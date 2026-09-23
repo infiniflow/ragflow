@@ -232,7 +232,9 @@ def _parsed(rest_client: RestClient, dataset_id: str, document_id: str):
     docs = payload["data"]["docs"]
     if not docs:
         return False
-    return docs[0].get("ingestion_status") == "COMPLETED"
+    if IS_GO_PROXY:
+        return docs[0].get("ingestion_status") == "COMPLETED"
+    return docs[0].get("run") == "DONE"
 
 
 @pytest.fixture

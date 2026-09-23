@@ -52,6 +52,7 @@ logger.setLevel(getattr(logging, _LOG_LEVEL, logging.WARNING))
 logger.addHandler(_log_handler)
 logger.propagate = False
 
+from test.testcases.configs import IS_GO_PROXY
 from test.testcases.utils import wait_for
 
 PYTHON_HOST = "http://localhost:9380"
@@ -283,7 +284,9 @@ def _upload_and_parse(rest_client, dataset_id, text, filename="doc.txt"):
         if doc_res.status_code != 200:
             return False
         docs = doc_res.json()["data"]["docs"]
-        return bool(docs) and docs[0].get("ingestion_status") == "COMPLETED"
+        if IS_GO_PROXY:
+            return bool(docs) and docs[0].get("ingestion_status") == "COMPLETED"
+        return bool(docs) and docs[0].get("run") == "DONE"
 
     check_parsed()
     return doc_id

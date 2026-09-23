@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -338,7 +339,10 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
 	}
 
-	chat := buildCreateChatEntity(req, userID)
+	chat, err := buildCreateChatEntity(req, userID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
@@ -401,7 +405,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 	}
@@ -520,7 +524,28 @@ func filterCreateChatPersistedFields(req map[string]interface{}) {
 	}
 }
 
-func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.Chat {
+func buildCreateChatEntity(req map[string]interface{}, tenantID string) (*entity.Chat, error) {
+	similarityThreshold, err := restChatFloatField(req, "similarity_threshold")
+	if err != nil {
+		return nil, err
+	}
+	vectorSimilarityWeight, err := restChatFloatField(req, "vector_similarity_weight")
+	if err != nil {
+		return nil, err
+	}
+	topN, err := restChatIntField(req, "top_n")
+	if err != nil {
+		return nil, err
+	}
+	rerankCandidatesCount, err := restChatIntField(req, "rerank_candidates_count")
+	if err != nil {
+		return nil, err
+	}
+	topK, err := restChatIntField(req, "top_k")
+	if err != nil {
+		return nil, err
+	}
+
 	name := stringFromValue(req["name"])
 	description := stringFromValue(req["description"])
 	icon := stringFromValue(req["icon"])
@@ -552,11 +577,11 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		LLMSetting:             entity.JSONMap(llmSetting),
 		PromptType:             stringFromValue(req["prompt_type"]),
 		PromptConfig:           entity.JSONMap(promptConfig),
-		SimilarityThreshold:    floatFromValue(req["similarity_threshold"]),
-		VectorSimilarityWeight: floatFromValue(req["vector_similarity_weight"]),
-		TopN:                   int64FromValue(req["top_n"]),
-		RerankCandidatesCount:  int64FromValue(req["rerank_candidates_count"]),
-		TopK:                   int64FromValue(req["top_k"]),
+		SimilarityThreshold:    similarityThreshold,
+		VectorSimilarityWeight: vectorSimilarityWeight,
+		TopN:                   topN,
+		RerankCandidatesCount:  rerankCandidatesCount,
+		TopK:                   topK,
 		DoRefer:                stringFromValue(req["do_refer"]),
 		RerankID:               rerankID,
 		TenantRerankID:         stringPtrIfNotEmpty(tenantRerankID),
@@ -579,7 +604,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 		metaDataFilterJSON := entity.JSONMap{}
 		chat.MetaDataFilter = &metaDataFilterJSON
 	}
-	return chat
+	return chat, nil
 }
 
 func stringPtrIfNotEmpty(value string) *string {
@@ -679,42 +704,53 @@ func stringListFromValue(value interface{}) ([]string, bool) {
 	return result, true
 }
 
-func int64FromValue(value interface{}) int64 {
+func parseRESTChatInt(value interface{}) (int64, bool) {
 	switch typed := value.(type) {
 	case int:
-		return int64(typed)
+		return int64(typed), true
 	case int64:
-		return typed
+		return typed, true
 	case float64:
-		return int64(typed)
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed || typed < -float64(uint64(1)<<63) || typed >= float64(uint64(1)<<63) {
+			return 0, false
+		}
+		return int64(typed), true
 	case json.Number:
 		n, err := typed.Int64()
 		if err == nil {
-			return n
+			return n, true
 		}
-		f, _ := typed.Float64()
-		return int64(f)
+		f, err := typed.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return parseRESTChatInt(f)
 	default:
-		return 0
+		return 0, false
 	}
 }
 
-func floatFromValue(value interface{}) float64 {
+func parseRESTChatFloat(value interface{}) (float64, bool) {
+	var n float64
 	switch typed := value.(type) {
 	case float64:
-		return typed
+		n = typed
 	case float32:
-		return float64(typed)
+		n = float64(typed)
 	case int:
-		return float64(typed)
+		n = float64(typed)
 	case int64:
-		return float64(typed)
+		n = float64(typed)
 	case json.Number:
-		n, _ := typed.Float64()
-		return n
+		var err error
+		n, err = typed.Float64()
+		if err != nil {
+			return 0, false
+		}
 	default:
-		return 0
+		return 0, false
 	}
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
 func isTruthy(value interface{}) bool {
@@ -945,7 +981,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	updates := filterRESTChatUpdates(req)
-	normalizeRESTChatNumericUpdates(updates)
+	if err := normalizeRESTChatNumericUpdates(updates); err != nil {
+		return nil, err
+	}
 	if value, ok := updates["name"]; ok {
 		name := value.(string)
 		currentName := ""
@@ -1053,7 +1091,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 			return nil, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 		if kb.ChunkNum == 0 {
-			return nil, fmt.Errorf("the dataset %s doesn't own parsed file", datasetID)
+			return nil, fmt.Errorf("The dataset %s doesn't own parsed file", datasetID)
 		}
 		kbs = append(kbs, kb)
 		kbIDs = append(kbIDs, datasetID)
@@ -1130,17 +1168,42 @@ func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
 	return updates
 }
 
-func normalizeRESTChatNumericUpdates(updates map[string]interface{}) {
+func restChatFloatField(fields map[string]interface{}, field string) (float64, error) {
+	n, valid := parseRESTChatFloat(fields[field])
+	if !valid {
+		return 0, fmt.Errorf("`%s` must be a number", field)
+	}
+	return n, nil
+}
+
+func restChatIntField(fields map[string]interface{}, field string) (int64, error) {
+	n, valid := parseRESTChatInt(fields[field])
+	if !valid {
+		return 0, fmt.Errorf("`%s` must be an integer", field)
+	}
+	return n, nil
+}
+
+func normalizeRESTChatNumericUpdates(updates map[string]interface{}) error {
 	for _, field := range []string{"similarity_threshold", "vector_similarity_weight"} {
-		if value, ok := updates[field]; ok {
-			updates[field] = floatFromValue(value)
+		if _, exists := updates[field]; exists {
+			n, err := restChatFloatField(updates, field)
+			if err != nil {
+				return err
+			}
+			updates[field] = n
 		}
 	}
 	for _, field := range []string{"top_n", "rerank_candidates_count", "top_k"} {
-		if value, ok := updates[field]; ok {
-			updates[field] = int64FromValue(value)
+		if _, exists := updates[field]; exists {
+			n, err := restChatIntField(updates, field)
+			if err != nil {
+				return err
+			}
+			updates[field] = n
 		}
 	}
+	return nil
 }
 
 func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSONMap {

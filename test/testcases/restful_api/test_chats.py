@@ -27,7 +27,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from test.testcases.configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
+from test.testcases.configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
@@ -1555,8 +1555,13 @@ def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_docume
         if expected_code == 0:
             actual_llm_id = body["data"]["llm_id"]
             tenant_llm_id = body["data"].get("tenant_llm_id")
-            assert actual_llm_id == expected_llm_id, (scenario_name, body)
-            assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, body)
+            if IS_GO_PROXY:
+                assert actual_llm_id == expected_llm_id, (scenario_name, body)
+                assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, body)
+            elif tenant_llm_id:
+                assert actual_llm_id == tenant_llm_id, (scenario_name, body)
+            else:
+                assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, body)
             assert body["data"]["llm_setting"] == expected_llm_setting, (scenario_name, body)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
@@ -1584,18 +1589,15 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
         ("similarity_threshold one", {"similarity_threshold": 1}, {("similarity_threshold",): 1}),
         ("similarity_threshold negative one", {"similarity_threshold": -1}, {("similarity_threshold",): -1.0}),
         ("similarity_threshold ten", {"similarity_threshold": 10}, {("similarity_threshold",): 10.0}),
-        ("similarity_threshold string", {"similarity_threshold": "a"}, {("similarity_threshold",): 0.0}),
         ("vector_similarity_weight one", {"vector_similarity_weight": 1}, {("vector_similarity_weight",): 1}),
         ("vector_similarity_weight zero", {"vector_similarity_weight": 0}, {("vector_similarity_weight",): 0}),
         ("vector_similarity_weight two", {"vector_similarity_weight": 2}, {("vector_similarity_weight",): 2.0}),
         ("vector_similarity_weight negative nine", {"vector_similarity_weight": -9}, {("vector_similarity_weight",): -9.0}),
-        ("vector_similarity_weight string", {"vector_similarity_weight": "a"}, {("vector_similarity_weight",): 0.0}),
         ("empty prompt parameters", {"prompt_config": {"parameters": []}}, {("prompt_config", "parameters"): []}),
         ("top_n zero", {"top_n": 0}, {("top_n",): 0}),
         ("top_n one", {"top_n": 1}, {("top_n",): 1}),
         ("top_n negative one", {"top_n": -1}, {("top_n",): -1}),
         ("top_n ten", {"top_n": 10}, {("top_n",): 10}),
-        ("top_n string", {"top_n": "a"}, {("top_n",): 0}),
         ("empty_response plain text", {"prompt_config": {"empty_response": "Hello World"}}, {("prompt_config", "empty_response"): "Hello World"}),
         ("empty_response empty string", {"prompt_config": {"empty_response": ""}}, {("prompt_config", "empty_response"): ""}),
         ("empty_response punctuation", {"prompt_config": {"empty_response": "!@#$%^&*()"}}, {("prompt_config", "empty_response"): "!@#$%^&*()"}),
@@ -1637,6 +1639,27 @@ def test_chat_create_prompt_contract(rest_client, clear_chats):
         assert payload["code"] == 0, (scenario_name, payload)
         for path, expected_value in expected_values.items():
             assert _get_nested(payload["data"], path) == expected_value, (scenario_name, path, payload)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("field", "value", "kind"),
+    [
+        ("similarity_threshold", "a", "number"),
+        ("vector_similarity_weight", "a", "number"),
+        ("top_n", "a", "integer"),
+    ],
+)
+def test_chat_create_invalid_numeric_contract(rest_client, clear_chats, field, value, kind):
+    res = rest_client.post("/chats", json={"name": f"invalid_create_{field}", "dataset_ids": [], field: value})
+    assert res.status_code == 200, res.text
+    payload = res.json()
+    if IS_GO_PROXY:
+        assert payload["code"] == 102, payload
+        assert payload["message"] == f"`{field}` must be a {kind}", payload
+    else:
+        assert payload["code"] == 0, payload
+        assert payload["data"][field] == 0, payload
 
 
 @pytest.mark.p2
@@ -1837,8 +1860,13 @@ def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_docume
             assert get_payload["data"]["name"] == updated_name, (scenario_name, get_payload)
             actual_llm_id = get_payload["data"]["llm_id"]
             tenant_llm_id = get_payload["data"].get("tenant_llm_id")
-            assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
-            assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, get_payload)
+            if IS_GO_PROXY:
+                assert actual_llm_id == expected_llm_id, (scenario_name, get_payload)
+                assert isinstance(tenant_llm_id, str) and re.fullmatch(r"[0-9a-f]{32}", tenant_llm_id), (scenario_name, get_payload)
+            elif tenant_llm_id:
+                assert actual_llm_id == tenant_llm_id, (scenario_name, get_payload)
+            else:
+                assert re.fullmatch(r"[0-9a-f]{32}", actual_llm_id), (scenario_name, get_payload)
             assert get_payload["data"]["llm_setting"] == expected_llm_setting, (scenario_name, get_payload)
         else:
             assert body["message"] == expected_message, (scenario_name, body)
@@ -1866,18 +1894,15 @@ def test_chat_update_prompt_contract(rest_client, clear_chats, ensure_parsed_doc
         ("similarity_threshold one", {"similarity_threshold": 1}, {("similarity_threshold",): 1}),
         ("similarity_threshold negative one", {"similarity_threshold": -1}, {("similarity_threshold",): -1.0}),
         ("similarity_threshold ten", {"similarity_threshold": 10}, {("similarity_threshold",): 10.0}),
-        ("similarity_threshold string", {"similarity_threshold": "a"}, {("similarity_threshold",): 0.0}),
         ("vector_similarity_weight zero", {"vector_similarity_weight": 0}, {("vector_similarity_weight",): 0}),
         ("vector_similarity_weight one", {"vector_similarity_weight": 1}, {("vector_similarity_weight",): 1}),
         ("vector_similarity_weight negative one", {"vector_similarity_weight": -1}, {("vector_similarity_weight",): -1.0}),
         ("vector_similarity_weight ten", {"vector_similarity_weight": 10}, {("vector_similarity_weight",): 10.0}),
-        ("vector_similarity_weight string", {"vector_similarity_weight": "a"}, {("vector_similarity_weight",): 0.0}),
         ("empty prompt parameters", {"prompt_config": {"parameters": []}}, {("prompt_config", "parameters"): []}),
         ("top_n zero", {"top_n": 0}, {("top_n",): 0}),
         ("top_n one", {"top_n": 1}, {("top_n",): 1}),
         ("top_n negative one", {"top_n": -1}, {("top_n",): -1}),
         ("top_n ten", {"top_n": 10}, {("top_n",): 10}),
-        ("top_n string", {"top_n": "a"}, {("top_n",): 0}),
         ("empty_response plain text", {"prompt_config": {"empty_response": "Hello World"}}, {("prompt_config", "empty_response"): "Hello World"}),
         ("empty_response empty string", {"prompt_config": {"empty_response": ""}}, {("prompt_config", "empty_response"): ""}),
         ("empty_response punctuation", {"prompt_config": {"empty_response": "!@#$%^&*()"}}, {("prompt_config", "empty_response"): "!@#$%^&*()"}),
@@ -1936,6 +1961,41 @@ def test_chat_update_prompt_contract(rest_client, clear_chats, ensure_parsed_doc
         assert get_payload["data"]["dataset_ids"] == [dataset_id], (scenario_name, get_payload)
         for path, expected_value in expected_values.items():
             assert _get_nested(get_payload["data"], path) == expected_value, (scenario_name, path, get_payload)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("field", "value", "kind"),
+    [
+        ("similarity_threshold", "a", "number"),
+        ("vector_similarity_weight", "a", "number"),
+        ("top_n", "a", "integer"),
+    ],
+)
+def test_chat_update_invalid_numeric_contract(rest_client, clear_chats, field, value, kind):
+    create_res = rest_client.post("/chats", json={"name": f"invalid_update_{field}", "dataset_ids": []})
+    assert create_res.status_code == 200, create_res.text
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    chat_id = create_payload["data"]["id"]
+    original_value = create_payload["data"][field]
+    original_name = create_payload["data"]["name"]
+
+    update_res = rest_client.put(f"/chats/{chat_id}", json={"name": f"changed_{field}", field: value})
+    assert update_res.status_code == 200, update_res.text
+    update_payload = update_res.json()
+    get_res = rest_client.get(f"/chats/{chat_id}")
+    assert get_res.status_code == 200, get_res.text
+    get_payload = get_res.json()
+    assert get_payload["code"] == 0, get_payload
+    if IS_GO_PROXY:
+        assert update_payload["code"] == 102, update_payload
+        assert update_payload["message"] == f"`{field}` must be a {kind}", update_payload
+        assert get_payload["data"][field] == original_value, get_payload
+        assert get_payload["data"]["name"] == original_name, get_payload
+    else:
+        assert update_payload["code"] == 0, update_payload
+        assert get_payload["data"][field] == 0, get_payload
 
 
 @pytest.mark.p2

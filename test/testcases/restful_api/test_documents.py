@@ -104,8 +104,12 @@ def _assert_docs_sorted(docs, key, reverse):
     assert values == sorted(values, reverse=reverse)
 
 
+DOCUMENT_STATUS_FIELD = "ingestion_status" if IS_GO_PROXY else "run"
+PARSED_STATUS = "COMPLETED" if IS_GO_PROXY else "DONE"
+
+
 @wait_for(200, 1, "Document parsing timeout in RESTful document tests")
-def _wait_document_ingestion_status(rest_client, dataset_id, document_ids, expected_status="COMPLETED"):
+def _wait_document_parsed(rest_client, dataset_id, document_ids):
     res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"page_size": max(100, len(document_ids))})
     if res.status_code != 200:
         return False
@@ -115,7 +119,7 @@ def _wait_document_ingestion_status(rest_client, dataset_id, document_ids, expec
     docs = {doc["id"]: doc for doc in payload["data"]["docs"]}
     for doc_id in document_ids:
         doc = docs.get(doc_id)
-        if not doc or doc.get("ingestion_status") != expected_status:
+        if not doc or doc.get(DOCUMENT_STATUS_FIELD) != PARSED_STATUS:
             return False
     return True
 
@@ -200,7 +204,7 @@ def test_documents_list_default_concurrent_and_filters_contract(rest_client, cre
         ({"id": first_id}, 0, 1, 1),
         ({"id": first_id, "name": first_name}, 0, 1, 1),
         ({"id": first_id, "name": "ragflow_test_upload_1.txt"}, 0, 0, 0),
-        ({"ingestion_status": ["UNSTART"]}, 0, 5, 5),
+        ({DOCUMENT_STATUS_FIELD: ["UNSTART"]}, 0, 5, 5),
     ):
         res = rest_client.get(f"/datasets/{dataset_id}/documents", params=params)
         assert res.status_code == 200, (params, res.text)
@@ -282,7 +286,7 @@ def test_documents_list_error_and_sorting_contract(rest_client, create_dataset, 
         (
             "ingestion status invalid",
             f"/datasets/{dataset_id}/documents",
-            {"ingestion_status": ["INVALID_STATUS"]},
+            {DOCUMENT_STATUS_FIELD: ["INVALID_STATUS"]},
             102,
             "Invalid filter run status conditions: INVALID_STATUS",
         ),
@@ -719,7 +723,7 @@ def test_documents_update_invalid_field_and_guard_contract(rest_client, create_d
         {"process_begin_at": 1},
         {"process_duration": 1.0},
         {"progress_msg": "ragflow_test"},
-        {"ingestion_status": "ragflow_test"},
+        {DOCUMENT_STATUS_FIELD: "ragflow_test"},
         {"size": 1},
         {"source_type": "ragflow_test"},
         {"thumbnail": "ragflow_test"},
@@ -1256,13 +1260,13 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
             assert expected_message in body["message"], (scenario_name, body)
         else:
             target_ids = payload["document_ids"]
-            _wait_document_ingestion_status(rest_client, dataset_id, target_ids)
+            _wait_document_parsed(rest_client, dataset_id, target_ids)
             detail_res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"page_size": 10})
             detail_payload = detail_res.json()
             docs = {doc["id"]: doc for doc in detail_payload["data"]["docs"]}
             for doc_id in target_ids:
                 doc = docs[doc_id]
-                assert doc["ingestion_status"] == "COMPLETED", (scenario_name, doc)
+                assert doc[DOCUMENT_STATUS_FIELD] == PARSED_STATUS, (scenario_name, doc)
                 assert doc["process_begin_at"], (scenario_name, doc)
                 assert doc["process_duration"] >= 0, (scenario_name, doc)
                 assert doc["progress"] >= 0, (scenario_name, doc)
@@ -1307,13 +1311,13 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     assert duplicate_payload["code"] == 0, duplicate_payload
     assert duplicate_payload["data"]["success_count"] == len(doc_ids), duplicate_payload
     assert any("Duplicate document ids:" in err for err in duplicate_payload["data"].get("errors", [])), duplicate_payload
-    _wait_document_ingestion_status(rest_client, dataset_id, doc_ids)
+    _wait_document_parsed(rest_client, dataset_id, doc_ids)
 
     repeated_res = rest_client.post(f"/datasets/{dataset_id}/documents/parse", json={"document_ids": doc_ids}, timeout=60)
     assert repeated_res.status_code == 200
     repeated_payload = repeated_res.json()
     assert repeated_payload["code"] == 0, repeated_payload
-    _wait_document_ingestion_status(rest_client, dataset_id, doc_ids)
+    _wait_document_parsed(rest_client, dataset_id, doc_ids)
 
 
 @pytest.mark.p3
@@ -1328,7 +1332,7 @@ def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dat
     assert parse_single_res.status_code == 200
     parse_single_payload = parse_single_res.json()
     assert parse_single_payload["code"] == 0, parse_single_payload
-    _wait_document_ingestion_status(rest_client, single_dataset_id, [single_doc_id])
+    _wait_document_parsed(rest_client, single_dataset_id, [single_doc_id])
 
     chunk_res = rest_client.get(f"/datasets/{single_dataset_id}/documents/{single_doc_id}/chunks")
     assert chunk_res.status_code == 200, chunk_res.text
@@ -1347,7 +1351,7 @@ def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dat
     assert parse_bulk_res.status_code == 200
     parse_bulk_payload = parse_bulk_res.json()
     assert parse_bulk_payload["code"] == 0, parse_bulk_payload
-    _wait_document_ingestion_status(rest_client, parse_bulk_dataset, parse_bulk_ids)
+    _wait_document_parsed(rest_client, parse_bulk_dataset, parse_bulk_ids)
 
     concurrent_dataset, concurrent_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=20)
     concurrent_ids = [doc["id"] for doc in concurrent_docs]
@@ -1368,7 +1372,7 @@ def test_documents_parse_chunks_and_scaled_bulk_contract(rest_client, create_dat
         assert response.status_code == 200, response.text
         payload = response.json()
         assert payload["code"] == 0, payload
-    _wait_document_ingestion_status(rest_client, concurrent_dataset, concurrent_ids)
+    _wait_document_parsed(rest_client, concurrent_dataset, concurrent_ids)
 
 
 @pytest.mark.p2
@@ -1623,7 +1627,7 @@ def test_documents_table_parser_chat_patterns(rest_client, clear_datasets, tmp_p
     assert parse_res.status_code == 200
     parse_payload = parse_res.json()
     assert parse_payload["code"] == 0, parse_payload
-    _wait_document_ingestion_status(rest_client, dataset_id, document_ids)
+    _wait_document_parsed(rest_client, dataset_id, document_ids)
 
     chat_payload = {
         "name": f"table_parser_chat_{uuid.uuid4().hex[:8]}",
