@@ -318,8 +318,8 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 			return nil, err
 		}
 		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
-		// running worker's pollCancel detects the stop immediately rather
-		// than waiting for the next DB poll (up to 3s).
+		// running worker's pollCancel detects the stop on its next 500ms
+		// tick instead of the slower DB fallback path.
 		if rc := kvrocks.Get(); rc != nil {
 			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
 		}

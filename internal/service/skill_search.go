@@ -222,7 +222,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	}
 
 	// Check if index exists before searching
-	indexName := getSkillIndexName(req.TenantID, req.SpaceID)
+	indexName := SkillIndexName(req.TenantID, req.SpaceID)
 	common.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
 
 	indexExists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
@@ -694,7 +694,8 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 }
 
 // Helper functions
-func getSkillIndexName(tenantID, spaceID string) string {
+// SkillIndexName returns the index used by a tenant's skill space.
+func SkillIndexName(tenantID, spaceID string) string {
 	spaceID = normalizeSpaceID(spaceID)
 	spaceID = strings.ToLower(spaceID)
 	replacer := strings.NewReplacer("-", "_", "/", "_", "\\", "_", " ", "_", ".", "_", ":", "_")

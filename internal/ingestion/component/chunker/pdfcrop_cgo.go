@@ -14,8 +14,10 @@ import (
 	"context"
 	"encoding/json"
 	"image"
-	"log/slog"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -117,8 +119,8 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 				}
 				img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
 				if rerr != nil || img == nil {
-					slog.Warn("cropImageChunks: render failed, skipping page",
-						"page", pn, "err", rerr)
+					common.Warn("cropImageChunks: render failed, skipping page",
+						zap.Int("page", pn), zap.Error(rerr))
 					continue
 				}
 				pageCache[pn] = img

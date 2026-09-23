@@ -119,7 +119,6 @@ type ChunkDoc struct {
 	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
 	ContentLtks   string                     `json:"content_ltks,omitempty"`
 	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	TagKwd        []string                   `json:"tag_kwd,omitempty"`
 	PageNumber    *int                       `json:"page_number,omitempty"`
 	TopInt        []int                      `json:"top_int,omitempty"`
 	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
@@ -146,6 +145,10 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	// Known ChunkDoc fields plus tag_kwd, which has no ChunkDoc field: Go's
+	// tagger emits tag_feas and the vocabulary comes from a tag source file,
+	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
+	// cannot fall through to Extra and be re-emitted by MarshalJSON.
 	for _, key := range []string{
 		"text", "doc_type_kwd", "mom", "img_id",
 		"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",

@@ -13,6 +13,22 @@ if (typeof globalThis.TextEncoder === 'undefined') {
   Object.assign(globalThis, { TextDecoder, TextEncoder });
 }
 
+// jsdom does not expose web streams; eventsource-parser reads TransformStream
+// at module scope (via hooks/logic-hooks.ts)
+if (typeof globalThis.TransformStream === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { TransformStream } = require('node:stream/web');
+  Object.assign(globalThis, { TransformStream });
+}
+
+// jsdom does not implement CSS.supports; css-support.ts calls it at module scope
+if (typeof globalThis.CSS === 'undefined') {
+  (globalThis as Record<string, unknown>).CSS = {};
+}
+if (typeof globalThis.CSS.supports !== 'function') {
+  globalThis.CSS.supports = () => false;
+}
+
 // Vite's import.meta.glob is rewritten to this stub by jest-esbuild-transformer.cjs
 (globalThis as Record<string, unknown>).jestImportMetaGlob = () => ({});
 

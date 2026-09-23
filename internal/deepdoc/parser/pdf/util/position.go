@@ -2,11 +2,13 @@ package util
 
 import (
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -54,7 +56,8 @@ func ExtractPositions(text string) []pdf.Position {
 		for p := range strings.SplitSeq(parts[0], "-") {
 			n, err := strconv.Atoi(p)
 			if err != nil {
-				slog.Warn("ExtractPositions: invalid page number in tag", "tag", tag, "part", p, "err", err)
+				common.Warn("ExtractPositions: invalid page number in tag",
+					zap.String("tag", tag), zap.String("part", p), zap.Error(err))
 				continue
 			}
 			pageNums = append(pageNums, n-1) // 0-index
@@ -62,22 +65,22 @@ func ExtractPositions(text string) []pdf.Position {
 
 		left, err := strconv.ParseFloat(parts[1], 64)
 		if err != nil {
-			slog.Warn("ExtractPositions: invalid left coordinate", "tag", tag, "err", err)
+			common.Warn("ExtractPositions: invalid left coordinate", zap.String("tag", tag), zap.Error(err))
 			continue
 		}
 		right, err := strconv.ParseFloat(parts[2], 64)
 		if err != nil {
-			slog.Warn("ExtractPositions: invalid right coordinate", "tag", tag, "err", err)
+			common.Warn("ExtractPositions: invalid right coordinate", zap.String("tag", tag), zap.Error(err))
 			continue
 		}
 		top, err := strconv.ParseFloat(parts[3], 64)
 		if err != nil {
-			slog.Warn("ExtractPositions: invalid top coordinate", "tag", tag, "err", err)
+			common.Warn("ExtractPositions: invalid top coordinate", zap.String("tag", tag), zap.Error(err))
 			continue
 		}
 		bottom, err := strconv.ParseFloat(parts[4], 64)
 		if err != nil {
-			slog.Warn("ExtractPositions: invalid bottom coordinate", "tag", tag, "err", err)
+			common.Warn("ExtractPositions: invalid bottom coordinate", zap.String("tag", tag), zap.Error(err))
 			continue
 		}
 

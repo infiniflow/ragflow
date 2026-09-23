@@ -1,16 +1,19 @@
 package layout
 
 import (
-	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ---- Column assignment ----
@@ -472,7 +475,7 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		processed := processPageBoxes(bxs, mh, mw, pageEnglish[pg])
 		result = append(result, processed...)
 	}
-	slog.Debug("vm result", "in", len(boxes), "out", len(result))
+	common.Debug("vm result", zap.Int("in", len(boxes)), zap.Int("out", len(result)))
 	return result
 }
 
@@ -528,21 +531,24 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
 	// Check layout number
 	if prev.LayoutNo != curr.LayoutNo {
-		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
+		common.Debug("vm reject", zap.String("reason", "layoutNo"),
+			zap.String("prevLayout", prev.LayoutNo), zap.String("currLayout", curr.LayoutNo))
 		return false
 	}
 
 	// Check vertical gap
 	gap := curr.Top - prev.Bottom
 	if gap > mh*1.5 {
-		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
+		common.Debug("vm reject", zap.String("reason", "gap"),
+			zap.Float64("gap", gap), zap.Float64("threshold", mh*1.5), zap.Float64("mh", mh))
 		return false
 	}
 
 	// Check horizontal overlap
 	ov := util.OverlapX(prev, curr)
 	if ov < 0.3 {
-		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
+		common.Debug("vm reject", zap.String("reason", "ovX"),
+			zap.Float64("ov", ov), zap.Float64("threshold", 0.3))
 		return false
 	}
 
@@ -586,7 +592,7 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	if r := []rune(currTrunc); len(r) > 40 {
 		currTrunc = string(r[:40])
 	}
-	slog.Debug("vm merge", "prev", prevTrunc, "curr", currTrunc)
+	common.Debug("vm merge", zap.String("prev", prevTrunc), zap.String("curr", currTrunc))
 
 	return prev
 }

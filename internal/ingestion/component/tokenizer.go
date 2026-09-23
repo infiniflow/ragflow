@@ -81,7 +81,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -520,7 +519,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// skip is the correct behavior (go_intentional). Do NOT "align" this to
 	// the DSL.
 	if trimmedName == "" {
-		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
+		common.Warn("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
 		// Encode the raw name (no TrimSpace) to mirror Python
 		// tokenizer.py:95 which passes name verbatim to embedding. The

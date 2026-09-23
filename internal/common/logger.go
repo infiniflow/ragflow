@@ -136,11 +136,12 @@ func parseZapLevel(level string) (zapcore.Level, error) {
 	}
 }
 
-func logLevelName(level zapcore.Level) string {
-	if level == zapcore.WarnLevel {
-		return "WARNING"
+func LogLevelHigherThanInfo(level string) bool {
+	l, err := parseZapLevel(level)
+	if err != nil {
+		return false
 	}
-	return strings.ToUpper(level.String())
+	return l > zapcore.InfoLevel
 }
 
 // InitLogger initializes the global logger. stdout is always written. If file.Path

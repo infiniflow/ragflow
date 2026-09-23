@@ -86,30 +86,32 @@ type Synset struct {
 
 // WordNet is the main struct for WordNet operations
 type WordNet struct {
-	wordNetDir          string
-	lemmaPosOffsetMap   map[string]map[string][]int
-	exceptionMap        map[string]map[string][]string
-	dataFileCache       map[string]*os.File
-	dataFileCacheOffset map[string]int64
-	fileMutexes         map[string]*sync.Mutex // Mutex for each POS to ensure concurrency safety
-	// cacheMu guards dataFileCache and fileMutexes themselves. Those two maps used to be
-	// read and written without a lock while the retrieval fan-out called the synonym lookup
-	// from several goroutines at once, which crashes the process outright: measured
-	// 2026-09-22, `fatal error: concurrent map writes` in getDataFile on the first fan-out
-	// after a restart. The per-POS mutex above serialises file READS; this one serialises the
-	// registry that hands them out.
-	cacheMu sync.Mutex
+	wordNetDir string
+	// mu guards the two LAZY caches below: getDataFile opens a POS's data file the first time it is
+	// needed, and retrieval is concurrent BY DESIGN (the graph's fan-out runs one goroutine per query),
+	// so an unguarded map here is a `concurrent map writes` runtime crash — a FATAL error, not a
+	// recoverable panic: it takes the whole server down mid-question.
+	//
+	// Measured 2026-09-22 (FRAMES, one opening): two of the fan-out's queries reached getDataFile for
+	// the noun data at the same moment and the process died. The per-POS mutex below is a DIFFERENT
+	// thing (it serialises I/O on a shared file handle) and does not protect these maps.
+	mu                sync.Mutex
+	lemmaPosOffsetMap map[string]map[string][]int
+	exceptionMap      map[string]map[string][]string
+	// dataFileCache is the per-POS open file; fileMutexes is the per-POS I/O lock. Both are filled
+	// lazily under mu (see getDataFile) and read-only after their first fill.
+	dataFileCache map[string]*os.File
+	fileMutexes   map[string]*sync.Mutex
 }
 
 // NewWordNet creates a new WordNet instance with the given WordNet directory
 func NewWordNet(wordNetDir string) (*WordNet, error) {
 	wn := &WordNet{
-		wordNetDir:          wordNetDir,
-		lemmaPosOffsetMap:   make(map[string]map[string][]int),
-		exceptionMap:        make(map[string]map[string][]string),
-		dataFileCache:       make(map[string]*os.File),
-		dataFileCacheOffset: make(map[string]int64),
-		fileMutexes:         make(map[string]*sync.Mutex),
+		wordNetDir:        wordNetDir,
+		lemmaPosOffsetMap: make(map[string]map[string][]int),
+		exceptionMap:      make(map[string]map[string][]string),
+		dataFileCache:     make(map[string]*os.File),
+		fileMutexes:       make(map[string]*sync.Mutex),
 	}
 
 	// Initialize exception maps for all POS
@@ -130,18 +132,33 @@ func NewWordNet(wordNetDir string) (*WordNet, error) {
 	return wn, nil
 }
 
-// Close closes all cached file handles
+// Close closes all cached file handles.
+//
+// The caches are snapshotted and cleared UNDER mu (a Close racing a lookup would otherwise iterate a map
+// another goroutine is writing), and the handles are closed OUTSIDE it, each under its own POS lock so it
+// cannot close a file a reader is using.
 func (wn *WordNet) Close() {
-	wn.cacheMu.Lock()
-	defer wn.cacheMu.Unlock()
+	type entry struct {
+		file  *os.File
+		mutex *sync.Mutex
+	}
+	wn.mu.Lock()
+	entries := make([]entry, 0, len(wn.dataFileCache))
 	for pos, f := range wn.dataFileCache {
-		if mutex, ok := wn.fileMutexes[pos]; ok {
-			mutex.Lock()
-			f.Close()
-			mutex.Unlock()
-		} else {
-			f.Close()
+		entries = append(entries, entry{file: f, mutex: wn.fileMutexes[pos]})
+	}
+	wn.dataFileCache = make(map[string]*os.File)
+	wn.fileMutexes = make(map[string]*sync.Mutex)
+	wn.mu.Unlock()
+
+	for _, e := range entries {
+		if e.mutex != nil {
+			e.mutex.Lock()
+			_ = e.file.Close()
+			e.mutex.Unlock()
+			continue
 		}
+		_ = e.file.Close()
 	}
 }
 
@@ -321,7 +338,12 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 		pos = ADJ
 	}
 
-	wn.cacheMu.Lock()
+	// The look-up-and-fill is under mu: this is the call two concurrent queries reach at once (see the
+	// struct's note). Holding the lock across the open is deliberate — the open happens ONCE per POS, and
+	// a double-checked variant would only add a second path for the same first-use race.
+	wn.mu.Lock()
+	defer wn.mu.Unlock()
+
 	// Get or create mutex for this POS
 	mutex, exists := wn.fileMutexes[pos]
 	if !exists {
@@ -330,10 +352,8 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 	}
 
 	if file, ok := wn.dataFileCache[pos]; ok {
-		wn.cacheMu.Unlock()
 		return file, mutex, nil
 	}
-	wn.cacheMu.Unlock()
 
 	suffix, ok := fileMap[pos]
 	if !ok {
@@ -346,14 +366,6 @@ func (wn *WordNet) getDataFile(pos string) (*os.File, *sync.Mutex, error) {
 		return nil, nil, fmt.Errorf("failed to open %s: %w", filename, err)
 	}
 
-	wn.cacheMu.Lock()
-	defer wn.cacheMu.Unlock()
-	// Another goroutine may have opened the same file while this one was: keep the cached
-	// handle (callers may already hold it) and close ours.
-	if cached, ok := wn.dataFileCache[pos]; ok {
-		_ = file.Close()
-		return cached, mutex, nil
-	}
 	wn.dataFileCache[pos] = file
 	return file, mutex, nil
 }
