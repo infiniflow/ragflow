@@ -73,3 +73,17 @@ export const LIST_MODEL_FIELD_NAMES = new Set<string>([
   'max_tokens',
   'is_tools',
 ]);
+
+/**
+ * Endpoint fields whose placeholder comes from the provider catalog.
+ *
+ * A provider that declares a display-only `url_hint` in `GET /providers`
+ * (see `conf/models/*.json`) shows that URL as the input placeholder
+ * instead of the generic i18n hint. The catalog wins so that the example
+ * URL lives next to the provider definition rather than in a locale file.
+ */
+export const URL_HINT_FIELD_NAMES = new Set<string>([
+  'base_url',
+  'mineru_apiserver',
+  'paddleocr_api_url',
+]);
