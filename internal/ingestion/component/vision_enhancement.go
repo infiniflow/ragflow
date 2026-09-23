@@ -128,17 +128,6 @@ func isValidBase64(s string) bool {
 	return err == nil
 }
 
-// isVisionEnhancementAllowed mirrors Python's 3 call sites in
-// rag/flow/parser/parser.py:772/978/1115 (PDF/DOCX/Markdown JSON branches).
-func isVisionEnhancementAllowed(fileType utility.FileType) bool {
-	switch fileType {
-	case utility.FileTypePDF, utility.FileTypeDOCX, utility.FileTypeMarkdown:
-		return true
-	default:
-		return false
-	}
-}
-
 // visionImageCropper yields a vision-usable base64 image for a parsed item.
 // Under cgo it crops on demand from the source PDF when the item carries
 // positions but no inlined image; under !cgo it returns the inlined image
@@ -161,10 +150,6 @@ func maybeDispatchVisionEnhancement(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 ) (parser.ParseResult, bool, error) {
-	// 0. FileType allowlist guard.
-	if !isVisionEnhancementAllowed(fileType) {
-		return dispatched, false, nil
-	}
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
