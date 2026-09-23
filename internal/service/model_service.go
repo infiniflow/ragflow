@@ -3462,27 +3462,6 @@ func (m *ModelProviderService) ShowModel(modelName string) (*modelModule.Model, 
 	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }
 
-// isImage2TextLLM returns true when the named LLM is registered as an
-// image2text model for the tenant.
-// Returns false on lookup error or empty LLM ID so callers fall back to
-// chat — matches Python's branch order where only an EXPLICIT image2text
-// registration switches the model type away from chat.
-func (m *ModelProviderService) isImage2TextLLM(ctx context.Context, tenantID, llmID string) bool {
-	if m == nil || llmID == "" {
-		return false
-	}
-	modelTypes, err := m.modelSolver().ResolveModelType(ctx, tenantID, llmID)
-	if err != nil {
-		return false
-	}
-	for _, mt := range modelTypes {
-		if mt == entity.ModelTypeImage2Text {
-			return true
-		}
-	}
-	return false
-}
-
 // ChatModelRef identifies one chat-capable tenant model together with its
 // human-readable coordinates (provider instance), so callers can log and
 // reason about failover chains. Ref is the tenant_model.id that
