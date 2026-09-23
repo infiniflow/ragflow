@@ -535,6 +535,26 @@ async def retrieval_test(tenant_id, dataset_id=None):
             "kb_id": "dataset_id",
         }
         ranks["chunks"] = [{key_mapping.get(key, key): value for key, value in chunk.items()} for chunk in ranks["chunks"]]
+        if req.get("debug"):
+            chunk_debug = []
+            for c in ranks["chunks"]:
+                chunk_debug.append({
+                    "chunk_id": c.get("id", ""),
+                    "document_id": c.get("document_id", ""),
+                    "document_keyword": c.get("document_keyword", ""),
+                    "similarity": c.get("similarity", 0.0),
+                    "vector_similarity": c.get("vector_similarity", 0.0),
+                    "term_similarity": c.get("term_similarity", 0.0),
+                    "content_preview": c.get("content", "")[:200],
+                })
+            ranks["debug"] = {
+                "original_question": question,
+                "effective_question": question,
+                "similarity_threshold": similarity_threshold,
+                "vector_similarity_weight": vector_similarity_weight,
+                "total_chunks": len(ranks["chunks"]),
+                "chunks": chunk_debug,
+            }
         return get_result(data=ranks)
     except Exception as e:
         if "not_found" in str(e):
