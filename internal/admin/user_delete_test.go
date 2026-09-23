@@ -123,7 +123,7 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{},
 		&entity.ChatChannel{}, &entity.UserCanvas{}, &entity.UserCanvasVersion{},
 		&entity.Search{}, &entity.Memory{}, &entity.MemoryTask{}, &entity.MCPServer{},
-		&entity.SkillSpace{}, &entity.SkillSearchConfig{},
+		&entity.SkillSearchConfig{},
 		&entity.CompilationTemplate{}, &entity.CompilationTemplateGroup{},
 		&entity.EvaluationDataset{}, &entity.EvaluationCase{}, &entity.EvaluationRun{}, &entity.EvaluationResult{},
 		&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{},
