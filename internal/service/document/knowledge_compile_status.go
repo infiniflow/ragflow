@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	knowledge_compile "ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/knowledge_compile"
 
 	"go.uber.org/zap"
 )
