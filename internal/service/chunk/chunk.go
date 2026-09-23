@@ -337,8 +337,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		extractedKeywords, err := service.KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
 		if err != nil {
 			common.Warn("Failed to extract keywords from question", zap.Error(err))
-		} else if extractedKeywords != "" {
-			modifiedQuestion = modifiedQuestion + " " + extractedKeywords
+		} else {
+			modifiedQuestion = service.AppendKeywords(modifiedQuestion, extractedKeywords)
 		}
 	}
 
