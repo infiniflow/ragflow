@@ -20,13 +20,13 @@ Build the Go backend and web frontend into a local Docker image for development 
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
 - Access to the `infiniflow/ragflow_deps:latest` and `infiniflow/github_action_runner:latest` images during the build
 
-The Go image currently targets `linux/amd64`. On an Apple Silicon Mac, Docker Desktop builds and runs this image through x86-64 emulation. A native `linux/arm64` build is not supported by the checked-in Go Dockerfile and its native dependencies.
+The documented Go image target is `linux/amd64`. On an Apple Silicon Mac, Docker Desktop builds and runs this image through x86-64 emulation.
 
 ## Platform support
 
-- **Linux x86-64:** CPU deployment is the default and recommended path. A GPU Compose deployment is available when the host has NVIDIA Container Toolkit configured. In the RAGFlow open-source 1.0 release, the Go DeepDoc backend remains CPU-only and does not support GPU inference.
+- **Linux x86-64:** CPU deployment is the default and recommended path. A GPU Compose deployment is available when the host has NVIDIA Container Toolkit configured. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 - **Apple Silicon macOS:** Build and run the `linux/amd64` image through Docker Desktop x86-64 emulation. Document processing and image builds may be slower than on an x86-64 Linux host.
-- **Linux ARM64:** Native builds are not supported by the checked-in Go Dockerfile and its native dependencies. Do not use an x86-64 image on ARM64 unless the resulting emulation setup has been validated for your workload.
+- **Linux ARM64:** Use a native build only after preparing ARM64-compatible dependency images and native libraries, and validate the selected document engine for the target architecture. The commands in this guide target AMD64.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
 
 Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. If a port is already in use, change the corresponding value in `docker/.env-go` and `docker/.env` together where both files define the same dependency.
