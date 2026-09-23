@@ -26,7 +26,7 @@ import (
 // called by the server's backend wiring) and (b) used to size the page worker
 // pool. It is configurable: the server resolves it once at start from
 // CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
-// (deepdoc.inference_concurrency) > default 4, then injects it with
+// (ingestor.inference_concurrency) > default 1, then injects it with
 // SetDeepDocConcurrency. Callers read it via DeepDocConcurrency(); they never
 // have to reason about the precedence themselves.
 //
@@ -41,7 +41,9 @@ import (
 // set once at server start via SetDeepDocConcurrency. It is the maximum number
 // of Runs in flight; each Run is single-threaded (intraOpThreads = 1 in the
 // native package), so it is also the number of cores inference may occupy.
-var deepDocInferenceConcurrency = 4
+// The default (1) is the conservative floor; the server overrides it from
+// CLI/env/config at boot via SetDeepDocConcurrency.
+var deepDocInferenceConcurrency = 1
 
 // SetDeepDocConcurrency sets the process inference budget. It is called exactly
 // once at server boot after CLI/env/config resolution. Non-positive values are
