@@ -96,6 +96,92 @@ func TestMediaOCRStatus_UsesPerItemMarker(t *testing.T) {
 	}
 }
 
+func TestResolveHTMLImageSourceLoadsRelativeAsset(t *testing.T) {
+	imagePayload := visionTestPNGBase64(t)
+	imageBytes, err := base64.StdEncoding.DecodeString(imagePayload)
+	if err != nil {
+		t.Fatalf("decode test PNG: %v", err)
+	}
+	storage := withMemoryStorage(t)
+	if err := storage.Put(t.Context(), "html-assets", "docs/images/chart.png", imageBytes); err != nil {
+		t.Fatalf("seed relative image: %v", err)
+	}
+
+	item := map[string]any{
+		"text":            "chart alt",
+		"doc_type_kwd":    "image",
+		"image_src":       "images/chart.png",
+		"parent_table_id": "html-table-1",
+	}
+	if !resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item) {
+		t.Fatal("resolveHTMLImageSource() = false, want true")
+	}
+	if _, ok := item["image_src"]; ok {
+		t.Fatalf("unresolved image source remains after storage lookup: %+v", item)
+	}
+	if image, _ := item["image"].(string); !strings.HasPrefix(image, "data:image/png;base64,") {
+		t.Fatalf("image payload = %q, want PNG data URI", image)
+	}
+	if item["text"] != "chart alt" || item["parent_table_id"] != "html-table-1" {
+		t.Fatalf("resource metadata changed during resolution: %+v", item)
+	}
+}
+
+func TestVisionEnhancementLoadsRelativeHTMLImageForOCR(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	imagePayload := visionTestPNGBase64(t)
+	imageBytes, err := base64.StdEncoding.DecodeString(imagePayload)
+	if err != nil {
+		t.Fatalf("decode test PNG: %v", err)
+	}
+	storage := withMemoryStorage(t)
+	if err := storage.Put(t.Context(), "html-assets", "docs/images/chart.png", imageBytes); err != nil {
+		t.Fatalf("seed relative image: %v", err)
+	}
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "chart alt",
+			"doc_type_kwd": "image",
+			"image_src":    "images/chart.png",
+		}},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeHTML, dispatched,
+		map[string]any{"bucket": "html-assets", "path": "docs/report.html"},
+		map[string]schema.ParserSetup{"html": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want relative image OCR")
+	}
+	if analyzer.detectCalls != 1 {
+		t.Errorf("OCR detect calls = %d, want 1", analyzer.detectCalls)
+	}
+	if _, ok := result.JSON[0]["image_src"]; ok {
+		t.Errorf("relative source not materialized: %+v", result.JSON[0])
+	}
+	if got := result.JSON[0]["text"]; got != "chart alt\n"+strings.TrimSpace(strings.Repeat("recognized ", 4)) {
+		t.Errorf("image text = %q, want alt plus OCR result", got)
+	}
+}
+
+func TestResolveRelativeHTMLImagePathStaysWithinHTMLDirectory(t *testing.T) {
+	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "images/chart.png"); !ok || got != "docs/images/chart.png" {
+		t.Errorf("resolveRelativeHTMLImagePath() = %q, %v; want docs/images/chart.png, true", got, ok)
+	}
+	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "images/my chart.png"); !ok || got != "docs/images/my chart.png" {
+		t.Errorf("space path = %q, %v; want docs/images/my chart.png, true", got, ok)
+	}
+	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "../../private.png"); ok {
+		t.Errorf("path escape resolved to %q", got)
+	}
+}
+
 type concurrentVisionOCRAnalyzer struct {
 	active atomic.Int32
 	peak   atomic.Int32
