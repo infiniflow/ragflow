@@ -35,6 +35,7 @@ import (
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/migrator"
 	"gorm.io/gorm/schema"
 )
 
@@ -43,53 +44,53 @@ var modelProviderManager *models.ProviderManager
 var modelProviderManagerMu sync.Mutex
 
 // migrationAwareDialector hands out a namedIndexMigrator instead of the stock
-// one and keeps everything else the wrapped dialector can do.
+// one.
+//
+// Both wrappers embed the concrete driver types, not gorm's interfaces. Embedding
+// gorm.Dialector or gorm.Migrator promotes only the methods those interfaces
+// declare, and gorm reaches capabilities such as ErrorTranslator,
+// SavePointerDialectorInterface and BuildIndexOptionsInterface by type
+// assertion on db.Dialector and db.Migrator() instead of through the
+// interfaces. The storage driver exposes twenty migrator methods beyond
+// gorm.Migrator, so forwarding them by hand loses one on every upgrade --
+// usually surfacing as a runtime panic mid-migration.
 type migrationAwareDialector struct {
-	gorm.Dialector
+	*mysql.Dialector
 }
 
-// The assertions gorm makes on db.Dialector must keep succeeding.
+// The capabilities gorm discovers by type assertion on db.Dialector.
 var (
+	_ gorm.Dialector                     = migrationAwareDialector{}
 	_ gorm.ErrorTranslator               = migrationAwareDialector{}
 	_ gorm.SavePointerDialectorInterface = migrationAwareDialector{}
 )
 
+func newMigrationAwareDialector(dsn string) gorm.Dialector {
+	base := mysql.Open(dsn)
+	if dialector, ok := base.(*mysql.Dialector); ok {
+		return migrationAwareDialector{Dialector: dialector}
+	}
+	return base
+}
+
 func (d migrationAwareDialector) Migrator(db *gorm.DB) gorm.Migrator {
-	return namedIndexMigrator{Migrator: d.Dialector.Migrator(db)}
-}
-
-// The three below are forwarded because gorm finds them on db.Dialector by type
-// assertion rather than through gorm.Dialector (gorm.go:361 for Translate,
-// finisher_api.go:713 and :736 for SavePoint/RollbackTo), and embedding an
-// interface only promotes the methods it declares. Dropping Translate would
-// turn gorm.ErrDuplicatedKey back into a raw MySQL error, and dropping the
-// savepoints would silently flatten nested transactions.
-func (d migrationAwareDialector) Translate(err error) error {
-	if translator, ok := d.Dialector.(gorm.ErrorTranslator); ok {
-		return translator.Translate(err)
+	migrator, ok := d.Dialector.Migrator(db).(mysql.Migrator)
+	if !ok {
+		// An unsupported driver shape degrades to the stock behaviour rather
+		// than panicking: a foreign migrator means we get the redundant drops
+		// back, which is what shipped before this wrapper existed.
+		return d.Dialector.Migrator(db)
 	}
-	return err
-}
-
-func (d migrationAwareDialector) SavePoint(tx *gorm.DB, name string) error {
-	if savePointer, ok := d.Dialector.(gorm.SavePointerDialectorInterface); ok {
-		return savePointer.SavePoint(tx, name)
-	}
-	return nil
-}
-
-func (d migrationAwareDialector) RollbackTo(tx *gorm.DB, name string) error {
-	if savePointer, ok := d.Dialector.(gorm.SavePointerDialectorInterface); ok {
-		return savePointer.RollbackTo(tx, name)
-	}
-	return nil
+	return namedIndexMigrator{Migrator: migrator}
 }
 
 // namedIndexMigrator leaves uniqueness to the named indexes declared with
 // uniqueIndex tags and created by the manual migrations.
 type namedIndexMigrator struct {
-	gorm.Migrator
+	mysql.Migrator
 }
+
+var _ migrator.BuildIndexOptionsInterface = namedIndexMigrator{}
 
 // MigrateColumnUnique drops a unique constraint only once it exists. The stock
 // implementation equates "this column carries some single-column UNIQUE index"
@@ -99,8 +100,15 @@ type namedIndexMigrator struct {
 // object and MySQL answers 1091 -- once per column, on every startup. The
 // add-constraint branch is left alone: it names its own object, so it cannot
 // hit the same mismatch.
+// phantomUniqueDrop reports whether the stock migrator is about to drop a
+// unique constraint this schema never created. See MigrateColumnUnique.
+func phantomUniqueDrop(field *schema.Field, columnType gorm.ColumnType) bool {
+	unique, _ := columnType.Unique()
+	return unique && !field.Unique
+}
+
 func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
-	if unique, _ := columnType.Unique(); unique && !field.Unique {
+	if phantomUniqueDrop(field, columnType) {
 		return nil
 	}
 	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
@@ -154,7 +162,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 
 	// Connect to database
 	var err error
-	DB, err = gorm.Open(migrationAwareDialector{mysql.Open(dsn)}, &gorm.Config{
+	DB, err = gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{
 		Logger: gormLogger.Default.LogMode(gormLogLevel),
 		NowFunc: func() time.Time {
 			return time.Now().Local()

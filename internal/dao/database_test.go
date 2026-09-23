@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -261,106 +262,59 @@ func (c uniqueColumnType) ScanType() reflect.Type            { return reflect.Ty
 func (c uniqueColumnType) Comment() (string, bool)           { return "", false }
 func (c uniqueColumnType) DefaultValue() (string, bool)      { return "", false }
 
-type migratorStub struct {
-	gorm.Migrator
-	migrateColumnUniqueCalls int
-}
-
-func (m *migratorStub) MigrateColumnUnique(any, *schema.Field, gorm.ColumnType) error {
-	m.migrateColumnUniqueCalls++
-	return nil
-}
-
-type dialectorStub struct {
-	gorm.Dialector
-	translated bool
-	savePoints int
-	rollbacks  int
-}
-
-func (d *dialectorStub) Translate(error) error {
-	d.translated = true
-	return gorm.ErrDuplicatedKey
-}
-
-func (d *dialectorStub) SavePoint(*gorm.DB, string) error {
-	d.savePoints++
-	return nil
-}
-
-func (d *dialectorStub) RollbackTo(*gorm.DB, string) error {
-	d.rollbacks++
-	return nil
-}
-
-type plainDialector struct {
-	gorm.Dialector
-}
-
-// TestMigrationAwareDialectorForwardsOptionalInterfaces guards the reason the
-// wrapper forwards anything: gorm finds ErrorTranslator and
-// SavePointerDialectorInterface on db.Dialector by type assertion, so a wrapper
-// that drops those methods silently reverts duplicate-key translation and
-// flattens nested transactions.
-func TestMigrationAwareDialectorForwardsOptionalInterfaces(t *testing.T) {
-	inner := &dialectorStub{}
-	dialector := migrationAwareDialector{Dialector: inner}
-
-	translated := dialector.Translate(errors.New("Error 1062: Duplicate entry"))
-	if !errors.Is(translated, gorm.ErrDuplicatedKey) {
-		t.Fatalf("Translate = %v, want the wrapped dialector's translation", translated)
-	}
-	if err := dialector.SavePoint(nil, "sp"); err != nil {
-		t.Fatalf("SavePoint: %v", err)
-	}
-	if err := dialector.RollbackTo(nil, "sp"); err != nil {
-		t.Fatalf("RollbackTo: %v", err)
-	}
-	if !inner.translated || inner.savePoints != 1 || inner.rollbacks != 1 {
-		t.Fatalf("inner calls = translate:%v savePoint:%d rollbackTo:%d, want one each", inner.translated, inner.savePoints, inner.rollbacks)
-	}
-}
-
-// A dialector without those interfaces must not make the wrappers panic; gorm
-// skips the behaviour when it finds no support, and so must we.
-func TestMigrationAwareDialectorToleratesUnsupportedOptionalInterfaces(t *testing.T) {
-	dialector := migrationAwareDialector{Dialector: &plainDialector{}}
-
-	if err := dialector.Translate(errors.New("boom")); err == nil || err.Error() != "boom" {
-		t.Fatalf("Translate = %v, want the original error", err)
-	}
-	if err := dialector.SavePoint(nil, "sp"); err != nil {
-		t.Fatalf("SavePoint = %v, want nil", err)
-	}
-	if err := dialector.RollbackTo(nil, "sp"); err != nil {
-		t.Fatalf("RollbackTo = %v, want nil", err)
-	}
-}
-
 // TestNamedIndexMigratorSkipsPhantomUniqueDrop pins the behaviour that kept
 // failing every startup on MySQL: a unique index created as an index is not a
-// column-level unique constraint, so nothing exists to drop.
+// column-level unique constraint, so nothing exists to drop. The other three
+// combinations must fall through to the stock migrator, which decides whether
+// the constraint it names has to be created.
 func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
-	inner := &migratorStub{}
-	m := namedIndexMigrator{Migrator: inner}
-
-	if err := m.MigrateColumnUnique(nil, &schema.Field{Unique: false}, uniqueColumnType{unique: true}); err != nil {
-		t.Fatalf("MigrateColumnUnique: %v", err)
-	}
-	if inner.migrateColumnUniqueCalls != 0 {
-		t.Fatal("dropped a unique constraint that was never created")
+	for _, tc := range []struct {
+		name     string
+		unique   bool
+		tag      bool
+		wantSkip bool
+	}{
+		{"named index with no unique tag", true, false, true},
+		{"column is not unique", false, false, false},
+		{"unique tag already set", false, true, false},
+		{"index and tag agree", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := phantomUniqueDrop(&schema.Field{Unique: tc.tag}, uniqueColumnType{unique: tc.unique})
+			if got != tc.wantSkip {
+				t.Fatalf("phantomUniqueDrop(unique=%v, tag=%v) = %v, want %v", tc.unique, tc.tag, got, tc.wantSkip)
+			}
+		})
 	}
 }
 
-func TestNamedIndexMigratorDelegatesConstraintCreation(t *testing.T) {
-	inner := &migratorStub{}
-	m := namedIndexMigrator{Migrator: inner}
-
-	if err := m.MigrateColumnUnique(nil, &schema.Field{Unique: true}, uniqueColumnType{unique: false}); err != nil {
-		t.Fatalf("MigrateColumnUnique: %v", err)
-	}
-	if inner.migrateColumnUniqueCalls != 1 {
-		t.Fatalf("migrateColumnUnique calls = %d, want 1", inner.migrateColumnUniqueCalls)
+// TestWrappersExposeEverythingWrappedTypeDoes is the guard that made the
+// concrete embedding necessary: embedding gorm's interfaces instead would drop
+// the twenty migrator methods and the three dialector methods that gorm reaches
+// by type assertion, and losing one surfaces as a panic part-way through
+// AutoMigrate. Embedding the concrete types promotes all of them by
+// construction; this catches a future refactor that reverts to the interfaces.
+func TestWrappersExposeEverythingWrappedTypeDoes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wrapped  reflect.Type
+		wrapper  reflect.Type
+		override string
+	}{
+		{"dialector", reflect.TypeOf(&mysql.Dialector{}), reflect.TypeOf(migrationAwareDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(mysql.Migrator{}), reflect.TypeOf(namedIndexMigrator{}), "MigrateColumnUnique"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < tc.wrapped.NumMethod(); i++ {
+				name := tc.wrapped.Method(i).Name
+				if name == tc.override {
+					continue
+				}
+				if _, ok := tc.wrapper.MethodByName(name); !ok {
+					t.Errorf("wrapper does not expose %s; gorm reaches some capabilities by type assertion on the wrapped type rather than through its interfaces", name)
+				}
+			}
+		})
 	}
 }
 
