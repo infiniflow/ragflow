@@ -439,7 +439,8 @@ export function collectCanvasIssues({
     if (
       label &&
       !OrphanExemptOperators.includes(label) &&
-      (beginComponentIds ? !beginComponentIds.has(node.id)
+      (beginComponentIds
+        ? !beginComponentIds.has(node.id)
         : !connectedNodeIds.has(node.id))
     ) {
       issues.push({
@@ -501,6 +502,19 @@ export function collectCanvasIssues({
             }),
           );
         }
+      }
+    }
+
+    if (label === Operator.Extractor) {
+      // Same always-on policy as the Agent model check: a template-created
+      // pipeline ships an empty llm_id and must flag on load, not only after
+      // edits.
+      if (!form?.llm_id) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorModelMissing',
+        });
       }
     }
 

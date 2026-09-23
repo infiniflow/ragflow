@@ -1,15 +1,24 @@
 import { Operator } from '@/constants/agent';
-import { ChunkerOperators } from '../constant/pipeline';
+import { ChunkerOperators, SingleOperators } from '../constant/pipeline';
 
 export function isChunkerOperator(operator: Operator): boolean {
   return (ChunkerOperators as Operator[]).includes(operator);
+}
+
+/**
+ * Operators that may appear at most once on a pipeline canvas. Duplicating a
+ * node with such an operator always exceeds the limit, so the copy action is
+ * disabled for them outright.
+ */
+export function isSingleInstanceOperator(operator: Operator): boolean {
+  return SingleOperators.includes(operator);
 }
 
 export interface PipelineNextOperators {
   // Operators offered in the flat top-level list (Parser, Tokenizer,
   // Extractor, Compiler), minus the single-instance ones already on canvas.
   operators: Operator[];
-  // Single-instance chunkers not yet on canvas, shown in the Chunker group.
+  // The chunker variants, offered only while the single chunker slot is free.
   chunkerOperators: Operator[];
   showChunker: boolean;
 }
@@ -32,20 +41,21 @@ export function buildPipelineNextOperators(
   // Go pipelines require a Parser to feed a chunker, so from a Parser node
   // the menu offers only the chunker group.
   if (!(isGoBackend && source === Operator.Parser)) {
-    [Operator.Parser, Operator.Tokenizer].forEach((operator) => {
-      if (!hasOperator(operator)) {
-        operators.push(operator);
-      }
-    });
+    [Operator.Parser, Operator.Tokenizer, Operator.Compiler].forEach(
+      (operator) => {
+        if (!hasOperator(operator)) {
+          operators.push(operator);
+        }
+      },
+    );
     operators.push(Operator.Extractor);
-    if (source !== Operator.Compiler) {
-      operators.push(Operator.Compiler);
-    }
   }
 
-  const chunkerOperators = ChunkerOperators.filter(
-    (operator) => !hasOperator(operator),
-  );
+  // The chunker group occupies a single slot: any chunker already on the
+  // canvas (Title or Token) hides the whole group, keeping the two variants
+  // mutually exclusive.
+  const chunkerSlotTaken = ChunkerOperators.some(hasOperator);
+  const chunkerOperators = chunkerSlotTaken ? [] : ChunkerOperators;
 
   // Go pipelines forbid chunker -> chunker, mirroring the existing rule
   // that Extractor/Compiler never offer the chunker group.
