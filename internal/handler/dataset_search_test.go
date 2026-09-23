@@ -192,24 +192,23 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 }
 
-func TestDatasetsHandlerSearchDatasetsValidationErrorCodes(t *testing.T) {
+func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
-		code common.ErrorCode
 	}{
-		{name: "parse error", body: `{"question"`, code: common.CodeArgumentError},
-		{name: "missing question", body: `{"dataset_ids":["ds-1"]}`, code: common.CodeArgumentError},
-		{name: "blank question", body: `{"question":"   ","dataset_ids":["ds-1"]}`, code: common.CodeArgumentError},
-		{name: "missing dataset ids", body: `{"question":"hello"}`, code: common.CodeDataError},
-		{name: "empty dataset ids", body: `{"question":"hello","dataset_ids":[]}`, code: common.CodeArgumentError},
-		{name: "invalid top k", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":0}`, code: common.CodeArgumentError},
-		{name: "legacy top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":2049}`, code: common.CodeArgumentError},
-		{name: "knn top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":2049}`, code: common.CodeArgumentError},
-		{name: "invalid knn candidates", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":0}`, code: common.CodeArgumentError},
-		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`, code: common.CodeArgumentError},
-		{name: "knn candidates below top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":8,"knn_num_candidates":7}`, code: common.CodeArgumentError},
-		{name: "invalid threshold", body: `{"question":"hello","dataset_ids":["ds-1"],"similarity_threshold":1.1}`, code: common.CodeArgumentError},
+		{name: "parse error", body: `{"question"`},
+		{name: "missing question", body: `{"dataset_ids":["ds-1"]}`},
+		{name: "blank question", body: `{"question":"   ","dataset_ids":["ds-1"]}`},
+		{name: "missing dataset ids", body: `{"question":"hello"}`},
+		{name: "empty dataset ids", body: `{"question":"hello","dataset_ids":[]}`},
+		{name: "invalid top k", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":0}`},
+		{name: "legacy top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"top_k":2049}`},
+		{name: "knn top k too large", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":2049}`},
+		{name: "invalid knn candidates", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":0}`},
+		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`},
+		{name: "knn candidates below top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":8,"knn_num_candidates":7}`},
+		{name: "invalid threshold", body: `{"question":"hello","dataset_ids":["ds-1"],"similarity_threshold":1.1}`},
 	}
 
 	for _, tt := range tests {
@@ -230,8 +229,8 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorCodes(t *testing.T) {
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
 			body := decodeSearchResponse(t, rec)
-			if body["code"] != float64(tt.code) {
-				t.Fatalf("code=%v want=%d body=%s", body["code"], tt.code, rec.Body.String())
+			if body["code"] != float64(common.CodeArgumentError) {
+				t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeArgumentError, rec.Body.String())
 			}
 		})
 	}
