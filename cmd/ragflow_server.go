@@ -1424,6 +1424,23 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
 }
 
+// inferenceTotalCores returns the CPU budget the DeepDoc inference config is
+// validated against. It uses runtime.GOMAXPROCS(0) instead of runtime.NumCPU()
+// so the budget reflects the cgroup CPU quota inside containers: Go 1.25+ derives
+// GOMAXPROCS from the quota (CGroups v2 cpu.max / v1 cpu.cfs_quota_us), whereas
+// runtime.NumCPU() reports the host's affinity-mask core count and ignores a
+// container's CPU limit. Without this, a 2-CPU-limit pod on a 64-core host would
+// "resolve" inference_cpu_cores: 0 to 64 and let inference_concurrency: 16 pass
+// validation, oversubscribing the box the fail-fast guard in
+// native.ValidateInferenceConfig exists to prevent.
+func inferenceTotalCores() int {
+	n := goruntime.GOMAXPROCS(0)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
@@ -1461,9 +1478,10 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	// inference may occupy). Both resolve from CLI > env > config > default. K
 	// defaults to 1; N defaults to "unset", which is derived from K so each Run
 	// stays single-threaded by default (the prior behaviour). An explicit N = 0
-	// means "all cores". All values are fail-fast validated against the machine
-	// core count at startup (see native.ValidateInferenceConfig), so a
-	// misconfiguration aborts rather than silently oversubscribing the box.
+	// means "all cores". All values are fail-fast validated against the process's
+	// cgroup-aware CPU budget at startup (see native.ValidateInferenceConfig and
+	// inferenceTotalCores), so a misconfiguration aborts rather than silently
+	// oversubscribing the box.
 	cfg := server.GetConfig()
 	K, _, errK := cfg.ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
 	if errK != nil {
@@ -1481,9 +1499,10 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	if !explicitN {
 		resolvedN = K
 	}
-	totalCores := goruntime.NumCPU()
-	// Validate K and N against the machine's core count and derive the per-Run
-	// intra-op thread count (max(1, N/K)). N == 0 resolves to all cores here.
+	totalCores := inferenceTotalCores()
+	// Validate K and N against the process's CPU budget (cgroup-aware) and
+	// derive the per-Run intra-op thread count (max(1, N/K)). N == 0 resolves to
+	// all cores here.
 	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
 	if errV != nil {
 		common.Fatal("invalid deepdoc inference configuration", zap.Error(errV))

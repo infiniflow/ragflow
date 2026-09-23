@@ -45,7 +45,10 @@ func intraOpThreadCount() int {
 // requested configuration and the machine's available core count, failing fast
 // on any invalid combination.
 //
-//   - totalCores is runtime.NumCPU(): the machine's physical/logical core count.
+//   - totalCores is the process's available CPU budget (callers pass
+//     runtime.GOMAXPROCS(0), which is cgroup-quota aware in Go 1.25+, rather than
+//     runtime.NumCPU(), which ignores a container's CPU limit). It bounds both the
+//     "all cores" resolution of rawCPUCores == 0 and every validation ceiling below.
 //   - rawCPUCores is the requested CPU-core budget N. A value of 0 means "use
 //     all cores" and is resolved to totalCores.
 //   - concurrency is the requested inference concurrency K (max in-flight Runs).

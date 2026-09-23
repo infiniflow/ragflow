@@ -18,6 +18,7 @@ package main
 
 import (
 	"os"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -163,5 +164,24 @@ func TestRegisterNativeDeepDocDefaultBootsOnSmallMachine(t *testing.T) {
 	}
 	if _, _, err := native.ValidateInferenceConfig(totalCores, resolvedN, K); err != nil {
 		t.Fatalf("default config on %d-core host must validate, got: %v", totalCores, err)
+	}
+}
+
+// TestInferenceTotalCoresIsCgroupAware pins that the DeepDoc inference core
+// budget passed to native.ValidateInferenceConfig is derived from
+// runtime.GOMAXPROCS(0) (cgroup-quota aware in Go 1.25+) rather than
+// runtime.NumCPU() (host affinity mask, which ignores a container's CPU limit).
+// This keeps the fail-fast oversubscription guard effective under container CPU
+// quotas: with NumCPU(), a 2-CPU-limit pod on a 64-core host would "resolve"
+// inference_cpu_cores: 0 to 64 and let inference_concurrency: 16 pass validation,
+// oversubscribing the box the check exists to prevent.
+func TestInferenceTotalCoresIsCgroupAware(t *testing.T) {
+	got := inferenceTotalCores()
+	want := goruntime.GOMAXPROCS(0)
+	if got != want {
+		t.Fatalf("inferenceTotalCores() = %d, want runtime.GOMAXPROCS(0) = %d (cgroup-aware budget)", got, want)
+	}
+	if got < 1 {
+		t.Fatalf("inferenceTotalCores() = %d, want >= 1", got)
 	}
 }
