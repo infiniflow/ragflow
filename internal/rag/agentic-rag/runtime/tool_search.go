@@ -1325,7 +1325,7 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 // knowing the name, and a narrow recall has it looking through a keyhole.
 //
 // It is the widest per-operand number the pipeline already uses elsewhere
-// (SCAViewCap), and only the MATCHED windows travel onwards — the grep output cap
+// (the seed's own SCAN-window cap), and only the MATCHED windows travel onwards — the grep output cap
 // (grepOutTotalChars) still bounds what the model pays for.
 //
 // 200, because the binding constraint is the recall bound rather than the corpus: an

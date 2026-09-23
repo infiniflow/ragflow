@@ -11,9 +11,8 @@ import (
 )
 
 // TestLogHierarchicalRounds verifies the log shape: the orchestrator phase expands into one
-// "orchestrator round N" row per round, with the in-loop sub-phases (claim_research /
-// sufficiency) nested underneath, while the out-of-loop phases (route / planner / finalize)
-// stay flat.
+// "orchestrator round N" row per round, with the in-loop sub-phases (claim_research / rewrite)
+// nested underneath, while the out-of-loop phases (route / planner / finalize) stay flat.
 //
 // NOTE: this test cannot run while the unrelated pre-existing break in
 // internal/agent/tool/retrieval_nlp.go (RankFeature) blocks compilation of the
@@ -34,7 +33,7 @@ func TestLogHierarchicalRounds(t *testing.T) {
 		s.RecordCall(phasePlanner)
 	}()
 
-	// Orchestrator loop: two rounds, each doing claim_research + sufficiency.
+	// Orchestrator loop: two rounds, each doing claim_research (the first also a rewrite).
 	func() {
 		c, done := Phase(ctx, phaseOrchestrator)
 		defer done()

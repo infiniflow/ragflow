@@ -148,7 +148,7 @@ func PrefillSlotsFromEvidence(slotTable *runtime.State, kb *runtime.Kbinfos) int
 				best, bestCov = j, covF
 			}
 		}
-		if best < 0 || bestCov < EvidencePrefillCoverage {
+		if best < 0 || bestCov < slotPrefillMinCoverage {
 			continue
 		}
 

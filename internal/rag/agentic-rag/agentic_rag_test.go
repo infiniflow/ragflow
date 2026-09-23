@@ -291,7 +291,7 @@ func TestResearchStatusTrailerStopsAfterTwoUnanswerable(t *testing.T) {
 	cache := NewRAGCache()
 	cache.consecutiveUnanswerable = 2
 	resp := &RunResponse{
-		SCAFeedback: "this round did not settle the question (40 passages read)",
+		RoundRecord: "this round did not settle the question (40 passages read)",
 		Answer:      "Partial findings.",
 	}
 	got := researchStatusTrailer(cache, resp)
@@ -311,7 +311,7 @@ func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 	cache := NewRAGCache()
 	cache.consecutiveUnanswerable = 1
 	resp := &RunResponse{
-		SCAFeedback: "this round did not settle the question (40 passages read)",
+		RoundRecord: "this round did not settle the question (40 passages read)",
 		Answer:      "Partial findings.",
 	}
 	got := researchStatusTrailer(cache, resp)
@@ -323,13 +323,8 @@ func TestResearchStatusTrailerInvitesFocusedReaskBelowTwo(t *testing.T) {
 	}
 }
 
-// TestResearchStatusTrailerSkipsSufficientOrEmpty ensures the note is omitted
-// when there is nothing to annotate: a SUFFICIENT verdict, an empty answer, or
-// missing SCA feedback all yield "".
-
-// TestResearchStatusTrailerSkipsSufficientOrEmpty ensures the note is omitted
-// when there is nothing to annotate: a SUFFICIENT verdict, an empty answer, or
-// missing SCA feedback all yield "".
+// TestResearchStatusTrailerSkipsSufficientOrEmpty ensures the note is omitted when there is
+// nothing to annotate: an empty answer or a round with no record both yield "".
 func TestResearchStatusTrailerSkipsSufficientOrEmpty(t *testing.T) {
 	cache := NewRAGCache()
 	cache.consecutiveUnanswerable = 2
@@ -338,9 +333,9 @@ func TestResearchStatusTrailerSkipsSufficientOrEmpty(t *testing.T) {
 		name string
 		resp *RunResponse
 	}{
-		{"answered round (no status note)", &RunResponse{SCAFeedback: "", Answer: "A"}},
-		{"empty answer", &RunResponse{SCAFeedback: "x", Answer: ""}},
-		{"missing status note", &RunResponse{SCAFeedback: "", Answer: "A"}},
+		{"answered round (no status note)", &RunResponse{RoundRecord: "", Answer: "A"}},
+		{"empty answer", &RunResponse{RoundRecord: "x", Answer: ""}},
+		{"missing status note", &RunResponse{RoundRecord: "", Answer: "A"}},
 	}
 	for _, c := range cases {
 		if got := researchStatusTrailer(cache, c.resp); got != "" {
@@ -521,7 +516,7 @@ func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			session.publish(
-				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), SCAFeedback: fmt.Sprintf("status-%d", i)},
+				&RunResponse{Answer: fmt.Sprintf("answer-%d", i), RoundRecord: fmt.Sprintf("status-%d", i)},
 				&runtime.Kbinfos{
 					Chunks:  []map[string]any{{"chunk_id": fmt.Sprintf("c%d", i)}},
 					DocAggs: []map[string]any{{"doc_id": fmt.Sprintf("d%d", i)}},
@@ -548,8 +543,8 @@ func TestOuterReactSessionPublishMergesPerCallResults(t *testing.T) {
 	if !strings.HasPrefix(session.resp.Answer, "answer-") {
 		t.Errorf("answer = %q, want one call's answer", session.resp.Answer)
 	}
-	if !strings.HasPrefix(session.resp.SCAFeedback, "status-") {
-		t.Errorf("status note = %q, want one call's note", session.resp.SCAFeedback)
+	if !strings.HasPrefix(session.resp.RoundRecord, "status-") {
+		t.Errorf("status note = %q, want one call's note", session.resp.RoundRecord)
 	}
 }
 

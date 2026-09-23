@@ -63,8 +63,7 @@ var _LOG = common.StdLogger()
 
 var tokenPattern = regexp.MustCompile(`[A-Za-z0-9_]+`)
 
-// ViewTerms: terms describing what the SCA
-// should look FOR this round.
+// ViewTerms: terms describing what the round should look FOR.
 func ViewTerms(st *AgenticState) []string {
 	if st == nil {
 		return nil
@@ -1078,8 +1077,7 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	}
 }
 
-// SCA helpers: view selection, the terms a view is scored on, gaps→rewrite, and the sca
-// node's claim construction.
+// Round helpers: view selection, the terms a view is scored on, and the gaps→rewrite handoff.
 
 // genJSONMaxRetry: the first call, plus one corrective round that feeds the malformed
 // answer and the parse error back to the model.
@@ -1093,7 +1091,8 @@ const genJSONMaxRetry = 2
 // "```\n*$" alternative of gen_json's cleanup regex.
 var genJSONTailFenceRE = regexp.MustCompile("```\\n*$")
 
-// GenJSON implements orchestrator.JSONModel.
+// GenJSON renders one JSON value from a prompt; see jsonModelAdapter for the turn layout and
+// the corrective retry.
 func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, error) {
 	if a.inner == nil {
 		return nil, fmt.Errorf("agentic: no model configured")
@@ -1247,13 +1246,7 @@ func composedRecord(kb *runtime.Kbinfos) string {
 	if kb == nil {
 		return ""
 	}
-	record := strings.TrimSpace(kb.Record)
-	if kb.SufficiencyUnchecked() {
-		// The review that judges completeness never produced a verdict (see graph_sca), so the count
-		// is what the evidence supports rather than a checked total.
-		record += "- NOTE: the sufficiency review could not be completed for this question, so nobody checked whether the members above are complete. State the count as what the evidence supports and do not present it as exhaustive."
-	}
-	return record
+	return strings.TrimSpace(kb.Record)
 }
 
 // it found (荥阳太守王植, 令左右推出斩之).
@@ -1401,11 +1394,10 @@ func intersectionSize(a, b map[string]bool) int {
 	return n
 }
 
-// Word-level coverage a pooled evidence row must reach before it is allowed to
-// answer a slot on its own. Deliberately strict: a wrong prefill costs
-// accuracy, while a missed prefill only costs one session (which still runs).
-// Strict on purpose: a wrong prefill costs accuracy, a missed one costs a session.
-const EvidencePrefillCoverage = 0.6
+// slotPrefillMinCoverage is the word-level coverage a pooled evidence row must reach before it
+// answers a slot on its own. Strict on purpose: a wrong prefill costs accuracy, a missed one
+// costs a session (which still runs).
+const slotPrefillMinCoverage = 0.6
 
 // The literal helpers this file's prompts render with (retrieval.formatLiteral /
 // retrieval.quoteLiteral) live in the runtime package: initialize_state needs the same
@@ -1470,7 +1462,7 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 		spec.Label, runtime.CountOf(maxRounds, "follow-up round"))
 
 	// run_agentic_rag — there is NO whole-graph wall clock. Research stays
-	// bounded by the per-node timeouts (bounded / PassTimeoutS / SCATimeoutS…),
+	// bounded by the per-node timeouts (bounded / PassTimeoutS / the action clock…),
 	// the routing guards (MinRoundHeadroomS) and the visit limit; and because
 	// formalize_answer now composes inside the graph, the answer stream must be allowed to
 	// run until the model finishes. Capping the whole graph at TotalBudgetS+30s used to cut
@@ -1724,11 +1716,11 @@ func NewAgenticLoop() AgenticLoop {
 		}
 		resp.Partial = st.PartialAnswer
 		resp.SearchRounds = st.SearchRounds
-		// SCAFeedback is the body of the "[Research status]" note that rag() folds into the
+		// RoundRecord is the body of the "[Research status]" note that rag() folds into the
 		// answer when the round did NOT answer. It is the round's own record (what it read, what
 		// the plan still lists as unresolved) rather than a reviewer's verdict. Rag() appends the
 		// trailing "STOP" vs "call rag again" sentence based on the consecutive-unanswerable count.
-		resp.SCAFeedback = researchStatusNote(st)
+		resp.RoundRecord = researchStatusNote(st)
 		// Update the consecutive-unanswerable guardrail on the shared per-turn *RAGCache.
 		// Rag() builds deps.Cache before the outer react branch, so this counter accumulates
 		// across the outer loop's multiple rag() calls within a single turn.

@@ -1163,10 +1163,8 @@ func TestRenderPromptUsesLoader(t *testing.T) {
 	if got := prompts.Render(loader, "missing", "", nil); got != "" {
 		t.Errorf("unknown template with empty fallback = %q", got)
 	}
-	// Nil loader + a known embedded name still resolves the canonical .md. (sca_select was the
-	// template here until the sufficiency review was removed, then sca_query_rewrite until the
-	// rewriter was; the ACTION prompts are the surviving embedded set. action_set carries no
-	// placeholders, so the assertion is that it renders — not that a variable came back.)
+	// Nil loader + a known embedded name still resolves the canonical .md. action_set carries no
+	// placeholders, so the assertion is that it renders — not that a variable came back.
 	if got := prompts.Render(nil, "action_set", "", nil); got == "" {
 		t.Error("nil loader did not resolve the embedded action_set template")
 	}

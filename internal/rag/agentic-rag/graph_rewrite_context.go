@@ -18,27 +18,19 @@ package agentic_rag
 
 import (
 	"strings"
-
-	"ragflow/internal/rag/agentic-rag/runtime/orchestrator"
 )
 
 // The rewrite context: what a follow-up round needs to know about the round before it.
 //
-// These three functions used to live in graph_sca.go, next to the review they were written for.
-// The review is gone; what it left behind is the part that was never about judging — turning the
-// round's own RECORD (its unresolved plan slots, its attempt ledger, the passages that carry
-// names it confirmed) into something the next round can act on. That is what a rewrite is.
+// It turns the round's own RECORD (its unresolved plan slots, its attempt ledger, the passages
+// that carry names it confirmed) into something the next round can act on. That is what a
+// rewrite is.
 
-// unresolvedClueGaps is the gap source: the first two question_clues of every unresolved slot
-// become (what, hint) gaps.
-//
-// It is the ONLY gap source now. The reviewer used to contribute a second one — its own
-// sub_queries — and the two were merged (the gaps the review extracted were tried first, because
-// they were written against the draft it had just read). With no review, the run's own record is
-// what is left, and it is the more conservative of the two: a slot is unresolved because the
-// round said so, not because a model judged the answer incomplete.
-func unresolvedClueGaps(st *AgenticState) []orchestrator.MissingPiece {
-	var gaps []orchestrator.MissingPiece
+// unresolvedClueGaps is the ONLY gap source: the first two question_clues of every unresolved
+// slot become (what, hint) gaps. A slot is unresolved because the round said so, not because a
+// model judged the answer incomplete.
+func unresolvedClueGaps(st *AgenticState) []missingPiece {
+	var gaps []missingPiece
 	for _, us := range st.UnresolvedSlots {
 		clues, ok := us["question_clues"].([]string)
 		if !ok {
@@ -52,15 +44,16 @@ func unresolvedClueGaps(st *AgenticState) []orchestrator.MissingPiece {
 			if qc == "" {
 				continue
 			}
-			gaps = append(gaps, orchestrator.MissingPiece{What: qc, SearchHint: qc})
+			gaps = append(gaps, missingPiece{What: qc, SearchHint: qc})
 		}
 	}
 	return gaps
 }
 
-// renderResearchContext and memberLinesOf used to live here: they rendered the block the
-// gap→query rewriter read (the attempted-query ledger with outcomes, plus the passages behind the
-// names the run had already reached). Both went with the rewriter node — with no machine writing
-// the next round's queries, there is no reader for that block. The DIRECTION the next round's
-// session is handed is what carries the record instead (see graph_slots.go), and the session reads
-// the pool through its tools.
+// missingPiece is one gap: what is missing, and a hint for searching for it. The DIRECTION the
+// next round's session is handed is what reads it (see graph_slots.go); the session writes its
+// own queries.
+type missingPiece struct {
+	What       string
+	SearchHint string
+}

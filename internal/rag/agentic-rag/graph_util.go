@@ -212,13 +212,13 @@ func extractJSONObject(text string) any {
 	return nil
 }
 
-// jsonModelAdapter adapts runtime.SessionModel to orchestrator.JSONModel.
+// jsonModelAdapter renders one JSON value from a runtime.SessionModel.
 //
 // The rendered prompt is the system turn and "Output:\n" the user turn (fitted ONCE
 // to the model's context window), then the first JSON value is parsed out of the reply.
 // Malformed JSON is retried (up to genJSONMaxRetry calls) with the model's own
 // bad answer and the parse error appended to the user turn, so a single
-// formatting hiccup does not abort the SCA review or the query rewrite.
+// formatting hiccup does not abort the call.
 type jsonModelAdapter struct {
 	inner runtime.SessionModel
 	// maxLength is the chat model's context window. It bounds the message fit so an

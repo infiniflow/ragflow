@@ -119,7 +119,7 @@ type RAGTools struct {
 	Embedder nlp.NavEmbedder
 	// Keywords extracts the entity-weighted retrieval query. Optional.
 	Keywords KeywordExtractorFn
-	// Prompts are the report/SCA/rewrite prompt templates (user_defined_prompts).
+	// Prompts are the report/rewrite prompt templates (user_defined_prompts).
 	Prompts runtime.PromptLoader
 	// Expand runs compiled-structure expansion. Optional.
 	Expand runtime.CompiledExpander
@@ -466,7 +466,7 @@ var reFenceDelimiters = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 //
 // SCOPE NOTE — read before relying on this for agentic modes: the outer
 // orchestration that agentic_rag_graph.py owns — planner decomposition, prefetch
-// fan-out, and the SCA↔rewriter iteration loop that drives medium/high/ultra — is
+// fan-out, and the research-round loop that drives medium/high/ultra — is
 // the agentic_rag package's agentic planner (Rag's agentic-loop registration).
 // So:
 //
@@ -502,20 +502,20 @@ type RunResponse struct {
 	// Partial is true when research ended without a satisfying verdict, so the
 	// caller surfaces the residual findings honestly instead of refusing.
 	Partial bool
-	// SearchRounds is the number of completed SCA→rewrite iterations (0 for the
+	// SearchRounds is the number of completed research rounds (0 for the
 	// non-agentic paths).
 	SearchRounds int
 	// GraphFailed is true when the research graph itself errored. It is paired with
 	// "produced nothing" before falling back to an internal-error message; an empty result
 	// on its own is not a failure.
 	GraphFailed bool
-	// SCAFeedback is the body of the "[Research status]" note: the round's OWN record when it
+	// RoundRecord is the body of the "[Research status]" note: the round's OWN record when it
 	// could not answer (see researchStatusNote) — how many passages it read, and what the plan
 	// still lists as unresolved. It used to be the reviewer's verdict text; with no reviewer it
 	// is a report of what happened rather than a judgement. Rag() appends the trailing "STOP" vs
 	// "call rag again" sentence based on the consecutive-unanswerable count.
-	SCAFeedback string
-	// ResearchStatus is that note, ready to print: SCAFeedback plus the trailing "STOP" vs "call
+	RoundRecord string
+	// ResearchStatus is that note, ready to print: RoundRecord plus the trailing "STOP" vs "call
 	// rag again" sentence. It is MODEL-FACING — it belongs in the `rag` tool's RESULT, so an outer
 	// loop can decide whether to re-ask — and it is NOT part of the answer.
 	//
@@ -526,7 +526,7 @@ type RunResponse struct {
 	// them." — a self-contradicting answer, judged as such). Nothing the user sees reads this
 	// field; only the tool-result builder does (see outerReactSession.ToolCall).
 	ResearchStatus string
-	// CollectedAnswer is the research draft (SCA-reviewed) produced by the
+	// CollectedAnswer is the research draft produced by the
 	// agentic loop. It feeds the final composition; prefer Answer for display.
 	CollectedAnswer string
 	// Kbinfos carries the full accumulated state (including the lossless
@@ -932,7 +932,7 @@ func (c *RAGCache) noteAnswered(answered bool) {
 // returns "" when there is nothing to annotate: the round answered, there is no
 // status note, or there is no answer to annotate.
 func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
-	if resp.SCAFeedback == "" || resp.Answer == "" {
+	if resp.RoundRecord == "" || resp.Answer == "" {
 		return ""
 	}
 	if cache != nil && cache.ConsecutiveUnanswerable() >= 2 {
@@ -1364,7 +1364,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	// below, so the note then travelled into a later question's answer).
 	if t := researchStatusTrailer(deps.Cache, resp); t != "" {
 		// The period closes the hint clause before the trailer sentence.
-		resp.ResearchStatus = "\n\n[Research status] " + resp.SCAFeedback + "." + t
+		resp.ResearchStatus = "\n\n[Research status] " + resp.RoundRecord + "." + t
 	}
 
 	// Cache the freshly produced answer for later near-identical questions, and
@@ -2037,7 +2037,7 @@ type outerReactSession struct {
 // graph runs started at the same millisecond, three planner runs for one question). The
 // tool layer (models.appendToolResults) executes them all concurrently while the terminal
 // fold keeps only the FIRST result. The duplicates each burn a full graph run
-// (double provider load → the SCA deadline overruns in the same log) and
+// (double provider load → the round deadline overruns in the same log) and
 // their — sometimes better — answers are discarded. The first caller executes
 // and publishes; the rest block on done and return the same answer.
 type ragFlight struct {
@@ -2201,7 +2201,7 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if t := researchStatusTrailer(s.deps.Cache, resp); t != "" {
 			// Same fold as Rag's direct path: the period closes the hint
 			// clause before the trailer sentence.
-			resp.ResearchStatus = "\n\n[Research status] " + resp.SCAFeedback + "." + t
+			resp.ResearchStatus = "\n\n[Research status] " + resp.RoundRecord + "." + t
 		}
 		s.publish(resp, kb)
 		// Close the "[Function tool] Running the rag tool with: …" line. The
@@ -2356,8 +2356,8 @@ func (s *outerReactSession) publish(call *RunResponse, kb *runtime.Kbinfos) {
 	if call.Answer != "" {
 		s.resp.Answer = call.Answer
 	}
-	if s.resp.SCAFeedback == "" {
-		s.resp.SCAFeedback = call.SCAFeedback
+	if s.resp.RoundRecord == "" {
+		s.resp.RoundRecord = call.RoundRecord
 	}
 	if s.resp.CollectedAnswer == "" {
 		s.resp.CollectedAnswer = call.CollectedAnswer
@@ -2419,10 +2419,9 @@ func (s *outerReactSession) selectEvidence(answer string) {
 
 // runDirect is the low/naive path: one hybrid search, no tool loop.
 //
-// It is the ONE implementation of the direct search (called from the low graph node) —
-// there is deliberately no runtime-level duplicate in runtime/orchestrator. It lives here
-// rather than there because the step reads the full RAGTools config; the graph node that
-// calls it forces UseCompiled=true.
+// It is the ONE implementation of the direct search (called from the low graph node). It lives
+// here rather than in the runtime package because the step reads the full RAGTools config; the
+// graph node that calls it forces UseCompiled=true.
 func runDirect(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd runtime.SearchDeps, kb *runtime.Kbinfos, resp *RunResponse, logger *log.Logger) {
 	ctx, done := runtime.Phase(ctx, runtime.PhaseDirect)
 	retrievalQuery := ""
@@ -2459,8 +2458,8 @@ func runDirect(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd ru
 	}
 }
 
-// AgenticLoop runs the full agentic search loop (planner / prefetch / SCA↔
-// rewriter iteration) for an agentic mode.
+// AgenticLoop runs the full agentic search loop (planner / prefetch / research-round
+// iteration) for an agentic mode.
 //
 // It is registered by the agentic_rag package's init rather than called directly: the
 // agentic_rag package owns RAGTools, so the runtime cannot import it back. The
@@ -2480,11 +2479,11 @@ func SetAgenticLoop(fn AgenticLoop) { agenticLoop = fn }
 //
 // When an agentic loop is registered (see SetAgenticLoop) it runs the full
 // five-phase pipeline: planner fan-out → slot table → slot research rounds →
-// SCA review → gap rewrite → repeat until sufficient or the budget runs out.
+// gap rewrite → repeat until the budget runs out.
 //
 // Fallback (no loop registered): ONE action session via RunActionSession. This
 // keeps `Run` usable without the planner, at the cost of the
-// planner/fan-out/SCA iteration.
+// planner/fan-out/research-round iteration.
 func runAgentic(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd runtime.SearchDeps, kb *runtime.Kbinfos, resp *RunResponse, logger *log.Logger) {
 	// Formalization happens inside the graph: it is the graph's entry node
 	// (START → formalize_question).

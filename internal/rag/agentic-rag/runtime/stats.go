@@ -31,8 +31,8 @@ import (
 
 // LLM-call instrumentation for the retrieval.
 //
-// Every phase of the pipeline (route / planner / orchestrator / direct / sufficiency /
-// finalize, ...) drives the LLM, and each call is attributed to the phase that was
+// Every phase of the pipeline (route / planner / orchestrator / direct / finalize, ...) drives
+// the LLM, and each call is attributed to the phase that was
 // executing. Phase wall-clock is measured here rather than summing LLM latency, which is
 // meaningless when calls run in parallel.
 //
@@ -44,8 +44,8 @@ import (
 // execution order so the log reads top-to-bottom like the actual flow,
 // regardless of which phase first touched the counters. Phases not in this list
 // are appended afterwards, alphabetically.
-// This list is the canonical order: it omits dynamic/draft/sca/rewrite (real phases, but
-// not part of the canonical list) and compute is a this-file-only phase
+// This list is the canonical order: it omits dynamic/rewrite (real phases, but not part of the
+// canonical list) and compute is a this-file-only phase
 // (arithmetic.Compute). The snapshot/Log logic below re-appends any phase not present here
 // alphabetically, so all of them still appear in the same relative position.
 var phaseOrder = []string{
@@ -429,7 +429,7 @@ func RecordRoundClaims(ctx context.Context, name string, count int) {
 // Log emits the per-phase usage table.
 //
 // With orchestrator-round data it expands hierarchically: each round repeats its
-// "orchestrator" row with the nested sub-phases (claim_research / sufficiency / grounded)
+// "orchestrator" row with the nested sub-phases (claim_research / grounded)
 // indented underneath. Phases outside the loop (route / planner / finalize) are listed flat.
 func (s *LLMUsageStats) Log(logger *log.Logger) {
 	rows := s.Snapshot()

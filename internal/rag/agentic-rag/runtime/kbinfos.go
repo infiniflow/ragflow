@@ -145,9 +145,6 @@ type Kbinfos struct {
 	// question whose answer is a list of members (see MarkSetDirection, which
 	// also says why the retrieval executor reads it). Guarded by ledgerMu.
 	setDirection bool
-	// sufficiencyUnchecked records that the completeness review never ran (see
-	// NoteSufficiencyUnchecked). Guarded by ledgerMu.
-	sufficiencyUnchecked bool
 	// scanLine is the coverage line of the run's scan channel (see NoteScanLine).
 	scanLine string
 	// scanWindows are the windows that scan delivered (see NoteScanWindows).
@@ -319,29 +316,6 @@ func (k *Kbinfos) IsSetDirection() bool {
 	k.ledgerMu.Lock()
 	defer k.ledgerMu.Unlock()
 	return k.setDirection
-}
-
-// NoteSufficiencyUnchecked records that the review which judges completeness never ran, so the
-// record the answer reads can say so. It is not a verdict, and not a reason to mark the answer
-// partial.
-func (k *Kbinfos) NoteSufficiencyUnchecked() {
-	if k == nil {
-		return
-	}
-	k.ledgerMu.Lock()
-	k.sufficiencyUnchecked = true
-	k.ledgerMu.Unlock()
-}
-
-// SufficiencyUnchecked reports whether the review that would have judged completeness
-// never ran (see NoteSufficiencyUnchecked). Safe on a nil pool.
-func (k *Kbinfos) SufficiencyUnchecked() bool {
-	if k == nil {
-		return false
-	}
-	k.ledgerMu.Lock()
-	defer k.ledgerMu.Unlock()
-	return k.sufficiencyUnchecked
 }
 
 // NoteOpening records the OPENING's ranked union: the order the session is handed at the start

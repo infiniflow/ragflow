@@ -1101,10 +1101,9 @@ func TestAgenticGraphTakesOneRoundWhenTheSessionNamesNothing(t *testing.T) {
 	}
 }
 
-// TestBuildLowGraphRunsFormalizeThenDirectSearch covers the low-mode graph
-// . It has no planner and no SCA loop, so the only
-// observable contract is: formalize rewrites the question, then direct_search
-// merges retrieved evidence into the kbinfos.
+// TestBuildLowGraphRunsFormalizeThenDirectSearch covers the low-mode graph. It has no planner
+// and no research-round loop, so the only observable contract is: formalize rewrites the
+// question, then direct_search merges retrieved evidence into the kbinfos.
 func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
@@ -1428,25 +1427,6 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	deps.Finalize(ctx, false, false, "")
 	if finalized != 1 {
 		t.Errorf("composition ran %d time(s) after the post-graph call, want 1", finalized)
-	}
-}
-
-// TestComposedRecordSaysWhenNobodyCheckedCompleteness pins the note's default and its wording: a
-// run whose review ran says nothing extra, and one whose review never ran says the one thing the
-// answer needs — nobody checked.
-func TestComposedRecordSaysWhenNobodyCheckedCompleteness(t *testing.T) {
-	kb := &runtime.Kbinfos{Record: "- slot 0 [count]: 18"}
-	if rec := composedRecord(kb); strings.Contains(rec, "nobody checked") {
-		t.Fatalf("record = %q, want no note while the review ran", rec)
-	}
-	kb.NoteSufficiencyUnchecked()
-	rec := composedRecord(kb)
-	if !strings.Contains(rec, "- slot 0 [count]: 18") {
-		t.Fatalf("record = %q, want the slots kept", rec)
-	}
-	if !strings.Contains(rec, "nobody checked whether the members above are complete") ||
-		!strings.Contains(rec, "do not present it as exhaustive") {
-		t.Fatalf("record = %q, want the unchecked review stated", rec)
 	}
 }
 
