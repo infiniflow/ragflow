@@ -21,6 +21,11 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 	}}
 	const tableHTML = "<table><tr><td>What is RAGFlow?</td><td>A RAG engine.</td></tr></table>"
 	const pipeText = "What is RAGFlow? | A RAG engine."
+	blankCells := []any{
+		map[string]any{"row": 0, "content": ""},
+		map[string]any{"row": 0, "content": " "},
+	}
+	blankRows := map[string]any{"rows": []any{[]any{"", " "}}}
 	const markdownTable = "| What is RAGFlow? | A RAG engine. |\n| --- | --- |\n| Is it open source? | Yes. |"
 
 	cases := []struct {
@@ -37,6 +42,9 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 		{"opendataloader cells only", func() []map[string]any {
 			return openDataLoaderItems(map[string]any{"type": "table", "cells": cells})
 		}, "table"},
+		{"opendataloader blank cells keep content", func() []map[string]any {
+			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText, "cells": blankCells})
+		}, "text"},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
 		}, "table"},
@@ -46,6 +54,9 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 		{"tcadp table_data rows only", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "table_data": rows})
 		}, "table"},
+		{"tcadp blank rows keep content", func() []map[string]any {
+			return tcadpAnyToItems(map[string]any{"type": "table", "content": pipeText, "table_data": blankRows})
+		}, "text"},
 		{"somark html", func() []map[string]any {
 			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
 		}, "table"},

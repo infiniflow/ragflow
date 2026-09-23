@@ -139,7 +139,7 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 			html = strings.TrimSpace(stringValue(el["html_content"]))
 		}
 		if html == "" {
-			if rows := openDataLoaderCellRows(el["cells"]); len(rows) > 0 {
+			if rows := openDataLoaderCellRows(el["cells"]); rowsHaveText(rows) {
 				html = table.SimpleRowsToHTML(rows)
 			}
 		}

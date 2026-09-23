@@ -94,7 +94,7 @@ func tcadpAnyToItems(raw any) []map[string]any {
 		}
 		switch contentType {
 		case "table":
-			if rows := tcadpTableRows(v["table_data"]); len(rows) > 0 {
+			if rows := tcadpTableRows(v["table_data"]); rowsHaveText(rows) {
 				text = table.SimpleRowsToHTML(rows)
 			}
 			if text == "" {

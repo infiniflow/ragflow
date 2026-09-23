@@ -117,3 +117,16 @@ func pdfTableDocType(text string) string {
 	}
 	return "text"
 }
+
+// rowsHaveText reports whether any cell holds non-whitespace text. Blank rows
+// must not replace the content of a table region with an empty <table>.
+func rowsHaveText(rows [][]string) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if strings.TrimSpace(cell) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
