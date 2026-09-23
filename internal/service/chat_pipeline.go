@@ -2216,8 +2216,9 @@ func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 	if cfg == nil {
 		return false
 	}
-	// Read the value the way the persisted flag is read (extraToolSupport): it is
-	// written as a JSON boolean but has historically also been spelled as a string.
+	// Read the resolved capability as a boolean. ModelSolver accepts the
+	// persisted JSON boolean and the historical string representation before it
+	// stores the result on ModelTarget.
 	switch v := cfg["is_tools"].(type) {
 	case bool:
 		return v
@@ -3060,7 +3061,9 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
+	// Embed inside the model's window: the caller supplies arbitrary text and the
+	// provider rejects an over-window input with 400/20015 instead of truncating it.
+	embeds, err := e.embModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -5153,12 +5156,11 @@ type HarnessResult struct {
 	CiteChunkIDs []string
 }
 
-// harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
-// the agentic-RAG entry point advanced_rag.Rag (:1022). The advanced_rag package
-// imports internal/service (e.g. harness/tool_exploration.go), so the service
-// layer cannot import it back without an import cycle; the function is injected
-// instead. When nil, retrieveViaHarness reports an error and the pipeline
-// continues with empty kbinfos.
+// harnessRetriever is installed at server bootstrap using
+// retrievalbridge.NewHarnessRetriever. The bridge imports internal/service,
+// so this package receives the callback instead of importing the bridge.
+// When nil, retrieveViaHarness reports an error and the pipeline continues
+// with empty kbinfos.
 var harnessRetriever func(ctx context.Context, req HarnessRequest) (HarnessResult, error)
 
 // SetHarnessRetriever injects the agentic-RAG harness driver. Call once at

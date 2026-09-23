@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -270,8 +269,8 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 		// should already be normalized; degrade to "parse all pages" rather
 		// than failing the parse if an unexpected shape slips through.
 		if pages, err := utility.NormalizePDFPages(raw); err != nil {
-			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
-				"raw", raw, "err", err)
+			common.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				zap.Any("raw", raw), zap.Error(err))
 		} else {
 			p.Pages = pages
 		}
@@ -533,8 +532,8 @@ func cropMediaSections(result *deepdoctype.ParseResult) {
 		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pn)
 		if err != nil || img == nil {
-			slog.Warn("cropMediaSections: render failed, skipping section",
-				"page", pn, "err", err)
+			common.Warn("cropMediaSections: render failed, skipping section",
+				zap.Int("page", pn), zap.Error(err))
 			pageCache[pn] = nil
 			return nil
 		}

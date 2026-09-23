@@ -21,22 +21,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	models "ragflow/internal/entity/models"
 	"ragflow/internal/service/nlp"
-
-	"gorm.io/gorm"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -412,21 +413,35 @@ func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*
 	for id, count := range ownerCounts {
 		resp.Filter.Owner = append(resp.Filter.Owner, MemoryFilterOption{ID: id, Label: ownerLabels[id], Count: count})
 	}
-	for _, id := range []string{"raw", "semantic", "episodic", "procedural"} {
-		if count := typeCounts[id]; count > 0 {
-			resp.Filter.MemoryType = append(resp.Filter.MemoryType, MemoryFilterOption{ID: id, Label: id, Count: count})
-		}
-	}
-	for _, id := range []string{"table", "graph"} {
-		if count := storageCounts[id]; count > 0 {
-			resp.Filter.StorageType = append(resp.Filter.StorageType, MemoryFilterOption{ID: id, Label: id, Count: count})
-		}
-	}
+	resp.Filter.MemoryType = filterOptionsInOrder(typeCounts, dao.MemoryTypeNames())
+	resp.Filter.StorageType = filterOptionsInOrder(storageCounts, []string{"table", "graph"})
 	slices.SortFunc(resp.Filter.Owner, func(a, b MemoryFilterOption) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Label), strings.ToLower(b.Label)), cmp.Compare(a.ID, b.ID))
 	})
 	resp.Total = int64(len(memories))
 	return resp, nil
+}
+
+func filterOptionsInOrder(counts map[string]int64, canonicalOrder []string) []MemoryFilterOption {
+	options := make([]MemoryFilterOption, 0, len(counts))
+	known := make(map[string]bool, len(canonicalOrder))
+	for _, id := range canonicalOrder {
+		if count, ok := counts[id]; ok {
+			options = append(options, MemoryFilterOption{ID: id, Label: id, Count: count})
+			known[id] = true
+		}
+	}
+	rest := make([]string, 0, len(counts)-len(options))
+	for id := range counts {
+		if !known[id] {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	for _, id := range rest {
+		options = append(options, MemoryFilterOption{ID: id, Label: id, Count: counts[id]})
+	}
+	return options
 }
 
 // CreateMemory creates a new memory with the given parameters
@@ -452,7 +467,8 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	if req.LLMID != "" && req.TenantLLMID == nil {
 		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
-			slog.Warn("CreateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", req.LLMID, "err", err)
+			common.Warn("CreateMemory: failed to resolve tenant LLM id",
+				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
 		} else if target != nil && target.ModelID != "" {
 			tenantLLMID := target.ModelID
 			req.TenantLLMID = &tenantLLMID
@@ -461,7 +477,8 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
 		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
-			slog.Warn("CreateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", req.EmbdID, "err", err)
+			common.Warn("CreateMemory: failed to resolve tenant embedding id",
+				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
 		} else if target != nil && target.ModelID != "" {
 			tenantEmbdID := target.ModelID
 			req.TenantEmbdID = &tenantEmbdID
@@ -606,7 +623,8 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 		if req.TenantLLMID == nil && *req.LLMID != "" {
 			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", ownerTenantID, "llm_id", *req.LLMID, "err", err)
+				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
+					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
 			} else if target != nil && target.ModelID != "" {
 				updateDict["tenant_llm_id"] = target.ModelID
 			}
@@ -618,7 +636,8 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
 			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", ownerTenantID, "embd_id", *req.EmbdID, "err", err)
+				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
+					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
 			} else if target != nil && target.ModelID != "" {
 				updateDict["tenant_embd_id"] = target.ModelID
 			}

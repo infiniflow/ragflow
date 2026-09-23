@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import math
 import numbers
 import os
 from abc import ABC
@@ -75,10 +76,7 @@ class Switch(ComponentBase, ABC):
                 cpn_v = self._canvas.get_variable_value(item["cpn_id"])
                 self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
-                # "empty"/"not empty" ignore the comparison value, so they must
-                # be dispatched before the numeric coercion (their value may
-                # legitimately be ""). All other operators use the value.
-                if item["operator"] not in ("empty", "not empty") and isinstance(cpn_v, numbers.Number):
+                if item["operator"] in ("=", "≠", "==", "!=", "<>") and isinstance(cpn_v, numbers.Number):
                     try:
                         operatee = float(operatee)
                     except (TypeError, ValueError):
@@ -100,6 +98,7 @@ class Switch(ComponentBase, ABC):
         self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
+        operator = {"==": "=", "!=": "≠", "<>": "≠", ">=": "≥", "<=": "≤"}.get(operator, operator)
         if operator in ("contains", "not contains", "start with", "end with"):
             input = "" if input is None else str(input)
             value = "" if value is None else str(value)
@@ -120,20 +119,14 @@ class Switch(ComponentBase, ABC):
         elif operator == "≠":
             return True if input != value else False
         elif operator in (">", "<", "≥", "≤"):
-            return self._ordering_compare(input, value, operator)
-
-        raise ValueError(f"Not supported operator: {operator}")
-
-    def _ordering_compare(self, input: Any, value: Any, operator: str) -> bool:
-        """Ordering comparison that never raises: compare numerically when both
-        sides parse, otherwise with the values' own ordering, and an
-        incomparable pair is a non-match instead of a TypeError."""
-        try:
-            left: Any = float(input)
-            right: Any = float(value)
-        except (TypeError, ValueError):
-            left, right = input, value
-        try:
+            try:
+                if isinstance(input, bool) or isinstance(value, bool):
+                    raise ValueError
+                left, right = float(input), float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f'operator "{operator}" requires numeric operands (left={type(input).__name__}, right={type(value).__name__})') from exc
+            if not math.isfinite(left) or not math.isfinite(right):
+                raise ValueError(f'operator "{operator}" requires numeric operands (left={type(input).__name__}, right={type(value).__name__})')
             if operator == ">":
                 return left > right
             if operator == "<":
@@ -141,8 +134,8 @@ class Switch(ComponentBase, ABC):
             if operator == "≥":
                 return left >= right
             return left <= right
-        except TypeError:
-            return False
+
+        raise ValueError(f"Not supported operator: {operator}")
 
     def thoughts(self) -> str:
         return "I’m weighing a few options and will pick the next step shortly."

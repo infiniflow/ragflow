@@ -350,10 +350,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			zap.Bool("keywordExtraction", req.Keyword != nil && *req.Keyword))
 	}
 
-	// Get tag-based rank features via LabelQuestion
+	// Get tag-based rank features via LabelQuestion. The result is logged inside
+	// LabelQuestion (info on match, debug when skipped), so no log here.
 	metadataSvc := service.NewMetadataService()
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
-	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
 	// Determine embedding model.
 	var embeddingModel *models.EmbeddingModel
@@ -1207,11 +1207,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["position_int"] = req.Positions
 	}
 
-	// Tag keywords
-	if req.TagKwd != nil {
-		d["tag_kwd"] = req.TagKwd
-	}
-
 	// Tag features
 	if req.TagFeas != nil {
 		tagFeas, err := validateTagFeatures(req.TagFeas)
@@ -1394,9 +1389,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
 	}
-	if req.TagKwd != nil {
-		chunkData["tag_kwd"] = req.TagKwd
-	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
 	}
@@ -1422,7 +1414,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if len(questionKwd) > 0 {
 		embeddingText = strings.Join(questionKwd, "\n")
 	}
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{docName, embeddingText}}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	// Embed inside the model's window: Content arrives from the API and can be
+	// arbitrarily long, and the provider answers 400/20015 instead of truncating it.
+	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}
@@ -1457,9 +1451,6 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],
-	}
-	if req.TagKwd != nil {
-		renamedChunk["tag_kwd"] = req.TagKwd
 	}
 	if imgID, ok := chunkData["img_id"]; ok {
 		renamedChunk["image_id"] = imgID

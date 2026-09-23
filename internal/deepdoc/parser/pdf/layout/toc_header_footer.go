@@ -1,12 +1,14 @@
 package layout
 
 import (
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -555,13 +557,17 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 
 		lt := strings.TrimSpace(b.LayoutType)
 		if (zone == "header" && lt == "header") || (zone == "footer" && lt == "footer") {
-			slog.Debug("header_footer: dropped by DLA label", "page", b.PageNumber, "zone", zone, "layoutType", lt, "textLen", utf8.RuneCountInString(b.Text))
+			common.Debug("header_footer: dropped by DLA label",
+				zap.Int("page", b.PageNumber), zap.String("zone", zone),
+				zap.String("layoutType", lt), zap.Int("textLen", utf8.RuneCountInString(b.Text)))
 			drop[i] = struct{}{}
 			continue
 		}
 
 		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], numPages) {
-			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "textLen", utf8.RuneCountInString(b.Text))
+			common.Debug("header_footer: dropped by page-number pattern",
+				zap.Int("page", b.PageNumber), zap.String("zone", zone),
+				zap.Int("textLen", utf8.RuneCountInString(b.Text)))
 			drop[i] = struct{}{}
 			continue
 		}
@@ -571,7 +577,8 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if len(drop) == 0 {
 			return boxes
 		}
-		slog.Debug("header_footer: removal completed (short document)", "total_boxes", len(boxes), "dropped_boxes", len(drop))
+		common.Debug("header_footer: removal completed (short document)",
+			zap.Int("total_boxes", len(boxes)), zap.Int("dropped_boxes", len(drop)))
 		return applyDrop(boxes, drop)
 	}
 
@@ -644,7 +651,9 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 
 		if reason != "" {
-			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", reason, "pages", distinctPages)
+			common.Debug("header_footer: dropped by recurrence",
+				zap.String("zone", key.zone), zap.Int("textLen", utf8.RuneCountInString(key.text)),
+				zap.String("reason", reason), zap.Int("pages", distinctPages))
 			for _, m := range metas {
 				drop[m.idx] = struct{}{}
 			}
@@ -657,7 +666,9 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
 			runIndices := findStableConsecutiveRunIndices(metas, 3, 4.0)
 			if len(runIndices) > 0 {
-				slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", "local_consecutive_run", "boxes", len(runIndices))
+				common.Debug("header_footer: dropped by recurrence",
+					zap.String("zone", key.zone), zap.Int("textLen", utf8.RuneCountInString(key.text)),
+					zap.String("reason", "local_consecutive_run"), zap.Int("boxes", len(runIndices)))
 				for _, idx := range runIndices {
 					drop[idx] = struct{}{}
 				}
@@ -668,7 +679,8 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	if len(drop) == 0 {
 		return boxes
 	}
-	slog.Debug("header_footer: removal completed", "total_boxes", len(boxes), "dropped_boxes", len(drop))
+	common.Debug("header_footer: removal completed",
+		zap.Int("total_boxes", len(boxes)), zap.Int("dropped_boxes", len(drop)))
 	return applyDrop(boxes, drop)
 }
 

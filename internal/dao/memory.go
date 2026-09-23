@@ -95,6 +95,11 @@ func GetMemoryTypeHuman(memoryType int64) []string {
 	return result
 }
 
+// MemoryTypeNames returns every memory type name in canonical bit-flag order.
+func MemoryTypeNames() []string {
+	return GetMemoryTypeHuman(MemoryTypeRaw | MemoryTypeSemantic | MemoryTypeEpisodic | MemoryTypeProcedural)
+}
+
 // MemoryDAO handles all Memory-related database operations
 type MemoryDAO struct{}
 

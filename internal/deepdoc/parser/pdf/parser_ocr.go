@@ -3,20 +3,23 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
+	"sort"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	"sort"
-	"strings"
 )
 
 func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
-			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
+			reportPageInferenceFailure(ctx, logLabel+" OCR detect failed", pageNum, err)
 		}
 		return nil
 	}
@@ -111,12 +114,13 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		case berr != nil:
 			// A batch error must not abort the whole page: the canonical
 			// per-crop path below still produces correct results.
-			slog.Warn(logLabel+" OCR batch recognize failed; falling back to per-crop", "page", pageNum, "err", berr)
+			reportPageInferenceFailure(ctx, logLabel+" OCR batch recognize failed; falling back to per-crop", pageNum, berr)
 		case len(batch) != len(cropAcc):
 			// Defensive: a count mismatch (or a nil result) would corrupt the
 			// per-box indexing further down. Fall back to per-crop instead of
 			// indexing out of range.
-			slog.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop", "page", pageNum, "got", len(batch), "want", len(cropAcc))
+			common.Warn(logLabel+" OCR batch recognize returned unexpected count; falling back to per-crop",
+				zap.Int("page", pageNum), zap.Int("got", len(batch)), zap.Int("want", len(cropAcc)))
 		default:
 			allTexts = batch
 		}
@@ -134,7 +138,7 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
 		texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 		if rerr != nil {
-			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", rerr)
+			reportPageInferenceFailure(recCtx, logLabel+" OCR recognize failed", pageNum, rerr)
 			return nil
 		}
 		allTexts[ci] = texts
@@ -260,7 +264,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
-	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
+	common.Debug("ocrMergeChars detect", zap.Int("page", pageNum), zap.Int("boxes", len(ocrDetectBoxes)))
 
 	// The caller multiplies the returned boxes back by this scale to crop the
 	// original render, so passing the render zoom keeps the round trip exact
@@ -581,7 +585,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		if p.docSupportsBatchOCR(doc) {
 			batch, berr := p.inferOCRRecognizeBatch(ctx, doc, crops)
 			if berr != nil {
-				slog.Warn("ocr merge: batch recognize failed", "page", pageNum, "err", berr)
+				reportPageInferenceFailure(ctx, "ocr merge: batch recognize failed", pageNum, berr)
 				return nil
 			}
 			allTexts = batch
@@ -594,7 +598,7 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 				recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, jobs[ci].srcIdx)
 				texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
 				if rerr != nil {
-					slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", rerr)
+					reportPageInferenceFailure(recCtx, "ocr merge: recognize failed", pageNum, rerr)
 					continue
 				}
 				allTexts[ci] = texts
@@ -625,6 +629,6 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 			filtered = append(filtered, tb)
 		}
 	}
-	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(filtered))
+	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }

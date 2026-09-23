@@ -21,6 +21,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 
 	"github.com/gin-gonic/gin"
 )
@@ -272,4 +273,13 @@ func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 // choose the appropriate code path (Go vs Python).
 func (h *SystemHandler) Language(c *gin.Context) {
 	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
+}
+
+func (h *SystemHandler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }
