@@ -114,3 +114,88 @@ def test_bedrock_model_discovery_error_includes_region():
 
     with patch("boto3.client", return_value=client), pytest.raises(ValueError, match="region 'us-east-1'"):
         asyncio.run(Bedrock(config).get_model_list())
+
+
+def _profile_only_client():
+    summaries = [
+        {
+            "modelId": "openai.gpt-6-sol",
+            "inputModalities": ["TEXT", "IMAGE"],
+            "outputModalities": ["TEXT"],
+            "inferenceTypesSupported": ["INFERENCE_PROFILE"],
+            "modelLifecycle": {"status": "ACTIVE"},
+        },
+        {
+            "modelId": "openai.gpt-oss-120b-1:0",
+            "inputModalities": ["TEXT"],
+            "outputModalities": ["TEXT"],
+            "inferenceTypesSupported": ["ON_DEMAND"],
+        },
+        {
+            "modelId": "amazon.titan-embed-text-v2:0:8k",
+            "inputModalities": ["TEXT"],
+            "outputModalities": ["EMBEDDING"],
+            "inferenceTypesSupported": [],
+        },
+        {
+            "modelId": "cohere.embed-v4:0",
+            "inputModalities": ["TEXT", "IMAGE"],
+            "outputModalities": ["EMBEDDING"],
+            "inferenceTypesSupported": ["INFERENCE_PROFILE"],
+        },
+    ]
+    client = MagicMock()
+    # Like the API: byInferenceType narrows the list server-side.
+    client.list_foundation_models.side_effect = lambda byInferenceType=None: {"modelSummaries": [summary for summary in summaries if byInferenceType in (None, *summary["inferenceTypesSupported"])]}
+    arn = "arn:aws:bedrock:{}::foundation-model/openai.gpt-6-sol"
+    client.get_paginator.return_value.paginate.return_value = [
+        {
+            "inferenceProfileSummaries": [
+                {"inferenceProfileId": "us.openai.gpt-6-sol", "models": [{"modelArn": arn.format(region)} for region in ("us-east-1", "us-east-2", "us-west-2")]},
+                {"inferenceProfileId": "global.openai.gpt-6-sol", "models": [{"modelArn": arn.format("")}]},
+                {"inferenceProfileId": "us.cohere.embed-v4:0", "models": [{"modelArn": "arn:aws:bedrock:us-west-2::foundation-model/cohere.embed-v4:0"}]},
+            ]
+        }
+    ]
+    return client
+
+
+def test_bedrock_lists_inference_profile_ids_for_models_without_on_demand():
+    client = _profile_only_client()
+    config = {
+        "auth_mode": "bedrock_api_key",
+        "bedrock_api_key": "bedrock-test-key",
+        "bedrock_region": "us-east-1",
+    }
+
+    with patch("boto3.client", return_value=client):
+        models = asyncio.run(Bedrock(config).get_model_list())
+
+    # us.cohere.embed-v4:0 is not offered: BedrockEmbed needs the bare ``cohere.`` id.
+    assert [(model["name"], model["model_types"]) for model in models] == [
+        ("us.openai.gpt-6-sol", [LLMType.CHAT.value, LLMType.VISION.value]),
+        ("global.openai.gpt-6-sol", [LLMType.CHAT.value, LLMType.VISION.value]),
+        ("openai.gpt-oss-120b-1:0", [LLMType.CHAT.value]),
+    ]
+    client.get_paginator.assert_called_once_with("list_inference_profiles")
+
+
+def test_bedrock_model_discovery_falls_back_to_on_demand_models_when_profiles_are_denied():
+    client = _profile_only_client()
+    client.get_paginator.return_value.paginate.side_effect = ClientError(
+        {
+            "Error": {"Code": "AccessDeniedException", "Message": "denied"},
+            "ResponseMetadata": {"HTTPStatusCode": 403},
+        },
+        "ListInferenceProfiles",
+    )
+    config = {
+        "auth_mode": "bedrock_api_key",
+        "bedrock_api_key": "bedrock-test-key",
+        "bedrock_region": "us-east-1",
+    }
+
+    with patch("boto3.client", return_value=client):
+        models = asyncio.run(Bedrock(config).get_model_list())
+
+    assert [model["name"] for model in models] == ["openai.gpt-oss-120b-1:0"]
