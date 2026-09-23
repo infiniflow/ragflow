@@ -203,26 +203,78 @@ func insertTableBoxes(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map
 // (r"(数据|资料|图表)*来源[:： ]") are removed entirely without replacement —
 // matching Python's _extract_table_figure discard behavior.
 
+// pagePosition pairs a table index with one of its Position indices. It is used
+// to build a per-page index so callers only test a box against table positions
+// on the same page instead of the full cross product.
+type pagePosition struct {
+	tableIdx int
+	posIdx   int
+}
+
+// indexTablePositions buckets each table Position by the pages it occupies. A
+// Position with no PageNumbers is page-agnostic — boxOverlapsPositionPage falls
+// back to an X/Y-only test for it — so it is returned separately as noPage and
+// must be tested against every box. all returns every (table, position) pair and
+// is used as the fallback when a box itself carries no page metadata.
+//
+// Correctness note: a box on page P can only match a Position whose PageNumbers
+// contains P (boxOverlapsPositionPage enforces this). A cross-page table whose
+// positions sit on pages 5, 6, 7 is therefore placed in byPage[5], [6] and [7];
+// a box on page 6 only sees the table's page-6 position. This is exactly
+// equivalent to the unindexed cross product and never drops a valid match.
+func indexTablePositions(tables []pdf.TableItem) (byPage map[int][]pagePosition, noPage []pagePosition, all []pagePosition) {
+	byPage = make(map[int][]pagePosition, len(tables))
+	for ti := range tables {
+		for pi := range tables[ti].Positions {
+			pos := tables[ti].Positions[pi]
+			pp := pagePosition{tableIdx: ti, posIdx: pi}
+			all = append(all, pp)
+			if len(pos.PageNumbers) == 0 {
+				noPage = append(noPage, pp)
+				continue
+			}
+			for _, p := range pos.PageNumbers {
+				byPage[p] = append(byPage[p], pp)
+			}
+		}
+	}
+	return byPage, noPage, all
+}
+
 // MarkNoMergeTables traverses boxes in page order. When a caption, title, or
 // reference immediately follows a table, the preceding table is marked NoMerge
 // to prevent cross-page merge. Matches Python's nomerge_lout_no.
 func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
+	byPage, noPage, all := indexTablePositions(tables)
 	var lastTableTI int = -1
 	for i := range boxes {
 		lt := boxes[i].LayoutType
 		if lt == pdf.LayoutTypeTable {
-			matched := false
-			for ti := range tables {
-				for _, tp := range tables[ti].Positions {
-					if boxOverlapsPositionPage(boxes[i], tp) {
-						lastTableTI = ti
-						matched = true
-						break
-					}
-				}
+			// Restrict candidates to positions on this box's page, plus the
+			// page-agnostic positions. A box with no page metadata falls back to
+			// the full set (boxOverlapsPositionPage skips the page check for it).
+			// The original cross-product keeps the highest-indexed table a box
+			// overlaps as lastTableTI; candidates are ordered by ascending table
+			// index, so assigning lastTableTI on every match leaves the highest
+			// index in place — matching the original semantics. seen avoids
+			// re-testing a table whose positions span several slots on the page.
+			var cands []pagePosition
+			if boxes[i].PageNumber == 0 {
+				cands = all
+			} else {
+				cands = append(cands, byPage[boxes[i].PageNumber]...)
+				cands = append(cands, noPage...)
 			}
-			if !matched {
-				lastTableTI = -1
+			lastTableTI = -1
+			seen := make(map[int]bool)
+			for _, c := range cands {
+				if seen[c.tableIdx] {
+					continue
+				}
+				if boxOverlapsPositionPage(boxes[i], tables[c.tableIdx].Positions[c.posIdx]) {
+					seen[c.tableIdx] = true
+					lastTableTI = c.tableIdx
+				}
 			}
 			continue
 		}
@@ -255,18 +307,40 @@ func buildRemoveSet(boxes []pdf.TextBox) map[int]bool {
 // buildReplacementsAfterMerge maps each table to overlapping table-layout boxes,
 // producing the replacement list. Must be called AFTER MergeTablesAcrossPages so
 // that tableIdx in each replacement refers to the correct merged-table slot.
+//
+// The match for a box on page P is restricted to table positions on page P (plus
+// any page-agnostic positions), via the per-page index built by
+// indexTablePositions. This turns the O(tables*boxes*positions) cross product
+// into a page-local scan; it is equivalent to the unindexed version because
+// boxOverlapsPositionPage already requires a box and position to share a page.
 func buildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map[int]bool) []replacement {
+	byPage, noPage, all := indexTablePositions(tables)
 	var reps []replacement
-	for ti := range tables {
-		for i := range boxes {
-			if boxes[i].LayoutType != pdf.LayoutTypeTable || removeSet[i] {
+	for i := range boxes {
+		if boxes[i].LayoutType != pdf.LayoutTypeTable || removeSet[i] {
+			continue
+		}
+		var cands []pagePosition
+		if boxes[i].PageNumber == 0 {
+			cands = all
+		} else {
+			cands = append(cands, byPage[boxes[i].PageNumber]...)
+			cands = append(cands, noPage...)
+		}
+		// Emit one replacement per (table, box) overlap pair. A box can overlap
+		// several tables on its page (plus the page-agnostic positions), and the
+		// original cross-product implementation added a replacement for each such
+		// table — so we must not stop at the first match. seen de-duplicates by
+		// table: a table that spans several positions on the page is still a
+		// single replacement for this box.
+		seen := make(map[int]bool)
+		for _, c := range cands {
+			if seen[c.tableIdx] {
 				continue
 			}
-			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPositionPage(boxes[i], tp) {
-					reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
-					break
-				}
+			if boxOverlapsPositionPage(boxes[i], tables[c.tableIdx].Positions[c.posIdx]) {
+				seen[c.tableIdx] = true
+				reps = append(reps, replacement{tableIdx: c.tableIdx, boxIdx: i})
 			}
 		}
 	}
