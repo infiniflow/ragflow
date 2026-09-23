@@ -45,7 +45,6 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"ragflow/internal/agent/chat"
 	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/prompts"
@@ -1075,77 +1074,6 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 		// evidence, so the compose that follows suppresses its own kickoff step.
 		deps.Finalize(markFinalizeAnnounced(ctx), st.PartialAnswer, true, st.Question)
 	}
-}
-
-// Round helpers: view selection, the terms a view is scored on, and the gaps→rewrite handoff.
-
-// genJSONMaxRetry: the first call, plus one corrective round that feeds the malformed
-// answer and the parse error back to the model.
-//
-// Deliberately NO reply cache: the contract is "the same prompt still calls the LLM",
-// which also rules out replaying a verdict computed against evidence a later round has
-// already superseded.
-const genJSONMaxRetry = 2
-
-// genJSONTailFenceRE matches a trailing ``` fence followed by any newlines, the
-// "```\n*$" alternative of gen_json's cleanup regex.
-var genJSONTailFenceRE = regexp.MustCompile("```\\n*$")
-
-// GenJSON renders one JSON value from a prompt; see jsonModelAdapter for the turn layout and
-// the corrective retry.
-func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, error) {
-	if a.inner == nil {
-		return nil, fmt.Errorf("agentic: no model configured")
-	}
-	// No reply cache: see the genJSONMaxRetry note — every call reaches the model.
-	const userPrompt = "Output:\n"
-	// The prompt is fitted ONCE, before the retry loop: msg[0] becomes the system turn and
-	// msg[1:] the history, with the corrective text appended to the LAST user turn WITHOUT
-	// re-fitting. A zero/negative max_length is normalised to 8192 by
-	// chat.EffectiveContextLength.
-	baseUser := userPrompt
-	systemTurn := prompt
-	if fitted, _ := chat.FitMessages("", []schema.Message{
-		*schema.SystemMessage(prompt),
-		*schema.UserMessage(baseUser),
-	}, a.maxLength); len(fitted) > 0 {
-		if fitted[0].Role == schema.System {
-			systemTurn = fitted[0].Content
-		}
-		if last := fitted[len(fitted)-1]; last.Role == schema.User {
-			baseUser = last.Content
-		}
-	}
-	var lastAns, errText string
-	for attempt := 0; attempt < genJSONMaxRetry; attempt++ {
-		userTurn := baseUser
-		if attempt > 0 && lastAns != "" && errText != "" {
-			// gen_json appends the corrective prompt to the user turn only once
-			// the previous round produced both an answer and a parse error.
-			userTurn = baseUser + fmt.Sprintf("\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.", lastAns, errText)
-		}
-		reply, err := a.inner.Complete(ctx, []schema.Message{
-			*schema.SystemMessage(systemTurn),
-			*schema.UserMessage(userTurn),
-		}, nil)
-		if err != nil {
-			// gen_json propagates chat/transport errors immediately; only JSON
-			// parsing failures are retried. Mirror that.
-			return nil, err
-		}
-		cleaned := stripGenJSONWrappers(reply.Content)
-		// The corrective prompt re-sends the CLEANED answer: the next round's "Generated
-		// JSON is as following:" carries the stripped text, not the raw reply with its fences
-		// / think block.
-		lastAns = cleaned
-		if v, ok := parseGenJSONReply(cleaned); ok {
-			return v, nil
-		}
-		// Deliberately log length, not content: the reply may embed retrieved
-		// material (PII), so the raw body is excluded, as in jsonchat.GenJSON.
-		errText = fmt.Sprintf("model reply (%d bytes) is not parseable JSON", len(cleaned))
-	}
-	return nil, fmt.Errorf("agentic: no parseable JSON in the model output after %d attempts", genJSONMaxRetry)
 }
 
 // routeResearch decides whether the run takes another research round — the ONE router, used

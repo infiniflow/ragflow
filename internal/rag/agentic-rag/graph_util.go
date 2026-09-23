@@ -28,7 +28,6 @@ import (
 	"sort"
 	"strings"
 
-	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
@@ -210,50 +209,4 @@ func extractJSONObject(text string) any {
 		i = start + 1
 	}
 	return nil
-}
-
-// jsonModelAdapter renders one JSON value from a runtime.SessionModel.
-//
-// The rendered prompt is the system turn and "Output:\n" the user turn (fitted ONCE
-// to the model's context window), then the first JSON value is parsed out of the reply.
-// Malformed JSON is retried (up to genJSONMaxRetry calls) with the model's own
-// bad answer and the parse error appended to the user turn, so a single
-// formatting hiccup does not abort the call.
-type jsonModelAdapter struct {
-	inner runtime.SessionModel
-	// maxLength is the chat model's context window. It bounds the message fit so an
-	// oversized prompt is trimmed instead of rejected by the provider. <=0 falls back
-	// to chat.EffectiveContextLength's 8192 default.
-	maxLength int
-}
-
-// parseGenJSONReply parses a cleaned model reply with gen_json's tolerance: a
-// strict decode of ANY top-level JSON value first (json_repair accepts objects,
-// arrays and scalars alike), then the brace-matched object extractor for fenced
-// or damaged objects — the JSON-shaped gate, NOT the prose-salvaging ExtractJSON,
-// so a non-JSON reply stays a parse failure and triggers the corrective retry.
-// The boolean distinguishes a successful decode from a failure, because a
-// legitimate `null` reply decodes to a nil value.
-func parseGenJSONReply(cleaned string) (any, bool) {
-	var val any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(cleaned)), &val); err == nil {
-		return val, true
-	}
-	if v := runtime.ExtractJSONObject(cleaned); v != nil {
-		return v, true
-	}
-	return nil, false
-}
-
-// stripGenJSONWrappers mirrors gen_json's answer cleanup:
-//
-//	ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
-//
-// The think term (greedy up to the LAST </think>) is common.StripThinkTrailing;
-// a "```json\n" fence may occur anywhere and is removed wholesale; a trailing
-// "```" (plus newlines) is cut from the end.
-func stripGenJSONWrappers(s string) string {
-	s = common.StripThinkTrailing(s)
-	s = strings.ReplaceAll(s, "```json\n", "")
-	return genJSONTailFenceRE.ReplaceAllString(s, "")
 }

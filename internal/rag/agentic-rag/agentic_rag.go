@@ -109,9 +109,7 @@ type RAGTools struct {
 	// Model drives the LLM turns. Required for agentic modes; low/naive never
 	// call it.
 	Model runtime.SessionModel
-	// ModelName is the RESOLVED chat model identity (e.g. "gpt-4o"), one component of the
-	// gen_json reply-cache key. Empty disables that cache: keying on an empty name would
-	// collapse every model onto one bucket and serve a reply produced by another model.
+	// ModelName is the RESOLVED chat model identity (e.g. "gpt-4o").
 	ModelName string
 	// Embedder is the external embedding handle used by graph/structure seed encoding.
 	// Nil falls back to this package's internal tenant-default resolver, which additionally

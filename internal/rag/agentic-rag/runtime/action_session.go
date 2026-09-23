@@ -706,51 +706,6 @@ func ExtractJSON(text string) any {
 	return repairJSONWhole(text)
 }
 
-// ExtractJSONObject parses the first JSON object/array found in text, but ONLY
-// from a brace/bracket-matched region. It deliberately stops short of
-// repairJSONWhole's whole-text prose fallback: prose with no JSON shape (e.g.
-// "I cannot produce JSON today.") returns nil so the caller can treat it as a
-// parse failure. This is the right gate for gen_json-style loops, where the
-// model is expected to emit JSON (possibly fenced or trailing-comma damaged)
-// and a non-JSON reply must trigger a corrective retry rather than be silently
-// coerced into a value. Keywords-style salvage of prose-wrapped JSON should use
-// ExtractJSON instead.
-func ExtractJSONObject(text string) any {
-	if text == "" {
-		return nil
-	}
-	n := len(text)
-	for i := 0; i < n; {
-		start := strings.IndexByte(text[i:], '{')
-		if start < 0 {
-			break
-		}
-		start += i
-		depth := 0
-		for j := start; j < n; j++ {
-			switch text[j] {
-			case '{':
-				depth++
-			case '}':
-				depth--
-				if depth == 0 {
-					candidate := text[start : j+1]
-					var out any
-					if err := json.Unmarshal([]byte(candidate), &out); err == nil {
-						return out
-					}
-					if v := repairJSONObject(candidate); v != nil {
-						return v
-					}
-					// Invalid object; try the next "{".
-				}
-			}
-		}
-		i = start + 1
-	}
-	return nil
-}
-
 // repairJSONObject is a conservative repair pass applied only after a candidate fails
 // strict json.Unmarshal. It walks cheap, idempotent normalizations that models commonly
 // emit and re-validates after each: trailing commas, single-quoted strings, NaN/Infinity
