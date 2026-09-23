@@ -530,6 +530,10 @@ def _load_agents_app(monkeypatch, *, target="rest"):
             return True
 
         @classmethod
+        def invalidate_canvas(cls, _canvas_id):
+            return 0
+
+        @classmethod
         def create_if_absent(cls, *_args, **_kwargs):
             return {}
 
@@ -646,17 +650,20 @@ def test_agents_crud_unit_branches(monkeypatch):
         return {"dsl": {"nodes": []}, "title": "  webhook-agent  ", "unused": None}
 
     monkeypatch.setattr(module, "get_request_json", req_update)
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: False)
 
-    @module._require_canvas_access_async
-    async def _dummy_update(agent_id, tenant_id):
-        return module.get_json_result(data=True)
-
-    res = _run(_dummy_update(agent_id="agent-1", tenant_id="tenant-1"))
+    # a team member can run the shared agent but must not be able to rewrite it
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: True)
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [])
+    res = _run(module.update_agent(agent_id="agent-1", tenant_id="member-1"))
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "owner" in res["message"]
+    res = _run(module.reset_agent(agent_id="agent-1", tenant_id="member-1"))
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    res = _run(module.update_agent_tags(tenant_id="member-1", canvas_id="agent-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
-    calls = {"update": 0, "save_or_replace_latest": 0, "replace_for_set": 0}
-    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: True)
+    calls = {"update": 0, "save_or_replace_latest": 0, "invalidate_canvas": []}
+    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [object()])
     monkeypatch.setattr(
         module.UserCanvasService,
         "get_by_id",
@@ -672,14 +679,11 @@ def test_agents_crud_unit_branches(monkeypatch):
         "save_or_replace_latest",
         lambda *_args, **_kwargs: calls.__setitem__("save_or_replace_latest", calls["save_or_replace_latest"] + 1),
     )
-    monkeypatch.setattr(
-        module.CanvasReplicaService,
-        "replace_for_set",
-        lambda **_kwargs: calls.__setitem__("replace_for_set", calls["replace_for_set"] + 1) or True,
-    )
-    res = _run(module.update_agent.__wrapped__("agent-1", "tenant-1"))
+    monkeypatch.setattr(module.CanvasReplicaService, "invalidate_canvas", lambda canvas_id: calls["invalidate_canvas"].append(canvas_id) or 0)
+    res = _run(module.update_agent(agent_id="agent-1", tenant_id="tenant-1"))
     assert res["code"] == module.RetCode.SUCCESS
-    assert calls == {"update": 1, "save_or_replace_latest": 1, "replace_for_set": 1}
+    # every tenant's runtime replica must be dropped, not just the saving tenant's
+    assert calls == {"update": 1, "save_or_replace_latest": 1, "invalidate_canvas": ["agent-1"]}
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
 
