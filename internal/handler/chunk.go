@@ -151,14 +151,18 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
 	chunkID := c.Param("chunk_id")
-	if chunkID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "chunk_id is required")
+	if datasetID == "" || documentID == "" || chunkID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id, document_id and chunk_id are required")
 		return
 	}
 
 	req := &service.GetChunkRequest{
-		ChunkID: chunkID,
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    chunkID,
 	}
 
 	ctx := c.Request.Context()
@@ -501,6 +505,21 @@ func parseAvailableBody(rawBody map[string]interface{}) (int, error) {
 	return 0, fmt.Errorf("`available_int` or `available` is required")
 }
 
+// optionalBodyString reads an optional string field. A present field of another
+// JSON type is rejected instead of being silently ignored, so a client cannot
+// believe it sent an image that the server dropped.
+func optionalBodyString(rawBody map[string]interface{}, field, typeMessage string) (*string, error) {
+	raw, ok := rawBody[field]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return nil, errors.New(typeMessage)
+	}
+	return &value, nil
+}
+
 // UpdateChunk updates a chunk
 // @Summary Update Chunk
 // @Description Update chunk fields
@@ -549,6 +568,8 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"questions":          true,
 		"available":          true,
 		"positions":          true,
+		"image_base64":       true,
+		"image_update_mode":  true,
 		// Accepted but never persisted: the UI always sends tag_kwd, so
 		// dropping it here would 400 every chunk edit. Go's tagger writes
 		// tag_feas; tag_kwd belongs to a Python tag dataset
@@ -559,7 +580,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_feas")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_feas")
 			return
 		}
 	}
@@ -592,6 +613,18 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		req.Positions = positions
 	}
 	req.TagFeas = rawBody["tag_feas"]
+	imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a non-empty string")
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		return
+	}
+	imageUpdateMode, err := optionalBodyString(rawBody, "image_update_mode", "`image_update_mode` must be a string")
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		return
+	}
+	req.ImageBase64 = imageBase64
+	req.ImageUpdateMode = imageUpdateMode
 
 	// Set path parameters
 	req.DatasetID = datasetID
@@ -599,7 +632,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	req.ChunkID = chunkID
 
 	ctx := c.Request.Context()
-	err := h.chunkService.UpdateChunk(ctx, &req, user.ID)
+	err = h.chunkService.UpdateChunk(ctx, &req, user.ID)
 	if err != nil {
 		var coded interface {
 			Code() common.ErrorCode

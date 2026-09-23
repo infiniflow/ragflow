@@ -39,7 +39,7 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/rag/agentic-rag"
+	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -65,7 +65,7 @@ import (
 	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
@@ -75,11 +75,10 @@ import (
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer | deepdoc
+	mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
 	helpFlag      bool
 	versionFlag   bool
 	logLevel      *string
-	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -96,6 +95,7 @@ type serverArgs struct {
 func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
+	// Mode flags share one variable, so the last one passed wins.
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
@@ -125,8 +125,6 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
-		case "--migrate":
-			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -138,6 +136,9 @@ func parseArgs() (*serverArgs, error) {
 			args.mode = &serverMode
 		case "--deepdoc":
 			serverMode = "deepdoc"
+			args.mode = &serverMode
+		case "--migrate":
+			serverMode = "migrate"
 			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
@@ -217,9 +218,6 @@ func parseArgs() (*serverArgs, error) {
 		}
 	}
 
-	if args.migrateDB && args.mode != nil {
-		return nil, errors.New("--migrate cannot be combined with a server mode")
-	}
 	return args, nil
 }
 
@@ -268,7 +266,7 @@ func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
 
 func printHelp(args *serverArgs) {
 	switch {
-	case args.mode == nil:
+	case args.mode == nil || *args.mode == "migrate":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
@@ -363,7 +361,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
+	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
 		os.Exit(1)
 	}
@@ -371,13 +369,6 @@ func main() {
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
-	}
-
-	if arguments.migrateDB {
-		if err = runMigrate(ctx, arguments); err != nil {
-			common.Fatal("Failed to run database migration", zap.Error(err))
-		}
-		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -459,6 +450,10 @@ func main() {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
 		}
+	case "migrate":
+		if arguments.name == nil {
+			serverName = "migrate"
+		}
 	default:
 		err = errors.New(*arguments.mode)
 		common.Error("invalid server mode", err)
@@ -492,9 +487,20 @@ func main() {
 		}()
 	}
 
-	// Initialize database
-	if err = dao.InitDB(ctx, false); err != nil {
+	// Initialize database. The migrate mode stops here: it needs neither the
+	// downgrade check nor any of the engines started below, so it can run
+	// before any server mode boots (see docker/entrypoint-go.sh and
+	// docker/launch_backend_service.sh).
+	migrate := *arguments.mode == "migrate"
+	if migrate {
+		common.Info("Running database migrations")
+	}
+	if err = dao.InitDB(ctx, migrate); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+	if migrate {
+		common.Info("Database migrations completed")
+		return
 	}
 
 	if err = checkDatabaseVersion(ctx); err != nil {
@@ -640,58 +646,6 @@ func checkDatabaseVersion(ctx context.Context) error {
 	common.Info("Database version check passed",
 		zap.String("code_version", codeVersion),
 		zap.String("database_version", databaseVersion))
-	return nil
-}
-
-// runMigrate runs the database schema and data migrations and returns. It is
-// the whole of the standalone --migrate action: load the configuration, run
-// dao.InitDB with migrations enabled, then exit. It deliberately does not call
-// registerNativeDeepDoc or initialize the doc engine, Redis, storage or the
-// message queue, so it can run on its own, before any server mode boots (see
-// docker/entrypoint-go.sh and docker/launch_backend_service.sh).
-func runMigrate(ctx context.Context, args *serverArgs) error {
-	const serverName = "migrate"
-
-	if err := server.InitLocalVariables(); err != nil {
-		return fmt.Errorf("initialize local variables: %w", err)
-	}
-
-	logLevel := selectedLogLevel(args, "")
-	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
-		return fmt.Errorf("initialize logger: %w", err)
-	}
-
-	var configPath string
-	if args.configPath != nil {
-		configPath = *args.configPath
-	}
-	if err := server.Init(configPath); err != nil {
-		return fmt.Errorf("initialize configuration: %w", err)
-	}
-
-	globalConfig := server.GetConfig()
-	server.SetServerName(serverName)
-	logConfig := globalConfig.GetLogConfig()
-	logLevel = selectedLogLevel(args, logConfig.Level)
-	globalConfig.SetLogLevel(logLevel)
-
-	common.SyncLog()
-	if err := common.InitLogger(logLevel, common.FileOutput{
-		Filename:   serverName + ".log",
-		Path:       logConfig.Path,
-		MaxSize:    logConfig.MaxSize,
-		MaxBackups: logConfig.MaxBackups,
-		MaxAge:     logConfig.MaxAge,
-		Compress:   logConfig.Compress,
-	}, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
-
-	common.Info("Running database migrations")
-	if err := dao.InitDB(ctx, true); err != nil {
-		return fmt.Errorf("initialize database: %w", err)
-	}
-	common.Info("Database migrations completed")
 	return nil
 }
 
@@ -895,7 +849,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		fmt.Sprintf("ingestor-%s", ingestor.ID()[:8]),
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -949,7 +903,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
-		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
+		fmt.Sprintf("syncer-%s", fileSyncer.ID()[:8]),
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -1352,7 +1306,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", apiServerConfig.HTTPPort),
+		fmt.Sprintf("ragflow-server-%s", utility.GenerateUUID()[:8]),
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {

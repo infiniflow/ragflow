@@ -739,24 +739,30 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	return wf, nil
 }
 
-// directMessageDownstream: only a direct
-// Message child enables lazy Agent execution. Intermediate nodes must not
+// directMessageDownstream reports whether a component may hand a deferred
+// stream to its downstream consumers. Only a direct Message child enables lazy
+// Agent execution, and only when EVERY direct downstream is a Message.
+//
+// A mixed graph (Agent -> [Agent, Message]) must keep eager execution: the
+// deferred stream is opaque to non-Message consumers, which would otherwise
+// observe the lazy object instead of the semantic answer. An empty downstream
+// list keeps eager execution as before. Intermediate nodes must not
 // accidentally change the Agent's execution mode.
 func directMessageDownstream(c *Canvas, cpnID string) bool {
 	if c == nil {
 		return false
 	}
 	comp, ok := c.Components[cpnID]
-	if !ok {
+	if !ok || len(comp.Downstream) == 0 {
 		return false
 	}
 	for _, downID := range comp.Downstream {
 		down, ok := c.Components[downID]
-		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
-			return true
+		if !ok || !strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func wireWorkflowTerminals(

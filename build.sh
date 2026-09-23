@@ -307,37 +307,34 @@ check_onnxruntime_deps() {
         return 1
     fi
 
-    # sha256 comparison against the published sidecar (best-effort, dev path).
+    # Pinned sha256 of the published onnxruntime-v${ort_version} archive.
+    #
+    # Upstream does not re-issue this archive, so we pin the digest here and
+    # verify the LOCAL copy against it — no network access at build time. This
+    # replaces the previous check that fetched the .sha256 sidecar over the
+    # network on every build, which hung the build when the machine was offline
+    # or GitHub was unreachable (curl had no connect timeout).
+    #
+    # A mismatch means the local copy is corrupt or stale; we only WARN (not
+    # fail) so a one-off re-issue cannot break the build. The download scripts
+    # (ragflow_deps/download_go_deps.py, download_deps.py) still verify against
+    # the published sidecar at download time, so a re-issued archive is picked
+    # up on the next download.
     local asset="onnxruntime-v${ort_version}-linux-x86_64.zip"
     local zip_path="${PROJECT_ROOT}/ragflow_deps/${asset}"
+    local expected="439308c93822d26cf04341cab3e77c595bbe88a12b54043210d14a0ca5574bd1"
     if [ -f "$zip_path" ]; then
-        local sidecar_url="https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v${ort_version}/${asset}.sha256"
-        local expected=""
-        if command -v curl >/dev/null 2>&1; then
-            expected="$(curl -fsSL "$sidecar_url" 2>/dev/null | awk '{print $1}')"
-        elif command -v python3 >/dev/null 2>&1; then
-            expected="$(python3 - "$sidecar_url" <<'PY' 2>/dev/null
-import sys, urllib.request
-try:
-    print(urllib.request.urlopen(sys.argv[1]).read().decode().split()[0])
-except Exception:
-    pass
-PY
-)"
-        fi
-        if [ -n "$expected" ]; then
-            local actual
-            actual="$(sha256sum "$zip_path" | awk '{print $1}')"
-            if [ "$actual" != "$expected" ]; then
-                echo -e "${RED}Error: ONNX Runtime archive ${asset} is stale${NC}" >&2
-                echo "  expected sha256: $expected" >&2
-                echo "  local    sha256: $actual" >&2
-                echo "  A re-issued archive under the same tag/asset name was not picked up." >&2
-                echo "  Refresh it (this re-downloads + re-extracts the .a):" >&2
-                echo "    rm -f ${zip_path}" >&2
-                echo "    uv run python3 ragflow_deps/download_go_deps.py   # or ragflow_deps/download_deps.py" >&2
-                return 1
-            fi
+        local actual
+        actual="$(sha256sum "$zip_path" | awk '{print $1}')"
+        if [ "$actual" != "$expected" ]; then
+            echo -e "${YELLOW}Warning: ONNX Runtime archive ${asset} sha256 mismatch${NC}" >&2
+            echo "  expected sha256: $expected" >&2
+            echo "  local    sha256: $actual" >&2
+            echo "  The local copy may be corrupt or stale. Refresh it with:" >&2
+            echo "    rm -f ${zip_path}" >&2
+            echo "    uv run python3 ragflow_deps/download_go_deps.py   # or ragflow_deps/download_deps.py" >&2
+        else
+            echo "  ✓ ${asset} sha256 matches pinned digest"
         fi
     else
         echo "  (no local ${asset}; skipping sha256 check — CI seed assumed authoritative)"

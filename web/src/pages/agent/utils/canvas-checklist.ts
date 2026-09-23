@@ -364,8 +364,12 @@ export function collectCanvasIssues({
 }: CanvasChecklistInputs): CanvasIssue[] {
   const nodeMap = new Map(nodes.map((x) => [x.id, x]));
   // References always use `begin@key` even when the Begin node's id is a
-  // legacy one (`begin:0`), so look the node up by label.
-  const beginNode = nodes.find((x) => x.data?.label === Operator.Begin);
+  // legacy one (`begin:0`), so look the node up by label. The pipeline
+  // (dataflow) canvas names its entry node `File` instead of `Begin` — same
+  // structural anchor, different label.
+  const beginNode = nodes.find(
+    (x) => x.data?.label === Operator.Begin || x.data?.label === Operator.File,
+  );
   const beginInputKeys = new Set(
     Object.keys(beginNode?.data?.form?.inputs ?? {}),
   );
@@ -381,7 +385,9 @@ export function collectCanvasIssues({
   // only linked to their container by `parentId` — outer edges terminate at the
   // container — so containment counts as connectivity too. The graph is walked
   // undirected: any component detached from Begin, single node or a group, is
-  // orphan regardless of edge direction.
+  // orphan regardless of edge direction. The anchor itself is always part of
+  // its own component, so it keeps the edges-only rule: an entry node with no
+  // edges at all (an empty pipeline) is still flagged.
   const neighbors = new Map<string, string[]>();
   const link = (a?: string, b?: string) => {
     if (!a || !b || a === b) {
@@ -436,12 +442,11 @@ export function collectCanvasIssues({
       operatorLabel: label ?? '',
     };
 
-    if (
-      label &&
-      !OrphanExemptOperators.includes(label) &&
-      (beginComponentIds ? !beginComponentIds.has(node.id)
-        : !connectedNodeIds.has(node.id))
-    ) {
+    const orphan =
+      beginComponentIds && node.id !== beginNode?.id
+        ? !beginComponentIds.has(node.id)
+        : !connectedNodeIds.has(node.id);
+    if (label && !OrphanExemptOperators.includes(label) && orphan) {
       issues.push({
         ...target,
         type: CanvasIssueType.Orphan,
@@ -501,6 +506,19 @@ export function collectCanvasIssues({
             }),
           );
         }
+      }
+    }
+
+    if (label === Operator.Extractor) {
+      // Same always-on policy as the Agent model check: a template-created
+      // pipeline ships an empty llm_id and must flag on load, not only after
+      // edits.
+      if (!form?.llm_id) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorModelMissing',
+        });
       }
     }
 
