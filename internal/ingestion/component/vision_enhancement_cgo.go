@@ -69,27 +69,27 @@ func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]a
 	return &visionPDFCropper{ctx: ctx, db: db, inputs: inputs}, nil
 }
 
-func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
+func (c *visionPDFCropper) Crop(item map[string]any) (*visionImage, error) {
 	// Fast path: an inlined image (docx/markdown, or any pre-inlined source)
 	// is used directly — no storage access, no engine.
 	if img, _ := item["image"].(string); img != "" {
-		return img, nil
+		return materializeInlineVisionImage(img)
 	}
 	matrix, ok := parser.ExtractPDFPositions(item)
 	if !ok {
-		return "", nil
+		return nil, nil
 	}
 	positions := util.PositionsFromMatrix(matrix)
 	if len(positions) == 0 {
-		return "", nil
+		return nil, nil
 	}
 	if err := c.ensureEngine(); err != nil {
 		// Best-effort: a missing/unreadable source PDF means no vision
 		// description for this item, not a hard failure.
-		return "", nil
+		return nil, nil
 	}
 	if c.engine == nil {
-		return "", nil
+		return nil, nil
 	}
 	// Render each distinct page the positions span (1-based → 0-based is
 	// handled by PositionsFromMatrix). Reuse the chunker's sliding-window
@@ -109,9 +109,13 @@ func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
 		single[pn] = img
 	}
 	if len(single) == 0 {
-		return "", nil
+		return nil, nil
 	}
-	return util.CropSectionPositions(positions, single, deepdoctype.DlaScale), nil
+	raster := util.CropSectionPositionsRaster(positions, single, deepdoctype.DlaScale)
+	if raster == nil {
+		return nil, nil
+	}
+	return &visionImage{Raster: raster}, nil
 }
 
 func (c *visionPDFCropper) ensureEngine() error {

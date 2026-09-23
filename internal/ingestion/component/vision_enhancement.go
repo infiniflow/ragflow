@@ -26,6 +26,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,13 +135,17 @@ func isValidBase64(s string) bool {
 // (the only form available without a native renderer). Close releases any
 // re-acquired engine so native handles are not leaked.
 type visionImageCropper interface {
-	Crop(item map[string]any) (string, error)
+	Crop(item map[string]any) (*visionImage, error)
 	Close() error
 }
 
-// maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
-// descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
-// with non-empty image field).
+type visionImage struct {
+	Raster  image.Image
+	VLMData string
+}
+
+// maybeDispatchVisionEnhancement appends local OCR and VLM descriptions to
+// parsed image resources and table regions.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -156,53 +161,74 @@ func maybeDispatchVisionEnhancement(
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return dispatched, false, nil
-	}
-	// Language priority mirrors Python's enhance_media_sections_with_vision
-	// (rag/flow/parser/parser.py:778): the run-level dataset language first
-	// (the Parser pulls it into inputs from Globals), then the family setup's
-	// lang, then English.
 	family := resolveParserFamily(fileType)
 	setup := setups[family]
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// 1. Collect target items (images/tables that can be described). A target
-	// may carry an inlined image (docx/markdown, or any pre-inlined source) or,
-	// under cgo for PDF, only PDF positions — in which case the cropper
-	// re-acquires the source PDF and crops on demand (the parser no longer
-	// inlines PDF media). The cropper transparently handles both forms.
+	// Collect normalized visual resources. A table without an inline image or
+	// PDF crop locator is structured text, not an OCR target.
 	type target struct {
-		idx int
+		idx     int
+		vlmData string
 	}
-	var targets []target
+	var items []int
 	for i, item := range dispatched.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
 		if kd != "image" && kd != "table" {
 			continue
 		}
 		if img, _ := item["image"].(string); img != "" {
-			targets = append(targets, target{idx: i})
+			items = append(items, i)
 			continue
 		}
 		if _, ok := parser.ExtractPDFPositions(item); ok {
-			targets = append(targets, target{idx: i})
+			items = append(items, i)
 		}
 	}
-	if len(targets) == 0 {
+	if len(items) == 0 {
 		return dispatched, false, nil
 	}
 
-	// Acquire the on-demand cropper (cgo: crops from storage; !cgo: returns
-	// the inlined image). Best-effort: a failure here means no vision
-	// enhancement, matching Python's try/except pass.
+	// Crop and OCR sequentially so each raster is released before any VLM call.
 	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
 	if cerr != nil {
 		return dispatched, false, nil
 	}
 	defer cropper.Close()
+	modified := false
+	targets := make([]target, 0, len(items))
+	parseMethod := getStringOr(setup, "parse_method", "")
+	for _, itemIdx := range items {
+		if err := ctx.Err(); err != nil {
+			return dispatched, modified, err
+		}
+		resource, err := cropper.Crop(dispatched.JSON[itemIdx])
+		if err != nil || resource == nil {
+			continue
+		}
+		if resource.Raster != nil && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending {
+			if text, ocrErr := runLocalImageOCRImage(ctx, resource.Raster); ocrErr == nil && strings.TrimSpace(text) != "" {
+				appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
+				modified = true
+			}
+		}
+		if resource.VLMData == "" && resource.Raster != nil {
+			resource.VLMData, err = encodeVisionRaster(resource.Raster)
+			if err != nil {
+				continue
+			}
+		}
+		if isUsableVisionImage(resource.VLMData) {
+			targets = append(targets, target{idx: itemIdx, vlmData: resource.VLMData})
+		}
+	}
 
-	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
+	// Local OCR does not require tenant configuration; only the VLM phase does.
+	if tenantID == "" || len(targets) == 0 {
+		return dispatched, modified, nil
+	}
+
+	// Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
 	// default. Mirror Python's vlm_conf["llm_id"] preference.
 	modelRef := configuredMediaModelID(setup, family)
 	var driver modelModule.ModelDriver
@@ -220,15 +246,14 @@ func maybeDispatchVisionEnhancement(
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}
 	if err != nil {
-		// Model not available — skip vision enhancement silently, matching Python's try/except pass.
-		return dispatched, false, nil
+		return dispatched, modified, nil
 	}
 
 	// Hoist prompt once: language is invariant across items.
 	prompt, perr := figureVisionPromptBuilder(language)
 	if perr != nil {
 		//nolint:nilerr // Vision enhancement is best-effort.
-		return dispatched, false, nil
+		return dispatched, modified, nil
 	}
 
 	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
@@ -251,20 +276,11 @@ dispatch:
 			break dispatch
 		}
 		wg.Add(1)
-		go func(slot int, itemIdx int) {
+		go func(slot int, tg target) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			img, ierr := cropper.Crop(dispatched.JSON[itemIdx])
-			if ierr != nil || img == "" {
-				return
-			}
-			if !isUsableVisionImage(img) {
-				common.Warn("vision enhancement: invalid image data skipped",
-					zap.Int("item", itemIdx))
-				return
-			}
-			messages := buildVisionMessages(prompt, img)
+			messages := buildVisionMessages(prompt, tg.vlmData)
 			if len(messages) == 0 {
 				return
 			}
@@ -273,15 +289,14 @@ dispatch:
 				return
 			}
 			descriptions[slot] = extractVisionAnswer(resp)
-		}(slot, tg.idx)
+		}(slot, tg)
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return dispatched, false, err
 	}
 
-	// 4. Append descriptions to item text (single newline \n, matching Python).
-	modified := false
+	// Append descriptions after any OCR text (single newline \n, matching Python).
 	for slot, tg := range targets {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {
@@ -297,6 +312,36 @@ dispatch:
 	}
 
 	return dispatched, modified, nil
+}
+
+type ocrStatus int
+
+const (
+	ocrPending ocrStatus = iota
+	ocrAttempted
+	ocrUnknown
+)
+
+func mediaOCRStatus(fileType utility.FileType, parseMethod string, item map[string]any) ocrStatus {
+	if fileType != utility.FileTypePDF {
+		return ocrPending
+	}
+	if !strings.EqualFold(strings.TrimSpace(parseMethod), "deepdoc") {
+		return ocrUnknown
+	}
+	if kind, _ := item["doc_type_kwd"].(string); kind == "table" {
+		return ocrAttempted
+	}
+	return ocrPending
+}
+
+func appendItemText(item map[string]any, text string) {
+	existing, _ := item["text"].(string)
+	if existing == "" {
+		item["text"] = text
+		return
+	}
+	item["text"] = existing + "\n" + text
 }
 
 func buildFigureVisionPrompt(language string) (string, error) {

@@ -17,11 +17,16 @@
 package component
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -103,6 +108,123 @@ func fakeResolver(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (
 
 func fakePrompt(language string) (string, error) {
 	return "describe the figure in " + language, nil
+}
+
+func visionTestPNGBase64(t *testing.T) string {
+	t.Helper()
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(encoded.Bytes())
+}
+
+func TestVisionEnhancement_AppendsLocalOCRBeforeVLM(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "Existing caption",
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"}, nil)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	want := "Existing caption\n" + strings.TrimSpace(strings.Repeat("recognized ", 4)) + "\na diagram of a pipeline"
+	if got := res.JSON[0]["text"]; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+	if analyzer.detectCalls != 1 || analyzer.recognizeCalls != 1 {
+		t.Errorf("OCR calls = detect %d, recognize %d; want 1 each", analyzer.detectCalls, analyzer.recognizeCalls)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_SkipsOCRForPDFTableSourcesThatAlreadyTriedOrUnknown(t *testing.T) {
+	for _, parseMethod := range []string{"deepdoc", "mineru"} {
+		t.Run(parseMethod, func(t *testing.T) {
+			analyzer := &requestContextAnalyzer{}
+			useRequestContextAnalyzer(t, analyzer)
+			invoker := &visionEnhanceCaptureInvoker{}
+			swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON: []map[string]any{{
+					"text":         "Existing table",
+					"image":        visionTestPNGBase64(t),
+					"doc_type_kwd": "table",
+				}},
+			}
+			res, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+				map[string]any{"tenant_id": "t1"},
+				map[string]schema.ParserSetup{"pdf": {"parse_method": parseMethod}},
+			)
+			if err != nil {
+				t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want VLM enhancement")
+			}
+			if analyzer.detectCalls != 0 {
+				t.Errorf("OCR detect calls = %d, want 0 for parse_method %q", analyzer.detectCalls, parseMethod)
+			}
+			if got, want := res.JSON[0]["text"], "Existing table\na diagram of a pipeline"; got != want {
+				t.Errorf("enhanced text = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestVisionEnhancement_RunsOCRWithoutTenantForVLM(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "Existing caption",
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched, nil,
+		map[string]schema.ParserSetup{"xlsx": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want local OCR to modify the item")
+	}
+	if analyzer.detectCalls != 1 || analyzer.recognizeCalls != 1 {
+		t.Errorf("OCR calls = detect %d, recognize %d; want 1 each", analyzer.detectCalls, analyzer.recognizeCalls)
+	}
+	if len(invoker.images) != 0 {
+		t.Errorf("VLM calls = %d, want 0 without tenant_id", len(invoker.images))
+	}
+	want := "Existing caption\n" + strings.TrimSpace(strings.Repeat("recognized ", 4))
+	if got := res.JSON[0]["text"]; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
 }
 
 func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {

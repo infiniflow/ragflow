@@ -20,15 +20,19 @@ import (
 //
 // Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
 func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom float64) string {
+	return encodeCroppedImage(cropSectionImageRaster(posTag, decodedImages, zoom))
+}
+
+func cropSectionImageRaster(posTag string, decodedImages map[int]image.Image, zoom float64) image.Image {
 	if len(decodedImages) == 0 {
 		common.Warn("cropSectionImage: no page images available, skipping image generation")
-		return ""
+		return nil
 	}
 
 	positions := ExtractPositions(posTag)
 	if len(positions) == 0 {
 		common.Warn("cropSectionImage: empty position list in tag", zap.String("posTag", posTag[:min(80, len(posTag))]))
-		return ""
+		return nil
 	}
 
 	// Filter valid positions (all pages available).
@@ -47,7 +51,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	}
 	if len(valid) == 0 {
 		common.Warn("cropSectionImage: no valid positions after filtering, skipping crop")
-		return ""
+		return nil
 	}
 
 	// Context padding (Python: 120px above first, 120 below last, 6px gap)
@@ -147,7 +151,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 		pageImg, ok := decodedImages[pn0]
 		if !ok {
 			common.Warn("cropSectionImage: page image not found", zap.Int("page", pn0))
-			return ""
+			return nil
 		}
 		pageH := float64(pageImg.Bounds().Dy())
 		bottomClamped := math.Min(accumBottom, pageH)
@@ -170,7 +174,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 			pageImg2, ok := decodedImages[pn]
 			if !ok {
 				common.Warn("cropSectionImage: page image not found for subsequent page", zap.Int("page", pn))
-				return ""
+				return nil
 			}
 			pageH2 := float64(pageImg2.Bounds().Dy())
 			bottomClamped2 := math.Min(bottomRemaining, pageH2)
@@ -186,7 +190,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	}
 
 	if len(segments) == 0 {
-		return ""
+		return nil
 	}
 
 	// Stitch vertically with gray background and 6px gaps.
@@ -235,7 +239,14 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 		curY += srcH + gap
 	}
 
-	data, err := EncodePNG(stitched)
+	return stitched
+}
+
+func encodeCroppedImage(img image.Image) string {
+	if img == nil {
+		return ""
+	}
+	data, err := EncodePNG(img)
 	if err != nil {
 		common.Warn("cropSectionImage: PNG encode failed", zap.Error(err))
 		return ""
@@ -598,8 +609,15 @@ func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
 //
 // Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
 func CropSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
+	return encodeCroppedImage(CropSectionPositionsRaster(positions, decodedImages, zoom))
+}
+
+// CropSectionPositionsRaster crops typed PDF positions and returns the raster
+// without encoding it. Callers that need both OCR and a VLM payload can reuse
+// this image and encode it once after OCR.
+func CropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) image.Image {
 	if len(positions) == 0 {
-		return ""
+		return nil
 	}
 	var tag strings.Builder
 	for _, pos := range positions {
@@ -614,9 +632,9 @@ func CropSectionPositions(positions []pdf.Position, decodedImages map[int]image.
 		}
 	}
 	if tag.Len() == 0 {
-		return ""
+		return nil
 	}
-	return CropSectionImage(tag.String(), decodedImages, zoom)
+	return cropSectionImageRaster(tag.String(), decodedImages, zoom)
 }
 
 // PositionsFromMatrix converts the _pdf_positions / positions matrix form
