@@ -93,6 +93,28 @@ def test_detect_csv_delimiter_falls_back_to_a_comma(text):
 
 
 @pytest.mark.p2
+def test_a_whitespace_only_line_is_not_a_row():
+    assert detect_csv_delimiter("Name;Region\nWidget;EU\n   \nGadget;US\n") == ";"
+
+
+@pytest.mark.p2
+def test_the_row_the_sample_cuts_is_left_out():
+    """Fewer than CSV_SAMPLE_ROWS rows fit in the sample, so it ends inside a row."""
+    cell = "x" * 4000
+    text = "a;b;c\n" + "".join(f"{i};{cell};{cell}\n" for i in range(60))
+
+    assert detect_csv_delimiter(text) == ";"
+
+
+@pytest.mark.p2
+def test_the_sample_can_end_inside_a_quoted_line_break():
+    cell = '"' + ("y" * 70 + "\n") * 60 + '"'
+    text = "a;b;c\n" + "".join(f"{i};{cell};end\n" for i in range(40))
+
+    assert detect_csv_delimiter(text) == ";"
+
+
+@pytest.mark.p2
 @pytest.mark.parametrize("delimiter", [",", ";", "\t", "|"])
 def test_a_csv_keeps_its_columns_whatever_the_separator(delimiter):
     """`_read_csv` is the path a .csv upload takes through the Excel parser."""

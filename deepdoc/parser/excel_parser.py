@@ -37,26 +37,35 @@ CSV_SAMPLE_CHARS = 64 * 1024
 CSV_SAMPLE_ROWS = 20
 
 
-def _consistent_column_count(sample, delimiter):
+def _consistent_column_count(sample, delimiter, truncated):
     """Columns per row under `delimiter`, or 0 when the rows disagree.
 
     A separator the file was not written with either does not occur at all (one
     column) or occurs by accident, and then the rows do not line up. Requiring
     the same count on every row is what keeps a comma inside a sentence, or a
     semicolon inside a quoted field, from being read as a separator.
+
+    When `truncated` is set, the sample is a prefix of a longer file, so the row
+    it ends in stops wherever the read did, between two fields or inside a
+    quoted one. That row is left out rather than counted as having fewer columns.
     """
-    count = 0
+    rows = []
     try:
         for index, row in enumerate(csv.reader(StringIO(sample, newline=""), delimiter=delimiter)):
             if index >= CSV_SAMPLE_ROWS:
                 break
-            if not row:  # a blank line says nothing about the separator
-                continue
-            if count and len(row) != count:
-                return 0
-            count = len(row)
+            if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                rows.append(row)
+        else:
+            if truncated and len(rows) > 1:
+                rows.pop()
     except csv.Error:
         return 0
+    count = 0
+    for row in rows:
+        if count and len(row) != count:
+            return 0
+        count = len(row)
     return count if count > 1 else 0
 
 
@@ -67,10 +76,11 @@ def detect_csv_delimiter(text):
     semicolon separated export with one does not fail: it returns a single
     column holding the whole row, separators included.
     """
+    truncated = len(text) > CSV_SAMPLE_CHARS
     sample = text[:CSV_SAMPLE_CHARS]
     best_delimiter, best_columns = ",", 0
     for delimiter in CSV_DELIMITERS:
-        columns = _consistent_column_count(sample, delimiter)
+        columns = _consistent_column_count(sample, delimiter, truncated)
         if columns > best_columns:
             best_delimiter, best_columns = delimiter, columns
     return best_delimiter
