@@ -1007,16 +1007,22 @@ async def delete_session_message(chat_id, session_id, msg_id):
         if not ok or conv.dialog_id != chat_id:
             return get_data_error_result(message="Session not found!")
         conv = conv.to_dict()
+        # QA pairs share a message id across user/assistant entries, and
+        # reference entries follow QA pairs only.
         for i, msg in enumerate(conv["message"]):
             if msg_id != msg.get("id", ""):
                 continue
-            assert conv["message"][i + 1]["id"] == msg_id
+            if i + 1 >= len(conv["message"]) or conv["message"][i + 1].get("id", "") != msg_id:
+                return get_data_error_result(message="Message not found!")
             conv["message"].pop(i)
             conv["message"].pop(i)
-            ref_index = (i - 1) // 2
-            conv["reference"].pop(ref_index)
+            ref_index = i // 2
+            if 0 <= ref_index < len(conv["reference"]):
+                conv["reference"].pop(ref_index)
+            ConversationService.update_by_id(conv["id"], conv)
             break
-        ConversationService.update_by_id(conv["id"], conv)
+        else:
+            return get_data_error_result(message="Message not found!")
         return get_json_result(data=_build_session_response(conv))
     except Exception as ex:
         return server_error_response(ex)
