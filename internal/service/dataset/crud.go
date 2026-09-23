@@ -428,7 +428,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 	}); err != nil {
 		return err
 	}
-	common.Info("Deleted dataset", zap.String("dataset", dataset), zap.String("kb_id", kb.ID))
+	common.Info("Deleted dataset", zap.String("dataset", datasetNameID), zap.String("kb_id", kb.ID))
 	return nil
 }
 
