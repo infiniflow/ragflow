@@ -411,6 +411,20 @@ describe('collectCanvasIssues: missing required fields', () => {
     );
   });
 
+  it('flags an Extractor node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Extractor:e1', 'Extractor', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Extractor:e1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorModelMissing',
+      }),
+    );
+  });
+
   it('flags an invalid Parser form only after the node was edited', () => {
     const parserNode = makeNode('Parser:p1', 'Parser', { setups: [] });
     const connected = [makeEdge('File', 'Parser:p1')];
