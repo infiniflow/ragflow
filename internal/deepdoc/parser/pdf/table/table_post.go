@@ -257,10 +257,15 @@ func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 			// PageNumber == 0: page numbers are 0-based, so the legitimate first
 			// page carries PageNumber == 0 and must still be scoped to its page.
 			// The original cross-product keeps the highest-indexed table a box
-			// overlaps as lastTableTI; candidates are ordered by ascending table
-			// index, so assigning lastTableTI on every match leaves the highest
-			// index in place — matching the original semantics. seen avoids
-			// re-testing a table whose positions span several slots on the page.
+			// overlaps as lastTableTI. Candidates are not strictly ordered by
+			// table index here (page-specific positions on this page precede the
+			// page-agnostic noPage positions, which are appended last), so we must
+			// not blindly overwrite lastTableTI on every match: a lower-indexed
+			// page-agnostic table sitting at the tail would otherwise win over a
+			// higher-indexed page-specific table. Keep the maximum index instead,
+			// which is order-independent and reproduces the original semantics
+			// exactly. seen avoids re-testing a table whose positions span
+			// several slots on the page.
 			var cands []pagePosition
 			if !boxes[i].HasPageNumber {
 				cands = all
@@ -276,7 +281,9 @@ func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
 				}
 				if boxOverlapsPositionPage(boxes[i], tables[c.tableIdx].Positions[c.posIdx]) {
 					seen[c.tableIdx] = true
-					lastTableTI = c.tableIdx
+					if c.tableIdx > lastTableTI {
+						lastTableTI = c.tableIdx
+					}
 				}
 			}
 			continue
