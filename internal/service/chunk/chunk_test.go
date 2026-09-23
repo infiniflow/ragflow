@@ -881,6 +881,55 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 	}
 }
 
+// A request that changes content and drops the image must still schedule the
+// Wiki refresh when the stored object cannot be deleted: the index update has
+// already committed by then.
+func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	wikiCalls := 0
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		removeChunkImageFunc: func(string, string) error {
+			return errors.New("storage unavailable")
+		},
+		markWikiDirtyFunc: func(tenantID, datasetID, documentID string, chunkIDs []string) {
+			wikiCalls++
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	content := "updated content"
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		Content:         &content,
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err == nil || !strings.Contains(err.Error(), "Failed to remove chunk image") {
+		t.Fatalf("UpdateChunk() error = %v, want the removal failure", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	if wikiCalls != 1 {
+		t.Fatalf("markWikiDirty calls = %d, want 1 (the index update already committed)", wikiCalls)
+	}
+}
+
 func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
 	cases := []struct {
 		name      string

@@ -99,6 +99,7 @@ type ChunkService struct {
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	storeChunkImageFunc     func(string, string, []byte, string) error
 	removeChunkImageFunc    func(string, string) error
+	markWikiDirtyFunc       func(tenantID, datasetID, documentID string, chunkIDs []string)
 	tokenizeFunc            func(string) (string, error)
 	fineGrainedTokenizeFunc func(string) (string, error)
 	numTokensFunc           func(string) int
@@ -1257,6 +1258,13 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}
+	// The index update above already committed, so a failing image removal must
+	// not skip the Wiki refresh for a content/availability change in the same
+	// request. The request still answers with the removal error (the Python
+	// reference does the same); the stored object is an orphan by then.
+	if req.Content != nil || req.Available != nil {
+		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+	}
 	if removeImageAfterUpdate {
 		if err = s.removeChunkImage(ctx, req.DatasetID, req.ChunkID); err != nil {
 			common.Error("failed to remove chunk image", err,
@@ -1264,9 +1272,6 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 				zap.String("chunk_id", req.ChunkID))
 			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 		}
-	}
-	if req.Content != nil || req.Available != nil {
-		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
 	}
 
 	return nil
@@ -1500,6 +1505,10 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 }
 
 func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) {
+	if s.markWikiDirtyFunc != nil {
+		s.markWikiDirtyFunc(tenantID, datasetID, documentID, chunkIDs)
+		return
+	}
 	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if err := knowledge_compile.MarkWikiDocumentDirty(markCtx, tenantID, datasetID, documentID, chunkIDs); err != nil {
