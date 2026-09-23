@@ -125,7 +125,11 @@ def _chunk_mapping_schema() -> dict:
     if _MAPPING_SCHEMA_CACHE is None:
         fp = os.path.join(get_project_base_directory(), "conf", "vastbase_mapping.json")
         try:
-            _MAPPING_SCHEMA_CACHE = json.load(open(fp)) if os.path.exists(fp) else {}
+            if os.path.exists(fp):
+                with open(fp) as f:
+                    _MAPPING_SCHEMA_CACHE = json.load(f)
+            else:
+                _MAPPING_SCHEMA_CACHE = {}
         except Exception as e:
             logger.warning(f"Failed to load vastbase_mapping.json: {e}")
             _MAPPING_SCHEMA_CACHE = {}
@@ -438,7 +442,8 @@ class VBConnection(DocStoreConnection):
             fp_mapping = os.path.join(get_project_base_directory(), "conf", "vastbase_mapping.json")
             if not os.path.exists(fp_mapping):
                 raise Exception(f"Mapping file not found at {fp_mapping}")
-            schema = json.load(open(fp_mapping))
+            with open(fp_mapping) as f:
+                schema = json.load(f)
             vector_name = f"q_{vector_size}_vec"
 
             columns = []
@@ -536,7 +541,8 @@ class VBConnection(DocStoreConnection):
             if not os.path.exists(fp_mapping):
                 logger.error(f"Document metadata mapping file not found at {fp_mapping}")
                 return False
-            schema = json.load(open(fp_mapping))
+            with open(fp_mapping) as f:
+                schema = json.load(f)
             columns = []
             for field_name, field_info in schema.items():
                 field_type = field_info["type"]
@@ -1084,6 +1090,7 @@ class VBConnection(DocStoreConnection):
                             if not de:
                                 de = ""
                         new_value[v] = de
+                        del new_value[k]
                     else:
                         for kk, vv in v.items():
                             removeValue[kk] = vv
