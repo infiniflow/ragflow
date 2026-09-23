@@ -1310,6 +1310,7 @@ func TestGetAgentbotLogs_DeniesMismatchedBoundAgent(t *testing.T) {
 	h := NewBotHandler(nil)
 	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
 		t.Fatal("AgentbotLogs should not be called for a mismatched bound agent")
+		return nil, common.CodeServerError, errors.New("unexpected call")
 	}}
 	h.GetAgentbotLogs(c)
 
