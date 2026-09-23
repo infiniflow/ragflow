@@ -59,11 +59,10 @@ After recording, the system converts the speech to text with the configured spee
 
 Click the paper-airplane icon next to the Chat name to open **Embed into website**. Use this configuration to integrate Chat into an external webpage or business system.
 
-RAGFlow provides HTTP and Python APIs for integration:
+RAGFlow provides an HTTP API for integration:
 
 - [Acquire a RAGFlow API key](../../develop/acquire_ragflow_api_key.md)
 - [HTTP API reference](../../references/http_api_reference.md)
-- [Python API reference](../../references/python_api_reference.md)
 
 You can also embed the created Chat assistant in a third-party webpage with an iframe:
 

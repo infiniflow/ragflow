@@ -26,7 +26,3 @@ After the first deployment, you can log in with the default administrator accoun
 This account is used to initialize the system and create subsequent administrator accounts. It is not recommended as a long-term shared daily operations account.
 
 After the first login, reset the default password as soon as possible and create separate accounts for different administrators. In daily administration, grant the `Superuser` identity only to users who actually need Admin UI responsibilities.
-
-## Change the Admin Account Password
-
-This feature is not available yet.

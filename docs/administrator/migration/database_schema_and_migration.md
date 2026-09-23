@@ -51,7 +51,5 @@ Check the migration logs as well as the exit status before starting services. So
 | --- | --- |
 | MySQL | Uses the GORM MySQL driver and runs the Go migration sequence. |
 | OceanBase | Supported through its MySQL-compatible protocol with `DB_TYPE=oceanbase`; the Go DAO still uses the MySQL driver. Test the migration with your OceanBase version and back up first. |
-| PostgreSQL | The Go metadata database configuration and DAO do not provide a PostgreSQL migration path. Do not run this command against PostgreSQL. |
-| GaussDB | The Go migration path does not support GaussDB. The Go Docker entrypoint skips migrations for `DB_TYPE=gaussdb` or `gauss`; that skip does not make Go database migration or startup support available. |
 
 This table concerns the **metadata database**, not the document search engine. Configuring OceanBase as a document engine does not by itself change where metadata migrations run.
