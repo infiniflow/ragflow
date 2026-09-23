@@ -27,6 +27,7 @@ import pytest
 from psycopg2 import sql
 
 import rag.utils.vastbase_conn as vastbase_conn_module
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 from rag.utils.vastbase_conn import (
     VBConnection,
     _parse_floatvector,
@@ -66,6 +67,7 @@ class RecordingCursor:
 
     def __init__(self, conn):
         self._conn = conn
+        self.description = conn.description
 
     def __enter__(self):
         return self
@@ -91,13 +93,14 @@ class RecordingCursor:
 class RecordingConnection:
     """psycopg2 connection stub: records executed SQL plus canned fetch results."""
 
-    def __init__(self, fetchone_results=None, fetchall_results=None, error_on_execute=None):
+    def __init__(self, fetchone_results=None, fetchall_results=None, error_on_execute=None, description=None):
         self.executed = []
         self.commits = 0
         self.rollbacks = 0
         self.fetchone_results = list(fetchone_results or [])
         self.fetchall_results = list(fetchall_results or [])
         self.error_on_execute = error_on_execute
+        self.description = description
 
     def cursor(self):
         return RecordingCursor(self)
@@ -669,3 +672,27 @@ class TestTableOperations:
         # The doc-meta table name carries the tenant id itself — no kb suffix is appended.
         # get_table_exists() passes the name as a bind parameter.
         assert conn.executed[0][1] == ("ragflow_doc_meta_t1",)
+
+
+class TestSearchDenseSql:
+    @pytest.mark.parametrize("compatibility,distance_op", [("PG", "<=>"), ("B", "<+>")])
+    def test_similarity_threshold_wraps_the_knn_scan(self, monkeypatch, render_as_string, compatibility, distance_op):
+        """The dense-search threshold must live in an outer WHERE over the KNN
+        subquery: a distance predicate in the inner WHERE makes the planner
+        fall back to a Seq Scan and bypass the graph_index (HNSW)."""
+        conn = RecordingConnection(fetchall_results=[[]], description=[("id",)])
+        connection = object.__new__(_vb_connection_class())
+        connection.db_compatibility = compatibility
+        connection.get_conn = contextlib.contextmanager(lambda: (yield conn))
+        monkeypatch.setattr(vastbase_conn_module, "get_table_exists", lambda c, t: True)
+        dense = MatchDenseExpr("q_3_vec", [0.1, 0.2, 0.3], "float", "cosine", 10, {"similarity": 0.17})
+        connection.search(["id"], [], {}, [dense], OrderByExpr(), 0, 10, "vb", ["kb1"])
+
+        rendered = _render(conn.executed[0][0])
+        inner, _, outer = rendered.partition(") AS vector_candidates")
+        # Pure KNN scan: ORDER BY + LIMIT, no WHERE — the graph index stays eligible.
+        assert "WHERE" not in inner
+        assert f'ORDER BY "q_3_vec" {distance_op} ' in inner
+        assert "LIMIT 10" in inner
+        # The threshold filters the SIMILARITY alias after the scan, in the outer query.
+        assert 'WHERE "SIMILARITY" >= 0.17' in outer
