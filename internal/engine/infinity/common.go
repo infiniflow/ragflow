@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"regexp"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -327,4 +328,111 @@ func buildChunkTableName(baseName, datasetID string) string {
 // buildMetadataTableName returns the metadata table name for a tenant
 func buildMetadataTableName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+}
+
+// analyzerLanguages are the dataset languages that need their own RAG
+// analyzer. Infinity's analyzer folds their diacritics to ASCII and skips
+// stemming, so a dataset in one of them has to be indexed and queried through
+// "rag-<language>" instead of the default "rag-coarse"/"rag-fine" pair.
+//
+// They are the only two languages whose analyzer differs from the default:
+// every other name either selects a Snowball stemmer (english, dutch, german,
+// ... -- SNOWBALL_LANGUAGE_MAP in Infinity's rag_analyzer) or is a no-op
+// (Chinese, Japanese, Korean, ... use dictionary segmentation, not stemming).
+// Naming a stemmer here would switch it for every newly created dataset in
+// that language, which is a behaviour change of its own.
+//
+// Mirrors _ANALYZER_LANGUAGES in common/doc_store/infinity_conn_base.py.
+var analyzerLanguages = map[string]struct{}{
+	"czech":  {},
+	"slovak": {},
+}
+
+// ragAnalyzer is the analyzer family whose behaviour the dataset language
+// changes. Fields indexed with "whitespace-#" or "rankfeatures" carry
+// keywords, not prose.
+const ragAnalyzer = "rag"
+
+// analyzerForLanguage returns the analyzer to index and query a dataset in
+// language with. Infinity analyzes the query with the analyzer of the fulltext
+// index it matches against, so the language has to be baked into the index
+// when it is created -- there is no per-query analyzer to pass. Chunk tables
+// are per-dataset, which is what makes a per-dataset analyzer possible.
+//
+// Languages outside analyzerLanguages, and analyzers outside the rag family,
+// are returned unchanged.
+func analyzerForLanguage(analyzer, language string) string {
+	key := strings.ToLower(strings.TrimSpace(language))
+	if _, ok := analyzerLanguages[key]; !ok {
+		return analyzer
+	}
+	if base, _, _ := strings.Cut(analyzer, "-"); base != ragAnalyzer {
+		return analyzer
+	}
+	return analyzer + "-" + key
+}
+
+// indexNamePartRe matches everything that cannot appear in an index name.
+var indexNamePartRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+// fulltextIndexName is the name of the fulltext index on fieldName under
+// analyzer. Infinity analyzes a query with the first index it finds for a
+// field, ordered by name, so these names decide which of a field's analyzers a
+// query is analyzed with.
+func fulltextIndexName(fieldName, analyzer string) string {
+	return fmt.Sprintf("ft_%s_%s", indexNamePartRe.ReplaceAllString(fieldName, "_"), indexNamePartRe.ReplaceAllString(analyzer, "_"))
+}
+
+// wantedFulltextIndexes returns the fulltext indexes fieldName should have
+// under language, as name -> analyzer.
+func wantedFulltextIndexes(fieldName string, analyzers []string, language string) map[string]string {
+	wanted := make(map[string]string, len(analyzers))
+	for _, configured := range analyzers {
+		analyzer := analyzerForLanguage(configured, language)
+		wanted[fulltextIndexName(fieldName, analyzer)] = analyzer
+	}
+	return wanted
+}
+
+// hasForeignRagIndex reports whether fieldName already carries a rag fulltext
+// index under another language.
+//
+// A table's rag analyzer is settled when its first fulltext index is built:
+// Infinity analyzes a query with the field's first index by name, so adding
+// "ft_content_rag_coarse" next to "ft_content_rag_coarse_slovak" would win on
+// name order and silently undo the dataset's language -- and adding the slovak
+// one next to an existing default would silently do nothing. Either way the
+// table keeps what it has, and a dataset that needs the other analyzer has to
+// be reindexed into a fresh table.
+//
+// Indexes this language does want are not foreign, so a field missing one of
+// its variants still gets it.
+//
+// Mirrors _has_foreign_rag_index in common/doc_store/infinity_conn_base.py.
+func hasForeignRagIndex(indexNames []string, fieldName string, wanted map[string]string) bool {
+	prefix := fmt.Sprintf("ft_%s_%s", indexNamePartRe.ReplaceAllString(fieldName, "_"), ragAnalyzer)
+	for _, name := range indexNames {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		if _, ok := wanted[name]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// listIndexNames returns the table's index names. The SDK types its response
+// as interface{} and the concrete type lives in its internal package, so read
+// it through the getter the thrift codegen provides.
+func listIndexNames(table *infinity.Table) ([]string, error) {
+	resp, err := table.ListIndexes()
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := resp.(interface{ GetIndexNames() []string })
+	if !ok {
+		return nil, fmt.Errorf("unexpected ListIndexes response type: %T", resp)
+	}
+	return lister.GetIndexNames(), nil
 }

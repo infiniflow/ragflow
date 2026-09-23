@@ -247,7 +247,7 @@ class GaussDBMemoryConnection(GaussDBConnectionBase):
         # the message schema instead of the document chunk schema.
         self.ddl = GaussDBMemoryDDLBuilder(schema=self.resolved_schema)
 
-    def create_idx(self, index_name: str, memory_id: str, vector_size: int, parser_id: str = None):
+    def create_idx(self, index_name: str, memory_id: str, vector_size: int, parser_id: str = None, language: str = None):
         table = self.physical_table(index_name)
         # Acquire the advisory lock before creating the base table, standard
         # indexes, full-text index, vector column, and vector-empty index. The

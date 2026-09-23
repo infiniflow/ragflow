@@ -189,6 +189,9 @@ def _load_module(monkeypatch, request_payload):
     _stub("rag.app.tag", label_question=lambda *a, **k: {})
     nlp_pkg = _pkg("rag.nlp", repo_root / "rag" / "nlp")
     nlp_pkg.search = SimpleNamespace(index_name=lambda tid: f"idx-{tid}")
+    # The kb above carries no language, which is what the real resolver
+    # returns None for.
+    nlp_pkg.dataset_language = lambda kbs: None
     _pkg("rag.prompts", repo_root / "rag" / "prompts")
     _stub("rag.prompts.generator", cross_languages=lambda *a, **k: None, keyword_extraction=lambda *a, **k: None)
     rag_pkg.nlp = nlp_pkg

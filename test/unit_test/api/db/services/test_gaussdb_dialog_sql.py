@@ -605,7 +605,7 @@ def _run_field_map_empty_chat(monkeypatch, dialog_service, chunks, doc_aggs):
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda *_args, **_kwargs: ([types.SimpleNamespace(tenant_id=tenant_id)], object(), None, chat, None),
+        lambda *_args, **_kwargs: ([types.SimpleNamespace(tenant_id=tenant_id, language="English")], object(), None, chat, None),
     )
     monkeypatch.setattr(dialog_service, "kb_prompt", lambda *_args, **_kwargs: ["content"])
     monkeypatch.setattr(dialog_service, "message_fit_in", lambda messages, _limit: (0, messages))
@@ -686,7 +686,7 @@ def _run_configured_chat(
         dialog_service,
         "get_models",
         lambda *_args, **_kwargs: (
-            [types.SimpleNamespace(id=kb_id, tenant_id=tenant_id, parser_config={"field_map": resolved_field_map})],
+            [types.SimpleNamespace(id=kb_id, tenant_id=tenant_id, language="English", parser_config={"field_map": resolved_field_map})],
             embd_mdl,
             None,
             chat,
@@ -1704,6 +1704,7 @@ def test_tc_sql_1001_use_sql_none_falls_back_to_retrieval(
         rerank_mdl=None,
         rank_feature=None,
         rerank_candidates_count=64,
+        language="English",
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1753,6 +1754,7 @@ def test_tc_sql_1002_validator_rejection_falls_back_to_retrieval(
         rerank_mdl=None,
         rank_feature=None,
         rerank_candidates_count=64,
+        language="English",
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
@@ -1804,6 +1806,7 @@ def test_tc_sql_1003_sql_timeout_falls_back_to_retrieval(
         rerank_mdl=None,
         rank_feature=None,
         rerank_candidates_count=64,
+        language="English",
     )
     assert results[-1]["answer"] == "fallback answer"
     assert results[-1]["reference"] == _expected_fallback_reference(kb_id)
