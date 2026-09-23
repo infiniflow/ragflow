@@ -70,21 +70,18 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	}
 }
 
-func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
+func TestTokenChunkerPreservesSpreadsheetSegmentBoundaries(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{"chunk_token_size": 512})
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
+	segOne := spreadsheetSegmentItem("Sheet1", []string{"ID", "Status"}, [][]string{{"A-1", "paid"}}, 1, 2)
+	segTwo := spreadsheetSegmentItem("Sheet2", []string{"ID", "Status"}, [][]string{{"B-1", "open"}}, 2, 2)
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "orders.xlsx",
 		"file_type":     "xlsx",
 		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1},
-			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 1},
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2},
-			{"text": "ID: B-1; Status: open", "doc_type_kwd": "text", "ck_type": "table_row", "sheet_index": 2},
-		},
+		"json":          []map[string]any{segOne, segTwo},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -94,14 +91,14 @@ func TestTokenChunkerPreservesSpreadsheetRowBoundaries(t *testing.T) {
 		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
 	}
 	if len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want one row chunk per sheet", chunks)
+		t.Fatalf("chunks = %#v, want one chunk per segment", chunks)
 	}
-	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "ID: B-1; Status: open" {
-		t.Fatalf("row chunks = %#v", chunks)
+	if chunks[0]["text"] != segOne["text"] || chunks[1]["text"] != segTwo["text"] {
+		t.Fatalf("segment chunks = %#v", chunks)
 	}
 	for i, chunk := range chunks {
-		if chunk["ck_type"] != "table_row" {
-			t.Errorf("chunk[%d] ck_type = %v, want table_row", i, chunk["ck_type"])
+		if chunk["ck_type"] != "table" {
+			t.Errorf("chunk[%d] ck_type = %v, want table", i, chunk["ck_type"])
 		}
 	}
 }
@@ -111,25 +108,23 @@ func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
+	segData := spreadsheetSegmentItem("Sheet1", []string{"ID", "Status"}, [][]string{{"A-1", "paid"}}, 1, 2)
+	segHeaderOnly := spreadsheetSegmentItem("Sheet2", []string{"Name", "Owner"}, nil, 2, 1)
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "orders.xlsx",
 		"file_type":     "xlsx",
 		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-1", "sheet_index": 1},
-			{"text": "ID: A-1; Status: paid", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1},
-			{"text": "Name; Owner", "doc_type_kwd": "table", "ck_type": "table_header", "table_id": "sheet-2", "sheet_index": 2},
-		},
+		"json":          []map[string]any{segData, segHeaderOnly},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want data row and header-only sheet", chunks)
+		t.Fatalf("chunks = %#v, want data segment and header-only segment", chunks)
 	}
-	if chunks[0]["text"] != "ID: A-1; Status: paid" || chunks[1]["text"] != "Name; Owner" {
-		t.Fatalf("chunks = %#v, want row followed by header-only sheet", chunks)
+	if chunks[0]["text"] != segData["text"] || chunks[1]["text"] != segHeaderOnly["text"] {
+		t.Fatalf("chunks = %#v, want data segment followed by header-only segment", chunks)
 	}
 }
 

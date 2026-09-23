@@ -42,100 +42,33 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // value parsing.
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
-func recordsToSpreadsheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) []map[string]any {
-	if len(records) == 0 {
-		return nil
-	}
-	if headerRow <= 0 {
-		headerRow = 1
-	}
-	if len(dataRows) != len(records)-1 {
-		dataRows = make([]int, len(records)-1)
-		for i := range dataRows {
-			dataRows[i] = headerRow + i + 1
-		}
-	}
-	maxCols := 0
-	for _, row := range records {
-		if len(row) > maxCols {
-			maxCols = len(row)
-		}
-	}
-	if maxCols == 0 {
-		return nil
-	}
-	header := append([]string(nil), records[0]...)
-	if len(header) == 0 {
-		header = padSpreadsheetRow(header, maxCols)
-	}
-	headerColEnd := len(header)
-	tableID := fmt.Sprintf("sheet-%d", sheetIndex)
-	items := make([]map[string]any, 0, len(records))
-	headerText := spreadsheetRowText(header, nil, sheet)
-	items = append(items, map[string]any{
-		"text":         headerText,
-		"doc_type_kwd": DocTypeTable,
-		"ck_type":      "table_header",
-		"table_id":     tableID,
-		"sheet":        sheet,
-		"sheet_index":  sheetIndex,
-		"cells":        header,
-		"row_start":    headerRow,
-		"row_end":      headerRow,
-		"col_start":    1,
-		"col_end":      headerColEnd,
-		"positions":    [][]float64{{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)}},
-	})
-	for i, sourceRow := range records[1:] {
-		cells := append([]string(nil), sourceRow...)
-		colStart, colEnd := nonEmptyColumnRange(cells)
-		if colStart == 0 {
-			continue
-		}
-		rowNumber := dataRows[i]
-		items = append(items, map[string]any{
-			"text":         spreadsheetRowText(header, cells, sheet),
-			"doc_type_kwd": DocTypeText,
-			"ck_type":      "table_row",
-			"table_id":     tableID,
-			"sheet":        sheet,
-			"sheet_index":  sheetIndex,
-			"headers":      header,
-			"cells":        cells,
-			"row_start":    rowNumber,
-			"row_end":      rowNumber,
-			"col_start":    colStart,
-			"col_end":      colEnd,
-			"positions":    [][]float64{{float64(sheetIndex), float64(rowNumber), float64(rowNumber), float64(colStart), float64(colEnd)}},
-		})
-	}
-	return items
+// spreadsheetSegmentRow is one emitted data row: its cells for the markup
+// and its row-aligned position tuple.
+type spreadsheetSegmentRow struct {
+	cells    []string
+	tuple    []float64
+	rowNum   int
+	colStart int
 }
 
-func recordsToHTMLTableItem(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int) map[string]any {
-	if len(records) == 0 {
-		return nil
-	}
-	if headerRow <= 0 {
-		headerRow = 1
-	}
-	colEnd := 1
-	for _, row := range records {
-		if len(row) > colEnd {
-			colEnd = len(row)
-		}
-	}
+// renderTableHTML renders one sheet segment in the spreadsheet wire format: a
+// captioned <table> whose header row is <th> cells and whose data rows are
+// <td> cells, one row per line. It is the byte contract every consumer reads —
+// the chunkers parse this shape back row by row (see
+// internal/ingestion/component/chunker/html_rows.go), and the positions matrix
+// emitted next to it is aligned one tuple per <tr>, header included.
+func renderSpreadsheetTable(sheet string, header []string, rows [][]string) string {
 	var builder strings.Builder
 	builder.WriteString("<table><caption>")
 	builder.WriteString(html.EscapeString(sheet))
 	builder.WriteString("</caption>\n<tr>")
-	for _, cell := range records[0] {
+	for _, cell := range header {
 		builder.WriteString("<th>")
 		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
 		builder.WriteString("</th>")
 	}
 	builder.WriteString("</tr>\n")
-	for _, row := range records[1:] {
+	for _, row := range rows {
 		builder.WriteString("<tr>")
 		for _, cell := range row {
 			builder.WriteString("<td>")
@@ -145,19 +78,157 @@ func recordsToHTMLTableItem(records [][]string, sheet string, sheetIndex, header
 		builder.WriteString("</tr>\n")
 	}
 	builder.WriteString("</table>\n")
-	rowStart, rowEnd := headerRow, headerRow
-	if len(dataRows) > 0 {
-		rowStart, rowEnd = dataRows[0], dataRows[len(dataRows)-1]
-	}
-	return NewTableJSONItem(builder.String(), sheet, [][]float64{{
-		float64(sheetIndex), float64(rowStart), float64(rowEnd), 1, float64(colEnd),
-	}})
+	return builder.String()
 }
 
-func padSpreadsheetRow(row []string, width int) []string {
-	padded := make([]string, width)
-	copy(padded, row)
-	return padded
+// buildSheetItems renders one sheet into its wire items: HTML <table>
+// segments split at image anchor boundaries, interleaved with the anchored
+// image items in document order. Every segment repeats the header row (so
+// segment 2+ never loses column names) and carries a row-aligned position
+// matrix — one tuple per <tr> in strict markup order, header included — so
+// row-level consumers index positions by <tr> number with no side channel.
+//
+// An image lands after the last row whose (row, colStart) sorts at or before
+// its anchor; rows before the header's anchor keep the header in front of
+// the image (a header-only lead segment); fully empty rows are skipped from
+// both markup and matrix.
+//
+// Segmentation is semantic only — sheet boundaries and image anchors, never a
+// size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
+// ignored the user's chunk size; that budget belongs to the chunker (see the
+// chunker's splitSpreadsheetTable).
+//
+// Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
+// colEnd]. The same `positions` field carries PDF layout boxes
+// ([page, left, right, top, bottom]) on PDF items, so a consumer must key the
+// vocabulary off sheet_index / ck_type and never reinterpret one as the other.
+func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
+	sortImagesByAnchor(images)
+	if len(records) == 0 {
+		return images
+	}
+	if headerRow <= 0 {
+		headerRow = 1
+	}
+	header := append([]string(nil), records[0]...)
+	headerColEnd := len(header)
+	if headerColEnd == 0 {
+		for _, row := range records {
+			if len(row) > headerColEnd {
+				headerColEnd = len(row)
+			}
+		}
+	}
+	if headerColEnd == 0 {
+		headerColEnd = 1
+	}
+	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)} // [sheet, rowStart, rowEnd, colStart, colEnd]
+
+	rows := make([]spreadsheetSegmentRow, 0, len(records)-1)
+	for i, source := range records[1:] {
+		cells := append([]string(nil), source...)
+		colStart, colEnd := nonEmptyColumnRange(cells)
+		if colStart == 0 {
+			continue
+		}
+		rowNum := headerRow + i + 1
+		if len(dataRows) == len(records)-1 {
+			rowNum = dataRows[i]
+		}
+		rows = append(rows, spreadsheetSegmentRow{
+			cells:    cells,
+			tuple:    []float64{float64(sheetIndex), float64(rowNum), float64(rowNum), float64(colStart), float64(colEnd)},
+			rowNum:   rowNum,
+			colStart: colStart,
+		})
+	}
+
+	anchored := make([]struct {
+		cut int
+		img map[string]any
+	}, 0, len(images))
+	for _, img := range images {
+		row, _ := numericItemInt(img["row_start"])
+		col, _ := numericItemInt(img["col_start"])
+		cut := 0
+		for cut < len(rows) {
+			r := rows[cut]
+			if r.rowNum > row || (r.rowNum == row && r.colStart > col) {
+				break
+			}
+			cut++
+		}
+		anchored = append(anchored, struct {
+			cut int
+			img map[string]any
+		}{cut, img})
+	}
+	sort.SliceStable(anchored, func(i, j int) bool {
+		if anchored[i].cut != anchored[j].cut {
+			return anchored[i].cut < anchored[j].cut
+		}
+		ri, _ := numericItemInt(anchored[i].img["row_start"])
+		rj, _ := numericItemInt(anchored[j].img["row_start"])
+		if ri != rj {
+			return ri < rj
+		}
+		ci, _ := numericItemInt(anchored[i].img["col_start"])
+		cj, _ := numericItemInt(anchored[j].img["col_start"])
+		return ci < cj
+	})
+
+	items := make([]map[string]any, 0, len(rows)+len(images))
+	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
+		cells := make([][]string, 0, len(body))
+		matrix := make([][]float64, 0, len(body)+1)
+		matrix = append(matrix, headerTuple)
+		for _, r := range body {
+			cells = append(cells, r.cells)
+			matrix = append(matrix, r.tuple)
+		}
+		item := NewTableJSONItem(renderSpreadsheetTable(sheet, header, cells), sheet, matrix)
+		item["sheet_index"] = sheetIndex
+		return item
+	}
+
+	prev := 0
+	headerLeadUsed := false
+	for i := 0; i < len(anchored); {
+		cut := anchored[i].cut
+		if cut == 0 && !headerLeadUsed {
+			// A cut at 0 keeps the header in front of the image, matching the
+			// old IR's always-first header record: emit a header-only lead
+			// segment, the data rows follow in the next segment.
+			items = append(items, newSegment(nil))
+			headerLeadUsed = true
+		} else if cut > prev {
+			items = append(items, newSegment(rows[prev:cut]))
+			prev = cut
+		}
+		for i < len(anchored) && anchored[i].cut == cut {
+			items = append(items, anchored[i].img)
+			i++
+		}
+	}
+	if prev < len(rows) || !headerLeadUsed && len(rows) == 0 && len(anchored) == 0 {
+		// A header-only sheet (no data rows, no images) still emits its
+		// header as the only searchable representation of the column schema.
+		items = append(items, newSegment(rows[prev:]))
+	}
+	return items
+}
+
+func sortImagesByAnchor(images []map[string]any) {
+	sort.SliceStable(images, func(i, j int) bool {
+		ri, _ := numericItemInt(images[i]["row_start"])
+		rj, _ := numericItemInt(images[j]["row_start"])
+		if ri != rj {
+			return ri < rj
+		}
+		ci, _ := numericItemInt(images[i]["col_start"])
+		cj, _ := numericItemInt(images[j]["col_start"])
+		return ci < cj
+	})
 }
 
 func nonEmptyColumnRange(row []string) (int, int) {
@@ -173,70 +244,6 @@ func nonEmptyColumnRange(row []string) (int, int) {
 		end = col
 	}
 	return start, end
-}
-
-func spreadsheetRowText(headers, cells []string, sheet string) string {
-	values := headers
-	if cells != nil {
-		values = cells
-	}
-	parts := make([]string, 0, len(values))
-	for i, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if cells == nil {
-			parts = append(parts, value)
-			continue
-		}
-		header := ""
-		if i < len(headers) {
-			header = strings.TrimSpace(headers[i])
-		}
-		if header != "" {
-			parts = append(parts, header+"："+value)
-		} else {
-			parts = append(parts, value)
-		}
-	}
-	text := strings.Join(parts, "; ")
-	if cells != nil && sheet != "" && !strings.Contains(strings.ToLower(sheet), "sheet") {
-		text += " ——" + sheet
-	}
-	return text
-}
-
-func sortSpreadsheetItems(items []map[string]any) {
-	sort.SliceStable(items, func(i, j int) bool {
-		headerI := items[i]["ck_type"] == "table_header"
-		headerJ := items[j]["ck_type"] == "table_header"
-		if headerI != headerJ {
-			return headerI
-		}
-		ri, ci := spreadsheetItemCoordinate(items[i])
-		rj, cj := spreadsheetItemCoordinate(items[j])
-		if ri != rj {
-			return ri < rj
-		}
-		if ci != cj {
-			return ci < cj
-		}
-		return spreadsheetItemKindRank(items[i]) < spreadsheetItemKindRank(items[j])
-	})
-}
-
-func spreadsheetItemCoordinate(item map[string]any) (int, int) {
-	row, _ := numericItemInt(item["row_start"])
-	col, _ := numericItemInt(item["col_start"])
-	return row, col
-}
-
-func spreadsheetItemKindRank(item map[string]any) int {
-	if item["ck_type"] == "image" {
-		return 1
-	}
-	return 0
 }
 
 func numericItemInt(value any) (int, bool) {
@@ -256,9 +263,10 @@ func numericItemInt(value any) (int, bool) {
 }
 
 // deprecatedChunkRows reports the removed parser-side chunking option. Row
-// boundaries are now emitted as structured IR and the selected chunker owns
-// token-budget merging; silently accepting chunk_rows would make an existing
-// configuration look effective when it is not.
+// segmentation is now owned by the parser's semantic segments and the
+// selected chunker owns token-budget splitting; silently accepting
+// chunk_rows would make an existing configuration look effective when it is
+// not.
 func deprecatedChunkRows(setup map[string]any, parserName string) {
 	raw, exists := setup["chunk_rows"]
 	if !exists {
@@ -272,6 +280,17 @@ func deprecatedChunkRows(setup map[string]any, parserName string) {
 	}
 	common.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker",
 		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
+}
+
+// deprecatedHTML4Excel reports the retired html4excel option. Both
+// spreadsheet builders collapsed into the segmented-HTML wire, so the flag
+// selects nothing anymore. Only an enabled flag warns: false is the default
+// every parser config carries, and warning there would be noise.
+func deprecatedHTML4Excel(setup map[string]any, parserName string) {
+	if enabled, ok := setup["html4excel"].(bool); ok && enabled {
+		common.Warn("spreadsheet parser ignored deprecated html4excel; spreadsheet tables are always emitted as segmented HTML",
+			zap.String("parser", parserName))
+	}
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a
