@@ -112,7 +112,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	var isMarkdown bool
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatHTML:
-		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult), isCSV(upstream.Name), nil)
+		qaPairs = extractQATable(stringPtrVal(upstream.HTMLResult), isCSV(upstream.Name))
 	case schema.PayloadFormatMarkdown:
 		qaPairs = extractQAMarkdown(stringPtrVal(upstream.MarkdownResult))
 		isMarkdown = true
@@ -447,14 +447,14 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	return pairs
 }
 
-// extractQATable turns table markup into Q&A pairs. It is the payload
-// wrapper: the JSON dispatch routes on the same walker, so both paths share
-// qaPairsFromRows.
-func extractQATable(htmlStr string, strictPairs bool, positions json.RawMessage) []qaPair {
+// extractQATable turns table markup from an HTML payload into Q&A pairs: the
+// JSON dispatch routes on the same walker, so both paths share
+// qaPairsFromRows. These items carry no positions payload of their own.
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	return qaPairsFromRows(tableRows(htmlStr), strictPairs, positions, false)
+	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
