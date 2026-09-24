@@ -148,6 +148,42 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     return None
 
 
+def document_has_parent_child_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
+    """True when the document has at least one child chunk (mom_id set)."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    res = settings.docStoreConn.search(
+        select_fields=["id"],
+        highlight_fields=[],
+        condition={"doc_id": doc_id, "exists": "mom_id"},
+        match_expressions=[],
+        order_by=OrderByExpr(),
+        offset=0,
+        limit=1,
+        index_names=search.index_name(tenant_id),
+        knowledgebase_ids=[kb_id],
+    )
+    return settings.docStoreConn.get_total(res) > 0
+
+
+def sync_document_source_chunk_availability(doc_id: str, tenant_id: str, kb_id: str, status: int) -> bool:
+    """Flip available_int on ordinary source chunks for document enable/disable.
+
+    Parent-child parent rows are written with available_int=0 and must stay that
+    way: on enable, only child rows (mom_id set) are turned on. Flat documents
+    (no mom_id) keep the previous all-source-chunks behaviour.
+    """
+    condition = {"doc_id": doc_id, "must_not": {"exists": "compile_kwd"}}
+    if int(status) == 1 and document_has_parent_child_chunks(doc_id, tenant_id, kb_id):
+        condition["exists"] = "mom_id"
+    return settings.docStoreConn.update(
+        condition,
+        {"available_int": int(status)},
+        search.index_name(tenant_id),
+        kb_id,
+    )
+
+
 def update_document_status_only(status: int, doc, kb):
     """
     Update document status only (without validation).
@@ -167,12 +203,7 @@ def update_document_status_only(status: int, doc, kb):
         try:
             if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                 return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update(
-                {"doc_id": doc.id, "must_not": {"exists": "compile_kwd"}},
-                {"available_int": status},
-                search.index_name(kb.tenant_id),
-                doc.kb_id,
-            )
+            sync_document_source_chunk_availability(doc.id, kb.tenant_id, doc.kb_id, status)
         except Exception as e:
             return server_error_response(e)
     return None

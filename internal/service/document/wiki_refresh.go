@@ -36,12 +36,13 @@ const sourceChunkAvailabilityBatchSize = 1000
 // its per-document final compiled products (tree / structure / mindmap — the wiki
 // variant is hidden at write time, see markCompiledProductsHidden). Wiki staging
 // rows and unknown-kwd rows are skipped; see loadAvailabilityToggleChunkIDs.
+// Parent-child parent rows stay available_int=0 on enable (citation-only).
 func (s *DocumentService) updateDocumentChunkAvailability(ctx context.Context, tenantID, datasetID, documentID string, available int) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("document engine not initialized")
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	ids, err := s.loadAvailabilityToggleChunkIDs(ctx, indexName, datasetID, documentID)
+	ids, err := s.loadAvailabilityToggleChunkIDs(ctx, indexName, datasetID, documentID, available)
 	if err != nil {
 		return err
 	}
@@ -59,23 +60,33 @@ func (s *DocumentService) updateDocumentChunkAvailability(ctx context.Context, t
 	return nil
 }
 
+type availabilityToggleRow struct {
+	id       string
+	compiled bool
+	momID    string
+}
+
 // loadAvailabilityToggleChunkIDs returns the document's own rows whose
 // availability follows the document status: source chunks (no compile_kwd) and
 // final compiled products (a compile_kwd mapping to a non-wiki variant). Skipped:
 // the wiki variant (wiki_page / wiki_section), whose per-document rows are
 // staging for the dataset-level merge, and unknown-kwd rows such as the
 // wiki_map_active state row or the legacy, KB-scoped wiki_page_graph blob.
-func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
-	ids := make([]string, 0)
+// When enabling (available==1) a parent-child document, source rows without
+// mom_id are also skipped — those are hidden parent passages.
+func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, indexName, datasetID, documentID string, available int) ([]string, error) {
+	rows := make([]availabilityToggleRow, 0)
+	hasChild := false
 	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
 		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 		result, err := s.docEngine.Search(searchCtx, &enginetypes.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        sourceChunkAvailabilityBatchSize,
-			SelectFields: []string{"id", "compile_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
+			IndexNames:         []string{indexName},
+			KbIDs:              []string{datasetID},
+			Offset:             offset,
+			Limit:              sourceChunkAvailabilityBatchSize,
+			SelectFields:       []string{"id", "compile_kwd", "mom_id"},
+			Filter:             map[string]any{"doc_id": []string{documentID}},
+			IncludeUnavailable: true,
 		})
 		cancel()
 		if err != nil {
@@ -85,19 +96,34 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 			break
 		}
 		for _, row := range result.Chunks {
+			id := strings.TrimSpace(documentStoreString(row["id"]))
+			if id == "" {
+				continue
+			}
 			if kwd := strings.TrimSpace(documentStoreString(row["compile_kwd"])); kwd != "" {
 				variant, variantErr := knowledge_compile.KwdToVariant(kwd)
 				if variantErr != nil || variant == kccommon.VariantWiki {
 					continue
 				}
+				rows = append(rows, availabilityToggleRow{id: id, compiled: true})
+				continue
 			}
-			if id := strings.TrimSpace(documentStoreString(row["id"])); id != "" {
-				ids = append(ids, id)
+			momID := strings.TrimSpace(documentStoreString(row["mom_id"]))
+			if momID != "" {
+				hasChild = true
 			}
+			rows = append(rows, availabilityToggleRow{id: id, momID: momID})
 		}
 		if int64(offset+len(result.Chunks)) >= result.Total {
 			break
 		}
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if available == 1 && hasChild && !row.compiled && row.momID == "" {
+			continue
+		}
+		ids = append(ids, row.id)
 	}
 	return ids, nil
 }

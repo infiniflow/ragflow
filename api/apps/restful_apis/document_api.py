@@ -34,6 +34,7 @@ from api.apps.services.document_api_service import (
     update_document_name_only,
     update_chunk_method,
     update_document_status_only,
+    sync_document_source_chunk_availability,
     reset_document_for_reparse,
 )
 from api.db import VALID_FILE_TYPES, FileType
@@ -2105,12 +2106,14 @@ async def batch_update_document_status(tenant_id, dataset_id):
             status_int = int(status)
             if getattr(doc, "chunk_num", 0) > 0:
                 try:
-                    ok = settings.docStoreConn.update(
-                        {"doc_id": doc_id},
-                        {"available_int": status_int},
-                        search.index_name(kb.tenant_id),
-                        doc.kb_id,
-                    )
+                    ok = sync_document_source_chunk_availability(doc_id, kb.tenant_id, doc.kb_id, status_int)
+                    if ok:
+                        ok = settings.docStoreConn.update(
+                            {"doc_id": doc_id, "exists": "compile_kwd"},
+                            {"available_int": status_int},
+                            search.index_name(kb.tenant_id),
+                            doc.kb_id,
+                        )
                 except Exception as exc:
                     msg = str(exc)
                     if "3022" in msg:
