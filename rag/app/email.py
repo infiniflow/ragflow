@@ -78,8 +78,10 @@ def chunk(
                 else:
                     target_list.append(payload.decode("utf-8", errors="ignore"))
 
-        # An attachment is chunked on its own below, not as part of the body.
-        if msg.get_content_disposition() == "attachment":
+        # An attached file is chunked on its own below, not as part of the body. A
+        # container, such as a forwarded message/rfc822, has no payload of its own
+        # for that loop to chunk, so it is not skipped here.
+        if msg.get_content_disposition() == "attachment" and not msg.is_multipart():
             return
         if content_type == "text/plain":
             payload = msg.get_payload(decode=True)
