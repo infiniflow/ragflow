@@ -18,7 +18,6 @@ import {
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
-  useRegenerateMessage,
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import {
@@ -28,7 +27,7 @@ import {
 } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
-import { IClientConversation, IMessage } from '@/interfaces/database/chat';
+import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -57,7 +56,7 @@ import {
   UseSendSingleMessageParameter,
 } from '../../hooks/use-send-single-message';
 import { useUploadFile } from '../../hooks/use-upload-file';
-import { EmptyReference, resolveResendOptions } from '../../utils';
+import { EmptyReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
 import { useMessageReferences } from '../../hooks/use-message-references';
@@ -105,20 +104,14 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { patchChat } = usePatchChat();
 
-  const {
-    removeMessageById,
-    derivedMessages,
-    handlePressEnter,
-    sendLoading,
-    sendMessage,
-    removeMessagesAfterCurrentMessage,
-  } = useSendSingleMessage({
-    controller,
-    value,
-    setValue,
-    files,
-    clearFiles,
-  });
+  const { derivedMessages, handlePressEnter, sendLoading } =
+    useSendSingleMessage({
+      controller,
+      value,
+      setValue,
+      files,
+      clearFiles,
+    });
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -139,32 +132,6 @@ const ChatCard = forwardRef(function ChatCard(
   });
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
-
-  // Regenerate is triggered from the transcript, which has no access to the
-  // input box's thinking / internet toggles. Remember what the last send used so
-  // a retry keeps the same options instead of silently dropping them.
-  const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
-
-  // Regenerate within this card: reuse the card's own message state and
-  // resend with the card's model settings (llm_id, temperature, ...).
-  const sendCardMessage = useCallback(
-    ({ message, messages }: { message: IMessage; messages?: IMessage[] }) =>
-      sendMessage({
-        message,
-        messages,
-        ...resolveResendOptions(lastSendOptionsRef.current),
-        ...form.getValues(),
-        storeHistoryMessages: false,
-        omitSessionId: true,
-      }),
-    [sendMessage, form],
-  );
-
-  const { regenerateMessage } = useRegenerateMessage({
-    removeMessagesAfterCurrentMessage,
-    sendMessage: sendCardMessage,
-    messages: derivedMessages,
-  });
 
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
@@ -210,7 +177,6 @@ const ChatCard = forwardRef(function ChatCard(
   useImperativeHandle(
     ref,
     (): HandlePressEnterType => (params) => {
-      lastSendOptionsRef.current = params;
       return handlePressEnter({
         ...params,
         ...form.getValues(),
@@ -305,8 +271,6 @@ const ChatCard = forwardRef(function ChatCard(
                   // clickDocumentButton={clickDocumentButton}
                   index={i}
                   isLast={i === derivedMessages.length - 1}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}
                   clickDocumentButton={clickDocumentButton}
                   showLikeButton={false}

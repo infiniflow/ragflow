@@ -592,7 +592,10 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 			return err
 		}
 	}
-	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	// A status transition changes document availability, not its parsed
+	// content. The status event handles dataset-level retraction/re-enable;
+	// scheduling a delayed Wiki recompilation here creates duplicate events
+	// and a visible 20-second oscillation.
 	s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, doc.ID, status)
 	return nil
 }
