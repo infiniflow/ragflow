@@ -353,6 +353,28 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 
 var mdHeading = regexp.MustCompile(`^(#*)`)
 
+// mdFenceOpen returns the fence run ("```", "~~~~", ...) that opens a fenced
+// code block on this line, or "" when the line does not open one. As in
+// CommonMark, a backtick fence's info string cannot contain a backtick.
+func mdFenceOpen(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	if !strings.HasPrefix(trimmed, "```") && !strings.HasPrefix(trimmed, "~~~") {
+		return ""
+	}
+	fence := trimmed[:len(trimmed)-len(strings.TrimLeft(trimmed, trimmed[:1]))]
+	if fence[0] == '`' && strings.Contains(trimmed[len(fence):], "`") {
+		return ""
+	}
+	return fence
+}
+
+// mdFenceCloses reports whether line closes a block opened by fence: the same
+// character, at least as many of them, and nothing else on the line.
+func mdFenceCloses(line, fence string) bool {
+	trimmed := strings.TrimSpace(line)
+	return len(trimmed) >= len(fence) && strings.Trim(trimmed, fence[:1]) == ""
+}
+
 func extractQAMarkdown(md string) []qaPair {
 	if md == "" {
 		return nil
@@ -363,7 +385,7 @@ func extractQAMarkdown(md string) []qaPair {
 	var levelStack []int
 	var answer []string
 	curRow := -1
-	codeBlock := false
+	fence := ""
 
 	flushAnswer := func() {
 		joined := strings.TrimSpace(strings.Join(answer, "\n"))
@@ -375,11 +397,14 @@ func extractQAMarkdown(md string) []qaPair {
 	}
 
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") {
-			codeBlock = !codeBlock
+		if fence != "" {
+			if mdFenceCloses(line, fence) {
+				fence = ""
+			}
+			answer = append(answer, line)
+			continue
 		}
-		if codeBlock {
+		if fence = mdFenceOpen(line); fence != "" {
 			answer = append(answer, line)
 			continue
 		}
