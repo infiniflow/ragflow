@@ -104,6 +104,7 @@ func (s *CanvasState) EnsureSysDate() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureInitializedLocked()
 	if s.Sys == nil {
 		s.Sys = make(map[string]any)
 	}
@@ -201,15 +202,9 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if snap.Outputs != nil {
-		s.Outputs = snap.Outputs
-	}
-	if snap.Sys != nil {
-		s.Sys = snap.Sys
-	}
-	if snap.Env != nil {
-		s.Env = snap.Env
-	}
+	s.Outputs = snap.Outputs
+	s.Sys = snap.Sys
+	s.Env = snap.Env
 	s.Path = snap.Path
 	s.History = snap.History
 	s.activeHistoryIndex = -1
@@ -217,15 +212,9 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 		s.activeHistoryIndex = *snap.ActiveHistoryIndex
 	}
 	s.Memory = snap.Memory
-	if snap.Retrieval != nil {
-		s.Retrieval = snap.Retrieval
-	}
-	if snap.Globals != nil {
-		s.Globals = snap.Globals
-	}
-	if s.CancelFlag == nil {
-		s.CancelFlag = &atomic.Bool{}
-	}
+	s.Retrieval = snap.Retrieval
+	s.Globals = snap.Globals
+	s.ensureInitializedLocked()
 	s.CancelFlag.Store(snap.CancelFlag)
 	s.RunID = snap.RunID
 	s.SessionID = snap.SessionID
@@ -261,6 +250,7 @@ func (s *CanvasState) GetVar(ref string) (any, error) {
 func (s *CanvasState) SetVar(cpnID, param string, v any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureInitializedLocked()
 	setVarLocked(s.Outputs, cpnID, param, v)
 }
 
@@ -610,12 +600,37 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureInitializedLocked()
 	b, ok := s.Outputs[cpnID]
 	if !ok {
 		b = make(map[string]any)
 		s.Outputs[cpnID] = b
 	}
 	b[bucket] = payload
+}
+
+func (s *CanvasState) ensureInitializedLocked() {
+	if s.Outputs == nil {
+		s.Outputs = make(map[string]map[string]any)
+	}
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	if s.Env == nil {
+		s.Env = make(map[string]any)
+	}
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
+	if s.CancelFlag == nil {
+		s.CancelFlag = &atomic.Bool{}
+	}
+	if s.activeHistoryIndex == 0 && len(s.History) == 0 {
+		s.activeHistoryIndex = -1
+	}
 }
 
 // GetGlobal returns a value from the workflow-wide Globals bag. Globals is a

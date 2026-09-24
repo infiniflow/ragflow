@@ -526,6 +526,22 @@ func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
 	}
 }
 
+func TestCodeExec_ResultFallsBackToReturnedValue(t *testing.T) {
+	t.Parallel()
+
+	out, err := codeExecResultJSON(t.Context(), &SandboxResponse{Returned: "legacy result"})
+	if err != nil {
+		t.Fatalf("codeExecResultJSON: %v", err)
+	}
+	var got codeExecResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("output not valid JSON: %v", err)
+	}
+	if got.Content != "legacy result" || got.RawResult != "legacy result" {
+		t.Fatalf("Returned fallback = %#v, want legacy result", got)
+	}
+}
+
 func TestCodeExec_ResultFallsBackToStdoutJSON(t *testing.T) {
 	t.Parallel()
 

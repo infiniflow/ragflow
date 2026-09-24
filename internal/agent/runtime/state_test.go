@@ -66,6 +66,29 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasState_UnmarshalInitializesMutableState(t *testing.T) {
+	t.Parallel()
+
+	var state CanvasState
+	if err := json.Unmarshal([]byte(`{"outputs":null,"sys":null,"env":null,"retrieval":null,"globals":null}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	state.SetVar("message_0", "content", "hello")
+	state.RecordOutput("message_0", "result", map[string]any{"ok": true})
+	state.SetGlobal("flag", true)
+
+	if got := state.Outputs["message_0"]["content"]; got != "hello" {
+		t.Fatalf("SetVar after restore = %#v, want hello", got)
+	}
+	if got := state.Outputs["message_0"]["result"]; got == nil {
+		t.Fatal("RecordOutput after restore did not persist")
+	}
+	if got, ok := state.GetGlobal("flag"); !ok || got != true {
+		t.Fatalf("SetGlobal after restore = %#v, %v; want true, true", got, ok)
+	}
+}
+
 func TestCanvasStateCheckpointPreservesCurrentUserMarker(t *testing.T) {
 	t.Parallel()
 	src := NewCanvasState("run-checkpoint", "task-checkpoint")

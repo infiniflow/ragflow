@@ -80,6 +80,7 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 		RetrievalFrom:            req.RetrievalFrom,
 		DocScope:                 req.DocScope,
 		TenantID:                 req.TenantID,
+		MetaDataFilter:           req.MetaDataFilter,
 		// rank_feature (Python retrieve: rank_feature=label_question(question,
 		// self.kbs)) — forwarded from the RAGTools-computed value so the agentic
 		// tool stays authoritative; the adapter falls back to its own resolution.

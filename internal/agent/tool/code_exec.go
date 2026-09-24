@@ -385,6 +385,9 @@ func resolveCodeExecResultValue(r *SandboxResponse) (any, bool) {
 			return r.StructuredResult["value"], false
 		}
 	}
+	if r != nil && r.Returned != "" {
+		return r.Returned, false
+	}
 	return deserializeCodeExecStdout(r.Stdout), true
 }
 

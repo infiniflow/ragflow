@@ -99,8 +99,8 @@ func (a *AgenticSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 }
 
 // InvokableRun executes the retrieval. It returns JSON with "chunks" (array of
-// chunk maps). Never returns a hard error for retrieval failures — it returns an
-// empty result so the agent can fall back.
+// chunk maps). Retrieval failures are returned so the caller can distinguish
+// an unavailable backend from a successful search with no matches.
 func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...einotool.Option) (string, error) {
 	var args hybridSearchArgs
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -132,10 +132,11 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		AllowDenseFallback:       new(false),
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
+		ExcludeCompiled:          !args.UseCompiled,
 	}
 	chunks, err := svc.Search(ctx, nil, req)
 	if err != nil {
-		return jsonChunksEmpty(), nil // agent falls back on failure
+		return "", fmt.Errorf("%s: retrieval: %w", a.mode, err)
 	}
 
 	// Keyword narrowing (mirrors Python _narrow_by_keywords).

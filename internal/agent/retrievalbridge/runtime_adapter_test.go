@@ -34,6 +34,21 @@ func TestRuntimeAdapterDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdapterPreservesMetadataFilter(t *testing.T) {
+	service := &captureRetrievalService{}
+	filter := map[string]any{"method": "manual", "value": "invoice"}
+	_, err := NewRuntimeAdapter(service).Search(t.Context(), nil, agentrunt.RetrievalRequest{
+		Query:          "test",
+		MetaDataFilter: filter,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(service.req.MetaDataFilter, filter) {
+		t.Fatalf("MetaDataFilter = %#v, want %#v", service.req.MetaDataFilter, filter)
+	}
+}
+
 // TestRuntimeAdapterDoesNotResolveItsTargetFromTheSharedRegistry reproduces the
 // server's boot order (cmd/ragflow_server.go): the NLP adapter is registered,
 // then the bridge REPLACES it in the same shared registry

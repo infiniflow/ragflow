@@ -143,6 +143,51 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+func TestAgenticSearchControlsCompiledResults(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-compiled", "session-compiled")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"plain","kb_ids":["kb-1"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if !service.req.ExcludeCompiled {
+		t.Fatal("default agentic search should exclude compiled results")
+	}
+	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"compiled","kb_ids":["kb-1"],"use_compiled":true}`); err != nil {
+		t.Fatal(err)
+	}
+	if service.req.ExcludeCompiled {
+		t.Fatal("use_compiled=true should include compiled results")
+	}
+}
+
+type failingAgenticRetrievalService struct{}
+
+func (failingAgenticRetrievalService) Search(context.Context, *gorm.DB, RetrievalRequest) ([]RetrievalChunk, error) {
+	return nil, errors.New("backend unavailable")
+}
+
+func TestAgenticSearchReturnsRetrievalError(t *testing.T) {
+	previous := GetRetrievalService()
+	SetRetrievalService(failingAgenticRetrievalService{})
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-error", "session-error")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	_, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`)
+	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
+		t.Fatalf("error = %v, want backend unavailable", err)
+	}
+}
+
 func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}

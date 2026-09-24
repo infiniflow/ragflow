@@ -425,51 +425,13 @@ func toStringSlice(v any) []string {
 	return out
 }
 
-// deepCopyDSL returns a deep copy of the parts of `dsl` that
-// NormalizeForCanvas mutates: the top-level keys "graph" and
-// "components", and within `graph` the "nodes" and "edges" slices.
-// All other top-level keys (`globals`, `variables`, `path`,
-// `retrieval`, `history`, `*`) are shallow-copied by reference —
-// they are read-only and never modified by the normalize pipeline.
-//
-// The deep copy is required because:
-//   - enforceHandleIds rewrites graph.edges[*].sourceHandle /
-//     targetHandle in place.
-//   - foldLegacyLoopVariants deletes entries from components,
-//     rewrites components[*].obj.component_name, and rewrites
-//     graph.nodes[*].data.label / type.
-//
-// Without the deep copy, a caller that reuses the original
-// decoded DSL map (e.g. for re-validation or diffing) would
-// observe side effects that contradict the documented
-// "never mutates its input"
-//
-// Primitives and non-mutable values (string, number, bool) are
-// shared by reference; only the maps and slices that the
-// normalize pipeline touches are duplicated.
+// deepCopyDSL returns a recursive copy so normalization never mutates the
+// caller's nested JSON values. Runtime alias rewrites walk every string in
+// the DSL, not only graph and component entries.
 func deepCopyDSL(dsl map[string]any) map[string]any {
 	out := make(map[string]any, len(dsl)+1)
 	for k, v := range dsl {
-		switch k {
-		case "graph":
-			if g, ok := v.(map[string]any); ok {
-				out["graph"] = deepCopyGraph(g)
-			} else {
-				out["graph"] = v
-			}
-		case "components":
-			if c, ok := v.(map[string]any); ok {
-				out["components"] = deepCopyComponents(c)
-			} else {
-				out["components"] = v
-			}
-		default:
-			// Shallow: globals, variables, path, retrieval,
-			// history, and any other top-level key are not
-			// mutated by the normalize pipeline. Sharing the
-			// reference is safe.
-			out[k] = v
-		}
+		out[k] = deepCopyAny(v)
 	}
 	return out
 }
