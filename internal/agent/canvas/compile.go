@@ -21,12 +21,10 @@ import (
 
 // CheckPointStore is the minimal interface Compile needs at compile time.
 // KvrocksCheckPointStore satisfies this; tests can pass any in-memory
-// implementation. Matches eino's compose.CheckPointStore (an alias for
-// core.CheckPointStore) and adds a Delete method.
+// implementation. It matches eino's compose.CheckPointStore.
 type CheckPointStore interface {
 	Get(ctx context.Context, id string) ([]byte, bool, error)
 	Set(ctx context.Context, id string, payload []byte) error
-	Delete(ctx context.Context, id string) error
 }
 
 // StateSerializer is the minimal interface Compile needs. The
@@ -227,14 +225,10 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 
 	compileOpts := make([]compose.GraphCompileOption, 0, 4)
 	if cfg.Store != nil {
-		// eino's compose.WithCheckPointStore expects compose.CheckPointStore
-		// (no Delete). Our CheckPointStore adds Delete; pass an adapter
-		// that drops it. RunTracker doesn't call Delete on this
-		// path — it deletes the agent:cp:* key via a separate Redis call.
-		compileOpts = append(compileOpts, compose.WithCheckPointStore(checkPointAdapter{cfg.Store}))
+		compileOpts = append(compileOpts, compose.WithCheckPointStore(cfg.Store))
 	}
 	if cfg.Serializer != nil {
-		compileOpts = append(compileOpts, compose.WithSerializer(serializerAdapter{cfg.Serializer}))
+		compileOpts = append(compileOpts, compose.WithSerializer(cfg.Serializer))
 	}
 	if len(cfg.InterruptBefore) > 0 {
 		compileOpts = append(compileOpts, compose.WithInterruptBeforeNodes(cfg.InterruptBefore))
@@ -312,24 +306,3 @@ func dedupeStrings(in []string) []string {
 	}
 	return out
 }
-
-// checkPointAdapter drops the Delete method that compose.CheckPointStore
-// does not declare. The KvrocksCheckPointStore in this package has deleted;
-// the adapter is a thin passthrough.
-type checkPointAdapter struct{ inner CheckPointStore }
-
-func (a checkPointAdapter) Get(ctx context.Context, id string) ([]byte, bool, error) {
-	return a.inner.Get(ctx, id)
-}
-func (a checkPointAdapter) Set(ctx context.Context, id string, payload []byte) error {
-	return a.inner.Set(ctx, id, payload)
-}
-
-// serializerAdapter exposes the eino-shaped Serializer (Marshal/Unmarshal,
-// no context). The CanvasStateSerializer in this package matches the
-// same shape, so
-// the adapter is a passthrough.
-type serializerAdapter struct{ inner StateSerializer }
-
-func (a serializerAdapter) Marshal(v any) ([]byte, error)   { return a.inner.Marshal(v) }
-func (a serializerAdapter) Unmarshal(b []byte, v any) error { return a.inner.Unmarshal(b, v) }
