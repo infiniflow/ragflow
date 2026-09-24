@@ -256,7 +256,7 @@ const FileLogsPage: FC = () => {
     <Card
       className="
       p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
-      flex flex-col overflow-y-auto scrollbar-auto"
+      flex flex-col min-h-0"
     >
       {/* Stats Cards */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
