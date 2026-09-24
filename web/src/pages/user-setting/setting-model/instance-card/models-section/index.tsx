@@ -168,20 +168,17 @@ export function ModelsSection(props: ModelsSectionProps) {
   // Batch toggle replaces the whole list. Diff the next list against the
   // current one so batch-removed names stay excluded from future catalog
   // merges and batch-added names are eligible again.
-  const applyDraftModelsList = useCallback(
-    (next: IProviderModelItem[]) => {
-      const removed = removedDraftModelsRef.current;
-      setDraftModels((prev) => {
-        const nextNames = new Set(next.map((m) => m.name));
-        prev.forEach((m) => {
-          if (!nextNames.has(m.name)) removed.add(m.name);
-        });
-        next.forEach((m) => removed.delete(m.name));
-        return next;
+  const applyDraftModelsList = useCallback((next: IProviderModelItem[]) => {
+    const removed = removedDraftModelsRef.current;
+    setDraftModels((prev) => {
+      const nextNames = new Set(next.map((m) => m.name));
+      prev.forEach((m) => {
+        if (!nextNames.has(m.name)) removed.add(m.name);
       });
-    },
-    [],
-  );
+      next.forEach((m) => removed.delete(m.name));
+      return next;
+    });
+  }, []);
 
   // 4. Derived union list (instance ∪ catalog) + push to host.
   const { instanceItems, models, addedSet } = useModelsDerived({
