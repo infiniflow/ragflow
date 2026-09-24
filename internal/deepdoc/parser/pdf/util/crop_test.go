@@ -147,6 +147,35 @@ func TestCropSectionImage_ZoomScaling(t *testing.T) {
 	}
 }
 
+type accessCountingImage struct {
+	bounds image.Rectangle
+	reads  int
+}
+
+func (i *accessCountingImage) ColorModel() color.Model { return color.RGBAModel }
+func (i *accessCountingImage) Bounds() image.Rectangle { return i.bounds }
+func (i *accessCountingImage) At(int, int) color.Color {
+	i.reads++
+	return color.RGBA{A: 255}
+}
+
+func TestCropSectionPositionsRasterLimitedRejectsOversizedStitchBeforeCopy(t *testing.T) {
+	page := &accessCountingImage{bounds: image.Rect(0, 0, 400, 400)}
+	positions := []pdf.Position{
+		{PageNumbers: []int{0}, Left: 10, Right: 30, Top: 150, Bottom: 170},
+		{PageNumbers: []int{0}, Left: 10, Right: 30, Top: 150, Bottom: 170},
+		{PageNumbers: []int{0}, Left: 10, Right: 30, Top: 150, Bottom: 170},
+	}
+
+	got := CropSectionPositionsRasterLimited(positions, map[int]image.Image{0: page}, 1, 5_000)
+	if got != nil {
+		t.Fatalf("limited crop = %v, want nil when stitched pixels exceed the limit", got.Bounds())
+	}
+	if page.reads != 0 {
+		t.Fatalf("source pixel reads = %d, want 0 before rejecting the oversized stitch", page.reads)
+	}
+}
+
 func TestRotateImageCW(t *testing.T) {
 	// Create a 3x2 image with known colors: (0,0)=red, (1,0)=green, (2,0)=blue,
 	//                                    (0,1)=white, (1,1)=black, (2,1)=gray

@@ -637,6 +637,71 @@ func CropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]
 	return cropSectionImageRaster(tag.String(), decodedImages, zoom)
 }
 
+// CropSectionPositionsRasterLimited rejects a section before creating segment
+// crops or the stitched raster when its conservative output-size estimate
+// exceeds maxPixels.
+func CropSectionPositionsRasterLimited(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) image.Image {
+	if maxPixels <= 0 || sectionRasterExceedsLimit(positions, decodedImages, zoom, maxPixels) {
+		return nil
+	}
+	return CropSectionPositionsRaster(positions, decodedImages, zoom)
+}
+
+func sectionRasterExceedsLimit(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) bool {
+	if len(positions) == 0 || zoom <= 0 || math.IsNaN(zoom) || math.IsInf(zoom, 0) {
+		return true
+	}
+	maxWidth := 6.0
+	segmentCount := int64(2) // synthetic top and bottom context bands
+	var contentHeight int64
+	for _, pos := range positions {
+		if len(pos.PageNumbers) == 0 {
+			continue
+		}
+		width := pos.Right - pos.Left
+		if width > maxWidth {
+			maxWidth = width
+		}
+		firstPage := pos.PageNumbers[0]
+		segmentCount++
+		for _, pageNum := range pos.PageNumbers[1:] {
+			if pageNum == firstPage {
+				continue
+			}
+			segmentCount++
+		}
+
+		height := math.Max(1, math.Ceil((pos.Bottom-pos.Top)*zoom))
+		for _, pageNum := range pos.PageNumbers[1:] {
+			if pageNum == firstPage {
+				continue
+			}
+			pageImage, ok := decodedImages[pageNum]
+			if !ok || pageImage == nil {
+				return true
+			}
+			height += float64(pageImage.Bounds().Dy())
+		}
+		if math.IsNaN(height) || math.IsInf(height, 0) || height > float64(maxPixels) {
+			return true
+		}
+		contentHeight += int64(height)
+		if contentHeight > maxPixels {
+			return true
+		}
+	}
+	width := math.Ceil(math.Max(10, maxWidth) * zoom)
+	bandHeight := math.Ceil(120 * zoom)
+	if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(bandHeight) || math.IsInf(bandHeight, 0) || width <= 0 || bandHeight <= 0 {
+		return true
+	}
+	if width > float64(maxPixels) {
+		return true
+	}
+	stitchedHeight := contentHeight + 2*int64(bandHeight) + segmentCount*6
+	return stitchedHeight <= 0 || int64(width) > maxPixels/stitchedHeight
+}
+
 // PositionsFromMatrix converts the _pdf_positions / positions matrix form
 // (as produced by layout.SectionsToJSON and normalized to 1-based page
 // numbers by normalizePDFPageNumber) back into typed []pdf.Position. The

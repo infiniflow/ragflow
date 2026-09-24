@@ -128,6 +128,42 @@ func TestVisionCropImage_RejectsOversizedPageBeforeRendering(t *testing.T) {
 	}
 }
 
+func TestVisionCropImage_RejectsAggregatePagePixelsBeforeRendering(t *testing.T) {
+	renderCalls := 0
+	oldFetcher := visionSourceFetcher
+	oldOpener := visionEngineOpener
+	defer func() {
+		visionSourceFetcher = oldFetcher
+		visionEngineOpener = oldOpener
+	}()
+	visionSourceFetcher = func(context.Context, string, string) ([]byte, error) {
+		return []byte("%PDF-fake-engine-bytes"), nil
+	}
+	visionEngineOpener = func([]byte) (deepdoctype.PDFEngine, error) {
+		return mockVisionEngine{pageWidth: 2000, pageHeight: 2000, renderCalls: &renderCalls}, nil
+	}
+
+	item := map[string]any{
+		"_pdf_positions": [][]any{{[]any{1, 2}, 10.0, 100.0, 10.0, 100.0}},
+	}
+	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
+	if err != nil {
+		t.Fatalf("newVisionImageCropper: %v", err)
+	}
+	defer cropper.Close()
+
+	img, err := cropper.Crop(context.Background(), item)
+	if err != nil {
+		t.Fatalf("Crop: %v", err)
+	}
+	if img != nil {
+		t.Fatalf("Crop = %#v, want nil when combined page pixels exceed the OCR budget", img)
+	}
+	if renderCalls != 0 {
+		t.Fatalf("render calls = %d, want pages rejected before raster allocation", renderCalls)
+	}
+}
+
 // TestVisionCropImage_PassthroughInline proves that when the item already
 // carries an inlined image (docx/markdown, or any pre-inlined source), the
 // cropper returns it directly without touching storage.

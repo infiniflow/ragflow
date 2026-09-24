@@ -103,13 +103,13 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 			pages[pn] = struct{}{}
 		}
 	}
+	if !pdfPagesRasterWithinOCRLimits(c.engine, pages) {
+		return nil, nil
+	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
 		if err := ctx.Err(); err != nil {
 			return nil, err
-		}
-		if !pdfPageRasterWithinOCRLimits(c.engine, pn) {
-			return nil, nil
 		}
 		img, rerr := deepdocpdf.RenderPageToImage(c.engine, pn)
 		if rerr != nil || img == nil {
@@ -120,29 +120,42 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if len(single) == 0 {
 		return nil, nil
 	}
-	raster := util.CropSectionPositionsRaster(positions, single, deepdoctype.DlaScale)
+	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxOCRImagePixels)
 	if raster == nil {
 		return nil, nil
 	}
 	return &visionImage{Raster: raster}, nil
 }
 
-func pdfPageRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNum int) bool {
+func pdfPagesRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
 	sizer, ok := engine.(interface {
 		PageSize(int) (float64, float64, error)
 	})
 	if !ok {
-		return true
-	}
-	widthPoints, heightPoints, err := sizer.PageSize(pageNum)
-	if err != nil {
 		return false
 	}
-	widthPixels := math.Ceil(widthPoints * deepdoctype.DlaScale)
-	heightPixels := math.Ceil(heightPoints * deepdoctype.DlaScale)
-	return widthPixels > 0 && heightPixels > 0 &&
-		widthPixels <= maxOCRImageEdge && heightPixels <= maxOCRImageEdge &&
-		widthPixels*heightPixels <= maxOCRImagePixels
+	var totalPixels int64
+	for pageNum := range pageNums {
+		widthPoints, heightPoints, err := sizer.PageSize(pageNum)
+		if err != nil {
+			return false
+		}
+		widthPixels := math.Ceil(widthPoints * deepdoctype.DlaScale)
+		heightPixels := math.Ceil(heightPoints * deepdoctype.DlaScale)
+		if math.IsNaN(widthPixels) || math.IsInf(widthPixels, 0) ||
+			math.IsNaN(heightPixels) || math.IsInf(heightPixels, 0) ||
+			widthPixels <= 0 || heightPixels <= 0 ||
+			widthPixels > maxOCRImageEdge || heightPixels > maxOCRImageEdge ||
+			widthPixels*heightPixels > float64(maxOCRImagePixels) {
+			return false
+		}
+		pagePixels := int64(widthPixels * heightPixels)
+		if pagePixels > maxOCRImagePixels-totalPixels {
+			return false
+		}
+		totalPixels += pagePixels
+	}
+	return true
 }
 
 func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
