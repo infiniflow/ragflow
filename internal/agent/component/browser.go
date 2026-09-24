@@ -262,7 +262,7 @@ func (b *BrowserComponent) Name() string { return b.name }
 // File upload/download and session persistence are not supported
 // in this component; they are v1-deferred.
 func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("browser: %w", err)
 	}

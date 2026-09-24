@@ -848,10 +848,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
-			} else if !isSkillIndex {
+			} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 				filterParts = append(filterParts, "available_int=1")
 			}
-		} else if !isSkillIndex {
+		} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 			filterParts = append(filterParts, "available_int=1")
 		}
 	}
@@ -1042,7 +1042,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" && !isSkillIndex {
+				if denseFilterStr == "" && shouldDefaultAvailableFilter(req, isSkillIndex) {
 					denseFilterStr = "available_int=1"
 				}
 
@@ -1173,6 +1173,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 			}
 
+			// Filter-only queries (e.g. the management chunk list) are the ones
+			// that can silently span KBs, so echo per-table outcome at debug
+			// level: which table was queried with which filter, and how many
+			// rows came back.
+			if !hasTextMatch && !hasVectorMatch {
+				common.Debug("Infinity filter-only search",
+					zap.String("table", tableName),
+					zap.String("filter", filterStr),
+					zap.Int("rows", len(searchChunks)))
+			}
+
 			// Parse total_hits_count from ExtraInfo
 			var tableTotal int64
 			if df.ExtraInfo != "" {
@@ -1222,6 +1233,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
+}
+
+func shouldDefaultAvailableFilter(req *types.SearchRequest, isSkillIndex bool) bool {
+	return !isSkillIndex && !req.IncludeUnavailable
 }
 
 // GetChunk gets a chunk by ID

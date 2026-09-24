@@ -1,12 +1,14 @@
 package table
 
 import (
-	"log/slog"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 )
@@ -121,7 +123,7 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 // every data row regardless of whether the table has a header. Rows with no
 // matching TSR row component (e.g. header rows) keep the grid-union strip X.
 func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
-	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
+	common.Debug("fillCellTextFromBoxes", zap.Int("cells", len(cells)), zap.Int("boxes", len(boxes)))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
 	}
@@ -349,7 +351,7 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			cells[i].Text = cellText[i]
 		}
 	}
-	slog.Debug("fillCellTextFromBoxes done", "box_cell_matches", matched, "cells_filled", matched)
+	common.Debug("fillCellTextFromBoxes done", zap.Int("box_cell_matches", matched), zap.Int("cells_filled", matched))
 }
 
 // tightestColumnDistance mirrors Python's find_horizontally_tightest_fit

@@ -35,8 +35,12 @@ import {
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
-import { isDocumentProcessing } from '@/pages/dataset/dataset/utils';
+import {
+  isDocumentProcessing,
+  isDocumentStopping,
+} from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
+import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -63,6 +67,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams } from 'react-router';
 import {
+  getCancelRequestInterval,
+  markCancelRequested,
+  observeStoppingDocuments,
+} from './cancel-stop-loss';
+import { sendDocumentIngest } from './document-ingest-in-flight';
+import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
@@ -83,8 +93,6 @@ export const enum DocumentStructureApiAction {
   FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
   DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
-
-const documentIngestInFlight = new Map<string, Promise<unknown>>();
 
 export const DocumentStructureKeys = {
   graph: (datasetId: string, documentId: string) =>
@@ -185,23 +193,38 @@ export const useFetchDocumentList = (loop = true) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
 
-  const { data, isFetching: loading } = useQuery<{
+  const {
+    data,
+    isFetching: loading,
+    dataUpdatedAt,
+  } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
     has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
     initialData: { docs: [], total: 0, has_active_tasks: false },
-    refetchInterval: (query) =>
-      loop &&
-      (query.state.data?.has_active_tasks ||
-        !!query.state.data?.docs.some(isDocumentProcessing))
-        ? 5000
-        : false,
+    refetchInterval: (query) => {
+      if (!loop) return false;
+      const current = query.state.data;
+      if (!current) return false;
+      const stoppingIds = current.docs
+        .filter(isDocumentStopping)
+        .map((doc) => doc.id);
+      if (stoppingIds.length > 0) {
+        return getCancelRequestInterval(stoppingIds);
+      }
+      if (current.has_active_tasks || current.docs.some(isDocumentProcessing)) {
+        return 5000;
+      }
+      return false;
+    },
+    refetchIntervalInBackground: true,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -260,6 +283,38 @@ export const useFetchDocumentList = (loop = true) => {
     });
   }, [data.docs, queryClient]);
 
+  // Stop-loss: observe the documents on every poll. This starts the window
+  // for cancels first seen here, prunes trackers for observed ids that left
+  // the stopping state, and re-sends one cancel request for the overdue ones.
+  // The effect is keyed on dataUpdatedAt too: structural sharing keeps
+  // data.docs reference-identical while a stopped document's fields no longer
+  // change, which is exactly the stuck case this has to fire in.
+  useEffect(() => {
+    if (!isGo) {
+      return;
+    }
+    const overdueIds = observeStoppingDocuments(
+      data.docs.map((doc) => doc.id),
+      data.docs.filter(isDocumentStopping).map((doc) => doc.id),
+    );
+    if (overdueIds.length === 0) {
+      return;
+    }
+    void sendDocumentIngest(
+      { documentIds: overdueIds, run: 2 },
+      () =>
+        kbService.documentIngest(
+          buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
+        ),
+      { force: true },
+    ).then(
+      () => {
+        queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+      },
+      () => {},
+    );
+  }, [data.docs, dataUpdatedAt, isGo, queryClient]);
+
   return {
     loading,
     searchString,
@@ -273,9 +328,16 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+type RefetchInterval =
+  | number
+  | false
+  | ((query: {
+      state: { data?: { docs: IDocumentInfo[]; total: number } };
+    }) => number | false);
+
 export const useFetchDocumentsByIds = (
   ids: string[],
-  options?: { enabled?: boolean; refetchInterval?: number | false },
+  options?: { enabled?: boolean; refetchInterval?: RefetchInterval },
 ) => {
   const { id: datasetId } = useParams();
   const { enabled, refetchInterval } = options ?? {};
@@ -439,17 +501,53 @@ export const useRunDocument = () => {
             ),
           };
         });
+      } else if (run === 2) {
+        // Optimistic STOPPING so the row locks immediately; a fast poll then
+        // picks up the real status. Stage timestamps in the same pass so the
+        // list's stop-loss can downgrade the interval and retry an overdue
+        // cancel exactly once.
+        // A list refetch already in flight when the click landed would
+        // resolve with the pre-cancel row and overwrite the optimistic
+        // STOPPING below, so drop it first. This must stay ahead of the
+        // optimistic write: cancelQueries reverts a query to the state it had
+        // when that refetch started, which would roll the write back. The
+        // all() prefix also covers the byIds views, so their in-flight
+        // refetches are dropped the same way.
+        await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
+        if (isGo) {
+          markCancelRequested(documentIds);
+        }
+        const documentIdSet = new Set(documentIds);
+        queryClient.setQueriesData<{
+          docs: IDocumentInfo[];
+          total: number;
+        }>({ queryKey: DocumentKeys.all() }, (current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            docs: current.docs.map((doc) =>
+              documentIdSet.has(doc.id)
+                ? {
+                    ...doc,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.STOPPING }
+                      : { run: RunningStatus.CANCEL }),
+                  }
+                : doc,
+            ),
+          };
+        });
       }
-      if (run !== 1) {
+      if (run !== 1 && run !== 2) {
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
       }
-      const ret = await kbService.documentIngest({
-        doc_ids: documentIds,
-        run,
-        ...(option || {}),
-      });
+      const ret = await kbService.documentIngest(
+        buildDocumentIngestPayload({ documentIds, run, option }),
+      );
       const code = get(ret, 'data.code');
       if (code === 0) {
         // For a start request, keep the optimistic running state until the
@@ -482,27 +580,7 @@ export const useRunDocument = () => {
       documentIds: string[];
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
-    }) => {
-      const key = JSON.stringify({
-        documentIds: [...params.documentIds].sort(),
-        run: params.run,
-        option: params.option || null,
-      });
-      const existingRequest = documentIngestInFlight.get(key);
-      if (existingRequest) {
-        return existingRequest;
-      }
-
-      const request = mutateAsync(params);
-      documentIngestInFlight.set(key, request);
-      const clearRequest = () => {
-        if (documentIngestInFlight.get(key) === request) {
-          documentIngestInFlight.delete(key);
-        }
-      };
-      void request.then(clearRequest, clearRequest);
-      return request;
-    },
+    }) => sendDocumentIngest(params, () => mutateAsync(params)),
     [mutateAsync],
   );
 

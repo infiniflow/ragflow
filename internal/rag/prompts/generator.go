@@ -150,6 +150,9 @@ func kbpBlock(c map[string]any, id int) (string, bool) {
 		return "", false
 	}
 	block := fmt.Sprintf("\nID: %d", id)
+	if cid, _ := c["chunk_id"].(string); strings.TrimSpace(cid) != "" {
+		block += "\n├── chunk_id: " + strings.TrimSpace(cid)
+	}
 	if title := chunkTitle(c); title != "" {
 		block += "\n├── Title: " + flattenNewlines(title)
 	}

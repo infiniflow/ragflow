@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
@@ -113,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
@@ -1250,7 +1250,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
@@ -1274,4 +1274,13 @@ func (h *Handler) PingEngine(c *gin.Context) {
 	}
 
 	common.SuccessNoMessage(c, "SUCCESS")
+}
+
+func (h *Handler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }

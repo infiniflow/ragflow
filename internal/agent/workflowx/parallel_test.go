@@ -463,6 +463,41 @@ func TestParallel_LoadSnapshot_RejectsPartitionHole(t *testing.T) {
 	}
 }
 
+// TestParallel_InvokeRejectsInputCountMismatch ensures a malformed
+// checkpoint cannot make the fan-out index beyond the restored inputs.
+func TestParallel_InvokeRejectsInputCountMismatch(t *testing.T) {
+	ctx := t.Context()
+	payload, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[1,2]`),
+		CompletedResults:   map[int]any{0: 2},
+		InterruptedIndices: []int{1, 2},
+		TotalCount:         3,
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	runner := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		return in, nil
+	}}
+	_, err = runParallelInvoke(
+		injectResumeState(ctx, payload),
+		"par",
+		runner,
+		[]int{1, 2},
+		getParallelOptions(nil),
+		newParallelBridgeState(nil),
+	)
+	if err == nil {
+		t.Fatal("expected resume state error, got nil")
+	}
+	if !errors.Is(err, ErrParallelResumeStateInvalid) {
+		t.Fatalf("errors.Is(err, ErrParallelResumeStateInvalid) = false; err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "does not match restored input count") {
+		t.Errorf("err %q must mention restored input count", err.Error())
+	}
+}
+
 // TestParallel_EmptyInput_NoSubInvoke asserts that an empty input
 // slice returns []O{}, nil without invoking the inner sub-workflow.
 func TestParallel_EmptyInput_NoSubInvoke(t *testing.T) {

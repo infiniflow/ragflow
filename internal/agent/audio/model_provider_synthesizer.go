@@ -45,7 +45,7 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 )
 
 // ModelProviderFunc is the contract the audio package uses to
@@ -80,14 +80,14 @@ type ModelProviderRequest struct {
 func SetModelProviderSynthesizer(fn ModelProviderFunc) {
 	var s Synthesizer = stubSynthesizer{}
 	if fn != nil {
-		s = &modelProviderSynthesizer{fn: fn, redis: redis.Get()}
+		s = &modelProviderSynthesizer{fn: fn, kvrocks: kvrocks.Get()}
 	}
 	SetSynthesizer(s)
 }
 
 type modelProviderSynthesizer struct {
-	fn    ModelProviderFunc
-	redis *redis.Client
+	fn      ModelProviderFunc
+	kvrocks *kvrocks.Client
 }
 
 func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req SynthesizeRequest) (*SynthesizeResponse, error) {
@@ -97,7 +97,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 
 	// Resolve tenant from canvas state when not on the request.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if uid, ok := state.Sys["user_id"].(string); ok {
 			tenantID = uid
 		}
@@ -107,8 +107,8 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	// rag/utils/tts_cache.py). Cache failures are non-fatal —
 	// log and fall through to the model provider.
 	cacheKey := buildTTSCacheKey(tenantID, req)
-	if cacheKey != "" && m.redis != nil {
-		if cached, _ := m.redis.Get(ctx, cacheKey); cached != "" {
+	if cacheKey != "" && m.kvrocks != nil {
+		if cached, _ := m.kvrocks.Get(ctx, cacheKey); cached != "" {
 			if b, err := hex.DecodeString(cached); err == nil && len(b) > 0 {
 				return &SynthesizeResponse{Audio: b, MediaType: "audio/mpeg"}, nil
 			}
@@ -136,10 +136,10 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 	// Store in cache. TTL defaults to 7 days; env override via
 	// RAGFLOW_TTS_CACHE_TTL_SECONDS (positive integer seconds;
 	// 0 or invalid → default).
-	if cacheKey != "" && m.redis != nil {
+	if cacheKey != "" && m.kvrocks != nil {
 		ttl := ttsCacheTTL()
 		if ttl > 0 {
-			m.redis.Set(ctx, cacheKey, hex.EncodeToString(resp.Audio), ttl)
+			m.kvrocks.Set(ctx, cacheKey, hex.EncodeToString(resp.Audio), ttl)
 		}
 	}
 	return resp, nil

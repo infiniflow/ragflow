@@ -36,10 +36,10 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
-// MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
+// mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}
@@ -144,7 +144,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if err != nil {
 				fields = map[string]any{}
 			}
-			doc := mapDocumentListItem(docs[0], fields)
+			doc := mapDocumentListItem(docs[0], fields, nil)
 			metadata := map[string]any{"document_id": docID}
 			for _, key := range []string{"name", "location", "type", "size", "chunk_count", "create_date", "update_date", "token_count", "thumbnail", "dataset_id", "meta_fields"} {
 				metadata[key] = doc[key]

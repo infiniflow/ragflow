@@ -55,6 +55,19 @@ func TestFormatArtifactMarkdown_DownloadLink(t *testing.T) {
 	}
 }
 
+// TestFormatArtifactMarkdown_ImageMIMEType: an image/ MIME type wins
+// over the URL extension, matching the Python collector's routing.
+func TestFormatArtifactMarkdown_ImageMIMEType(t *testing.T) {
+	arts := []artifactEntry{
+		{Name: "chart.bin", URL: "/api/v1/documents/artifact/1ae8d553478544628bb8be267d502371.bin", MIMEType: "image/png"},
+	}
+	got := formatArtifactMarkdown(arts, "answer")
+	want := "\n\n![chart.bin](/api/v1/documents/artifact/1ae8d553478544628bb8be267d502371.bin)"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 // TestFormatArtifactMarkdown_DedupesAgainstExistingText: if the URL is
 // already in the answer, the artifact link is omitted.
 func TestFormatArtifactMarkdown_DedupesAgainstExistingText(t *testing.T) {

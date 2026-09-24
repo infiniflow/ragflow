@@ -306,7 +306,7 @@ func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
 	})
 
 	opt, future := react.WithMessageFuture()
-	emitDone := emitAgentModelStreams(ctx, future)
+	emitDone := emitAgentModelStreams(ctx, future, false)
 
 	streamCh := make(chan *schema.StreamReader[*schema.Message], 1)
 	errCh := make(chan error, 1)
@@ -582,6 +582,52 @@ func TestAgent_ResolvesUserPromptFromCanvasState(t *testing.T) {
 	}
 	if gotPrompt != "Question: what is marigold" {
 		t.Fatalf("runner prompt = %q, want resolved sys.query", gotPrompt)
+	}
+}
+
+func TestAgent_RejectsUnresolvedPromptReferences(t *testing.T) {
+	tests := []string{"missing@value", "sys.missing", "env.missing", "item", "index"}
+	for _, ref := range tests {
+		t.Run(ref, func(t *testing.T) {
+			called := false
+			withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+				called = true
+				return &schema.Message{Role: schema.Assistant, Content: "unexpected"}, nil
+			})
+
+			state := runtime.NewCanvasState("run-1", "task-1")
+			ctx := runtime.WithState(t.Context(), state)
+			c := NewAgentComponent(AgentParam{ModelID: "stub", UserPrompt: "value {{" + ref + "}}"})
+			_, err := c.Invoke(ctx, nil, nil)
+			if err == nil || err.Error() != "Can't find variable: '"+ref+"'" {
+				t.Fatalf("Invoke error = %v, want missing-variable error", err)
+			}
+			if called {
+				t.Fatal("agent runner called after prompt resolution failed")
+			}
+		})
+	}
+}
+
+func TestAgent_AllowsEmptyPromptReferenceValues(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		if p.UserPrompt != "value " {
+			return nil, fmt.Errorf("resolved prompt = %q, want %q", p.UserPrompt, "value ")
+		}
+		return &schema.Message{Role: schema.Assistant, Content: "ok"}, nil
+	})
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.SetVar("component", "value", "")
+	state.Sys["empty"] = ""
+	state.Env["empty"] = ""
+	state.Globals["__item__"] = ""
+	state.Globals["__index__"] = ""
+	for _, ref := range []string{"component@value", "sys.empty", "env.empty", "item", "index"} {
+		c := NewAgentComponent(AgentParam{ModelID: "stub", UserPrompt: "value {{" + ref + "}}"})
+		if _, err := c.Invoke(runtime.WithState(t.Context(), state), nil, nil); err != nil {
+			t.Fatalf("Invoke(%q): %v", ref, err)
+		}
 	}
 }
 

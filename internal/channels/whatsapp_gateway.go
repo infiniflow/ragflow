@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -149,7 +150,7 @@ func (r *gatewayRuntime) start(ctx context.Context) error {
 		}
 		r.mu.Unlock()
 		if err != nil && owned {
-			log.Printf("whatsapp gateway exited: %v", err)
+			common.Error("whatsapp gateway exited", err)
 		}
 	}()
 	if err := waitForGateway(ctx, gatewayStartTimeout); err != nil {

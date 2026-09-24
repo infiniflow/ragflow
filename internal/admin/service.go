@@ -24,13 +24,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/elasticsearch"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
@@ -72,6 +74,8 @@ type Service struct {
 	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
 	MemoryDAO              *dao.MemoryDAO
 	SearchDAO              *dao.SearchDAO
+	deleteEngine           engine.DocEngine
+	deleteStorage          storage.Storage
 }
 
 // NewService create admin service
@@ -522,12 +526,11 @@ type DeleteUserResult struct {
 //   - *DeleteUserResult
 //   - error: error message
 func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
-	result := &DeleteUserResult{
-		Username:       username,
-		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
-	}
 	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
-	if err != nil || len(userList) == 0 {
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+	if len(userList) == 0 {
 		return nil, fmt.Errorf("user '%s' not found", username)
 	}
 
@@ -547,191 +550,7 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 		return nil, fmt.Errorf("user '%s' is admin account and cannot be deleted", username)
 	}
 
-	// Get user-tenant relations
-	tenants, err := s.userTenantDAO.GetByUserIDAll(ctx, dao.DB, user.ID)
-	if err != nil {
-		common.Warn("failed to get user-tenant relations", zap.Error(err))
-	}
-
-	// Find owned tenant (role = "owner")
-	var ownedTenantID string
-	for _, t := range tenants {
-		if t.Role == "owner" {
-			ownedTenantID = t.TenantID
-			break
-		}
-	}
-
-	// Start transaction for cascade delete
-	tx := dao.DB.Begin()
-	if tx.Error != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", tx.Error)
-	}
-
-	// Rollback helper function
-	rollbackTx := func() {
-		if rbErr := tx.Rollback(); rbErr.Error != nil {
-			common.Error("failed to rollback transaction", rbErr.Error)
-		}
-	}
-
-	result.DeletedDetails = append(result.DeletedDetails, "Start to delete owned tenant.")
-	// Delete owned tenant data
-	if ownedTenantID != "" {
-		// 1. Get knowledge base IDs
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ctx, tx, ownedTenantID)
-		if err != nil {
-			common.Warn("failed to get knowledge base IDs", zap.Error(err))
-		}
-
-		if len(kbIDs) > 0 {
-			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
-			if err != nil {
-				common.Warn("failed to get document IDs", zap.Error(err))
-			}
-
-			// 3. Delete tasks by document IDs
-			if len(docIDs) > 0 {
-				docIDList := make([]string, len(docIDs))
-				for i, d := range docIDs {
-					docIDList[i] = d["id"]
-				}
-				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&entity.Task{}); delErr.Error != nil {
-					common.Warn("failed to delete tasks", zap.Error(delErr.Error))
-				}
-			}
-
-			// 4. Delete documents
-			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&entity.Document{}); delErr.Error != nil {
-				common.Warn("failed to delete documents", zap.Error(delErr.Error))
-			}
-
-			// 5. Delete knowledge bases
-			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&entity.Knowledgebase{}); delErr.Error != nil {
-				common.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
-			}
-		}
-
-		// 6. Delete files
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.File{}); delErr.Error != nil {
-			common.Warn("failed to delete files", zap.Error(delErr.Error))
-		}
-
-		// 7. Delete user canvas (agents)
-		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&entity.UserCanvas{}); delErr.Error != nil {
-			common.Warn("failed to delete user canvas", zap.Error(delErr.Error))
-		}
-
-		// 8. Get dialog IDs
-		var dialogIDs []string
-		if pluckErr := tx.Model(&entity.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
-			common.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
-		}
-
-		// 9. Delete chat sessions
-		if len(dialogIDs) > 0 {
-			var sessionIDs []string
-			if pluckErr := tx.Model(&entity.ChatSession{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
-				common.Warn("failed to get chat session IDs", zap.Error(pluckErr.Error))
-			}
-			if len(sessionIDs) > 0 {
-				if delErr := tx.Table("conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
-					common.Warn("failed to delete conversation messages", zap.Error(delErr.Error))
-				}
-				if delErr := tx.Table("conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
-					common.Warn("failed to delete conversation references", zap.Error(delErr.Error))
-				}
-			}
-			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
-				common.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
-			}
-		}
-
-		// 10. Delete chats/dialogs
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.Chat{}); delErr.Error != nil {
-			common.Warn("failed to delete chats", zap.Error(delErr.Error))
-		}
-
-		// 11. Delete API tokens
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.APIToken{}); delErr.Error != nil {
-			common.Warn("failed to delete API tokens", zap.Error(delErr.Error))
-		}
-
-		// 12. Delete API4Conversations
-		if len(dialogIDs) > 0 {
-			var sessionIDs []string
-			if pluckErr := tx.Model(&entity.API4Conversation{}).Where("dialog_id IN ?", dialogIDs).Pluck("id", &sessionIDs); pluckErr.Error != nil {
-				common.Warn("failed to get API conversation IDs", zap.Error(pluckErr.Error))
-			}
-			if len(sessionIDs) > 0 {
-				if delErr := tx.Table("api_4_conversation_message").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
-					common.Warn("failed to delete API conversation messages", zap.Error(delErr.Error))
-				}
-				if delErr := tx.Table("api_4_conversation_reference").Where("conversation_id IN ?", sessionIDs).Delete(map[string]interface{}{}); delErr.Error != nil {
-					common.Warn("failed to delete API conversation references", zap.Error(delErr.Error))
-				}
-			}
-			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
-				common.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
-			}
-		}
-
-		var tenantLLMCount int64
-		tx.Model(&entity.TenantLLM{}).Where("tenant_id = ?", ownedTenantID).Count(&tenantLLMCount)
-		result.TenantLLMCount = int(tenantLLMCount)
-		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant-LLM records.", tenantLLMCount))
-
-		result.LangfuseCount = 0
-		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d langfuse records.", result.LangfuseCount))
-
-		metadataTableName := fmt.Sprintf("ragflow_doc_meta_%s", ownedTenantID[:32])
-		result.MetadataTable = metadataTableName
-		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted metadata table %s.", metadataTableName))
-
-		// 13. Delete tenant LLM configurations
-		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.TenantLLM{}); delErr.Error != nil {
-			common.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
-		}
-
-		var tenantCount int64
-		tx.Model(&entity.Tenant{}).Where("id = ?", ownedTenantID).Count(&tenantCount)
-		result.TenantCount = int(tenantCount)
-		// 14. Delete tenant
-		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&entity.Tenant{}); delErr.Error != nil {
-			common.Warn("failed to delete tenant", zap.Error(delErr.Error))
-		}
-		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant.", result.TenantCount))
-	}
-
-	var userTenantCount int64
-	tx.Model(&entity.UserTenant{}).Where("user_id = ?", user.ID).Count(&userTenantCount)
-	result.UserTenantCount = int(userTenantCount)
-
-	// 15. Delete user-tenant relations
-	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&entity.UserTenant{}); delErr.Error != nil {
-		common.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
-	}
-	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user-tenant records.", result.UserTenantCount))
-
-	result.UserCount = 1
-	// 16. Finally, hard delete user
-	if delErr := tx.Unscoped().Where("id = ?", user.ID).Delete(&entity.User{}); delErr.Error != nil {
-		rollbackTx()
-		return nil, fmt.Errorf("failed to delete user: %w", delErr.Error)
-	}
-	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user.", result.UserCount))
-
-	// Commit transaction
-	if commitErr := tx.Commit(); commitErr.Error != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", commitErr.Error)
-	}
-
-	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
-
-	common.Info("Delete user success with all related data", zap.String("username", username))
-
-	return result, nil
+	return s.deleteUserData(ctx, user)
 }
 
 // ChangePassword change user password
@@ -998,19 +817,36 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 type ServiceStatus struct {
 	Type    string `json:"type"`
 	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
 	Status  string `json:"status"`
 	Elapsed string `json:"elapsed"`
 	Message string `json:"message"`
 }
 
-func newServiceStatus(typeStr, nameStr, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
+func newServiceStatus(typeStr, nameStr, host string, port int, statusStr string, startTime time.Time, messageStr string) ServiceStatus {
 	return ServiceStatus{
 		Type:    typeStr,
 		Name:    nameStr,
+		Host:    host,
+		Port:    port,
 		Status:  statusStr,
 		Elapsed: fmt.Sprintf("%.1d", time.Since(startTime).Milliseconds()),
 		Message: messageStr,
 	}
+}
+
+func serviceEndpoint(raw string, defaultPort int) (string, int) {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Hostname() != "" {
+		raw = parsed.Host
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err == nil {
+		var portNumber int
+		fmt.Sscanf(port, "%d", &portNumber)
+		return host, portNumber
+	}
+	return raw, defaultPort
 }
 
 // ListServices get all services
@@ -1026,48 +862,67 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		mysqlConfig := globalConfig.GetMySQLConfig()
+		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
 	}
 
 	// Doc engine
 	docEngineImpl := engine.Get()
+	docHost, docPort := "-", 0
+	if docEngineImpl.GetType() == "infinity" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
+	} else if docEngineImpl.GetType() == "elasticsearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), "timeout", time.Now(), err.Error()))
+		results = append(results, newServiceStatus("doc_engine", docEngineImpl.GetType(), docHost, docPort, "timeout", time.Now(), err.Error()))
 	}
 
 	// storage engine
 	storageImpl := storage.GetStorageFactory().GetStorage()
+	storageHost, storagePort := "-", 0
+	if storageImpl.Type() == "minio" {
+		storageHost, storagePort = serviceEndpoint(globalConfig.GetMinioConfig().Host, 0)
+	}
 	storageHealth := storageImpl.Health(ctx)
 	if storageHealth {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "alive", time.Now(), ""))
 	} else {
-		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "timeout", time.Now(), ""))
+		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), storageHost, storagePort, "timeout", time.Now(), ""))
 	}
 
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
-		mysqlStatus := s.getRedisInfo(ctx)
-		results = append(results, mysqlStatus)
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so probe the same connection.
+	case "redis", "kvrocks":
+		kvrocksStatus := s.getKvrocksStatus(ctx)
+		results = append(results, kvrocksStatus)
 	default:
-		results = append(results, newServiceStatus("database", databaseType, "not available", time.Now(), "not supported database type"))
+		redisConfig := globalConfig.GetKvrocksConfig()
+		results = append(results, newServiceStatus("cache", cacheType, redisConfig.Host, redisConfig.Port, "not available", time.Now(), "not supported cache type"))
 	}
 
 	// message queue
 	messageQueueImpl := engine.GetMessageQueueEngine()
 	messageQueueStatus := messageQueueImpl.CheckStatus()
-	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), messageQueueStatus, time.Now(), ""))
+	if messageQueueStatus == "CONNECTED" {
+		messageQueueStatus = "alive"
+	}
+	natsConfig := globalConfig.GetNATSConfig()
+	results = append(results, newServiceStatus("message_queue", messageQueueImpl.Type(), natsConfig.Host, natsConfig.Port, messageQueueStatus, time.Now(), ""))
 
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
 		now := time.Now()
-		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, "", serverStatus.Timestamp, "")
+		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
 		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
 			serverItem.Status = "alive"
@@ -1096,7 +951,7 @@ func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]Servic
 	//case "meta_data":
 	//	return s.getMySQLStatus(ctx), nil
 	//case "cache":
-	//	return s.getRedisInfo(ctx), nil
+	//	return s.getKvrocksStatus(ctx), nil
 	//case "message_queue":
 	//	host := configDict["host"].(string)
 	//	port := configDict["port"].(int)
@@ -1134,32 +989,36 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	sqlDB, err := dao.DB.DB()
 	if err != nil {
-		return newServiceStatus(serviceType, name, "not connected", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "not connected", startTime, err.Error())
 	}
 
 	// Execute SELECT 1 to check connectivity
 	err = sqlDB.PingContext(ctx)
 	if err != nil {
-		return newServiceStatus(serviceType, name, "timeout", startTime, err.Error())
+		mysqlConfig := server.GetConfig().GetMySQLConfig()
+		return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "timeout", startTime, err.Error())
 	}
 
-	return newServiceStatus(serviceType, name, "alive", startTime, "")
+	mysqlConfig := server.GetConfig().GetMySQLConfig()
+	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
 }
 
-// getRedisInfo gets Redis service info
-func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
+// getKvrocksStatus gets the Kvrocks service status.
+func (s *Service) getKvrocksStatus(ctx context.Context) ServiceStatus {
 
 	serviceType := "cache"
-	name := "redis"
+	name := "kvrocks"
 
 	startTime := time.Now()
+	kvrocksConfig := server.GetConfig().GetKvrocksConfig()
 
-	redisClient := redis.Get()
-	if redisClient.Health(ctx) {
-		return newServiceStatus(serviceType, name, "alive", startTime, "")
+	kvrocksClient := kvrocks.Get()
+	if kvrocksClient.Health(ctx) {
+		return newServiceStatus(serviceType, name, kvrocksConfig.Host, kvrocksConfig.Port, "alive", startTime, "")
 	}
 
-	return newServiceStatus(serviceType, name, "timeout", startTime, "Redis health check failed")
+	return newServiceStatus(serviceType, name, kvrocksConfig.Host, kvrocksConfig.Port, "timeout", startTime, "Kvrocks health check failed")
 }
 
 // getESClusterStats gets Elasticsearch cluster stats
@@ -1354,7 +1213,7 @@ func (s *Service) GetVariable(ctx context.Context, varName string) ([]map[string
 			return nil, NewAdminException("Can't get setting: " + varName)
 		}
 	}
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 // ListAllVariables list all variables
@@ -1365,7 +1224,7 @@ func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{
 		return nil, err
 	}
 
-	return common.FormatSystemSettings(settings), nil
+	return entity.FormatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
@@ -1383,7 +1242,7 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 
 	if len(settings) == 1 {
 		setting := &settings[0]
-		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
+		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
 			return err
 		}
 		setting.Value = varValue
@@ -1392,14 +1251,14 @@ func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValu
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	dataType := common.InferSystemSettingDataType(varName)
+	dataType := entity.InferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
 	}
-	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
+	if err = entity.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
 	return s.systemSettingsDAO.Create(ctx, db, newSetting)

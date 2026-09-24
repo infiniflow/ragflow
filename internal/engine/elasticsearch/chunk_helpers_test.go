@@ -18,7 +18,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
-	}, 0, true, false)
+	}, true, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
@@ -32,13 +32,44 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
-	}, 0, false, false)
+	}, false, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("query_string missing from %#v", query)
 	}
 	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
+
+func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
+	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
+	// tokens; a capitalized query term must not silently match nothing.
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		"isabel wood co-lead ross feldner bob musil bird watch wonder program")
+}
+
+func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
+	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
+	// term clause, which re-bases minimum_should_match and turns a 94-hit search
+	// into a 32-hit one (see lowerCaseQueryText).
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		`(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("mes"^0.7)`)
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
@@ -250,10 +281,11 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 }
 
 // TestUpdateChunksPreservesStringSliceCondition guards the document
-// availability switch: updateSourceChunkAvailability passes a typed []string id
-// list, and a builder that only understands []interface{} silently drops the id
-// clause, widening the update-by-query to every chunk of the dataset (kb_id is
-// then the only remaining filter).
+// availability switch: the doc-service caller of UpdateChunks
+// (updateDocumentChunkAvailability) passes a typed []string id list, and a
+// builder that only understands []interface{} silently drops the id clause,
+// widening the update-by-query to every chunk of the dataset (kb_id is then the
+// only remaining filter).
 func TestUpdateChunksPreservesStringSliceCondition(t *testing.T) {
 	var updateQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

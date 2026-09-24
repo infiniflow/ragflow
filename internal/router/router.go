@@ -217,8 +217,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
 		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
 
-		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		// Public bot endpoints (authenticated with an SDK beta token, not a session).
+		// The image/thumbnail routes accept the beta token like Python's
+		// login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA]); shared
+		// chats render their images through them. Ownership is enforced in the
+		// service layer, not by the middleware group.
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/documents/:id/thumbnail", r.documentHandler.GetDocumentThumbnail)
+		apiBetaAuth.GET("/documents/:id/images/:image_id", r.documentHandler.GetDocumentImageForDocument)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
@@ -348,9 +354,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
-				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
-				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
-				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
@@ -388,6 +391,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
 				// Metadata Config
@@ -689,6 +693,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete key /api/v1/system/keys/:key DELETE
 					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
+
+				system.GET("/hardware", r.systemHandler.GetHardwareInfo)
+
+				system.GET("/cores", r.systemHandler.GetCores)
+				system.PUT("/cores", r.systemHandler.SetCores)
+				system.GET("/memory", r.systemHandler.GetMemory)
+				system.PUT("/memory", r.systemHandler.SetMemory)
+				system.GET("/concurrency", r.systemHandler.GetConcurrency)
+				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
 			}
 
 			// Document routes

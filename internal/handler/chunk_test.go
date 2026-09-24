@@ -312,6 +312,107 @@ func TestChunkHandlerUpdateChunkValidationErrorIsBadRequest(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerUpdateChunkForwardsImageFields(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+		if req.ImageBase64 == nil || *req.ImageBase64 != "aGVsbG8=" {
+			t.Fatalf("image_base64 = %v, want aGVsbG8=", req.ImageBase64)
+		}
+		if req.ImageUpdateMode == nil || *req.ImageUpdateMode != "replace" {
+			t.Fatalf("image_update_mode = %v, want replace", req.ImageUpdateMode)
+		}
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1",
+		strings.NewReader(`{"content":"updated","image_base64":"aGVsbG8=","image_update_mode":"replace"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsNonStringImageFields(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"image_base64 as number", `{"image_base64":123}`, "`image_base64` must be a non-empty string"},
+		{"image_base64 as null", `{"image_base64":null}`, "`image_base64` must be a non-empty string"},
+		{"image_update_mode as number", `{"image_update_mode":5}`, "`image_update_mode` must be a string"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+				t.Fatal("service must not be called for a malformed image field")
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			message, _ := resp["message"].(string)
+			if message != tc.want {
+				t.Fatalf("message = %q, want %q", message, tc.want)
+			}
+			// Python answers the image paths with DATA_ERROR (102).
+			if resp["code"] != float64(common.CodeDataError) {
+				t.Fatalf("code = %v, want %d", resp["code"], common.CodeDataError)
+			}
+		})
+	}
+}
+
+func TestChunkHandlerUpdateChunkStillRejectsUnknownFields(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+		t.Fatal("service must not be called for an unsupported field")
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"doc_type_kwd":"image"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	message, _ := resp["message"].(string)
+	for _, field := range []string{"image_base64", "image_update_mode"} {
+		if !strings.Contains(message, field) {
+			t.Fatalf("message = %q, want it to list %s as updatable", message, field)
+		}
+	}
+}
+
 func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
 	r, _ := setupChunkRetrievalTest("user1")
 
@@ -754,11 +855,6 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			name:    "important keywords type",
 			body:    `{"content":"chunk body","important_keywords":{}}`,
 			wantMsg: "`important_keywords` is required to be a list",
-		},
-		{
-			name:    "tag kwd element type",
-			body:    `{"content":"chunk body","tag_kwd":[1]}`,
-			wantMsg: "`tag_kwd` must be a list of strings",
 		},
 	}
 

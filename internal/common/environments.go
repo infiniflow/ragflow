@@ -31,6 +31,31 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// SandboxArtifactBucket is the object-storage bucket that holds
+// code-exec sandbox artifacts, served back through
+// /api/v1/documents/artifact/<name>.
+func SandboxArtifactBucket() string {
+	if bucket := GetEnv(EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+// SandboxArtifactContentTypes maps the sandbox-artifact file extensions
+// the /api/v1/documents/artifact route serves to response content
+// types. Artifact publication derives storage-name extensions from the
+// same table so every published URL resolves to a servable type.
+var SandboxArtifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
 func IsLLMDebugEnabled() bool {
 	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
 	return err == nil && enabled
@@ -232,6 +257,11 @@ const (
 	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
 	// backends apply the same text-blanking contract.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
+	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
+	// Runs may be in flight at once (each uses one core). It overrides the
+	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// --deepdoc-inference-concurrency CLI flag.
+	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the

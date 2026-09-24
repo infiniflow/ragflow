@@ -23,11 +23,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -63,7 +61,9 @@ type documentServiceIface interface {
 	GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
-	GetDocumentImage(ctx context.Context, imageID string) ([]byte, error)
+	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
+	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
+	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
 	DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error
@@ -84,6 +84,10 @@ type documentServiceIface interface {
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
 	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
+}
+
+type latestIngestionEventLookup interface {
+	LatestIngestionEventsByPipelineLogIDs(ctx context.Context, pipelineLogIDs []string) (map[string]*service.IngestionEventItem, error)
 }
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
@@ -190,22 +194,60 @@ func parseThumbnailDocIDs(c *gin.Context) []string {
 
 // GetDocumentImage returns a document image from object storage.
 func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
 	imageID := c.Param("image_id")
 	ctx := c.Request.Context()
-	data, err := h.documentService.GetDocumentImage(ctx, imageID)
+	data, err := h.documentService.GetDocumentImage(ctx, user.ID, imageID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
 		return
 	}
+	h.writeDocumentImage(c, data)
+}
 
-	contentType := documentImageContentType(imageID, data)
+func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), user.ID, c.Param("id"), c.Param("image_id"))
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	h.writeDocumentImage(c, data)
+}
+
+func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), user.ID, c.Param("id"))
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	h.writeDocumentImage(c, data)
+}
+
+func (h *DocumentHandler) writeDocumentImage(c *gin.Context, data []byte) {
+	contentType := documentImageContentType(data)
+	if contentType == "" {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, contentType, data)
 }
 
-func documentImageContentType(imageID string, data []byte) string {
-	if contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID))); strings.HasPrefix(contentType, "image/") {
-		return contentType
-	}
+func documentImageContentType(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
 		return "image/png"
@@ -218,7 +260,7 @@ func documentImageContentType(imageID string, data []byte) string {
 	case bytes.HasPrefix(data, []byte("BM")):
 		return "image/bmp"
 	default:
-		return "application/octet-stream"
+		return ""
 	}
 }
 
@@ -623,6 +665,21 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	docs := make([]map[string]interface{}, 0, len(documents))
+	runIDs := make([]string, 0, len(documents))
+	for _, doc := range documents {
+		if doc != nil && doc.PipelineLogID != nil && *doc.PipelineLogID != "" {
+			runIDs = append(runIDs, *doc.PipelineLogID)
+		}
+	}
+	latestEventsByRun := map[string]*service.IngestionEventItem{}
+	if lookup, ok := h.documentService.(latestIngestionEventLookup); ok && len(runIDs) > 0 {
+		var lookupErr error
+		latestEventsByRun, lookupErr = lookup.LatestIngestionEventsByPipelineLogIDs(ctx, runIDs)
+		if lookupErr != nil {
+			common.Warn("failed to load latest ingestion events for document list", zap.Error(lookupErr))
+			latestEventsByRun = map[string]*service.IngestionEventItem{}
+		}
+	}
 	for _, doc := range documents {
 		if opts.CreateTimeFrom > 0 && doc.CreateTime != nil && *doc.CreateTime < opts.CreateTimeFrom {
 			continue
@@ -635,7 +692,11 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			metaFields = make(map[string]interface{})
 		}
 
-		docs = append(docs, mapDocumentListItem(doc, metaFields))
+		var latestEvent *service.IngestionEventItem
+		if doc.PipelineLogID != nil {
+			latestEvent = latestEventsByRun[*doc.PipelineLogID]
+		}
+		docs = append(docs, mapDocumentListItem(doc, metaFields, latestEvent))
 	}
 
 	hasActiveTasks, err := h.documentService.HasActiveIngestionTasks(ctx, datasetID)
@@ -1152,7 +1213,7 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	c.Data(http.StatusOK, res.ContentType, res.Data)
 }
 
-func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}, latestEvent *service.IngestionEventItem) map[string]interface{} {
 	processDuration := doc.ProcessDuration
 	if doc.IngestionStatus != nil && *doc.IngestionStatus == common.RUNNING && doc.ProcessBeginAt != nil {
 		processDuration = time.Since(*doc.ProcessBeginAt).Seconds()
@@ -1165,34 +1226,35 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		ingestionStatus = *doc.IngestionStatus
 	}
 	item := map[string]interface{}{
-		"id":               doc.ID,
-		"dataset_id":       doc.KbID,
-		"name":             stringValue(doc.Name),
-		"thumbnail":        stringValue(doc.Thumbnail),
-		"size":             doc.Size,
-		"type":             doc.Type,
-		"created_by":       doc.CreatedBy,
-		"location":         stringValue(doc.Location),
-		"token_count":      doc.TokenNum,
-		"chunk_count":      doc.ChunkNum,
-		"progress":         doc.Progress,
-		"progress_msg":     stringValue(doc.ProgressMsg),
-		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
-		"process_duration": processDuration,
-		"suffix":           doc.Suffix,
-		"ingestion_status": ingestionStatus,
-		"status":           stringValue(doc.Status),
-		"parser_id":        doc.ParserID,
-		"chunk_method":     doc.ParserID,
-		"pipeline_id":      stringValue(doc.PipelineID),
-		"pipeline_name":    stringValue(doc.PipelineName),
-		"nickname":         stringValue(doc.Nickname),
-		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
-		"meta_fields":      metaFields,
-		"create_time":      int64(0),
-		"create_date":      "",
-		"update_time":      int64(0),
-		"update_date":      "",
+		"id":                     doc.ID,
+		"dataset_id":             doc.KbID,
+		"name":                   stringValue(doc.Name),
+		"thumbnail":              stringValue(doc.Thumbnail),
+		"size":                   doc.Size,
+		"type":                   doc.Type,
+		"created_by":             doc.CreatedBy,
+		"location":               stringValue(doc.Location),
+		"token_count":            doc.TokenNum,
+		"chunk_count":            doc.ChunkNum,
+		"progress":               doc.Progress,
+		"progress_msg":           stringValue(doc.ProgressMsg),
+		"latest_ingestion_event": latestEvent,
+		"process_begin_at":       formatTimePtr(doc.ProcessBeginAt),
+		"process_duration":       processDuration,
+		"suffix":                 doc.Suffix,
+		"ingestion_status":       ingestionStatus,
+		"status":                 stringValue(doc.Status),
+		"parser_id":              doc.ParserID,
+		"chunk_method":           doc.ParserID,
+		"pipeline_id":            stringValue(doc.PipelineID),
+		"pipeline_name":          stringValue(doc.PipelineName),
+		"nickname":               stringValue(doc.Nickname),
+		"parser_config":          decodeJSONMap(string(doc.ParserConfig)),
+		"meta_fields":            metaFields,
+		"create_time":            int64(0),
+		"create_date":            "",
+		"update_time":            int64(0),
+		"update_date":            "",
 	}
 
 	if doc.CreateTime != nil {

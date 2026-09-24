@@ -427,6 +427,10 @@ export function transformTitleChunkerParams(
       'groupRules',
       'hierarchyHierarchy',
       'hierarchyGroup',
+      // Legacy pre-split rules field. The active rules have already been
+      // resolved (with `rules` as fallback) into `levels` above; keep the
+      // serialized params identical to the template's obj.params shape.
+      'rules',
     ]),
     method: params.method,
     hierarchy: Number(hierarchyValue || 0),
@@ -436,10 +440,11 @@ export function transformTitleChunkerParams(
   };
 }
 
-// LLM setting keys the Go extractor DSL keeps besides the nested groups.
-// Mirrors LlmSettingSchema (components/llm-setting-items/next) — duplicated
-// here as a plain list so this module doesn't import the form components.
-const ExtractorLlmSettingKeys = [
+// LLM setting keys LLM-backed pipeline operators (Extractor, Compiler) keep in
+// their DSL params. Mirrors LlmSettingSchema (components/llm-setting-items/next)
+// — duplicated here as a plain list so this module doesn't import the form
+// components.
+export const LlmSettingParamKeys = [
   'llm_id',
   'temperature',
   'top_p',
@@ -514,7 +519,7 @@ function transformExtractorParamsGo(
   // the LLM settings the form defines — no legacy flat mirrors, no
   // display-only fields like outputs.
   return {
-    ...pick(params, ExtractorLlmSettingKeys),
+    ...pick(params, LlmSettingParamKeys),
     keywords: {
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
@@ -546,6 +551,17 @@ export function transformExtractorParams(
     go: transformExtractorParamsGo,
     python: transformExtractorParamsPython,
   })(params);
+}
+
+// The Compiler reads the compilation template group plus the same LLM runtime
+// settings as the Extractor; display-only fields like outputs are dropped.
+export function transformCompilationParams(
+  params: Record<string, any>,
+): Record<string, any> {
+  return {
+    compilation_template_group_id: params?.compilation_template_group_id,
+    ...pick(params, LlmSettingParamKeys),
+  };
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
@@ -683,6 +699,14 @@ export const buildDslComponentsByGraph = (
 
         case Operator.TitleChunker:
           params = transformTitleChunkerParams(params);
+          break;
+        case Operator.ManualChunker:
+          // These fields are UI-only for the manual chunker and are not read
+          // by the backend ManualChunker component (manual.go pins method=group,
+          // ignores the token cap).
+          params = transformTitleChunkerParams(
+            omit(params, ['include_heading_content', 'chunk_token_cap']) as any,
+          );
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);
@@ -993,21 +1017,6 @@ export function isEmptyMessageContent(content?: unknown): boolean {
     content.length === 0 ||
     content.some((item) => typeof item !== 'string' || item.trim() === '')
   );
-}
-
-/**
- * Returns the display names of Message nodes whose content is empty, so the
- * save flow can warn about them up front instead of surfacing the runtime
- * error only when the user runs the agent.
- */
-export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
-  return nodes
-    .filter(
-      (node) =>
-        node.data?.label === Operator.Message &&
-        isEmptyMessageContent(node.data?.form?.content),
-    )
-    .map((node) => node.data?.name ?? node.id);
 }
 
 /**

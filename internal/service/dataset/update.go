@@ -223,9 +223,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = resolvedID
+					tenantEmbdID = target.ModelID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID
@@ -247,7 +247,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			}
 			if dslJSON != nil {
 				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
-				updates["parser_config"] = preserveDatasetParserConfigMetadata(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
+				updates["parser_config"] = preserveDatasetParserConfigState(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
@@ -268,7 +268,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
-					updates["parser_config"] = preserveDatasetParserConfigMetadata(resolved, lockedKB.ParserConfig, req.ParserConfig)
+					updates["parser_config"] = preserveDatasetParserConfigState(resolved, lockedKB.ParserConfig, req.ParserConfig)
 				}
 			}
 		}
@@ -279,7 +279,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
-		if pipelineChanged {
+		if _, ok := updates["parser_config"]; pipelineChanged && !ok {
 			cfgParserID := lockedKB.ParserID
 			if parserIDProvided {
 				cfgParserID = parserID
@@ -288,7 +288,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				common.Warn("failed to resolve component params defaults on pipeline change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
 			} else if cpDefaults != nil {
-				updates["parser_config"] = preserveDatasetParserConfigMetadata(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
+				updates["parser_config"] = preserveDatasetParserConfigState(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 

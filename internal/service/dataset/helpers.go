@@ -56,7 +56,6 @@ var (
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -508,7 +507,7 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	return embdID, true, nil
 }
 
-func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
 	if next == nil {
 		next = entity.JSONMap{}
 	}
@@ -525,6 +524,69 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	}
 	if mm != nil {
 		next["metadata"] = mm
+	}
+	var parentChild map[string]any
+	if incoming != nil {
+		if value, ok := incoming["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild == nil && existing != nil {
+		if value, ok := existing["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild != nil {
+		next["parent_child"] = parentChild
+	}
+	requestedChildren := make(map[string]interface{})
+	for componentID, value := range incoming {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := value.(map[string]interface{}); ok {
+			if enabled, provided := requested["enable_children"].(bool); provided && !enabled {
+				requestedChildren[componentID] = []string{}
+			} else if _, provided := requested["children_delimiters"]; provided {
+				if params, ok := next[componentID].(map[string]interface{}); ok {
+					requestedChildren[componentID] = params["children_delimiters"]
+				}
+			}
+		}
+	}
+	// Re-derive delimiters from parent_child, then keep explicit chunker edits
+	// (or an existing chunker setting on a partial update) over that fallback.
+	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	for componentID, value := range incoming {
+		if pipelinepkg.IsChunkerComponent(componentID) {
+			parentChildConfig[componentID] = value
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(next, parentChildConfig)
+	_, parentChildUpdated := incoming["parent_child"]
+	for componentID, value := range next {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if delimiters, provided := requestedChildren[componentID]; provided {
+			params["children_delimiters"] = delimiters
+			continue
+		}
+		if parentChildUpdated {
+			continue
+		}
+		if previous, ok := existing[componentID].(map[string]interface{}); ok {
+			if delimiters, present := previous["children_delimiters"]; present {
+				params["children_delimiters"] = delimiters
+			}
+			if enabled, present := previous["enable_children"]; present {
+				params["enable_children"] = enabled
+			}
+		}
 	}
 	return next
 }

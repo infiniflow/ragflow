@@ -152,6 +152,34 @@ func TestParserComponentInvokeOutputsResolvedFileType(t *testing.T) {
 	}
 }
 
+// TestParserComponentInvoke_LanguageFromGlobals covers the production run
+// shape: File emits no lang, the pipeline seeds the dataset language into
+// CanvasState.Globals, and the Parser must pull it into the local inputs so
+// the language consumers (vision enhancement, media dispatch) see it. The
+// inputs-map value stays the fallback when no CanvasState is attached.
+func TestParserComponentInvoke_LanguageFromGlobals(t *testing.T) {
+	component := &ParserComponent{setups: defaultSetups()}
+
+	ctx := runtime.WithState(t.Context(), &runtime.CanvasState{
+		Globals: map[string]any{"lang": "Chinese"},
+	})
+	out, err := component.Invoke(ctx, nil, map[string]any{"binary": "hello", "name": "notes.txt"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["lang"]; got != "Chinese" {
+		t.Errorf("out[lang] = %v, want Chinese", got)
+	}
+
+	out, err = component.Invoke(t.Context(), nil, map[string]any{"binary": "hello", "name": "notes.txt", "lang": "Japanese"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["lang"]; got != "Japanese" {
+		t.Errorf("out[lang] = %v, want Japanese", got)
+	}
+}
+
 func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
 		"pdf":         map[string]any{"output_format": "markdown"},
