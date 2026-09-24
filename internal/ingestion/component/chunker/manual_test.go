@@ -429,3 +429,83 @@ func TestManualChunker_MixedPositionedAndPlain(t *testing.T) {
 		t.Fatalf("coordinate-free records lost original order in %q", joined)
 	}
 }
+
+// TestManualChunker_RespectsChunkTokenCap is the regression lock for #20139:
+// ManualChunker previously hardcoded tokenCap=0 into chunkFromRecords and so
+// never enforced chunk_token_cap, even though the param survived save/reload.
+// It must now split an oversized body under an explicit cap exactly like
+// GroupTitleChunker does with the same cap. Uses cap=128, the smallest value
+// production Validate() accepts (range 128..8000), since this goes through
+// the real NewManualChunker constructor rather than the char-stub suite's
+// Validate-skipping newTitleParam helper.
+func TestManualChunker_RespectsChunkTokenCap(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 200) // 400 stub tokens > cap 128
+	mc := mustManual(t, map[string]any{"levels": [][]string{{`^# `}}, "chunk_token_cap": 128})
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	out, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) <= 1 {
+		t.Fatalf("expected split under cap=128, got %d chunk(s)", len(chunks))
+	}
+	assertCapInvariants(t, chunks, 128, body)
+}
+
+// TestManualChunker_ChunkTokenCapZeroNoop confirms cap=0 (explicitly
+// disabled) still means "no cap" for ManualChunker, matching GroupTitleChunker.
+func TestManualChunker_ChunkTokenCapZeroNoop(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Join(joinSentences(12), "")
+	mc := mustManual(t, map[string]any{"levels": [][]string{{`^# `}}, "chunk_token_cap": 0})
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	out, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("cap=0 must keep 1 chunk, got %d", len(chunks))
+	}
+}
+
+// TestManualChunker_DefaultChunkTokenCapAppliesLikeGroupChunker locks the
+// behavior change from #20139: an unset chunk_token_cap now resolves to the
+// same schema default (512) GroupTitleChunker uses, instead of silently never
+// capping. Both chunkers must produce byte-identical output for the same
+// oversized coordinate-free body.
+func TestManualChunker_DefaultChunkTokenCapAppliesLikeGroupChunker(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 400) // 800 stub tokens > default cap 512
+	levels := [][]string{{`^# `}}
+
+	gc, err := NewGroupTitleChunker(map[string]any{"levels": levels})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	mc := mustManual(t, map[string]any{"levels": levels})
+
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	gOut, err := gc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("group Invoke: %v", err)
+	}
+	mOut, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("manual Invoke: %v", err)
+	}
+
+	gChunks, _ := gOut["chunks"].([]map[string]any)
+	mChunks, _ := mOut["chunks"].([]map[string]any)
+	if len(gChunks) <= 1 {
+		t.Fatalf("expected the oversized body to split under the default cap, got %d", len(gChunks))
+	}
+	if !reflect.DeepEqual(gChunks, mChunks) {
+		t.Fatalf("ManualChunker diverges from GroupTitleChunker under the default token cap\n group: %#v\n manual: %#v", gChunks, mChunks)
+	}
+}

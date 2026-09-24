@@ -37,6 +37,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -124,16 +125,16 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 
 // chunkFromRecords runs the shared GroupTitle / Manual grouping pipeline over
 // an already-extracted record list: resolve heading levels, split into
-// sections, merge adjacent text records, build chunks, enforce the token cap
-// (title family only), and perform on-demand PDF cropping. GroupTitleChunker
-// feeds records in input order; ManualChunker feeds them after a (page, top,
-// left) resort. Sharing this body keeps both strategies byte-identical for
-// coordinate-free input as long as no built chunk exceeds the token cap
-// (TestManualChunker_NoPositionsEqualsGroupChunker); once one does, only
-// GroupTitleChunker re-splits it (ManualChunker is exempt).
+// sections, merge adjacent text records, build chunks, enforce the token cap,
+// and perform on-demand PDF cropping. GroupTitleChunker feeds records in input
+// order; ManualChunker feeds them after a (page, top, left) resort. Sharing
+// this body keeps both strategies byte-identical for coordinate-free input
+// given the same param (TestManualChunker_NoPositionsEqualsGroupChunker) —
+// including once a built chunk exceeds the token cap: both now enforce it via
+// the same tokenCap argument (#20139; ManualChunker previously passed a
+// hardcoded 0 and skipped enforcement entirely).
 //
-// tokenCap is the title-family token ceiling (chunk_token_cap). ManualChunker
-// must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
+// tokenCap is the title-family token ceiling (chunk_token_cap); callers pass
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
 // on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
 func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
@@ -176,8 +177,8 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
-	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
-	// tokenCap=0, so this is a no-op there.
+	// invoke() order (build -> cap -> set_chunks). tokenCap==0 (explicitly
+	// disabled via the param) is a no-op here for either caller.
 	if tokenCap > 0 {
 		chunks = enforceTitleTokenCap(chunks, tokenCap)
 	}
@@ -194,7 +195,7 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
 		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 		if eErr != nil {
-			common.Warn("chunker: could not open PDF for on-demand cropping", zap.Error(eErr))
+			slog.Warn("chunker: could not open PDF for on-demand cropping", "err", eErr)
 		}
 		if engine != nil {
 			defer engine.Close()

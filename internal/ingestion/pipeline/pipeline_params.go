@@ -50,13 +50,25 @@ var extractorValidParamKeys = func() map[string]struct{} {
 // families) or whose param struct is not part of the schema package
 // (GeneralChunker, QAChunker) stay out of this table; Extractor and Compiler
 // keep their cpnID-prefixed dynamic whitelists.
+// manualChunkerParamKeys is TitleChunkerParam's key set minus
+// include_heading_content (#20139). ManualChunker reuses TitleChunkerParam
+// wholesale, but include_heading_content only has a toggle point in the
+// hierarchy path (hierarchy.go's leaf-only emission rule), and ManualChunker
+// is permanently pinned to method="group" (manual.go:NewManualChunker), so it
+// can never reach that code — the key would silently persist with zero
+// effect. method, levels, hierarchy, root_chunk_as_heading and
+// chunk_token_cap all have real effect for ManualChunker (method's value is
+// fixed but still consumed; chunk_token_cap enforces the same cap
+// GroupTitleChunker does, as of #20139), so they stay.
+var manualChunkerParamKeys = func() map[string]struct{} {
+	keys := extractJSONTags(schema.TitleChunkerParam{})
+	delete(keys, "include_heading_content")
+	return keys
+}()
+
 var componentParamSchemaKeys = map[string]map[string]struct{}{
-	"titlechunker": extractJSONTags(schema.TitleChunkerParam{}),
-	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
-	// from the token cap, so method, chunk_token_cap and include_heading_content
-	// (hierarchy-only) are accepted here but ignored by the component — the
-	// operator form omits them for the same reason.
-	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"titlechunker":  extractJSONTags(schema.TitleChunkerParam{}),
+	"manualchunker": manualChunkerParamKeys,
 	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
 	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
 }

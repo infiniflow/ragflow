@@ -95,7 +95,6 @@
                     "component_name": "ManualChunker",
                     "params": {
                         "hierarchy": 0,
-                        "include_heading_content": false,
                         "levels": [
                             [
                                 "^#[^#]",
