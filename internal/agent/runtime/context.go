@@ -460,29 +460,15 @@ func ResetAgentMessageEmission(ctx context.Context) {
 	state.mu.Unlock()
 }
 
-// GetStateFromContext extracts a typed state attached via WithState.
-// Returns the state and a nil *sync.Mutex for *CanvasState (the
-// embedded RWMutex is what callers actually contend on through
-// helper methods); the *sync.Mutex return value mirrors eino's
-// getState shape for API parity.
-//
-// The generic type parameter is needed for compatibility with eino's
-// compose.getState[S] signature so callers can write the same shape
-// whether they're reading our state or eino's.
-func GetStateFromContext[S any](ctx context.Context) (S, *sync.Mutex, error) {
-	var zero S
+// GetStateFromContext extracts the per-run CanvasState attached via WithState.
+func GetStateFromContext(ctx context.Context) (*CanvasState, error) {
 	v := ctx.Value(stateCtxKey{})
 	if v == nil {
-		return zero, nil, fmt.Errorf("canvas: no state in context")
+		return nil, fmt.Errorf("canvas: no state in context")
 	}
-	s, ok := v.(S)
+	s, ok := v.(*CanvasState)
 	if !ok {
-		return zero, nil, fmt.Errorf("canvas: state type mismatch: have %T, want %T", v, zero)
+		return nil, fmt.Errorf("canvas: state type mismatch: have %T, want *CanvasState", v)
 	}
-	// For *CanvasState the returned *sync.Mutex is nil on purpose:
-	// CanvasState exposes its own sync.RWMutex via the exported
-	// methods (GetVar / SetVar / ReadVars), all of which lock
-	// internally. Callers reading *CanvasState should prefer the
-	// self-locking methods over holding the mutex themselves.
-	return s, nil, nil
+	return s, nil
 }

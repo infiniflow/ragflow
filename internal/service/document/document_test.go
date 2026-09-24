@@ -123,8 +123,15 @@ func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tena
 func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (f *fakeUploadStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeUploadStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
@@ -2605,6 +2612,32 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
 		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
+	}
+}
+
+func TestDocumentKnowledgeCompileTypesIncludesUnavailableProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	variants, _, err := svc.documentKnowledgeCompileTypes(t.Context(), "tenant-1", "kb-1", "doc-1")
+	if err != nil {
+		t.Fatalf("documentKnowledgeCompileTypes failed: %v", err)
+	}
+	if docEngine.search == nil || !docEngine.search.IncludeUnavailable {
+		t.Fatalf("knowledge compile type search = %#v, want unavailable products included", docEngine.search)
+	}
+	for _, want := range []string{"tree", "structure", "wiki"} {
+		found := false
+		for _, variant := range variants {
+			if variant == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("variants = %v, missing %q", variants, want)
+		}
 	}
 }
 

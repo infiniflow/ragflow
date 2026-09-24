@@ -473,6 +473,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       redoAll: 'Clear existing chunks',
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
+      clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
@@ -2424,7 +2425,7 @@ Example: Virtual Hosted Style`,
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
-      modelFeatureToolCall: 'Tool call',
+      modelFeatureToolCall: 'Tool calling',
       modelFeatureFunctionCall: 'Function call',
       modelNameRequired: 'Model name is required',
       modelNameDuplicate: 'Model name already exists',
@@ -2957,6 +2958,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       addPageNumbers: 'Add Page Numbers',
       addTimestamp: 'Add Timestamp',
       watermarkText: 'Watermark Text',
+      headerText: 'Header Text',
+      footerText: 'Footer Text',
+      includeDownloadInfoInContent: 'Append download info to content',
+      contentPlaceholder: 'Enter markdown content...',
+      filenamePlaceholder: 'document.ext (auto-generated if empty)',
+      contentRequired: 'Content is required',
+      fontSizeMin: 'Font size must be at least 12',
       channel: 'Channel',
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
@@ -3527,6 +3535,7 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
       agentModelMissing: 'No model selected, please choose one first',
+      extractorModelMissing: 'No model selected, please choose one first',
       retrievalDatasetMissing: 'No dataset selected, please choose one first',
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
@@ -3547,12 +3556,16 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      generalChunkerDescription:
+        'A general-purpose chunking method for most document types, with flexible control over chunk size, overlap, and context.',
       tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      manualChunkerDescription:
+        'A chunking method for manual-style documents such as product manuals and user guides, with structure-aware splitting that preserves relevant context.',
       oneChunkerDescription:
         'No additional configuration is required for this chunker.',
       qAChunkerDescription:

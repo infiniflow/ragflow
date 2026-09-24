@@ -99,7 +99,7 @@ func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) ma
 	if tips == "" {
 		return info
 	}
-	state, _, err := GetStateFromContext[*CanvasState](ctx)
+	state, err := GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return info
 	}

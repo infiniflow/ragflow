@@ -604,10 +604,18 @@ jobs:
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
                PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -619,8 +627,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
@@ -754,7 +762,7 @@ jobs:
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
                NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
-              KVROCKS_PORT=$((6381 + PORT_OFFSET))
+               KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
@@ -789,7 +797,7 @@ jobs:
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
-                echo "KVROCKS_PORT=${KVROCKS_PORT}"
+                 echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
                  echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
@@ -1340,10 +1348,18 @@ jobs:
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
                PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -1355,8 +1371,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
@@ -1490,7 +1506,7 @@ jobs:
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
                NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
-              KVROCKS_PORT=$((6381 + PORT_OFFSET))
+               KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
@@ -1525,7 +1541,7 @@ jobs:
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
-                echo "KVROCKS_PORT=${KVROCKS_PORT}"
+                 echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
                  echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
@@ -2011,11 +2027,19 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -2027,8 +2051,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
@@ -2162,6 +2186,7 @@ jobs:
                EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
                NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
                TEI_PORT=$((6380 + PORT_OFFSET))
+               KVROCKS_PORT=$((6381 + PORT_OFFSET))
                KIBANA_PORT=$((6601 + PORT_OFFSET))
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
@@ -2176,7 +2201,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env-go (not .env). Without syncing these two,
@@ -2196,6 +2221,7 @@ jobs:
                  echo "MINIO_PORT=${MINIO_PORT}"
                  echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
                  echo "REDIS_PORT=${REDIS_PORT}"
+                 echo "KVROCKS_PORT=${KVROCKS_PORT}"
                  echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
                  echo "NATS_MONITORING_PORT=${NATS_MONITORING_PORT}"
                  echo "TEI_PORT=${TEI_PORT}"
@@ -2263,6 +2289,15 @@ jobs:
         # (mysql/minio/kvrocks/redis/nats/infinity/tei/clickhouse) come up.
         run: |
           set -euo pipefail
+          # docker-compose-base.yml publishes kvrocks as "${KVROCKS_PORT:-6379}:6379",
+          # so a missing KVROCKS_PORT silently binds the UN-offset host port 6379 and
+          # collides with whatever already holds it ("port is already allocated").
+          # The offset reservation only guards 6379+offset, never bare 6379, so the
+          # guard cannot catch this. Fail loudly here instead of at compose up.
+          grep -q '^KVROCKS_PORT=' docker/.env || {
+            echo "KVROCKS_PORT missing from docker/.env — compose would fall back to host 6379" >&2
+            exit 1
+          }
           COMPOSE_FILE=docker/docker-compose-go.yml
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f

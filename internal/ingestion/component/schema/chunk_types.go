@@ -105,6 +105,7 @@ type ChunkDoc struct {
 	TKNums        *int                       `json:"tk_nums,omitempty"`
 	Mom           string                     `json:"mom,omitempty"`
 	ImgID         string                     `json:"img_id,omitempty"`
+	ID            string                     `json:"id,omitempty"`
 	Layout        string                     `json:"layout,omitempty"`
 	LayoutType    string                     `json:"layout_type,omitempty"`
 	LayoutNo      string                     `json:"layoutno,omitempty"`

@@ -295,7 +295,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 // images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 	}
 	// Inject sys.files uploads into the current user message, mirroring
@@ -524,7 +524,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 // chunks key is absent / empty. The returned slice is shaped
 // for prompts.CitationSource — the grounding renderer.
 func chunksFromState(ctx context.Context) []prompts.CitationSource {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return nil
 	}
@@ -914,7 +914,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 		if inputs["_ERROR"] == "No dataset is selected." {
 			return map[string]any{"content": "No dataset is selected."}, nil
@@ -962,7 +962,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// a dedicated LLM call. The rephrased prompt is what the Agent runner
 	// actually consumes.
 	if p.OptimizeMultiTurn {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if rephrased, err := optimizeMultiTurnQuestion(ctx, db, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
@@ -976,7 +976,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// the canvas state's Memory. Conversation History is reserved for
 	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, db, p, msg); sErr2 == nil && summary != "" {
 				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}

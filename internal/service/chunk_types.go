@@ -39,6 +39,7 @@ type RetrievalTestRequest struct {
 	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
+	Highlight              *bool                  `json:"highlight,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
 }
@@ -53,7 +54,9 @@ type RetrievalTestResponse struct {
 
 // GetChunkRequest request for getting a chunk by ID
 type GetChunkRequest struct {
-	ChunkID string `json:"chunk_id"`
+	DatasetID  string `json:"dataset_id"`
+	DocumentID string `json:"document_id"`
+	ChunkID    string `json:"chunk_id"`
 }
 
 // GetChunkResponse response for getting a chunk
@@ -148,6 +151,10 @@ type UpdateChunkRequest struct {
 	Available    *bool         `json:"available,omitempty"`
 	Positions    []interface{} `json:"positions,omitempty"`
 	TagFeas      interface{}   `json:"tag_feas,omitempty"`
+	// ImageBase64 and ImageUpdateMode replace or drop the chunk's stored image.
+	// ImageUpdateMode is one of append (default), replace, remove.
+	ImageBase64     *string `json:"image_base64,omitempty"`
+	ImageUpdateMode *string `json:"image_update_mode,omitempty"`
 }
 
 // RemoveChunksRequest request for removing chunks

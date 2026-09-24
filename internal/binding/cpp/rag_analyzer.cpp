@@ -1700,10 +1700,16 @@ PCRE2GlobalReplaceWithPosition(const std::string &text, const std::string &patte
 
     PCRE2_SIZE current_pos = 0;
     PCRE2_SIZE last_match_end = 0;
+    bool subject_validated = false;
 
     // Process the string match by match
     while (current_pos < text.length()) {
-        int rc = pcre2_match(re, pcre2_subject, text.length(), current_pos, 0, match_data, nullptr);
+        // The first successful match validates the entire unchanged subject. Rechecking
+        // the remaining suffix for every match makes dense inputs (e.g. HTML) quadratic.
+        // Keep offset validation if an empty match or \C advanced into a UTF-8 character.
+        const bool at_character_boundary = (static_cast<unsigned char>(text[current_pos]) & 0xc0) != 0x80;
+        const uint32_t match_options = subject_validated && at_character_boundary ? PCRE2_NO_UTF_CHECK : 0;
+        int rc = pcre2_match(re, pcre2_subject, text.length(), current_pos, match_options, match_data, nullptr);
 
         if (rc < 0) {
             // No more matches, copy remaining text
@@ -1719,6 +1725,7 @@ PCRE2GlobalReplaceWithPosition(const std::string &text, const std::string &patte
             break;
         }
 
+        subject_validated = true;
         PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
         PCRE2_SIZE match_start = ovector[0];
         PCRE2_SIZE match_end = ovector[1];
