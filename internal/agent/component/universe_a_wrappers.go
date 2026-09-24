@@ -161,6 +161,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+const componentNameRetrieval = "Retrieval"
+
 var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
 
 func newRetrievalComponent(params map[string]any) (Component, error) {
@@ -458,6 +460,8 @@ type codeExecComponent struct {
 	params  map[string]any
 	outputs map[string]any
 }
+
+const componentNameCodeExec = "CodeExec"
 
 func newCodeExecComponent(params map[string]any) (Component, error) {
 	cloned := make(map[string]any, len(params))

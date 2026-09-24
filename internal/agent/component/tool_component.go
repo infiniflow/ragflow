@@ -37,6 +37,8 @@ type ToolBackedComponent struct {
 	spec agenttool.ComponentSpec
 }
 
+const componentNameExeSQL = "ExeSQL"
+
 func newToolComponentFactory(componentName, toolName string) Factory {
 	return func(params map[string]any) (Component, error) {
 		base, err := agenttool.BuildByName(toolName, params)
