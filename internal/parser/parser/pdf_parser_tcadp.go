@@ -99,7 +99,11 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return emit(text, "table", "table")
+			item := emit(text, "table", "table")
+			if len(item) > 0 {
+				item[0] = pdfDowngradeLabelIfNoTableMarkup(item[0])
+			}
+			return item
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {

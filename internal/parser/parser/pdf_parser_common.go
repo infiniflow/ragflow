@@ -934,3 +934,37 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	}
 	return res
 }
+
+// pdfTextCarriesTableMarkup reports whether text actually carries HTML
+// table markup, i.e. an opening `<table` tag or a `<tr>` row tag. The
+// three PDF parsers (OpenDataLoader, TCADP, SoMark) sometimes label a
+// block as `doc_type_kwd: "table"` when the upstream parser did, but
+// the resulting payload has no markup at all (it is concatenated cell
+// or row text instead). The QA chunker then walks the markup looking
+// for rows, finds none, and silently returns zero QA pairs — a
+// successful parse that produced nothing. Downgrading the label when
+// the markup is absent restores the consumer-side contract that a
+// "table" item carries an actual table. See issue #20143.
+func pdfTextCarriesTableMarkup(text string) bool {
+	return strings.Contains(text, "<table") || strings.Contains(text, "<tr")
+}
+
+// pdfDowngradeLabelIfNoTableMarkup rewrites an item map so that the
+// `doc_type_kwd`/`layout` pair reflects the actual payload when the
+// upstream block was labelled "table" but the text contains no
+// `<table` or `<tr>` markup. Returns the (possibly modified) item.
+func pdfDowngradeLabelIfNoTableMarkup(item map[string]any) map[string]any {
+	if item == nil {
+		return nil
+	}
+	if docType, _ := item["doc_type_kwd"].(string); docType != "table" {
+		return item
+	}
+	text, _ := item["text"].(string)
+	if pdfTextCarriesTableMarkup(text) {
+		return item
+	}
+	item["doc_type_kwd"] = "text"
+	item["layout"] = "text"
+	return item
+}

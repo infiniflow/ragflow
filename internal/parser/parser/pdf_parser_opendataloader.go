@@ -146,7 +146,7 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 		if text == "" {
 			return nil
 		}
-		return map[string]any{"text": text, "doc_type_kwd": "table", "layout": "table"}
+		return pdfDowngradeLabelIfNoTableMarkup(map[string]any{"text": text, "doc_type_kwd": "table", "layout": "table"})
 	case "image", "picture", "figure":
 		if text == "" {
 			text = "[Image]"
