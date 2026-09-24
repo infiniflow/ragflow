@@ -119,6 +119,33 @@ func TestCanvasStateRestoreReplacesNamespaces(t *testing.T) {
 	}
 }
 
+func TestCanvasStateMergeAndReplaceNamespaces(t *testing.T) {
+	state := NewCanvasState("run", "session")
+	state.MergeNamespaces(
+		map[string]any{"query": "hello"},
+		map[string]any{"region": "test"},
+		map[string]any{"item": 1},
+	)
+	state.MergeNamespaces(map[string]any{"user_id": "user", "query": "updated"}, nil, nil)
+
+	sys, env, globals := state.SnapshotNamespaces()
+	if sys["query"] != "updated" || sys["user_id"] != "user" || env["region"] != "test" || globals["item"] != 1 {
+		t.Fatalf("merged namespaces = %#v, %#v, %#v", sys, env, globals)
+	}
+
+	replacement := map[string]any{"query": "replacement"}
+	state.ReplaceNamespaces(replacement, nil, nil)
+	replacement["query"] = "mutated"
+
+	sys, env, globals = state.SnapshotNamespaces()
+	if sys["query"] != "replacement" || len(sys) != 1 {
+		t.Fatalf("replaced sys = %#v", sys)
+	}
+	if env == nil || globals == nil || len(env) != 0 || len(globals) != 0 {
+		t.Fatalf("replaced empty namespaces = %#v, %#v", env, globals)
+	}
+}
+
 func TestCanvasStateWritesNullOutputBuckets(t *testing.T) {
 	for _, method := range []string{"SetVar", "RecordOutput"} {
 		t.Run(method, func(t *testing.T) {

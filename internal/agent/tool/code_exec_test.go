@@ -183,6 +183,27 @@ func TestCodeExec_Info(t *testing.T) {
 	}
 }
 
+func TestCodeExecPublicFormattingHandlesTypedNilSlice(t *testing.T) {
+	t.Parallel()
+
+	var value []any
+	if got := InferCodeExecActualType(value); got != "Array<Any>" {
+		t.Fatalf("InferCodeExecActualType(typed nil) = %q, want Array<Any>", got)
+	}
+	if got := RenderCodeExecCanonicalContent(value); got != "[]" {
+		t.Fatalf("RenderCodeExecCanonicalContent(typed nil) = %q, want []", got)
+	}
+
+	contract, err := BuildCodeExecContract(map[string]any{"result": nil}, value)
+	if err != nil {
+		t.Fatalf("BuildCodeExecContract(typed nil): %v", err)
+	}
+	normalized, ok := contract.Value.([]any)
+	if !ok || normalized == nil {
+		t.Fatalf("contract.Value = %#v, want non-nil empty []any", contract.Value)
+	}
+}
+
 // TestCodeExec_ResultExtractsArtifacts pins the artifact
 // collection: SandboxResponse.Metadata["artifacts"] entries that
 // already carry a hosted URL surface unchanged as `_ARTIFACTS` in
