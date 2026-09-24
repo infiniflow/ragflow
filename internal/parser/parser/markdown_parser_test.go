@@ -35,6 +35,24 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	}
 }
 
+// A UTF-8 BOM in front of the first heading must not demote it to a paragraph.
+func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "bom.md", []byte("\xef\xbb\xbf# Hello\n\nBody.\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
+	}
+	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
+		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	}
+}
+
 // TestMarkdownParser_ListItemsKeepWordBoundaries pins the shape of a list in the parsed output:
 // one item per entry, marker included, and no gluing between entries.
 //
