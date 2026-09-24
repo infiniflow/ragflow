@@ -539,11 +539,26 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			llmMaxOutput = modelTarget.MaxTokens
 		}
 
+		embedder := &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: embeddingModel}
+		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(engine.Get(), func(ctx context.Context) (int, error) {
+			if dimension := embedder.Dimensions(); dimension > 0 {
+				return dimension, nil
+			}
+			vectors, err := embedder.Encode(ctx, []string{"ok"})
+			if err != nil {
+				return 0, err
+			}
+			if len(vectors) == 0 || len(vectors[0]) == 0 {
+				return 0, fmt.Errorf("embedding returned an empty vector")
+			}
+			return len(vectors[0]), nil
+		})
+
 		return kc.Deps{
 			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
-			Embed:           &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: embeddingModel},
+			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
-			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
+			WikiMapVersions: mapStore,
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.

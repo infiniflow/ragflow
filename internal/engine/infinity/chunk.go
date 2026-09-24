@@ -2628,6 +2628,10 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)
 			}
+		case "tenant_id":
+			// Infinity isolates tenants by table name (ragflow_<tenant>), so
+			// tenant_id is an internal routing field, not a table column.
+			continue
 		case "kb_id":
 			// 1. First check if it's a string
 			if str, ok := v.(string); ok {
@@ -2654,8 +2658,14 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		case "chunk_data":
 			d["chunk_data"] = utility.ConvertMapToJSONString(v)
 		default:
-			// Check for *_feas fields
-			if strings.HasSuffix(k, "_feas") {
+			if fieldJSON(k) {
+				jsonBytes, err := json.Marshal(v)
+				if err == nil {
+					d[k] = string(jsonBytes)
+				} else {
+					d[k] = v
+				}
+			} else if strings.HasSuffix(k, "_feas") {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
 			} else if fieldKeyword(k) {
