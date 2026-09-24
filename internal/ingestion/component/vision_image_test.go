@@ -46,7 +46,7 @@ func TestMaterializeInlineVisionImageKeepsVLMForOCRDimensionLimit(t *testing.T) 
 }
 
 func TestIsUsableVisionImageRejectsPayloadOverVLMByteBudget(t *testing.T) {
-	encodedLength := base64.StdEncoding.EncodedLen(maxVLMImageBytes + 3)
+	encodedLength := base64.StdEncoding.EncodedLen(maxVisionImageBytes + 3)
 	payload := strings.Repeat("A", encodedLength)
 	if isUsableVisionImage(payload) {
 		t.Fatal("base64 payload above the VLM byte budget must be rejected")

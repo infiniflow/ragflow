@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,13 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	}
 	if result.JSON[0]["doc_type_kwd"] != "table" || result.JSON[0]["source_table_id"] != "html-table-1" {
 		t.Errorf("table item = %+v", result.JSON[0])
+	}
+	tableText, _ := result.JSON[0]["text"].(string)
+	if strings.Contains(tableText, "data:image/") {
+		t.Error("table text duplicates the separately emitted inline image payload")
+	}
+	if !strings.Contains(tableText, `alt="first"`) {
+		t.Errorf("table text lost the image alt text: %q", tableText)
 	}
 	if result.JSON[1]["image"] != htmlMediaDataURI {
 		t.Errorf("inline image payload = %v, want data URI", result.JSON[1]["image"])

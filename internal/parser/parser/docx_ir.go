@@ -206,9 +206,10 @@ func docxIRTableToHTML(el docxIRElement) string {
 }
 
 type docxTableImage struct {
-	data   []byte
-	row    int
-	column int
+	data     []byte
+	row      int
+	column   int
+	included bool
 }
 
 func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage) bool) bool {
@@ -223,15 +224,6 @@ func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage) bool) bo
 		}
 	}
 	return true
-}
-
-func docxIRHasImages(elements []docxIRElement) bool {
-	found := false
-	forEachDOCXIRImage(elements, func([]byte) bool {
-		found = true
-		return false
-	})
-	return found
 }
 
 // forEachDOCXIRImage visits image payloads without first collecting a second
@@ -368,24 +360,31 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 					"doc_type_kwd": "table",
 				}
 				tableID := ""
-				if docxIRHasImages([]docxIRElement{el}) {
+				foundImage := false
+				var tableImages []docxTableImage
+				forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
+					foundImage = true
+					included, keepWalking := budget.include(tableImage.data)
+					if included || keepWalking {
+						tableImage.included = included
+						tableImages = append(tableImages, tableImage)
+					}
+					return keepWalking
+				})
+				if foundImage {
 					tableID = fmt.Sprintf("docx-table-%d", tableSequence)
 					table["source_table_id"] = tableID
 				}
 				sections = append(sections, table)
-				mediaOrder := 0
-				forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
-					mediaOrder++
+				for mediaOrder, tableImage := range tableImages {
 					metadata := map[string]any{
 						"parent_table_id": tableID,
 						"row_index":       tableImage.row,
 						"column_index":    tableImage.column,
-						"media_order":     mediaOrder,
+						"media_order":     mediaOrder + 1,
 					}
-					var keepWalking bool
-					sections, keepWalking = appendDOCXImageSection(sections, tableImage.data, budget, metadata)
-					return keepWalking
-				})
+					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata)
+				}
 
 			case "list":
 				for _, item := range el.Items {
@@ -469,6 +468,10 @@ func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embe
 	if !included && !keepWalking {
 		return sections, false
 	}
+	return appendDOCXImagePayload(sections, data, included, metadata), keepWalking
+}
+
+func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any) []map[string]any {
 	item := map[string]any{
 		"text":         "",
 		"image":        nil,
@@ -482,7 +485,7 @@ func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embe
 	for key, value := range metadata {
 		item[key] = value
 	}
-	return append(sections, item), keepWalking
+	return append(sections, item)
 }
 
 // --- figure extraction (used by the cgo parser path) ---

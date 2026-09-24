@@ -34,13 +34,49 @@ func cropSectionImageRaster(posTag string, decodedImages map[int]image.Image, zo
 		common.Warn("cropSectionImage: empty position list in tag", zap.String("posTag", posTag[:min(80, len(posTag))]))
 		return nil
 	}
+	return cropSectionPositionsRaster(positions, decodedImages, zoom)
+}
 
-	// Filter valid positions (all pages available).
-	var valid []pdf.Position
+type sectionRasterSegment struct {
+	page   int
+	x0     int
+	y0     int
+	x1     int
+	y1     int
+	isEdge bool
+}
+
+type sectionRasterPlan struct {
+	segments []sectionRasterSegment
+	width    int
+	height   int
+}
+
+const (
+	sectionRasterContextPad = 120.0
+	sectionRasterGap        = 6
+)
+
+func cropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) image.Image {
+	plan, ok := buildSectionRasterPlan(positions, decodedImages, zoom)
+	if !ok {
+		return nil
+	}
+	return renderSectionRaster(plan, decodedImages)
+}
+
+func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) (*sectionRasterPlan, bool) {
+	if len(decodedImages) == 0 || len(positions) == 0 || zoom <= 0 || math.IsNaN(zoom) || math.IsInf(zoom, 0) {
+		return nil, false
+	}
+	valid := make([]pdf.Position, 0, len(positions))
 	for _, pos := range positions {
+		if len(pos.PageNumbers) == 0 {
+			continue
+		}
 		allValid := true
-		for _, pn := range pos.PageNumbers {
-			if _, ok := decodedImages[pn]; !ok {
+		for _, pageNum := range pos.PageNumbers {
+			if img, ok := decodedImages[pageNum]; !ok || img == nil {
 				allValid = false
 				break
 			}
@@ -50,196 +86,154 @@ func cropSectionImageRaster(posTag string, decodedImages map[int]image.Image, zo
 		}
 	}
 	if len(valid) == 0 {
-		common.Warn("cropSectionImage: no valid positions after filtering, skipping crop")
-		return nil
+		return nil, false
 	}
 
-	// Context padding (Python: 120px above first, 120 below last, 6px gap)
-	const contextPad = 120.0
-	const gap = 6
-
-	// Compute max width across original positions for full-width edge bands.
 	maxWidth := 6.0
 	for _, pos := range valid {
-		w := pos.Right - pos.Left
-		if w > maxWidth {
-			maxWidth = w
+		if width := pos.Right - pos.Left; width > maxWidth {
+			maxWidth = width
 		}
 	}
 
-	// Python-style: insert synthetic context bands at edges.
-	// Original positions are all middle entries (narrow width).
-	// Synthetic bands are edge entries (full width + semi-transparent overlay).
 	first := valid[0]
 	last := valid[len(valid)-1]
-	firstPageIdx := first.PageNumbers[0]
-	lastPageIdx := last.PageNumbers[len(last.PageNumbers)-1]
-	lastPageH := float64(decodedImages[lastPageIdx].Bounds().Dy()) / zoom
-
-	// topBand: 120px context above the first content position.
-	topBandPos := pdf.Position{
-		PageNumbers: []int{firstPageIdx},
+	firstPage := first.PageNumbers[0]
+	lastPage := last.PageNumbers[len(last.PageNumbers)-1]
+	lastPageHeight := float64(decodedImages[lastPage].Bounds().Dy()) / zoom
+	topBand := pdf.Position{
+		PageNumbers: []int{firstPage},
 		Left:        first.Left,
 		Right:       first.Right,
-		Top:         math.Max(0, first.Top-contextPad),
-		Bottom:      math.Max(first.Top-gap, 0),
+		Top:         math.Max(0, first.Top-sectionRasterContextPad),
+		Bottom:      math.Max(first.Top-sectionRasterGap, 0),
 	}
-	// bottomBand: 120px context below the last content position.
-	bottomBandPos := pdf.Position{
-		PageNumbers: []int{lastPageIdx},
+	bottomBand := pdf.Position{
+		PageNumbers: []int{lastPage},
 		Left:        last.Left,
 		Right:       last.Right,
-		Top:         math.Min(lastPageH, last.Bottom+gap),
-		Bottom:      math.Min(lastPageH, last.Bottom+contextPad),
+		Top:         math.Min(lastPageHeight, last.Bottom+sectionRasterGap),
+		Bottom:      math.Min(lastPageHeight, last.Bottom+sectionRasterContextPad),
 	}
 
-	// Build entry list: [topBand, original positions..., bottomBand].
-	type segment struct {
-		img    image.Image
-		isEdge bool
+	type positionEntry struct {
+		position pdf.Position
+		isEdge   bool
 	}
-	var segments []segment
-
-	allPos := make([]struct {
-		pos    pdf.Position
-		isEdge bool
-	}, 0, len(valid)+2)
-	allPos = append(allPos, struct {
-		pos    pdf.Position
-		isEdge bool
-	}{topBandPos, true})
+	entries := make([]positionEntry, 0, len(valid)+2)
+	entries = append(entries, positionEntry{position: topBand, isEdge: true})
 	for _, pos := range valid {
-		allPos = append(allPos, struct {
-			pos    pdf.Position
-			isEdge bool
-		}{pos, false})
+		entries = append(entries, positionEntry{position: pos})
 	}
-	allPos = append(allPos, struct {
-		pos    pdf.Position
-		isEdge bool
-	}{bottomBandPos, true})
+	entries = append(entries, positionEntry{position: bottomBand, isEdge: true})
 
-	for _, entry := range allPos {
-		pos := entry.pos
-		isEdge := entry.isEdge
-
-		top := pos.Top
-		bottom := pos.Bottom
-		left := pos.Left
-		right := pos.Right
-
-		// Width: edge segments are full-width, middle are narrow.
-		if !isEdge {
-			right = math.Max(left+10, right)
-		} else {
+	plan := &sectionRasterPlan{}
+	maxInt := int(^uint(0) >> 1)
+	for _, entry := range entries {
+		pos := entry.position
+		left, right := pos.Left, pos.Right
+		if entry.isEdge {
 			right = left + maxWidth
+		} else {
+			right = math.Max(left+10, right)
+		}
+		firstPage := pos.PageNumbers[0]
+		accumBottom := pos.Bottom * zoom
+		for _, pageNum := range pos.PageNumbers[1:] {
+			if pageNum != firstPage {
+				accumBottom += float64(decodedImages[pageNum].Bounds().Dy())
+			}
 		}
 
-		pn0 := pos.PageNumbers[0]
+		pageImage := decodedImages[firstPage]
+		pageHeight := float64(pageImage.Bounds().Dy())
+		bottomClamped := math.Min(accumBottom, pageHeight)
+		plan.addCrop(firstPage, int(left*zoom), int(pos.Top*zoom), int(right*zoom), int(bottomClamped), entry.isEdge)
 
-		// Accumulate bottom for multi-page positions.
-		accumBottom := bottom * zoom
-		for _, pn := range pos.PageNumbers[1:] {
-			if pn == pn0 {
+		bottomRemaining := accumBottom - pageHeight
+		for _, pageNum := range pos.PageNumbers[1:] {
+			if pageNum == firstPage {
 				continue
 			}
-			if img, ok := decodedImages[pn]; ok {
-				accumBottom += float64(img.Bounds().Dy())
-			}
+			pageImage := decodedImages[pageNum]
+			bottomClamped := math.Min(bottomRemaining, float64(pageImage.Bounds().Dy()))
+			plan.addCrop(pageNum, int(left*zoom), 0, int(right*zoom), int(bottomClamped), entry.isEdge)
+			bottomRemaining -= bottomClamped
 		}
-
-		pageImg, ok := decodedImages[pn0]
-		if !ok {
-			common.Warn("cropSectionImage: page image not found", zap.Int("page", pn0))
-			return nil
+	}
+	if len(plan.segments) == 0 {
+		return nil, false
+	}
+	for _, segment := range plan.segments {
+		width, height := cropSize(decodedImages[segment.page], segment.x0, segment.y0, segment.x1, segment.y1)
+		plan.width = max(plan.width, width)
+		if height > maxInt-sectionRasterGap || plan.height > maxInt-(height+sectionRasterGap) {
+			return nil, false
 		}
-		pageH := float64(pageImg.Bounds().Dy())
-		bottomClamped := math.Min(accumBottom, pageH)
+		plan.height += height + sectionRasterGap
+	}
+	return plan, plan.width > 0 && plan.height > 0
+}
 
-		// Crop first page of this position.
-		cropped := FastCrop(pageImg,
-			int(left*zoom), int(top*zoom),
-			int(right*zoom), int(bottomClamped))
-		if isEdge {
+func (p *sectionRasterPlan) addCrop(page, x0, y0, x1, y1 int, isEdge bool) {
+	p.segments = append(p.segments, sectionRasterSegment{
+		page: page, x0: x0, y0: y0, x1: x1, y1: y1, isEdge: isEdge,
+	})
+}
+
+func cropSize(img image.Image, x0, y0, x1, y1 int) (int, int) {
+	bounds := cropRectBounds(img, x0, y0, x1, y1)
+	if bounds.Empty() {
+		return 1, 1
+	}
+	return bounds.Dx(), bounds.Dy()
+}
+
+func renderSectionRaster(plan *sectionRasterPlan, decodedImages map[int]image.Image) image.Image {
+	segments := make([]image.Image, 0, len(plan.segments))
+	for _, segment := range plan.segments {
+		cropped := FastCrop(decodedImages[segment.page], segment.x0, segment.y0, segment.x1, segment.y1)
+		if segment.isEdge {
 			cropped = applyEdgeOverlay(cropped)
 		}
-		segments = append(segments, segment{img: cropped, isEdge: isEdge})
-
-		// Subsequent pages (only those different from the first page).
-		bottomRemaining := accumBottom - pageH
-		for _, pn := range pos.PageNumbers[1:] {
-			if pn == pn0 {
-				continue
-			}
-			pageImg2, ok := decodedImages[pn]
-			if !ok {
-				common.Warn("cropSectionImage: page image not found for subsequent page", zap.Int("page", pn))
-				return nil
-			}
-			pageH2 := float64(pageImg2.Bounds().Dy())
-			bottomClamped2 := math.Min(bottomRemaining, pageH2)
-			cropped2 := FastCrop(pageImg2,
-				int(left*zoom), 0,
-				int(right*zoom), int(bottomClamped2))
-			if isEdge {
-				cropped2 = applyEdgeOverlay(cropped2)
-			}
-			segments = append(segments, segment{img: cropped2, isEdge: isEdge})
-			bottomRemaining -= bottomClamped2
-		}
+		segments = append(segments, cropped)
 	}
-
-	if len(segments) == 0 {
-		return nil
-	}
-
-	// Stitch vertically with gray background and 6px gaps.
-	totalH := 0
-	maxW := 0
-	for _, seg := range segments {
-		totalH += seg.img.Bounds().Dy() + gap
-		maxW = max(maxW, seg.img.Bounds().Dx())
-	}
-	stitched := image.NewRGBA(image.Rect(0, 0, maxW, totalH))
-
-	// Fill background using direct Pix slice write (matching fastCrop pattern).
-	// Gray 245,245,245,255 as BGRA bytes.
-	for y := 0; y < totalH; y++ {
-		row := stitched.Pix[stitched.PixOffset(0, y):stitched.PixOffset(maxW, y)]
+	stitched := image.NewRGBA(image.Rect(0, 0, plan.width, plan.height))
+	for y := 0; y < plan.height; y++ {
+		row := stitched.Pix[stitched.PixOffset(0, y):stitched.PixOffset(plan.width, y)]
 		for i := 0; i < len(row); i += 4 {
-			row[i] = 245   // B
-			row[i+1] = 245 // G
-			row[i+2] = 245 // R
-			row[i+3] = 255 // A
+			row[i], row[i+1], row[i+2], row[i+3] = 245, 245, 245, 255
 		}
 	}
 
 	curY := 0
-	for _, seg := range segments {
-		srcW := seg.img.Bounds().Dx()
-		srcH := seg.img.Bounds().Dy()
-		if rgba, ok := seg.img.(*image.RGBA); ok {
-			// Fast path: direct Pix slice copy (matching fastCrop in geometry.go).
-			srcMinX := seg.img.Bounds().Min.X
-			srcMinY := seg.img.Bounds().Min.Y
-			for ry := 0; ry < srcH; ry++ {
-				srcStart := rgba.PixOffset(srcMinX, srcMinY+ry)
+	for _, segment := range segments {
+		srcW, srcH := segment.Bounds().Dx(), segment.Bounds().Dy()
+		if rgba, ok := segment.(*image.RGBA); ok {
+			srcMinX, srcMinY := segment.Bounds().Min.X, segment.Bounds().Min.Y
+			for row := 0; row < srcH; row++ {
+				srcStart := rgba.PixOffset(srcMinX, srcMinY+row)
 				srcRow := rgba.Pix[srcStart : srcStart+srcW*4]
-				dstStart := stitched.PixOffset(0, curY+ry)
+				dstStart := stitched.PixOffset(0, curY+row)
 				copy(stitched.Pix[dstStart:], srcRow)
 			}
 		} else {
-			// Fallback: pixel-by-pixel for non-RGBA images (e.g. edge overlays).
 			for y := 0; y < srcH; y++ {
 				for x := 0; x < srcW; x++ {
-					stitched.Set(x, curY+y, seg.img.At(x+seg.img.Bounds().Min.X, y+seg.img.Bounds().Min.Y))
+					stitched.Set(x, curY+y, segment.At(x+segment.Bounds().Min.X, y+segment.Bounds().Min.Y))
 				}
 			}
 		}
-		curY += srcH + gap
+		curY += srcH + sectionRasterGap
 	}
-
 	return stitched
+}
+
+func rasterPlanExceedsLimit(plan *sectionRasterPlan, maxPixels int64) bool {
+	if plan == nil || plan.width <= 0 || plan.height <= 0 || maxPixels <= 0 {
+		return true
+	}
+	return int64(plan.width) > maxPixels/int64(plan.height)
 }
 
 func encodeCroppedImage(img image.Image) string {
@@ -616,90 +610,17 @@ func CropSectionPositions(positions []pdf.Position, decodedImages map[int]image.
 // without encoding it. Callers that need both OCR and a VLM payload can reuse
 // this image and encode it once after OCR.
 func CropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) image.Image {
-	if len(positions) == 0 {
-		return nil
-	}
-	var tag strings.Builder
-	for _, pos := range positions {
-		if len(pos.PageNumbers) == 0 {
-			continue
-		}
-		if len(pos.PageNumbers) == 1 {
-			tag.WriteString(FormatPositionTag(pos.PageNumbers[0], pos.Left, pos.Right, pos.Top, pos.Bottom))
-		} else {
-			from, to := pos.PageNumbers[0], pos.PageNumbers[len(pos.PageNumbers)-1]
-			tag.WriteString(FormatPositionTagRange(from, to, pos.Left, pos.Right, pos.Top, pos.Bottom))
-		}
-	}
-	if tag.Len() == 0 {
-		return nil
-	}
-	return cropSectionImageRaster(tag.String(), decodedImages, zoom)
+	return cropSectionPositionsRaster(positions, decodedImages, zoom)
 }
 
-// CropSectionPositionsRasterLimited rejects a section before creating segment
-// crops or the stitched raster when its conservative output-size estimate
-// exceeds maxPixels.
+// CropSectionPositionsRasterLimited rejects a section before rendering when
+// the planned stitched raster exceeds maxPixels.
 func CropSectionPositionsRasterLimited(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) image.Image {
-	if maxPixels <= 0 || sectionRasterExceedsLimit(positions, decodedImages, zoom, maxPixels) {
+	plan, ok := buildSectionRasterPlan(positions, decodedImages, zoom)
+	if !ok || rasterPlanExceedsLimit(plan, maxPixels) {
 		return nil
 	}
-	return CropSectionPositionsRaster(positions, decodedImages, zoom)
-}
-
-func sectionRasterExceedsLimit(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) bool {
-	if len(positions) == 0 || zoom <= 0 || math.IsNaN(zoom) || math.IsInf(zoom, 0) {
-		return true
-	}
-	maxWidth := 6.0
-	segmentCount := int64(2) // synthetic top and bottom context bands
-	var contentHeight int64
-	for _, pos := range positions {
-		if len(pos.PageNumbers) == 0 {
-			continue
-		}
-		width := pos.Right - pos.Left
-		if width > maxWidth {
-			maxWidth = width
-		}
-		firstPage := pos.PageNumbers[0]
-		segmentCount++
-		for _, pageNum := range pos.PageNumbers[1:] {
-			if pageNum == firstPage {
-				continue
-			}
-			segmentCount++
-		}
-
-		height := math.Max(1, math.Ceil((pos.Bottom-pos.Top)*zoom))
-		for _, pageNum := range pos.PageNumbers[1:] {
-			if pageNum == firstPage {
-				continue
-			}
-			pageImage, ok := decodedImages[pageNum]
-			if !ok || pageImage == nil {
-				return true
-			}
-			height += float64(pageImage.Bounds().Dy())
-		}
-		if math.IsNaN(height) || math.IsInf(height, 0) || height > float64(maxPixels) {
-			return true
-		}
-		contentHeight += int64(height)
-		if contentHeight > maxPixels {
-			return true
-		}
-	}
-	width := math.Ceil(math.Max(10, maxWidth) * zoom)
-	bandHeight := math.Ceil(120 * zoom)
-	if math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(bandHeight) || math.IsInf(bandHeight, 0) || width <= 0 || bandHeight <= 0 {
-		return true
-	}
-	if width > float64(maxPixels) {
-		return true
-	}
-	stitchedHeight := contentHeight + 2*int64(bandHeight) + segmentCount*6
-	return stitchedHeight <= 0 || int64(width) > maxPixels/stitchedHeight
+	return renderSectionRaster(plan, decodedImages)
 }
 
 // PositionsFromMatrix converts the _pdf_positions / positions matrix form
