@@ -178,7 +178,9 @@ func newCSVReader(text string, comma rune) *csv.Reader {
 	reader := csv.NewReader(strings.NewReader(text))
 	reader.Comma = comma
 	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
+	// TrimLeadingSpace also trims a tab when the tab is the separator, which
+	// would swallow the empty field in "Widget\t\t12".
+	reader.TrimLeadingSpace = comma != '\t'
 	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
 	return reader
 }

@@ -185,3 +185,16 @@ func TestDetectCSVDelimiter_LeavesOutTheRowTheSampleCutsShort(t *testing.T) {
 		t.Errorf("detectCSVDelimiter = %q, want ';'", got)
 	}
 }
+
+func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
+	// Trimming leading space would also trim the tab after "Widget", leaving
+	// the row a field short of its header, and the tab would lose to the comma.
+	data := []byte("Name\tRegion\tUnits\nWidget\t\t12\n")
+	res := NewCSVParser().ParseWithResult(context.Background(), "export.csv", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if got := res.JSON[len(res.JSON)-1]["text"]; got != "Name：Widget; Units：12 ——Data" {
+		t.Errorf("row text = %v", got)
+	}
+}
