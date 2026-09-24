@@ -35,9 +35,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"strconv"
 	"strings"
-	"time"
 
 	"ragflow/internal/agent/runtime"
 
@@ -193,22 +191,6 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 		out["__legacy_noop__"] = true
 		return out, nil
 	}
-}
-
-// componentTimeout returns the per-component Invoke timeout.
-//
-// Reads the COMPONENT_EXEC_TIMEOUT env var (seconds); defaults to 600s
-// (10 min) to match the Python @timeout decorator's default in
-// agent/component/base.py. Invalid / non-positive values fall back to
-// the default — invalid input must never widen the timeout silently.
-func componentTimeout() time.Duration {
-	const def = 600 * time.Second
-	if v := common.GetEnv(common.EnvComponentExecTimeout); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
-	}
-	return def
 }
 
 // realComponentBody returns a body that delegates to the supplied

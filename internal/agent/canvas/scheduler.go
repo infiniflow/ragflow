@@ -836,18 +836,3 @@ func wireWorkflowTerminals(
 	addEndInput(terminalMergeNodeID)
 	return nil
 }
-
-// snapshotOutputs is retained as a thin wrapper around state.Snapshot()
-// for any leftover callers in test/bench files. New code should call
-// state.Snapshot() directly.
-func snapshotOutputs(src map[string]map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(src))
-	for k, v := range src {
-		cp := make(map[string]any, len(v))
-		for kk, vv := range v {
-			cp[kk] = vv
-		}
-		out[k] = cp
-	}
-	return out
-}
