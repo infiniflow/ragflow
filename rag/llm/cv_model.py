@@ -33,6 +33,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm.key_utils import _resolve_bedrock_credentials
+from rag.llm.ollama_utils import resolve_ollama_keep_alive
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -797,7 +798,7 @@ class OllamaCV(Base):
         self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
-        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
+        self.keep_alive = resolve_ollama_keep_alive(kwargs)
         Base.__init__(self, **kwargs)
 
     def _clean_img(self, img):

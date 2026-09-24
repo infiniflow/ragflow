@@ -35,6 +35,7 @@ from common.llm_request_context import openai_user_kwargs
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.llm.ollama_utils import resolve_ollama_keep_alive
 from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
@@ -508,7 +509,7 @@ class OllamaEmbed(Base):
         self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
-        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
+        self.keep_alive = resolve_ollama_keep_alive(kwargs)
 
     @classmethod
     def _strip_special(cls, text: str) -> str:
