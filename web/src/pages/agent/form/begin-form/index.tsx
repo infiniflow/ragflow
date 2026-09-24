@@ -1,7 +1,7 @@
 import { Collapse } from '@/components/collapse';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Button } from '@/components/ui/button';
 import { Form, FormField } from '@/components/ui/form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
