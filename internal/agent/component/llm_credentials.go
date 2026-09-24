@@ -17,9 +17,8 @@ import (
 )
 
 // resolveTenantLLMConfig fills tenant-scoped API credentials for the supplied
-// driver/model pair when the canvas DSL omitted them. It first checks the old
-// tenant_llm table, then falls back to tenant_model_provider +
-// tenant_model_instance when the composite llm_id carries an instance name.
+// driver/model pair when the canvas DSL omitted them. It resolves them through
+// tenant_model_provider + tenant_model_instance using the composite llm_id.
 func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
@@ -35,9 +34,6 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 		return apiKey, baseURL
 	}
 
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(ctx, db, tid, driver, modelID, baseURL); ok {
-		return resolvedKey, resolvedBaseURL
-	}
 	if originalModelID == "" {
 		return apiKey, baseURL
 	}
@@ -105,33 +101,6 @@ func rejectUnsupportedImages(ctx context.Context, db *gorm.DB, state *runtime.Ca
 		}
 	}
 	return nil
-}
-
-// resolveTenantLLMCredentials looks up the old tenant_llm table for the given
-// tenant / factory / model. Returns true when credentials were found.
-func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
-	common.Debug("llm credentials: tenant_llm lookup", zap.String("tid", tid), zap.String("factory", driver), zap.String("model", modelID))
-	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(ctx, db, tid, driver, modelID)
-	if err != nil {
-		common.Debug("llm credentials: tenant_llm lookup", zap.Error(err))
-		return "", baseURL, false
-	}
-	if row == nil {
-		common.Debug("llm credentials: tenant_llm lookup: no row")
-		return "", baseURL, false
-	}
-
-	apiKey := ""
-	if row.APIKey != nil {
-		apiKey = *row.APIKey
-	}
-	if baseURL == "" && row.APIBase != nil {
-		baseURL = *row.APIBase
-	}
-	common.Debug("llm credentials: tenant_llm OK",
-		zap.Bool("api_key_present", apiKey != ""),
-		zap.Bool("base_url_present", baseURL != ""))
-	return apiKey, baseURL, apiKey != ""
 }
 
 // resolveTenantModelInstanceCredentials attempts to resolve llm credentials

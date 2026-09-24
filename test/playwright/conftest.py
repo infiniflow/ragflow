@@ -319,6 +319,15 @@ def _response_data(payload: dict | None) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _response_data_list(payload: dict | None) -> list:
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("code") not in (0, None):
+        raise RuntimeError(f"API returned failure payload: {payload}")
+    data = payload.get("data")
+    return data if isinstance(data, list) else []
+
+
 def _is_malformed_tenant_model_value(value: str | None) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -351,16 +360,20 @@ def _normalize_tenant_model_value(value: str | None) -> str:
     return text
 
 
-def _provider_has_model(my_llms_data: dict, provider: str, model_name: str) -> bool:
-    if not isinstance(my_llms_data, dict):
+def _added_model_exists(added_models: list, provider: str, model_name: str) -> bool:
+    """True when GET /api/v1/models lists `model_name` under `provider`.
+
+    GET /api/v1/models returns the array form produced by
+    ModelProviderService.ListTenantAddedModels: one row per
+    (provider x instance x model) with `provider_name` and `name`.
+    """
+    if not isinstance(added_models, list):
         return False
-    provider_data = my_llms_data.get(provider)
-    if not isinstance(provider_data, dict):
-        return False
-    llms = provider_data.get("llm")
-    if not isinstance(llms, list):
-        return False
-    for model in llms:
+    for model in added_models:
+        if not isinstance(model, dict):
+            continue
+        if str(model.get("provider_name") or "").strip() != provider:
+            continue
         if str(model.get("name") or "").strip() == model_name:
             return True
     return False
@@ -631,7 +644,6 @@ def pytest_collection_modifyitems(session, config, items):
         "test/playwright/auth/test_sso_optional.py",
         "test/playwright/auth/test_register_success_optional.py",
         "test/playwright/auth/test_login_success_optional.py",
-        "test/playwright/e2e/test_model_providers_zhipu_ai_defaults.py",
         "test/playwright/e2e/test_dataset_upload_parse.py",
         "test/playwright/e2e/test_next_apps_chat.py",
         "test/playwright/e2e/test_next_apps_search.py",
@@ -988,27 +1000,44 @@ def ensure_auth_context(
 def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dict:
     headers = {"Authorization": auth_header}
 
-    _, my_llms_payload = _api_request_json(_build_url(base_url, "/v1/llm/my_llms"), headers=headers)
-    my_llms_data = _response_data(my_llms_payload)
-    has_provider = bool(my_llms_data)
+    _, providers_payload = _api_request_json(_build_url(base_url, "/api/v1/providers"), headers=headers)
+    providers = _response_data_list(providers_payload)
+    has_provider = any(isinstance(p, dict) and p.get("has_instance") for p in providers)
     created_provider = False
     zhipu_key = os.getenv("ZHIPU_AI_API_KEY")
 
     if not has_provider and zhipu_key:
-        _, set_key_payload = _api_request_json(
-            _build_url(base_url, "/v1/llm/set_api_key"),
-            method="POST",
-            payload={"llm_factory": "ZHIPU-AI", "api_key": zhipu_key},
+        _, add_provider_payload = _api_request_json(
+            _build_url(base_url, "/api/v1/providers"),
+            method="PUT",
+            payload={"provider_name": "ZHIPU-AI"},
             headers=headers,
         )
-        _response_data(set_key_payload)
+        _response_data(add_provider_payload)
+        _, add_instance_payload = _api_request_json(
+            _build_url(base_url, "/api/v1/providers/ZHIPU-AI/instances"),
+            method="POST",
+            payload={
+                "instance_name": "e2e-default",
+                "api_key": zhipu_key,
+                "model_info": [
+                    {"model_name": "glm-4-flash", "model_type": ["chat"], "max_tokens": 8192},
+                    {"model_name": "embedding-2", "model_type": ["embedding"], "max_tokens": 8192},
+                    {"model_name": "glm-4.5v", "model_type": ["image2text"], "max_tokens": 8192},
+                    {"model_name": "glm-asr", "model_type": ["asr"], "max_tokens": 8192},
+                ],
+            },
+            headers=headers,
+        )
+        _response_data(add_instance_payload)
         has_provider = True
         created_provider = True
-        _, my_llms_payload = _api_request_json(_build_url(base_url, "/v1/llm/my_llms"), headers=headers)
-        my_llms_data = _response_data(my_llms_payload)
 
     if not has_provider:
         pytest.skip("No model provider configured and ZHIPU_AI_API_KEY is not set.")
+
+    _, models_payload = _api_request_json(_build_url(base_url, "/api/v1/models"), headers=headers)
+    added_models = _response_data_list(models_payload)
 
     _, tenant_payload = _api_request_json(_build_url(base_url, "/api/v1/users/me/models"), headers=headers)
     tenant_data = _response_data(tenant_payload)
@@ -1026,7 +1055,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     target_llm = current_llm
     if not target_llm or _is_malformed_tenant_model_value(target_llm):
         target_llm = _normalize_tenant_model_value(current_llm)
-        if not target_llm and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4-flash"):
+        if not target_llm and _added_model_exists(added_models, "ZHIPU-AI", "glm-4-flash"):
             target_llm = "glm-4-flash@ZHIPU-AI"
     if not target_llm:
         pytest.skip("Provider exists but no canonical default llm_id could be inferred for tenant setup.")
@@ -1034,7 +1063,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     target_embd = current_embd
     if not target_embd or _is_malformed_tenant_model_value(target_embd):
         target_embd = _normalize_tenant_model_value(current_embd)
-        if not target_embd and _provider_has_model(my_llms_data, "ZHIPU-AI", "embedding-2"):
+        if not target_embd and _added_model_exists(added_models, "ZHIPU-AI", "embedding-2"):
             target_embd = "embedding-2@ZHIPU-AI"
         if not target_embd:
             target_embd = "BAAI/bge-small-en-v1.5@Builtin"
@@ -1042,14 +1071,14 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
     target_img2txt = current_img2txt
     if _is_malformed_tenant_model_value(target_img2txt):
         target_img2txt = _normalize_tenant_model_value(current_img2txt)
-        if not target_img2txt and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-4.5v"):
+        if not target_img2txt and _added_model_exists(added_models, "ZHIPU-AI", "glm-4.5v"):
             target_img2txt = "glm-4.5v@ZHIPU-AI"
     target_img2txt = target_img2txt or ""
 
     target_asr = current_asr
     if _is_malformed_tenant_model_value(target_asr):
         target_asr = _normalize_tenant_model_value(current_asr)
-        if not target_asr and _provider_has_model(my_llms_data, "ZHIPU-AI", "glm-asr"):
+        if not target_asr and _added_model_exists(added_models, "ZHIPU-AI", "glm-asr"):
             target_asr = "glm-asr@ZHIPU-AI"
     target_asr = target_asr or ""
 
@@ -1090,7 +1119,7 @@ def _ensure_model_provider_ready_via_api(base_url: str, auth_header: str) -> dic
         "has_provider": True,
         "created_provider": created_provider,
         "normalized_defaults": should_update_tenant_defaults,
-        "llm_factories": list(my_llms_data.keys()) if isinstance(my_llms_data, dict) else [],
+        "llm_factories": sorted({str(m.get("provider_name")) for m in added_models if isinstance(m, dict) and m.get("provider_name")}),
     }
 
 
