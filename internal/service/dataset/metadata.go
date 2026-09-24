@@ -173,19 +173,53 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 }
 
 // modularMetadataConfig reads the modular dataset-level metadata object
-// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
-// or malformed config yields a disabled, empty result.
+// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. When the
+// modular object is absent it falls back to the legacy flat shape
+// (enable_metadata / metadata list / built_in_metadata at the top level), which
+// older datasets and the Python API still write, so that configuration is not
+// silently reported as empty. Missing or malformed config yields a disabled,
+// empty result.
 func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
 	if parserConfig == nil {
 		return false, false, []any{}, []any{}
 	}
 	metaObj, ok := parserConfig["metadata"].(map[string]any)
 	if !ok {
-		return false, false, []any{}, []any{}
+		return legacyFlatMetadataConfig(parserConfig)
 	}
 	enabled, _ := metaObj["enabled"].(bool)
 	metadata := anyOrEmptyList(metaObj["metadata"])
 	builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+	return true, enabled, metadata, builtIn
+}
+
+// legacyFlatMetadataConfig reads the pre-modular flat metadata keys from
+// parser_config. It reports present=false only when none of the legacy keys
+// exist, so a dataset that never configured auto-metadata stays disabled.
+func legacyFlatMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
+	rawEnabled, hasEnabled := parserConfig["enable_metadata"]
+	rawMetadata, hasMetadata := parserConfig["metadata"]
+	rawBuiltIn, hasBuiltIn := parserConfig["built_in_metadata"]
+	switch rawMetadata.(type) {
+	case []any, []map[string]any:
+	default:
+		// Only a field list is the legacy shape; anything else is malformed.
+		hasMetadata = false
+	}
+	if !hasEnabled && !hasMetadata && !hasBuiltIn {
+		return false, false, []any{}, []any{}
+	}
+	metadata := []any{}
+	if hasMetadata {
+		metadata = anyOrEmptyList(rawMetadata)
+	}
+	builtIn := anyOrEmptyList(rawBuiltIn)
+	enabled := false
+	if hasEnabled {
+		enabled = common.ParserConfigBool(rawEnabled)
+	} else {
+		enabled = len(metadata) > 0 || len(builtIn) > 0
+	}
 	return true, enabled, metadata, builtIn
 }
 
