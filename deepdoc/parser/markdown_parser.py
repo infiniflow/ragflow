@@ -29,6 +29,28 @@ from rag.nlp.delim import (
 logger = logging.getLogger(__name__)
 
 
+def fence_marker(line):
+    """The code fence ``line`` opens, as ``(character, length)``, or None.
+
+    A fence is three or more backticks or tildes after at most three spaces.
+    The info string after a backtick fence cannot contain a backtick, so a line
+    such as ```` ```inline``` text ```` is inline code, not a fence.
+    """
+    match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$", line)
+    if not match:
+        return None
+    fence = match.group("fence")
+    if fence[0] == "`" and "`" in match.group("info"):
+        return None
+    return fence[0], len(fence)
+
+
+def is_closing_fence(line, fence_char, fence_len):
+    """Whether ``line`` closes a fence of ``fence_len`` ``fence_char`` characters."""
+    pattern = r"^[ \t]{0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
+    return re.match(pattern, line) is not None
+
+
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
         self.chunk_token_num = int(chunk_token_num)
@@ -174,17 +196,6 @@ class MarkdownElementExtractor:
         # the same splits in every file type.
         return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
-    def _get_fence_marker(self, line):
-        match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)
-        if not match:
-            return None
-        fence = match.group("fence")
-        return fence[0], len(fence)
-
-    def _is_closing_fence(self, line, fence_char, fence_len):
-        pattern = r"^[ \t]{0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
-        return re.match(pattern, line) is not None
-
     def _line_start_offsets(self, text):
         offsets = []
         offset = 0
@@ -199,7 +210,7 @@ class MarkdownElementExtractor:
 
         i = 0
         while i < len(self.lines):
-            marker = self._get_fence_marker(self.lines[i])
+            marker = fence_marker(self.lines[i])
             if not marker:
                 i += 1
                 continue
@@ -208,7 +219,7 @@ class MarkdownElementExtractor:
             start_pos = line_offsets[i]
             end_line = len(self.lines) - 1
             for j in range(i + 1, len(self.lines)):
-                if self._is_closing_fence(self.lines[j], fence_char, fence_len):
+                if is_closing_fence(self.lines[j], fence_char, fence_len):
                     end_line = j
                     break
 
@@ -359,7 +370,7 @@ class MarkdownElementExtractor:
                 if not stripped:
                     return False
                 first_line = stripped.split("\n", 1)[0]
-                if self._get_fence_marker(first_line):
+                if fence_marker(first_line):
                     return False
                 if first_line.lstrip().startswith("|"):
                     return False
@@ -424,7 +435,7 @@ class MarkdownElementExtractor:
                 element = self._extract_header(i)
                 sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
-            elif self._get_fence_marker(line):
+            elif fence_marker(line):
                 # code block
                 element = self._extract_code_block(i)
                 sections.append(element if include_meta else element["content"])
@@ -464,13 +475,13 @@ class MarkdownElementExtractor:
     def _extract_code_block(self, start_pos):
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
-        fence_char, fence_len = self._get_fence_marker(self.lines[start_pos])
+        fence_char, fence_len = fence_marker(self.lines[start_pos])
 
         # Find the end of the code block
         for i in range(start_pos + 1, len(self.lines)):
             content_lines.append(self.lines[i])
             end_pos = i
-            if self._is_closing_fence(self.lines[i], fence_char, fence_len):
+            if is_closing_fence(self.lines[i], fence_char, fence_len):
                 break
 
         return {
@@ -539,13 +550,13 @@ class MarkdownElementExtractor:
         while i < len(self.lines):
             line = self.lines[i]
             # stop if we encounter a block element
-            if re.match(r"^#{1,6}\s+.*$", line) or self._get_fence_marker(line) or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
+            if re.match(r"^#{1,6}\s+.*$", line) or fence_marker(line) or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
                 break
             elif not line.strip():
                 # check if the next line is a block element
                 if i + 1 < len(self.lines) and (
                     re.match(r"^#{1,6}\s+.*$", self.lines[i + 1])
-                    or self._get_fence_marker(self.lines[i + 1])
+                    or fence_marker(self.lines[i + 1])
                     or re.match(r"^\s*[-*+]\s+.*$", self.lines[i + 1])
                     or re.match(r"^\s*\d+\.\s+.*$", self.lines[i + 1])
                     or self.lines[i + 1].strip().startswith(">")

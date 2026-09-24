@@ -27,6 +27,7 @@ from markdown import markdown
 from common.constants import MAXIMUM_PAGE_NUMBER
 from common.float_utils import get_float
 from deepdoc.parser import DocxParser, ExcelParser, PdfParser
+from deepdoc.parser.markdown_parser import fence_marker, is_closing_fence
 from deepdoc.parser.utils import get_text
 from rag.nlp import add_positions, concat_img, docx_question_level, has_qbullet, is_english, qbullets_category, rag_tokenizer, random_choices, tokenize_table
 
@@ -289,6 +290,10 @@ def beAdoc(d, q, a, eng, row_num=-1):
     return d
 
 
+# An answer keeps its tables and code blocks when rendered to HTML.
+_MD_ANSWER_EXTENSIONS = ["markdown.extensions.tables", "markdown.extensions.fenced_code"]
+
+
 def mdQuestionLevel(s):
     match = re.match(r"#*", s)
     return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
@@ -402,13 +407,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         lines = txt.split("\n")
         _last_question, last_answer = "", ""
         question_stack, level_stack = [], []
-        code_block = False
+        # The fence the current line sits inside, as the markdown parser reads
+        # fences: a `#` line in a code block is code, and a block closes only on
+        # a fence of the same character that is at least as long.
+        fence = None
         for index, line in enumerate(lines):
-            if line.strip().startswith("```"):
-                code_block = not code_block
             question_level, question = 0, ""
-            if not code_block:
-                question_level, question = mdQuestionLevel(line)
+            if fence is not None:
+                if is_closing_fence(line, *fence):
+                    fence = None
+            else:
+                fence = fence_marker(line)
+                if fence is None:
+                    question_level, question = mdQuestionLevel(line)
 
             if not question_level or question_level > 6:  # not a question
                 last_answer = f"{last_answer}\n{line}"
@@ -416,7 +427,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 if last_answer.strip():
                     sum_question = "\n".join(question_stack)
                     if sum_question:
-                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=["markdown.extensions.tables"]), eng, index))
+                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=_MD_ANSWER_EXTENSIONS), eng, index))
                     last_answer = ""
 
                 i = question_level
@@ -428,7 +439,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if last_answer.strip():
             sum_question = "\n".join(question_stack)
             if sum_question:
-                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=["markdown.extensions.tables"]), eng, index))
+                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=_MD_ANSWER_EXTENSIONS), eng, index))
         return res
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
