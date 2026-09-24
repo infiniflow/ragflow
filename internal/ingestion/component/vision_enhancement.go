@@ -430,7 +430,11 @@ func mediaOCRStatus(fileType utility.FileType, parseMethod string, item map[stri
 	if fileType != utility.FileTypePDF {
 		return ocrPending
 	}
-	if !strings.EqualFold(strings.TrimSpace(parseMethod), "deepdoc") {
+	method := strings.TrimSpace(parseMethod)
+	if method == "" {
+		method = "deepdoc"
+	}
+	if !strings.EqualFold(method, "deepdoc") {
 		return ocrUnknown
 	}
 	if kind, _ := item["doc_type_kwd"].(string); kind == "table" {
