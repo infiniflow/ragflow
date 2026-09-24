@@ -1098,7 +1098,6 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
-	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
 	chatService := service.NewChatService()
 	chatChannelService := service.NewChatChannelService()
@@ -1171,7 +1170,6 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	systemHandler := handler.NewSystemHandler(systemService)
 	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
-	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
 	chatChannelHandler := handler.NewChatChannelHandler(chatChannelService)
 	langfuseHandler := handler.NewLangfuseHandler(langfuseService)
@@ -1208,10 +1206,8 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
 	// BotService delegates the agentBot completion to agentService so
-	// both paths share the same canvas runner. Reuse the llmService
-	// already constructed above (line 222) — do NOT redeclare with
-	// `:=` since the variable is in scope.
-	botService := service.NewBotService(agentService, llmService)
+	// both paths share the same canvas runner.
+	botService := service.NewBotService(agentService)
 	botHandler := handler.NewBotHandler(botService)
 
 	// Wire the TTS synthesizer to the per-tenant model-provider
@@ -1281,7 +1277,6 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		systemHandler,
 		statsHandler,
 		chunkHandler,
-		llmHandler,
 		chatHandler,
 		chatChannelHandler,
 		langfuseHandler,

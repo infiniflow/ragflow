@@ -703,11 +703,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 				return err
 			}
 		}
-		tenantLLMCount, err := remove("tenant LLMs", &entity.TenantLLM{}, "tenant_id = ?", owner)
-		if err != nil {
-			return err
-		}
-		result.TenantLLMCount = int(tenantLLMCount)
 		langfuseCount, err := remove("Langfuse credentials", &entity.TenantLangfuse{}, "tenant_id = ?", owner)
 		if err != nil {
 			return err
