@@ -115,6 +115,8 @@ func TestExtractQAMarkdown_FencedCodeKeepsHashLines(t *testing.T) {
 		"tilde fence":    "# Install\n~~~bash\n# fetch deps\nmake deps\n~~~\n# Run\nmake run",
 		"longer fence":   "# Install\n````md\n```bash\n# fetch deps\n```\n````\n# Run\nmake run",
 		"longer closing": "# Install\n```bash\n# fetch deps\n`````\n# Run\nmake run",
+		"indented close": "# Install\n```md\n    ```\n# fetch deps\n```\n# Run\nmake run",
+		"list fence":     "# Install\n1. Fetch:\n   ```bash\n   # fetch deps\n   ```\n# Run\nmake run",
 	}
 	for name, md := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,9 +136,14 @@ func TestExtractQAMarkdown_FencedCodeKeepsHashLines(t *testing.T) {
 
 // A line that only looks like a fence must not swallow the questions after it.
 func TestExtractQAMarkdown_NonFenceBackticksDoNotOpenCodeBlock(t *testing.T) {
-	pairs := extractQAMarkdown("# Q1\n```inline``` is not a fence\n# Q2\nA2")
-	if len(pairs) != 2 || pairs[1].Question != "Q2" || pairs[1].Answer != "A2" {
-		t.Fatalf("got %+v, want Q1 and Q2", pairs)
+	for _, md := range []string{
+		"# Q1\n```inline``` is not a fence\n# Q2\nA2",
+		"# Q1\n    ```\n# Q2\nA2", // indented four spaces: indented code, not a fence
+	} {
+		pairs := extractQAMarkdown(md)
+		if len(pairs) != 2 || pairs[1].Question != "Q2" || pairs[1].Answer != "A2" {
+			t.Errorf("%q: got %+v, want Q1 and Q2", md, pairs)
+		}
 	}
 }
 

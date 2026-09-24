@@ -353,12 +353,20 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 
 var mdHeading = regexp.MustCompile(`^(#*)`)
 
+// mdFenceIndent strips the up to three spaces a fence line may be indented by,
+// reporting false when the line is indented further (CommonMark reads that as
+// indented code, not a fence).
+func mdFenceIndent(line string) (string, bool) {
+	trimmed := strings.TrimLeft(line, " ")
+	return trimmed, len(line)-len(trimmed) <= 3
+}
+
 // mdFenceOpen returns the fence run ("```", "~~~~", ...) that opens a fenced
 // code block on this line, or "" when the line does not open one. As in
 // CommonMark, a backtick fence's info string cannot contain a backtick.
 func mdFenceOpen(line string) string {
-	trimmed := strings.TrimLeft(line, " \t")
-	if !strings.HasPrefix(trimmed, "```") && !strings.HasPrefix(trimmed, "~~~") {
+	trimmed, ok := mdFenceIndent(line)
+	if !ok || !strings.HasPrefix(trimmed, "```") && !strings.HasPrefix(trimmed, "~~~") {
 		return ""
 	}
 	fence := trimmed[:len(trimmed)-len(strings.TrimLeft(trimmed, trimmed[:1]))]
@@ -371,8 +379,9 @@ func mdFenceOpen(line string) string {
 // mdFenceCloses reports whether line closes a block opened by fence: the same
 // character, at least as many of them, and nothing else on the line.
 func mdFenceCloses(line, fence string) bool {
-	trimmed := strings.TrimSpace(line)
-	return len(trimmed) >= len(fence) && strings.Trim(trimmed, fence[:1]) == ""
+	trimmed, ok := mdFenceIndent(line)
+	trimmed = strings.TrimRight(trimmed, " \t\r")
+	return ok && len(trimmed) >= len(fence) && strings.Trim(trimmed, fence[:1]) == ""
 }
 
 func extractQAMarkdown(md string) []qaPair {
