@@ -20,6 +20,7 @@ def _isolate_stubs():
     yield
     for name in [key for key in sys.modules if key not in saved]:
         del sys.modules[name]
+    sys.modules.update(saved)  # restore entries this file replaced, not just added
 
 
 class _AnyMeta(type):
@@ -116,7 +117,10 @@ def _load(parser_name):
 def _extractor(parser_name):
     module = _load(parser_name)
     for value in vars(module).values():
-        if isinstance(value, type) and "extract_positions" in vars(value):
+        # ``__module__`` keeps the search to classes this file actually defines:
+        # every parser imports ``RAGFlowPdfParser``, which has its own
+        # ``extract_positions`` and would otherwise win the scan.
+        if isinstance(value, type) and value.__module__ == module.__name__ and "extract_positions" in vars(value):
             return value.extract_positions
     raise AssertionError(f"{parser_name}.py exposes no extract_positions")
 
