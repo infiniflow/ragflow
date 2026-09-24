@@ -21,7 +21,6 @@ import re
 import uuid
 import chardet
 from bs4 import BeautifulSoup, NavigableString, Tag, Comment
-import html
 
 
 def get_encoding(file):
@@ -135,7 +134,7 @@ class RAGFlowHtmlParser:
             if str.lower(element.name) == "table":
                 table_info_list = []
                 table_id = str(uuid.uuid1())
-                table_list = [html.unescape(str(element))]
+                table_list = [str(element)]
                 for t in table_list:
                     table_info_list.append({"content": t, "tag_name": "table", "metadata": {"table_id": table_id, "index": table_list.index(t)}})
                 return table_info_list
