@@ -48,37 +48,67 @@ def _stub(name, search_path=None):
     return module
 
 
+_CACHE: dict[str, object] = {}
+
+
 def _load(parser_name):
-    """Import a deepdoc parser with any unavailable third-party module stubbed out.
+    """Import a deepdoc parser for real, stubbing only what is not a parser module.
 
     Only ``extract_positions`` is exercised, which is a pure staticmethod, so the
-    stubs never participate in the assertion. Missing modules are discovered from
-    the import errors themselves, which also covers the conditional imports the
-    parsers wrap in ``try`` blocks.
+    stubs never participate in the assertion. Missing modules are discovered from the
+    import errors themselves, which also covers the conditional imports the parsers
+    wrap in ``try`` blocks. A parser imported by another parser (``pdf_parser``) is
+    loaded for real and registered under its dotted name: stubbing it passes in an
+    isolated run but breaks in CI, where a sibling file has already imported the real
+    module under that name.
     """
     for pkg in ("common", "deepdoc", "rag", "api"):
         if not getattr(sys.modules.get(pkg), "__path__", None):
             _stub(pkg, pkg)
+    # Register the parsers under their dotted names, but never let the real
+    # deepdoc/parser/__init__.py run: it imports every parser, and pdf_parser is
+    # already mid-import here.
+    if "deepdoc.parser" not in sys.modules:
+        parser_pkg = _stub("deepdoc.parser")
+        parser_pkg.__path__ = [str(PARSER_DIR)]
+
+    dotted = f"deepdoc.parser.{parser_name}"
+    if parser_name in _CACHE:
+        sys.modules[dotted] = _CACHE[parser_name]
+        return _CACHE[parser_name]
 
     path = PARSER_DIR / f"{parser_name}.py"
-    module_name = f"_position_tag_unit_{parser_name}"
-    for _attempt in range(40):
-        spec = importlib.util.spec_from_file_location(module_name, path)
+    existing = sys.modules.get(dotted)
+    if existing is not None and str(getattr(existing, "__file__", "") or "") == str(path):
+        # Already the real module (a sibling file imported it): reuse it.
+        _CACHE[parser_name] = existing
+        return existing
+
+    if parser_name != "pdf_parser":
+        # A sibling test file may have left a stub here; every parser except
+        # pdf_parser itself imports names from it.
+        sys.modules["deepdoc.parser.pdf_parser"] = _load("pdf_parser")
+
+    for _attempt in range(200):
+        spec = importlib.util.spec_from_file_location(dotted, path)
         module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
+        sys.modules[dotted] = module
         try:
             spec.loader.exec_module(module)
         except ModuleNotFoundError as exc:
-            missing = exc.name
-            del sys.modules[module_name]
-            if missing in (module_name,):
+            missing = exc.name or ""
+            del sys.modules[dotted]
+            if missing == dotted:
                 raise
-            head = missing.split(".")[0]
-            for i in range(len(missing.split("."))):
-                dotted = ".".join(missing.split(".")[: i + 1])
-                if dotted not in sys.modules:
-                    _stub(dotted, head if (REPO_ROOT / head).is_dir() and i == 0 else None)
+            leaf = missing.rsplit(".", 1)[-1]
+            if missing.startswith("deepdoc.parser.") and (PARSER_DIR / f"{leaf}.py").exists():
+                _load(leaf)
+                continue
+            if missing in sys.modules:
+                raise
+            sys.modules[missing] = _stub(missing)
         else:
+            _CACHE[parser_name] = module
             return module
     raise AssertionError(f"could not import {parser_name}.py")
 
