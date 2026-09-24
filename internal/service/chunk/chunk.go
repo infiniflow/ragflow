@@ -383,14 +383,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		embdID = kbRecords[0].EmbdID
 		target, getErr = modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
 		if getErr != nil {
-			_, embdID, err = dao.LookupTenantLLMByName(ctx, dao.DB, dao.NewTenantLLMDAO(), tenantIDs[0], embdID, entity.ModelTypeEmbedding)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
-			}
-			target, getErr = modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, embdID)
-			if getErr != nil {
-				return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
-			}
+			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 		}
 	} else {
 		target, getErr = modelSolver.ResolveDefaultModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding)

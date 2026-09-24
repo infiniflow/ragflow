@@ -36,7 +36,6 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
-	"ragflow/internal/server/config"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -55,7 +54,6 @@ type Service struct {
 	systemSettingsDAO   *dao.SystemSettingsDAO
 	tenantDAO           *dao.TenantDAO
 	userTenantDAO       *dao.UserTenantDAO
-	tenantLLMDAO        *dao.TenantLLMDAO
 	fileDAO             *dao.FileDAO
 	documentDAO         *dao.DocumentDAO
 	taskDAO             *dao.TaskDAO
@@ -87,7 +85,6 @@ func NewService() *Service {
 		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
 		tenantDAO:           dao.NewTenantDAO(),
 		userTenantDAO:       dao.NewUserTenantDAO(),
-		tenantLLMDAO:        dao.NewTenantLLMDAO(),
 		fileDAO:             dao.NewFileDAO(),
 		documentDAO:         dao.NewDocumentDAO(),
 		taskDAO:             dao.NewTaskDAO(),
@@ -308,19 +305,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to create user-tenant relation: %w", err)
 	}
 
-	// 4. Create tenant LLM configurations
-	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
-	if err != nil {
-		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
-		// Continue without LLM configs - not a critical error
-	} else if len(tenantLLMs) > 0 {
-		if err = tx.Create(&tenantLLMs).Error; err != nil {
-			common.Warn("failed to create tenant LLM configs", zap.Error(err))
-			// Continue without LLM configs - not a critical error
-		}
-	}
-
-	// 5. Create root file folder
+	// 4. Create root file folder
 	fileID := utility.GenerateToken()
 	fileLocation := ""
 	file := &entity.File{
@@ -355,132 +340,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	}, nil
 }
 
-// getInitTenantLLM gets initial tenant LLM configurations
-// This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		return nil, fmt.Errorf("config not initialized")
-	}
-
-	var tenantLLMs []*entity.TenantLLM
-
-	// Get model configs from configuration
-	modelConfigs := []config.ModelConfig{
-		cfg.GetDefaultChatModel(),
-		cfg.GetDefaultEmbeddingModel(),
-		cfg.GetDefaultRerankModel(),
-		cfg.GetDefaultASRModel(),
-		cfg.GetDefaultVisionModel(),
-		cfg.GetDefaultTTSModel(),
-		cfg.GetDefaultOCRModel(),
-	}
-
-	// Track seen factories to avoid duplicates
-	seenFactories := make(map[string]bool)
-	var uniqueFactories []config.ModelConfig
-
-	for _, mc := range modelConfigs {
-		if mc.Factory == "" {
-			continue
-		}
-		if !seenFactories[mc.Factory] {
-			seenFactories[mc.Factory] = true
-			uniqueFactories = append(uniqueFactories, mc)
-		}
-	}
-
-	// Get LLMs for each unique factory
-	for _, factoryConfig := range uniqueFactories {
-		models, err := s.llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
-		if err != nil {
-			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
-			continue
-		}
-
-		for _, model := range models {
-			// Determine API key and base URL based on model type
-			var apiKey, apiBase string
-			switch model.ModelType {
-			case entity.ModelTypeChat.String():
-				apiKey = factoryConfig.APIKey
-				apiBase = factoryConfig.BaseURL
-			case entity.ModelTypeEmbedding.String():
-				apiKey = cfg.GetDefaultEmbeddingModel().APIKey
-				apiBase = cfg.GetDefaultEmbeddingModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeRerank.String():
-				apiKey = cfg.GetDefaultRerankModel().APIKey
-				apiBase = cfg.GetDefaultRerankModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeSpeech2Text.String():
-				apiKey = cfg.GetDefaultASRModel().APIKey
-				apiBase = cfg.GetDefaultASRModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeImage2Text.String():
-				apiKey = cfg.GetDefaultVisionModel().APIKey
-				apiBase = cfg.GetDefaultVisionModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			default:
-				apiKey = factoryConfig.APIKey
-				apiBase = factoryConfig.BaseURL
-			}
-
-			maxTokens := int64(8192)
-			if model.MaxTokens > 0 {
-				maxTokens = model.MaxTokens
-			}
-
-			llmName := model.LLMName
-			modelType := model.ModelType
-			tenantLLM := &entity.TenantLLM{
-				TenantID:   userID,
-				LLMFactory: factoryConfig.Factory,
-				LLMName:    &llmName,
-				ModelType:  &modelType,
-				APIKey:     &apiKey,
-				APIBase:    &apiBase,
-				MaxTokens:  maxTokens,
-				Status:     "1",
-			}
-			tenantLLMs = append(tenantLLMs, tenantLLM)
-		}
-	}
-
-	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
-	seen := make(map[string]bool)
-	var uniqueLLMs []*entity.TenantLLM
-	for _, tenantLLM := range tenantLLMs {
-		key := fmt.Sprintf("%s|%s|%s", tenantLLM.TenantID, tenantLLM.LLMFactory, *tenantLLM.LLMName)
-		if !seen[key] {
-			seen[key] = true
-			uniqueLLMs = append(uniqueLLMs, tenantLLM)
-		}
-	}
-
-	return uniqueLLMs, nil
-}
-
 // GetUserDetails get user details
 func (s *Service) GetUserDetails(ctx context.Context, username string) (map[string]interface{}, error) {
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
@@ -509,7 +368,6 @@ func (s *Service) GetUserDetails(ctx context.Context, username string) (map[stri
 // DeleteUserResult result of delete user operation
 type DeleteUserResult struct {
 	Username        string   `json:"username"`
-	TenantLLMCount  int      `json:"tenant_llm_count"`
 	LangfuseCount   int      `json:"langfuse_count"`
 	MetadataTable   string   `json:"metadata_table"`
 	TenantCount     int      `json:"tenant_count"`
