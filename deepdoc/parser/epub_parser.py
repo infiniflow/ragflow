@@ -15,9 +15,11 @@
 #
 
 import logging
+import posixpath
 import warnings
 import zipfile
 from io import BytesIO
+from urllib.parse import unquote
 from xml.etree import ElementTree
 
 from .html_parser import RAGFlowHtmlParser
@@ -136,7 +138,9 @@ class RAGFlowEpubParser:
             href, media_type = manifest[idref]
             if media_type not in _XHTML_MEDIA_TYPES:
                 continue
-            spine_items.append(opf_dir + href)
+            # Manifest hrefs are URLs relative to the OPF: drop the fragment, decode
+            # %-escapes, and resolve "." and ".." to get the ZIP entry name.
+            spine_items.append(posixpath.normpath(opf_dir + unquote(href.split("#", 1)[0])))
 
         return spine_items if spine_items else RAGFlowEpubParser._fallback_xhtml_order(zf)
 

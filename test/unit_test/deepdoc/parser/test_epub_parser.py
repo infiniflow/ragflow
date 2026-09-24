@@ -455,3 +455,54 @@ class TestEpubParserUnreadableChapter:
 
         assert "ALPHA" in combined
         assert "CHARLIE" in combined
+
+
+class TestEpubParserManifestHrefs:
+    """Manifest hrefs are URLs relative to the OPF, not raw ZIP entry names."""
+
+    def _make_epub(self, manifest_hrefs, entries):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("mimetype", "application/epub+zip")
+            zf.writestr(
+                "META-INF/container.xml",
+                '<?xml version="1.0"?>'
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">'
+                '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>'
+                "</container>",
+            )
+            items = "".join(f'<item id="c{i}" href="{href}" media-type="application/xhtml+xml"/>' for i, href in enumerate(manifest_hrefs))
+            refs = "".join(f'<itemref idref="c{i}"/>' for i in range(len(manifest_hrefs)))
+            zf.writestr(
+                "OEBPS/content.opf",
+                f'<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>{items}</manifest><spine>{refs}</spine></package>',
+            )
+            for name, text in entries:
+                zf.writestr(name, _simple_html(text))
+        return buf.getvalue()
+
+    def _parse(self, epub_bytes):
+        return " ".join(RAGFlowEpubParser()(None, binary=epub_bytes, chunk_token_num=512))
+
+    def test_percent_encoded_hrefs_resolve_to_their_entries(self):
+        """Non-ASCII and space file names are percent-encoded in the manifest."""
+        epub_bytes = self._make_epub(
+            ["Text/%E7%AC%AC%E4%B8%80%E7%AB%A0.xhtml", "Text/chapter%202.xhtml"],
+            [("OEBPS/Text/第一章.xhtml", "ALPHA chapter"), ("OEBPS/Text/chapter 2.xhtml", "BRAVO chapter")],
+        )
+
+        combined = self._parse(epub_bytes)
+
+        assert "ALPHA" in combined
+        assert "BRAVO" in combined
+
+    def test_fragment_and_parent_segments_are_resolved(self):
+        epub_bytes = self._make_epub(
+            ["ch1.xhtml#start", "../Shared/ch2.xhtml"],
+            [("OEBPS/ch1.xhtml", "ALPHA chapter"), ("Shared/ch2.xhtml", "BRAVO chapter")],
+        )
+
+        combined = self._parse(epub_bytes)
+
+        assert "ALPHA" in combined
+        assert "BRAVO" in combined
