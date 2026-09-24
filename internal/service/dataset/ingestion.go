@@ -145,6 +145,9 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("no authorization")
 	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
+	}
 
 	if page <= 0 {
 		page = 1
