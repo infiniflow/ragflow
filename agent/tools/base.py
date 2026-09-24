@@ -67,10 +67,24 @@ class LLMToolPluginCallSession(ToolCallSession):
         """Synchronous wrapper for :meth:`tool_call_async`."""
         return asyncio.run(self.tool_call_async(name, arguments, request_timeout=timeout))
 
+    def resolve_name(self, name: str) -> str:
+        """Map the name the model used to the indexed key in ``tools_map``.
+
+        Tools are registered as ``<function_name>_<index>`` so that two tools with the same
+        function name (e.g. two Retrieval nodes) stay distinct, but models keep calling the
+        bare ``function_name`` the prompt talks about. Accept the bare name when it maps to
+        exactly one indexed tool; anything else is a real miss."""
+        if name in self.tools_map:
+            return name
+        candidates = [key for key in self.tools_map if re.fullmatch(re.escape(name) + r"_\d+", key)]
+        if len(candidates) == 1:
+            return candidates[0]
+        raise KeyError(f"LLM tool {name} does not exist")
+
     async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int | None = None) -> Any:
         """Invoke a tool asynchronously, applying the default timeout when needed."""
         request_timeout = self.default_timeout if request_timeout is None else request_timeout
-        assert name in self.tools_map, f"LLM tool {name} does not exist"
+        name = self.resolve_name(name)
         logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]} request_timeout={request_timeout}")
         if not isinstance(arguments, Mapping):
             raise TypeError(f"Tool arguments for {name} must be an object, got {type(arguments).__name__}")
@@ -106,8 +120,8 @@ class LLMToolPluginCallSession(ToolCallSession):
         return resp
 
     def get_tool_obj(self, name):
-        """Return the raw tool object for a given indexed name."""
-        return self.tools_map[name]
+        """Return the raw tool object for an indexed name or an unambiguous bare function name."""
+        return self.tools_map[self.resolve_name(name)]
 
 
 class ToolParamBase(ComponentParamBase):
