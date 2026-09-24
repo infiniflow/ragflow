@@ -464,12 +464,15 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def remove_document(cls, doc, tenant_id):
         from api.db.services.task_service import TaskService, cancel_all_task_of
+        chunk_index_name = search.index_name(tenant_id)
+        # Probe BEFORE the record is deleted. index_exist() raises on a failure it cannot
+        # attribute, and the cleanup below is not inside the try blocks - a raise here after
+        # the delete would strand the chunks, tasks and images of a document that no longer
+        # has a row to find them from.
+        chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
 
         if not cls.delete_document_and_update_kb_counts(doc.id):
             return True
-
-        chunk_index_name = search.index_name(tenant_id)
-        chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
 
         # Cancel all running tasks first using preset function in task_service.py --- set cancel flag in Redis
         try:

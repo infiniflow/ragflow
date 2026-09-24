@@ -771,7 +771,10 @@ class FileService(CommonService):
 
                 b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
 
-                TaskService.filter_delete([Task.doc_id == doc_id])
+                # Tasks are NOT deleted here. remove_document() cancels and deletes them
+                # itself, after it has removed the document row, and doing it first means a
+                # remove_document that raises - its index probe cannot always prove the table
+                # is there - leaves a document with no tasks to re-parse it from.
                 if not DocumentService.remove_document(doc, tenant_id):
                     raise RuntimeError("Database error (Document removal)!")
 

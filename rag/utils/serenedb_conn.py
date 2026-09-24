@@ -291,16 +291,36 @@ class SereneDBConnection(DocStoreConnection):
         with self._known_lock:
             self._known_tables.discard(index_name)
 
+    # Errors that actually mean "this table is not there". Anything else - a timeout, a
+    # dropped connection, the server being busy - means WE DO NOT KNOW, and must not be
+    # reported as absence.
+    _MISSING_TABLE_SQLSTATES = frozenset({
+        "42P01",   # undefined_table
+        "3F000",   # invalid_schema_name
+    })
+
     def index_exist(self, index_name: str, dataset_id: str = None) -> bool:
+        """Does the table exist? Raises if it cannot tell.
+
+        Catching every exception and returning False makes a timed-out probe look like
+        absence, so the caller runs CREATE INDEX over the whole relation, saturates the
+        disk, and times out the next probe. Observed: concurrent 20-70s CREATE INDEX
+        statements at ~4 GB/s that continued after ingest stopped.
+        """
         if index_name in self._known_tables:
             return True
         try:
             self._run(f"SELECT 1 FROM {index_name} LIMIT 0")
-            with self._known_lock:
-                self._known_tables.add(index_name)
-            return True
-        except Exception:
-            return False
+        except Exception as e:
+            code = getattr(e, "pgcode", None) or getattr(getattr(e, "diag", None), "sqlstate", None)
+            if code in self._MISSING_TABLE_SQLSTATES:
+                return False
+            # Unknown failure: say so. Reporting absence here is what caused the
+            # CREATE INDEX storm.
+            raise
+        with self._known_lock:
+            self._known_tables.add(index_name)
+        return True
 
     """
     Filters
