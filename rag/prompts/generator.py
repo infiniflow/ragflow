@@ -524,7 +524,7 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
-async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:
+async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None, key_descriptions: list[dict] | None = None) -> dict:
     """Generate metadata filter conditions from a user query using an LLM.
 
     Args:
@@ -532,6 +532,9 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         meta_data: Dict of {key: set of values} - e.g. {"character": {"Caocao", "Liubei"}, "year": {2026}}
         query: User question (e.g. "Caocao in 2026")
         constraints: Optional dict of {key: operator} to constrain which op to use for a key
+        key_descriptions: Optional list of {"key": str, "description": str} explaining each key's
+            semantics, value-mapping rules and usage caveats so the LLM can choose the right values
+            even when the query uses synonyms, abbreviations or a different language than the stored codes.
 
     Returns:
         Dict with "logic" ("and"/"or") and "conditions" list.
@@ -552,7 +555,8 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
         meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
 
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
-        current_date=datetime.datetime.today().strftime("%Y-%m-%d"), metadata_keys=json.dumps(meta_data_structure), user_question=query, constraints=json.dumps(constraints) if constraints else None
+        current_date=datetime.datetime.today().strftime("%Y-%m-%d"), metadata_keys=json.dumps(meta_data_structure), user_question=query, constraints=json.dumps(constraints) if constraints else None,
+        key_descriptions=key_descriptions,
     )
     user_prompt = "Generate filters:"
     ans = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}])

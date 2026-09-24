@@ -178,6 +178,11 @@ class Retrieval(ToolBase, ABC):
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
                 chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
+            key_descs = None
+            if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"] and kbs:
+                meta_fields = (kbs[0].parser_config or {}).get("metadata") or []
+                key_descs = [{"key": f["key"], "description": f["description"]} for f in meta_fields if f.get("description")] or None
+
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
                 None,
@@ -187,6 +192,7 @@ class Retrieval(ToolBase, ABC):
                 self._resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
                 kb_ids=kb_ids,
                 metas_loader=_load_metas,
+                key_descriptions=key_descs,
             )
 
         if self._param.cross_languages:

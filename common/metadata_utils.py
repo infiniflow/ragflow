@@ -159,6 +159,7 @@ async def apply_meta_data_filter(
     manual_value_resolver: Callable[[dict], dict] | None = None,
     kb_ids: list[str] | None = None,
     metas_loader: Callable[[], dict] | None = None,
+    key_descriptions: list[dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -237,7 +238,7 @@ async def apply_meta_data_filter(
         return constrained
 
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
+        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question, key_descriptions=key_descriptions)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
@@ -259,7 +260,8 @@ async def apply_meta_data_filter(
             current_metas = _get_metas()
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
-                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
+                descs = [d for d in (key_descriptions or []) if d.get("key") in filtered_metas] or None
+                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints, key_descriptions=descs)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
