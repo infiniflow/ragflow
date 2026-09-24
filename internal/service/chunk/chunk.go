@@ -1442,6 +1442,13 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
 	}
+	if req.TagKwd != nil {
+		// Mirror Python chunk_api.py: `tag_kwd` is only persisted when the
+		// caller actually supplied it. Omitting the field when absent avoids
+		// a Go/Python behavioural divergence on chunks that were not tagged
+		// at write time. See issue #20138.
+		chunkData["tag_kwd"] = req.TagKwd
+	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
 	}
@@ -1508,6 +1515,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],
+	}
+	if tagKwd, ok := chunkData["tag_kwd"]; ok {
+		renamedChunk["tag_kwd"] = tagKwd
 	}
 	if imgID, ok := chunkData["img_id"]; ok {
 		renamedChunk["image_id"] = imgID

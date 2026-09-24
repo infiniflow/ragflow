@@ -1092,6 +1092,122 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 }
 
+// TestAddChunkPersistsTagKwdOnlyWhenProvided pins the Go/Python parity
+// contract that mirrors api/apps/restful_apis/chunk_api.py: the `tag_kwd`
+// field is only persisted on the inserted chunk when the caller actually
+// supplied it, and is echoed back in the response when present. Issue
+// #20138 documented that the Go path was silently dropping the field.
+func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
+	ctx := t.Context()
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	makeService := func() (*ChunkService, *addChunkTestEngine) {
+		engine := &addChunkTestEngine{}
+		svc := &ChunkService{
+			docEngine:   engine,
+			kbDAO:       dao.NewKnowledgebaseDAO(),
+			documentDAO: dao.NewDocumentDAO(),
+			accessibleFunc: func(datasetIDArg, userIDArg string) bool {
+				return datasetIDArg == datasetID && userIDArg == userID
+			},
+			getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
+				return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+			},
+			getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+				driver := &stubEmbeddingDriver{
+					embeddings: []models.EmbeddingData{
+						{Embedding: []float64{1, 2}},
+						{Embedding: []float64{3, 4}},
+					},
+				}
+				modelName := "embed-1"
+				return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
+			},
+			incrementChunkStatsFunc: func(_, _ string, _, _ int64, _ float64) error { return nil },
+			tokenizeFunc:            func(text string) (string, error) { return text, nil },
+			fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+			numTokensFunc:           func(text string) int { return len(text) },
+		}
+		return svc, engine
+	}
+
+	t.Run("omitted by caller", func(t *testing.T) {
+		svc, engine := makeService()
+		resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
+			DatasetID:  datasetID,
+			DocumentID: documentID,
+			Content:    "chunk body",
+		}, userID)
+		if err != nil {
+			t.Fatalf("AddChunk() error = %v", err)
+		}
+		if len(engine.insertedChunks) != 1 {
+			t.Fatalf("inserted chunks = %d, want 1", len(engine.insertedChunks))
+		}
+		if _, ok := engine.insertedChunks[0]["tag_kwd"]; ok {
+			t.Fatalf("expected tag_kwd to be absent when caller omits it; got %#v", engine.insertedChunks[0]["tag_kwd"])
+		}
+		if _, ok := resp.Chunk["tag_kwd"]; ok {
+			t.Fatalf("response should not include tag_kwd when caller omits it; got %#v", resp.Chunk["tag_kwd"])
+		}
+	})
+
+	t.Run("explicit empty list persists empty slice", func(t *testing.T) {
+		svc, engine := makeService()
+		resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
+			DatasetID:  datasetID,
+			DocumentID: documentID,
+			Content:    "chunk body",
+			TagKwd:     []string{},
+		}, userID)
+		if err != nil {
+			t.Fatalf("AddChunk() error = %v", err)
+		}
+		got, ok := engine.insertedChunks[0]["tag_kwd"].([]string)
+		if !ok {
+			t.Fatalf("expected []string in tag_kwd, got %T", engine.insertedChunks[0]["tag_kwd"])
+		}
+		if len(got) != 0 {
+			t.Fatalf("expected empty tag_kwd, got %v", got)
+		}
+		if echoed, _ := resp.Chunk["tag_kwd"].([]string); len(echoed) != 0 {
+			t.Fatalf("response tag_kwd = %v, want empty", resp.Chunk["tag_kwd"])
+		}
+	})
+
+	t.Run("values are persisted and echoed", func(t *testing.T) {
+		svc, engine := makeService()
+		want := []string{"alpha", "beta"}
+		resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
+			DatasetID:  datasetID,
+			DocumentID: documentID,
+			Content:    "chunk body",
+			TagKwd:     want,
+		}, userID)
+		if err != nil {
+			t.Fatalf("AddChunk() error = %v", err)
+		}
+		got, ok := engine.insertedChunks[0]["tag_kwd"].([]string)
+		if !ok {
+			t.Fatalf("expected []string in tag_kwd, got %T", engine.insertedChunks[0]["tag_kwd"])
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("inserted tag_kwd = %v, want %v", got, want)
+		}
+		echoed, ok := resp.Chunk["tag_kwd"].([]string)
+		if !ok {
+			t.Fatalf("response tag_kwd type = %T, want []string", resp.Chunk["tag_kwd"])
+		}
+		if !reflect.DeepEqual(echoed, want) {
+			t.Fatalf("response tag_kwd = %v, want %v", echoed, want)
+		}
+	})
+}
+
 func TestAddChunkValidationErrors(t *testing.T) {
 	ctx := t.Context()
 	db := setupChunkTestDB(t)
