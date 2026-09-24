@@ -1381,6 +1381,10 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 // Used by Search() to mutate chunks with derived fields before returning.
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
+		// Decode json-list columns (source_doc_ids, entity_names_kwd, ...) which
+		// Infinity returns as JSON strings, so readers see slices (mirrors ES).
+		decodeJSONListFields(chunk)
+
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -1542,6 +1546,11 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 		for k := range chunk {
 			columnMap[strings.ToLower(k)] = k
 		}
+
+		// Decode JSON-list columns (Infinity returns them as JSON strings) so
+		// readers and the API see real slices, mirroring Python's get_fields ->
+		// parse_json_list normalization (infinity_conn.py:937-947).
+		decodeJSONListFields(chunk)
 
 		// Apply field mappings first (to get derived fields)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks (Python lines 716-719)
@@ -2558,6 +2567,54 @@ var jsonListFields = map[string]bool{
 	"outlinks_kwd":             true,
 	"related_kb_pages_kwd":     true,
 	"rechunked_from_chunk_ids": true,
+}
+
+// decodeJSONListFields converts Infinity json-column values that arrive as JSON
+// strings back into []interface{} so downstream readers see the same slice shape
+// ES returns. It mirrors the Python Infinity connector's read-side parse_json_list
+// (rag/utils/infinity_conn.py:937-947): a []interface{} passes through; nil/empty
+// becomes []; a JSON string array is decoded; a string that is not JSON (legacy
+// "###"-joined values written by older Go code) is split on "###"; any other
+// scalar value is wrapped in a single-element list. It is a no-op for every
+// other key.
+func decodeJSONListFields(chunk map[string]interface{}) {
+	for k, v := range chunk {
+		if !jsonListFields[strings.ToLower(k)] {
+			continue
+		}
+		switch val := v.(type) {
+		case nil:
+			chunk[k] = []interface{}{}
+		case []interface{}:
+			// Already decoded (e.g. ES returns real arrays).
+		case string:
+			if val == "" {
+				chunk[k] = []interface{}{}
+				continue
+			}
+			var parsed []interface{}
+			if err := json.Unmarshal([]byte(val), &parsed); err == nil {
+				if parsed == nil {
+					parsed = []interface{}{}
+				}
+				chunk[k] = parsed
+				continue
+			}
+			// Legacy varchar encoding: entries joined by "###".
+			parts := strings.Split(val, "###")
+			out := make([]interface{}, 0, len(parts))
+			for _, p := range parts {
+				if p != "" {
+					out = append(out, p)
+				}
+			}
+			chunk[k] = out
+		default:
+			// A non-list JSON scalar (number/object) stored as the column value:
+			// mirror Python's "[parsed]" wrap.
+			chunk[k] = []interface{}{v}
+		}
+	}
 }
 
 // jsonListValue renders a list field as the JSON string its column stores; a
