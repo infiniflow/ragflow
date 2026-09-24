@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, Mock
 
 class TestWikiGraphTopN(unittest.TestCase):
     def setUp(self):
-        # Execute the real route body without importing the server or its dependencies.
+        """Load the real route with isolated request and service mocks."""
         path = Path(__file__).resolve().parents[5] / "api/apps/restful_apis/dataset_api.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
         route = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "get_wiki_graph")
@@ -47,6 +47,7 @@ class TestWikiGraphTopN(unittest.TestCase):
         self.route = namespace["get_wiki_graph"]
 
     def test_invalid_budget_is_rejected_before_querying(self):
+        """Reject malformed budgets and empty primary values before calling the service."""
         invalid_values = ("not-a-number", "1.5", "", " ")
         cases = [{name: value} for name in ("top_n", "topN") for value in invalid_values]
         cases.extend({"top_n": value, "topN": "64"} for value in invalid_values)
@@ -62,6 +63,7 @@ class TestWikiGraphTopN(unittest.TestCase):
                 self.success.assert_not_called()
 
     def test_omitted_and_integer_budgets_are_forwarded(self):
+        """Forward omitted and integer budgets while honoring the primary parameter."""
         cases = [({}, None), ({"top_n": "32", "topN": "64"}, 32), ({"top_n": "32", "topN": "bad"}, 32)]
         cases.extend(({name: str(value)}, value) for name in ("top_n", "topN") for value in (1, 128, 0, -1, 2048))
         for args, expected in cases:
