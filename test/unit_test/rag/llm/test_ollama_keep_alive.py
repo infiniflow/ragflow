@@ -52,3 +52,10 @@ def test_models_accept_duration_env(monkeypatch, model_cls):
     monkeypatch.setenv("OLLAMA_KEEP_ALIVE", "24h")
     model = model_cls("x", "bge-m3", base_url="http://localhost:11434")
     assert model.keep_alive == "24h"
+
+
+@pytest.mark.parametrize("model_cls", [OllamaEmbed, OllamaCV])
+def test_models_prefer_explicit_keep_alive(monkeypatch, model_cls):
+    monkeypatch.setenv("OLLAMA_KEEP_ALIVE", "not-a-duration")
+    model = model_cls("x", "bge-m3", base_url="http://localhost:11434", ollama_keep_alive="10m")
+    assert model.keep_alive == "10m"
