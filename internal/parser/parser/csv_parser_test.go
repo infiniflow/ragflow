@@ -2,6 +2,8 @@ package parser
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +136,85 @@ func TestCSVParserKeepsVariableRowWidths(t *testing.T) {
 	}
 	if got := len(res.JSON[2]["cells"].([]string)); got != 3 {
 		t.Fatalf("second data row width = %d, want 3", got)
+	}
+}
+
+func TestCSVParser_ReadsTheSeparatorTheFileWasWrittenWith(t *testing.T) {
+	// A semicolon, tab or pipe separated .csv used to come out as one column
+	// holding the whole line.
+	for _, sep := range []string{",", ";", "\t", "|"} {
+		data := []byte("Name" + sep + "Region" + sep + "Units\nWidget" + sep + "EU" + sep + "12\n")
+		res := NewCSVParser().ParseWithResult(context.Background(), "export.csv", data)
+		if res.Err != nil {
+			t.Fatalf("separator %q: ParseWithResult failed: %v", sep, res.Err)
+		}
+		if got := res.JSON[len(res.JSON)-1]["text"]; got != "Name：Widget; Region：EU; Units：12 ——Data" {
+			t.Errorf("separator %q: row text = %v", sep, got)
+		}
+	}
+}
+
+func TestDetectCSVDelimiter(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want rune
+	}{
+		{"comma inside a sentence", "Name;Note\nWidget;Red, blue and green\nCable;Short\n", ';'},
+		{"semicolon inside a quoted field", "Name,Note\nWidget,\"a;b\"\nCable,\"c;d;e\"\n", ','},
+		{"single column", "Name\nWidget\nCable\n", ','},
+		{"whitespace-only row", "Name;Region\n   \nWidget;EU\n", ';'},
+		{"whitespace-only lines before the header", strings.Repeat("  \n", csvSampleRows) + "Name;Region\nWidget;EU\n", ';'},
+		{"rows disagree under every separator", "Name,Note\nWidget\n", ','},
+	}
+	for _, tc := range cases {
+		if got := detectCSVDelimiter(tc.text); got != tc.want {
+			t.Errorf("%s: detectCSVDelimiter = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestDetectCSVDelimiter_LeavesOutTheRowTheSampleCutsShort(t *testing.T) {
+	// The sample ends right after "Cable;E", so its last row has two fields
+	// where the complete rows have three.
+	header := "Name;Region;Units\n"
+	filler := "Widget;EU;" + strings.Repeat("9", csvSampleBytes-len(header)-len("Widget;EU;\nCable;E")) + "\n"
+	text := header + filler + "Cable;EU;12\n"
+	if !strings.HasSuffix(text[:csvSampleBytes], "\nCable;E") {
+		t.Fatalf("sample does not end inside the third row: %q", text[csvSampleBytes-12:csvSampleBytes])
+	}
+	if got := detectCSVDelimiter(text); got != ';' {
+		t.Errorf("detectCSVDelimiter = %q, want ';'", got)
+	}
+}
+
+func TestDetectCSVDelimiter_LeavesOutTheLastSampledRowWhenTheCutEndsIt(t *testing.T) {
+	// csvSampleRows rows fit in the sample only because the last of them is
+	// cut short: "18;xxx" has two fields where the others have three.
+	cell := strings.Repeat("x", 3600)
+	var b strings.Builder
+	b.WriteString("a;b;c\n")
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&b, "%d;%s;end\n", i, cell)
+	}
+	text := b.String()
+	if n := strings.Count(text[:csvSampleBytes], "\n"); n != csvSampleRows-1 {
+		t.Fatalf("sample holds %d complete rows, want %d", n, csvSampleRows-1)
+	}
+	if got := detectCSVDelimiter(text); got != ';' {
+		t.Errorf("detectCSVDelimiter = %q, want ';'", got)
+	}
+}
+
+func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
+	// Trimming leading space would also trim the tab after "Widget", leaving
+	// the row a field short of its header, and the tab would lose to the comma.
+	data := []byte("Name\tRegion\tUnits\nWidget\t\t12\n")
+	res := NewCSVParser().ParseWithResult(context.Background(), "export.csv", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if got := res.JSON[len(res.JSON)-1]["text"]; got != "Name：Widget; Units：12 ——Data" {
+		t.Errorf("row text = %v", got)
 	}
 }
