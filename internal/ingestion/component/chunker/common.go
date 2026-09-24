@@ -248,8 +248,14 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 }
 
 // canonicalChunkID returns the deterministic chunk id: the single identity
-// used both as the MinIO object key and as ck["id"]. It is the only place the
-// id formula is applied, so no two code paths can compute different ids.
+// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
+// over canonicalChunkText) is centralized here, so the text normalization
+// that feeds the hash lives in exactly one place. The decorator in
+// register.go re-derives ck["id"] from the same already-finalized text as a
+// fallback for chunks that bypassed the streamed crop-upload path; the two
+// routes cannot disagree because a chunk is either stamped by crop-upload
+// (and the decorator reuses that id) or computed by the decorator fallback —
+// never both — and both hash the normalized chunk body.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
 	return common.ChunkID(docID, canonicalChunkText(ck))
 }
