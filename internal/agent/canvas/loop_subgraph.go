@@ -199,7 +199,7 @@ func buildSubWorkflow(
 	//                 build time by resolveLoopVarValue)
 	initNode := sub.AddLambdaNode(loopInitKey,
 		compose.InvokableLambda(func(ctx context.Context, in map[string]any) (map[string]any, error) {
-			state, _, err := GetStateFromContext[*CanvasState](ctx)
+			state, err := GetStateFromContext(ctx)
 			if err != nil || state == nil {
 				return in, nil
 			}
@@ -529,7 +529,7 @@ func translateLoopCondition(loopID string, params map[string]any) (workflowx.Loo
 		// and other DSL variables. The workflowx lambda passes the
 		// loop's outer context into this closure, so
 		// canvas.GetStateFromContext works.
-		state, _, err := GetStateFromContext[*CanvasState](ctx)
+		state, err := GetStateFromContext(ctx)
 		if err != nil || state == nil {
 			return false, fmt.Errorf("loop %q: condition eval: no canvas state in context", loopID)
 		}

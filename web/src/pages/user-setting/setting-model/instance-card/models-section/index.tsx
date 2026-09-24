@@ -29,6 +29,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { modelNameKey } from '@/utils/llm-util';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
 import { ModelRow } from './components/model-row';
@@ -149,27 +150,38 @@ export function ModelsSection(props: ModelsSectionProps) {
     if (catalog.length === 0) return;
     hasAutoPopulatedDraftRef.current = true;
     setDraftModels((prev) => {
-      const existing = new Set(prev.map((m) => m.name));
-      return [...prev, ...catalog.filter((m) => !existing.has(m.name))];
+      const existing = new Set(prev.map((m) => modelNameKey(m.name)));
+      return [
+        ...prev,
+        ...catalog.filter((m) => !existing.has(modelNameKey(m.name))),
+      ];
     });
   }, [isDraftInstance, catalog]);
 
   const addDraftModel = useCallback((model: IProviderModelItem) => {
     setDraftModels((prev) =>
-      prev.some((m) => m.name === model.name) ? prev : [...prev, model],
+      prev.some((m) => modelNameKey(m.name) === modelNameKey(model.name))
+        ? prev
+        : [...prev, model],
     );
   }, []);
   const removeDraftModel = useCallback((name: string) => {
-    setDraftModels((prev) => prev.filter((m) => m.name !== name));
+    setDraftModels((prev) =>
+      prev.filter((m) => modelNameKey(m.name) !== modelNameKey(name)),
+    );
   }, []);
   const updateDraftModel = useCallback((item: IProviderModelItem) => {
     setDraftModels((prev) =>
-      prev.map((m) => (m.name === item.name ? { ...m, ...item } : m)),
+      prev.map((m) =>
+        modelNameKey(m.name) === modelNameKey(item.name)
+          ? { ...m, ...item }
+          : m,
+      ),
     );
   }, []);
 
   // 4. Derived union list (instance ∪ catalog) + push to host.
-  const { instanceItems, models, addedSet } = useModelsDerived({
+  const { instanceItems, models, isModelAdded } = useModelsDerived({
     catalog,
     instanceModels,
     instanceModelsLoading,
@@ -227,7 +239,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     instance,
     instanceItems,
     filteredModels,
-    addedSet,
+    isModelAdded,
     setCatalog,
     clearCatalogOverride,
     addDraftModel,
@@ -248,7 +260,7 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
-    addedSet,
+    isModelAdded,
     isDraftInstance,
     updateCatalogModel,
     clearCatalogOverride,
@@ -390,7 +402,7 @@ export function ModelsSection(props: ModelsSectionProps) {
                 <ModelRow
                   key={model.name}
                   model={model}
-                  isAdded={addedSet.has(model.name)}
+                  isAdded={isModelAdded(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
                   hideActions={hideActions}
                   onVerify={() => handleVerify(model)}
@@ -428,7 +440,11 @@ export function ModelsSection(props: ModelsSectionProps) {
         title={tSetting('editModel')}
         fields={editModelDialogFields}
         existingNames={models
-          .filter((m) => m.name !== editingModel?.name)
+          .filter(
+            (m) =>
+              editingModel === null ||
+              modelNameKey(m.name) !== modelNameKey(editingModel.name),
+          )
           .map((m) => m.name)}
         providerFeatureKeys={providerFeatureKeys}
         defaultValues={editDefaultValues}

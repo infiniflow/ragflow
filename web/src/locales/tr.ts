@@ -65,7 +65,7 @@ export default {
       pleaseSelect: 'Lütfen seçin',
       pleaseInput: 'Lütfen girin',
       modelUnavailable:
-        'Daha önce seçilen model silinmiş, lütfen başka bir tane seçin',
+        'Seçilen model kullanılamıyor (silinmiş veya izin yok), lütfen başka bir tane seçin',
       submit: 'Gönder',
       clear: 'Temizle',
       embedIntoSite: 'Web sayfasına göm',
@@ -743,7 +743,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       editLinkDataPipeline: 'Alım hattını düzenle',
       linkPipelineSetTip: 'Bu dataset ile alım hattı bağlantısını yönetin',
       default: 'Varsayılan',
-      dataPipeline: 'Alım hattını değiştirin veya yapılandırın.',
+      dataPipeline: 'Ayrıştırma türünü seçin veya değiştirin',
       linkDataPipeline: 'Alım hattını bağla',
       enableAutoGenerate: 'Otomatik oluşturmayı etkinleştir',
       teamPlaceholder: 'Lütfen bir takım seçin.',
@@ -753,6 +753,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       parseType: 'Ayrıştırma türü',
       manualSetup: 'Hat',
       builtIn: 'Yerleşik',
+      noConfigChunkerHint:
+        'Yerleşik {{name}} ayrıştırıcısı parçalamayı otomatik yapar, bu nedenle ek yapılandırma gerekmez.',
       titleDescription:
         'Dataset yapılandırmanızı buradan güncelleyin, özellikle LLM ve istemler.',
       name: 'Dataset adı',
@@ -777,6 +779,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       chinese: 'Çince',
       portugueseBr: 'Portekizce (Brezilya)',
       embeddingModelPlaceholder: 'Lütfen bir embedding model seçin.',
+      checkingEmbedding: 'Embedding modeli uyumluluğu kontrol ediliyor…',
       chunkMethodPlaceholder: 'Lütfen bir parçalama yöntemi seçin.',
       tableColumnMode: 'Sütun modu',
       tableColumnModeAuto: 'Otomatik',
@@ -945,6 +948,8 @@ Yukarısı özetlemeniz gereken içeriktir.`,
       entityTypes: 'Varlık türleri',
       compilationTemplate: 'Operatör',
       compilationTemplateRequired: 'Lütfen bir operatör seçin',
+      compilationTemplateUnavailable:
+        'Seçilen operatör kullanılamıyor (silinmiş veya izin yok), lütfen başka bir tane seçin',
       createTemplate: 'Şablon oluştur',
       scopeFile: 'Dosya',
       vietnamese: 'Vietnamca',
@@ -1079,7 +1084,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       knowledgeBasesPlaceholder: 'Değer seçin',
       knowledgeBasesMessage: 'Lütfen seçin',
       datasetUnavailable:
-        'Seçilen bilgi tabanı kullanılamıyor (silinmiş veya hiç parçası yok), lütfen yeniden seçin',
+        'Seçilen dataset kullanılamıyor (silinmiş veya hiç parçası yok), lütfen yeniden seçin',
       knowledgeBasesTip:
         'Bu sohbet asistanıyla ilişkilendirilecek datasets seçin.',
       system: 'Sistem istemi',
@@ -1644,6 +1649,33 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Senkronize edilen Drive içeriğine erişimi olan e-posta adresi',
       zendeskDescription:
         "Biletleri, makaleleri ve diğer içeriği senkronize etmek için Zendesk'inizi bağlayın.",
+      zoteroDescription:
+        'Makale ve kaynaklardaki PDF eklerini senkronize etmek için Zotero kitaplığınızı bağlayın.',
+      dataSourceFieldZoteroUserId: 'Zotero kullanıcı kimliği',
+      dataSourceFieldZoteroApiKey: 'Zotero API anahtarı',
+      dataSourceFieldZoteroStorageMode: 'Ek dosya depolaması',
+      dataSourceOptionZoteroCloudStorage: 'Zotero bulutu',
+      dataSourceOptionZoteroWebdav: 'WebDAV',
+      dataSourceFieldZoteroWebdavPassword: 'WebDAV şifresi',
+      zoteroUserIdTip:
+        'https://www.zotero.org/settings/keys adresindeki sayısal Zotero kullanıcı kimliğiniz.',
+      zoteroApiKeyTip:
+        'https://www.zotero.org/settings/keys adresinde kitaplık erişimine sahip kişisel bir API anahtarı oluşturun.',
+      zoteroStorageModeTip:
+        "Dosyaları Web API üzerinden indirmek için Zotero bulutunu, ekleriniz kendi WebDAV sunucunuzda depolanıyorsa WebDAV'ı seçin.",
+      zoteroWebdavUrlTip:
+        "WebDAV sunucunuzun HTTPS URL'si. Zotero bulut depolaması barındırılan bir WebDAV uç noktası sağlamaz.",
+      zoteroWebdavUrlRequired:
+        "Ek dosya depolaması WebDAV olduğunda WebDAV sunucu URL'si gereklidir.",
+      dataSourceFieldZoteroWebdavUsername: 'WebDAV kullanıcı adı',
+      zoteroWebdavUsernameTip:
+        'WebDAV temel kimlik doğrulaması için kullanıcı adı. Bu genellikle Zotero kullanıcı kimliğinizden farklıdır.',
+      zoteroWebdavUsernameRequired:
+        'Ek dosya depolaması WebDAV olduğunda WebDAV kullanıcı adı gereklidir.',
+      zoteroWebdavPasswordTip:
+        'Zotero depolama ayarlarındaki WebDAV şifresi (Zotero hesap şifreniz değil).',
+      zoteroWebdavPasswordRequired:
+        'Ek dosya depolaması WebDAV olduğunda WebDAV şifresi gereklidir.',
       google_driveMyDriveEmailsTip:
         'İçerikleri indekslenmesi gereken "My Drive" sahibi e-postaları (virgülle ayrılmış).',
       google_driveSharedFoldersTip:
@@ -2767,6 +2799,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       stringTransformDescription:
         'Metin içeriğini değiştirir. Şu anda destekleniyor: Metin bölme veya birleştirme.',
       foundation: 'Temel',
+      tool: 'Araç',
       tools: 'Araçlar',
       dataManipulation: 'Veri işleme',
       flow: 'Akış',
@@ -2784,7 +2817,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       msgTip:
         'Yukarı akış bileşeninin değişken içeriğini veya kendiniz girdiğiniz metni çıktı olarak verir.',
       messagePlaceholder: `Lütfen mesaj içeriğinizi girin, değişkenleri hızlıca eklemek için '/' kullanın.`,
-      messageMsg: 'Lütfen mesaj girin veya bu alanı silin.',
+      messageMsg: 'Mesaj boş olamaz',
       addField: 'Seçenek ekle',
       addMessage: 'Mesaj ekle',
       loop: 'Döngü',
@@ -3461,28 +3494,43 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         'Aşağı akış işleme için dosyalardan ham metin ve yapı çıkarır.',
       tokenizer: 'İndeksleyici',
       tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
-      nodeFormInvalid:
-        'Kaydedilemiyor: "{{name}}" geçersiz ayarlar içeriyor. Lütfen önce bunları düzeltin',
-      agentModelMissing:
-        'Kaydedilemiyor: "{{name}}" için model seçilmemiş. Lütfen önce bir tane seçin',
+      nodeFormInvalid: 'Geçersiz ayarlar, lütfen önce bunları düzeltin',
+      agentModelMissing: 'Model seçilmedi, lütfen önce bir tane seçin',
+      extractorModelMissing: 'Model seçilmedi, lütfen önce bir tane seçin',
       retrievalDatasetRequired: 'Lütfen en az bir veri kümesi seçin',
-      retrievalDatasetMissing:
-        'Kaydedilemiyor: "{{name}}" için veri kümesi seçilmedi. Lütfen önce bir tane seçin',
+      retrievalDatasetMissing: 'Dataset seçilmedi, lütfen önce bir tane seçin',
       retrievalMemoryRequired: 'Lütfen en az bir bellek seçin',
-      retrievalMemoryMissing:
-        'Kaydedilemiyor: "{{name}}" için bellek seçilmedi. Lütfen önce bir tane seçin',
+      retrievalMemoryMissing: 'Bellek seçilmedi, lütfen önce seçin',
+      checklist: 'Kontrol listesi',
+      checklistEmpty: 'Sorun bulunamadı',
+      checklistTitle:
+        'Çalıştırmadan veya yayınlamadan önce aşağıdaki sorunları giderin',
+      checklistResolveBefore:
+        'Lütfen önce kontrol listesindeki sorunları giderin',
+      issueNotConnected: 'Bu adım hiçbir şeye bağlı değil',
+      issueVariableInvalid: 'Geçersiz değişken: {{variable}}',
+      memoryUnavailable:
+        'Seçilen bellek kullanılamıyor (silinmiş), lütfen yeniden seçin',
       retrievalTemplateDatasetHint:
-        'Bu şablon, bağlı bir bilgi tabanı olmayan {{num}} dataset alım adımı içeriyor. Aşağıdan birini seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.',
+        "Bu şablon, bağlı dataset'i olmayan {{num}} alım adımı içeriyor. Aşağıdan birini seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.",
       retrievalTemplateMemoryHint:
         'Bu şablon, bağlı belleği olmayan {{num}} alım adımı içeriyor. Aşağıdan bellekleri seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
+      generalChunkerDescription:
+        'Çoğu belge türü için genel amaçlı bir parçalama yöntemi; parça boyutu, örtüşme ve bağlam üzerinde esnek denetim sağlar.',
       tokenChunker: 'Token Parçalayıcı',
       tokenChunkerDescription:
         'Metni isteğe bağlı sınırlayıcılar ve örtüşme ile token uzunluğuna göre parçalara böler.',
       titleChunkerDescription:
         'Belgeleri başlık hiyerarşisine göre bölümlere ayırır. Regex kurallarıyla başlık düzeylerini tanımlayın, ardından parçaların nasıl yapılandırılacağını kontrol etmek için Hiyerarşi veya Grup modunu seçin.',
       titleChunker: 'Başlık Parçalayıcı',
+      manualChunkerDescription:
+        'Ürün ve kullanım kılavuzları gibi kılavuz türü belgeler için bir parçalama yöntemi; ilgili bağlamı koruyan, yapıya duyarlı bölme uygular.',
+      oneChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
+      qAChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
+      tableChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
+      pageChunkerDescription: 'Bu parçalayıcı için ek yapılandırma gerekmez.',
       extractor: 'Dönüştürücü',
       extractorDescription:
         'Belge parçalarından yapılandırılmış içgörüler çıkarmak için LLM kullanır.',

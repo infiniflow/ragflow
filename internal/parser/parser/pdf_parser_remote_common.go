@@ -107,3 +107,26 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 	walk(raw)
 	return pages
 }
+
+// pdfTableDocType labels a table region "table" only when its text is <table>
+// markup, because consumers of that label read the text as HTML rows. Free
+// text recognized inside a table region is labelled "text".
+func pdfTableDocType(text string) string {
+	if isTableHTML(text) {
+		return "table"
+	}
+	return "text"
+}
+
+// rowsHaveText reports whether any cell holds non-whitespace text. Blank rows
+// must not replace the content of a table region with an empty <table>.
+func rowsHaveText(rows [][]string) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if strings.TrimSpace(cell) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}

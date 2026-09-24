@@ -64,6 +64,18 @@ def markdown_parser_module(monkeypatch):
 
 @pytest.mark.p2
 class TestMarkdownElementExtractorFences:
+    @pytest.mark.parametrize("marker", ["`", "~"])
+    @pytest.mark.parametrize("table", ["| Product | Price |\n| --- | --- |\n| Widget | 10 |\n", '<table border="1"><tr><td>Widget</td></tr></table>\n'])
+    def test_table_after_longer_closing_fence(self, markdown_parser_module, marker, table):
+        fenced = f"{marker * 3}text\nexample\n{marker * 4}\n"
+
+        remainder, tables = markdown_parser_module.RAGFlowMarkdownParser().extract_tables_and_remainder(fenced + "\n" + table)
+
+        assert len(tables) == 1
+        assert "Widget" in tables[0]
+        assert fenced in remainder
+        assert "Widget" not in remainder
+
     def test_custom_delimiter_preserves_backtick_fence(self, markdown_element_extractor):
         text = "# Title\n```python\nprint('a')\nprint('b')\n```\nAfter"
 

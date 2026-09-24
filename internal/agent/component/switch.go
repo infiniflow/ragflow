@@ -82,7 +82,7 @@ func (s *SwitchComponent) Name() string { return s.name }
 // scheduler's MultiBranch condition consumes this list via
 // NewGraphMultiBranch so every declared target fires.
 func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Switch: %w", err)
 	}

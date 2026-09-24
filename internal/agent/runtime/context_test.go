@@ -70,6 +70,23 @@ func TestAgentMessageCallbacksRunOutsideStateLocks(t *testing.T) {
 	assertCompletes("reset", func() { ResetAgentMessageEmission(lifecycleCtx) })
 }
 
+func TestGetStateFromContextReturnsCanvasState(t *testing.T) {
+	state := NewCanvasState("run", "session")
+	ctx := WithState(t.Context(), state)
+
+	got, err := GetStateFromContext(ctx)
+	if err != nil {
+		t.Fatalf("GetStateFromContext: %v", err)
+	}
+	if got != state {
+		t.Fatalf("GetStateFromContext returned %p, want %p", got, state)
+	}
+
+	if _, err := GetStateFromContext(t.Context()); err == nil {
+		t.Fatal("GetStateFromContext without state returned nil error")
+	}
+}
+
 func TestAgentMessageRunStateSurvivesInvocationReset(t *testing.T) {
 	ctx := WithAgentMessageEmitter(t.Context(), func(string, string) {})
 	EmitAgentMessage(ctx, "first", "")

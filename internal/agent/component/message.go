@@ -172,7 +172,7 @@ func (m *MessageComponent) Name() string { return m.name }
 // same node can be reused with different templates at run time when
 // the orchestrator wants to override the DSL-declared value.
 func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Message: %w", err)
 	}
