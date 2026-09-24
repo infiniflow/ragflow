@@ -45,33 +45,9 @@ var ResolveDocumentStorageOverride func(docID string) (*DocumentStorageRef, erro
 // the source PDF to crop section images on demand) can reuse the same
 // storage resolution the Parser uses.
 func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
-	return fetchBinary(ctx, bucket, path, -1)
-}
-
-// FetchBinaryLimited returns the stored object only if it fits in maxBytes.
-// Storage backends read at most maxBytes+1 bytes, so the bound applies before
-// the full object is buffered in memory.
-func FetchBinaryLimited(ctx context.Context, bucket, path string, maxBytes int64) ([]byte, error) {
-	if maxBytes < 0 {
-		return nil, fmt.Errorf("storage read limit must not be negative")
-	}
-	return fetchBinary(ctx, bucket, path, maxBytes)
-}
-
-func fetchBinary(ctx context.Context, bucket, path string, maxBytes int64) ([]byte, error) {
 	storageImpl := resolveStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("no storage backend registered")
-	}
-	var readObject func() ([]byte, error)
-	if maxBytes < 0 {
-		readObject = func() ([]byte, error) { return storageImpl.Get(ctx, bucket, path) }
-	} else {
-		limited, ok := storageImpl.(storage.LimitedGetter)
-		if !ok {
-			return nil, fmt.Errorf("storage backend %q does not support bounded object reads", storageImpl.Type())
-		}
-		readObject = func() ([]byte, error) { return limited.GetLimited(ctx, bucket, path, maxBytes) }
 	}
 
 	type result struct {
@@ -80,7 +56,7 @@ func fetchBinary(ctx context.Context, bucket, path string, maxBytes int64) ([]by
 	}
 	done := make(chan result, 1)
 	go func() {
-		data, err := readObject()
+		data, err := storageImpl.Get(ctx, bucket, path)
 		done <- result{data: data, err: err}
 	}()
 	select {
