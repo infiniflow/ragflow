@@ -124,6 +124,40 @@ func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
 	}
 }
 
+// TestSoMarkBlockToItem_TableWithoutMarkupDowngradesToText pins the
+// producer-side fix for issue #20143: when SoMark labels a block
+// `type=="table"` but the content carries no `<table>` / `<tr>`
+// markup, the resulting item must come back as `doc_type_kwd: "text"`
+// so the QA chunker does not silently return zero pairs.
+func TestSoMarkBlockToItem_TableWithoutMarkupDowngradesToText(t *testing.T) {
+	item := soMarkBlockToItem(map[string]any{"type": "table", "content": "col1 | col2\ncol3 | col4"}, false)
+	if item == nil {
+		t.Fatal("item = nil, want non-nil (content non-empty)")
+	}
+	if got := item["doc_type_kwd"]; got != "text" {
+		t.Fatalf("doc_type_kwd = %v, want text", got)
+	}
+	if got := item["layout"]; got != "text" {
+		t.Fatalf("layout = %v, want text", got)
+	}
+}
+
+// TestSoMarkBlockToItem_TableWithMarkupKeepsTableLabel pins the
+// positive case: when SoMark's content does carry `<table>` / `<tr>`
+// markup, the producer keeps the table label.
+func TestSoMarkBlockToItem_TableWithMarkupKeepsTableLabel(t *testing.T) {
+	item := soMarkBlockToItem(map[string]any{"type": "table", "content": "<table><tr><td>a</td></tr></table>"}, false)
+	if item == nil {
+		t.Fatal("item = nil, want non-nil")
+	}
+	if got := item["doc_type_kwd"]; got != "table" {
+		t.Fatalf("doc_type_kwd = %v, want table", got)
+	}
+	if got := item["layout"]; got != "table" {
+		t.Fatalf("layout = %v, want table", got)
+	}
+}
+
 func TestSoMarkSubmitMultipartShape(t *testing.T) {
 	withSSRFBypass(t)
 	var form multipart.Form

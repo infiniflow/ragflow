@@ -184,6 +184,48 @@ func TestTCADPAnyToItems_NestedArrayKeepsEachPage(t *testing.T) {
 	}
 }
 
+// TestTCADPAnyToItems_TableWithoutMarkupDowngradesToText pins the
+// producer-side fix for issue #20143: when TCADP labels a block
+// `type=="table"` but the row-concatenated text carries no
+// `<table>` / `<tr>` markup, the resulting item must come back as
+// `doc_type_kwd: "text"`. Mirrors TestSoMarkBlockToItem_TableWithoutMarkupDowngradesToText.
+func TestTCADPAnyToItems_TableWithoutMarkupDowngradesToText(t *testing.T) {
+	raw := map[string]any{"type": "table", "table_data": map[string]any{"rows": []any{[]any{"a", "b"}, []any{"c", "d"}}}}
+	items := tcadpAnyToItems(raw)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item := items[0]
+	if got := item["doc_type_kwd"]; got != "text" {
+		t.Fatalf("doc_type_kwd = %v, want text", got)
+	}
+	if got := item["layout"]; got != "text" {
+		t.Fatalf("layout = %v, want text", got)
+	}
+	if got := item["text"]; got != "a | b\nc | d" {
+		t.Fatalf("text = %v, want %q", got, "a | b\nc | d")
+	}
+}
+
+// TestTCADPAnyToItems_TableWithMarkupKeepsTableLabel pins the
+// positive case: when the producer receives a TCADP block whose
+// content already contains `<table>` / `<tr>` markup, the item
+// must come back labelled "table".
+func TestTCADPAnyToItems_TableWithMarkupKeepsTableLabel(t *testing.T) {
+	raw := map[string]any{"type": "table", "content": "<table><tr><td>a</td></tr></table>"}
+	items := tcadpAnyToItems(raw)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item := items[0]
+	if got := item["doc_type_kwd"]; got != "table" {
+		t.Fatalf("doc_type_kwd = %v, want table", got)
+	}
+	if got := item["layout"]; got != "table" {
+		t.Fatalf("layout = %v, want table", got)
+	}
+}
+
 func tcadpZipFixture(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
