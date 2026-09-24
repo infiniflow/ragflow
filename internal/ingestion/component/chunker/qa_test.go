@@ -107,6 +107,46 @@ func TestQAChunker_Markdown(t *testing.T) {
 	}
 }
 
+// A "#" line inside a fenced code block is code, not a new question. The fence
+// must close only on a matching run of the same character that is at least as
+// long, so tilde fences and longer fences that show a ``` example stay intact.
+func TestExtractQAMarkdown_FencedCodeKeepsHashLines(t *testing.T) {
+	cases := map[string]string{
+		"tilde fence":    "# Install\n~~~bash\n# fetch deps\nmake deps\n~~~\n# Run\nmake run",
+		"longer fence":   "# Install\n````md\n```bash\n# fetch deps\n```\n````\n# Run\nmake run",
+		"longer closing": "# Install\n```bash\n# fetch deps\n`````\n# Run\nmake run",
+		"indented close": "# Install\n```md\n    ```\n# fetch deps\n```\n# Run\nmake run",
+		"list fence":     "# Install\n1. Fetch:\n   ```bash\n   # fetch deps\n   ```\n# Run\nmake run",
+	}
+	for name, md := range cases {
+		t.Run(name, func(t *testing.T) {
+			pairs := extractQAMarkdown(md)
+			if len(pairs) != 2 {
+				t.Fatalf("got %d pairs %+v, want Install and Run", len(pairs), pairs)
+			}
+			if pairs[0].Question != "Install" || !strings.Contains(pairs[0].Answer, "# fetch deps") {
+				t.Errorf("first pair = %+v, want the code block in the Install answer", pairs[0])
+			}
+			if pairs[1].Question != "Run" || pairs[1].Answer != "make run" {
+				t.Errorf("second pair = %+v", pairs[1])
+			}
+		})
+	}
+}
+
+// A line that only looks like a fence must not swallow the questions after it.
+func TestExtractQAMarkdown_NonFenceBackticksDoNotOpenCodeBlock(t *testing.T) {
+	for _, md := range []string{
+		"# Q1\n```inline``` is not a fence\n# Q2\nA2",
+		"# Q1\n    ```\n# Q2\nA2", // indented four spaces: indented code, not a fence
+	} {
+		pairs := extractQAMarkdown(md)
+		if len(pairs) != 2 || pairs[1].Question != "Q2" || pairs[1].Answer != "A2" {
+			t.Errorf("%q: got %+v, want Q1 and Q2", md, pairs)
+		}
+	}
+}
+
 func TestQAChunker_HTMLTable(t *testing.T) {
 	comp, err := NewQAChunker(nil)
 	if err != nil {
