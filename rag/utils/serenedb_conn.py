@@ -53,6 +53,7 @@ Deliberate first-cut simplifications (documented, revisit on in-app eval):
   - rank_feature tag boosting is skipped (parity: ob_conn TODOs it as well); pagerank IS applied.
 """
 
+import io
 import json
 import logging
 import os
@@ -241,6 +242,91 @@ class SereneDBConnection(DocStoreConnection):
                 return [], []
         finally:
             self._pool.putconn(conn)
+
+    # ---- bulk write path -----------------------------------------------------
+
+    @staticmethod
+    def _copy_escape(text: str) -> str:
+        r"""Escape one finished value for COPY TEXT: backslash, tab, newline and CR, or the
+        row framing breaks silently mid-stream."""
+        return (text.replace("\\", "\\\\").replace("\t", "\\t")
+                .replace("\n", "\\n").replace("\r", "\\r"))
+
+    @staticmethod
+    def _copy_field(v) -> str:
+        r"""One value in COPY TEXT format. \N is NULL.
+
+        An array is escaped TWICE and the order matters: the inner quoting is what the array
+        parser reads, and the finished literal is then escaped for COPY, which strips its own
+        layer first. Escaping only for the array parser leaves `a\b` arriving as `ab`, and a
+        tab inside an element ends the field early.
+        """
+        if v is None:
+            return r"\N"
+        if isinstance(v, bool):
+            return "t" if v else "f"
+        if isinstance(v, (int, float)):
+            return repr(v)
+        if isinstance(v, (list, tuple)):
+            if v and isinstance(v[0], (int, float)):
+                lit = "{" + ",".join(repr(x) for x in v) + "}"
+            else:
+                parts = []
+                for x in v:
+                    x = "" if x is None else str(x)
+                    parts.append('"' + x.replace("\\", "\\\\").replace('"', '\\"') + '"')
+                lit = "{" + ",".join(parts) + "}"
+            return SereneDBConnection._copy_escape(lit)
+        return SereneDBConnection._copy_escape(str(v))
+
+    def _copy_upsert(self, cur, index_name: str, cols, val_rows, updates) -> bool:
+        """COPY into a temp table, then upsert from it. True if it worked.
+
+        Returns False rather than raising so the caller can fall back to the literal
+        INSERT: this is a performance path, and a corpus that stops ingesting is a far
+        worse outcome than one that ingests slowly.
+
+        SereneDB has no `CREATE TEMP TABLE (LIKE t)` - it is a syntax error - so the
+        temp table is spelled out from COLUMN_DDL, with the vector columns recovered
+        from their q_<size>_vec name.
+        """
+        try:
+            types = []
+            for c in cols:
+                # q_<n>_vec matches directly; q_<n>_vec_n is the normalized shadow column and
+                # needs its `_n` stripped. `c[:-2] + "vec"` produced q_<n>_vecvec, which matched
+                # nothing - and insert() adds the shadow column to EVERY vector batch, so the
+                # `return False` below fired every time and COPY never ran at all.
+                m = vector_column_pattern.match(c) or vector_column_pattern.match(c[:-2])
+                if c in COLUMN_DDL:
+                    types.append(f"{c} {COLUMN_DDL[c].replace(' PRIMARY KEY', '')}")
+                elif m:
+                    types.append(f"{c} FLOAT[{int(m.group('vector_size'))}]")
+                else:
+                    return False                      # unknown column: take the safe path
+            tmp = f"rf_copy_{abs(hash((index_name, cols))) % 10**9}"
+            cur.execute(f"DROP TABLE IF EXISTS {tmp}")
+            cur.execute(f"CREATE TEMP TABLE {tmp} ({', '.join(types)})")
+            buf = io.StringIO()
+            for row in val_rows:
+                buf.write("\t".join(self._copy_field(v) for v in row) + "\n")
+            buf.seek(0)
+            cur.copy_expert(f"COPY {tmp} ({', '.join(cols)}) FROM STDIN", buf)
+            cur.execute(f"INSERT INTO {index_name} ({', '.join(cols)}) "
+                        f"SELECT {', '.join(cols)} FROM {tmp} "
+                        f"ON CONFLICT (id) DO UPDATE SET {updates}")
+            cur.execute(f"DROP TABLE IF EXISTS {tmp}")
+            return True
+        except Exception as e:
+            logger.warning(f"SereneDB COPY path unavailable on {index_name}, "
+                           f"falling back to INSERT: {e}")
+            try:
+                cur.execute("ROLLBACK")
+            except Exception as rb:
+                # Nothing to do about it - the caller falls back to the literal INSERT
+                # either way - but a silent swallow hides a connection that is already gone.
+                logger.debug(f"SereneDB COPY rollback failed on {index_name}: {rb}")
+            return False
 
     """
     Database operations
@@ -562,7 +648,12 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             return None
         return self._row_to_entity(rows[0], cols)
 
-    def insert(self, rows: list[dict], index_name: str, dataset_id: str = None) -> list[str]:
+    def insert(self, rows: list[dict], index_name: str, dataset_id: str = None,
+               refresh: str | bool = "wait_for") -> list[str]:
+        # `refresh` is part of the DocStoreConnection signature and callers pass it
+        # positionally; without it every insert raises TypeError and the document FAILs.
+        # Ignored rather than honoured: it is an Elasticsearch concept, and a SereneDB
+        # write is already visible to the next statement.
         if not rows:
             return []
         if index_name.startswith("ragflow_doc_meta_"):
@@ -618,6 +709,12 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             with conn.cursor() as cur:
                 for cols, val_rows in groups.items():
                     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c != "id")
+                    # COPY first, literal INSERT as a fallback. execute_values interpolates
+                    # every value into one statement client-side - ~726 KB at DOC_BULK_SIZE=32,
+                    # two 1024-dim float arrays per chunk - and the cost is the parse:
+                    # 317.8ms against 20.8ms for the same rows via COPY.
+                    if self._copy_upsert(cur, index_name, cols, val_rows, updates):
+                        continue
                     try:
                         psycopg2.extras.execute_values(cur, f"INSERT INTO {index_name} ({', '.join(cols)}) VALUES %s ON CONFLICT (id) DO UPDATE SET {updates}", val_rows, page_size=500)
                     except Exception as e:
