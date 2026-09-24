@@ -856,6 +856,9 @@ class Dealer:
             bool(rerank_mdl),
         )
 
+        debug_tsim = None
+        debug_vsim = None
+
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
@@ -865,13 +868,16 @@ class Dealer:
                 vector_similarity_weight,
                 rank_feature=rank_feature,
             )
+            debug_tsim, debug_vsim = tsim, vsim
         else:
             if settings.DOC_ENGINE_INFINITY:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]
-                tsim = [None] * len(sim)
-                vsim = [None] * len(sim)
+                tsim = sim
+                vsim = sim
+                debug_tsim = [None] * len(sim)
+                debug_vsim = [None] * len(sim)
             elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                 # OceanBase still returns chunk vectors in the result; use
                 # the historical local rerank that depends on them.
@@ -882,14 +888,17 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+                debug_tsim, debug_vsim = tsim, vsim
             elif settings.DOC_ENGINE_GAUSSDB:
                 # GaussDB computes fusion and PageRank in SQL; tag features are
                 # applied locally to the returned candidate window.
                 sql_scores = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sql_scores = np.array([s if s is not None else 0.0 for s in sql_scores], dtype=np.float64)
                 sim = sql_scores + self._tag_feature_scores(rank_feature, sres)
-                tsim = [None] * len(sim)
-                vsim = [None] * len(sim)
+                tsim = sql_scores
+                vsim = sql_scores
+                debug_tsim = [None] * len(sim)
+                debug_vsim = [None] * len(sim)
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it
@@ -904,6 +913,7 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+                debug_tsim, debug_vsim = tsim, vsim
 
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
@@ -927,8 +937,8 @@ class Dealer:
                     candidate_ids=[sres.ids[i] for i in sorted_idx],
                     sorted_ids=[sres.ids[i] for i in sorted_idx],
                     sorted_scores=[float(sim_np[i]) for i in sorted_idx],
-                    sorted_term_scores=[float(tsim[i]) for i in sorted_idx],
-                    sorted_vector_scores=[float(vsim[i]) for i in sorted_idx],
+                    sorted_term_scores=[debug_tsim[i] for i in sorted_idx],
+                    sorted_vector_scores=[debug_vsim[i] for i in sorted_idx],
                     valid_ids=[],
                     returned_ids=[],
                     similarity_threshold=post_threshold,
@@ -945,8 +955,8 @@ class Dealer:
                 candidate_ids=[sres.ids[i] for i in sorted_idx],
                 sorted_ids=[sres.ids[i] for i in sorted_idx],
                 sorted_scores=[float(sim_np[i]) for i in sorted_idx],
-                sorted_term_scores=[float(tsim[i]) for i in sorted_idx],
-                sorted_vector_scores=[float(vsim[i]) for i in sorted_idx],
+                sorted_term_scores=[debug_tsim[i] for i in sorted_idx],
+                sorted_vector_scores=[debug_vsim[i] for i in sorted_idx],
                 valid_ids=[sres.ids[i] for i in valid_idx],
                 returned_ids=[sres.ids[i] for i in page_idx],
                 similarity_threshold=post_threshold,
