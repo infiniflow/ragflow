@@ -423,7 +423,7 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	owner := data.ownedTenantID
 	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs []string
 	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs, groupIDs []string
-	var ingestionTaskIDs, memoryTaskIDs, commitIDs []string
+	var ingestionTaskIDs, pipelineLogIDs, memoryTaskIDs, commitIDs []string
 	var err error
 	if owner != "" {
 		if chatIDs, err = selectIDs(&entity.Chat{}, "tenant_id = ?", owner); err != nil {
@@ -498,6 +498,29 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	if err != nil {
 		return err
 	}
+	if owner != "" || len(data.documentIDs) > 0 || len(data.datasetIDs) > 0 {
+		pipelineLogQuery := tx.Model(&entity.PipelineOperationLog{})
+		switch {
+		case owner != "":
+			pipelineLogQuery = pipelineLogQuery.Where("tenant_id = ?", owner)
+			if len(data.documentIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("document_id IN ?", data.documentIDs)
+			}
+			if len(data.datasetIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("kb_id IN ?", data.datasetIDs)
+			}
+		case len(data.documentIDs) > 0:
+			pipelineLogQuery = pipelineLogQuery.Where("document_id IN ?", data.documentIDs)
+			if len(data.datasetIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("kb_id IN ?", data.datasetIDs)
+			}
+		default:
+			pipelineLogQuery = pipelineLogQuery.Where("kb_id IN ?", data.datasetIDs)
+		}
+		if err = pipelineLogQuery.Pluck("id", &pipelineLogIDs).Error; err != nil {
+			return err
+		}
+	}
 	if len(data.memories) > 0 {
 		if err = tx.Model(&entity.MemoryTask{}).Where("memory_id IN ?", memoryIDs(data.memories)).Pluck("task_id", &memoryTaskIDs).Error; err != nil {
 			return err
@@ -565,6 +588,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		}
 	}
 	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "task_id", ingestionTaskIDs); err != nil {
+		return err
+	}
+	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "pipeline_log_id", pipelineLogIDs); err != nil {
 		return err
 	}
 	if err := removeIDs("ingestion tasks", &entity.IngestionTask{}, "id", ingestionTaskIDs); err != nil {

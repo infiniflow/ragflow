@@ -434,6 +434,45 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 	return result, nil
 }
 
+// ListParserConfigsByKBIDs returns each dataset's distinct document
+// parser_config that declares a tag source file, keyed by dataset ID.
+//
+// Because parser_config is a LONGTEXT column and also carries per-document
+// state such as page ranges, an unconstrained DISTINCT across all documents
+// forces disk temporary tables and filesort over large JSON blobs. Filtering
+// by `parser_config LIKE '%tag_file_id%'` drops the vast majority of
+// documents that carry no tag configuration before distinct deduplication,
+// avoiding OOM and slow queries on large datasets.
+func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]entity.JSONMap, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		KbID         string         `gorm:"column:kb_id"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
+	}
+	query := db.WithContext(ctx).Table("document").
+		Distinct("kb_id", "parser_config").
+		Where("kb_id IN ?", kbIDs)
+	if db.Dialector.Name() == "sqlite" {
+		query = query.Where("CAST(parser_config AS TEXT) LIKE '%tag_file_id%'")
+	} else {
+		query = query.Where("parser_config LIKE '%tag_file_id%'")
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]entity.JSONMap, len(kbIDs))
+	for _, row := range rows {
+		if len(row.ParserConfig) == 0 {
+			continue
+		}
+		result[row.KbID] = append(result[row.KbID], row.ParserConfig)
+	}
+	return result, nil
+}
+
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if len(ids) == 0 {

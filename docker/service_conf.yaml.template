@@ -106,7 +106,6 @@ redis:
 # Kvrocks is the RocksDB-backed, Redis-protocol store used ONLY by the Go
 # services. It has no in-memory maxmemory cap, so it does not OOM the way
 # Valkey/Redis does. The Go services read this section; the Python services
-# keep using the `redis:` section above.
 kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'
