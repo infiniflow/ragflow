@@ -442,6 +442,13 @@ class InfinityConnection(InfinityConnectionBase):
                     schema = json.load(f)
                 schema[f"q_{vector_size}_vec"] = {"type": f"vector,{vector_size},float"}
                 table_instance.add_columns({column: schema[column] for column in missing_columns})
+                # Refresh the handle: Infinity may keep the pre-upgrade schema
+                # on an already fetched table object.
+                table_instance = db_instance.get_table(table_name)
+            else:
+                # Do the same refresh for tables whose metadata was stale but
+                # happened to report all columns during the first inspection.
+                table_instance = db_instance.get_table(table_name)
             ids = ["'{}'".format(d["id"]) for d in docs]
             str_ids = ", ".join(ids)
             str_filter = f"id IN ({str_ids})"

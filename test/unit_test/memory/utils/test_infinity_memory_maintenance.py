@@ -235,11 +235,12 @@ def test_insert_repairs_missing_message_columns_before_writing():
     conn.logger = logging.getLogger(__name__)
     conn.connPool = MagicMock()
     table = MagicMock()
+    refreshed_table = MagicMock()
     table.show_columns.return_value.rows.return_value = [
         ("id", "Varchar", "", ""),
         ("q_2_vec", "Embedding(float,2)", None, ""),
     ]
-    conn.connPool.get_conn.return_value.get_database.return_value.get_table.return_value = table
+    conn.connPool.get_conn.return_value.get_database.return_value.get_table.side_effect = [table, refreshed_table]
 
     conn.insert(
         [
@@ -263,7 +264,7 @@ def test_insert_repairs_missing_message_columns_before_writing():
             "message_id": {"type": "integer", "default": 0},
         }
     )
-    table.insert.assert_called_once()
+    refreshed_table.insert.assert_called_once()
 
 
 async def test_capacity_overflow_evicts_old_messages_and_saves_new_message(store, monkeypatch):
