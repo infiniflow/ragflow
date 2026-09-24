@@ -26,10 +26,12 @@ class _RecordingSession:
     """Fake MCP session that records the timeout supplied by each call."""
 
     def __init__(self):
+        """Initialize empty recordings of tool names and timeouts."""
         self.names = []
         self.timeouts = []
 
     def tool_call(self, name: str, arguments: dict, timeout: float = 10) -> str:
+        """Record the tool name and timeout, then return a fixed result."""
         self.names.append(name)
         self.timeouts.append(timeout)
         return "done"
@@ -79,6 +81,7 @@ def test_tool_call_wrapper_uses_default_timeout():
 
 
 def _make_named_session(names):
+    """Build a session whose indexed tool names strip the ``_N`` suffix into ``original_name``."""
     recording = _RecordingSession()
     session = LLMToolPluginCallSession(
         {name: MCPToolBinding(recording, name.rsplit("_", 1)[0]) for name in names},
@@ -88,6 +91,7 @@ def _make_named_session(names):
 
 
 def test_bare_function_name_resolves_to_unique_indexed_tool():
+    """Verify a bare function name dispatches to the single matching indexed tool."""
     session, recording = _make_named_session(["search_archa_metodika_0", "search_archa_data_1"])
     assert asyncio.run(session.tool_call_async("search_archa_data", {})) == "done"
     assert recording.names == ["search_archa_data"]
@@ -96,6 +100,7 @@ def test_bare_function_name_resolves_to_unique_indexed_tool():
 
 
 def test_ambiguous_or_unknown_bare_name_is_rejected():
+    """Verify ambiguous and unknown bare names raise KeyError."""
     session, _ = _make_named_session(["search_0", "search_1"])
     for name in ("search", "search_2", "open_file"):
         try:
