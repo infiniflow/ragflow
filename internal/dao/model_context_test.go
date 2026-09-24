@@ -162,6 +162,9 @@ func TestResolveModelContentLength_CompositeDefaultUsesSoleActiveInstance(t *tes
 	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 32000 {
 		t.Fatalf("ResolveModelContentLength(composite+sole active instance) = %d, want 32000", got)
 	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@default@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(explicit default instance) = %d, want catalog 128000", got)
+	}
 }
 
 // TestResolveModelContentLength_CustomModelExtraComposite is the core

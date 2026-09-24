@@ -104,7 +104,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 			return nil
 		}
 		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
-		if errors.Is(err, gorm.ErrRecordNotFound) && instanceName == "default" {
+		if errors.Is(err, gorm.ErrRecordNotFound) && instanceName == "default" && strings.Count(modelRef, "@") == 1 {
 			// Legacy model@provider references implicitly mean "default".
 			// A tenant may have only one active instance under a different
 			// name, so use it before falling back to the provider catalog.
