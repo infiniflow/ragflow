@@ -40,6 +40,9 @@ class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
+    def param_refs(self) -> list[str]:
+        return [ref for item in self._param.variables if isinstance(item, dict) for ref in (item.get("variable"), item.get("parameter"))]
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if not isinstance(self._param.variables, list):
