@@ -320,7 +320,7 @@ func placeholderBody(cpnID string) nodeBodyFn {
 func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		originalIn := in
-		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, _ := runtime.GetStateFromContext(ctx)
 		if state != nil {
 			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {

@@ -24,7 +24,7 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		common.Debug("llm credentials: no canvas state in ctx")
 		return apiKey, baseURL
@@ -220,7 +220,7 @@ func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiK
 	if !isBareTenantModelID(modelRef) {
 		return "", "", apiKey, baseURL, false, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return "", "", apiKey, baseURL, false, nil
 	}

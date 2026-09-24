@@ -159,7 +159,7 @@ func (a *AnswerStub) Name() string { return componentNameAnswer }
 func (a *AnswerStub) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Mirror the no-state-check pattern of Message/Retrieval: we
 	// don't read state, but the signature must match.
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("Answer: %w", err)
 	}
 	return map[string]any{"answer": ""}, nil
