@@ -15,6 +15,8 @@
 #
 """Tests for MWS provider registration, discovery, and inference adapters."""
 
+import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
@@ -294,6 +296,258 @@ async def test_mws_chat_uses_exact_url_bearer_header_and_documented_fields():
             "max_completion_tokens": 128,
         },
     )
+
+
+@pytest.mark.p1
+def test_mws_chat_request_flattens_openai_tool_history():
+    """Convert RAGFlow tool history to the roles and strings accepted by MWS."""
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    tool_calls = [
+        {
+            "id": "call_123",
+            "type": "function",
+            "function": {
+                "name": "DuckDuckGo",
+                "arguments": '{"query":"Makise Kurisu"}',
+            },
+        }
+    ]
+    expected_tool_calls = f"<tool_calls>{json.dumps(tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>"
+    expected_tool_result = '<tool_result>{"tool_call_id":"call_123","content":"Makise Kurisu is a fictional character."}</tool_result>'
+
+    body = chat._request_body(
+        [
+            {"role": "system", "content": "Use tools when needed."},
+            {"role": "user", "content": "Who is Makise Kurisu?"},
+            {"role": "assistant", "content": None, "tool_calls": tool_calls},
+            {
+                "role": "tool",
+                "tool_call_id": "call_123",
+                "content": "Makise Kurisu is a fictional character.",
+            },
+            {"role": "user", "content": "Exceed max rounds: 1"},
+        ],
+        {"temperature": 0.2},
+        stream=False,
+    )
+
+    assert body == {
+        "model": "qwen3-235b-instruct",
+        "messages": [
+            {"role": "system", "content": "Use tools when needed."},
+            {"role": "user", "content": "Who is Makise Kurisu?"},
+            {
+                "role": "assistant",
+                "content": expected_tool_calls,
+            },
+            {
+                "role": "user",
+                "content": expected_tool_result,
+            },
+            {"role": "user", "content": "Exceed max rounds: 1"},
+        ],
+        "temperature": 0.2,
+    }
+    assert all(message["role"] in {"system", "user", "assistant"} for message in body["messages"])
+    assert all(isinstance(message["content"], str) for message in body["messages"])
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_bound_tool_request_normalizes_existing_tool_history():
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    chat.tools = [{"type": "function", "function": {"name": "lookup", "parameters": {}}}]
+    chat.is_tools = True
+    tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]
+    message = SimpleNamespace(content="Done", tool_calls=None, reasoning_content=None)
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=message, finish_reason="stop")],
+        usage=SimpleNamespace(prompt_tokens=3, completion_tokens=1, total_tokens=4),
+    )
+    chat.async_client.chat.completions.create = AsyncMock(return_value=response)
+
+    answer, token_count = await chat.async_chat_with_tools(
+        "",
+        [
+            {"role": "assistant", "content": None, "tool_calls": tool_calls},
+            {"role": "tool", "tool_call_id": "call_123", "content": "result"},
+        ],
+        {},
+    )
+
+    assert (answer, token_count) == ("Done", 4)
+    sent_messages = chat.async_client.chat.completions.create.await_args.kwargs["messages"]
+    assert sent_messages == [
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_123","content":"result"}</tool_result>'},
+    ]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_bound_tool_stream_normalizes_existing_tool_history():
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+    chat.tools = [{"type": "function", "function": {"name": "lookup", "parameters": {}}}]
+    chat.is_tools = True
+    chat.max_rounds = 1
+    chat.max_retries = 0
+    chat.toolcall_session = SimpleNamespace(tool_call_async=AsyncMock(side_effect=["new result 1", "new result 2"]))
+
+    initial_tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]
+
+    def tool_call_chunk(call_id):
+        tool_call = SimpleNamespace(
+            index=0,
+            id=call_id,
+            function=SimpleNamespace(name="lookup", arguments="{}"),
+        )
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, reasoning_content=None, reasoning=None, tool_calls=[tool_call]),
+                    finish_reason="tool_calls",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=0, total_tokens=1),
+        )
+
+    def content_chunk(content):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=content, reasoning_content=None, reasoning=None, tool_calls=None),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=0, total_tokens=1),
+        )
+
+    async def stream(chunk):
+        yield chunk
+
+    chat.async_client.chat.completions.create = AsyncMock(
+        side_effect=[
+            stream(tool_call_chunk("call_456")),
+            stream(tool_call_chunk("call_789")),
+            stream(content_chunk("Done")),
+        ]
+    )
+
+    chunks = [
+        chunk
+        async for chunk in chat.async_chat_streamly_with_tools(
+            "",
+            [
+                {"role": "assistant", "content": None, "tool_calls": initial_tool_calls},
+                {"role": "tool", "tool_call_id": "call_123", "content": "existing result"},
+            ],
+            {},
+        )
+    ]
+
+    assert "Done" in chunks
+    calls = chat.async_client.chat.completions.create.await_args_list
+    assert len(calls) == 3
+
+    expected_initial_messages = [
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(initial_tool_calls, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_123","content":"existing result"}</tool_result>'},
+    ]
+    assert calls[0].kwargs["messages"] == expected_initial_messages
+
+    first_new_tool_call = [
+        {
+            "index": 0,
+            "id": "call_456",
+            "function": {"name": "lookup", "arguments": "{}"},
+            "type": "function",
+        }
+    ]
+    expected_second_messages = [
+        *expected_initial_messages,
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(first_new_tool_call, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_456","content":"new result 1"}</tool_result>'},
+    ]
+    assert calls[1].kwargs["messages"] == expected_second_messages
+
+    second_new_tool_call = [
+        {
+            "index": 0,
+            "id": "call_789",
+            "function": {"name": "lookup", "arguments": "{}"},
+            "type": "function",
+        }
+    ]
+    assert calls[2].kwargs["messages"] == [
+        *expected_second_messages,
+        {
+            "role": "assistant",
+            "content": f"<tool_calls>{json.dumps(second_new_tool_call, ensure_ascii=False, separators=(',', ':'))}</tool_calls>",
+        },
+        {"role": "user", "content": '<tool_result>{"tool_call_id":"call_789","content":"new result 2"}</tool_result>'},
+        {"role": "user", "content": "Exceed max rounds: 1"},
+    ]
+    assert all(message["role"] in {"system", "user", "assistant"} and isinstance(message["content"], str) for request in calls for message in request.kwargs["messages"])
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    ("history", "error"),
+    [
+        (["not-a-message"], "must be a dictionary"),
+        ([{"role": "developer", "content": "No"}], "Unsupported MWS chat role"),
+        ([{"role": "user", "content": None}], "user message content must be a string"),
+        ([{"role": "assistant", "content": None}], "assistant message content must be a string"),
+        (
+            [{"role": "assistant", "content": {"invalid": True}, "tool_calls": [{"id": "call_123"}]}],
+            "assistant message content must be a string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": {"id": "call_123"}}],
+            "assistant message tool_calls must be a list",
+        ),
+        (
+            [{"role": "assistant", "content": "invalid", "tool_calls": {}}],
+            "assistant message tool_calls must be a list",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": {}}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "{"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        (
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "[]"}}]}],
+            r"function\.arguments must be a JSON object string",
+        ),
+        ([{"role": "tool", "content": "result"}], "requires tool_call_id"),
+        (
+            [{"role": "tool", "tool_call_id": "call_123", "content": None}],
+            "tool message content must be a string",
+        ),
+    ],
+)
+def test_mws_chat_request_rejects_invalid_message_shapes(history, error):
+    """Keep strict validation around MWS tool-history normalization."""
+    chat = MWSChat("token", "qwen3-235b-instruct", PROJECT_URL)
+
+    with pytest.raises(ValueError, match=error):
+        chat._request_body(history, {}, stream=False)
 
 
 @pytest.mark.p1
