@@ -98,7 +98,7 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 
 	if builder, ok := c.tool.(agenttool.ReferenceBuilder); ok {
 		chunks, docAggs := builder.BuildReferences(ctx, decoded)
-		if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+		if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
 			state.SetRetrievalReferences(chunks, docAggs)
 		}
 	}
