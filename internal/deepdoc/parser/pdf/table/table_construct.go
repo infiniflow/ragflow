@@ -43,25 +43,46 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 
 	// Use the precomputed per-page grid when available. A merged table with a
 	// missing page grid rebuilds from page-numbered boxes before flat cells.
+	// rowsArePixelGrid tracks whether rows still holds that precomputed
+	// item.Grid: its coordinates are crop pixels, while every grid rebuilt
+	// from boxes or cells is in PDF points. The orphan merge gap below is a
+	// point threshold, so it scales only for the pixel grid.
 	var rows [][]pdf.TSRCell
+	rowsArePixelGrid := false
 	if item != nil {
 		rows = item.Grid
+		rowsArePixelGrid = len(rows) > 0
 	}
 	if item != nil && item.NeedsPageGridFallback && len(boxes) > 0 {
 		if rebuilt := groupFallbackBoxesByPage(boxes, item.Positions); len(rebuilt) > 0 {
 			rows = rebuilt
+			rowsArePixelGrid = false
 			item.NeedsPageGridFallback = false
 		}
 	}
 	if len(rows) == 0 && item != nil && len(boxes) > 0 {
 		rows = groupFallbackBoxesByPage(boxes, item.Positions)
+		rowsArePixelGrid = false
 	}
 	if len(rows) == 0 && len(cells) > 0 && HasAnyText(cells) {
 		rows = GroupTSRCellsToRows(cells)
+		rowsArePixelGrid = false
 	}
+	// Every producer above can hand back a jagged grid: GroupTSRCellsToRows
+	// emits one row per Y band with that band's own cell count, a merged table
+	// splices child rows of a different width into item.Grid
+	// (mergeContainedCandidateRows), and each page's GroupBoxesByRC sizes its
+	// grid by that page's distinct column labels before stackGrids concatenates
+	// them. The orphan passes below read an adjacent row at the orphan's column
+	// without a bounds check, so widen every row to the shared count once, here,
+	// instead of in each producer. This only guarantees the width invariant: it
+	// is NOT the normalization rebuildMergedGrid applies, which prefers
+	// alignGridColsByX once per-page column counts differ, and a per-page index
+	// shift already applied by compressColIndices survives index padding.
+	rows = padGridCols(rows, gridMaxWidth(rows))
 	if len(rows) > 0 && HasText(rows) {
 		orphanGap := maxOrphanMergeGapPoints
-		if item != nil && len(item.Grid) > 0 && item.Scale > 0 {
+		if rowsArePixelGrid && item != nil && item.Scale > 0 {
 			orphanGap *= item.Scale
 		}
 		// Clean up orphan columns then orphan rows (Python order: columns at
@@ -70,7 +91,17 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		// must be re-derived AFTER them (the old code set item.Rows before
 		// column cleanup, leaving it stale; item.Grid also went stale because
 		// CleanupOrphanRows returns a re-sliced header).
-		rows = cleanupOrphanColumns(rows, orphanGap)
+		// Both of them also decide a merge from cell coordinates, which only
+		// means anything when the grid actually has coordinates: a grid grouped
+		// by Y/X alone (GroupBoxesByYX, which GroupBoxesByRC delegates to when
+		// no box carries an R label) stores text only, so every gap reads 0
+		// whatever the real distance is and any lone-cell row folds into its
+		// neighbour. Skip the pair on such a grid; the empty-row drop and the
+		// rendering below never look at coordinates.
+		hasGeometry := gridHasGeometry(rows)
+		if hasGeometry {
+			rows = cleanupOrphanColumns(rows, orphanGap)
+		}
 		// Drop all-empty rows. Python's construct_table groups boxes by their
 		// R annotation (tbl[i] is the boxes for row i; a TSR row with no
 		// overlapping box contributes no row). Its HTML emitter also skips
@@ -84,7 +115,9 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		// every TSR cleanup pass. Drop it here so rows/Rows/HTML all match
 		// Python.
 		rows = DropAllEmptyRows(rows)
-		rows = cleanupOrphanRows(rows, orphanGap)
+		if hasGeometry {
+			rows = cleanupOrphanRows(rows, orphanGap)
+		}
 		hdrs := HeaderSetWithBlockType(rows, boxes)
 		if item != nil {
 			item.Grid = rows
@@ -464,6 +497,20 @@ func cleanupOrphanRows(rows [][]pdf.TSRCell, maxGap float64) [][]pdf.TSRCell {
 		nRows--
 	}
 	return rows
+}
+
+// gridHasGeometry reports whether any cell carries a real rectangle. Cells
+// produced by GroupBoxesByYX keep only their text, so a grid of such cells has
+// no usable distance to measure.
+func gridHasGeometry(rows [][]pdf.TSRCell) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if cell.X1 > cell.X0 || cell.Y1 > cell.Y0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // DropAllEmptyRows removes rows whose cells are all whitespace/empty.

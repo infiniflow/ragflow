@@ -226,8 +226,12 @@ func TestConstructTable_YBasedFallback(t *testing.T) {
 	if strings.Count(html, "<tr>") != 2 {
 		t.Errorf("expected 2 rows from Y-fallback, got %d", strings.Count(html, "<tr>"))
 	}
-	if strings.Count(html, "<td ") != 3 { // 2 in row0, 1 in row1 (no padding in basic grouping)
-		t.Errorf("expected 3 cells, got %d", strings.Count(html, "<td "))
+	// Y/X grouping sizes a row by the cells it actually holds, so row 1 comes
+	// back one cell short; ConstructTable widens every row to the shared column
+	// count before the cleanup passes, and the missing cell renders empty the
+	// way Python's rectangular construct_table grid does.
+	if strings.Count(html, "<td ") != 4 { // 2 in row0, 2 (one empty) in row1
+		t.Errorf("expected 4 cells, got %d", strings.Count(html, "<td "))
 	}
 }
 
@@ -1093,4 +1097,346 @@ func TestConstructTable_OrphanRowGapUsesRenderedScale(t *testing.T) {
 	if item.Rows[1][1] != "Note" {
 		t.Fatalf("orphan row text = %q, want it preserved in the neighboring row", item.Rows[1][1])
 	}
+}
+
+// fallbackBox builds a page-numbered, R/C annotated text box in PDF point
+// space — the input the degraded cross-page path rebuilds a grid from.
+func fallbackBox(text string, page, r, c int, x0, x1, top, bottom float64) pdf.TextBox {
+	return pdf.TextBox{
+		Text:          text,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bottom,
+		PageNumber:    page,
+		HasPageNumber: true,
+		R:             r,
+		RTop:          top,
+		RBott:         bottom,
+		C:             c,
+	}
+}
+
+// noRBox is a page-numbered text box with no row annotation at all, so the page
+// grouping falls through GroupBoxesByRC into the coordinate-based
+// GroupBoxesByYX, whose cells hold nothing but text.
+func noRBox(text string, page int, x0, x1, top, bottom float64) pdf.TextBox {
+	return fallbackBox(text, page, -1, 0, x0, x1, top, bottom)
+}
+
+// stalePixelGrid returns the crop-pixel anchor grid of a merged table rendered
+// at scale 3. It is non-empty precisely when ConstructTable is about to replace
+// it with a point-space grid rebuilt from boxes.
+func stalePixelGrid() [][]pdf.TSRCell {
+	cell := func(text string, x0, y0, x1, y1 float64) pdf.TSRCell {
+		return pdf.TSRCell{Text: text, X0: x0, Y0: y0, X1: x1, Y1: y1}
+	}
+	return [][]pdf.TSRCell{
+		{cell("P0", 0, 0, 150, 60), cell("P1", 150, 0, 300, 60)},
+		{cell("P2", 0, 60, 150, 120), cell("P3", 150, 60, 300, 120)},
+	}
+}
+
+func crossPagePositions() []pdf.Position {
+	return []pdf.Position{{PageNumbers: []int{0}}, {PageNumbers: []int{1}}}
+}
+
+func assertFallbackRows(t *testing.T, got [][]string, want [][]string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("rows = %d, want %d:\n%v", len(got), len(want), got)
+	}
+	for i := range want {
+		if strings.Join(got[i], "|") != strings.Join(want[i], "|") {
+			t.Errorf("row %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestConstructTable_OrphanGapStaysInPointsForPageFallback pins that the
+// rendered-scale adjustment applies only to the crop-pixel item.Grid. On the
+// degraded cross-page path the grid is rebuilt from page-numbered boxes, whose
+// coordinates are PDF points, while the item.Grid that decides the scale is
+// still the stale crop-pixel anchor. Multiplying the 25 point fragment gap by
+// item.Scale there (x3, up to x9 on a retry zoom) merged legitimate sparse rows
+// and shifted their text into the row above.
+func TestConstructTable_OrphanGapStaysInPointsForPageFallback(t *testing.T) {
+	page0 := []pdf.TextBox{
+		fallbackBox("H0", 0, 0, 0, 0, 50, 10, 25),
+		fallbackBox("H1", 0, 0, 1, 60, 110, 10, 25),
+		fallbackBox("H2", 0, 0, 2, 120, 170, 10, 25),
+		fallbackBox("H3", 0, 0, 3, 180, 230, 10, 25),
+		fallbackBox("A0", 0, 1, 0, 0, 50, 30, 45),
+		fallbackBox("A1", 0, 1, 1, 60, 110, 30, 45),
+		fallbackBox("A2", 0, 1, 2, 120, 170, 30, 45),
+		fallbackBox("A3", 0, 1, 3, 180, 230, 30, 45),
+	}
+	// Continuation page whose third column is empty in its first row, so the
+	// lone cell below it is an orphan candidate measured in points.
+	page1Head := []pdf.TextBox{
+		fallbackBox("B0", 1, 0, 0, 0, 50, 10, 25),
+		fallbackBox("B1", 1, 0, 1, 60, 110, 10, 25),
+		fallbackBox("B3", 1, 0, 3, 180, 230, 10, 25),
+	}
+
+	t.Run("a 35 point gap is a sparse row, not a fragment", func(t *testing.T) {
+		boxes := append(append([]pdf.TextBox{}, page0...), page1Head...)
+		boxes = append(boxes, fallbackBox("Subtotal", 1, 1, 2, 120, 170, 60, 75))
+		item := pdf.TableItem{
+			Scale:                 3,
+			Grid:                  stalePixelGrid(),
+			NeedsPageGridFallback: true,
+			Positions:             crossPagePositions(),
+		}
+		ConstructTable(nil, boxes, "", &item)
+
+		// 35pt is above the 25pt fragment gap but below 25pt x scale 3: a
+		// scaled threshold would merge this category row into the row above.
+		assertFallbackRows(t, item.Rows, [][]string{
+			{"H0", "H1", "H2", "H3"},
+			{"A0", "A1", "A2", "A3"},
+			{"B0", "B1", "", "B3"},
+			{"", "", "Subtotal", ""},
+		})
+	})
+
+	t.Run("a 15 point gap still merges", func(t *testing.T) {
+		// Control: the point threshold stays active on the rebuilt grid, so a
+		// genuine vertical fragment is still joined with the row above.
+		boxes := append(append([]pdf.TextBox{}, page0...), page1Head...)
+		boxes = append(boxes, fallbackBox("Note", 1, 1, 2, 120, 170, 40, 55))
+		item := pdf.TableItem{
+			Scale:                 3,
+			Grid:                  stalePixelGrid(),
+			NeedsPageGridFallback: true,
+			Positions:             crossPagePositions(),
+		}
+		ConstructTable(nil, boxes, "", &item)
+
+		assertFallbackRows(t, item.Rows, [][]string{
+			{"H0", "H1", "H2", "H3"},
+			{"A0", "A1", "A2", "A3"},
+			{"B0", "B1", "Note", "B3"},
+		})
+	})
+}
+
+// TestGroupFallbackBoxesByPageLeavesGridRawPadsAtConsumer pins where the jagged
+// grid gets normalized. Each page's GroupBoxesByRC sizes its grid by that
+// page's distinct C labels, so a separator missed on one page yields fewer
+// columns there and stacking returns a jagged grid; the producer stays raw and
+// ConstructTable widens every row to the shared count once, which is the only
+// place that covers all producers. Without that normalization
+// cleanupOrphanRows indexes an adjacent row at the orphan's column unguarded
+// and an out-of-range panic kills the parse worker.
+func TestGroupFallbackBoxesByPageLeavesGridRawPadsAtConsumer(t *testing.T) {
+	positions := crossPagePositions()
+	boxes := []pdf.TextBox{
+		// Page 0: four detected columns, last row a lone right-most cell.
+		fallbackBox("H0", 0, 0, 0, 0, 50, 10, 25),
+		fallbackBox("H1", 0, 0, 1, 60, 110, 10, 25),
+		fallbackBox("H2", 0, 0, 2, 120, 170, 10, 25),
+		fallbackBox("H3", 0, 0, 3, 180, 230, 10, 25),
+		fallbackBox("A0", 0, 1, 0, 0, 50, 30, 45),
+		fallbackBox("A1", 0, 1, 1, 60, 110, 30, 45),
+		fallbackBox("A2", 0, 1, 2, 120, 170, 30, 45),
+		fallbackBox("A3", 0, 1, 3, 180, 230, 30, 45),
+		fallbackBox("Tail", 0, 2, 3, 180, 230, 50, 65),
+		// Page 1: a missed separator leaves this page two columns.
+		fallbackBox("B0", 1, 0, 0, 0, 50, 10, 25),
+		fallbackBox("B1", 1, 0, 1, 60, 110, 10, 25),
+		fallbackBox("C0", 1, 1, 0, 0, 50, 40, 55),
+		fallbackBox("C1", 1, 1, 1, 60, 110, 40, 55),
+	}
+
+	// The producer reports what the pages actually yielded: the two-column
+	// continuation page stacks under the four-column anchor page.
+	grid := groupFallbackBoxesByPage(boxes, positions)
+	if got, want := rowWidths(grid), []int{4, 4, 4, 2, 2}; !sameInts(got, want) {
+		t.Fatalf("grouping widths = %v, want %v (the producer stays raw):\n%v",
+			got, want, RowsToStrings(grid))
+	}
+
+	item := pdf.TableItem{
+		Scale:                 3,
+		Grid:                  stalePixelGrid(),
+		NeedsPageGridFallback: true,
+		Positions:             positions,
+	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("ConstructTable panicked on the fallback grid: %v", r)
+			}
+		}()
+		ConstructTable(nil, boxes, "", &item)
+	}()
+	assertFallbackRows(t, item.Rows, [][]string{
+		{"H0", "H1", "H2", "H3"},
+		{"A0", "A1", "A2", "A3"},
+		{"", "", "", "Tail"},
+		{"B0", "B1", "", ""},
+		{"C0", "C1", "", ""},
+	})
+	// The consumer-side normalization is what makes the grid rectangular again,
+	// so the emitted grid keeps one column model for every row.
+	for i, row := range item.Grid {
+		if len(row) != 4 {
+			t.Errorf("grid row %d width = %d, want 4 (uniform after padding):\n%v", i, len(row), RowsToStrings(item.Grid))
+		}
+	}
+}
+
+// TestConstructTable_PadsJaggedCellGrid pins the same normalization on the
+// cells path, which handleImageOnlyPDFs reaches with no boxes at all.
+// GroupTSRCellsToRows emits one row per Y band holding that band's own cells,
+// so the widths are inherently per-row. Here the widest band carries its only
+// text in its fifth column, and cleanupOrphanRows reads the neighbouring rows
+// at that same column — one past their end — so the worker died with
+// "index out of range [4] with length 4".
+func TestConstructTable_PadsJaggedCellGrid(t *testing.T) {
+	bands := [][]string{
+		{"A0", "A1", "A2", "A3"},
+		{"B0", "B1", "B2", "B3"},
+		{"C0", "C1", "C2", "C3"},
+		{"", "", "", "", "Subtotal"},
+		{"E0", "E1", "E2", "E3"},
+	}
+	var cells []pdf.TSRCell
+	for i, band := range bands {
+		y0 := float64(i) * 60
+		for j, text := range band {
+			cells = append(cells, pdf.TSRCell{
+				Text:  text,
+				X0:    float64(j) * 100,
+				Y0:    y0,
+				X1:    float64(j+1) * 100,
+				Y1:    y0 + 50,
+				Label: "table row",
+			})
+		}
+	}
+
+	// The producer stays raw: one row per band, that band's own cell count.
+	raw := GroupTSRCellsToRows(cells)
+	if got, want := rowWidths(raw), []int{4, 4, 4, 5, 4}; !sameInts(got, want) {
+		t.Fatalf("GroupTSRCellsToRows widths = %v, want %v", got, want)
+	}
+
+	var item pdf.TableItem
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("ConstructTable panicked on the jagged cell grid: %v", r)
+			}
+		}()
+		ConstructTable(cells, nil, "", &item)
+	}()
+
+	if len(item.Rows) != len(bands) {
+		t.Fatalf("rows = %d, want %d:\n%v", len(item.Rows), len(bands), item.Rows)
+	}
+	for i := range item.Grid {
+		if len(item.Grid[i]) != len(item.Grid[0]) {
+			t.Fatalf("grid row %d width = %d, want the shared width %d:\n%v",
+				i, len(item.Grid[i]), len(item.Grid[0]), RowsToStrings(item.Grid))
+		}
+	}
+	for _, band := range bands {
+		for _, want := range band {
+			if want == "" {
+				continue
+			}
+			if !rowContainsText(item.Rows, want) {
+				t.Errorf("cell text %q lost from the grid:\n%v", want, item.Rows)
+			}
+		}
+	}
+}
+
+// TestConstructTable_KeepsOrphanRowWithoutGridGeometry pins the no-geometry
+// guard. Every page here falls through GroupBoxesByRC into GroupBoxesByYX,
+// which stores text only, so all cells report X0==X1==Y0==Y1==0. The orphan row
+// pass reads that as a zero gap and folds a lone cell into the row above it no
+// matter how far below the page it actually sat.
+func TestConstructTable_KeepsOrphanRowWithoutGridGeometry(t *testing.T) {
+	// R stays -1 on every box, so the page grouping is coordinate-based.
+	boxes := []pdf.TextBox{
+		noRBox("H0", 0, 0, 50, 10, 25),
+		noRBox("H1", 0, 60, 110, 10, 25),
+		noRBox("H2", 0, 120, 170, 10, 25),
+		noRBox("H3", 0, 180, 230, 10, 25),
+		noRBox("A0", 0, 0, 50, 30, 45),
+		noRBox("A1", 0, 60, 110, 30, 45),
+		noRBox("A2", 0, 120, 170, 30, 45),
+		noRBox("A3", 0, 180, 230, 30, 45),
+		// Last anchor row stops one column short, so column 3 is blank there.
+		noRBox("B0", 0, 0, 50, 50, 65),
+		noRBox("B1", 0, 60, 110, 50, 65),
+		noRBox("B2", 0, 120, 170, 50, 65),
+		// Continuation page: a subtotal row 265pt below the anchor, whose text
+		// sits in the fourth column.
+		noRBox("", 1, 0, 50, 330, 345),
+		noRBox("", 1, 60, 110, 330, 345),
+		noRBox("", 1, 120, 170, 330, 345),
+		noRBox("Subtotal", 1, 180, 230, 330, 345),
+	}
+	grid := groupFallbackBoxesByPage(boxes, crossPagePositions())
+	if got, want := rowWidths(grid), []int{4, 4, 3, 4}; !sameInts(got, want) {
+		t.Fatalf("page grouping widths = %v, want %v:\n%v", got, want, RowsToStrings(grid))
+	}
+	for _, row := range grid {
+		for _, cell := range row {
+			if cell.X0 != 0 || cell.X1 != 0 || cell.Y0 != 0 || cell.Y1 != 0 {
+				t.Fatalf("fixture must reach the text-only grouping, got cell %+v", cell)
+			}
+		}
+	}
+
+	item := pdf.TableItem{Positions: crossPagePositions()}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("ConstructTable panicked on the geometry-free grid: %v", r)
+			}
+		}()
+		ConstructTable(nil, boxes, "", &item)
+	}()
+	assertFallbackRows(t, item.Rows, [][]string{
+		{"H0", "H1", "H2", "H3"},
+		{"A0", "A1", "A2", "A3"},
+		{"B0", "B1", "B2", ""},
+		{"", "", "", "Subtotal"},
+	})
+}
+
+func rowWidths(rows [][]pdf.TSRCell) []int {
+	out := make([]int, len(rows))
+	for i, row := range rows {
+		out[i] = len(row)
+	}
+	return out
+}
+
+func sameInts(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func rowContainsText(rows [][]string, want string) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if cell == want {
+				return true
+			}
+		}
+	}
+	return false
 }
