@@ -158,10 +158,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		// duplicate text across cells (e.g. 13_crosspage_table page 2:
 		// '2024-43 2024-44' y=(1014,1045) + nested '2024-44' y=(1032,1045)).
 		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
-		const headerTopTolerance = 15.0 // tolerance to avoid dropping table header boxes
+		const headerTopTolerancePoints = 5.0 // 15 crop pixels at the default 216 DPI
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
-			if b.Bottom*scale-cropOffY < firstCellTop-headerTopTolerance {
+			if b.Bottom*scale-cropOffY < firstCellTop-headerTopTolerancePoints*scale {
 				continue
 			}
 			tableBoxes = append(tableBoxes, b)

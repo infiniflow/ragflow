@@ -173,8 +173,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 
 // rebuildMergedGrid rebuilds anchor.Grid from its own per-page grid plus the
 // continuation pages' grids (contGrids). Only when the anchor already had a
-// Grid (the production path); Grid-less tables fall back to the cells path
-// and must be left untouched to avoid regression.
+// Grid (the production path); Grid-less tables are handled by ConstructTable.
 //
 // The anchor and continuation pages form ONE logical table, but TSR
 // can detect a slightly different number of columns per page (or even
@@ -211,10 +210,9 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 	for _, g := range allGrids {
 		if len(g) == 0 {
 			// Degenerate grid with no rows: drop the whole merged grid so
-			// ConstructTable rebuilds from the merged Cells (the anchor-only
-			// grid would render page 0 and silently omit the continuation
-			// pages' cells). A nil Grid is the package's signal for the
-			// cells fallback path.
+			// ConstructTable rebuilds from page-numbered boxes, then cells
+			// if boxes are unavailable. Keeping the anchor grid would omit
+			// the continuation page.
 			keep = false
 			break
 		}
@@ -251,9 +249,13 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 	// table_construct.go dropAllEmptyRows for the matching
 	// per-page fix.
 	if len(anchor.Grid) > 0 && HasText(anchor.Grid) {
+		orphanGap := maxOrphanMergeGapPoints
+		if anchor.Scale > 0 {
+			orphanGap *= anchor.Scale
+		}
 		anchor.Grid = DropAllEmptyRows(anchor.Grid)
-		anchor.Grid = CleanupOrphanColumns(anchor.Grid)
-		anchor.Grid = CleanupOrphanRows(anchor.Grid)
+		anchor.Grid = cleanupOrphanColumns(anchor.Grid, orphanGap)
+		anchor.Grid = cleanupOrphanRows(anchor.Grid, orphanGap)
 		anchor.Rows = RowsToStrings(anchor.Grid)
 	}
 }
@@ -312,23 +314,28 @@ func stackGrids(grids ...[][]pdf.TSRCell) [][]pdf.TSRCell {
 	return out
 }
 
-// isRepeatedHeader checks if a continuation page's top row is a repeated header row
-// that matches the anchor table's header row.
+// isRepeatedHeader requires matching text and explicit header labels on both
+// pages before removing a continuation row. Text alone can match a data row.
 func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool {
 	if len(headerRow) == 0 || len(candidateRow) == 0 {
 		return false
 	}
 	headerTexts := make(map[string]bool)
+	headerLabelTexts := make(map[string]bool)
 	for _, c := range headerRow {
 		t := strings.TrimSpace(c.Text)
 		if t != "" {
 			headerTexts[t] = true
+			if isHeaderLabel(c.Label) {
+				headerLabelTexts[t] = true
+			}
 		}
 	}
-	if len(headerTexts) == 0 {
+	if len(headerLabelTexts) < 2 {
 		return false
 	}
 	matches := 0
+	exactMatches := 0
 	candidateNonEmpty := 0
 	for _, c := range candidateRow {
 		t := strings.TrimSpace(c.Text)
@@ -338,6 +345,9 @@ func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool 
 		candidateNonEmpty++
 		if headerTexts[t] {
 			matches++
+			if isHeaderLabel(c.Label) && headerLabelTexts[t] {
+				exactMatches++
+			}
 		} else {
 			for ht := range headerTexts {
 				// Rune count, not bytes: len() is >=3 for every single CJK
@@ -354,7 +364,7 @@ func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool 
 	if candidateNonEmpty == 0 {
 		return false
 	}
-	return matches >= 2 && float64(matches)/float64(candidateNonEmpty) >= 0.5
+	return exactMatches >= 2 && float64(matches)/float64(candidateNonEmpty) >= 0.5
 }
 
 // gridYExtent returns the min/max Y0/Y1 across all cells of a grid.

@@ -6,6 +6,28 @@ import (
 	"testing"
 )
 
+func TestProcessPageBoxes_RescuesUnmatchedEmbeddedText(t *testing.T) {
+	p := NewParser(pdf.DefaultParserConfig())
+	doc := &MockDocAnalyzer{
+		Healthy: true,
+		OCRBoxes: []pdf.OCRBox{{
+			X0: 0, Y0: 0, X1: 30, Y1: 0, X2: 30, Y2: 30, X3: 0, Y3: 30,
+		}},
+	}
+	chars := []pdf.TextChar{
+		{Text: "A", X0: 1, X1: 5, Top: 2, Bottom: 8, PageNumber: 0},
+		{Text: "!", X0: 18, X1: 22, Top: 2, Bottom: 8, PageNumber: 0},
+	}
+
+	boxes, _, used := p.processPageBoxes(t.Context(), testPageImg(), chars, 0, nil, false, doc, pdf.DlaScale)
+	if !used {
+		t.Fatal("expected embedded-text OCR merge path")
+	}
+	if len(boxes) != 2 || boxes[0].Text != "A" || boxes[1].Text != "!" {
+		t.Fatalf("OCR boxes = %#v, want separate boxes for embedded text A and rescued punctuation !", boxes)
+	}
+}
+
 // TestOCRMergeChars_FullCoverage: embedded chars fill the detect box.
 func TestOCRMergeChars_FullCoverage(t *testing.T) {
 	p := NewParser(pdf.DefaultParserConfig())

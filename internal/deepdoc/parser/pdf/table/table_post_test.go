@@ -146,6 +146,40 @@ func TestBuildTableHTMLs_SingleTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableHTMLs_EmptyMergedGridKeepsContinuationRows(t *testing.T) {
+	tables := []pdf.TableItem{{
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 200, Top: 0, Bottom: 60},
+			{PageNumbers: []int{1}, Left: 0, Right: 200, Top: 0, Bottom: 60},
+		},
+		Scale: 1,
+		Cells: []pdf.TSRCell{{Text: "anchor", X0: 0, Y0: 10, X1: 80, Y1: 20}},
+	}}
+	var boxes []pdf.TextBox
+	for page, texts := range [][]string{{"A", "B", "C", "D"}, {"E", "F", "G", "H"}} {
+		for i, value := range texts {
+			row, col := i/2, i%2
+			x, y := float64(col*100), float64(row*20+10)
+			boxes = append(boxes, pdf.TextBox{
+				Text: value, LayoutType: pdf.LayoutTypeTable,
+				PageNumber: page, HasPageNumber: true,
+				X0: x, X1: x + 80, Top: y, Bottom: y + 10,
+				R: row, C: col, RTop: y, RBott: y + 10,
+			})
+		}
+	}
+
+	html := buildTableHTMLs(boxes, tables)[0]
+	if rows := strings.Count(html, "<tr>"); rows != 4 {
+		t.Fatalf("rendered %d rows, want 4: %s", rows, html)
+	}
+	for _, value := range []string{"A", "B", "C", "D", "E", "F", "G", "H"} {
+		if !strings.Contains(html, ">"+value+"<") {
+			t.Errorf("missing %q from merged HTML: %s", value, html)
+		}
+	}
+}
+
 func TestBuildTableHTMLs_NoCells(t *testing.T) {
 	boxes := []pdf.TextBox{}
 	tables := []pdf.TableItem{

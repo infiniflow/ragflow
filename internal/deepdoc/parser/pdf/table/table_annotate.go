@@ -62,10 +62,14 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 	return matches
 }
 
-// cleanupOverlappingTableRegions removes spurious sub-table DLA detections
-// that heavily overlap (>50% area) a higher-confidence or larger table region
-// on the same page.
+// cleanupOverlappingTableRegions removes contained fragments and near-duplicate
+// DLA table regions on the same page. Partial overlap alone is ambiguous.
 func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
+	const (
+		containedOverlap = 0.7
+		parentOverlap    = 0.4
+		duplicateOverlap = 0.8
+	)
 	if len(regs) <= 1 {
 		return regs
 	}
@@ -94,21 +98,15 @@ func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
 			}
 			ratioA := interArea / areaA
 			ratioB := interArea / areaB
-			if ratioA >= 0.5 || ratioB >= 0.5 {
-				// Lopsided containment first: ratioX >= 0.7 with the other
-				// side < 0.4 means one region sits essentially inside the
-				// other and the regions are of very different size. DLA
-				// sub-table false positives are exactly this — a small
-				// fragment over a dense grid area, where the model score is
-				// routinely HIGHER than for the whole-table box. Choosing by
-				// confidence alone would let the fragment swallow the real
-				// table, so the contained side is always dropped.
-				if ratioB >= 0.7 && ratioA < 0.4 {
-					dropped[j] = true
-				} else if ratioA >= 0.7 && ratioB < 0.4 {
-					dropped[i] = true
-					break
-				} else if a.Confidence > b.Confidence {
+			// A small detection inside a larger table can score higher than
+			// its parent, so drop the contained fragment regardless of score.
+			if ratioB >= containedOverlap && ratioA < parentOverlap {
+				dropped[j] = true
+			} else if ratioA >= containedOverlap && ratioB < parentOverlap {
+				dropped[i] = true
+				break
+			} else if ratioA >= duplicateOverlap && ratioB >= duplicateOverlap {
+				if a.Confidence > b.Confidence {
 					dropped[j] = true
 				} else if b.Confidence > a.Confidence {
 					dropped[i] = true

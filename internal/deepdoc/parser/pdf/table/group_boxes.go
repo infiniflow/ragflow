@@ -1,7 +1,6 @@
 package table
 
 import (
-	"math"
 	"sort"
 	"strings"
 
@@ -251,15 +250,24 @@ func cellLabelFromBox(b pdf.TextBox) string {
 	return ""
 }
 
-// SortYFirstlyBoxes sorts boxes by Top (fuzzy threshold), then X0.
+// SortYFirstlyBoxes groups nearby box tops into rows, then sorts each row by X0.
 func SortYFirstlyBoxes(arr []pdf.TextBox, threshold float64) {
 	sort.SliceStable(arr, func(i, j int) bool {
-		diff := arr[i].Top - arr[j].Top
-		if math.Abs(diff) < threshold {
-			return arr[i].X0 < arr[j].X0
-		}
-		return diff < 0
+		return arr[i].Top < arr[j].Top
 	})
+	if threshold <= 0 {
+		return
+	}
+	for start := 0; start < len(arr); {
+		end := start + 1
+		for end < len(arr) && arr[end].Top-arr[start].Top < threshold {
+			end++
+		}
+		sort.SliceStable(arr[start:end], func(i, j int) bool {
+			return arr[start+i].X0 < arr[start+j].X0
+		})
+		start = end
+	}
 }
 
 // SortRFirstly mirrors Python's Recognizer.sort_R_firstly.

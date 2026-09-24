@@ -134,6 +134,26 @@ func TestGroupBoxesByRC_ColspanMissing(t *testing.T) {
 	_ = rows
 }
 
+func TestSortYFirstlyBoxes_FuzzyRowsHaveStableOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{Top: 0, X0: 2, Text: "A"},
+		{Top: 9, X0: 1, Text: "B"},
+		{Top: 18, X0: 0, Text: "C"},
+	}
+	permutations := [][]int{
+		{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+		{1, 2, 0}, {2, 0, 1}, {2, 1, 0},
+	}
+	for _, permutation := range permutations {
+		ordered := []pdf.TextBox{boxes[permutation[0]], boxes[permutation[1]], boxes[permutation[2]]}
+		SortYFirstlyBoxes(ordered, 10)
+		got := []string{ordered[0].Text, ordered[1].Text, ordered[2].Text}
+		if strings.Join(got, "") != "BAC" {
+			t.Errorf("permutation %v sorted to %v, want [B A C]", permutation, got)
+		}
+	}
+}
+
 func TestCompressRowIndices(t *testing.T) {
 	// 6 boxes with 6 different R values → 6 rows.
 	boxes := []pdf.TextBox{

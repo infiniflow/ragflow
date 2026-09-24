@@ -9,9 +9,9 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// constructTable produces an HTML table string from TSR cells and text boxes.
-// Both cells and boxes must be in the same coordinate space (crop pixel space).
-// Fills item.Rows so downstream consumers don't need to re-group cells.
+// ConstructTable produces an HTML table string from TSR cells and text boxes.
+// A precomputed item.Grid uses crop pixels; fallback cells and boxes use PDF
+// points. Fills item.Rows so downstream consumers don't need to re-group cells.
 //
 // Python equivalent: TableStructureRecognizer.construct_table()
 // stripCaptionFromCells clears caption-like text from TSR cells.
@@ -41,24 +41,30 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 	// may include caption text that doesn't match isCaptionBox patterns).
 	StripCaptionFromCells(cells)
 
-	// Use the pre-computed grid from pdf.TableBuilder.GroupCells.
-	// Falls back to cell-level grouping only when called directly by tests
-	// without a pre-computed Grid (production always sets it).
+	// Use the precomputed per-page grid when available. A merged table with a
+	// missing page grid rebuilds from page-numbered boxes before flat cells.
 	var rows [][]pdf.TSRCell
 	if item != nil {
 		rows = item.Grid
 	}
-	if rows == nil && len(cells) > 0 && HasAnyText(cells) {
+	if len(rows) == 0 && item != nil && len(boxes) > 0 {
+		rows = groupFallbackBoxesByPage(boxes, item.Positions)
+	}
+	if len(rows) == 0 && len(cells) > 0 && HasAnyText(cells) {
 		rows = GroupTSRCellsToRows(cells)
 	}
 	if len(rows) > 0 && HasText(rows) {
+		orphanGap := maxOrphanMergeGapPoints
+		if item != nil && len(item.Grid) > 0 && item.Scale > 0 {
+			orphanGap *= item.Scale
+		}
 		// Clean up orphan columns then orphan rows (Python order: columns at
 		// construct_table:224-277, then rows at :279-333). Both passes mutate
 		// the same grid and may drop rows/columns, so item.Grid and item.Rows
 		// must be re-derived AFTER them (the old code set item.Rows before
 		// column cleanup, leaving it stale; item.Grid also went stale because
 		// CleanupOrphanRows returns a re-sliced header).
-		rows = CleanupOrphanColumns(rows)
+		rows = cleanupOrphanColumns(rows, orphanGap)
 		// Drop all-empty rows. Python's construct_table groups boxes by their
 		// R annotation (tbl[i] is the boxes for row i; a TSR row with no
 		// overlapping box contributes no row). Its HTML emitter also skips
@@ -72,7 +78,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		// every TSR cleanup pass. Drop it here so rows/Rows/HTML all match
 		// Python.
 		rows = DropAllEmptyRows(rows)
-		rows = CleanupOrphanRows(rows)
+		rows = cleanupOrphanRows(rows, orphanGap)
 		hdrs := HeaderSetWithBlockType(rows, boxes)
 		if item != nil {
 			item.Grid = rows
@@ -108,6 +114,43 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		}
 	}
 	return ""
+}
+
+func groupFallbackBoxesByPage(boxes []pdf.TextBox, positions []pdf.Position) [][]pdf.TSRCell {
+	var pages []int
+	seenPages := make(map[int]struct{})
+	for _, position := range positions {
+		for _, page := range position.PageNumbers {
+			if _, seen := seenPages[page]; seen {
+				continue
+			}
+			seenPages[page] = struct{}{}
+			pages = append(pages, page)
+		}
+	}
+	if len(pages) < 2 {
+		return nil
+	}
+	sort.Ints(pages)
+	for _, box := range boxes {
+		if !box.HasPageNumber {
+			return nil
+		}
+	}
+
+	pageSet := make(map[int][]pdf.TextBox, len(pages))
+	for _, box := range boxes {
+		pageSet[box.PageNumber] = append(pageSet[box.PageNumber], box)
+	}
+	grids := make([][][]pdf.TSRCell, 0, len(pages))
+	for _, page := range pages {
+		if pageBoxes := pageSet[page]; len(pageBoxes) > 0 {
+			if grid := GroupBoxesByRC(pageBoxes); len(grid) > 0 {
+				grids = append(grids, grid)
+			}
+		}
+	}
+	return stackGrids(grids...)
 }
 
 // boxHeaderSet returns rows that contain boxes with H annotations.
@@ -266,16 +309,20 @@ func minRectangleDistance(left1, right1, top1, bottom1, left2, right2, top2, bot
 
 // Orphan column/row cleanup (Python: construct_table:221-277 columns, :279-333 rows)
 
-// maxOrphanMergeGap is the maximum distance (in points) between an orphan
+// maxOrphanMergeGapPoints is the maximum distance (in PDF points) between an orphan
 // single cell and its neighbor to be considered an OCR fragment. If the distance
 // exceeds this threshold, the cell is a legitimate sparse column or row and
 // must be preserved to prevent column shift and structure distortion.
-const maxOrphanMergeGap = 25.0
+const maxOrphanMergeGapPoints = 25.0
 
 // CleanupOrphanColumns removes empty columns or merges close over-segmented fragments.
 // Matches Python's construct_table column cleanup (table_structure_recognizer.py:224-277),
 // which is gated on the ROW count: `if len(rows) >= 4` (construct_table:221).
 func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
+	return cleanupOrphanColumns(rows, maxOrphanMergeGapPoints)
+}
+
+func cleanupOrphanColumns(rows [][]pdf.TSRCell, maxGap float64) [][]pdf.TSRCell {
 	if len(rows) < 4 {
 		return rows
 	}
@@ -308,7 +355,7 @@ func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 
 		// Guard: if neighbors are too far away (exceeding fragment gap), this is a
 		// legitimate sparse column. Preserve it to avoid column shift.
-		if leftDist > maxOrphanMergeGap && rightDist > maxOrphanMergeGap {
+		if leftDist > maxGap && rightDist > maxGap {
 			j++
 			continue
 		}
@@ -330,9 +377,13 @@ func CleanupOrphanColumns(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 
 // CleanupOrphanRows removes rows that hold exactly one non-empty cell when the
 // table has >=4 columns, merging that lone cell into its nearest vertical
-// neighbor if it is within maxOrphanMergeGap. Mirrors Python's construct_table row cleanup
+// neighbor if it is within maxOrphanMergeGapPoints. Mirrors Python's construct_table row cleanup
 // (table_structure_recognizer.py:279-333).
 func CleanupOrphanRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
+	return cleanupOrphanRows(rows, maxOrphanMergeGapPoints)
+}
+
+func cleanupOrphanRows(rows [][]pdf.TSRCell, maxGap float64) [][]pdf.TSRCell {
 	if len(rows) == 0 || len(rows[0]) < 4 {
 		return rows
 	}
@@ -388,7 +439,7 @@ func CleanupOrphanRows(rows [][]pdf.TSRCell) [][]pdf.TSRCell {
 		}
 		// Guard: if vertical gap is too large, it is a legitimate category/subtotal
 		// row rather than a vertical fragment. Preserve it.
-		if up > maxOrphanMergeGap && down > maxOrphanMergeGap {
+		if up > maxGap && down > maxGap {
 			i++
 			continue
 		}

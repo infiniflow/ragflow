@@ -48,6 +48,56 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 	t.Logf("HTML:\n%s", html)
 }
 
+func TestConstructTable_GroupsFallbackBoxesByPage(t *testing.T) {
+	item := pdf.TableItem{
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}},
+			{PageNumbers: []int{1}},
+		},
+		Cells: []pdf.TSRCell{
+			{Text: "A", X0: 0, Y0: 10, X1: 80, Y1: 20},
+			{Text: "B", X0: 100, Y0: 10, X1: 180, Y1: 20},
+			{Text: "C", X0: 0, Y0: 30, X1: 80, Y1: 40},
+			{Text: "D", X0: 100, Y0: 30, X1: 180, Y1: 40},
+			{Text: "E", X0: 0, Y0: 10, X1: 80, Y1: 20},
+			{Text: "F", X0: 100, Y0: 10, X1: 180, Y1: 20},
+			{Text: "G", X0: 0, Y0: 30, X1: 80, Y1: 40},
+			{Text: "H", X0: 100, Y0: 30, X1: 180, Y1: 40},
+		},
+	}
+	boxes := []pdf.TextBox{
+		{Text: "A", X0: 0, X1: 80, Top: 10, Bottom: 20, PageNumber: 0, HasPageNumber: true, R: 0, C: 0, RTop: 10, RBott: 20},
+		{Text: "B", X0: 100, X1: 180, Top: 10, Bottom: 20, PageNumber: 0, HasPageNumber: true, R: 0, C: 1, RTop: 10, RBott: 20},
+		{Text: "C", X0: 0, X1: 80, Top: 30, Bottom: 40, PageNumber: 0, HasPageNumber: true, R: 1, C: 0, RTop: 30, RBott: 40},
+		{Text: "D", X0: 100, X1: 180, Top: 30, Bottom: 40, PageNumber: 0, HasPageNumber: true, R: 1, C: 1, RTop: 30, RBott: 40},
+		{Text: "E", X0: 0, X1: 80, Top: 10, Bottom: 20, PageNumber: 1, HasPageNumber: true, R: 0, C: 0, RTop: 10, RBott: 20},
+		{Text: "F", X0: 100, X1: 180, Top: 10, Bottom: 20, PageNumber: 1, HasPageNumber: true, R: 0, C: 1, RTop: 10, RBott: 20},
+		{Text: "G", X0: 0, X1: 80, Top: 30, Bottom: 40, PageNumber: 1, HasPageNumber: true, R: 1, C: 0, RTop: 30, RBott: 40},
+		{Text: "H", X0: 100, X1: 180, Top: 30, Bottom: 40, PageNumber: 1, HasPageNumber: true, R: 1, C: 1, RTop: 30, RBott: 40},
+	}
+
+	ConstructTable(nil, boxes, "", &item)
+
+	want := [][]string{{"A", "B"}, {"C", "D"}, {"E", "F"}, {"G", "H"}}
+	if len(item.Rows) != len(want) {
+		t.Fatalf("got %d rows, want %d: %v", len(item.Rows), len(want), item.Rows)
+	}
+	for i := range want {
+		if strings.Join(item.Rows[i], "|") != strings.Join(want[i], "|") {
+			t.Errorf("row %d = %v, want %v", i, item.Rows[i], want[i])
+		}
+	}
+}
+
+func TestConstructTable_EmptyGridFallsBackToCells(t *testing.T) {
+	item := pdf.TableItem{Grid: make([][]pdf.TSRCell, 0)}
+	cells := []pdf.TSRCell{{Text: "value", X0: 0, Y0: 0, X1: 80, Y1: 20}}
+	html := ConstructTable(cells, nil, "", &item)
+	if !strings.Contains(html, ">value<") {
+		t.Fatalf("empty grid lost cell text: %s", html)
+	}
+}
+
 // TestConstructTable_DropsAllEmptyRow pins Python parity: when the
 // TSR-derived grid carries a row that no text box landed in
 // (e.g. an extra "table row" detected next to a "table projected row
@@ -981,5 +1031,50 @@ func TestCleanupOrphanRows_PreservesSparseRowsWithNormalGaps(t *testing.T) {
 	}
 	if result[2][0].Text != "Subtotal" {
 		t.Errorf("expected 'Subtotal' in row 2, got %q", result[2][0].Text)
+	}
+}
+
+func TestConstructTable_OrphanGapUsesRenderedScale(t *testing.T) {
+	item := pdf.TableItem{
+		Scale: 3,
+		Grid: [][]pdf.TSRCell{
+			{{Text: "L0", X0: 0, X1: 40}, {X0: 90, X1: 140}, {Text: "R0", X0: 190, X1: 230}},
+			{{Text: "L1", X0: 0, X1: 40}, {X0: 90, X1: 140}, {Text: "R1", X0: 190, X1: 230}},
+			{{Text: "L2", X0: 0, X1: 40}, {Text: "Note", X0: 90, X1: 140}, {X0: 190, X1: 230}},
+			{{Text: "L3", X0: 0, X1: 40}, {X0: 90, X1: 140}, {Text: "R3", X0: 190, X1: 230}},
+		},
+	}
+
+	ConstructTable(nil, nil, "", &item)
+
+	if len(item.Grid[0]) != 2 {
+		t.Fatalf("50 rendered pixels at scale 3 are under the 25-point limit; want merged 2-column grid, got %d columns", len(item.Grid[0]))
+	}
+	if item.Rows[2][1] != "Note" {
+		t.Fatalf("orphan text = %q, want it preserved in the neighboring cell", item.Rows[2][1])
+	}
+}
+
+func TestConstructTable_OrphanRowGapUsesRenderedScale(t *testing.T) {
+	cell := func(text string, y float64) pdf.TSRCell {
+		return pdf.TSRCell{Text: text, Y0: y, Y1: y + 20}
+	}
+	item := pdf.TableItem{
+		Scale: 3,
+		Grid: [][]pdf.TSRCell{
+			{cell("H0", 0), cell("H1", 0), cell("H2", 0), cell("H3", 0)},
+			{cell("", 30), cell("Note", 30), cell("", 30), cell("", 30)},
+			{cell("A", 100), cell("", 100), cell("B", 100), cell("C", 100)},
+			{cell("D", 130), cell("E", 130), cell("F", 130), cell("G", 130)},
+		},
+	}
+
+	ConstructTable(nil, nil, "", &item)
+
+	if len(item.Rows) != 3 {
+		t.Fatalf("50 rendered pixels at scale 3 are under the 25-point row limit; want 3 rows, got %d: %v", len(item.Rows), item.Rows)
+	}
+	if item.Rows[1][1] != "Note" {
+		t.Fatalf("orphan row text = %q, want it preserved in the neighboring row", item.Rows[1][1])
 	}
 }

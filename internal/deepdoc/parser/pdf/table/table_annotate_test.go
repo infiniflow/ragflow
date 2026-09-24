@@ -689,3 +689,14 @@ func TestCleanupOverlappingTableRegions_ContainedFragmentCannotSwallowParent(t *
 		t.Fatalf("near-duplicate overlap should keep the higher-confidence box, got %+v", out)
 	}
 }
+
+func TestCleanupOverlappingTableRegions_KeepsAmbiguousPartialOverlap(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeTable},
+		{X0: 40, Y0: 0, X1: 140, Y1: 100, Confidence: 0.8, Label: pdf.LayoutTypeTable},
+	}
+	out := cleanupOverlappingTableRegions(regions)
+	if len(out) != 2 {
+		t.Fatalf("two table regions with 60%% mutual overlap are ambiguous; want both retained, got %+v", out)
+	}
+}

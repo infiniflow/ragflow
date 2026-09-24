@@ -624,9 +624,9 @@ func TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights(t 
 func TestStackGrids_StripsRepeatedHeaderRow(t *testing.T) {
 	grid1 := [][]pdf.TSRCell{
 		{
-			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号"},
-			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称"},
-			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号"},
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号", Label: "table column header"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称", Label: "table column header"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号", Label: "table column header"},
 		},
 		{
 			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "1"},
@@ -636,9 +636,9 @@ func TestStackGrids_StripsRepeatedHeaderRow(t *testing.T) {
 	}
 	grid2 := [][]pdf.TSRCell{
 		{
-			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号"},
-			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称"},
-			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号"},
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号", Label: "table column header"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称", Label: "table column header"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号", Label: "table column header"},
 		},
 		{
 			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "2"},
@@ -874,7 +874,7 @@ func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T
 // strip real data rows as "repeated headers". Exact matches still count.
 func TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched(t *testing.T) {
 	cell := func(txt string) pdf.TSRCell {
-		return pdf.TSRCell{Text: txt, X0: 0, X1: 100, Y0: 0, Y1: 10}
+		return pdf.TSRCell{Text: txt, Label: "table column header", X0: 0, X1: 100, Y0: 0, Y1: 10}
 	}
 	header := []pdf.TSRCell{cell("价"), cell("量")}
 	dataRow := []pdf.TSRCell{cell("价格"), cell("数量"), cell("优质")}
@@ -884,5 +884,21 @@ func TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched(t *testing.T) {
 	repeated := []pdf.TSRCell{cell("价"), cell("量")}
 	if !isRepeatedHeader(header, repeated) {
 		t.Error("exact repeated single-CJK header must still be stripped")
+	}
+}
+
+func TestIsRepeatedHeader_DoesNotDropRowsWithOnlyPartialHeaderWords(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "Name", Label: "table column header"}, {Text: "Price", Label: "table column header"}, {Text: "Unit", Label: "table column header"}}
+	data := []pdf.TSRCell{{Text: "Named item"}, {Text: "Pricey goods"}, {Text: "kg"}}
+	if isRepeatedHeader(header, data) {
+		t.Fatal("a data row with two header words as substrings must not be removed")
+	}
+}
+
+func TestIsRepeatedHeader_DoesNotDropUnlabelledDataMatchingHeader(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "Type", Label: "table column header"}, {Text: "Value", Label: "table column header"}}
+	data := []pdf.TSRCell{{Text: "Type"}, {Text: "Value"}}
+	if isRepeatedHeader(header, data) {
+		t.Fatal("an unlabelled data row with the same text as the header must be retained")
 	}
 }
