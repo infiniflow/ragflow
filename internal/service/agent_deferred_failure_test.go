@@ -114,7 +114,7 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 	tracker, _ := newAgentCancelTracker(t)
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)
 	events, err := svc.RunAgent(
-		t.Context(),
+		WithAgentSessionID(t.Context(), "session-deferred-fail"),
 		"user-1",
 		"canvas-deferred-fail",
 		"session-deferred-fail",

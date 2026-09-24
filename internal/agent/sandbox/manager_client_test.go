@@ -83,41 +83,6 @@ func TestManagerClient_MapsLegacyResultKeyToSandboxResponse(t *testing.T) {
 	}
 }
 
-type managerClientFlattenedResultProvider struct{}
-
-func (managerClientFlattenedResultProvider) Initialize(context.Context) error { return nil }
-func (managerClientFlattenedResultProvider) ProviderType() ProviderType {
-	return ProviderUCloudAgentSandbox
-}
-func (managerClientFlattenedResultProvider) CreateInstance(context.Context, string) (*SandboxInstance, error) {
-	return &SandboxInstance{InstanceID: "inst-flat", Provider: ProviderUCloudAgentSandbox, Status: "running"}, nil
-}
-func (managerClientFlattenedResultProvider) ExecuteCode(context.Context, *SandboxInstance, string, string, int, map[string]any) (*ExecutionResult, error) {
-	return &ExecutionResult{Metadata: map[string]any{
-		"result_present": true,
-		"result_value":   "ucloud result",
-		"result_type":    "string",
-	}}, nil
-}
-func (managerClientFlattenedResultProvider) DestroyInstance(context.Context, *SandboxInstance) error {
-	return nil
-}
-func (managerClientFlattenedResultProvider) HealthCheck(context.Context) error { return nil }
-func (managerClientFlattenedResultProvider) SupportedLanguages() []string      { return []string{"python"} }
-
-func TestManagerClient_MapsFlattenedProviderResult(t *testing.T) {
-	mgr := &ProviderManager{}
-	mgr.SetProvider(managerClientFlattenedResultProvider{})
-
-	resp, err := (&ManagerClient{manager: mgr}).ExecuteCode(t.Context(), agenttool.SandboxRequest{Lang: "python"})
-	if err != nil {
-		t.Fatalf("ExecuteCode: %v", err)
-	}
-	if resp.StructuredResult["value"] != "ucloud result" || resp.Returned != "ucloud result" {
-		t.Fatalf("flattened result = %#v, Returned=%q", resp.StructuredResult, resp.Returned)
-	}
-}
-
 type managerClientResultKeyProvider struct{}
 
 func (managerClientResultKeyProvider) Initialize(context.Context) error { return nil }

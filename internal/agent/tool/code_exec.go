@@ -223,6 +223,7 @@ func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error)
 	}
 	if strings.TrimSpace(r.Stderr) != "" &&
 		!hasStructuredResult &&
+		r.Returned == "" &&
 		len(out.Artifacts) == 0 &&
 		strings.TrimSpace(r.Stdout) == "" {
 		out.Error = r.Stderr

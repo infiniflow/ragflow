@@ -104,7 +104,6 @@ func (s *CanvasState) EnsureSysDate() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.ensureInitializedLocked()
 	if s.Sys == nil {
 		s.Sys = make(map[string]any)
 	}
@@ -602,7 +601,7 @@ func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	defer s.mu.Unlock()
 	s.ensureInitializedLocked()
 	b, ok := s.Outputs[cpnID]
-	if !ok {
+	if !ok || b == nil {
 		b = make(map[string]any)
 		s.Outputs[cpnID] = b
 	}
@@ -627,9 +626,6 @@ func (s *CanvasState) ensureInitializedLocked() {
 	}
 	if s.CancelFlag == nil {
 		s.CancelFlag = &atomic.Bool{}
-	}
-	if s.activeHistoryIndex == 0 && len(s.History) == 0 {
-		s.activeHistoryIndex = -1
 	}
 }
 
@@ -900,7 +896,7 @@ func getVarLocked(s *CanvasState, ref string) (any, error) {
 // setVarLocked is the lock-free inner SetVar. Caller must hold s.mu.
 func setVarLocked(outputs map[string]map[string]any, cpnID, param string, v any) {
 	bucket, ok := outputs[cpnID]
-	if !ok {
+	if !ok || bucket == nil {
 		bucket = make(map[string]any)
 		outputs[cpnID] = bucket
 	}
@@ -912,7 +908,7 @@ func setVarLocked(outputs map[string]map[string]any, cpnID, param string, v any)
 			return
 		}
 		next, ok := cur[p].(map[string]any)
-		if !ok {
+		if !ok || next == nil {
 			next = make(map[string]any)
 			cur[p] = next
 		}

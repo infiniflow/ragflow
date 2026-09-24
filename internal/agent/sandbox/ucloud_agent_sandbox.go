@@ -285,28 +285,22 @@ func (p *UCloudAgentSandboxProvider) ExecuteCode(
 	if err := p.collectArtifacts(ctx, instance.sandbox, path.Join(instance.remoteWorkDir, "artifacts"), "", &artifacts, 0); err != nil {
 		return nil, err
 	}
-	metadata := map[string]any{
-		"instance_id":     inst.InstanceID,
-		"sandbox_id":      instance.sandbox.ID,
-		"language":        normalizedLanguage,
-		"script_path":     scriptPath,
-		"remote_work_dir": instance.remoteWorkDir,
-		"status":          map[bool]string{true: "ok", false: "error"}[commandResult.ExitCode == 0],
-		"timeout":         executionTimeout,
-		"artifacts":       artifacts,
-		"result_present":  structured["present"],
-		"result_value":    structured["value"],
-		"result_type":     structured["type"],
-	}
-	if structured != nil {
-		metadata["structured_result"] = structured
-	}
 	return &ExecutionResult{
 		Stdout:        stdout,
 		Stderr:        commandResult.Stderr,
 		ExitCode:      commandResult.ExitCode,
 		ExecutionTime: executionTime,
-		Metadata:      metadata,
+		Metadata: map[string]any{
+			"instance_id":       inst.InstanceID,
+			"sandbox_id":        instance.sandbox.ID,
+			"language":          normalizedLanguage,
+			"script_path":       scriptPath,
+			"remote_work_dir":   instance.remoteWorkDir,
+			"status":            map[bool]string{true: "ok", false: "error"}[commandResult.ExitCode == 0],
+			"timeout":           executionTimeout,
+			"artifacts":         artifacts,
+			"structured_result": structured,
+		},
 	}, nil
 }
 

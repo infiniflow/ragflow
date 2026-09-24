@@ -65,30 +65,12 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if db == nil {
 		db = dao.DB
 	}
-	toolReq := agenttool.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		MemoryIDs:                req.MemoryIDs,
-		TopN:                     req.TopN,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		TopK:                     req.TopK,
-		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
-		UseKG:                    req.UseKG,
-		SimilarityThreshold:      req.SimilarityThreshold,
-		AllowDenseFallback:       new(false),
-		CrossLanguages:           req.CrossLanguages,
-		RetrievalFrom:            req.RetrievalFrom,
-		DocScope:                 req.DocScope,
-		TenantID:                 req.TenantID,
-		MetaDataFilter:           req.MetaDataFilter,
-		// rank_feature (Python retrieve: rank_feature=label_question(question,
-		// self.kbs)) — forwarded from the RAGTools-computed value so the agentic
-		// tool stays authoritative; the adapter falls back to its own resolution.
-		RankFeature: rankFeatureOrNil(req.RankFeature),
-		// OnlyOriginalText restricts retrieval to ordinary document chunks (no
-		// compile_kwd) — Python hybrid_search's must_not={"exists":"compile_kwd"}.
-		ExcludeCompiled: req.OnlyOriginalText,
-	}
+	// RetrievalRequest is the same runtime-owned type on both sides. Forward it
+	// whole so new fields cannot disappear at this bridge, then apply the two
+	// Agentic caller policies owned here.
+	toolReq := agenttool.RetrievalRequest(req)
+	toolReq.AllowDenseFallback = new(false)
+	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
 	chunks, err := svc.Search(ctx, db, toolReq)
 	if err != nil {
 		return nil, err

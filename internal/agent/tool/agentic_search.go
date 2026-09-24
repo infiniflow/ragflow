@@ -41,12 +41,11 @@ const (
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.
 type hybridSearchArgs struct {
-	Query       string   `json:"query"`
-	KbIDs       []string `json:"kb_ids,omitempty"`
-	TopN        int      `json:"top_n,omitempty"`
-	DocScope    []string `json:"doc_scope,omitempty"`
-	Keywords    string   `json:"keywords,omitempty"`
-	UseCompiled bool     `json:"use_compiled,omitempty"`
+	Query    string   `json:"query"`
+	KbIDs    []string `json:"kb_ids,omitempty"`
+	TopN     int      `json:"top_n,omitempty"`
+	DocScope []string `json:"doc_scope,omitempty"`
+	Keywords string   `json:"keywords,omitempty"`
 }
 
 type agenticSearchResult struct {
@@ -89,11 +88,10 @@ func (a *AgenticSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			"query": {
 				Type: schema.String, Required: true, Desc: "The search query.",
 			},
-			"kb_ids":       {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
-			"top_n":        {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
-			"doc_scope":    {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
-			"keywords":     {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
-			"use_compiled": {Type: schema.Boolean, Desc: "Whether to enrich with compiled products."},
+			"kb_ids":    {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
+			"top_n":     {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
+			"doc_scope": {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
+			"keywords":  {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
 		}),
 	}, nil
 }
@@ -132,7 +130,8 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		AllowDenseFallback:       new(false),
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
-		ExcludeCompiled:          !args.UseCompiled,
+		TenantID:                 tenantID,
+		ExcludeCompiled:          true,
 	}
 	chunks, err := svc.Search(ctx, nil, req)
 	if err != nil {

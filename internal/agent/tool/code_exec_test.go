@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -526,19 +527,87 @@ func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
 	}
 }
 
-func TestCodeExec_ResultFallsBackToReturnedValue(t *testing.T) {
+func TestCodeExec_ResultPrecedence(t *testing.T) {
 	t.Parallel()
 
-	out, err := codeExecResultJSON(t.Context(), &SandboxResponse{Returned: "legacy result"})
-	if err != nil {
-		t.Fatalf("codeExecResultJSON: %v", err)
+	tests := []struct {
+		name       string
+		response   *SandboxResponse
+		wantResult any
+		wantType   string
+	}{
+		{
+			name: "structured result wins over legacy and streams",
+			response: &SandboxResponse{
+				StructuredResult: map[string]any{"present": true, "value": float64(8)},
+				Returned:         "legacy",
+				Stdout:           "stdout",
+				Stderr:           "warning",
+			},
+			wantResult: float64(8),
+			wantType:   "Number",
+		},
+		{
+			name: "explicit structured null wins over legacy and streams",
+			response: &SandboxResponse{
+				StructuredResult: map[string]any{"present": true, "value": nil},
+				Returned:         "legacy",
+				Stdout:           "stdout",
+				Stderr:           "warning",
+			},
+			wantType: "Null",
+		},
+		{
+			name: "legacy returned value tolerates warning streams",
+			response: &SandboxResponse{
+				Returned: "legacy result",
+				Stderr:   "warning",
+			},
+			wantResult: "legacy result",
+			wantType:   "String",
+		},
+		{
+			name: "legacy returned value wins over stdout and stderr",
+			response: &SandboxResponse{
+				Returned: "legacy result",
+				Stdout:   "diagnostic output",
+				Stderr:   "warning",
+			},
+			wantResult: "legacy result",
+			wantType:   "String",
+		},
+		{
+			name:       "stdout remains the final fallback",
+			response:   &SandboxResponse{Stdout: `{"a":[1,2]}`},
+			wantResult: map[string]any{"a": []any{float64(1), float64(2)}},
+			wantType:   "Object",
+		},
 	}
-	var got codeExecResult
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("output not valid JSON: %v", err)
-	}
-	if got.Content != "legacy result" || got.RawResult != "legacy result" {
-		t.Fatalf("Returned fallback = %#v, want legacy result", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := codeExecResultJSON(t.Context(), tt.response)
+			if err != nil {
+				t.Fatalf("codeExecResultJSON: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("output not valid JSON: %v", err)
+			}
+			if got["_ERROR"] != nil {
+				t.Fatalf("_ERROR = %#v, want successful result", got["_ERROR"])
+			}
+			if tt.wantResult == nil {
+				if _, ok := got["raw_result"]; ok {
+					t.Fatalf("raw_result = %#v, want omitted JSON null", got["raw_result"])
+				}
+			} else if !reflect.DeepEqual(got["raw_result"], tt.wantResult) {
+				t.Fatalf("raw_result = %#v, want %#v", got["raw_result"], tt.wantResult)
+			}
+			if got["actual_type"] != tt.wantType {
+				t.Fatalf("actual_type = %#v, want %q", got["actual_type"], tt.wantType)
+			}
+		})
 	}
 }
 

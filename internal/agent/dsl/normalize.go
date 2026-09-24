@@ -459,64 +459,8 @@ func deepCopyAny(v any) any {
 	}
 }
 
-// deepCopyGraph copies a graph block. Nodes and edges are deep-copied
-// element-by-element so that later mutations (e.g. data.label rewrite
-// in fixComponentNames) target the copy, not the caller's input.
-func deepCopyGraph(g map[string]any) map[string]any {
-	out := make(map[string]any, len(g))
-	for k, v := range g {
-		switch k {
-		case "nodes":
-			if nodes, ok := v.([]any); ok {
-				copied := make([]any, len(nodes))
-				for i, n := range nodes {
-					copied[i] = deepCopyAny(n)
-				}
-				out["nodes"] = copied
-			} else {
-				out["nodes"] = v
-			}
-		case "edges":
-			if edges, ok := v.([]any); ok {
-				copied := make([]any, len(edges))
-				for i, e := range edges {
-					copied[i] = deepCopyAny(e)
-				}
-				out["edges"] = copied
-			} else {
-				out["edges"] = v
-			}
-		default:
-			out[k] = v
-		}
-	}
-	return out
-}
-
-// deepCopyComponents copies a components block. Each component
-// entry is a new map; the `obj` sub-map (when present) is also
-// deep-copied so rewrites to component_name / params land on
-// the copy.
-func deepCopyComponents(c map[string]any) map[string]any {
-	out := make(map[string]any, len(c))
-	for k, v := range c {
-		if cm, ok := v.(map[string]any); ok {
-			entry := deepCopyAny(cm).(map[string]any)
-			if obj, ok := cm["obj"].(map[string]any); ok {
-				entry["obj"] = deepCopyAny(obj)
-			}
-			out[k] = entry
-		} else {
-			out[k] = v
-		}
-	}
-	return out
-}
-
 // copyMapStringAny returns a shallow copy of m. The new map
-// aliases the original values; callers that need a deeper copy
-// recurse on their own (e.g. deepCopyGraph / deepCopyComponents
-// recurse on `obj` and on each node / edge).
+// aliases the original values.
 func copyMapStringAny(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {

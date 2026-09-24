@@ -143,7 +143,7 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
-func TestAgenticSearchControlsCompiledResults(t *testing.T) {
+func TestAgenticSearchExcludesCompiledResults(t *testing.T) {
 	previous := GetRetrievalService()
 	service := &capturingRetrievalService{}
 	SetRetrievalService(service)
@@ -159,11 +159,22 @@ func TestAgenticSearchControlsCompiledResults(t *testing.T) {
 	if !service.req.ExcludeCompiled {
 		t.Fatal("default agentic search should exclude compiled results")
 	}
-	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"compiled","kb_ids":["kb-1"],"use_compiled":true}`); err != nil {
+	if service.req.TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", service.req.TenantID)
+	}
+}
+
+func TestAgenticSearchDoesNotAdvertiseUnsupportedCompiledExpansion(t *testing.T) {
+	info, err := NewAgenticSearchTool(toolHybridSearch).Info(t.Context())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if service.req.ExcludeCompiled {
-		t.Fatal("use_compiled=true should include compiled results")
+	schemaJSON, err := json.Marshal(info.ParamsOneOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(schemaJSON), `"use_compiled"`) {
+		t.Fatalf("schema advertises unsupported compiled expansion: %s", schemaJSON)
 	}
 }
 
