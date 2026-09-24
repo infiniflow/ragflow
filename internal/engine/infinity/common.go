@@ -158,6 +158,20 @@ func fieldKeyword(fieldName string) bool {
 	return false
 }
 
+// fieldJSON reports fields stored as Infinity JSON columns. The Infinity Go
+// SDK expects JSON columns as encoded strings, not Go slices or maps.
+func fieldJSON(fieldName string) bool {
+	switch fieldName {
+	case "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
+		"related_kb_pages_kwd", "claims", "page_ids", "source_chunk_hashes",
+		"rechunked_from_chunk_ids", "aliases":
+		return true
+	default:
+		return false
+	}
+}
+
 // existsCondition builds a NOT EXISTS or field!=" condition
 func existsCondition(field string, tableColumns map[string]struct {
 	Type    string

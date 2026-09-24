@@ -34,7 +34,8 @@ const (
 )
 
 type wikiMapVersionStore struct {
-	engine engine.DocEngine
+	engine            engine.DocEngine
+	resolveVectorSize func(context.Context) (int, error)
 }
 
 func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error) {
@@ -69,6 +70,9 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	if state.Key == "" || state.TenantID == "" || state.DatasetID == "" || state.DocumentID == "" {
 		return fmt.Errorf("save Wiki MAP active state: key and scope are required")
 	}
+	if err := s.ensureInfinityChunkStore(ctx, state.TenantID, state.DatasetID); err != nil {
+		return err
+	}
 	row := map[string]interface{}{
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
@@ -89,6 +93,37 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 // discriminator, while preserving every chunk/hash version for reuse.
 func NewWikiMapVersionStore(docEngine engine.DocEngine) kccommon.WikiMapVersionStore {
 	return &wikiMapVersionStore{engine: docEngine}
+}
+
+// NewWikiMapVersionStoreWithVectorSizeResolver creates a Wiki MAP store that
+// can initialize an Infinity chunk table before inserting metadata-only MAP
+// rows. Elasticsearch does not need this resolver because it can create its
+// mapping dynamically.
+func NewWikiMapVersionStoreWithVectorSizeResolver(
+	docEngine engine.DocEngine,
+	resolveVectorSize func(context.Context) (int, error),
+) kccommon.WikiMapVersionStore {
+	return &wikiMapVersionStore{
+		engine:            docEngine,
+		resolveVectorSize: resolveVectorSize,
+	}
+}
+
+func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tenantID, datasetID string) error {
+	if engine.Type(s.engine) != engine.EngineInfinity || s.resolveVectorSize == nil {
+		return nil
+	}
+	vectorSize, err := s.resolveVectorSize(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki MAP vector size: %w", err)
+	}
+	if vectorSize <= 0 {
+		return fmt.Errorf("resolve Wiki MAP vector size: got %d", vectorSize)
+	}
+	if err := s.engine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", tenantID), datasetID, vectorSize, ""); err != nil {
+		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: %w", err)
+	}
+	return nil
 }
 
 func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, datasetID string, keys []string) (map[string][]byte, error) {
@@ -153,6 +188,9 @@ func (s *wikiMapVersionStore) PutWikiMapVersions(ctx context.Context, versions [
 		byScope[scope] = append(byScope[scope], version)
 	}
 	for _, scopedVersions := range byScope {
+		if err := s.ensureInfinityChunkStore(ctx, scopedVersions[0].TenantID, scopedVersions[0].DatasetID); err != nil {
+			return err
+		}
 		for start := 0; start < len(scopedVersions); start += wikiMapStoreBatchSize {
 			end := min(start+wikiMapStoreBatchSize, len(scopedVersions))
 			batch := scopedVersions[start:end]

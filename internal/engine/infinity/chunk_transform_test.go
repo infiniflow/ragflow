@@ -143,3 +143,37 @@ func TestTransformChunkFieldsJoinsNativeKeywordSlice(t *testing.T) {
 		t.Errorf("important_kwd_empty_count = %v, want 1", got["important_kwd_empty_count"])
 	}
 }
+
+// TestTransformChunkFieldsJSONSlices serializes Go-native slices for Infinity
+// JSON columns. Passing []string directly to the SDK is rejected as an
+// unsupported slice element type.
+func TestTransformChunkFieldsJSONSlices(t *testing.T) {
+	got := transformChunkFields(map[string]interface{}{
+		"source_chunk_ids": []string{"chunk-1", "chunk-2"},
+		"source_doc_ids":   []string{"doc-1"},
+	}, nil)
+
+	if want := `["chunk-1","chunk-2"]`; got["source_chunk_ids"] != want {
+		t.Errorf("source_chunk_ids = %#v, want %q", got["source_chunk_ids"], want)
+	}
+	if want := `["doc-1"]`; got["source_doc_ids"] != want {
+		t.Errorf("source_doc_ids = %#v, want %q", got["source_doc_ids"], want)
+	}
+}
+
+// TestTransformChunkFieldsDropsTenantRoutingField ensures the tenant routing
+// field is not sent to Infinity, whose per-tenant table schema does not have a
+// tenant_id column.
+func TestTransformChunkFieldsDropsTenantRoutingField(t *testing.T) {
+	got := transformChunkFields(map[string]interface{}{
+		"tenant_id": "tenant-1",
+		"kb_id":     "kb-1",
+	}, nil)
+
+	if _, ok := got["tenant_id"]; ok {
+		t.Fatal("tenant_id must not be sent to Infinity")
+	}
+	if got["kb_id"] != "kb-1" {
+		t.Fatalf("kb_id = %#v, want %q", got["kb_id"], "kb-1")
+	}
+}
