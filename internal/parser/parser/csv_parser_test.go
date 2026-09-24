@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -163,6 +164,7 @@ func TestDetectCSVDelimiter(t *testing.T) {
 		{"semicolon inside a quoted field", "Name,Note\nWidget,\"a;b\"\nCable,\"c;d;e\"\n", ','},
 		{"single column", "Name\nWidget\nCable\n", ','},
 		{"whitespace-only row", "Name;Region\n   \nWidget;EU\n", ';'},
+		{"whitespace-only lines before the header", strings.Repeat("  \n", csvSampleRows) + "Name;Region\nWidget;EU\n", ';'},
 		{"rows disagree under every separator", "Name,Note\nWidget\n", ','},
 	}
 	for _, tc := range cases {
@@ -180,6 +182,24 @@ func TestDetectCSVDelimiter_LeavesOutTheRowTheSampleCutsShort(t *testing.T) {
 	text := header + filler + "Cable;EU;12\n"
 	if !strings.HasSuffix(text[:csvSampleBytes], "\nCable;E") {
 		t.Fatalf("sample does not end inside the third row: %q", text[csvSampleBytes-12:csvSampleBytes])
+	}
+	if got := detectCSVDelimiter(text); got != ';' {
+		t.Errorf("detectCSVDelimiter = %q, want ';'", got)
+	}
+}
+
+func TestDetectCSVDelimiter_LeavesOutTheLastSampledRowWhenTheCutEndsIt(t *testing.T) {
+	// csvSampleRows rows fit in the sample only because the last of them is
+	// cut short: "18;xxx" has two fields where the others have three.
+	cell := strings.Repeat("x", 3600)
+	var b strings.Builder
+	b.WriteString("a;b;c\n")
+	for i := 0; i < 40; i++ {
+		fmt.Fprintf(&b, "%d;%s;end\n", i, cell)
+	}
+	text := b.String()
+	if n := strings.Count(text[:csvSampleBytes], "\n"); n != csvSampleRows-1 {
+		t.Fatalf("sample holds %d complete rows, want %d", n, csvSampleRows-1)
 	}
 	if got := detectCSVDelimiter(text); got != ';' {
 		t.Errorf("detectCSVDelimiter = %q, want ';'", got)

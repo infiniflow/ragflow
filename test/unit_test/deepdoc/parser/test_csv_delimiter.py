@@ -107,6 +107,25 @@ def test_the_row_the_sample_cuts_is_left_out():
 
 
 @pytest.mark.p2
+def test_the_last_sampled_row_is_left_out_when_the_sample_cuts_it():
+    """CSV_SAMPLE_ROWS rows fit only because the last of them is cut short."""
+    cell = "x" * 3600
+    text = "a;b;c\n" + "".join(f"{i};{cell};end\n" for i in range(40))
+    assert text[: excel_parser.CSV_SAMPLE_CHARS].count("\n") == excel_parser.CSV_SAMPLE_ROWS - 1
+
+    assert detect_csv_delimiter(text) == ";"
+
+
+@pytest.mark.p2
+def test_leading_blank_lines_do_not_use_up_the_sample():
+    text = "\n" * (excel_parser.CSV_SAMPLE_ROWS + 5) + _text(";")
+
+    assert detect_csv_delimiter(text) == ";"
+    workbook = RAGFlowExcelParser._read_csv(BytesIO(text.encode("utf-8")))
+    assert list(workbook.columns) == ["Name", "Region", "Units"]
+
+
+@pytest.mark.p2
 def test_the_sample_can_end_inside_a_quoted_line_break():
     cell = '"' + ("y" * 70 + "\n") * 60 + '"'
     text = "a;b;c\n" + "".join(f"{i};{cell};end\n" for i in range(40))

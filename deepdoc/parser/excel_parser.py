@@ -47,20 +47,21 @@ def _consistent_column_count(sample, delimiter, truncated):
 
     When `truncated` is set, the sample is a prefix of a longer file, so the row
     it ends in stops wherever the read did, between two fields or inside a
-    quoted one. That row is left out rather than counted as having fewer columns.
+    quoted one. That row is left out rather than counted as having fewer columns,
+    also when it is the last of the CSV_SAMPLE_ROWS rows sampled.
     """
     rows = []
+    reader = csv.reader(StringIO(sample, newline=""), delimiter=delimiter)
     try:
-        for index, row in enumerate(csv.reader(StringIO(sample, newline=""), delimiter=delimiter)):
-            if index >= CSV_SAMPLE_ROWS:
-                break
+        for row in reader:
             if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
                 rows.append(row)
-        else:
-            if truncated and len(rows) > 1:
-                rows.pop()
+                if len(rows) == CSV_SAMPLE_ROWS:
+                    break
     except csv.Error:
         return 0
+    if truncated and len(rows) > 1 and reader.line_num == len(StringIO(sample, newline="").readlines()):
+        rows.pop()
     count = 0
     for row in rows:
         if count and len(row) != count:

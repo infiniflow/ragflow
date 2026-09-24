@@ -216,22 +216,21 @@ func detectCSVDelimiter(text string) rune {
 //
 // When truncated is set, the sample is a prefix of a longer file, so the row it
 // ends in stops wherever the read did, between two fields or inside a quoted
-// one. That row is left out rather than counted as having fewer columns.
+// one. That row is left out rather than counted as having fewer columns, also
+// when it is the last of the csvSampleRows rows sampled.
 func consistentColumnCount(sample string, delimiter rune, truncated bool) int {
 	reader := newCSVReader(sample, delimiter)
 	var rows [][]string
-	exhausted := false
-	for read := 0; read < csvSampleRows; read++ {
+	for len(rows) < csvSampleRows {
 		row, err := reader.Read()
 		if err != nil {
-			exhausted = true
 			break
 		}
 		if !isBlankCSVRow(row) {
 			rows = append(rows, row)
 		}
 	}
-	if exhausted && truncated && len(rows) > 1 {
+	if truncated && len(rows) > 1 && reader.InputOffset() == int64(len(sample)) {
 		rows = rows[:len(rows)-1]
 	}
 	count := 0
