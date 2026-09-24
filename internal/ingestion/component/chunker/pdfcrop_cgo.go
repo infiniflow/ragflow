@@ -147,23 +147,28 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		// in-memory base64 immediately, instead of carrying every chunk's
 		// image until the later batch upload pass (imageUploadDecorator).
 		// For a large PDF this bounds peak Go-heap retention during the
-		// chunker stage to a single chunk's image rather than the whole
-		// document's worth of base64 previews. The batch pass is idempotent:
+		// chunker stage to the in-flight set of cropped images (a bounded
+		// number of chunks) rather than the whole document's worth of base64
+		// previews. The batch pass is idempotent:
 		// it skips any chunk whose img_id is already set, so an upload that
 		// fails here simply falls through to that retry path. kb_id is empty
 		// only in canvas debug (dry-run) mode, where no persist stage runs
 		// and the decorator's debug branch drops the raw bytes instead.
 		if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
 			if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
-				// Key the upload under the chunk's FINALIZED text (after
-				// removeTag + context fold), not the raw pre-finalization
-				// text. This makes the stored img_id match the canonical
-				// chunk id that imageUploadDecorator assigns later
-				// (register.go) and Python's convention, so retrieval and
-				// any id-derived storage key stay consistent. Crop only
-				// depends on positions, so finalizing the text here does
-				// not alter the cropped image or the chunker's output text.
-				chunkID := common.ChunkID(docID, finalChunkTextForID(out[i]))
+				// Key the upload under exactly the text the canonical
+				// chunk id is derived from later in imageUploadDecorator:
+				// materializeMediaContext folds media context (and strips
+				// tags only when context exists) and is idempotent, so this
+				// matches register.go's ChunkID(docID, requireChunkText(ck))
+				// for EVERY chunk — including image/table chunks whose text
+				// still carries position tags when there is no media
+				// context. Using materializeMediaContext(out[i]) (not a bare
+				// removeTag) is what keeps the key equal to the decorator's
+				// id; crop depends only on positions, so reading the
+				// materialized text here does not alter the cropped image
+				// or the chunker's later output text.
+				chunkID := common.ChunkID(docID, materializeMediaContext(out[i]).Text)
 				if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
 					out[i].ImgID = imgID
 					out[i].Image = ""
@@ -175,16 +180,6 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		}
 	}
 	return out
-}
-
-// finalChunkTextForID returns the chunk text as the chunker will finalize it
-// (removeTag + context fold via materializeMediaContext) so the image upload
-// key equals the canonical chunk id that imageUploadDecorator assigns later.
-// It operates on a copy and does not mutate the caller's ChunkDoc; the
-// chunker's own output text is still finalized downstream in chunkOutputs.
-func finalChunkTextForID(ck schema.ChunkDoc) string {
-	ck.Text = removeTag(ck.Text)
-	return materializeMediaContext(ck).Text
 }
 
 // needsCrop reports whether a chunk should be cropped to a page-region
