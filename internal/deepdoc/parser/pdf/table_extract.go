@@ -101,15 +101,20 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	annotated = tbl.AnnotateBoxLayouts(annotated, regions, scale, float64(pageImg.Bounds().Dy()))
 
 	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
-	var items []pdf.TableItem
+	var candidates []pageTableCandidate
 	for i, tm := range tableMatches {
 		// Stamp the per-page table index so a replay analyzer can map a
 		// TSR call back to the correct Python intermediate table.
 		tctx := context.WithValue(ctx, tableIdxCtxKey, i)
 		item := p.processOneTable(tctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
 		if len(item.Cells) > 0 || len(item.Positions) > 0 {
-			items = append(items, item)
+			candidates = append(candidates, pageTableCandidate{item: item, boxIdx: tm.BoxIdx, region: tm.Region})
 		}
+	}
+	candidates = reconcileContainedPageTables(candidates, annotated)
+	items := make([]pdf.TableItem, 0, len(candidates))
+	for _, candidate := range candidates {
+		items = append(items, candidate.item)
 	}
 	return annotated, items, dlaRegions
 }
