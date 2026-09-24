@@ -216,6 +216,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var chatID string
 	var chatModelForFilter *models.ChatModel
 	filter := req.Filter
+	tenantRerankID := req.TenantRerankID
+	rerankID := req.RerankID
 	rerankCandidatesCount := 64
 	if req.RerankCandidatesCount != nil {
 		rerankCandidatesCount = *req.RerankCandidatesCount
@@ -235,6 +237,16 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			}
 			if searchMetaFilter, ok := searchConfigMap(searchConfig["meta_data_filter"]); ok {
 				filter = searchMetaFilter
+			}
+			if tenantRerankID == nil || strings.TrimSpace(*tenantRerankID) == "" {
+				if configuredTenantRerankID, ok := searchConfig["tenant_rerank_id"].(string); ok && strings.TrimSpace(configuredTenantRerankID) != "" {
+					tenantRerankID = &configuredTenantRerankID
+				}
+			}
+			if rerankID == nil || strings.TrimSpace(*rerankID) == "" {
+				if configuredRerankID, ok := searchConfig["rerank_id"].(string); ok && strings.TrimSpace(configuredRerankID) != "" {
+					rerankID = &configuredRerankID
+				}
 			}
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
@@ -398,20 +410,19 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
-	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, *req.TenantRerankID)
+	if tenantRerankID != nil && *tenantRerankID != "" {
+		target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, *tenantRerankID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
 		}
 		rerankModel = models.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
-	} else if req.RerankID != nil && *req.RerankID != "" {
-		rerankCompositeName := *req.RerankID
+	} else if rerankID != nil && *rerankID != "" {
+		rerankCompositeName := *rerankID
 		target, getErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
 		if getErr != nil {
-			rerankModel = nil
-		} else {
-			rerankModel = models.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", getErr)
 		}
+		rerankModel = models.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{

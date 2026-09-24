@@ -261,13 +261,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	// Resolve chat model ID.
 	modelID := ""
+	options := service.AskStreamOptions{}
 	if req.SearchID != "" && h.searchSvc != nil {
 		ctx := c.Request.Context()
 		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
-			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
-				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
-					modelID = cid
-				}
+			searchConfig := searchConfigFromDetail(detail)
+			options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
+			if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
+				modelID = chatID
 			}
 		}
 	}
@@ -298,7 +299,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
-	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
