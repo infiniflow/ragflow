@@ -31,6 +31,19 @@ func decodePNG(t *testing.T, data []byte) image.Image {
 	return img
 }
 
+func TestFastCropReturnsPlaceholderForInvertedBounds(t *testing.T) {
+	src := makeTestPageImage(100, 100, color.RGBA{255, 0, 0, 255})
+	for _, bounds := range [][4]int{
+		{80, 10, 20, 90},
+		{10, 80, 90, 20},
+	} {
+		got := FastCrop(src, bounds[0], bounds[1], bounds[2], bounds[3]).Bounds()
+		if got != image.Rect(0, 0, 1, 1) {
+			t.Errorf("FastCrop(%v) bounds = %v, want 1x1 placeholder", bounds, got)
+		}
+	}
+}
+
 func TestCropSectionImage_SinglePage(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(200, 300, color.RGBA{255, 0, 0, 255}),
@@ -330,34 +343,29 @@ func colorEqual(a, b color.Color) bool {
 	return ar == br && ag == bg && ab == bb && aa == ba
 }
 
-// TestCropSectionImage_MultiPage verifies the bottomRemaining fix for 3+ page
-// positions where page heights differ. Regression test for Bug #3.
+// TestCropSectionImage_MultiPage verifies that a non-positive trailing-page
+// remainder does not become an inverted crop region.
 func TestCropSectionImage_MultiPage(t *testing.T) {
 	// Page 0: tall (2000px), Page 1: short (800px), Page 2: short (800px)
-	// Content spans all 3 pages. The old bug subtracted full pageH2 from
-	// bottomRemaining instead of the actual clamped value, causing negative
-	// y1 on the last page → 1×1 placeholder crop.
+	// The range stores only its endpoint page numbers. With these page heights,
+	// the remaining crop height is exhausted before the trailing endpoint.
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(100, 2000, color.RGBA{200, 0, 0, 255}),
 		1: makeTestPageImage(100, 800, color.RGBA{0, 200, 0, 255}),
 		2: makeTestPageImage(100, 800, color.RGBA{0, 0, 200, 255}),
 	}
-	// pdf.Position spans pages 0-2, bottom reaches into page 2.
+	// The position range covers pages 0-2.
 	posTag := "@@1-3\t0.0\t100.0\t0.0\t500.0##"
 	b64 := CropSectionImage(posTag, pageImages, 1)
 	if b64 == "" {
 		t.Fatal("expected non-empty result for multi-page position")
 	}
-	// Decode and check height: content 500pt + bottom on page 1 clamped
-	// to 800 → page 1 crop 0-800, page 2 crop 0-200. Total with 2x6px gaps
-	// should be ~2000 + 200 + 12 = 2212.
+	// The first page and context bands should still yield a non-empty crop.
 	decoded, _ := base64.StdEncoding.DecodeString(b64)
 	img := decodePNG(t, decoded)
 	h := img.Bounds().Dy()
-	// Without the fix, page 2 gets negative y1 → 1x1 output (~100 + gap).
-	// With fix, proper crop from all 3 pages.
 	if h < 500 {
-		t.Errorf("multi-page height too small: got %d, want >= 500 (bug: bottomRemaining over-subtraction)", h)
+		t.Errorf("multi-page height too small: got %d, want >= 500", h)
 	}
 	t.Logf("multi-page stitch height: %d", h)
 }

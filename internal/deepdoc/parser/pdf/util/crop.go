@@ -6,7 +6,6 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"strings"
 
 	"go.uber.org/zap"
 
@@ -155,9 +154,16 @@ func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]imag
 			if pageNum == firstPage {
 				continue
 			}
+			if bottomRemaining <= 0 {
+				break
+			}
 			pageImage := decodedImages[pageNum]
 			bottomClamped := math.Min(bottomRemaining, float64(pageImage.Bounds().Dy()))
-			plan.addCrop(pageNum, int(left*zoom), 0, int(right*zoom), int(bottomClamped), entry.isEdge)
+			bottomPixels := int(bottomClamped)
+			if bottomPixels <= 0 {
+				break
+			}
+			plan.addCrop(pageNum, int(left*zoom), 0, int(right*zoom), bottomPixels, entry.isEdge)
 			bottomRemaining -= bottomClamped
 		}
 	}
