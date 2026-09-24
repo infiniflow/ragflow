@@ -18,16 +18,15 @@ from deepdoc.vision.ocr import _OPENCV_REMAP_MAX_DIM, OCR
 
 def _cv2_runtime_available() -> bool:
     try:
-        cv2.resize(np.zeros((2, 2, 3), dtype=np.uint8), (1, 1))
-        return True
+        resized = cv2.resize(np.zeros((2, 2, 3), dtype=np.uint8), (1, 1))
+        return isinstance(resized, np.ndarray) and resized.shape == (1, 1, 3)
     except Exception:
         return False
 
 
-# Several unit test modules replace sys.modules["cv2"] with a stub that raises on
-# every call when the real OpenCV wheel cannot be imported, and never restore it.
-# Those modules are collected before this one, so the geometry checks below need
-# a live OpenCV runtime rather than whatever "cv2" currently resolves to.
+# Earlier test modules may stub sys.modules["cv2"] when OpenCV cannot be imported.
+# Stubs can return mocks instead of raising, so require an actual resized image
+# before running the geometry checks.
 requires_cv2 = pytest.mark.skipif(
     not _cv2_runtime_available(),
     reason="OpenCV runtime is unavailable or stubbed out",
@@ -43,6 +42,11 @@ def _ocr_stub() -> OCR:
 
 def test_opencv_remap_max_dim_below_shrt_max():
     assert _OPENCV_REMAP_MAX_DIM < 32767
+
+
+def test_cv2_runtime_available_rejects_mock():
+    with patch(f"{__name__}.cv2", new=MagicMock()):
+        assert not _cv2_runtime_available()
 
 
 @requires_cv2
