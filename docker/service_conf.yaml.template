@@ -91,6 +91,13 @@ seekdb:
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
     port: ${SEEKDB_PORT:-2881}
+vastbase:
+  host: '${VB_HOST:-host.docker.internal}'
+  port: ${VB_PORT:-5432}
+  user: '${VB_USERNAME:-ragflow}'
+  password: '${VB_PASSWORD}'
+  db_name: '${VB_VEC_DBNAME:-ragflow}'
+  dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
 redis:
   db: 1
   username: '${REDIS_USERNAME:-}'

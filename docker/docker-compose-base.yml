@@ -273,6 +273,30 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+  
+  vastbase:
+    profiles:
+      - vastbase
+    image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
+    env_file: .env
+    environment:
+      - VB_PASSWORD=${VB_PASSWORD}
+      - VB_USERNAME=${VB_USERNAME}
+      - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+    ports:
+      - ${VB_PORT:-5432}:5432
+    volumes:
+      - vastbase_data:/home/vastbase/data
+      - ./vastbase/init:/docker-entrypoint-initdb.d
+      - ./vastbase/license:/home/vastbase/vastbase/lic
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "vsql -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   minio:
     image: pgsty/silo:RELEASE.2026-08-06T00-00-00Z
@@ -510,6 +534,8 @@ volumes:
   nats_data:
     driver: local
   clickhouse_data:
+    driver: local
+  vastbase_data:
     driver: local
 
 networks:
