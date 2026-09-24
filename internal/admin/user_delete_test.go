@@ -188,6 +188,10 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type) VALUES (?, ?, ?, ?, ?)", "model", "model", "provider", "instance", 1)
 	insert("INSERT INTO tenant_model_group (id, group_type, strategy) VALUES (?, ?, ?)", "group", "chat", "weighted")
 	insert("INSERT INTO tenant_model_group_mapping (group_id, provider_id, instance_id, model_id) VALUES (?, ?, ?, ?)", "group", "provider", "instance", "model")
+	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "own-commit", "own-kb", "Own page edit", "user-2", 1)
+	insert("INSERT INTO file_commit_item (id, commit_id, file_id, operation) VALUES (?, ?, ?, ?)", "own-commit-item", "own-commit", "own-page", "add")
+	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "other-commit", "team-kb", "Other page edit", "user-2", 1)
+	insert("INSERT INTO file_commit_item (id, commit_id, file_id, operation) VALUES (?, ?, ?, ?)", "other-commit-item", "other-commit", "other-page", "add")
 
 	docEngine := &deletionEngine{}
 	store := &deletionStorage{}
@@ -211,7 +215,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 		{"conversation", "own-conversation"}, {"conversation", "joined-conversation"}, {"api_4_conversation", "own-api-conversation"}, {"api_4_conversation", "agent-conversation"},
 		{"user_canvas", "agent"}, {"user_canvas_version", "agent-version"}, {"chat_channel", "channel"},
 		{"memory", "memory"}, {"tenant_model_provider", "provider"}, {"tenant_model_instance", "instance"},
-		{"tenant_model", "model"}, {"tenant_model_group", "group"},
+		{"tenant_model", "model"}, {"tenant_model_group", "group"}, {"file_commit", "own-commit"},
+		{"file_commit_item", "own-commit-item"},
 	} {
 		var count int64
 		if err := db.Table(item[0]).Where("id = ?", item[1]).Count(&count).Error; err != nil {
@@ -231,7 +236,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 			t.Fatalf("dependent rows remain in %s: count=%d, err=%v", table, count, err)
 		}
 	}
-	for _, tableID := range [][2]string{{"document", "other-doc"}, {"file", "other-file"}, {"search", "other-search"}, {"knowledgebase", "team-kb"}, {"dialog", "team-chat"}, {"conversation", "other-conversation"}} {
+	for _, tableID := range [][2]string{{"document", "other-doc"}, {"file", "other-file"}, {"search", "other-search"}, {"knowledgebase", "team-kb"}, {"dialog", "team-chat"}, {"conversation", "other-conversation"}, {"file_commit", "other-commit"}, {"file_commit_item", "other-commit-item"}} {
 		var count int64
 		if err := db.Table(tableID[0]).Where("id = ?", tableID[1]).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("shared resource %s/%s missing: count=%d, err=%v", tableID[0], tableID[1], count, err)
@@ -241,7 +246,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	if err := db.First(&team, "id = ?", "team-kb").Error; err != nil || team.DocNum != 1 || team.TokenNum != 3 || team.ChunkNum != 4 {
 		t.Fatalf("joined dataset counters = %+v, err=%v", team, err)
 	}
-	if !slices.Equal(store.buckets, []string{"own-kb"}) || !slices.Equal(store.emptyBuckets, []string{"own-folder"}) || !slices.Equal(store.files, []string{"own-kb/own.pdf", "team-kb/joined.pdf", "own-folder/own.pdf", "team-folder/joined.pdf"}) {
+	if !slices.Equal(store.buckets, []string{"own-kb", "user-1-downloads"}) || !slices.Equal(store.emptyBuckets, []string{"own-folder"}) || !slices.Equal(store.files, []string{"own-kb/own.pdf", "team-kb/joined.pdf", "own-folder/own.pdf", "team-folder/joined.pdf"}) {
 		t.Fatalf("storage cleanup = buckets %v, empty buckets %v, files %v", store.buckets, store.emptyBuckets, store.files)
 	}
 	if !slices.Contains(docEngine.dropped, "ragflow_user-1") || !slices.Contains(docEngine.dropped, "memory_user-1") || !slices.Contains(docEngine.deleted, "doc_id:[joined-doc]") || !slices.Contains(docEngine.deleted, "metadata:id:[joined-doc]") {
