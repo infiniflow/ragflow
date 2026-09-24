@@ -932,7 +932,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					if err != nil {
 						common.Warn("Retrieval failed", zap.Error(err))
-						// Continue with empty kbinfos.
+						out <- AsyncChatResult{
+							Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+							Final:  true,
+						}
+						return
 					}
 				}
 
