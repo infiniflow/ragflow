@@ -1,334 +1,102 @@
 ---
 sidebar_position: 2
-title: "Backup & Migration"
-sidebar_label: "Backup & Migration"
+title: "Go Backup and Migration"
+sidebar_label: "Go Backup and Migration"
 slug: /migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Backup & Migration
+# Go Backup and Migration
 
-- [Data migration](#data-migration)
-- [Migrate from multi-bucket to single-bucket mode](#migrate-from-multi-bucket-to-single-bucket-mode)
+This guide explains how to move the default Go Docker deployment to another host.
 
-## Data Migration
+The bundled `docker/migration.sh` covers only the MySQL, MinIO, Redis, and Elasticsearch volumes and is not a complete backup method for the Go Docker deployment. It does not include Kvrocks or optional service volumes. Use the volume procedure below to back up a Go deployment.
 
-:::info KUDOS
-This document is contributed by our community contributor [TreeDy](https://github.com/Treedy2020). We may not actively maintain this document.
-:::
+## Move a Go deployment to another host
 
-A common scenario is processing large datasets on a powerful instance (e.g., with a GPU) and then migrating the entire RAGFlow service to a different production environment (e.g., a CPU-only server). This guide explains how to safely back up and restore your data using our provided migration script.
+### 1. Identify all persistent data
 
-### Identify Your Data
-
-By default, RAGFlow uses Docker volumes to store all persistent data, including your database, uploaded files, and search indexes. You can see these volumes by running:
+From the repository root, inspect the running deployment and its Docker volumes:
 
 ```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml ps
 docker volume ls
 ```
 
-The output will look similar to this:
+Record the Compose project name and the volumes actually mounted by its running containers before stopping them. For each relevant container shown by `ps`, check its mounts with `docker inspect <container-name> --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}'`. `docker volume ls` also shows unrelated and unused volumes, so do not treat that list as the backup set. The default project name is usually `docker`; if you started Compose with `-p ragflow`, volume names normally start with `ragflow_`. Use the same `-p` value with every Compose command below.
 
-```text
-DRIVER    VOLUME NAME
-local     docker_esdata01
-local     docker_minio_data
-local     docker_mysql_data
-local     docker_redis_data
-```
+The default Go stack can use these volumes, depending on the enabled services:
 
-These volumes contain all the data you need to migrate.
+| Service or data | Typical volume |
+| --- | --- |
+| Metadata database | `<project>_mysql_data` |
+| Uploaded objects in bundled MinIO | `<project>_minio_data` |
+| Search index with Elasticsearch | `<project>_esdata01` |
+| Go cache and persistent Redis-protocol data | `<project>_kvrocks_data` |
+| NATS JetStream data | `<project>_nats_data` |
+| ClickHouse analytics data | `<project>_clickhouse_data` |
 
-:::note
-The volume name prefix (e.g., `docker_`) comes from the Docker Compose project name. By default it is `docker` (derived from the directory name). If you started RAGFlow with `docker compose -p <project_name>`, your volumes will be prefixed with `<project_name>_` instead, for example `ragflow_mysql_data`.
-:::
+Also retain `docker/.env`, the configuration template, and any custom certificates or mounted files. Protect the backup because these files may contain credentials.
 
-### Step 1: Stop RAGFlow Services
+### 2. Stop writers and archive the volumes
 
-Before starting the migration, you must stop all running RAGFlow services on the **source machine**. Navigate to the project's root directory and run:
-
-```bash
-docker compose -f docker/docker-compose.yml down
-```
-
-If you started RAGFlow with a custom project name (e.g., `docker compose -p ragflow`), include it in the command:
+Stop the Go deployment and any other process that writes to the same stores. For a Compose project named `docker`:
 
 ```bash
-docker compose -p ragflow -f docker/docker-compose.yml down
+docker compose --env-file docker/.env -f docker/docker-compose.yml down
+mkdir backup-go
 ```
 
-**Important:** Do **not** use the `-v` flag (e.g., `docker compose down -v`), as this will delete all your data volumes. The migration script includes a check and will prevent you from running it if services are active.
-
-### Step 2: Back Up Your Data
-
-We provide a convenient script to package all your data volumes into a single backup folder.
-
-For a quick reference of the script's commands and options, you can run:
-```bash
-bash docker/migration.sh help
-```
-
-To create a backup, run the following command from the project's root directory:
+Create a new, empty `backup-go` directory for this backup; do not reuse a directory containing earlier archives. Repeat the following command for **each volume you recorded**. Replace `docker_mysql_data` with its exact name; the example creates `backup-go/docker_mysql_data.tar.gz`:
 
 ```bash
-bash docker/migration.sh backup
+volume_name=docker_mysql_data
+if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+  if docker run --rm -v "$volume_name":/source:ro -v "$PWD/backup-go":/backup alpine:3.20 \
+    tar czf "/backup/$volume_name.tar.gz" -C /source .; then
+    tar tzf "backup-go/$volume_name.tar.gz" > /dev/null
+  else
+    echo "Backup failed: $volume_name"
+  fi
+else
+  echo "Missing volume: $volume_name"
+fi
 ```
 
-This will create a `backup/` folder in your project root containing compressed archives of your data volumes.
+Keep the volume name in each archive filename and copy the entire `backup-go` directory to the target host. Verify that every selected volume has a readable archive.
 
-You can also specify a custom name for your backup folder:
+### 3. Restore on the target host
+
+Install the matching Go deployment and configuration on the target host. Keep services stopped and put `backup-go` in the repository root.
+
+For each archived Docker volume, restore into a **new, empty volume**. Replace both names in this example and repeat. Keep the source name when reading the archive; use the target Compose project's name when creating its volume:
 
 ```bash
-bash docker/migration.sh backup my_ragflow_backup
+source_volume=docker_mysql_data
+target_volume=docker_mysql_data
+if ! test -f "backup-go/$source_volume.tar.gz"; then
+  echo "Missing archive: backup-go/$source_volume.tar.gz"
+elif docker volume inspect "$target_volume" >/dev/null 2>&1; then
+  echo "Target volume already exists; inspect it before restoring: $target_volume"
+else
+  if docker volume create "$target_volume"; then
+    docker run --rm -v "$target_volume":/target -v "$PWD/backup-go":/backup:ro alpine:3.20 \
+      tar xzf "/backup/$source_volume.tar.gz" -C /target
+  fi
+fi
 ```
 
-This will create a folder named `my_ragflow_backup/` instead.
+If the target Compose project has a different name, set `target_volume` to that project's volume name while retaining `source_volume` from the archive. Do not restore over a populated volume: extracting an archive does not remove files already present. Keep the metadata database, object data, and search index from the same stopped deployment together.
 
-If you started RAGFlow with a custom project name (e.g., `docker compose -p ragflow`), use the `-p` flag so the script can find the correct volumes:
+### 4. Start and verify
+
+Start the Go stack with the target configuration and the same Compose project name used for its volumes:
 
 ```bash
-bash docker/migration.sh -p ragflow backup
-bash docker/migration.sh -p ragflow backup my_ragflow_backup
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml ps
 ```
 
-### Step 3: Transfer the Backup Folder
-
-Copy the entire backup folder (e.g., `backup/` or `my_ragflow_backup/`) from your source machine to the RAGFlow project directory on your **target machine**. You can use tools like `scp`, `rsync`, or a physical drive for the transfer.
-
-### Step 4: Restore Your Data
-
-On the **target machine**, ensure that RAGFlow services are not running. Then, use the migration script to restore your data from the backup folder.
-
-If your backup folder is named `backup/`, run:
-
-```bash
-bash docker/migration.sh restore
-```
-
-If you used a custom name, specify it in the command:
-
-```bash
-bash docker/migration.sh restore my_ragflow_backup
-```
-
-If the target machine uses a custom project name, use the `-p` flag to ensure the volumes are created with the correct prefix:
-
-```bash
-bash docker/migration.sh -p ragflow restore
-bash docker/migration.sh -p ragflow restore my_ragflow_backup
-```
-
-The script will automatically create the necessary Docker volumes and unpack the data.
-
-**Note:** If the script detects that Docker volumes with the same names already exist on the target machine, it will warn you that restoring will overwrite the existing data and ask for confirmation before proceeding.
-
-### Step 5: Start RAGFlow Services
-
-Once the restore process is complete, you can start the RAGFlow services on your new machine:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-If you use a custom project name:
-
-```bash
-docker compose -p ragflow -f docker/docker-compose.yml up -d
-```
-
-**Note:** If you already have built a service by docker compose before, you may need to backup your data for target machine like this guide above and run like:
-
-```bash
-# Please backup by `bash docker/migration.sh backup backup_dir_name` before you do the following line.
-# !!! this line -v flag will delete the original docker volume
-docker compose -f docker/docker-compose.yml down -v
-docker compose -f docker/docker-compose.yml up -d
-```
-
-Your RAGFlow instance is now running with all the data from your original machine.
-
-## Migrate from Multi-Bucket to Single-Bucket Mode
-
-:::info KUDOS
-This document is contributed by our community contributor [arogan178](https://github.com/arogan178). We may not actively maintain this document.
-:::
-
-By default, RAGFlow creates one bucket per Knowledge Base (dataset) and one bucket per user folder. This can be problematic when:
-
-- Your cloud provider charges per bucket
-- Your IAM policy restricts bucket creation
-- You want all data organized in a single bucket with directory structure
-
-The **Single Bucket Mode** allows you to configure RAGFlow to use a single bucket with a directory structure instead of multiple buckets.
-
-### How It Works
-
-#### Default Mode (Multiple Buckets)
-
-```
-bucket: kb_12345/
-  └── document_1.pdf
-bucket: kb_67890/
-  └── document_2.pdf
-bucket: folder_abc/
-  └── file_3.txt
-```
-
-#### Single Bucket Mode (With Prefix_path)
-
-```
-bucket: ragflow-bucket/
-  └── ragflow/
-      ├── kb_12345/
-      │   └── document_1.pdf
-      ├── kb_67890/
-      │   └── document_2.pdf
-      └── folder_abc/
-          └── file_3.txt
-```
-
-### Configuration
-
-#### MinIO Configuration
-
-Edit your `service_conf.yaml` or set environment variables:
-
-```yaml
-minio:
-  user: "your-access-key"
-  password: "your-secret-key"
-  host: "minio.example.com:443"
-  bucket: "ragflow-bucket" # Default bucket name
-  prefix_path: "ragflow" # Optional prefix path
-```
-
-Or using environment variables:
-
-```bash
-export MINIO_USER=your-access-key
-export MINIO_PASSWORD=your-secret-key
-export MINIO_HOST=minio.example.com:443
-export MINIO_BUCKET=ragflow-bucket
-export MINIO_PREFIX_PATH=ragflow
-```
-
-#### S3 Configuration (Already Supported)
-
-```yaml
-s3:
-  access_key: "your-access-key"
-  secret_key: "your-secret-key"
-  endpoint_url: "https://s3.amazonaws.com"
-  bucket: "my-ragflow-bucket"
-  prefix_path: "production"
-  region_name: "us-east-1"
-```
-
-#### Tigris Configuration
-
-[Tigris](https://www.tigrisdata.com) is an S3-compatible object storage service that works with RAGFlow's `AWS_S3` backend. Set `STORAGE_IMPL=AWS_S3` in your `.env` file:
-
-```yaml
-s3:
-  access_key: "tid_YOUR_ACCESS_KEY"
-  secret_key: "tsec_YOUR_SECRET_KEY"
-  region_name: "auto"
-  endpoint_url: "https://t3.storage.dev"
-  bucket: "ragflow"
-  prefix_path: "ragflow"
-  signature_version: "v4"
-  addressing_style: "virtual"
-```
-
-See [S3 (Tigris)](../configurations/configurations.md#s3-tigris) for full setup instructions.
-
-### Iam Policy Example
-
-When using single bucket mode, you only need permissions for one bucket:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": ["s3:*"],
-      "Resource": [
-        "arn:aws:s3:::ragflow-bucket",
-        "arn:aws:s3:::ragflow-bucket/*"
-      ]
-    }
-  ]
-}
-```
-
-### Migration from Multi-Bucket to Single Bucket
-
-If you're migrating from multi-bucket mode to single-bucket mode:
-
-1. **Set environment variables** for the new configuration
-2. **Restart RAGFlow** services
-3. **Migrate existing data** (optional):
-
-```bash
-# Example using mc (MinIO Client)
-mc alias set old-minio http://old-minio:9000 ACCESS_KEY SECRET_KEY
-mc alias set new-minio https://new-minio:443 ACCESS_KEY SECRET_KEY
-
-# List all knowledge base buckets
-mc ls old-minio/ | grep kb_ | while read -r line; do
-    bucket=$(echo $line | awk '{print $5}')
-    # Copy each bucket to the new structure
-    mc cp --recursive old-minio/$bucket/ new-minio/ragflow-bucket/ragflow/$bucket/
-done
-```
-
-### Toggle Between Modes
-
-#### Enable Single Bucket Mode
-
-```yaml
-minio:
-  bucket: "my-single-bucket"
-  prefix_path: "ragflow"
-```
-
-#### Disable (Use Multi-Bucket Mode)
-
-```yaml
-minio:
-  # Leave bucket and prefix_path empty or commented out
-  # bucket: ''
-  # prefix_path: ''
-```
-
-### Troubleshooting
-
-#### Issue: Access Denied Errors
-
-**Solution**: Ensure your IAM policy grants access to the bucket specified in the configuration.
-
-#### Issue: Files Not Found After Switching Modes
-
-**Solution**: The path structure changes between modes. You'll need to migrate existing data.
-
-#### Issue: Connection Fails with HTTPS
-
-**Solution**: Ensure `secure: True` is set in the MinIO connection (automatically handled for port 443).
-
-### Storage Backends Supported
-
-- ✅ **MinIO** - Full support with single bucket mode
-- ✅ **AWS S3** - Full support with single bucket mode
-- ✅ **Tigris** - Full support with single bucket mode (uses `AWS_S3` backend)
-- ✅ **Alibaba OSS** - Full support with single bucket mode
-- ✅ **Azure Blob** - Uses container-based structure (different paradigm)
-- ⚠️ **OpenDAL** - Depends on underlying storage backend
-
-### Performance Considerations
-
-- **Single bucket mode** may have slightly better performance for bucket listing operations
-- **Multi-bucket mode** provides better isolation and organization for large deployments
-- Choose based on your specific requirements and infrastructure constraints
+The Go image's entrypoint runs the standalone database migration before starting its enabled server modes. Check the container logs for migration errors before using the service. Confirm that an existing dataset can list and open files and that search still returns its documents.

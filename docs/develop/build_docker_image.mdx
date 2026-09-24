@@ -7,61 +7,97 @@ sidebar_custom_props: {
   categoryIcon: LucidePackage
 }
 ---
+
 # Build RAGFlow Docker Image
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
-A guide explaining how to build a RAGFlow Docker image from its source code. By following this guide, you'll be able to create a local Docker image that can be used for development, debugging, or testing purposes.
-
-## Target Audience
-
-- Developers who have added new features or modified the existing code and require a Docker image to view and debug their changes.
-- Developers seeking to build a RAGFlow Docker image for an ARM64 platform.
-- Testers aiming to explore the latest features of RAGFlow in a Docker image.
+Build the Go backend and web frontend into a local Docker image for development and testing. The image uses external LLM and embedding services at runtime.
 
 ## Prerequisites
 
-- CPU &ge; 4 cores
-- RAM &ge; 16 GB
-- Disk &ge; 50 GB
-- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
+- A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB
+  free disk space. Actual requirements depend on the selected document engine,
+  local models, build concurrency, and data volume.
+- Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
+- Access to the `infiniflow/ragflow_deps:latest` and `infiniflow/github_action_runner:latest` images during the build
 
-## Build a Docker Image
+The documented Go image target is `linux/amd64`. On an Apple Silicon Mac, Docker Desktop builds and runs this image through x86-64 emulation.
 
-This image is approximately 2 GB in size and relies on external LLM and embedding services.
+## Platform support
 
-:::danger IMPORTANT
-- While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
-- For ARM64 platforms, please upgrade the `xgboost` version in **pyproject.toml** to `1.6.0` and ensure **unixODBC** is properly installed.
-:::
+- **Linux x86-64:** CPU deployment is the default and recommended path. A GPU Compose deployment is available when the host has NVIDIA Container Toolkit configured. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+- **Apple Silicon macOS:** Build and run the `linux/amd64` image through Docker Desktop x86-64 emulation. Document processing and image builds may be slower than on an x86-64 Linux host.
+- **Linux ARM64:** Use a native build only after preparing ARM64-compatible dependency images and native libraries, and validate the selected document engine for the target architecture. The commands in this guide target AMD64.
+- **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
+
+Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. For the Go deployment, change the corresponding values in `docker/.env`; use `docker/.env` only when a separate command explicitly loads that file.
+
+## Build the Go image
+
+Run the build from the repository root. Keep the `.git` directory in the build context: `Dockerfile` uses it to stamp the image version.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/ragflow_deps
-uv run python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow_deps .
-cd ..
-docker build -f Dockerfile -t infiniflow/ragflow:nightly .
+cd ragflow
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
 ```
 
-## Launch a RAGFlow Service from Docker for macOS
+`Dockerfile` builds the Go server and web frontend. `infiniflow/ragflow_deps:latest` supplies document models and tokenizer assets; `infiniflow/github_action_runner:latest` supplies the build toolchain and prebuilt ONNX Runtime libraries. You do not need to build either dependency image separately for this command.
 
-After building the infiniflow/ragflow:nightly image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
+## Start the service
 
-## Example: Apple M2 Pro (sequoia)
+For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host. For macOS, use the Docker Desktop command below instead.
 
-1. Edit Docker Compose Configuration
+```bash
+sudo sysctl -w vm.max_map_count=262144
+```
 
-Open the `docker/.env` file. Find the `RAGFLOW_IMAGE` setting and change the image reference from `infiniflow/ragflow:v0.27.2` to `infiniflow/ragflow:nightly` to use the pre-built image.
-
-
-2. Launch the Service
+Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. That file also controls the document engine, CPU or GPU selection, ports, and dependency credentials. Change the default passwords before making the service accessible over a network.
 
 ```bash
 cd docker
-$ docker compose -f docker-compose-macos.yml up -d
+docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-3. Access the RAGFlow Service
+The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env` and configure the NVIDIA container runtime on the host. This selection can make GPUs available to components that explicitly support them, but it does not enable GPU execution for the open-source 1.0 Go DeepDoc backend.
 
-Once the setup is complete, open your web browser and navigate to http://127.0.0.1 or your server's \<IP_ADDRESS\>; (the default port is \<PORT\> = 80). You will be directed to the RAGFlow welcome page. Enjoy!🍻
+## Verify the service
+
+```bash
+docker compose --env-file .env -f docker-compose.yml ps
+docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
+curl -f http://localhost/api/v1/system/healthz
+```
+
+Use `ragflow-gpu` in the logs command if you selected GPU. A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in the health-check URL and when opening the web interface in a browser.
+
+For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env`. Use this only for local development; keep it `false` for production.
+
+## macOS with Docker Desktop
+
+The same Go image and Compose file work on macOS. On Apple Silicon, keep `--platform linux/amd64` in the build command so that the x86-64 Go image and native libraries use the same architecture. Emulation can make the build and document processing slower than on an x86-64 Linux host.
+
+1. Start Docker Desktop and build from the repository root:
+
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+   ```
+
+2. If you use the default Elasticsearch document engine, set `vm.max_map_count` inside Docker Desktop's Linux virtual machine:
+
+   ```bash
+   docker run --rm --privileged alpine sysctl -w vm.max_map_count=262144
+   ```
+
+   Repeat this command after restarting Docker Desktop. It is unnecessary when using another document engine such as Infinity.
+
+3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`, then start the Go stack:
+
+   ```bash
+   cd docker
+   docker compose --env-file .env -f docker-compose.yml up -d
+   curl -f http://localhost/api/v1/system/healthz
+   ```
+
+   Wait for the health check to return HTTP 200, then open `http://localhost` in a browser. Include `SVR_WEB_HTTP_PORT` in both URLs if you changed its default value.

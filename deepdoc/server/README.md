@@ -1,5 +1,9 @@
 # OSS DeepDoc HTTP API Service
 
+The standard RAGFlow deployment uses the Go server's in-process DeepDoc
+backend. This directory provides an optional standalone HTTP service for
+deployments that explicitly require a separate DeepDoc endpoint.
+
 Serves DLA (Document Layout Analysis), OCR (Optical Character Recognition), and
 TSR (Table Structure Recognition) models via a unified HTTP API using
 [LitServe](https://github.com/Lightning-AI/litserve) and OSS ONNX Runtime models.
@@ -13,15 +17,12 @@ docker build -f Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
 # Run (CPU only; no GPU required)
 docker run -p 9390:9390 deepdoc_oss:latest
 
-# Or via docker compose
-docker compose -f docker/docker-compose.yml up -d
 ```
 
-The service listens on port **9390** by default. Pass `--port` to change it:
-
-```bash
-python deepdoc/server/deepdoc_server.py --port 9000 --model-dir /path/to/models
-```
+The container listens on port **9390** by default. Configure the port and model
+directory through the standalone service's container settings when a different
+deployment is required. The standard Go Compose deployment does not require
+this separate service.
 
 ## Endpoints
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "RAGFlow Go Docs"
+  short_description: "审计并维护以 Go 为正式实现的 RAGFlow 用户文档"
+  default_prompt: "Use $ragflow-go-docs to audit and update the RAGFlow Go documentation."
