@@ -94,7 +94,9 @@ func aggregateTagsResultMap(rows []map[string]interface{}) map[string]int {
 
 // TestDatasetServiceAggregateTagsSeedsFromTagFile verifies that the tag
 // vocabulary (and its counts) come solely from the configured tag source file,
-// with no chunk-level aggregation.
+// with no chunk-level aggregation. The file is configured on the dataset and
+// reaches the endpoint through the copy upload puts on its document — the
+// endpoint reads documents, not the dataset row.
 func TestDatasetServiceAggregateTagsSeedsFromTagFile(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -102,6 +104,7 @@ func TestDatasetServiceAggregateTagsSeedsFromTagFile(t *testing.T) {
 	kbInput := "123e4567-e89b-12d3-a456-426614174000"
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
+	insertAggregateTagsDoc(t, "doc-seed", kbID, "file-1")
 
 	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
 		if tagFileID == "file-1" {
@@ -143,6 +146,8 @@ func TestDatasetServiceAggregateTagsMergesAcrossTagFiles(t *testing.T) {
 	kb2ID := strings.ReplaceAll(kb2Input, "-", "")
 	insertAggregateTagsKB(t, kb1ID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
 	insertAggregateTagsKB(t, kb2ID, "user-1", string(entity.TenantPermissionMe), "file-2", 0)
+	insertAggregateTagsDoc(t, "doc-merge-1", kb1ID, "file-1")
+	insertAggregateTagsDoc(t, "doc-merge-2", kb2ID, "file-2")
 
 	loader := func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
 		switch tagFileID {
@@ -236,6 +241,7 @@ func TestDatasetServiceAggregateTagsScopesLoaderToDatasetTenant(t *testing.T) {
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	const kbTenant = "tenant-owner"
 	insertAggregateTagsKB(t, kbID, kbTenant, string(entity.TenantPermissionTeam), "file-foreign", 0)
+	insertAggregateTagsDoc(t, "doc-scope", kbID, "file-foreign")
 	insertAggregateTagsMembership(t, kbTenant, "user-1")
 	ctx := t.Context()
 
@@ -382,8 +388,12 @@ func TestDatasetServiceAggregateTagsCountsSharedFileOnce(t *testing.T) {
 
 	kb1Input := "923e4567-e89b-12d3-a456-426614174008"
 	kb2Input := "a23e4567-e89b-12d3-a456-426614174009"
-	insertAggregateTagsKB(t, strings.ReplaceAll(kb1Input, "-", ""), "user-1", string(entity.TenantPermissionMe), "file-1", 0)
-	insertAggregateTagsKB(t, strings.ReplaceAll(kb2Input, "-", ""), "user-1", string(entity.TenantPermissionMe), "file-1", 0)
+	kb1ID := strings.ReplaceAll(kb1Input, "-", "")
+	kb2ID := strings.ReplaceAll(kb2Input, "-", "")
+	insertAggregateTagsKB(t, kb1ID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
+	insertAggregateTagsKB(t, kb2ID, "user-1", string(entity.TenantPermissionMe), "file-1", 0)
+	insertAggregateTagsDoc(t, "doc-shared-1", kb1ID, "file-1")
+	insertAggregateTagsDoc(t, "doc-shared-2", kb2ID, "file-1")
 
 	loads := 0
 	loader := func(_ context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
@@ -447,23 +457,33 @@ func TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource(t *testin
 	assertTagCounts(t, result, map[string]int{"finance": 2})
 }
 
-// TestDatasetServiceAggregateTagsFailsOnUnresolvableDatasetTagSource pins the
-// other half of the policy: a source the dataset configured itself keeps
-// failing loudly even when the file no longer resolves, so a broken explicit
-// configuration stays visible instead of degrading to an empty vocabulary.
-func TestDatasetServiceAggregateTagsFailsOnUnresolvableDatasetTagSource(t *testing.T) {
+// TestDatasetServiceAggregateTagsIgnoresUnappliedDatasetTagSource pins the
+// chosen semantics: this endpoint reports what is in effect, not what is
+// configured. A source only the dataset row carries has not been applied to
+// any chunk, so it is not reported. That is the deliberate cost of answering
+// at document level — a dataset configured after its documents were uploaded
+// reads empty until those documents are re-uploaded or configured individually.
+func TestDatasetServiceAggregateTagsIgnoresUnappliedDatasetTagSource(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
 	kbInput := "d23e4567-e89b-12d3-a456-426614174012"
-	insertAggregateTagsKB(t, strings.ReplaceAll(kbInput, "-", ""), "user-1", string(entity.TenantPermissionMe), "file-dead", 0)
+	insertAggregateTagsKB(t, strings.ReplaceAll(kbInput, "-", ""), "user-1", string(entity.TenantPermissionMe), "file-1", 0)
 
-	_, code, err := testDatasetServiceForAggregateTags(t, missingTagSourceLoader).AggregateTags(t.Context(), []string{kbInput}, "user-1")
-	if err == nil {
-		t.Fatal("expected an error for an unresolvable dataset-level tag source")
+	loader := func(_ context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+		t.Fatalf("loader must not be called for a source no document carries, got %q", tagFileID)
+		return nil, nil
 	}
-	if code != common.CodeServerError {
-		t.Fatalf("code=%d want=%d", code, common.CodeServerError)
+
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(t.Context(), []string{kbInput}, "user-1")
+	if err != nil {
+		t.Fatalf("AggregateTags failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%d want=%d", code, common.CodeSuccess)
+	}
+	if len(result) != 0 {
+		t.Fatalf("result=%v want empty: a dataset-level source with no document carrying it is not in effect", result)
 	}
 }
 

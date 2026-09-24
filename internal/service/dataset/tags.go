@@ -16,14 +16,19 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
-	// merged holds the selectable-tag vocabulary sourced from every tag source
-	// file (parser_config.tags.tag_file_id) declared by the datasets and by
-	// their documents. A document copies the dataset config at upload and the
+	// merged holds the selectable-tag vocabulary sourced from the tag source
+	// files (parser_config.tags.tag_file_id) declared by the dataset's
+	// documents. A document copies the dataset config at upload and the
 	// document parser dialog may then override it, and that document-level copy
 	// is the one the extractor reads at parse time (see
-	// ingestion/task/pipeline_executor.go), so both levels must be read here.
-	// The count for a tag is the number of times it appears in that source file.
-	// The Go backend has no Python-style tag-library datasets, so there is no
+	// ingestion/task/pipeline_executor.go) — so it, not the dataset row, is what
+	// describes the tags actually in effect. A dataset-level value no document
+	// carries has not been applied to anything yet and is deliberately not
+	// reported: this endpoint answers "in effect", not "configured", so a
+	// dataset configured after its documents were uploaded reads empty until
+	// those documents are re-uploaded or configured individually. The count for
+	// a tag is the number of times it appears in that source file. The Go
+	// backend has no Python-style tag-library datasets, so there is no
 	// chunk-level aggregation.
 	loader := d.tagVocabularyLoader
 	if loader == nil {
@@ -58,7 +63,6 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	type authorizedDataset struct {
 		id     string
 		tenant string
-		config map[string]any
 	}
 	authorized := make([]authorizedDataset, 0, len(orderedIDs))
 	for _, datasetID := range orderedIDs {
@@ -75,7 +79,6 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		authorized = append(authorized, authorizedDataset{
 			id:     datasetID,
 			tenant: kb.TenantID,
-			config: map[string]any(kb.ParserConfig),
 		})
 	}
 
@@ -84,20 +87,13 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 
-	// A source file is scoped to its owning tenant, and the same file is
-	// normally referenced by the dataset itself and by every document seeded
-	// from it. Load each (tenant, file) once so its counts are not added again.
+	// Every source below comes from a document — that is the copy the extractor
+	// reads, so only it can describe tags in effect. A source file is scoped to
+	// its owning tenant and is normally referenced by every document seeded from
+	// the dataset, so load each (tenant, file) once or its counts add up again.
 	loaded := make(map[string]struct{})
 	for _, ds := range authorized {
-		sources := make(map[string]struct{}, 1+len(docConfigs[ds.id]))
-		// datasetSources records what the dataset configured itself. Only a
-		// source that exists nowhere but in a document may be skipped when it
-		// stops resolving: an explicitly configured one must still fail.
-		datasetSources := make(map[string]struct{}, 1)
-		if id := component.TagFileIDFromParserConfig(ds.config); id != "" {
-			sources[id] = struct{}{}
-			datasetSources[id] = struct{}{}
-		}
+		sources := make(map[string]struct{}, len(docConfigs[ds.id]))
 		for _, docConfig := range docConfigs[ds.id] {
 			if id := component.TagFileIDFromParserConfig(map[string]any(docConfig)); id != "" {
 				sources[id] = struct{}{}
@@ -116,29 +112,26 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			if _, dup := loaded[key]; dup {
 				continue
 			}
+			loaded[key] = struct{}{}
 			// The file is resolved against the dataset's own tenant:
 			// tag_file_id is user-writable, so a foreign file ID must not
 			// resolve (IDOR, CWE-639).
 			counts, vErr := loader(ctx, tagFileID, ds.tenant)
 			if vErr != nil {
-				_, explicitlyConfigured := datasetSources[tagFileID]
-				if !explicitlyConfigured && component.IsTagSourceNotFound(vErr) {
-					// Deleting a tag file leaves its references behind — nothing
-					// clears them — and a document's parser_config is never
-					// validated against the file table. One dead document-level
-					// reference must not discard every other dataset in the
-					// request along with it.
-					common.Warn(fmt.Sprintf("tag_vocab: skipping unresolvable document tag source %q for dataset %q: %v",
+				// Nothing clears a stale reference when a tag file is deleted, and
+				// a document's parser_config is never validated against the file
+				// table, so an unresolvable id is skipped instead of letting it
+				// discard every other dataset in the request. A database or
+				// storage failure still fails loudly: it says nothing about this
+				// id and may be environment-wide.
+				if component.IsTagSourceNotFound(vErr) {
+					common.Warn(fmt.Sprintf("tag_vocab: skipping unresolvable tag source %q for dataset %q: %v",
 						tagFileID, ds.id, vErr))
 					continue
 				}
 				return nil, common.CodeServerError,
 					fmt.Errorf("load tag vocabulary for dataset %q: %w", ds.id, vErr)
 			}
-			// Marked only after a successful load: a skipped source above must
-			// not suppress a later dataset that configured the same file
-			// explicitly, which has to keep failing.
-			loaded[key] = struct{}{}
 			for tag, c := range counts {
 				merged[tag] += c
 			}
