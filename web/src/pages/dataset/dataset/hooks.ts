@@ -6,6 +6,7 @@ import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
+import { RunningStatus } from '@/constants/knowledge';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
@@ -29,13 +30,32 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const datasetId = knowledgeId || routeId;
   const isGoBackend = useIsGoBackend();
 
+  const isTerminal = (doc?: IDocumentInfo) => {
+    const status = doc && getDocumentRunningStatus(doc);
+    return (
+      status === RunningStatus.DONE ||
+      status === RunningStatus.FAIL ||
+      status === RunningStatus.CANCEL
+    );
+  };
+
   // When the modal is visible, poll the document directly by ID so progress_msg
   // updates (e.g. "Indexing done") are captured even if the parent list no longer
   // polls (isLoop became false before the final message) or the record fell off
-  // the current paginated page.
+  // the current paginated page. Stop polling once the run reaches a terminal
+  // status, otherwise the modal keeps requesting forever.
   const { documents: liveDocs } = useFetchDocumentsByIds(
     record?.id ? [record.id] : [],
-    { enabled: visible, refetchInterval: PollIntervalMs },
+    {
+      enabled: visible,
+      refetchInterval: (query) => {
+        const doc =
+          query.state.data?.docs[0] ??
+          documents.find((item: IDocumentInfo) => item.id === record?.id) ??
+          record;
+        return isTerminal(doc) ? false : PollIntervalMs;
+      },
+    },
   );
   const liveDoc = liveDocs?.[0];
   const sourceDoc =
@@ -48,7 +68,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const { data: documentLog } = useQuery<IFileLogList>({
     queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
     enabled: visible && isGoBackend && !!datasetId && !!sourceDoc?.id,
-    refetchInterval: PollIntervalMs,
+    refetchInterval: isTerminal(sourceDoc) ? false : PollIntervalMs,
     queryFn: async () => {
       const { data: res = {} } = await listDataPipelineLogDocument(
         datasetId || '',
