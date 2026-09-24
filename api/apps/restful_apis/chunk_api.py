@@ -494,6 +494,9 @@ async def retrieval_test(tenant_id, dataset_id=None):
     include_knowledge_compilation = req.get("include_knowledge_compilation", True)
     if not isinstance(include_knowledge_compilation, bool):
         return get_error_data_result("`include_knowledge_compilation` should be a boolean")
+    debug = req.get("debug", False)
+    if not isinstance(debug, bool):
+        return get_error_data_result("`debug` should be a boolean")
     highlight_val = req.get("highlight", None)
     if highlight_val is None:
         highlight = False
@@ -541,7 +544,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
-            debug=bool(req.get("debug", False)),
+            debug=debug,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -554,6 +557,11 @@ async def retrieval_test(tenant_id, dataset_id=None):
             ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
+
+        if debug:
+            debug_info = ranks.get("debug")
+            if isinstance(debug_info, dict) and isinstance(debug_info.get("funnel"), dict):
+                debug_info["funnel"]["returned"] = len(ranks["chunks"])
 
         for c in ranks["chunks"]:
             c.pop("vector", None)

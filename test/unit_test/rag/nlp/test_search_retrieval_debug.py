@@ -111,6 +111,23 @@ class TestRetrievalDebug:
         assert out["funnel"]["returned"] == 0
         assert out["dropped_total"] == 2
 
+    def test_fused_score_is_labeled_when_signal_scores_are_unavailable(self):
+        """A backend fused score must not masquerade as two signal scores."""
+        out = _debug(
+            candidate_ids=["a"],
+            sorted_ids=["a"],
+            sorted_scores=[0.1],
+            sorted_term_scores=[None],
+            sorted_vector_scores=[None],
+            valid_ids=[],
+            returned_ids=[],
+            threshold=0.2,
+        )
+        dropped = out["dropped"][0]
+        assert dropped["fused_similarity"] == 0.1
+        assert "term_similarity" not in dropped
+        assert "vector_similarity" not in dropped
+
     def test_max_dropped_truncates(self):
         n = 10
         out = _debug(

@@ -75,15 +75,18 @@ def build_retrieval_debug(
         if cid in returned:
             continue
         if score < similarity_threshold:
-            dropped.append(
-                {
-                    "chunk_id": cid,
-                    "similarity": float(score),
-                    "term_similarity": float(term_score),
-                    "vector_similarity": float(vector_score),
-                    "reason": "below_similarity_threshold",
-                }
-            )
+            item = {
+                "chunk_id": cid,
+                "similarity": float(score),
+                "reason": "below_similarity_threshold",
+            }
+            if term_score is not None:
+                item["term_similarity"] = float(term_score)
+            if vector_score is not None:
+                item["vector_similarity"] = float(vector_score)
+            if term_score is None or vector_score is None:
+                item["fused_similarity"] = float(score)
+            dropped.append(item)
     return {
         "funnel": {
             "candidates": len(candidate_ids),
@@ -827,6 +830,19 @@ class Dealer:
         sres = await self._prune_deleted_chunks(sres)
         if sres.total == 0:
             ranks["doc_aggs"] = []
+            if debug:
+                zero_scores = [0.0] * len(sres.ids)
+                ranks["debug"] = build_retrieval_debug(
+                    candidate_ids=sres.ids,
+                    sorted_ids=sres.ids,
+                    sorted_scores=zero_scores,
+                    sorted_term_scores=[None] * len(sres.ids),
+                    sorted_vector_scores=[None] * len(sres.ids),
+                    valid_ids=[],
+                    returned_ids=[],
+                    similarity_threshold=similarity_threshold,
+                    vector_similarity_weight=vector_similarity_weight,
+                )
             return ranks
 
         term_similarity_weight = 1 - vector_similarity_weight
@@ -854,8 +870,8 @@ class Dealer:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]
-                tsim = sim
-                vsim = sim
+                tsim = [None] * len(sim)
+                vsim = [None] * len(sim)
             elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                 # OceanBase still returns chunk vectors in the result; use
                 # the historical local rerank that depends on them.
@@ -872,8 +888,8 @@ class Dealer:
                 sql_scores = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sql_scores = np.array([s if s is not None else 0.0 for s in sql_scores], dtype=np.float64)
                 sim = sql_scores + self._tag_feature_scores(rank_feature, sres)
-                tsim = sql_scores
-                vsim = sql_scores
+                tsim = [None] * len(sim)
+                vsim = [None] * len(sim)
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it
