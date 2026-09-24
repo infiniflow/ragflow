@@ -267,8 +267,20 @@ class SereneDBConnection(DocStoreConnection):
         self._run(f"CREATE TABLE IF NOT EXISTS {index_name} ({cols}, {vec} FLOAT[{vector_size}], {vec_n} FLOAT[{vector_size}])", fetch=False)
         self._run(DICTIONARY_DDL, fetch=False)
         fts = ", ".join(f"{c} {DICTIONARY_NAME}" for c in FTS_COLUMNS)
+        # CREATE INDEX IF NOT EXISTS is not free when the index exists: GetGlobalSinkState
+        # skips the SINK, but the child pipeline still scans the whole relation and Sink()
+        # discards every chunk. 40-70s per call on 422GB, once per task per executor.
+        # The probe deliberately does not catch: a swallowed failure is read as absence and
+        # feeds the same loop index_exist() documents.
+        rel = _index_relation(index_name)
+        got, _ = self._run(
+            f"SELECT 1 FROM pg_class WHERE relname = '{rel}' LIMIT 1")
+        if got:
+            with self._known_lock:
+                self._known_tables.add(index_name)
+            return
         self._run(
-            f"CREATE INDEX IF NOT EXISTS {_index_relation(index_name)} ON {index_name} "
+            f"CREATE INDEX IF NOT EXISTS {rel} ON {index_name} "
             f"USING inverted (id, {fts}, {vec_n} ivf (metric = 'ip', quant = 'sq8')) "
             f"WITH (optimize_top_k = 'bm25(1.2, 0.75)')",
             fetch=False,
