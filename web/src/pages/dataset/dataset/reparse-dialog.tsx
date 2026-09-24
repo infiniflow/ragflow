@@ -136,7 +136,11 @@ export const ReparseDialog = memo(
         open={visible}
         okButtonText={t('common.confirm')}
         content={{
-          title: t(`knowledgeDetails.parseFileTip`),
+          title: t(
+            forceDelete
+              ? `knowledgeDetails.clearChunksReparseTip`
+              : `knowledgeDetails.parseFileTip`,
+          ),
           node: (
             <div>
               <DynamicForm.Root
