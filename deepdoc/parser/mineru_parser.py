@@ -22,12 +22,14 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
 import numpy as np
 import pdfplumber
@@ -145,9 +147,10 @@ class MinerUParseOptions:
 
 
 class MinerUParser(RAGFlowPdfParser):
-    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
+    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = "", mineru_api_token: str = ""):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
+        self.mineru_api_token = mineru_api_token or ""
         self.outlines = []
         self.page_from = 0
         self.page_to = MAXIMUM_PAGE_NUMBER
@@ -264,6 +267,13 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(reason)
             return False, reason
 
+        if self._is_official_cloud():
+            ok, reason = self._check_official_cloud()
+            if not ok:
+                self.logger.warning(reason)
+                return False, reason
+            return True, ""
+
         api_openapi = f"{self.mineru_api}/openapi.json"
         try:
             api_ok = self._is_http_endpoint_valid(api_openapi)
@@ -293,7 +303,229 @@ class MinerUParser(RAGFlowPdfParser):
     def _run_mineru(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, page_from: int = 0, page_to: int = MAXIMUM_PAGE_NUMBER) -> Path:
         return self._run_mineru_api(input_path, output_dir, options, callback, page_from=page_from, page_to=page_to)
 
+    def _is_official_cloud(self) -> bool:
+        """True when mineru_api points at the hosted mineru.net API, not a self-hosted FastAPI server."""
+        parsed = urlparse(self.mineru_api or "")
+        host = (parsed.hostname or "").lower()
+        return host == "mineru.net" or host.endswith(".mineru.net")
+
+    def _official_origin(self) -> str:
+        parsed = urlparse(self.mineru_api or "")
+        host = (parsed.hostname or "").lower()
+        if host != "mineru.net" and not host.endswith(".mineru.net"):
+            raise RuntimeError(f"[MinerU] official API host required, got: {host or self.mineru_api}")
+        scheme = (parsed.scheme or "https").lower()
+        if scheme != "https":
+            raise RuntimeError("[MinerU] official mineru.net API requires HTTPS")
+        return f"https://{parsed.netloc}"
+
+    def _official_token(self) -> str:
+        token = (getattr(self, "mineru_api_token", "") or "").strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+        return token
+
+    @staticmethod
+    def _official_model_version(backend: str) -> str:
+        """Map a self-hosted backend name onto mineru.net model_version (pipeline / vlm)."""
+        name = (backend or MinerUBackend.PIPELINE).strip()
+        if name in (MinerUBackend.VLM_HTTP_CLIENT, MinerUBackend.VLM_ENGINE):
+            return "vlm"
+        return "pipeline"
+
+    @staticmethod
+    def _official_page_ranges(page_from: int, page_to: int) -> str | None:
+        """Translate RAGFlow's half-open page slice into mineru.net's 1-based page_ranges."""
+        if page_from <= 0 and page_to >= MAXIMUM_PAGE_NUMBER:
+            return None
+        start = max(page_from, 0) + 1
+        if page_to >= MAXIMUM_PAGE_NUMBER:
+            return None if start <= 1 else f"{start}-200"
+        end = max(page_to, start)
+        return f"{start}-{end}"
+
+    def _check_official_cloud(self) -> tuple[bool, str]:
+        """Probe mineru.net. A token uses the precise API; otherwise the no-login agent API.
+
+        The hosted site does not publish ``/openapi.json`` (that path is the self-hosted FastAPI spec).
+        """
+        try:
+            origin = self._official_origin()
+            token = self._official_token()
+            if token:
+                url = f"{origin}/api/v4/extract/task/ragflow-connectivity-probe"
+                response = requests.get(
+                    url,
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                    timeout=10,
+                )
+                if response.status_code in (401, 403):
+                    return False, f"[MinerU] official API authentication failed (HTTP {response.status_code}): {(response.text or '')[:300]}"
+                if response.status_code >= 500:
+                    return False, f"[MinerU] official precise API not accessible: {url} (HTTP {response.status_code})"
+                self.logger.info("[MinerU] official precise API reachable status=%s url=%s", response.status_code, url)
+                return True, ""
+
+            url = f"{origin}/api/v1/agent/parse/ragflow-connectivity-probe"
+            response = requests.get(url, headers={"Accept": "application/json"}, timeout=10)
+            if response.status_code >= 500:
+                return False, f"[MinerU] official agent API not accessible: {url} (HTTP {response.status_code})"
+            self.logger.info("[MinerU] official agent API reachable status=%s url=%s", response.status_code, url)
+            return True, ""
+        except RuntimeError as exc:
+            return False, str(exc)
+        except requests.RequestException as exc:
+            return False, f"[MinerU] official API check failed: {exc}"
+
+    def _official_auth_headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        token = self._official_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    @staticmethod
+    def _official_payload(response: requests.Response) -> dict[str, Any]:
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if response.status_code >= 400 or not isinstance(body, dict):
+            raise RuntimeError(f"[MinerU] official API failed status={response.status_code} body={(response.text or '')[:2000]}")
+        if body.get("code") not in (0, "0"):
+            raise RuntimeError(f"[MinerU] official API failed code={body.get('code')} msg={body.get('msg')}")
+        data = body.get("data")
+        if not isinstance(data, dict):
+            raise RuntimeError(f"[MinerU] official API missing data: {body}")
+        return data
+
+    def _poll_official(self, url: str, headers: dict[str, str], callback: Optional[Callable], timeout: int = 1800) -> dict[str, Any]:
+        deadline = time.time() + timeout
+        while True:
+            response = requests.get(url, headers=headers, timeout=30)
+            data = self._official_payload(response)
+            state = data.get("state")
+            if state is None and isinstance(data.get("extract_result"), list) and data["extract_result"]:
+                state = data["extract_result"][0].get("state")
+                data = {**data, **data["extract_result"][0]}
+            if state == "done":
+                return data
+            if state == "failed":
+                raise RuntimeError(f"[MinerU] official task failed: {data.get('err_msg') or data}")
+            if time.time() >= deadline:
+                raise RuntimeError(f"[MinerU] official task timed out after {timeout}s (state={state})")
+            if callback:
+                callback(0.25, f"[MinerU] official task state={state or 'pending'}")
+            time.sleep(2)
+
+    def _run_mineru_official(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable], *, page_from: int, page_to: int) -> Path:
+        pdf_file_path = str(input_path)
+        if not os.path.exists(pdf_file_path):
+            raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
+
+        file_stem = Path(pdf_file_path).stem
+        output_path = Path(tempfile.mkdtemp(prefix=f"{file_stem.strip() or 'mineru'}_", dir=str(output_dir)))
+        backend = options.backend.value if isinstance(options.backend, MinerUBackend) else options.backend
+        if self._official_token():
+            self._run_mineru_official_precise(pdf_file_path, output_path, options, callback, backend=backend, page_from=page_from, page_to=page_to)
+        else:
+            self.logger.info("[MinerU] no API token; using mineru.net agent API (no-login, size/page limits apply). Set mineru_api_token to use the precise API.")
+            self._run_mineru_official_agent(pdf_file_path, output_path, options, callback, page_from=page_from, page_to=page_to)
+        return output_path
+
+    def _official_request_options(self, options: MinerUParseOptions, backend: str, page_from: int, page_to: int) -> tuple[dict[str, Any], str | None, str]:
+        payload: dict[str, Any] = {
+            "enable_formula": options.formula_enable,
+            "enable_table": options.table_enable,
+        }
+        method = options.method.value if isinstance(options.method, MinerUParseMethod) else options.method
+        if method == MinerUParseMethod.OCR.value:
+            payload["is_ocr"] = True
+        if isinstance(options.lang, MinerULanguage):
+            payload["language"] = options.lang.value
+        elif options.lang:
+            payload["language"] = options.lang
+        page_ranges = self._official_page_ranges(page_from, page_to)
+        model_version = self._official_model_version(backend)
+        return payload, page_ranges, model_version
+
+    def _run_mineru_official_precise(self, pdf_file_path: str, output_path: Path, options: MinerUParseOptions, callback: Optional[Callable], *, backend: str, page_from: int, page_to: int) -> None:
+        origin = self._official_origin()
+        headers = self._official_auth_headers()
+        file_name = Path(pdf_file_path).name
+        if not Path(file_name).suffix:
+            file_name += ".pdf"
+        shared, page_ranges, model_version = self._official_request_options(options, backend, page_from, page_to)
+        file_item: dict[str, Any] = {"name": file_name}
+        if "is_ocr" in shared:
+            file_item["is_ocr"] = shared.pop("is_ocr")
+        if page_ranges:
+            file_item["page_ranges"] = page_ranges
+        body = {**shared, "model_version": model_version, "files": [file_item]}
+        self.logger.info("[MinerU] official precise API %s/api/v4/file-urls/batch model_version=%s", origin, model_version)
+        if callback:
+            callback(0.20, "[MinerU] submit official precise parse task")
+        submit = requests.post(f"{origin}/api/v4/file-urls/batch", json=body, headers=headers, timeout=60)
+        data = self._official_payload(submit)
+        file_urls = data.get("file_urls") or []
+        batch_id = data.get("batch_id")
+        if not file_urls or not batch_id:
+            raise RuntimeError(f"[MinerU] official upload URL missing: {data}")
+        with open(pdf_file_path, "rb") as pdf_file:
+            uploaded = requests.put(file_urls[0], data=pdf_file, timeout=1800)
+        if uploaded.status_code not in (200, 201):
+            raise RuntimeError(f"[MinerU] official file upload failed status={uploaded.status_code} body={(uploaded.text or '')[:500]}")
+        result = self._poll_official(f"{origin}/api/v4/extract-results/batch/{batch_id}", headers, callback)
+        zip_url = result.get("full_zip_url")
+        if not zip_url:
+            raise RuntimeError(f"[MinerU] official result missing full_zip_url: {result}")
+        output_zip_path = output_path.parent / f"{output_path.name}.zip"
+        with requests.get(zip_url, timeout=1800, stream=True) as downloaded:
+            if not downloaded.ok:
+                raise RuntimeError(f"[MinerU] official zip download failed status={downloaded.status_code}")
+            with open(output_zip_path, "wb") as handle:
+                for chunk in downloaded.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+        self._extract_zip_no_root(output_zip_path, output_path, "")
+
+    def _run_mineru_official_agent(self, pdf_file_path: str, output_path: Path, options: MinerUParseOptions, callback: Optional[Callable], *, page_from: int, page_to: int) -> None:
+        origin = self._official_origin()
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        file_name = Path(pdf_file_path).name
+        if not Path(file_name).suffix:
+            file_name += ".pdf"
+        shared, page_ranges, _model_version = self._official_request_options(options, MinerUBackend.PIPELINE, page_from, page_to)
+        body: dict[str, Any] = {"file_name": file_name, **shared}
+        if page_ranges:
+            body["page_range"] = page_ranges
+        if callback:
+            callback(0.20, "[MinerU] submit official agent parse task")
+        submit = requests.post(f"{origin}/api/v1/agent/parse/file", json=body, headers=headers, timeout=60)
+        data = self._official_payload(submit)
+        task_id = data.get("task_id")
+        file_url = data.get("file_url")
+        if not task_id or not file_url:
+            raise RuntimeError(f"[MinerU] official agent upload URL missing: {data}")
+        with open(pdf_file_path, "rb") as pdf_file:
+            uploaded = requests.put(file_url, data=pdf_file, timeout=600)
+        if uploaded.status_code not in (200, 201):
+            raise RuntimeError(f"[MinerU] official agent file upload failed status={uploaded.status_code} body={(uploaded.text or '')[:500]}")
+        result = self._poll_official(f"{origin}/api/v1/agent/parse/{task_id}", headers, callback)
+        markdown_url = result.get("markdown_url")
+        if not markdown_url:
+            raise RuntimeError(f"[MinerU] official agent result missing markdown_url: {result}")
+        downloaded = requests.get(markdown_url, timeout=120)
+        if not downloaded.ok:
+            raise RuntimeError(f"[MinerU] official markdown download failed status={downloaded.status_code}")
+        content_list = [{"type": "text", "text": downloaded.text or "", "page_idx": 0}]
+        content_path = output_path / f"{Path(pdf_file_path).stem}_content_list.json"
+        content_path.write_text(json.dumps(content_list, ensure_ascii=False), encoding="utf-8")
+
     def _run_mineru_api(self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, page_from: int = 0, page_to: int = MAXIMUM_PAGE_NUMBER) -> Path:
+        if self._is_official_cloud():
+            return self._run_mineru_official(input_path, output_dir, options, callback, page_from=page_from, page_to=page_to)
+
         pdf_file_path = str(input_path)
 
         if not os.path.exists(pdf_file_path):
@@ -594,7 +826,20 @@ class MinerUParser(RAGFlowPdfParser):
         return poss
 
     def _find_middle_json(self, output_dir: Path, subdir: Path, file_stem: str, safe_stem: str) -> Path | None:
-        middle_names = tuple(dict.fromkeys((f"{file_stem}_middle.json", f"{safe_stem}_middle.json", "middle.json")))
+        # Official mineru.net zip uses layout.json for the middle result, and may
+        # name files after a task UUID instead of the original PDF stem.
+        middle_names = tuple(
+            dict.fromkeys(
+                (
+                    f"{file_stem}_middle.json",
+                    f"{safe_stem}_middle.json",
+                    "middle.json",
+                    "layout.json",
+                    f"{file_stem}_layout.json",
+                    f"{safe_stem}_layout.json",
+                )
+            )
+        )
         for base in (subdir, output_dir):
             for name in middle_names:
                 candidate = base / name
@@ -602,11 +847,16 @@ class MinerUParser(RAGFlowPdfParser):
                     return candidate
 
         stem_dirs = tuple(dict.fromkeys((file_stem, safe_stem)))
-        for pattern in ("**/*_middle.json", "**/middle.json"):
+        unmatched = []
+        for pattern in ("**/*_middle.json", "**/middle.json", "**/*_layout.json", "**/layout.json"):
             for candidate in sorted(output_dir.glob(pattern)):
                 rel_parts = candidate.relative_to(output_dir).parts
                 if candidate.name in middle_names or any(stem_dir in rel_parts for stem_dir in stem_dirs):
                     return candidate
+                if candidate.name.endswith(("_middle.json", "_layout.json")) or candidate.name in {"middle.json", "layout.json"}:
+                    unmatched.append(candidate)
+        if len(unmatched) == 1:
+            return unmatched[0]
         return None
 
     @staticmethod
@@ -832,15 +1082,19 @@ class MinerUParser(RAGFlowPdfParser):
                 )
             patterns.extend(["**/content_list.json", "**/*_content_list.json"])
 
+            unmatched = []
             for pattern in patterns:
                 for candidate in sorted(output_dir.glob(pattern)):
                     self.logger.info(f"[MinerU] Trying fallback path: {candidate}")
-                    if candidate.name.endswith("_content_list.json"):
+                    if candidate.name.endswith("_content_list.json") or candidate.name == "content_list.json":
                         rel_parts = candidate.relative_to(output_dir).parts
                         in_stem_dir = any(stem_dir in rel_parts for stem_dir in stem_dirs)
                         stem_match = candidate.stem.startswith(file_stem) or candidate.stem.startswith(safe_stem)
                         if not (stem_match or in_stem_dir):
-                            self.logger.info(f"[MinerU] Skip unrelated fallback candidate: {candidate}")
+                            # Official mineru.net zip names files after a task UUID, not
+                            # the PDF stem. Keep the sole unmatched content_list.
+                            self.logger.info(f"[MinerU] Deferred unmatched fallback candidate: {candidate}")
+                            unmatched.append(candidate)
                             continue
                     attempted.append(candidate)
                     subdir = candidate.parent
@@ -848,6 +1102,16 @@ class MinerUParser(RAGFlowPdfParser):
                     break
                 if json_file:
                     break
+
+            if not json_file:
+                unique_unmatched = list(dict.fromkeys(unmatched))
+                if len(unique_unmatched) == 1:
+                    json_file = unique_unmatched[0]
+                    subdir = json_file.parent
+                    attempted.append(json_file)
+                    self.logger.info("[MinerU] Using sole unmatched content_list from official/zip output: %s", json_file)
+                elif unique_unmatched:
+                    attempted.extend(unique_unmatched)
 
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
