@@ -51,16 +51,34 @@ func TestRuntimeAdapterPreservesMetadataFilter(t *testing.T) {
 }
 
 func TestRuntimeAdapterPreservesCompiledExclusion(t *testing.T) {
-	service := &captureRetrievalService{}
-	_, err := NewRuntimeAdapter(service).Search(t.Context(), nil, agentrunt.RetrievalRequest{
-		Query:           "test",
-		ExcludeCompiled: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !service.req.ExcludeCompiled {
-		t.Fatal("ExcludeCompiled was dropped by the runtime bridge")
+	for _, tc := range []struct {
+		name             string
+		excludeCompiled  bool
+		onlyOriginalText bool
+	}{
+		{name: "neither"},
+		{name: "exclude compiled", excludeCompiled: true},
+		{name: "original text", onlyOriginalText: true},
+		{name: "both", excludeCompiled: true, onlyOriginalText: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &captureRetrievalService{}
+			req := agentrunt.RetrievalRequest{
+				Query:            "test",
+				RerankID:         "reranker",
+				ExcludeCompiled:  tc.excludeCompiled,
+				OnlyOriginalText: tc.onlyOriginalText,
+			}
+			if _, err := NewRuntimeAdapter(service).Search(t.Context(), nil, req); err != nil {
+				t.Fatal(err)
+			}
+			if service.req.ExcludeCompiled != req.ExcludeCompiled || service.req.OnlyOriginalText != req.OnlyOriginalText {
+				t.Fatalf("retrieval flags = (%v, %v), want (%v, %v)", service.req.ExcludeCompiled, service.req.OnlyOriginalText, req.ExcludeCompiled, req.OnlyOriginalText)
+			}
+			if service.req.RerankID != req.RerankID {
+				t.Fatalf("RerankID = %q, want %q", service.req.RerankID, req.RerankID)
+			}
+		})
 	}
 }
 
