@@ -45,6 +45,21 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 }
 
+// Excel's "CSV UTF-8" export starts with a BOM; it must not become part of
+// the first column name, which is repeated in every row's text.
+func TestCSVParser_UTF8BOM(t *testing.T) {
+	res := NewCSVParser().ParseWithResult(context.Background(), "bom.csv", []byte("\xef\xbb\xbfName,Age\nAlice,30\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("len(res.JSON) = %d, want header plus one row", len(res.JSON))
+	}
+	if res.JSON[1]["text"] != "Name：Alice; Age：30 ——Data" {
+		t.Errorf("row text = %q", res.JSON[1]["text"])
+	}
+}
+
 func TestCSVParserHTML4ExcelRemainsAtomic(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"html4excel": true})
