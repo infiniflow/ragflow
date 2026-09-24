@@ -64,13 +64,9 @@ type SearchBotRetrievalTestRequest struct {
 	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
+	Highlight              *bool                  `json:"highlight,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
-	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
-	//        → search.py highlightFields → ES get_highlight()
-	// Issue: https://github.com/infiniflow/ragflow/issues/15712
-	// Highlight           *bool                   `json:"highlight,omitempty"`
 }
 
 // UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
@@ -530,6 +526,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		TenantRerankID:         h.TenantRerankID,
 		RerankID:               h.RerankID,
 		Keyword:                h.Keyword,
+		Highlight:              h.Highlight,
 		SimilarityThreshold:    h.SimilarityThreshold,
 		VectorSimilarityWeight: h.VectorSimilarityWeight,
 	}
