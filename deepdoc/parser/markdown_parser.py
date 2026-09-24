@@ -43,7 +43,8 @@ class RAGFlowMarkdownParser:
         # MarkdownElementExtractor already shields fences (see _fenced_code_ranges), so
         # keep table extraction consistent with it.
         fence_pattern = re.compile(
-            r"^[ \t]{0,3}(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}\1[ \t]*$|\Z)",
+            r"^[ \t]{0,3}(?:(?P<backticks>`{3,})|(?P<tildes>~{3,}))[^\n]*\n"
+            r".*?(?:^[ \t]{0,3}(?(backticks)(?P=backticks)`*|(?P=tildes)~*)[ \t]*$|\Z)",
             re.MULTILINE | re.DOTALL,
         )
 
