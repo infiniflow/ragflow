@@ -475,6 +475,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       redoAll: 'Mevcut parçaları temizle',
       applyAutoMetadataSettings: 'Global otomatik meta veri ayarlarını uygula',
       parseFileTip: 'Ayrıştırmak istediğinizden emin misiniz?',
+      clearChunksReparseTip:
+        'Yeniden ayrıştırmak için parçaları temizlemek istediğinizden emin misiniz?',
       parseFile: 'Dosyayı ayrıştır',
       emptyMetadata: 'Meta veri yok',
       metadataField: 'Meta veri alanı',
@@ -2928,6 +2930,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       addPageNumbers: 'Sayfa Numarası Ekle',
       addTimestamp: 'Zaman Damgası Ekle',
       watermarkText: 'Filigran Metni',
+      headerText: 'Üst Bilgi Metni',
+      footerText: 'Alt Bilgi Metni',
+      includeDownloadInfoInContent: 'İndirme bilgisini içeriğe ekle',
+      contentPlaceholder: 'Markdown içeriği girin...',
+      filenamePlaceholder:
+        'document.ext (boş bırakılırsa otomatik oluşturulur)',
+      contentRequired: 'İçerik gereklidir',
+      fontSizeMin: 'Yazı tipi boyutu en az 12 olmalıdır',
       channel: 'Kanal',
       channelTip: `Bileşenin girdisi üzerinde metin araması veya haber araması yapın`,
       text: 'Metin',
