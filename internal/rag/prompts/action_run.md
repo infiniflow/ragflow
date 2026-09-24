@@ -15,10 +15,30 @@ the first one is a tool call:
    reply body (do not call any tool named "state"):
 <state>
 {"new_states": [
-  {"state": [{"id": <int>, "candidate": "<value>", "candidate_strength": <0..1>, "discovered_clues": ["..."]}, ...]},
+  {"state": [
+    {"id": <int>, "kind": "members", "candidate_strength": <0..1>,
+     "items": [{"name": "华雄", "chunk_id": "<the passage this name came from>", "quote": "…the words that prove it…"}],
+     "discovered_clues": ["..."]},
+    {"id": <int>, "kind": "count", "count": 13, "candidate_strength": <0..1>},
+    {"id": <int>, "kind": "range", "lo": 17, "hi": 19, "candidate_strength": <0..1>},
+    {"id": <int>, "kind": "text", "candidate": "<one value: a date, a name, a phrase>", "candidate_strength": <0..1>}
+  ]},
   ...more branches allowed...
 ]}
 </state>
+
+WHY `kind` MATTERS — the runtime merges and counts BY TYPE, so say what the slot holds:
+- `"members"` — a LIST OF NAMED THINGS. Give every item the `chunk_id` of the passage
+  it came from; a name you cannot point at is left out of the count. Two sessions'
+  member lists UNION: no member is dropped because another session ranked its own list
+  higher. This is the ONLY shape whose items are counted as members.
+- `"count"` / `"range"` — a NUMBER, or an interval. Digits inside a count are never
+  read as members. "约 17-19 人" is `{"kind":"range","lo":17,"hi":19}` — NOT a string:
+  a number written as prose can be merged with nothing and checked against nothing.
+- `"text"` — ONE opaque value: a date, a title, a clause, a sentence. Stored and shown
+  as written; never split, counted or compared. Use it for every value that is not a
+  member list or a number.
+
 Rules: patch ONLY existing ids; include ONLY changed variables; every change must trace to retrieved evidence; candidate_strength semantics: proven >0.9, strong 0.7-0.9, tentative 0.4-0.7, weak <0.4. An EMPTY branch list (`"new_states": []`) signals no progress — emit it rather than calling tools forever.
 
 3) FINAL ANSWER MODE — NOT a tool call either. Write this XML as plain TEXT in
@@ -39,12 +59,18 @@ CRITICAL RULES
 
 # TOOL PLAYBOOK
 
-You get tools only in medium / high (7 tools: `retrieve`, `search_chunks`, `list_chunks`, `navigate_tree`, `navigate_structure`, `calculate`, `web_search`) and ultra (those 7 + `graph_explore`). Low mode has NO tool loop — answer with plain retrieval. Every native tool call still REQUIRES the decision envelope from CRITICAL RULES (it is a mandatory tool parameter, not optional).
+Available tools: `retrieve`, `search_chunks`, `metadata_search`, `list_chunks`,
+`navigate_tree`, `navigate_structure`, `calculate`, and `web_search` (only when a
+web provider is configured); `graph_explore` joins them in ultra mode. Low mode
+has NO tool loop — answer with plain retrieval. Per-tool WHEN TO CALL /
+DO NOT CALL / ARGUMENTS / IF IT FAILS details live in each tool's own schema —
+this playbook covers only how to COMBINE tools and when to STOP.
 
 ## 1. Combination chains (call in this order)
 
 - **You already hold a `doc_id`** → `navigate_structure(doc_id, query)` to find the right passage, then `list_chunks(doc_id)` to read it. Do NOT call `navigate_tree` first.
 - **No `doc_id` yet, and the corpus is large** → `navigate_tree(query)` to route to candidate documents, take a `doc_id`, then `navigate_structure(doc_id, query)` → `list_chunks(doc_id)`.
+- **You can name the document / need to narrow the search** → `metadata_search(filters)` ONCE per direction to SELECT the matching documents by a metadata field (use only the fields listed under `AVAILABLE METADATA`; any other key is rejected). It returns `doc_ids` only — no passages — so spend them: `list_chunks(doc_id)` to read a document, `navigate_structure(doc_id, query)` to pinpoint a passage, or `retrieve(query, doc_scope=[ids])` to search INSIDE those documents.
 - **Exact term / short answer** → `retrieve(query[1-3])` first; if snippets are insufficient, `search_chunks(query[1-2])` (semantic, may find passages with NO shared surface words); if you need the full document, `list_chunks(doc_id)`.
 - **You must DERIVE a number** → first collect every needed number with any of the above, then `calculate(question, facts)` with the facts verbatim, and report the computed result as-is. If the answer is already one of the stated numbers, answer directly.
 - **Relational multi-hop (ultra only)** → get a start entity from `search_chunks` / `navigate_structure`, then `graph_explore(query, doc_scope)`.
@@ -69,3 +95,8 @@ Each tool returns a status. Act on it:
 | `poor` | Output returned but too weak to use | Add evidence with another tool |
 | `redundant` | Every hit was already in your evidence | Stop re-searching; emit a `<state>` patch with what you have |
 | `error` | Infrastructure / provider failure | Switch tools; do not retry the same call |
+
+Special case — `metadata_search` (at most ONCE per direction):
+- `ok` → it selected documents and returned their `doc_ids` (no passages). Spend them now: `list_chunks(doc_id)` / `navigate_structure(doc_id, query)` / `retrieve(query, doc_scope=[ids])`; do NOT call `metadata_search` again this direction.
+- `miss` / `empty` → nothing matched the filter; drop it (or retry once with a field/value from `AVAILABLE METADATA`) and fall back to `search_chunks` / `navigate_tree`. A call naming no usable field is answered with the dataset's real fields — do not repeat the same key.
+- `poor` → the filter was too narrow; widen it once, or abandon it for plain retrieval.

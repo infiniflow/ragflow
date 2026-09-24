@@ -253,18 +253,11 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when
 // the column is missing.
 //
-// It cannot be left to AutoMigrate. The model declares document_id's unique key
-// as a named unique index (uniqueIndex:idx_ingestion_task_document_id), while
-// the column is UNIQUE at the database level. GORM's MigrateColumnUnique reads
-// that pairing as a stray unique constraint: it issues
-// `ALTER TABLE ingestion_task DROP FOREIGN KEY uni_ingestion_task_document_id`
-// for the default constraint name, which does not exist, so MySQL fails with
-// 1091. AutoMigrate aborts on the first error, and because autoMigrateSafely
-// treats 1091 as a benign "already dropped" case, the failure is swallowed and
-// the migration reports success -- before ever reaching the missing column.
-// A column added to this table would therefore never be created, and every
-// ingestion_task query (the DAO selects all columns) would fail with
-// Error 1054.
+// It runs after AutoMigrate rather than being left to it. AutoMigrate reaches a
+// new column only once every earlier column has converged, so any failure on
+// the way (a duplicate key, a rejected ALTER) silently skips it, and every
+// ingestion_task query selects all columns: a missing column then fails the
+// whole API with Error 1054.
 func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	// Use the model, not the bare table name: HasColumn resolves the field
 	// against the statement schema and dereferences it, which a plain string
@@ -286,6 +279,70 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	}
 	common.Info("Added ingestion_task.pipeline_log_id")
 	return nil
+}
+
+// migrateIngestionLogRunIdentity adds the columns and indexes that make each
+// ingestion event belong to one immutable pipeline-operation-log run. It is
+// deliberately explicit: the runtime startup path auto-migrates ingestion
+// tables and cannot be trusted to converge an existing schema safely.
+func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	if migrator.HasTable(&entity.PipelineOperationLog{}) {
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "run_count") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN run_count int NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.run_count: %w", err)
+			}
+		}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
+			return err
+		}
+	}
+
+	if migrator.HasTable(&entity.IngestionTaskLog{}) {
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "pipeline_log_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE ingestion_task_log ADD COLUMN pipeline_log_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add ingestion_task_log.pipeline_log_id: %w", err)
+			}
+		}
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, "event_type") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE ingestion_task_log ADD COLUMN event_type tinyint NOT NULL DEFAULT 4",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add ingestion_task_log.event_type: %w", err)
+			}
+		}
+		if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type ingestionLogSchemaMigrator interface {
+	HasIndex(any, string) bool
+	CreateIndex(any, string) error
+}
+
+func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model any, name, operation string) error {
+	if migrator.HasIndex(model, name) {
+		return nil
+	}
+	if err := migrator.CreateIndex(model, name); err != nil && !migrator.HasIndex(model, name) {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on

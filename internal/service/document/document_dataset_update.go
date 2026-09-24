@@ -80,7 +80,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				hasError = true
 				continue
 			}
-			err = s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
+			err = s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 			if err != nil {
 				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
 				msg := err.Error()
@@ -93,7 +93,10 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				continue
 			}
 		}
-		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
+		// A status transition changes document availability, not its parsed
+		// content. The status event handles dataset-level retraction/re-enable;
+		// scheduling a delayed Wiki recompilation here creates duplicate events
+		// and a visible 20-second oscillation.
 		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
@@ -162,6 +165,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
 			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 			if tenantErr == nil && tenant != nil {
 				cleaned = service.ApplyComponentScopedParserConfig(
@@ -467,6 +471,7 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	if _, ok := config["raptor"]; !ok {
 		delete(merged, "raptor")
 	}
+	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
 
 	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),
@@ -478,8 +483,10 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		metaFields = map[string]interface{}{}
 	}
 	ingestionStatus := "UNSTART"
+	var task *entity.IngestionTask
 	if s.ingestionTaskDAO != nil && doc != nil && doc.ID != "" {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+		var err error
+		task, err = s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
 		}
@@ -487,34 +494,40 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 			ingestionStatus = task.Status
 		}
 	}
+	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, map[string]*entity.IngestionTask{doc.ID: task})
+	if err != nil {
+		common.Warn(fmt.Sprintf("get latest ingestion event for document %s: %v", doc.ID, err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
+	}
 	return &UpdateDatasetDocumentResponse{
-		ID:              doc.ID,
-		Thumbnail:       doc.Thumbnail,
-		DatasetID:       doc.KbID,
-		ParserID:        doc.ParserID,
-		PipelineID:      doc.PipelineID,
-		ParserConfig:    doc.ParserConfig,
-		SourceType:      doc.SourceType,
-		Type:            doc.Type,
-		CreatedBy:       doc.CreatedBy,
-		Name:            doc.Name,
-		Location:        doc.Location,
-		Size:            doc.Size,
-		TokenCount:      doc.TokenNum,
-		ChunkCount:      doc.ChunkNum,
-		Progress:        doc.Progress,
-		ProgressMsg:     doc.ProgressMsg,
-		ProcessBeginAt:  doc.ProcessBeginAt,
-		ProcessDuration: doc.ProcessDuration,
-		ContentHash:     doc.ContentHash,
-		MetaFields:      metaFields,
-		Suffix:          doc.Suffix,
-		IngestionStatus: ingestionStatus,
-		Status:          doc.Status,
-		CreateTime:      doc.CreateTime,
-		CreateDate:      doc.CreateDate,
-		UpdateTime:      doc.UpdateTime,
-		UpdateDate:      doc.UpdateDate,
+		ID:                   doc.ID,
+		Thumbnail:            doc.Thumbnail,
+		DatasetID:            doc.KbID,
+		ParserID:             doc.ParserID,
+		PipelineID:           doc.PipelineID,
+		ParserConfig:         doc.ParserConfig,
+		SourceType:           doc.SourceType,
+		Type:                 doc.Type,
+		CreatedBy:            doc.CreatedBy,
+		Name:                 doc.Name,
+		Location:             doc.Location,
+		Size:                 doc.Size,
+		TokenCount:           doc.TokenNum,
+		ChunkCount:           doc.ChunkNum,
+		Progress:             doc.Progress,
+		ProgressMsg:          doc.ProgressMsg,
+		LatestIngestionEvent: latestEventsByDocument[doc.ID],
+		ProcessBeginAt:       doc.ProcessBeginAt,
+		ProcessDuration:      doc.ProcessDuration,
+		ContentHash:          doc.ContentHash,
+		MetaFields:           metaFields,
+		Suffix:               doc.Suffix,
+		IngestionStatus:      ingestionStatus,
+		Status:               doc.Status,
+		CreateTime:           doc.CreateTime,
+		CreateDate:           doc.CreateDate,
+		UpdateTime:           doc.UpdateTime,
+		UpdateDate:           doc.UpdateDate,
 	}, nil
 }
 

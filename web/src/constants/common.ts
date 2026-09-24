@@ -71,6 +71,7 @@ export enum LanguageAbbreviation {
   Tr = 'tr',
   Ko = 'ko',
   Nl = 'nl',
+  Az = 'az',
 }
 
 export const LanguageAbbreviationMap = {
@@ -91,6 +92,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Tr]: 'Türkçe',
   [LanguageAbbreviation.Ko]: '한국어',
   [LanguageAbbreviation.Nl]: 'Nederlands',
+  [LanguageAbbreviation.Az]: 'Azərbaycanca',
 };
 
 export const LanguageTranslationMap = {
@@ -162,6 +164,25 @@ export const Images = [
   'webp',
   // 'svg',
   'ico',
+];
+
+export const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
 ];
 
 // Without FileViewer

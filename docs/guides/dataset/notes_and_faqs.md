@@ -22,6 +22,19 @@ After metadata is manually modified, interface filters can usually use the new v
 
 It is recommended to troubleshoot in the order of **document status -> configuration -> Logs**. First confirm whether the document is still parsing or has failed, then check the parsing method, model, and data source configuration, and finally open document log details to view the error cause.
 
+## Why Does the Log Show "File not found in object storage."?
+
+This message means the source file could not be found in object storage when RAGFlow tried to read it for parsing. The original storage error remains available in the document log.
+
+Possible causes include:
+
+- The disk holding MinIO's data directory ran low on free space, preventing an earlier upload from being written successfully.
+- The file was deleted from object storage after it was uploaded.
+
+The message alone does not establish that disk space is the cause. Check the free space on the machine or volume hosting MinIO's data directory and review MinIO's logs from the time of the upload for write failures. In the default Docker Compose deployment, MinIO stores its data in the `minio_data` volume mounted at `/data`.
+
+After resolving any storage issues, upload the missing file again and retry parsing. Retrying parsing alone does not restore a missing file.
+
 ## What Should I Do If Retrieval Testing Cannot Retrieve Content?
 
 It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Vector similarity weight**, and **Top K**.

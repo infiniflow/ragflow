@@ -35,9 +35,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"strconv"
 	"strings"
-	"time"
 
 	"ragflow/internal/agent/runtime"
 
@@ -195,22 +193,6 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 	}
 }
 
-// componentTimeout returns the per-component Invoke timeout.
-//
-// Reads the COMPONENT_EXEC_TIMEOUT env var (seconds); defaults to 600s
-// (10 min) to match the Python @timeout decorator's default in
-// agent/component/base.py. Invalid / non-positive values fall back to
-// the default — invalid input must never widen the timeout silently.
-func componentTimeout() time.Duration {
-	const def = 600 * time.Second
-	if v := common.GetEnv(common.EnvComponentExecTimeout); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
-	}
-	return def
-}
-
 // realComponentBody returns a body that delegates to the supplied
 // runtime.Component. The component is constructed once at build time
 // (in buildNodeBody) and re-invoked per iteration.
@@ -257,6 +239,10 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 		// model deadlines remain enforced at the model driver.
 		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
+		// Bind the node id into the fraction reporter so the component's
+		// runtime.ReportComponentFraction calls are attributed to this node
+		// without the component knowing its own cpnID.
+		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
@@ -267,20 +253,30 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 			return e
 		})
 		if invokeErr != nil {
-			// Surface the failure as a structured log line. The wrapped error
-			// already carries the full cause chain (e.g. deepseek DNS/timeout),
-			// but without this the failure only showed up as a generic
-			// "Task ... failed" line with no clear cause in the logs.
-			common.Error("canvas: component invoke failed", invokeErr,
-				zap.String("component_id", cpnID),
-				zap.String("component_class", componentClass))
 			switch {
-			case errors.Is(invokeErr, context.DeadlineExceeded):
-				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
 			case errors.Is(invokeErr, context.Canceled):
+				// A user cancel is a normal control path; the authoritative
+				// "Task ... cancelled" line is logged by the service layer, so
+				// keep this at debug to avoid duplicate noise.
+				common.Debug("canvas: component invoke cancelled",
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
 				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
+			case errors.Is(invokeErr, context.DeadlineExceeded):
+				common.Error("canvas: component invoke failed", invokeErr,
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
+				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
+			default:
+				// Surface the failure as a structured log line. The wrapped error
+				// already carries the full cause chain (e.g. deepseek DNS/timeout),
+				// but without this the failure only showed up as a generic
+				// "Task ... failed" line with no clear cause in the logs.
+				common.Error("canvas: component invoke failed", invokeErr,
+					zap.String("component_id", cpnID),
+					zap.String("component_class", componentClass))
+				return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
 			}
-			return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
 		}
 		if out == nil {
 			out = make(map[string]any, 1)
@@ -324,7 +320,7 @@ func placeholderBody(cpnID string) nodeBodyFn {
 func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		originalIn := in
-		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, _ := runtime.GetStateFromContext(ctx)
 		if state != nil {
 			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DocumentDAO document data access object
@@ -43,6 +44,18 @@ func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entit
 func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
 	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &document, nil
+}
+
+// GetByIDForUpdate fetches a document while holding the row lock used to
+// serialize creation of its ingestion-run identity. Callers must use a short
+// transaction and perform no external I/O while holding the lock.
+func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
+	var document entity.Document
+	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +169,7 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 	// only the newest row, with ID as a deterministic tie-breaker for equal
 	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
@@ -421,6 +434,45 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 	return result, nil
 }
 
+// ListParserConfigsByKBIDs returns each dataset's distinct document
+// parser_config that declares a tag source file, keyed by dataset ID.
+//
+// Because parser_config is a LONGTEXT column and also carries per-document
+// state such as page ranges, an unconstrained DISTINCT across all documents
+// forces disk temporary tables and filesort over large JSON blobs. Filtering
+// by `parser_config LIKE '%tag_file_id%'` drops the vast majority of
+// documents that carry no tag configuration before distinct deduplication,
+// avoiding OOM and slow queries on large datasets.
+func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]entity.JSONMap, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var rows []struct {
+		KbID         string         `gorm:"column:kb_id"`
+		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
+	}
+	query := db.WithContext(ctx).Table("document").
+		Distinct("kb_id", "parser_config").
+		Where("kb_id IN ?", kbIDs)
+	if db.Dialector.Name() == "sqlite" {
+		query = query.Where("CAST(parser_config AS TEXT) LIKE '%tag_file_id%'")
+	} else {
+		query = query.Where("parser_config LIKE '%tag_file_id%'")
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]entity.JSONMap, len(kbIDs))
+	for _, row := range rows {
+		if len(row.ParserConfig) == 0 {
+			continue
+		}
+		result[row.KbID] = append(result[row.KbID], row.ParserConfig)
+	}
+	return result, nil
+}
+
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if len(ids) == 0 {
@@ -428,22 +480,6 @@ func (dao *DocumentDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string)
 	}
 	var documents []*entity.Document
 	err := db.WithContext(ctx).Model(&entity.Document{}).Where("id IN ?", ids).Find(&documents).Error
-	if err != nil {
-		return nil, err
-	}
-	return documents, nil
-}
-
-// GetByIDsAndTenantIDs retrieves documents by IDs scoped to knowledgebase owners.
-func (dao *DocumentDAO) GetByIDsAndTenantIDs(ctx context.Context, db *gorm.DB, ids, tenantIDs []string) ([]*entity.Document, error) {
-	if len(ids) == 0 || len(tenantIDs) == 0 {
-		return nil, nil
-	}
-	var documents []*entity.Document
-	err := db.WithContext(ctx).Model(&entity.Document{}).
-		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
-		Where("document.id IN ? AND knowledgebase.tenant_id IN ? AND knowledgebase.status = ?", ids, tenantIDs, string(entity.StatusValid)).
-		Find(&documents).Error
 	if err != nil {
 		return nil, err
 	}

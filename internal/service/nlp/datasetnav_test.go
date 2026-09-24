@@ -69,10 +69,15 @@ func (m *memNavEngine) DeleteChunks(_ context.Context, cond map[string]interface
 
 func (m *memNavEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	var matched []map[string]interface{}
-	hasDense := len(req.MatchExprs) > 0
+	// This engine implements the DENSE leg only. A lexical match expression is
+	// deliberately a no-op rather than a dense one: treating a text expression
+	// as dense would look for a q_0_vec column and silently drop every row, so a
+	// keyword search would look broken in tests.
+	hasDense := false
 	var queryVec []float64
-	if hasDense {
+	if len(req.MatchExprs) > 0 {
 		if de, ok := req.MatchExprs[0].(*types.MatchDenseExpr); ok {
+			hasDense = true
 			queryVec = de.EmbeddingData
 		}
 	}
@@ -365,6 +370,210 @@ func TestNavNode_JSONShape_SnakeCase(t *testing.T) {
 			t.Errorf("NavNode JSON leaked PascalCase key %q; got %s", bad, b)
 		}
 	}
+	// A search hit carries the tree edge and the hit flag. Both are optional:
+	// the ordinary tree reads (root clusters, children) never set them, so they
+	// must stay out of the payload there.
+	hit := nav.NavNode{Name: "doc.pdf", Type: "doc", Parent: "topic 8738e200", Matched: true}
+	hb, err := json.Marshal(hit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hm map[string]interface{}
+	if err := json.Unmarshal(hb, &hm); err != nil {
+		t.Fatal(err)
+	}
+	if hm["parent_kwd"] != "topic 8738e200" || hm["matched"] != true {
+		t.Errorf("search hit JSON = %s, want parent_kwd + matched", hb)
+	}
+	if _, ok := m["matched"]; ok {
+		t.Errorf("a non-hit NavNode must not carry matched; got %s", b)
+	}
+}
+
+// TestNavService_ListClusters_SearchReturnsPrunedForest pins the search shape:
+// the hits come back TOGETHER with the cluster path above them, so the caller
+// nests the flat list into one tree per root cluster instead of rendering every
+// hit — and every matched subtree — as its own tree.
+func TestNavService_ListClusters_SearchReturnsPrunedForest(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	const (
+		rootCluster = "三国 11111111"
+		subCluster  = "名将 22222222"
+	)
+	rows := []map[string]interface{}{
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavCluster,
+			"title_kwd": rootCluster, "parent_kwd": navRootParent, "depth_int": 0,
+			"doc_count_int": 2, "doc_ids_kwd": []string{"d1", "d2"},
+			"content_with_weight": `{"type":"nav_cluster","description":"三国主题"}`,
+		},
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavCluster,
+			"title_kwd": subCluster, "parent_kwd": rootCluster, "depth_int": 1,
+			"doc_count_int": 1, "doc_ids_kwd": []string{"d1"},
+			"content_with_weight": `{"type":"nav_cluster","description":"名将主题"}`,
+		},
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+			"doc_id": "d1", "parent_kwd": subCluster, "depth_int": 2,
+			"title_kwd": "三国名将事迹概要", "doc_count_int": 1,
+			"content_with_weight": `{"type":"nav_doc","description":"三国名将事迹概要\n正文"}`,
+		},
+		// A second leaf in subCluster: two hits in ONE cluster must count once.
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+			"doc_id": "d4", "parent_kwd": subCluster, "depth_int": 2,
+			"title_kwd": "名将功过评析", "doc_count_int": 1,
+			"content_with_weight": `{"type":"nav_doc","description":"名将功过评析"}`,
+		},
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+			"doc_id": "d2", "parent_kwd": rootCluster, "depth_int": 1,
+			"title_kwd": "其他概要", "doc_count_int": 1,
+			"content_with_weight": `{"type":"nav_doc","description":"其他概要"}`,
+		},
+		// An orphan whose parent cluster is gone: the hit is still returned (as
+		// its own root) rather than dropped.
+		{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+			"doc_id": "d3", "parent_kwd": "missing-cluster", "depth_int": 1,
+			"title_kwd": "孤儿概要", "doc_count_int": 1,
+			"content_with_weight": `{"type":"nav_doc","description":"孤儿概要"}`,
+		},
+	}
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, total, err := ns.ListClusters(t.Context(), "t1", "kb1", "任意关键词", 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test engine ignores the lexical expression, so all four nav_doc rows
+	// are hits. total is the CLUSTER count — the same quantity the nav tree
+	// header shows while browsing — not the hit count: d1 and d4 share
+	// subCluster (one cluster, two hits), d2 sits directly in rootCluster, and
+	// d3's cluster edge dangles. The path rows above the hits are not counted.
+	if total != 3 {
+		t.Errorf("search total = %d, want 3 (the clusters the hits landed in, not the 4 hits)", total)
+	}
+	byID := make(map[string]nav.NavNode, len(nodes))
+	for _, n := range nodes {
+		if n.Type == "doc" {
+			byID[n.DocID] = n
+		}
+	}
+	if len(byID) != 4 {
+		t.Fatalf("search forest returned %d doc nodes, want 4: %+v", len(byID), nodes)
+	}
+	// The cluster path above d1 (sub-cluster then root) must be present so the
+	// tree stays ONE tree, and it must not be flagged as a hit.
+	var gotRoot, gotSub bool
+	for _, n := range nodes {
+		switch n.Name {
+		case rootCluster:
+			gotRoot = true
+			if n.Matched {
+				t.Errorf("path cluster %q marked as a hit", n.Name)
+			}
+			if n.Parent != navRootParent {
+				t.Errorf("root cluster parent = %q, want %q", n.Parent, navRootParent)
+			}
+		case subCluster:
+			gotSub = true
+			if n.Matched {
+				t.Errorf("path cluster %q marked as a hit", n.Name)
+			}
+			if n.Parent != rootCluster {
+				t.Errorf("sub cluster parent = %q, want %q", n.Parent, rootCluster)
+			}
+		}
+	}
+	if !gotRoot || !gotSub {
+		t.Fatalf("search forest is missing the path above d1 (root=%v sub=%v): %+v", gotRoot, gotSub, nodes)
+	}
+	// The leaf keeps both the tree edge and its label (title_kwd, the summary's
+	// first line — the same column the model-facing readers use).
+	if got := byID["d1"]; got.Parent != subCluster || !got.Matched || got.Name != "三国名将事迹概要" {
+		t.Errorf("hit d1 = %+v, want parent=%q matched=true name=三国名将事迹概要", got, subCluster)
+	}
+	if got := byID["d4"]; got.Parent != subCluster || !got.Matched {
+		t.Errorf("hit d4 = %+v, want parent=%q matched=true", got, subCluster)
+	}
+	if got := byID["d2"]; got.Parent != rootCluster || !got.Matched {
+		t.Errorf("hit d2 = %+v, want parent=%q matched=true", got, rootCluster)
+	}
+	if got := byID["d3"]; got.Parent != "missing-cluster" || !got.Matched {
+		t.Errorf("orphan hit d3 = %+v, want it still returned with its edge", got)
+	}
+
+	// The ordinary (no-keyword) read is unchanged: depth-0 clusters only.
+	clusters, rootTotal, err := ns.ListClusters(t.Context(), "t1", "kb1", "", 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootTotal != 1 || len(clusters) != 1 || clusters[0].Name != rootCluster {
+		t.Fatalf("root listing = %+v (total %d), want the single root cluster", clusters, rootTotal)
+	}
+	if clusters[0].Matched {
+		t.Error("a non-search read must not mark nodes as hits")
+	}
+}
+
+// TestSearchNavClusterCount pins the search header's number: how many clusters
+// the hits landed in — not the hit count (which would make the header mean
+// "documents" in search mode), and not every cluster row returned either, since
+// an ancestor shared by two hits is a path row.
+func TestSearchNavClusterCount(t *testing.T) {
+	hit := func(docID, parent string) map[string]interface{} {
+		return map[string]interface{}{"doc_id": docID, "parent_kwd": parent}
+	}
+	cases := []struct {
+		name    string
+		matches []map[string]interface{}
+		want    int64
+	}{
+		{
+			name:    "no hits",
+			matches: nil,
+			want:    0,
+		},
+		{
+			name:    "two hits in one cluster count once",
+			matches: []map[string]interface{}{hit("d1", "三国 11111111"), hit("d2", "三国 11111111")},
+			want:    1,
+		},
+		{
+			name: "two sub-clusters under one root count their own clusters, not the ancestor",
+			matches: []map[string]interface{}{
+				hit("d1", "名将 22222222"), hit("d2", "谋士 33333333"),
+			},
+			want: 2,
+		},
+		{
+			name:    "hits in different root clusters",
+			matches: []map[string]interface{}{hit("d1", "三国 11111111"), hit("d2", "唐宋 44444444")},
+			want:    2,
+		},
+		{
+			name:    "a leaf with no cluster edge is not counted",
+			matches: []map[string]interface{}{hit("d1", navRootParent), hit("d2", "")},
+			want:    0,
+		},
+		{
+			name:    "an empty row is dropped",
+			matches: []map[string]interface{}{{}, hit("d1", "三国 11111111")},
+			want:    1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := searchNavClusterCount(tc.matches); got != tc.want {
+				t.Errorf("searchNavClusterCount = %d, want %d", got, tc.want)
+			}
+		})
+	}
 }
 
 // TestNavNamingHelpers_Readable verifies the nav display-name helpers produce
@@ -433,6 +642,48 @@ func TestNodeFromRow_ReadableName(t *testing.T) {
 	cluster := ns.nodeFromRow(clusterRow, "cluster")
 	if cluster.Name != "cluster_abc12345" {
 		t.Errorf("cluster key = %q, want it kept verbatim as the parent_kwd lookup key", cluster.Name)
+	}
+}
+
+// TestNodeFromRow_LabelSource pins which column the nav tree renders: title_kwd
+// (the summary's first line, the same label NavHit.Name carries to the model),
+// overridden by an explicit readable `name` column when the row has one (Python's
+// writer stores one; Go's rows do not). A cluster keeps its key from title_kwd.
+func TestNodeFromRow_LabelSource(t *testing.T) {
+	ns := &NavService{}
+	cases := []struct {
+		name string
+		row  map[string]interface{}
+		want string
+	}{
+		{
+			name: "the content title labels a document leaf",
+			row: map[string]interface{}{
+				"title_kwd": "三国名将事迹概要", "type_kwd": "nav_doc",
+			},
+			want: "三国名将事迹概要",
+		},
+		{
+			name: "the name column wins over the content title",
+			row: map[string]interface{}{
+				"name": "三国名将事迹概要", "title_kwd": "机器键_ab12cd34ef56", "type_kwd": "nav_doc",
+			},
+			want: "三国名将事迹概要",
+		},
+		{
+			name: "a cluster keeps its key from title_kwd",
+			row: map[string]interface{}{
+				"title_kwd": "三国名将事迹概要 3fdf14d0", "type_kwd": "nav_cluster", "doc_count_int": 3,
+			},
+			want: "三国名将事迹概要 3fdf14d0",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ns.nodeFromRow(tc.row, "doc").Name; got != tc.want {
+				t.Errorf("nodeFromRow name = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -706,6 +957,426 @@ func TestNavService_NavDocDepth(t *testing.T) {
 	}
 }
 
+// TestNavService_NavDocLabel pins the nav_doc leaf's label on both write sites:
+// title_kwd carries the summary's first line, one column for both readers — the
+// tree (nodeFromRow) and the model (NavHit.Name → the routed document's
+// <summary>). No second label column is written.
+func TestNavService_NavDocLabel(t *testing.T) {
+	summary := "三国名将事迹概要\n三国名将事迹概述：关羽斩颜良诛文丑。"
+
+	t.Run("the leaf label is the summary's first line", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", summary)); err != nil {
+			t.Fatalf("UpsertDoc: %v", err)
+		}
+		if got := navDocRowTitle(t, eng, "d1"); got != "三国名将事迹概要" {
+			t.Errorf("nav_doc title_kwd = %q, want the summary's first line", got)
+		}
+		if _, ok := navDocRow(t, eng, "d1")["docnm_kwd"]; ok {
+			t.Error("nav_doc carries a separate docnm_kwd label; the label lives in title_kwd")
+		}
+	})
+
+	t.Run("the merge path labels the leaf too", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		// d1 creates the root cluster; d2's summary embeds identically, so it
+		// merges into that cluster (the second nav_doc write site).
+		if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+			t.Fatalf("UpsertDoc d1: %v", err)
+		}
+		if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+			t.Fatalf("UpsertDoc d2: %v", err)
+		}
+		if got := navDocRowTitle(t, eng, "d2"); got != "aaa two" {
+			t.Errorf("merged nav_doc title_kwd = %q, want the summary's first line", got)
+		}
+	})
+}
+
+// TestNavService_UpsertDoc_RestoresContentLabel covers the recompile upgrade for
+// legacy rows whose title_kwd holds the document file name (written by the
+// earlier label rule): the refresh puts the leaf back on the summary's first
+// line, in place (same row).
+func TestNavService_UpsertDoc_RestoresContentLabel(t *testing.T) {
+	summary := "三国名将事迹概要\n三国名将事迹概述：关羽斩颜良诛文丑。"
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	in := navUpsertInput("t1", "kb1", "d1", summary)
+	if err := ns.UpsertDoc(t.Context(), in); err != nil {
+		t.Fatalf("UpsertDoc: %v", err)
+	}
+	// Simulate a legacy row whose leaf label holds the file name.
+	navDocRow(t, eng, "d1")["title_kwd"] = "三国人物.pdf"
+
+	if err := ns.UpsertDoc(t.Context(), in); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	if got := navDocRowTitle(t, eng, "d1"); got != "三国名将事迹概要" {
+		t.Errorf("nav_doc title_kwd = %q, want it restored to the summary's first line", got)
+	}
+	assertSingleNavDocRow(t, eng, "d1")
+}
+
+// TestNavService_UpsertDoc_PlacementBySimilarity pins where a similar-but-not-
+// mergeable document opens its cluster, against the three similarity bands
+// (Python _MERGE_THRESHOLD=0.80 / _MIN_SIM=0.50):
+//
+//   - >= 0.80  → merge into the best cluster (the document leaf joins it);
+//   - <  0.80  → its own cluster, at the ROOT level when the best match is a
+//     root cluster (Python attaches it to the best cluster's parent, which is
+//     the root sentinel there), one level deeper when the best match is nested.
+//
+// The stub embedder's vectors are nearly collinear for any text, so the bands
+// are driven with explicit vectors (UpsertDocInput.Embedd) and seeded cluster
+// rows.
+func TestNavService_UpsertDoc_PlacementBySimilarity(t *testing.T) {
+	const dim = 1024
+
+	navVec := navTestUnitVec
+	seedCluster := func(eng *memNavEngine, name, parentKwd string, depth int, vec []float64) {
+		row := map[string]interface{}{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavCluster,
+			"title_kwd": name, "parent_kwd": parentKwd, "depth_int": depth,
+			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
+			"q_1024_vec": vec,
+		}
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	findCluster := func(t *testing.T, eng *memNavEngine, parentKwd string) map[string]interface{} {
+		t.Helper()
+		for _, row := range eng.rows {
+			if row["type_kwd"] == nav.TypeNavCluster && row["parent_kwd"] == parentKwd {
+				return row
+			}
+		}
+		t.Fatalf("no nav_cluster row with parent_kwd=%q", parentKwd)
+		return nil
+	}
+	docRows := func(eng *memNavEngine, docID string) []map[string]interface{} {
+		out := []map[string]interface{}{}
+		for _, row := range eng.rows {
+			if row["type_kwd"] == nav.TypeNavDoc && row["doc_id"] == docID {
+				out = append(out, row)
+			}
+		}
+		return out
+	}
+
+	t.Run("an unrelated doc opens a root-level cluster", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		seedCluster(eng, "三国演义 aaaaaaaa", navRootParent, 0, navVec(1))
+
+		in := navUpsertInput("t1", "kb1", "d2", "出师表要义")
+		in.Embedd = f64ToF32Slice(navVec(0.60, 0.80)) // cos 0.60: related, not mergeable
+		if err := ns.UpsertDoc(t.Context(), in); err != nil {
+			t.Fatalf("UpsertDoc: %v", err)
+		}
+
+		// The seeded cluster keeps its name; the newly opened one is the other
+		// root-level cluster.
+		var opened map[string]interface{}
+		for _, row := range eng.rows {
+			if row["type_kwd"] == nav.TypeNavCluster && row["title_kwd"] != "三国演义 aaaaaaaa" {
+				opened = row
+			}
+		}
+		if opened == nil {
+			t.Fatal("no root-level cluster was opened for the unrelated document")
+		}
+		if opened["parent_kwd"] != navRootParent {
+			t.Errorf("new cluster parent_kwd = %v, want the root sentinel (top level, beside the existing cluster)", opened["parent_kwd"])
+		}
+		if d, _ := opened["depth_int"].(int); d != 0 {
+			t.Errorf("new cluster depth_int = %v, want 0 (a root cluster)", opened["depth_int"])
+		}
+		// Its document leaf sits one level below it.
+		rows := docRows(eng, "d2")
+		if len(rows) != 1 {
+			t.Fatalf("nav_doc rows for d2 = %d, want 1", len(rows))
+		}
+		if rows[0]["parent_kwd"] != opened["title_kwd"] {
+			t.Errorf("nav_doc parent = %v, want the new cluster %v", rows[0]["parent_kwd"], opened["title_kwd"])
+		}
+		if d, _ := rows[0]["depth_int"].(int); d != 1 {
+			t.Errorf("nav_doc depth_int = %v, want 1", rows[0]["depth_int"])
+		}
+	})
+
+	t.Run("a mergeable doc joins the best cluster", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		seedCluster(eng, "三国演义 aaaaaaaa", navRootParent, 0, navVec(1))
+
+		in := navUpsertInput("t1", "kb1", "d2", "三国名将")
+		in.Embedd = f64ToF32Slice(navVec(0.90, math.Sqrt(1-0.81))) // cos 0.90
+		if err := ns.UpsertDoc(t.Context(), in); err != nil {
+			t.Fatalf("UpsertDoc: %v", err)
+		}
+		rows := docRows(eng, "d2")
+		if len(rows) != 1 || rows[0]["parent_kwd"] != "三国演义 aaaaaaaa" {
+			t.Fatalf("nav_doc rows = %+v, want the leaf under the merged cluster", rows)
+		}
+		if clusters := countNavClusters(eng); clusters != 1 {
+			t.Errorf("nav_cluster rows = %d, want 1 (a merge must not open a cluster)", clusters)
+		}
+	})
+
+	t.Run("a nested best match keeps the child cluster", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		// Root cluster at cos 0.70 with the doc (>= _RECURSE_THRESHOLD, so the
+		// descent continues), nested cluster at 0.78 (< merge threshold, > the
+		// root's, so IT becomes the best match).
+		seedCluster(eng, "三国演义 aaaaaaaa", navRootParent, 0, navVec(1))
+		nested := "出师表要义 bbbbbbbb"
+		seedCluster(eng, nested, "三国演义 aaaaaaaa", 1, navVec(0.546, 0.5569, 0.6257))
+
+		in := navUpsertInput("t1", "kb1", "d3", "出师表陈情")
+		in.Embedd = f64ToF32Slice(navVec(0.70, 0.714)) // cos(root) 0.70, cos(child) 0.78
+		if err := ns.UpsertDoc(t.Context(), in); err != nil {
+			t.Fatalf("UpsertDoc: %v", err)
+		}
+		child := findCluster(t, eng, nested)
+		if d, _ := child["depth_int"].(int); d != 2 {
+			t.Errorf("new child cluster depth_int = %v, want 2 (best depth 1 + 1)", child["depth_int"])
+		}
+		rows := docRows(eng, "d3")
+		if len(rows) != 1 || rows[0]["parent_kwd"] != child["title_kwd"] {
+			t.Fatalf("nav_doc rows = %+v, want the leaf under the new child cluster %v", rows, child["title_kwd"])
+		}
+		if d, _ := rows[0]["depth_int"].(int); d != 3 {
+			t.Errorf("nav_doc depth_int = %v, want 3", rows[0]["depth_int"])
+		}
+	})
+
+}
+
+// navTestUnitVec builds a 1024-dim unit vector from the leading components (the
+// rest zero), so a test can dial an exact cosine against a seeded cluster's
+// vector. 1024 is the stub embedder's dimension.
+func navTestUnitVec(components ...float64) []float64 {
+	v := make([]float64, 1024)
+	var norm float64
+	for i, c := range components {
+		v[i] = c
+		norm += c * c
+	}
+	if norm > 0 {
+		scale := 1 / math.Sqrt(norm)
+		for i := range v {
+			v[i] *= scale
+		}
+	}
+	return v
+}
+
+// TestNavService_FindBestCluster_DeepestMatchWins pins the descent result against
+// Python _find_best_cluster: the returned match is the DEEPEST cluster reached
+// while every step clears navRecurse (0.65) — not the strongest one seen — and a
+// child below the threshold is not adopted at all. The placement branch decides
+// from that (deeper, possibly lower) similarity, so this is what keeps the two
+// implementations in step.
+func TestNavService_FindBestCluster_DeepestMatchWins(t *testing.T) {
+	const (
+		rootName  = "三国演义 aaaaaaaa"
+		childName = "出师表要义 bbbbbbbb"
+	)
+	seedCluster := func(eng *memNavEngine, name, parentKwd string, depth int, vec []float64) {
+		row := map[string]interface{}{
+			"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavCluster,
+			"title_kwd": name, "parent_kwd": parentKwd, "depth_int": depth,
+			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
+			"q_1024_vec": vec,
+		}
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// doc/child pairs are built so the document's cosine against each seeded
+	// cluster vector is exactly the intended value.
+	cases := []struct {
+		name      string
+		doc       []float64
+		child     []float64
+		wantName  string
+		wantSim   float64
+		wantDepth int
+	}{
+		{
+			// Root 0.85 (mergeable on its own) but the child still clears the
+			// recurse threshold at 0.70: Python descends and returns the CHILD,
+			// so the placement sees 0.70 and opens a new cluster instead of
+			// merging into the root.
+			name:      "a recurseable descendant displaces a stronger ancestor",
+			doc:       navTestUnitVec(0.85, 0.5268),
+			child:     navTestUnitVec(0.595, 0.3688, 0.7141),
+			wantName:  childName,
+			wantSim:   0.70,
+			wantDepth: 1,
+		},
+		{
+			// The child is below the threshold: it is not adopted at all, so the
+			// root (0.90) stays the answer and the document merges into it.
+			name:      "a child below the recurse threshold is not adopted",
+			doc:       navTestUnitVec(0.90, 0.4359),
+			child:     navTestUnitVec(0.36, 0.1744, 0.9165),
+			wantName:  rootName,
+			wantSim:   0.90,
+			wantDepth: 0,
+		},
+		{
+			// The root itself is returned even when it does not clear the
+			// threshold (Python seeds `best` with its top-1 root).
+			name:      "an unrelated root is still returned",
+			doc:       navTestUnitVec(0.40, 0.9165),
+			child:     navTestUnitVec(0.36, 0.1744, 0.9165),
+			wantName:  rootName,
+			wantSim:   0.40,
+			wantDepth: 0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng := newMemNavEngine()
+			ns := newTestNav(eng)
+			seedCluster(eng, rootName, navRootParent, 0, navTestUnitVec(1))
+			seedCluster(eng, childName, rootName, 1, tc.child)
+
+			name, sim, depth, err := ns.findBestCluster(t.Context(), "t1", "kb1", f64ToF32Slice(tc.doc))
+			if err != nil {
+				t.Fatalf("findBestCluster: %v", err)
+			}
+			if name != tc.wantName || depth != tc.wantDepth {
+				t.Errorf("findBestCluster = (%q, %v, %d), want (%q, %v, %d)",
+					name, sim, depth, tc.wantName, tc.wantSim, tc.wantDepth)
+			}
+			if math.Abs(sim-tc.wantSim) > 1e-4 {
+				t.Errorf("findBestCluster sim = %v, want %v", sim, tc.wantSim)
+			}
+		})
+	}
+}
+
+// countNavClusters counts the nav_cluster rows of the mem engine.
+func countNavClusters(eng *memNavEngine) int {
+	n := 0
+	for _, row := range eng.rows {
+		if row["type_kwd"] == nav.TypeNavCluster {
+			n++
+		}
+	}
+	return n
+}
+
+// f64ToF32Slice narrows an explicit test vector to the engine's float32 shape.
+func f64ToF32Slice(in []float64) []float32 {
+	out := make([]float32, len(in))
+	for i, v := range in {
+		out[i] = float32(v)
+	}
+	return out
+}
+
+// assertSingleNavDocRow fails when docID has anything other than one nav_doc
+// row: the label refresh must UPDATE, never duplicate the leaf.
+func assertSingleNavDocRow(t *testing.T, eng *memNavEngine, docID string) {
+	t.Helper()
+	count := 0
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" && row["doc_id"] == docID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("nav_doc rows for %s = %d, want 1 (refresh, not a duplicate)", docID, count)
+	}
+}
+
+// TestNavService_SummariesByDocIDs_DescriptionLabel pins the routed-document
+// label — which callers render to the model as the document's <summary> — to the
+// nav_doc's stored description, i.e. the document's own summary text (Python
+// _nav_doc_summaries). The row's label is only the fallback: title_kwd carries
+// the summary's first line, not the whole text.
+func TestNavService_SummariesByDocIDs_DescriptionLabel(t *testing.T) {
+	summary := "三国名将事迹概要\n三国名将事迹概述：关羽斩颜良诛文丑。"
+
+	t.Run("the description wins over the tree label", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", summary)); err != nil {
+			t.Fatalf("UpsertDoc: %v", err)
+		}
+		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{"d1"})
+		if got["d1"] != summary {
+			t.Errorf("routed label = %q, want the stored description", got["d1"])
+		}
+		if got["d1"] == navDocRowTitle(t, eng, "d1") {
+			t.Error("routed label fell back to the tree label; the description must win")
+		}
+	})
+
+	t.Run("a row without a description falls back to its label", func(t *testing.T) {
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{
+			{
+				"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+				"doc_id": "d9", "title_kwd": "出师表全文内容与赏析",
+				"content_with_weight": `{"type":"nav_doc"}`,
+			},
+		}, "", "kb1"); err != nil {
+			t.Fatal(err)
+		}
+		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{"d9"})
+		if got["d9"] != "出师表全文内容与赏析" {
+			t.Errorf("label = %q, want the stored title_kwd fallback", got["d9"])
+		}
+	})
+
+	t.Run("a raw id is never a label", func(t *testing.T) {
+		const rawID = "6564be8a6564be8a6564be8a6564be8a"
+		eng := newMemNavEngine()
+		ns := newTestNav(eng)
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{
+			{
+				"compile_kwd": navCompileKwd, "type_kwd": nav.TypeNavDoc,
+				"doc_id": rawID, "title_kwd": rawID,
+				"content_with_weight": `{"type":"nav_doc"}`,
+			},
+		}, "", "kb1"); err != nil {
+			t.Fatal(err)
+		}
+		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{rawID})
+		if _, ok := got[rawID]; ok {
+			t.Errorf("raw id used as a label: %+v", got)
+		}
+	})
+}
+
+// navDocRow returns the nav_doc row for docID.
+func navDocRow(t *testing.T, eng *memNavEngine, docID string) map[string]interface{} {
+	t.Helper()
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" && row["doc_id"] == docID {
+			return row
+		}
+	}
+	t.Fatalf("no nav_doc row for doc %s", docID)
+	return nil
+}
+
+// navDocRowTitle returns the title_kwd of the nav_doc row for docID.
+func navDocRowTitle(t *testing.T, eng *memNavEngine, docID string) string {
+	t.Helper()
+	title, _ := navDocRow(t, eng, docID)["title_kwd"].(string)
+	return title
+}
+
 // TestNavService_RemoveDoc_CascadesToEmptyCluster covers A3: after removing a
 // doc, a cluster left with no docs and no children is pruned (cleanupEmptyCluster),
 // and the doc is dropped from its parent cluster's doc_ids_kwd.
@@ -844,6 +1515,159 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	}
 	if remainingCount != 54 || remainingIDs != 54 {
 		t.Errorf("RemoveDoc after split must update count and membership: count=%d ids=%d", remainingCount, remainingIDs)
+	}
+}
+
+// stubNavMergeLLM is a canned nav.NavMergeLLM: it names every new cluster with
+// the configured topic title and fuses merges into the configured text.
+type stubNavMergeLLM struct {
+	name      string
+	summary   string
+	merged    string
+	mergeSeen [][]string
+}
+
+func (s *stubNavMergeLLM) CreateSummary(_ context.Context, _, _ string) (string, string, error) {
+	return s.name, s.summary, nil
+}
+
+func (s *stubNavMergeLLM) Merge(_ context.Context, _ string, texts []string) (string, error) {
+	s.mergeSeen = append(s.mergeSeen, texts)
+	return s.merged, nil
+}
+
+// recordingNavEmbedder records every embedded text so a test can assert that a
+// rewritten cluster description was re-embedded.
+type recordingNavEmbedder struct {
+	texts []string
+}
+
+func (e *recordingNavEmbedder) Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
+	e.texts = append(e.texts, texts...)
+	return stubNavEmbedder{}.Encode(ctx, tenantID, texts)
+}
+
+// navClusterRow returns the first nav_cluster row of the mem engine.
+func navClusterRow(t *testing.T, eng *memNavEngine) map[string]interface{} {
+	t.Helper()
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" {
+			return row
+		}
+	}
+	t.Fatal("no nav_cluster row")
+	return nil
+}
+
+// navRowDescription parses a nav row payload's description.
+func navRowDescription(t *testing.T, row map[string]interface{}) string {
+	t.Helper()
+	raw, _ := row["content_with_weight"].(string)
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("parse nav payload %q: %v", raw, err)
+	}
+	desc, _ := m["description"].(string)
+	return desc
+}
+
+// TestNavService_LLMClusterNaming pins the wired naming path: the cluster takes
+// the model's topic title as the title part and keeps the " <8-hex>" suffix —
+// the name is also the cluster key (parent_kwd / row id), so it must stay unique
+// per KB — and the model's summary becomes the cluster's description.
+func TestNavService_LLMClusterNaming(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	ns.SetNavMergeLLM(&stubNavMergeLLM{name: "三国名将事迹", summary: "三国名将事迹概览。"})
+	summary := "三国名将事迹概要\n正文"
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", summary)); err != nil {
+		t.Fatalf("UpsertDoc: %v", err)
+	}
+	cluster := navClusterRow(t, eng)
+	if want := readableClusterName("三国名将事迹", summary); cluster["title_kwd"] != want {
+		t.Errorf("cluster title_kwd = %v, want %q (topic title + uniqueness suffix)", cluster["title_kwd"], want)
+	}
+	if got := navRowDescription(t, cluster); got != "三国名将事迹概览。" {
+		t.Errorf("cluster description = %q, want the model summary", got)
+	}
+}
+
+// TestNavService_MergeFusesClusterDescription pins the wired merge path: a
+// document that joins an existing cluster fuses its summary into the cluster
+// description (Python _llm_merge) and re-embeds the rewritten description, so
+// later placements score against the merged topic.
+func TestNavService_MergeFusesClusterDescription(t *testing.T) {
+	eng := newMemNavEngine()
+	embedder := &recordingNavEmbedder{}
+	ns := NewNavService(embedder)
+	ns.engine = eng
+	stub := &stubNavMergeLLM{name: "topic", summary: "first doc summary", merged: "fused description"}
+	ns.SetNavMergeLLM(stub)
+
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+		t.Fatalf("UpsertDoc d1: %v", err)
+	}
+	// d2's summary embeds identically under the deterministic stub embedder, so
+	// it is placed inside d1's cluster (the merge branch).
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+		t.Fatalf("UpsertDoc d2: %v", err)
+	}
+
+	clusters := 0
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" {
+			clusters++
+		}
+	}
+	if clusters != 1 {
+		t.Fatalf("nav_cluster rows = %d, want 1 (d2 must merge, not create a cluster)", clusters)
+	}
+	cluster := navClusterRow(t, eng)
+	if got := navRowDescription(t, cluster); got != "fused description" {
+		t.Errorf("cluster description = %q, want the merged text", got)
+	}
+	if ids := firstStringSlice(cluster["doc_ids_kwd"]); len(ids) != 2 {
+		t.Errorf("cluster doc_ids_kwd = %v, want both documents", ids)
+	}
+	if len(stub.mergeSeen) != 1 {
+		t.Fatalf("Merge calls = %d, want 1", len(stub.mergeSeen))
+	}
+	if texts := stub.mergeSeen[0]; len(texts) != 2 || texts[0] != "first doc summary" || texts[1] != "aaa two" {
+		t.Errorf("Merge texts = %v, want [existing description, new summary]", texts)
+	}
+	reEmbedded := false
+	for _, text := range embedder.texts {
+		if text == "fused description" {
+			reEmbedded = true
+			break
+		}
+	}
+	if !reEmbedded {
+		t.Errorf("merged description was not re-embedded; embedded texts = %v", embedder.texts)
+	}
+}
+
+// TestNavService_MergeKeepsDescriptionWithoutLLM pins the no-LLM fallback:
+// without a NavMergeLLM the cluster keeps the description it was created with
+// (Python _llm_merge returns the existing text when chat_mdl is nil) instead of
+// accumulating a concatenation of every document summary.
+func TestNavService_MergeKeepsDescriptionWithoutLLM(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+		t.Fatalf("UpsertDoc d1: %v", err)
+	}
+	cluster := navClusterRow(t, eng)
+	before := navRowDescription(t, cluster)
+
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+		t.Fatalf("UpsertDoc d2: %v", err)
+	}
+	if got := navRowDescription(t, cluster); got != before {
+		t.Errorf("cluster description = %q, want it unchanged (%q) without an LLM", got, before)
+	}
+	if ids := firstStringSlice(cluster["doc_ids_kwd"]); len(ids) != 2 {
+		t.Errorf("cluster doc_ids_kwd = %v, want both documents", ids)
 	}
 }
 

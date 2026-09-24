@@ -25,6 +25,7 @@ import functools
 import importlib.util
 import logging
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -111,7 +112,6 @@ class FileTestModel(BaseTestModel):
     size = BigIntegerField(default=0, index=True)
     type = CharField(max_length=32, index=True)
     source_type = CharField(max_length=128, default="", index=True)
-    status = CharField(max_length=1, null=True, default="1", index=True)
     create_time = BigIntegerField(null=True, index=True)
     create_date = CharField(null=True, max_length=32, index=True)
     update_time = BigIntegerField(null=True, index=True)
@@ -320,7 +320,8 @@ def _load_module(monkeypatch):
     db_pkg.__path__ = [str(repo_root / "api" / "db")]
     db_pkg.UserTenantRole = type("UserTenantRole", (), {k: k for k in ("OWNER", "ADMIN", "NORMAL", "INVITE")})
     db_pkg.TenantPermission = type("TenantPermission", (), {"ME": "me", "TEAM": "team"})
-    db_pkg.FileType = type("FileType", (), {"FOLDER": "folder", "DOC": "doc", "VISUAL": "visual", "AURAL": "aural", "VIRTUAL": "virtual", "PDF": "pdf", "OTHER": "other"})
+    # Mirror api.db.FileType, which is a StrEnum, so members carry .value like the real one.
+    db_pkg.FileType = StrEnum("FileType", {"FOLDER": "folder", "DOC": "doc", "VISUAL": "visual", "AURAL": "aural", "VIRTUAL": "virtual", "PDF": "pdf", "OTHER": "other"})
     db_pkg.KNOWLEDGEBASE_FOLDER_NAME = ".knowledgebase"
     db_pkg.SKILLS_FOLDER_NAME = "skills"
     monkeypatch.setitem(sys.modules, "api.db", db_pkg)
@@ -520,6 +521,30 @@ def test_create_commit_delete(monkeypatch):
     )
     res = _run(module.create_commit("root-folder"))
     assert res["code"] == 0
+    # The File row is removed rather than flagged, because the model has no status column.
+    assert FileTestModel.get_or_none(FileTestModel.id == "f1") is None
+
+
+@pytest.mark.p2
+def test_create_commit_delete_folder_is_refused(monkeypatch):
+    module = _load_module(monkeypatch)
+    FileTestModel.create(id="d1", parent_id="root-folder", tenant_id="t1", created_by="test-user", name="sub", type="folder")
+
+    _setup_request(
+        module,
+        json_payload={
+            "message": "delete folder",
+            "files": [{"file_id": "d1", "file_name": "sub", "operation": "delete"}],
+        },
+    )
+    res = _run(module.create_commit("root-folder"))
+    assert res["code"] == 0
+    # A dropped folder row would strand every historical entry beneath it, because
+    # the hierarchy is rebuilt from live File rows rather than from tree state.
+    assert FileTestModel.get_or_none(FileTestModel.id == "d1") is not None
+    # The refusal drops the whole change, so history must not call the folder deleted.
+    items = list(FileCommitItemTestModel.select().where(FileCommitItemTestModel.file_id == "d1"))
+    assert items == []
 
 
 @pytest.mark.p2

@@ -212,11 +212,13 @@ func TestInsertCitationsWithVectors_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatal("expected citations")
 	}
-	if !strings.Contains(answer, "[ID:abc123]") {
-		t.Errorf("answer should contain [ID:abc123]: %q", answer)
+	// Markers carry the chunk's position in `chunks` (the list the caller returns
+	// as the reference), not its chunk id.
+	if !strings.Contains(answer, "[ID:0]") {
+		t.Errorf("answer should contain [ID:0]: %q", answer)
 	}
-	if !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("answer should contain [ID:def456]: %q", answer)
+	if !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("answer should contain [ID:1]: %q", answer)
 	}
 }
 
@@ -231,7 +233,7 @@ func TestApplyCitations(t *testing.T) {
 	chunks := []SourcedChunk{{ID: "c1"}}
 	cites := map[int][]int{0: {0}}
 	answer, cited := applyCitations("Hello world.", []string{"Hello world."}, []int{0}, cites, chunks)
-	if answer != "Hello world. [ID:c1]" {
+	if answer != "Hello world. [ID:0]" {
 		t.Errorf("got %q", answer)
 	}
 	if len(cited) != 1 || cited[0] != 0 {
@@ -261,8 +263,8 @@ func TestInsertCitations_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
-	if !strings.Contains(answer, "[ID:abc123]") || !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("missing [ID:*] markers: %q", answer)
+	if !strings.Contains(answer, "[ID:0]") || !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("missing positional [ID:*] markers: %q", answer)
 	}
 }
 
@@ -493,11 +495,13 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 		},
 	}
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil)
+	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
 
 	if strings.Contains(res.Answer, "1-3") {
 		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
 	}
+	// Expanded markers keep the 0-based indexes the client resolves against
+	// reference.chunks.
 	for _, want := range []string{"[ID:1]", "[ID:2]", "[ID:3]"} {
 		if !strings.Contains(res.Answer, want) {
 			t.Fatalf("final answer missing expanded citation %s: %q", want, res.Answer)
@@ -507,5 +511,107 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 	// filtered out of the reference (recall_docs = cited docs).
 	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
 		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
+	}
+}
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
+	}
+}
+
+// TestReportsNoAnswer covers the three signals: the dialog's configured
+// empty_response, the shipped not-found line, and a grounded answer that must
+// keep its citations.
+func TestReportsNoAnswer(t *testing.T) {
+	cases := []struct {
+		name          string
+		answer        string
+		emptyResponse string
+		want          bool
+	}{
+		{
+			name:          "configured empty response",
+			answer:        "未在资料库中找到相关内容。",
+			emptyResponse: "未在资料库中找到相关内容。",
+			want:          true,
+		},
+		{
+			name:   "shipped phrase",
+			answer: "知识库中未找到您要的答案！",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase with marker injected mid-sentence",
+			answer: "知识库中未找到您要的答案！因 [ID:3]此无法统计。",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase split by line breaks",
+			answer: "知识库中\n未找到您要的\n答案！",
+			want:   true,
+		},
+		{
+			name:          "grounded answer keeps citations",
+			answer:        "Texas and California agreed in 1924 [ID:0].",
+			emptyResponse: "知识库中未找到您要的答案！",
+			want:          false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := reportsNoAnswer(c.answer, c.emptyResponse); got != c.want {
+				t.Fatalf("reportsNoAnswer(%q, %q) = %v, want %v", c.answer, c.emptyResponse, got, c.want)
+			}
+		})
+	}
+}
+
+// TestDecorateQuote pins that a not-found answer is decorated with quoting off
+// (no markers, no reference), while a grounded one keeps quoting on.
+func TestDecorateQuote(t *testing.T) {
+	if decorateQuote(true, "知识库中未找到您要的答案！", "") {
+		t.Fatal("not-found answer must be decorated without quoting")
+	}
+	if !decorateQuote(true, "California voted for the same nominee [ID:0].", "知识库中未找到您要的答案！") {
+		t.Fatal("grounded answer must keep quoting")
+	}
+	if decorateQuote(false, "California voted for the same nominee [ID:0].", "") {
+		t.Fatal("quote=false must stay off")
+	}
+}
+
+// TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
+// shape of the report: an answer that only says the knowledge base has no answer
+// must come back with neither [ID:n] markers nor a reference, even though the
+// evidence pool and a resolvable marker are present.
+func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, decorateQuote(true, answer, ""))
+
+	if strings.Contains(res.Answer, "[ID:") {
+		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
+	}
+	if len(res.Reference) != 0 {
+		t.Fatalf("not-found answer still carries a reference: %#v", res.Reference)
 	}
 }

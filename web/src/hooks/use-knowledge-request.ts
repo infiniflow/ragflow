@@ -47,6 +47,7 @@ import {
 } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  checkEmbedding,
   clearWiki,
   deleteArtifactsStructure,
   deleteKnowledgeGraph,
@@ -119,12 +120,29 @@ export const enum KnowledgeApiAction {
   DeleteDatasetStructure = 'deleteDatasetStructure',
   FetchArtifactAlteration = 'fetchArtifactAlteration',
   RunArtifactIndex = 'runArtifactIndex',
+  CheckKbEmbedding = 'checkKbEmbedding',
 }
 
 export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
   return (id as string) || '';
+};
+
+export const useCheckKbEmbedding = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { mutateAsync, isPending } = useMutation({
+    mutationKey: [KnowledgeApiAction.CheckKbEmbedding],
+    mutationFn: async (embedId: string) => {
+      const { data } = await checkEmbedding(knowledgeBaseId || '', {
+        embd_id: embedId,
+      });
+      return data;
+    },
+  });
+
+  return { checkKbEmbedding: mutateAsync, checking: isPending };
 };
 
 export const useTestRetrieval = () => {
@@ -1032,21 +1050,29 @@ export const KnowledgeListKeys = {
     shouldFilterListWithoutDocument: boolean,
     keywords: string,
     pageSize: number,
+    ownerTenantId?: string,
   ) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
       shouldFilterListWithoutDocument,
       keywords,
       pageSize,
+      ownerTenantId,
     ] as const,
-  byIds: (ids: string[]) =>
-    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids] as const,
+  byIds: (ids: string[], ownerTenantId?: string) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      'byIds',
+      ids,
+      ownerTenantId,
+    ] as const,
 };
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
   pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
+  ownerTenantId?: string,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -1061,6 +1087,7 @@ export const useFetchKnowledgeList = (
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
+        // ownerTenantId,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1070,6 +1097,8 @@ export const useFetchKnowledgeList = (
           page,
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
+          // Viewing a shared canvas: list the canvas owner's datasets.
+          // ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1126,7 +1155,10 @@ export const useFetchKnowledgeList = (
  * users pick variables alongside datasets); those are not resolvable ids and
  * are dropped before the request is built.
  */
-export const useFetchDatasetsByIds = (ids: string[]) => {
+export const useFetchDatasetsByIds = (
+  ids: string[],
+  ownerTenantId?: string,
+) => {
   const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
   const { data, isFetching: loading } = useQuery<IDataset[]>({
     queryKey: KnowledgeListKeys.byIds(sortedIds),
@@ -1151,7 +1183,10 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
  * empty while the lookup is in flight so consumers can hold off validation
  * until it settles; `settled` flips true once the lookup has finished.
  */
-export const useStaleDatasetIds = (datasetIds?: string[]) => {
+export const useStaleDatasetIds = (
+  datasetIds?: string[],
+  ownerTenantId?: string,
+) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
   // below and get misreported as stale.
@@ -1159,7 +1194,10 @@ export const useStaleDatasetIds = (datasetIds?: string[]) => {
     () => (datasetIds ?? []).filter(isDatasetId),
     [datasetIds],
   );
-  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+  const { data: datasets, loading } = useFetchDatasetsByIds(
+    persistedIds,
+    ownerTenantId,
+  );
 
   const staleDatasetIds = useMemo(() => {
     if (loading) {

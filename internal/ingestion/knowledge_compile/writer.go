@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
+	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
@@ -1385,6 +1386,35 @@ func wikiGraphBareKey(slug string) string {
 	return strings.TrimSpace(s)
 }
 
+// tokenizeWikiGraphContent prepares the lexical fields used by wiki graph
+// keyword search. Keep the raw text as a fallback so graph rows remain
+// searchable when the tokenizer pool is unavailable during startup or tests.
+func tokenizeWikiGraphContent(title, slug, description string) (string, string, string, string) {
+	title = strings.TrimSpace(title)
+	content := strings.TrimSpace(strings.Join([]string{slug, description}, " "))
+	if title == "" && content == "" {
+		return "", "", "", ""
+	}
+
+	titleLTKS, err := tokenizer.Tokenize(title)
+	if err != nil || titleLTKS == "" {
+		titleLTKS = title
+	}
+	titleSMLTKS, err := tokenizer.FineGrainedTokenize(titleLTKS)
+	if err != nil || titleSMLTKS == "" {
+		titleSMLTKS = titleLTKS
+	}
+	contentLTKS, err := tokenizer.Tokenize(content)
+	if err != nil || contentLTKS == "" {
+		contentLTKS = content
+	}
+	contentSMLTKS, err := tokenizer.FineGrainedTokenize(contentLTKS)
+	if err != nil || contentSMLTKS == "" {
+		contentSMLTKS = contentLTKS
+	}
+	return titleLTKS, titleSMLTKS, contentLTKS, contentSMLTKS
+}
+
 // wikiPageProjection is the subset of a merged wiki_page row that the graph
 // projection needs. It is reconstructed from the stored display columns (the
 // same fields GetWikiGraph reads back), not from the JSON payload.
@@ -1448,16 +1478,27 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 	if eng == nil {
 		return nil, nil
 	}
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled Wiki documents for graph: %w", err)
+	}
+	if statusAvailable && len(enabledIDs) == 0 {
+		return nil, nil
+	}
 	const batchSize = 2000
 	bySlug := make(map[string]wikiPageProjection)
 	for offset := 0; ; offset += batchSize {
+		filter := map[string]interface{}{
+			"compile_kwd": compileKwdWikiPage, "available_int": 0,
+			"scope_kwd": "doc", "kb_id": kb,
+		}
+		if statusAvailable {
+			filter["doc_id"] = enabledIDs
+		}
 		result, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:      []string{kb},
-			Filter: map[string]interface{}{
-				"compile_kwd": compileKwdWikiPage, "available_int": 0,
-				"scope_kwd": "doc", "kb_id": kb,
-			},
+			Filter:     filter,
 			SelectFields: []string{
 				"slug_kwd", "page_type_kwd", "title_kwd", "entity_names_kwd",
 				"summary_with_weight", "outlinks_kwd", "source_doc_ids", "source_chunk_ids",
@@ -1799,6 +1840,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 		if err != nil {
 			return nil, err
 		}
+		titleLTKS, titleSMLTKS, contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(p.Title, p.Slug, p.Summary)
 		rows = append(rows, map[string]interface{}{
 			"id":                      entityID,
 			"doc_id":                  kb,
@@ -1815,6 +1857,10 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			"weight_int":              weight,
 			"source_chunk_ids":        p.SourceChunkIDs,
 			"source_doc_ids":          capSourceDocs(p.SourceDocIDs),
+			"title_tks":               titleLTKS,
+			"title_sm_tks":            titleSMLTKS,
+			"content_ltks":            contentLTKS,
+			"content_sm_ltks":         contentSMLTKS,
 			"content_with_weight":     string(content),
 		})
 

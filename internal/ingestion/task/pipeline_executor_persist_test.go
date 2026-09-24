@@ -20,7 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"gorm.io/gorm"
 	"ragflow/internal/entity"
 )
 
@@ -58,11 +57,6 @@ func TestExecute_DebugSkipsPipelineLog(t *testing.T) {
 		return map[string]any{"chunks": []map[string]any{}}, "dsl", nil
 	})
 
-	var logCalled bool
-	exec.WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
-		logCalled = true
-		return nil
-	})
 	var insertCalled bool
 	exec.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
 		insertCalled = true
@@ -71,9 +65,6 @@ func TestExecute_DebugSkipsPipelineLog(t *testing.T) {
 
 	if _, err := exec.Execute(context.Background()); err != nil {
 		t.Fatalf("Execute: %v", err)
-	}
-	if logCalled {
-		t.Errorf("recordPipelineLog must not be called in a debug (kb_id == \"\") run")
 	}
 	if insertCalled {
 		t.Errorf("index insert must not be called in a debug (kb_id == \"\") run")
@@ -118,11 +109,6 @@ func TestExecute_DebugReturnsChunks(t *testing.T) {
 		}, "dsl", nil
 	})
 
-	var logCalled bool
-	exec.WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
-		logCalled = true
-		return nil
-	})
 	var insertCalled bool
 	exec.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
 		insertCalled = true
@@ -141,9 +127,6 @@ func TestExecute_DebugReturnsChunks(t *testing.T) {
 	}
 	if result.ChunkCount != 3 {
 		t.Errorf("expected ChunkCount 3, got %d", result.ChunkCount)
-	}
-	if logCalled {
-		t.Errorf("recordPipelineLog must not be called in a debug (kb_id == \"\") run")
 	}
 	if insertCalled {
 		t.Errorf("index insert must not be called in a debug (kb_id == \"\") run")

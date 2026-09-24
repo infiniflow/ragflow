@@ -67,10 +67,10 @@
 //   - The Python _param.check() business validation
 //     (parse_method whitelist, conditional lang checks) is mirrored
 //     by (*ParserComponent).Check() below, which NewParserComponent
-//     runs at construction time. The Python flow check() also
-//     validates audio/video vlm.llm_id, but Go media_dispatch uses
-//     tenant default models (resolveTenantModelByType) rather than
-//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
+//     runs at construction time. Neither backend validates
+//     audio/video vlm.llm_id: Python's check() has no such branch,
+//     and the audio model is resolved at dispatch time with a
+//     tenant-default fallback.
 //
 //   - NO PERSISTENCE: structured parser items live only in the per-run
 //     output map.
@@ -210,11 +210,10 @@ func cloneParserSetupValue(value any) any {
 // (Python raises ValueError on the first failure).
 //
 // NOT covered here (intentional):
-//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
-//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
-//     The Python flow check() for vlm.llm_id does not apply — Go
-//     never reads that field, and validating it would block every
-//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+//   - audio/video vlm.llm_id: Python's check() does not validate it
+//     either, and audio dispatch resolves a missing/empty model to
+//     the tenant default, so validating it here would only block
+//     otherwise valid pipelines (see ingestion_pipeline_audio.json).
 func (c *ParserComponent) Check() error {
 	// PDF family (parser.py:252-261).
 	if pdf, ok := c.setups["pdf"]; ok {
@@ -222,14 +221,10 @@ func (c *ParserComponent) Check() error {
 		if pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
-		pmLower := strings.ToLower(pm)
-		pdfWhitelist := []string{
-			"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
-			"opendataloader", "tcadp parser", "paddleocr", "somark",
-		}
-		if !containsString(pdfWhitelist, pmLower) {
-			// Non-whitelist parse_method is treated as a VLM method,
-			// which requires lang (Python parser.py:257-258).
+		if !parser.IsPDFParseMethod(pm) {
+			// A parse_method outside the known vocabulary is treated as a
+			// VLM model reference, which requires lang (Python
+			// parser.py:257-258).
 			if lang, _ := pdf["lang"].(string); lang == "" {
 				return errors.New("PDF VLM language does not support empty value")
 			}
@@ -246,18 +241,6 @@ func (c *ParserComponent) Check() error {
 		}
 	}
 	return nil
-}
-
-// containsString reports whether s is in list. Used by Check() for
-// whitelist membership tests; kept unexported and local to this file
-// to avoid polluting the package namespace.
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -447,6 +430,15 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// it back into the local inputs map for the dispatch functions.
 	if tid := globals.GlobalOrInput(ctx, inputs, "tenant_id", ""); tid != "" {
 		inputs["tenant_id"] = tid
+	}
+
+	// Same pull-back for the run-level (dataset) language: File emits no
+	// lang, and the language consumers below — vision enhancement and the
+	// media dispatch branches — read the local inputs map, so without this
+	// the KB language never reaches them and the prompt language silently
+	// falls back to English.
+	if lang := globals.GlobalOrInput(ctx, inputs, "lang", ""); lang != "" {
+		inputs["lang"] = lang
 	}
 
 	// 2. Resolve the file family from the inputs. When the family

@@ -131,6 +131,9 @@ type proseChat struct{}
 
 func (proseChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
 	if req.JSONMode {
+		if strings.Contains(req.SystemPrompt, "into a mind map") {
+			return &common.ChatResponse{Content: `{"id":"mindmap root","source_chunk_ids":["c1"],"children":[]}`}, nil
+		}
 		return &common.ChatResponse{Content: `{"ok":true}`}, nil
 	}
 	// Echo a deterministic prose reply derived from the prompt.

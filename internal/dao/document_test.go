@@ -452,3 +452,74 @@ func TestDocumentDAOGetParsingStatusByKBID(t *testing.T) {
 }
 
 func sp(s string) *string { return &s }
+
+func TestDocumentListParserConfigsByKBIDs(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	dao := NewDocumentDAO()
+	ctx := t.Context()
+
+	// Empty kbIDs returns nil, nil
+	res, err := dao.ListParserConfigsByKBIDs(ctx, db, nil)
+	if err != nil || res != nil {
+		t.Fatalf("expected nil, nil for empty kbIDs, got res=%v, err=%v", res, err)
+	}
+
+	// Doc 1: no tag_file_id (should be filtered out by SQL query)
+	db.Create(&entity.Document{
+		ID:           "doc-no-tag",
+		KbID:         "kb-1",
+		ParserConfig: entity.JSONMap{"pages": []any{1, 5}},
+	})
+	// Doc 2: empty parser_config
+	db.Create(&entity.Document{
+		ID:           "doc-empty-config",
+		KbID:         "kb-1",
+		ParserConfig: entity.JSONMap{},
+	})
+	// Doc 3: has tag_file_id
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-1",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-1"},
+		},
+	})
+	// Doc 4: identical parser_config in kb-1 (should collapse via DISTINCT)
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-1-dup",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-1"},
+		},
+	})
+	// Doc 5: distinct tag in kb-1
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-2",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-2"},
+		},
+	})
+	// Doc 6: tag in kb-2
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-kb2",
+		KbID: "kb-2",
+		ParserConfig: entity.JSONMap{
+			"Extractor:Auto": map[string]any{
+				"tags": map[string]any{"tag_file_id": "file-3"},
+			},
+		},
+	})
+
+	res, err = dao.ListParserConfigsByKBIDs(ctx, db, []string{"kb-1", "kb-2"})
+	if err != nil {
+		t.Fatalf("ListParserConfigsByKBIDs failed: %v", err)
+	}
+
+	if len(res["kb-1"]) != 2 {
+		t.Fatalf("expected 2 distinct configs for kb-1, got %d: %v", len(res["kb-1"]), res["kb-1"])
+	}
+	if len(res["kb-2"]) != 1 {
+		t.Fatalf("expected 1 config for kb-2, got %d: %v", len(res["kb-2"]), res["kb-2"])
+	}
+}

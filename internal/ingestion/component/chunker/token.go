@@ -72,14 +72,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
@@ -233,7 +234,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		// simply skips cropping.
 		engine, engErr := newPDFEngineFromUpstream(ctx, db, upstream)
 		if engErr != nil {
-			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
+			common.Warn("TokenChunker: could not open PDF for on-demand cropping", zap.Error(engErr))
 		}
 		if engine != nil {
 			defer engine.Close()
@@ -595,6 +596,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// leaves every media chunk without neighbours, because one item rarely
 	// yields more than one chunk.
 	flat := flatten(perItem)
+	// perItem is no longer needed once flattened: drop the [][]ChunkDoc
+	// scaffolding (its sub-slice backing arrays) so it can be collected. The
+	// ChunkDoc values now live solely in flat.
+	perItem = nil
 
 	// Python's naive_merge: custom (backtick) delimiters produce one
 	// chunk per segment — no token-size merge (naive_merge:1194-1213).
@@ -622,7 +627,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// Crop image/table chunks on demand when a PDF engine is available.
 	flat = cropImageChunks(ctx, engine, flat)
 
-	out := make([]schema.ChunkDoc, 0, len(flat))
+	// Fuse the keep-filter and the media-context materialisation into a single
+	// pass. The previous code built `out` (a full []ChunkDoc copy of the kept
+	// chunks) and then chunkOutputs copied it again into `materialized`. Building
+	// `materialized` directly removes one full-document-scale slice allocation
+	// from the chunker's peak (the 3266-page PDF holds millions of fine-grained
+	// ChunkDocs at this point).
+	materialized := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
@@ -640,12 +651,17 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
 			continue
 		}
-		out = append(out, m)
+		materialized = append(materialized, materializeMediaContext(m))
 	}
-	if len(out) == 0 {
+	// flat has been consumed; release it before we build the output map.
+	flat = nil
+	if len(materialized) == 0 {
 		return emptyOutputs()
 	}
-	return chunkOutputs(out)
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(materialized),
+	}
 }
 
 // isTextParserSentenceFallback restores the semantic sentence units that the
@@ -1620,15 +1636,59 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 // extendRawJSONArray concatenates two JSON array payloads, mirroring
 // Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
 // empty; the result is always a valid JSON array (or an empty raw message).
+//
 // It is used to accumulate PDF coordinate lists (`_pdf_positions`,
 // `positions`) when text chunks are merged (diffs 2.5 / 2.3).
+//
+// Fast path (compact arrays): the positions that flow through here are always
+// json.Marshal'd parser output, i.e. compact `[...]` arrays with no internal
+// whitespace. Instead of the old per-step json.Unmarshal + json.Marshal
+// (which re-serialised the ENTIRE growing array on every merge step — O(n^2)
+// bytes plus reflection — and dominated the chunker's wall time / heap peak on
+// large PDFs, see the 10k-unit benchmark: ~11 GB allocated per merge), we strip
+// the outer brackets and append the element bytes directly. Appending into `a`'s
+// (re)growing buffer is O(n) total. The merged coordinate list is semantically
+// identical (extend, not replace) and byte-for-byte equal to the old path for
+// compact input.
+//
+// Slow path: for any non-compact-array / malformed operand we fall back to the
+// exact prior behaviour (unmarshal + marshal), so output never diverges from the
+// historical contract.
+//
+// Mutation contract (append-like): the fast path grows `a`'s backing buffer in
+// place to accumulate the result, so the returned slice may alias / reuse `a`'s
+// storage and `a` must be treated as consumed after the call. Callers that pass
+// a shared or reused buffer as `a` must copy it first; the merge path satisfies
+// this naturally because `pdfTail`/`posTail` are dedicated accumulators that own
+// their buffers. When `a` is empty the result is a fresh COPY of `b` (never `b`
+// itself) so the first extension never aliases the caller's source coordinate
+// bytes.
 func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
 	if len(a) == 0 {
-		return b
+		// Return a COPY of b, not b itself: the caller stores the result and
+		// the fast path may later mutate its backing array in place. Returning
+		// b directly would alias the caller's (possibly shared) source bytes,
+		// e.g. the overlap branch re-extends the same growing buffer and would
+		// corrupt the original unit coordinate list (see #18148 overlap chain).
+		return append(json.RawMessage(nil), b...)
 	}
 	if len(b) == 0 {
+		return append(json.RawMessage(nil), a...)
+	}
+	if a[0] == '[' && a[len(a)-1] == ']' && b[0] == '[' && b[len(b)-1] == ']' {
+		innerA := a[1 : len(a)-1]
+		innerB := b[1 : len(b)-1]
+		// Drop a's trailing ']' and append b's elements followed by a fresh
+		// ']'. append reuses/grows a's buffer (amortised O(n) total).
+		a = a[:len(a)-1]
+		if len(innerA) > 0 && len(innerB) > 0 {
+			a = append(a, ',')
+		}
+		a = append(a, innerB...)
+		a = append(a, ']')
 		return a
 	}
+	// Slow path (unchanged semantics).
 	var arrA, arrB []json.RawMessage
 	if err := json.Unmarshal(a, &arrA); err != nil {
 		return b
