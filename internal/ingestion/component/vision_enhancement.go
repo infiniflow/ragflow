@@ -114,7 +114,7 @@ func isUsableVisionImage(raw string) bool {
 		if idx < 0 {
 			return false
 		}
-		return isValidBase64(raw[idx+len("base64,"):])
+		return isValidBase64(raw[idx+len("base64,"):], false)
 	}
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return true
@@ -122,23 +122,21 @@ func isUsableVisionImage(raw string) bool {
 	if len(raw) > maxVLMEncodedBytes {
 		return false
 	}
-	cleaned := strings.Map(func(r rune) rune {
-		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
-			return -1
-		}
-		return r
-	}, raw)
-	return isValidBase64(cleaned)
+	return isValidBase64(raw, true)
 }
 
-func isValidBase64(s string) bool {
+func isValidBase64(s string, stripWhitespace bool) bool {
 	if s == "" || len(s) > maxVLMEncodedBytes {
 		return false
 	}
 	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
-		decoded := base64.NewDecoder(encoding, strings.NewReader(s))
-		n, err := io.CopyN(io.Discard, decoded, int64(maxVLMImageBytes)+1)
-		if n > int64(maxVLMImageBytes) {
+		var source io.Reader = strings.NewReader(s)
+		if stripWhitespace {
+			source = &visionPayloadReader{source: s}
+		}
+		decoded := base64.NewDecoder(encoding, source)
+		n, err := io.CopyN(io.Discard, decoded, int64(maxVisionImageBytes)+1)
+		if n > int64(maxVisionImageBytes) {
 			return false
 		}
 		if err == io.EOF {
@@ -148,19 +146,18 @@ func isValidBase64(s string) bool {
 	return false
 }
 
-// visionImageCropper yields a vision-usable base64 image for a parsed item.
-// Under cgo it crops on demand from the source PDF when the item carries
-// positions but no inlined image; under !cgo it returns the inlined image
-// (the only form available without a native renderer). Close releases any
-// re-acquired engine so native handles are not leaked.
+// visionImageCropper materializes the raster and VLM payload for a parsed
+// item. Under cgo it crops PDF sections on demand; both build variants use
+// inline images directly. Close releases any re-acquired native engine.
 type visionImageCropper interface {
 	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
 
 type visionImage struct {
-	Raster  image.Image
-	VLMData string
+	Raster           image.Image
+	VLMData          string
+	VLMDataValidated bool
 }
 
 // maybeDispatchVisionEnhancement appends local OCR and VLM descriptions to
@@ -287,7 +284,7 @@ func maybeDispatchVisionEnhancement(
 			if err != nil || resource == nil {
 				if ctx.Err() == nil && vlmReady {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
-						resource = &visionImage{VLMData: payload}
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
 					}
 				}
 				return
@@ -305,6 +302,8 @@ func maybeDispatchVisionEnhancement(
 				resource.VLMData, err = encodeVisionRaster(resource.Raster)
 				if err != nil {
 					resource.VLMData = ""
+				} else {
+					resource.VLMDataValidated = resource.VLMData != ""
 				}
 			}
 		}()
@@ -320,7 +319,7 @@ func maybeDispatchVisionEnhancement(
 			}
 			continue
 		}
-		if !vlmSlot || !isUsableVisionImage(resource.VLMData) {
+		if !vlmSlot || (!resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData)) {
 			if vlmSlot {
 				<-sem
 			}

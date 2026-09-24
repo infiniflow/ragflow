@@ -105,27 +105,11 @@ func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 	return DecodeToUTF8(data, "text/html")
 }
 
-// walkHTMLBlocks emits one normalized item per block-level
-// descendant of root. Inline elements (b, i, a, span, …) are
-// collapsed into the parent's text via leafText. <script>,
-// <style>, and <noscript> blocks are skipped entirely so they
-// don't pollute the downstream chunker input.
-func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
-	walkHTMLBlocksWithState(root, out, &htmlWalkState{})
-}
-
 type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
 }
-
-type htmlImageSourceKind uint8
-
-const (
-	unsupportedHTMLImageSource htmlImageSourceKind = iota
-	inlineHTMLImageSource
-)
 
 func (s *htmlWalkState) warnings() []string {
 	if s.skippedInlineImages == 0 {
@@ -134,6 +118,9 @@ func (s *htmlWalkState) warnings() []string {
 	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
 }
 
+// walkHTMLBlocksWithState emits normalized text and image items in document
+// order. Inline formatting is collapsed into its parent text; script, style,
+// and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
 		if child.Type == html.TextNode {
@@ -349,8 +336,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			sourceKind := classifyHTMLImageSource(src)
-			if sourceKind == unsupportedHTMLImageSource {
+			if !usableHTMLImageSource(src) {
 				if isHTMLDataImageSource(src) {
 					state.skippedInlineImages++
 				}
@@ -451,8 +437,7 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				kind := classifyHTMLImageSource(src)
-				if kind == unsupportedHTMLImageSource {
+				if !usableHTMLImageSource(src) {
 					if isHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
@@ -464,6 +449,10 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 						row:    row,
 						column: column,
 					})
+					// The image is emitted as its own item below, so leave its
+					// alt text and table cell in the markup without duplicating
+					// the (potentially large) data URI.
+					removeHTMLImageSource(node)
 				}
 			}
 		}
@@ -515,13 +504,6 @@ func usableHTMLImageSource(src string) bool {
 		return false
 	}
 	return validBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
-}
-
-func classifyHTMLImageSource(src string) htmlImageSourceKind {
-	if usableHTMLImageSource(src) {
-		return inlineHTMLImageSource
-	}
-	return unsupportedHTMLImageSource
 }
 
 func isHTMLDataImageSource(src string) bool {

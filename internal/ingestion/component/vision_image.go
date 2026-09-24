@@ -22,15 +22,15 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"strings"
 )
 
 const (
-	maxOCRImageBytes   = 32 << 20
-	maxOCRImagePixels  = 40_000_000
-	maxOCRImageEdge    = 12_000
-	maxVLMImageBytes   = 32 << 20
-	maxVLMEncodedBytes = (maxVLMImageBytes+2)/3*4 + 256
+	maxVisionImageBytes = 32 << 20
+	maxOCRImagePixels   = 40_000_000
+	maxOCRImageEdge     = 12_000
+	maxVLMEncodedBytes  = (maxVisionImageBytes+2)/3*4 + 256
 )
 
 func materializeInlineVisionImage(raw string) (*visionImage, error) {
@@ -40,22 +40,53 @@ func materializeInlineVisionImage(raw string) (*visionImage, error) {
 	}
 	materialized := &visionImage{VLMData: raw}
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		materialized.VLMDataValidated = isUsableVisionImage(raw)
 		return materialized, nil
 	}
 
 	data, err := decodeVisionPayload(raw)
 	if err != nil {
+		materialized.VLMDataValidated = isUsableVisionImage(raw)
 		return materialized, nil
 	}
-	raster, format, err := decodeOCRImage(data)
-	if err != nil {
-		return materialized, nil
+	raster, format, decodeErr := decodeOCRImage(data)
+	if decodeErr == nil {
+		materialized.Raster = raster
 	}
-	materialized.Raster = raster
-	if !strings.HasPrefix(raw, "data:image/") {
-		mimeType := imageMIMEForFormat(format)
-		if mimeType != "" {
-			materialized.VLMData = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+
+	if strings.HasPrefix(raw, "data:image/") {
+		comma := strings.IndexByte(raw, ',')
+		if comma > 0 && strings.HasSuffix(strings.ToLower(raw[:comma]), ";base64") {
+			payload := raw[comma+1:]
+			if strings.ContainsAny(payload, "\r\n \t") {
+				payload = base64.StdEncoding.EncodeToString(data)
+				materialized.VLMData = raw[:comma+1] + payload
+			}
+			materialized.VLMDataValidated = true
+		} else {
+			materialized.VLMDataValidated = isUsableVisionImage(raw)
+		}
+	} else if strings.HasPrefix(strings.ToLower(raw), "data:") {
+		if decodeErr == nil {
+			if mimeType := imageMIMEForFormat(format); mimeType != "" {
+				materialized.VLMData = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+				materialized.VLMDataValidated = true
+				return materialized, nil
+			}
+		}
+		materialized.VLMDataValidated = isUsableVisionImage(raw)
+	} else {
+		materialized.VLMDataValidated = true
+		normalized := false
+		if decodeErr == nil {
+			if mimeType := imageMIMEForFormat(format); mimeType != "" {
+				payload := base64.StdEncoding.EncodeToString(data)
+				materialized.VLMData = "data:" + mimeType + ";base64," + payload
+				normalized = true
+			}
+		}
+		if !normalized && strings.ContainsAny(raw, "\r\n \t") {
+			materialized.VLMData = base64.StdEncoding.EncodeToString(data)
 		}
 	}
 	return materialized, nil
@@ -70,34 +101,54 @@ func decodeVisionPayload(raw string) ([]byte, error) {
 		}
 		encoded = encoded[comma+1:]
 	}
-	maxEncodedBytes := (maxOCRImageBytes+2)/3*4 + 256
+	maxEncodedBytes := (maxVisionImageBytes+2)/3*4 + 256
 	if len(encoded) == 0 || len(encoded) > maxEncodedBytes {
 		return nil, fmt.Errorf("vision image: encoded payload exceeds limit")
 	}
-	encoded = strings.Map(func(r rune) rune {
-		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
-			return -1
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		decoder := base64.NewDecoder(encoding, &visionPayloadReader{source: encoded})
+		data, err := io.ReadAll(io.LimitReader(decoder, maxVisionImageBytes+1))
+		if err != nil {
+			continue
 		}
-		return r
-	}, encoded)
-	if len(encoded) == 0 || len(encoded) > maxEncodedBytes {
-		return nil, fmt.Errorf("vision image: encoded payload exceeds limit")
+		if len(data) > maxVisionImageBytes {
+			return nil, fmt.Errorf("vision image: payload exceeds %d bytes", maxVisionImageBytes)
+		}
+		if len(data) == 0 {
+			return nil, fmt.Errorf("vision image: empty base64 payload")
+		}
+		return data, nil
 	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		data, err = base64.RawStdEncoding.DecodeString(encoded)
+	return nil, fmt.Errorf("vision image: decode base64 failed")
+}
+
+type visionPayloadReader struct {
+	source string
+	offset int
+}
+
+func (r *visionPayloadReader) Read(dst []byte) (int, error) {
+	written := 0
+	for written < len(dst) && r.offset < len(r.source) {
+		b := r.source[r.offset]
+		r.offset++
+		if b == '\r' || b == '\n' || b == ' ' || b == '\t' {
+			continue
+		}
+		dst[written] = b
+		written++
 	}
-	if err != nil {
-		return nil, fmt.Errorf("vision image: decode base64: %w", err)
+	if written > 0 {
+		return written, nil
 	}
-	if len(data) > maxOCRImageBytes {
-		return nil, fmt.Errorf("vision image: payload exceeds %d bytes", maxOCRImageBytes)
+	if r.offset == len(r.source) {
+		return 0, io.EOF
 	}
-	return data, nil
+	return 0, nil
 }
 
 func decodeOCRImage(data []byte) (image.Image, string, error) {
-	if len(data) == 0 || len(data) > maxOCRImageBytes {
+	if len(data) == 0 || len(data) > maxVisionImageBytes {
 		return nil, "", fmt.Errorf("local OCR: image payload size %d is outside limits", len(data))
 	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
@@ -153,8 +204,8 @@ func encodeVisionRaster(img image.Image) (string, error) {
 	if err := png.Encode(&encoded, img); err != nil {
 		return "", fmt.Errorf("vision image: encode raster: %w", err)
 	}
-	if encoded.Len() > maxOCRImageBytes {
-		return "", fmt.Errorf("vision image: encoded raster exceeds %d bytes", maxOCRImageBytes)
+	if encoded.Len() > maxVisionImageBytes {
+		return "", fmt.Errorf("vision image: encoded raster exceeds %d bytes", maxVisionImageBytes)
 	}
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), nil
 }
