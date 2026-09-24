@@ -47,7 +47,6 @@ package canvas
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/cloudwego/eino/compose"
@@ -200,19 +199,4 @@ func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphMultiBranc
 		}
 		return chosen, nil
 	}
-}
-
-// fmtBranchRegistrations is a small debug helper kept here so the
-// table of installed branches can be dumped from a test or a future
-// verbose-logging path without pulling in fmt at the call site.
-// Currently unused; lives next to its data type for symmetry.
-func fmtBranchRegistrations(regs []branchRegistration) string {
-	if len(regs) == 0 {
-		return "no multi-branches installed"
-	}
-	var b strings.Builder
-	for _, r := range regs {
-		fmt.Fprintf(&b, "%s -> %v\n", r.Parent, r.EndNodes)
-	}
-	return b.String()
 }

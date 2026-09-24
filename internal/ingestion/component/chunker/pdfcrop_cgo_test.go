@@ -336,20 +336,28 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 	if len(rec.calls) != len(chunks) {
 		t.Fatalf("upload calls = %d, want %d", len(rec.calls), len(chunks))
 	}
-	for i, c := range rec.calls {
+	// cropImageChunks fans out per chunk in goroutines, so the order of
+	// upload calls is non-deterministic; assert the SET of uploaded ids
+	// matches the expected per-chunk ids rather than the call order.
+	wantIDs := make(map[string]struct{}, len(chunks))
+	for _, ck := range chunks {
+		wantIDs[common.ChunkID("doc1", ck.Text)] = struct{}{}
+	}
+	for _, c := range rec.calls {
 		if c.dataLen == 0 {
-			t.Errorf("call %d: uploaded empty bytes", i)
+			t.Errorf("uploaded empty bytes")
 		}
-		// cropImageChunks passes the bare chunk id (hash of docID+text); the
-		// uploader composes the img_id as "<kb_id>-<chunkID>".
-		wantID := common.ChunkID("doc1", chunks[i].Text)
-		if c.chunkID != wantID {
-			t.Errorf("call %d: chunkID = %q, want %q", i, c.chunkID, wantID)
+		if _, ok := wantIDs[c.chunkID]; !ok {
+			t.Errorf("call uploaded unexpected chunkID %q", c.chunkID)
 		}
-		// The stored img_id must equal what the uploader returns.
-		wantImgID := "kb1-" + wantID
-		if out[i].ImgID != wantImgID {
-			t.Errorf("chunk %d: ImgID = %q, want %q", i, out[i].ImgID, wantImgID)
+	}
+	// The stored img_id per chunk must equal what the uploader returns
+	// ("<kb_id>-<chunkID>"); keyed by input position, which is deterministic
+	// even though the upload order is not.
+	for i, ck := range out {
+		wantImgID := "kb1-" + common.ChunkID("doc1", chunks[i].Text)
+		if ck.ImgID != wantImgID {
+			t.Errorf("chunk %d: ImgID = %q, want %q", i, ck.ImgID, wantImgID)
 		}
 	}
 }

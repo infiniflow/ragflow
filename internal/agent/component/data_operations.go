@@ -185,7 +185,7 @@ func (d *DataOperationsComponent) Name() string { return d.name }
 // Invoke loads input_objects from the configured query refs, then
 // dispatches to the operation-specific helper.
 func (d *DataOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("DataOperations: %w", err)
 	}
