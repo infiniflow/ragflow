@@ -1045,3 +1045,75 @@ func TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
 		t.Errorf("declared key must survive, got %#v", params)
 	}
 }
+
+// TestManualChunkerParamKeys_ExcludesIncludeHeadingContent is the direct unit
+// check backing #20139: ManualChunker's schema-derived whitelist must drop
+// include_heading_content (it has no toggle point outside the hierarchy
+// path, which ManualChunker can never reach) while keeping every other
+// TitleChunkerParam key, and TitleChunker's own whitelist must be unaffected.
+func TestManualChunkerParamKeys_ExcludesIncludeHeadingContent(t *testing.T) {
+	if _, ok := manualChunkerParamKeys["include_heading_content"]; ok {
+		t.Error("manualChunkerParamKeys must not accept include_heading_content")
+	}
+	for _, key := range []string{"method", "levels", "hierarchy", "root_chunk_as_heading", "chunk_token_cap"} {
+		if _, ok := manualChunkerParamKeys[key]; !ok {
+			t.Errorf("manualChunkerParamKeys must still accept %q", key)
+		}
+	}
+	if _, ok := componentParamSchemaKeys["titlechunker"]["include_heading_content"]; !ok {
+		t.Error("titlechunker whitelist must still accept include_heading_content")
+	}
+}
+
+// TestCleanComponentParams_ManualChunkerDropsIncludeHeadingContent is the
+// end-to-end regression lock for #20139: include_heading_content only
+// affects TitleChunker's hierarchy path and can never affect ManualChunker
+// (permanently pinned to method="group"), so it must be stripped by
+// CleanComponentParams for ManualChunker components in every builtin
+// template that has one, while surviving for TitleChunker components.
+func TestCleanComponentParams_ManualChunkerDropsIncludeHeadingContent(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checkedManual, checkedTitle := 0, 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			continue
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			overrides := map[string]interface{}{s.CpnID: map[string]any{"include_heading_content": true}}
+			switch s.ComponentName {
+			case "ManualChunker":
+				checkedManual++
+				cleaned := CleanComponentParams(dslJSON, overrides)
+				got, _ := cleaned[s.CpnID].(map[string]any)
+				if _, ok := got["include_heading_content"]; ok {
+					t.Errorf("template %q component %s: include_heading_content should be dropped for ManualChunker, got %#v", ref, s.CpnID, got)
+				}
+			case "TitleChunker":
+				checkedTitle++
+				cleaned := CleanComponentParams(dslJSON, overrides)
+				got, _ := cleaned[s.CpnID].(map[string]any)
+				if _, ok := got["include_heading_content"]; !ok {
+					t.Errorf("template %q component %s: include_heading_content should survive for TitleChunker, got %#v", ref, s.CpnID, got)
+				}
+			}
+		}
+	}
+	if checkedManual == 0 {
+		t.Fatal("expected at least one builtin template with a ManualChunker component")
+	}
+	if checkedTitle == 0 {
+		t.Fatal("expected at least one builtin template with a TitleChunker component")
+	}
+}
