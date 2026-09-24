@@ -150,12 +150,32 @@ def _require_canvas_access_async(func):
     return wrapper
 
 
+def _is_canvas_owner(kwargs) -> bool:
+    canvas_id = kwargs.get("agent_id") or kwargs.get("canvas_id")
+    return bool(UserCanvasService.query(user_id=kwargs.get("tenant_id"), id=canvas_id))
+
+
+_OWNER_ONLY_MESSAGE = "Only the owner of the agent is authorized for this operation."
+
+
 def _require_canvas_owner_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if not UserCanvasService.query(user_id=kwargs.get("tenant_id"), id=kwargs.get("agent_id")):
-            return get_json_result(data=False, message="Only the owner of the agent is authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        if not _is_canvas_owner(kwargs):
+            return get_json_result(data=False, message=_OWNER_ONLY_MESSAGE, code=RetCode.OPERATING_ERROR)
         return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _require_canvas_owner_async(func):
+    # Team members (permission=TEAM) may run and read a shared canvas, but only the owning
+    # tenant may change what everyone else executes.
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not await thread_pool_exec(_is_canvas_owner, kwargs):
+            return get_json_result(data=False, message=_OWNER_ONLY_MESSAGE, code=RetCode.OPERATING_ERROR)
+        return await func(*args, **kwargs)
 
     return wrapper
 
@@ -921,18 +941,8 @@ def list_agent_tags(tenant_id):
 @manager.route("/agents/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
+@_require_canvas_owner_async
 async def update_agent_tags(tenant_id, canvas_id):
-    if not UserCanvasService.accessible(canvas_id, tenant_id):
-        logging.info(
-            "update_agent_tags denied tenant=%s canvas_id=%s reason=no_permission",
-            tenant_id,
-            canvas_id,
-        )
-        return get_json_result(
-            data=False,
-            message="Agent not found or no permission.",
-            code=RetCode.OPERATING_ERROR,
-        )
     req = await get_request_json()
     tags = req.get("tags", "")
     incoming = tags if isinstance(tags, (list, tuple)) else [t for t in str(tags).split(",") if t.strip()]
@@ -1212,7 +1222,7 @@ def delete_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_async
+@_require_canvas_owner_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
     req["canvas_type"] = req.get("canvas_type", "")
@@ -1241,7 +1251,6 @@ async def update_agent(agent_id, tenant_id):
                 return get_data_error_result(message=f"{req['title']} already exists.")
 
     agent_title_for_version = req.get("title") or (current_agent.title if current_agent else "")
-    canvas_category = req.get("canvas_category") or (current_agent.canvas_category if current_agent else CanvasCategory.Agent)
     owner_nickname = _get_user_nickname(tenant_id)
     UserCanvasService.update_by_id(agent_id, req)
 
@@ -1252,16 +1261,7 @@ async def update_agent(agent_id, tenant_id):
             dsl=req["dsl"],
             release=req.get("release"),
         )
-        replica_ok = CanvasReplicaService.replace_for_set(
-            canvas_id=agent_id,
-            tenant_id=str(tenant_id),
-            runtime_user_id=str(tenant_id),
-            dsl=req["dsl"],
-            canvas_category=canvas_category,
-            title=agent_title_for_version,
-        )
-        if not replica_ok:
-            return get_data_error_result(message="agent saved, but replica sync failed.")
+        CanvasReplicaService.invalidate_canvas(agent_id)
 
     _, updated_agent = UserCanvasService.get_by_id(agent_id)
     return get_json_result(data={"update_time": updated_agent.update_time})
@@ -1270,7 +1270,7 @@ async def update_agent(agent_id, tenant_id):
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_async
+@_require_canvas_owner_async
 async def reset_agent(agent_id, tenant_id):
     try:
         from agent.canvas import Canvas
@@ -1283,16 +1283,7 @@ async def reset_agent(agent_id, tenant_id):
         canvas.reset()
         dsl = json.loads(str(canvas))
         UserCanvasService.update_by_id(agent_id, {"dsl": dsl})
-        replica_ok = CanvasReplicaService.replace_for_set(
-            canvas_id=agent_id,
-            tenant_id=str(tenant_id),
-            runtime_user_id=str(tenant_id),
-            dsl=dsl,
-            canvas_category=user_canvas.canvas_category,
-            title=user_canvas.title,
-        )
-        if not replica_ok:
-            return get_data_error_result(message="agent reset, but replica sync failed.")
+        CanvasReplicaService.invalidate_canvas(agent_id)
         return get_json_result(data=dsl)
     except Exception as exc:
         return server_error_response(exc)

@@ -69,6 +69,25 @@ class CanvasReplicaService:
         return f"{cls.LOCK_KEY_PREFIX}:{canvas_id}:{tenant_id}:{runtime_user_id}"
 
     @classmethod
+    def invalidate_canvas(cls, canvas_id: str) -> int:
+        """Drop every tenant's runtime replica of a canvas so the next run re-reads the DB DSL.
+
+        Replicas are created per (tenant, user) and otherwise only expire after TTL_SECS of
+        inactivity, so a canvas that is run continuously by another tenant would keep serving
+        the DSL from before the owner's save."""
+        client = REDIS_CONN.REDIS
+        if client is None:
+            return 0
+        pattern = f"{cls.REPLICA_KEY_PREFIX}:{canvas_id}:*"
+        deleted = 0
+        try:
+            for key in client.scan_iter(match=pattern, count=200):
+                deleted += int(client.delete(key) or 0)
+        except Exception:
+            logging.exception("Failed to invalidate canvas runtime replicas: canvas_id=%s", canvas_id)
+        return deleted
+
+    @classmethod
     def _read_payload(cls, replica_key: str):
         """Read replica payload from Redis; return None on missing/invalid content."""
         cache_blob = REDIS_CONN.get(replica_key)
