@@ -229,6 +229,9 @@ func cropRectBounds(src image.Image, x0, y0, x1, y1 int) image.Rectangle {
 	if y1 > b.Max.Y {
 		y1 = b.Max.Y
 	}
+	if x0 >= x1 || y0 >= y1 {
+		return image.Rectangle{}
+	}
 	return image.Rect(x0, y0, x1, y1)
 }
 
