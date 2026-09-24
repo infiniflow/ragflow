@@ -89,6 +89,56 @@ func TestAzureDevOpsOrganizationURLSupportsSelfHostedCollection(t *testing.T) {
 	if got := azureDevOpsOrganizationURL("https://tfs.contoso.com/DefaultCollection/"); got != "https://tfs.contoso.com/DefaultCollection" {
 		t.Fatalf("unexpected self-hosted URL: %s", got)
 	}
+	if got := azureDevOpsOrganizationURL("http://tfs.contoso.local:8080/DefaultCollection/"); got != "http://tfs.contoso.local:8080/DefaultCollection" {
+		t.Fatalf("unexpected HTTP self-hosted URL: %s", got)
+	}
+}
+
+func TestAzureDevOpsSupportsCustomBaseURL(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":     "http://tfs.corp.local:8080/tfs",
+		"organization": "DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if connector.baseURL != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected baseURL: %s", connector.baseURL)
+	}
+	if connector.organization != "DefaultCollection" {
+		t.Fatalf("unexpected organization: %s", connector.organization)
+	}
+}
+
+func TestAzureDevOpsCustomBaseURLWithCollectionIncluded(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":     "https://tfs.corp.local/tfs/DefaultCollection",
+		"organization": "DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if connector.baseURL != "https://tfs.corp.local/tfs/DefaultCollection" {
+		t.Fatalf("unexpected baseURL: %s", connector.baseURL)
+	}
+}
+
+func TestAzureDevOpsCustomBaseURLWithEmptyOrganization(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "http://tfs.corp.local:8080/tfs/DefaultCollection",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if connector.baseURL != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected baseURL: %s", connector.baseURL)
+	}
+	if connector.organization != "DefaultCollection" {
+		t.Fatalf("unexpected organization: %s", connector.organization)
+	}
 }
 
 func TestAzureDevOpsDefaultsIndexModeAndContentTypes(t *testing.T) {
@@ -437,12 +487,17 @@ func TestAzureDevOpsOpenSyncResumesFromCursor(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cursor, _ := json.Marshal(azureDevOpsSyncCursor{RepoKey: "iddaa/repo-a", Stage: azureDevOpsStageCode, FileOffset: 1})
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{
+		RepoKey:    "iddaa/repo-a",
+		Stage:      azureDevOpsStageCode,
+		FileOffset: 1,
+		SourceID:   "azure_devops:contoso:iddaa:repo-a:file:a.cs",
+	})
 	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
 	session, err := connector.OpenSync(context.Background(), SyncRequest{
 		FromBeginning: true,
 		WindowEnd:     time.Now().UTC(),
-		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+		Resume:        &SyncCheckpoint{Cursor: string(cursor), SourceID: "azure_devops:contoso:iddaa:repo-a:file:a.cs"},
 	})
 	if err != nil {
 		t.Fatalf("OpenSync returned error: %v", err)
@@ -458,6 +513,32 @@ func TestAzureDevOpsOpenSyncResumesFromCursor(t *testing.T) {
 	}
 	if listed == 0 {
 		t.Fatal("the file listing should have been requested once on resume")
+	}
+}
+
+func TestAzureDevOpsOpenSyncRejectsMissingSourceAnchor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/pullrequests"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		case strings.Contains(r.URL.Path, "/items"):
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{}})
+		default:
+			writeAzureDevOpsJSON(t, w, map[string]any{"value": []any{
+				map[string]any{"name": "repo-a", "defaultBranch": "refs/heads/master", "project": map[string]any{"name": "iddaa"}},
+			}})
+		}
+	}))
+	defer server.Close()
+
+	cursor, _ := json.Marshal(azureDevOpsSyncCursor{RepoKey: "iddaa/repo-a", Stage: azureDevOpsStageCode, FileOffset: 1})
+	connector := newTestAzureDevOpsConnector(t, server.URL, nil)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume:        &SyncCheckpoint{Cursor: string(cursor)},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume = session %v, err %v, want ErrSyncResumeInvalid", session, err)
 	}
 }
 
@@ -574,7 +655,7 @@ func TestAzureDevOpsLongPullRequestDescriptionIsRefetchedInFull(t *testing.T) {
 	}
 }
 
-func TestAzureDevOpsRejectsCleartextCollectionURL(t *testing.T) {
+func TestAzureDevOpsAcceptsHTTPCollectionURLInClosedNetwork(t *testing.T) {
 	connector, err := NewAzureDevOpsConnector(map[string]any{
 		"organization": "http://tfs.contoso.com/DefaultCollection",
 		"credentials":  map[string]any{"azure_devops_pat": "token"},
@@ -582,8 +663,138 @@ func TestAzureDevOpsRejectsCleartextCollectionURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTPS") {
-		t.Fatalf("cleartext collection URLs must be rejected, got %v", err)
+	if connector.baseURL != "http://tfs.contoso.com/DefaultCollection" {
+		t.Fatalf("expected HTTP collection URL, got %s", connector.baseURL)
+	}
+}
+
+func TestAzureDevOpsRejectsInvalidScheme(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "ftp://tfs.contoso.com/tfs",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "HTTP") {
+		t.Fatalf("invalid scheme must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsRootBaseURLWithoutOrganization(t *testing.T) {
+	connector, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "https://dev.azure.com",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connector.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "organization or collection") {
+		t.Fatalf("root base URL without organization must be rejected, got %v", err)
+	}
+
+	connectorHTTP, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "http://tfs.corp.local:8080",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorHTTP.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "organization or collection") {
+		t.Fatalf("root base URL without organization must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsURLWithCredentials(t *testing.T) {
+	connectorBase, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorBase.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("base URL with credentials must be rejected, got %v", err)
+	}
+
+	connectorOrg, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "http://user:pass@tfs.corp.local:8080/tfs/DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorOrg.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("organization URL with credentials must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsHostlessURL(t *testing.T) {
+	connectorBase, err := NewAzureDevOpsConnector(map[string]any{
+		"base_url":    "https:///DefaultCollection",
+		"credentials": map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorBase.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "host") {
+		t.Fatalf("base URL without host must be rejected, got %v", err)
+	}
+
+	connectorOrg, err := NewAzureDevOpsConnector(map[string]any{
+		"organization": "https:///DefaultCollection",
+		"credentials":  map[string]any{"azure_devops_pat": "token"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := connectorOrg.Validate(context.Background()); err == nil || !strings.Contains(err.Error(), "host") {
+		t.Fatalf("organization URL without host must be rejected, got %v", err)
+	}
+}
+
+func TestAzureDevOpsRejectsQueryAndFragment(t *testing.T) {
+	testCases := []map[string]any{
+		{"base_url": "http://tfs.corp.local:8080/tfs?test=1", "organization": "DefaultCollection"},
+		{"base_url": "http://tfs.corp.local:8080/tfs#frag", "organization": "DefaultCollection"},
+		{"organization": "http://tfs.corp.local:8080/DefaultCollection?test=1"},
+		{"organization": "http://tfs.corp.local:8080/DefaultCollection#frag"},
+		{"organization": "DefaultCollection?test=1"},
+		{"organization": "DefaultCollection#frag"},
+	}
+
+	for _, tc := range testCases {
+		cfg := map[string]any{
+			"credentials": map[string]any{"azure_devops_pat": "token"},
+		}
+		for k, v := range tc {
+			cfg[k] = v
+		}
+		connector, err := NewAzureDevOpsConnector(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := connector.Validate(context.Background()); err == nil || (!strings.Contains(err.Error(), "query") && !strings.Contains(err.Error(), "fragment")) {
+			t.Fatalf("expected query/fragment rejection for %+v, got %v", tc, err)
+		}
+	}
+}
+
+func TestAzureDevOpsResolveURLStripsQueryAndFragment(t *testing.T) {
+	got, org := azureDevOpsResolveURL("DefaultCollection", "http://tfs.corp.local:8080/tfs?test=1#frag")
+	if got != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected resolved URL: %s", got)
+	}
+	if org != "DefaultCollection" {
+		t.Fatalf("unexpected org: %s", org)
+	}
+
+	gotWithoutOrg, orgExtracted := azureDevOpsResolveURL("", "http://tfs.corp.local:8080/tfs/DefaultCollection?test=1#frag")
+	if gotWithoutOrg != "http://tfs.corp.local:8080/tfs/DefaultCollection" {
+		t.Fatalf("unexpected resolved URL: %s", gotWithoutOrg)
+	}
+	if orgExtracted != "DefaultCollection" {
+		t.Fatalf("unexpected org: %s", orgExtracted)
 	}
 }
 

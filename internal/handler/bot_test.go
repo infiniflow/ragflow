@@ -523,6 +523,23 @@ func TestAgentbotCompletion_ResumesSession(t *testing.T) {
 	}
 }
 
+func TestAgentbotCompletion_BindsReleaseQuery(t *testing.T) {
+	var capturedReq service.AgentbotCompletionRequest
+	stub := &stubBotService{
+		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+			capturedReq = req
+			ch := make(chan canvas.RunEvent)
+			close(ch)
+			return ch, common.CodeSuccess, nil
+		},
+	}
+	r := botTestEngine(stub)
+	_ = doJSON(r, http.MethodPost, "/api/v1/agentbots/a1/completions?release=true", `{"question":"hi"}`)
+	if capturedReq.Release == nil || !*capturedReq.Release {
+		t.Fatalf("release = %v, want true", capturedReq.Release)
+	}
+}
+
 func TestAgentbotCompletion_BindsFileDescriptors(t *testing.T) {
 	var capturedReq service.AgentbotCompletionRequest
 	stub := &stubBotService{
@@ -661,10 +678,9 @@ func TestDownloadAttachment_OK(t *testing.T) {
 	}
 	cd := w.Header().Get("Content-Disposition")
 	// Mirrors Python apply_download_file_response_headers: with no
-	// explicit ?filename= the disposition is a plain attachment (Go
-	// backfills the empty name with "file" via SanitizeContentDispositionFilename).
-	if !strings.Contains(cd, "attachment") || !strings.Contains(cd, `filename="file"`) {
-		t.Errorf("Content-Disposition = %q, want attachment; filename=\"file\"", cd)
+	// explicit ?filename= the disposition is a plain attachment.
+	if cd != "attachment" {
+		t.Errorf("Content-Disposition = %q, want attachment", cd)
 	}
 }
 

@@ -17,19 +17,15 @@
 package parser
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strings"
-
-	"github.com/xuri/excelize/v2"
 )
 
 type XLSParser struct {
 	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	ChunkRows                      int
+	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -42,7 +38,6 @@ func NewXLSParser(libType string) (*XLSParser, error) {
 	}
 	return &XLSParser{
 		libType:                        libType,
-		ChunkRows:                      defaultTableChunkRows,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -62,7 +57,10 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	p.ChunkRows = decodeChunkRows(setup)
+	if v, ok := setup["html4excel"].(bool); ok {
+		p.HTML4Excel = v
+	}
+	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
@@ -81,8 +79,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseSpreadsheetWithTCADP(
-			filename, data, "XLS",
+		return parseWithTCADP(
+			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 			p.OutputFormat,
@@ -95,26 +93,15 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	f, err := excelize.OpenReader(bytes.NewReader(data))
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("xls open: %w", err)}
-	}
-	defer f.Close()
-
-	sheets := f.GetSheetList()
-	chunkRows := p.ChunkRows
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-
-	var html strings.Builder
-	for _, sheet := range sheets {
-		html.WriteString(renderSheetTables(f, sheet, chunkRows))
+		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
 
 	return ParseResult{
-		OutputFormat: "html",
-		File:         map[string]any{"name": filename, "format": "xls"},
-		HTML:         html.String(),
+		OutputFormat: spreadsheetOutputFormat,
+		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON:         items,
+		Warnings:     warnings,
 	}
 }

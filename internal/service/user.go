@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"hash"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
@@ -595,7 +595,7 @@ func defaultUserLanguage() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -781,6 +781,8 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
+			invalidToken := "INVALID_" + utility.GenerateToken()
+			user.AccessToken = &invalidToken
 		}
 	}
 	if req.Nickname != nil {
@@ -827,6 +829,8 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
+		invalidToken := "INVALID_" + utility.GenerateToken()
+		user.AccessToken = &invalidToken
 	}
 
 	// Save updated user
@@ -1081,7 +1085,7 @@ func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (cap
 		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
-	if ok := redis.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
+	if ok := kvrocks.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
 	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
@@ -1101,7 +1105,7 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	captchaKey := utility.CaptchaIDRedisKey(captchaID)
 	stored, _ := rc.Get(ctx, captchaKey)
 	if stored == "" {
@@ -1200,7 +1204,7 @@ func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (c
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
 	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
@@ -1270,7 +1274,7 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
 	if v, _ := rc.Get(ctx, verifiedKey); v != "1" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")

@@ -31,7 +31,7 @@ func TestCollectMindMapStream(t *testing.T) {
 		streamErrs := make(chan error)
 		close(streamErrs)
 
-		got, err := collectMindMapStream(context.Background(), chunks, streamErrs)
+		got, err := collectMindMapStream(t.Context(), chunks, streamErrs)
 		if err != nil {
 			t.Fatalf("collect stream: %v", err)
 		}
@@ -49,7 +49,7 @@ func TestCollectMindMapStream(t *testing.T) {
 		streamErrs <- providerErr
 		close(streamErrs)
 
-		_, err := collectMindMapStream(context.Background(), chunks, streamErrs)
+		_, err := collectMindMapStream(t.Context(), chunks, streamErrs)
 		if !errors.Is(err, providerErr) {
 			t.Fatalf("expected provider error, got %v", err)
 		}

@@ -8,12 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 func TestNewBitbucketConnectorParsesConfig(t *testing.T) {
@@ -329,7 +328,7 @@ func TestBitbucketConnectorOpenSyncResumesAfterCheckpoint(t *testing.T) {
 	}
 }
 
-func TestBitbucketConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument(t *testing.T) {
+func TestBitbucketConnectorOpenSyncResumeRejectsMissingSourceAnchor(t *testing.T) {
 	connector := mustBitbucketConnector(t, 1, "repo-a", "repo-b")
 	connector.doJSON = bitbucketFixtureDoJSON(t)
 
@@ -348,18 +347,8 @@ func TestBitbucketConnectorOpenSyncResumeOffsetFallbackSkipsCommittedDocument(t 
 	resumeCheckpoint := cloneBitbucketCheckpointWithoutSourceID(t, first.Checkpoint)
 
 	resumed, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end, Resume: resumeCheckpoint})
-	if err != nil {
-		t.Fatalf("resume OpenSync failed: %v", err)
-	}
-	second, err := resumed.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("resume NextBatch failed: %v", err)
-	}
-	if len(second.Documents) != 1 || second.Documents[0].SourceID != "bitbucket:acme:repo-a:pr:2" {
-		t.Fatalf("resume documents = %+v, want PR 2", second.Documents)
-	}
-	if second.Documents[0].SourceID == first.Documents[0].SourceID {
-		t.Fatalf("committed document was redelivered: %s", second.Documents[0].SourceID)
+	if resumed != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", resumed, err)
 	}
 }
 
@@ -490,18 +479,18 @@ func TestBitbucketConnectorValidateMissingConfig(t *testing.T) {
 }
 
 func TestBitbucketGetJSONRetriesOnTransientStatuses(t *testing.T) {
-	originalAllowAny := utility.AllowAnyHostForTest
+	originalAllowAny := common.AllowAnyHostForTest
 	originalTries := bitbucketRetryTries
 	originalDelay := bitbucketRetryBaseDelay
 	originalBackoff := bitbucketRetryBackoff
 	originalMaxDelay := bitbucketRetryMaxDelay
-	utility.AllowAnyHostForTest = true
+	common.AllowAnyHostForTest = true
 	bitbucketRetryTries = 3
 	bitbucketRetryBaseDelay = time.Millisecond
 	bitbucketRetryBackoff = 1
 	bitbucketRetryMaxDelay = 10 * time.Millisecond
 	t.Cleanup(func() {
-		utility.AllowAnyHostForTest = originalAllowAny
+		common.AllowAnyHostForTest = originalAllowAny
 		bitbucketRetryTries = originalTries
 		bitbucketRetryBaseDelay = originalDelay
 		bitbucketRetryBackoff = originalBackoff

@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"sort"
@@ -21,13 +22,13 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	einojsonschema "github.com/eino-contrib/jsonschema"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/component/messagefit"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 
@@ -186,13 +187,7 @@ type einoChatInvoker struct{}
 // Invoke satisfies ChatInvoker.
 func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
-		// Harness/agentic-search nodes may omit the model; fall back to the
-		// bootstrap-registered tenant default so those calls work in production.
-		if def := chat.GetDefaultModelName(); def != "" {
-			req.ModelName = def
-		} else {
-			return nil, fmt.Errorf("component: LLM: model_id is required and no default model is configured")
-		}
+		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
 	driver := req.Driver
 	modelName := req.ModelName
@@ -231,18 +226,392 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		chatCfg.Thinking = &f
 	}
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
-	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
+	einoMsgs := toEinoMessages(req.Messages)
+	infos, choice := toolOptions(req.Tools, req.ToolChoice)
+	if len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	out, err := wrapper.Generate(ctx, einoMsgs)
 	if err != nil {
 		return nil, err
 	}
-	return &ChatInvokeResponse{
+	resp := &ChatInvokeResponse{
 		Content:  out.Content,
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Tokens:   0,
-	}, nil
+		Usage:    usageFromMessage(out),
+	}
+	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
+		resp.ToolCalls = calls
+	}
+	return resp, nil
 }
+
+// usageFromMessage copies the call's own token split - which the model attaches to the
+// message it returns (ResponseMeta.Usage) - into the chat.Response Usage. The split
+// travels with the call instead of being read back off the shared ChatModel, where a
+// concurrent call could have replaced it before the read.
+func usageFromMessage(msg *schema.Message) *chat.Usage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return usageFromEinoUsage(msg.ResponseMeta.Usage)
+}
+
+// usageFromEinoUsage converts eino's own usage metadata into the chat.Response Usage.
+// A nil usage yields a nil Response.Usage, which is the honest answer for a call whose
+// provider reported none - better than a value left behind by another call.
+func usageFromEinoUsage(u *schema.TokenUsage) *chat.Usage {
+	if u == nil {
+		return nil
+	}
+	return &chat.Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+	}
+}
+
+// toolOptions converts the seam-level chat.Tool declarations into eino tool
+// infos and a tool_choice string the provider understands. It returns
+// (nil, "") when no tools were requested, so the invoke falls back to plain
+// completion and the harness can still parse tool calls from a fenced block.
+func toolOptions(tools []chat.Tool, choice chat.ToolChoice) ([]*schema.ToolInfo, string) {
+	if len(tools) == 0 {
+		return nil, ""
+	}
+	infos := make([]*schema.ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		name, desc := t.Function.Name, t.Function.Description
+		if name == "" {
+			continue
+		}
+		infos = append(infos, &schema.ToolInfo{
+			Name:        name,
+			Desc:        desc,
+			ParamsOneOf: paramsFromMap(t.Function.Parameters),
+		})
+	}
+	if len(infos) == 0 {
+		return nil, ""
+	}
+	resolved := "auto"
+	switch choice {
+	case chat.ToolChoiceNone:
+		resolved = "none"
+	case chat.ToolChoiceRequired:
+		resolved = "required"
+	case chat.ToolChoiceAuto:
+		resolved = "auto"
+	case "":
+		resolved = "auto"
+	}
+	return infos, resolved
+}
+
+// paramsFromMap builds an eino ParamsOneOf from a raw JSON-schema dict. The
+// harness ToolSpec carries the schema as map[string]any, so we round-trip it
+// through JSON into a jsonschema.Schema. A malformed schema yields a permissive
+// (empty) ParamsOneOf rather than failing the whole call.
+func paramsFromMap(raw map[string]any) *schema.ParamsOneOf {
+	if len(raw) == 0 {
+		return &schema.ParamsOneOf{}
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return &schema.ParamsOneOf{}
+	}
+	var js einojsonschema.Schema
+	if err := json.Unmarshal(b, &js); err != nil {
+		return &schema.ParamsOneOf{}
+	}
+	return schema.NewParamsOneOfByJSONSchema(&js)
+}
+
+// nativeToolCalls converts eino tool calls into the seam's chat.ToolCall values,
+// parsing each call's JSON arguments into a map for direct dispatch. A malformed
+// argument string is left as an empty map rather than dropping the call, so the
+// harness can surface the parse failure through its normal error path.
+func nativeToolCalls(calls []schema.ToolCall) []chat.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]chat.ToolCall, 0, len(calls))
+	for _, c := range calls {
+		args := map[string]any{}
+		if c.Function.Arguments != "" {
+			_ = json.Unmarshal([]byte(c.Function.Arguments), &args)
+		}
+		out = append(out, chat.ToolCall{
+			ID:        c.ID,
+			Name:      c.Function.Name,
+			Arguments: args,
+		})
+	}
+	return out
+}
+
+// Stream satisfies chat.StreamingInvoker: it emits the reply as it arrives
+// while still returning the assembled result, so a caller can push deltas to the
+// user without waiting for the full answer.
+func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	modelName := req.ModelName
+	if modelName == "" {
+		return nil, fmt.Errorf("component: LLM: model_id is required")
+	}
+	driver, bareModel := req.Driver, modelName
+	if driver == "" && bareModel != "" {
+		if name, provider, ok := splitCompositeLLMID(bareModel); ok {
+			driver, bareModel = provider, name
+		}
+	}
+	if driver == "" {
+		driver = "dummy"
+	}
+	d, err := newChatModelDriver(driver, req.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
+	}
+	apiKey := req.APIKey
+	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
+	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
+	switch req.Thinking {
+	case "enabled":
+		t := true
+		chatCfg.Thinking = &t
+	case "disabled":
+		f := false
+		chatCfg.Thinking = &f
+	}
+
+	wrapper := models.NewEinoChatModel(cm, chatCfg)
+	if infos, choice := toolOptions(req.Tools, req.ToolChoice); len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	return streamEinoChat(ctx, wrapper, toEinoMessages(req.Messages), cm, bareModel, onDelta)
+}
+
+// streamEinoChat drains a streaming eino chat call and assembles the reply the
+// one-shot path would have returned, forwarding every piece to onDelta as it
+// arrives (reasoning pieces are flagged isThink so the caller never renders them
+// as answer text). Both chat invokers share it, so streaming and one-shot calls
+// cannot drift apart.
+//
+// Streaming native tool calls arrive as incremental deltas, each carrying an
+// Index (parallel calls) and a slice of Function.Arguments. Merge them by
+// index the same way Python's async_chat_streamly aggregates tool_calls
+// (chat_model.py:711-719): first delta seeds the entry, later deltas append to
+// the arguments string. The full list is committed once the stream ends.
+func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*schema.Message, cm *models.ChatModel, modelName string, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	sr, err := wrapper.Stream(ctx, msgs)
+	if err != nil {
+		return nil, err
+	}
+	defer sr.Close()
+
+	var content, reasoning strings.Builder
+	pendingCalls := map[int]*schema.ToolCall{}
+	// A streamed call reports its usage on the last message that carries it
+	// (stream_options.include_usage), so keep the newest one and read it out below.
+	// It is this call's own split: the model no longer parks it on a field shared by
+	// every call on the ChatModel.
+	var streamUsage *schema.TokenUsage
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		if chunk == nil {
+			continue
+		}
+		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+			streamUsage = chunk.ResponseMeta.Usage
+		}
+		// Streaming tool-call deltas are merged before any content handling so a
+		// chunk that carries both is processed exactly once.
+		for _, tc := range chunk.ToolCalls {
+			idx := -1
+			if tc.Index != nil {
+				idx = *tc.Index
+			}
+			existing, ok := pendingCalls[idx]
+			if !ok {
+				cp := tc
+				if cp.Function.Arguments == "" {
+					cp.Function.Arguments = ""
+				}
+				pendingCalls[idx] = &cp
+				continue
+			}
+			existing.Function.Arguments += tc.Function.Arguments
+			if existing.ID == "" && tc.ID != "" {
+				existing.ID = tc.ID
+			}
+			if existing.Function.Name == "" && tc.Function.Name != "" {
+				existing.Function.Name = tc.Function.Name
+			}
+		}
+		// Reasoning is streamed first and flagged, so the caller can render it
+		// separately instead of showing it as part of the answer.
+		if chunk.ReasoningContent != "" {
+			reasoning.WriteString(chunk.ReasoningContent)
+			if onDelta != nil {
+				if err := onDelta(chunk.ReasoningContent, true); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if chunk.Content != "" {
+			content.WriteString(chunk.Content)
+			if onDelta != nil {
+				if err := onDelta(chunk.Content, false); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	resp := &ChatInvokeResponse{
+		Content:  content.String(),
+		Thinking: reasoning.String(),
+		Model:    modelName,
+		Stopped:  true,
+		Usage:    usageFromEinoUsage(streamUsage),
+	}
+	if len(pendingCalls) > 0 {
+		// Preserve provider-given index order (Python's final_tool_calls.values()
+		// is insertion-ordered by index) rather than relying on map iteration.
+		idxs := make([]int, 0, len(pendingCalls))
+		for k := range pendingCalls {
+			idxs = append(idxs, k)
+		}
+		sort.Ints(idxs)
+		merged := make([]schema.ToolCall, 0, len(pendingCalls))
+		for _, k := range idxs {
+			merged = append(merged, *pendingCalls[k])
+		}
+		if calls := nativeToolCalls(merged); len(calls) > 0 {
+			resp.ToolCalls = calls
+		}
+	}
+	return resp, nil
+}
+
+// resolvedModelInvoker is a ChatInvoker pinned to an already-resolved model
+// (driver/modelName/apiConfig). Unlike einoChatInvoker it never consults the
+// process-global default model name nor splits a composite llm id — the caller
+// (e.g. the Go chat pipeline's harness bridge) resolves the tenant model up
+// front via the model provider service. This mirrors Python, where RAGTools
+// receives a fully-resolved LLMBundle, and lets the agentic-RAG harness call a
+// tenant's actual chat model (which may be a UUID/tenant_model id) instead of
+// falling through to a dummy driver.
+type resolvedModelInvoker struct {
+	driver    models.ModelDriver
+	modelName string
+	apiConfig *models.APIConfig
+}
+
+// NewResolvedInvoker builds a ChatInvoker bound to the given resolved model
+// config. modelName may be a bare model name; apiConfig carries the api key and
+// base url already resolved for the tenant.
+func NewResolvedInvoker(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) ChatInvoker {
+	return &resolvedModelInvoker{driver: driver, modelName: modelName, apiConfig: apiConfig}
+}
+
+// resolvedChatWrapper builds the eino wrapper for the pinned model, applying the
+// request's sampling config, thinking switch and tool binding. Invoke and Stream
+// share it so both send an identical request; only the transport differs.
+func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
+	cm := models.NewChatModel(c.driver, &modelName, c.apiConfig)
+	chatCfg := &models.ChatConfig{
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+	}
+	switch req.Thinking {
+	case "enabled":
+		t := true
+		chatCfg.Thinking = &t
+	case "disabled":
+		f := false
+		chatCfg.Thinking = &f
+	}
+	wrapper := models.NewEinoChatModel(cm, chatCfg)
+	infos, choice := toolOptions(req.Tools, req.ToolChoice)
+	if len(infos) > 0 {
+		withTools, err := wrapper.WithTools(infos)
+		if err != nil {
+			return nil, nil, err
+		}
+		wrapper = withTools.(*models.EinoChatModel).WithToolChoice(choice)
+	}
+	return wrapper, cm, nil
+}
+
+// modelFor returns the model to call: the request's override when set, else the
+// model this invoker was pinned to.
+func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
+	if req.ModelName != "" {
+		return req.ModelName
+	}
+	return c.modelName
+}
+
+// Invoke satisfies ChatInvoker.
+func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	modelName := c.modelFor(req)
+	wrapper, _, err := c.resolvedChatWrapper(modelName, req)
+	if err != nil {
+		return nil, err
+	}
+	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
+	if err != nil {
+		return nil, err
+	}
+	resp := &ChatInvokeResponse{
+		Content:  out.Content,
+		Thinking: out.ReasoningContent,
+		Model:    modelName,
+		Stopped:  true,
+		Usage:    usageFromMessage(out),
+	}
+	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
+		resp.ToolCalls = calls
+	}
+	return resp, nil
+}
+
+// Stream satisfies chat.StreamingInvoker, the seam
+// harness.InvokerSessionModel.StreamComplete asserts when it composes the final
+// answer (harness/action_session.go:1504). Without it every agentic answer fell
+// back to the one-shot call above and reached the client in a single piece,
+// logging "chat invoker … does not support streaming" per request. Mirrors
+// Python, where LLMBundle.async_chat_streamly feeds tools.answer_sink while the
+// model is still writing.
+func (c *resolvedModelInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	modelName := c.modelFor(req)
+	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
+	if err != nil {
+		return nil, err
+	}
+	return streamEinoChat(ctx, wrapper, toEinoMessages(req.Messages), cm, modelName, onDelta)
+}
+
+// The harness asserts chat.StreamingInvoker on the invoker it is handed
+// (action_session.go:1504), so a missing Stream silently downgrades the final
+// answer to a non-streaming call. Fail at build time instead.
+var _ chat.StreamingInvoker = (*resolvedModelInvoker)(nil)
 
 // toEinoMessages converts the LLM component's Message slice to eino's.
 //
@@ -277,6 +646,8 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 			Role:                  role,
 			Content:               m.Content,
 			UserInputMultiContent: cloned,
+			ToolCalls:             m.ToolCalls,
+			ToolCallID:            m.ToolCallID,
 		})
 	}
 	return out
@@ -312,7 +683,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
 	// Resolve the model's context window (content_length) for message
-	// fitting. 0 means the model is unknown → fitMessages falls back to
+	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
 	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
 	// tenantID scopes composite-reference resolution to the tenant's own rows
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
@@ -324,8 +695,8 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	}
 	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
-		// A 0 makes fitMessages fall back to the 8192 default budget, which can
-		// silently discard most of a large-context prompt, so surface the
+		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
+		// can silently discard most of a large-context prompt, so surface the
 		// resolution failure for diagnosis.
 		common.Warn("llm: content_length not resolved, falling back to 8192",
 			zap.String("model_ref", originalModelID),
@@ -382,6 +753,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
 	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
+			return nil, err
+		}
 		sysFileTexts, sysFileImgs = collectSysFiles(state)
 		if len(sysFileImgs) > 0 {
 			p.VisualFiles = dedupStrings(append(p.VisualFiles, sysFileImgs...))
@@ -449,9 +823,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// generation length only.
 	{
 		// The system prompt is already embedded as the first message
-		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// in msgs by buildMessagesWithImages; pass "" so chat.FitMessages
 		// does not duplicate it.
-		fitted, fitErr := fitMessages("", msgs, contentLength)
+		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
 			return map[string]any{"content": fitErr}, nil
 		}
@@ -486,7 +860,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// Operators who do NOT set MaxRetries (both fields zero) get
 	// the boot retry chain unchanged. The unit tests in
 	// llm_retry_test.go pin both the unwrap behaviour and the
-	// stacking-prevention contract.
+	// stacking-prevention
 	hasOverride := p.MaxRetries > 0 || p.DelayAfterError > 0
 	if hasOverride {
 		maxRetries := p.MaxRetries
@@ -1009,151 +1383,6 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		}
 	}
 	return p
-}
-
-// effectiveContextLength returns maxLength if positive, otherwise 8192.
-// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
-// zero/negative context windows from silently trimming all prompt content.
-func effectiveContextLength(maxLength int) int {
-	if maxLength > 0 {
-		return maxLength
-	}
-	return 8192
-}
-
-// contextFitBudget returns 97% of the effective context length as the
-// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
-// in PR #16413.
-func contextFitBudget(maxLength int) int {
-	return int(float64(effectiveContextLength(maxLength)) * 0.97)
-}
-
-// validateFittedMessages checks that the fitted message list is non-empty
-// and the last message is a non-empty user turn (content or multi-modal
-// parts). Returns an error string on failure, empty string on success.
-// Python requires len >= 2 because the system prompt is always injected
-// upstream; Go allows len >= 1 because the system message may be embedded
-// inside msgs (from buildMessagesWithImages) or absent entirely.
-func validateFittedMessages(msgFit []schema.Message) string {
-	if len(msgFit) == 0 {
-		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
-	}
-	last := msgFit[len(msgFit)-1]
-	if last.Role != schema.User {
-		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
-	}
-	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
-		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
-	}
-	return ""
-}
-
-// fitMessages calls message_fit_in semantics on the given messages and
-// validates that the result ends with a non-empty user turn. Returns the
-// fitted messages and an error string (empty on success).
-// Mirrors Python's LLM.fit_messages in PR #16413.
-func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
-	copied := make([]schema.Message, len(msgs))
-	for i, m := range msgs {
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		copied[i] = schema.Message{
-			Role:                  m.Role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		}
-	}
-
-	// Convert to messagefit.Message. Track where each entry's text lives
-	// (plain Content or a multi-modal text part) so the fitted text can be
-	// written back to the right field. Entries with no text at all
-	// (image-only turns) carry an empty Content in messagefit and survive
-	// fitting when kept.
-	type fitSource struct {
-		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
-		multiIdx      int  // -1 means the text lives in Content
-		textInContent bool // the original message carried text in Content
-	}
-	all := make([]messagefit.Message, 0, 1+len(copied))
-	sources := make([]fitSource, 0, 1+len(copied))
-
-	if systemPrompt != "" {
-		all = append(all, messagefit.Message{Role: "system", Content: systemPrompt})
-		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
-	}
-
-	for i := range copied {
-		text := copied[i].Content
-		multiIdx := -1
-		hadText := text != ""
-		if !hadText {
-			// Fold every non-empty text part into the token budget: only the
-			// first text part is written back, so leaving later parts out
-			// would let text exceed the fitted budget after reconstruction.
-			var textParts []string
-			for j, p := range copied[i].UserInputMultiContent {
-				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
-					textParts = append(textParts, p.Text)
-					if multiIdx < 0 {
-						multiIdx = j
-					}
-				}
-			}
-			if len(textParts) > 0 {
-				text = strings.Join(textParts, "\n\n")
-				hadText = true
-			}
-		}
-		all = append(all, messagefit.Message{Role: string(copied[i].Role), Content: text})
-		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
-	}
-
-	// Use 97% of effective context as the token budget.
-	budget := contextFitBudget(maxLength)
-	kept, keptIdx, _ := messagefit.Fit(all, budget)
-
-	// Convert back to []schema.Message. messagefit.Fit reports exactly which
-	// entries are kept (keptIdx); dropped entries are simply absent, so no
-	// empty-content sentinel is needed and image-only turns are preserved.
-	result := make([]schema.Message, 0, len(kept))
-	for j, i := range keptIdx {
-		src := sources[i]
-		if src.copiedIdx < 0 {
-			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
-			continue
-		}
-		m := copied[src.copiedIdx]
-		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
-			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
-			// Drop any additional text parts: their content was folded into
-			// the first part before fitting, so keeping them would re-introduce
-			// text outside the token budget.
-			keptParts := m.UserInputMultiContent[:0]
-			for k, part := range m.UserInputMultiContent {
-				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
-					continue
-				}
-				keptParts = append(keptParts, part)
-			}
-			m.UserInputMultiContent = keptParts
-		} else if src.textInContent {
-			// Always write the fitted text back (even when trimmed to empty):
-			// leaving the original would send untrimmed content past the budget.
-			m.Content = kept[j].Content
-		}
-		result = append(result, m)
-	}
-	return result, validateFittedMessages(result)
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and

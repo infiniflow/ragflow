@@ -128,33 +128,34 @@ func (m *MinioStorage) Health(ctx context.Context) bool {
 func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
 
-	var err error
+	var lastErr error
 
 	for i := 0; i < 3; i++ {
-		var exists bool
 		// Ensure bucket exists
 		if m.bucket == "" {
-			exists, err = m.client.BucketExists(ctx, bucket)
+			exists, err := m.client.BucketExists(ctx, bucket)
 			if err != nil {
+				lastErr = err
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
 				common.Warn("Failed to check bucket existence", zap.String("bucket", bucket), zap.Error(err))
 				m.reconnect()
-				if err = sleepOrAbort(ctx, time.Second); err != nil {
-					return err
+				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+					return sleepErr
 				}
 				continue
 			}
 			if !exists {
-				if err = m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+				if err := m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+					lastErr = err
 					if ctxErr := ctx.Err(); ctxErr != nil {
 						return ctxErr
 					}
 					common.Warn("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
 					m.reconnect()
-					if err = sleepOrAbort(ctx, time.Second); err != nil {
-						return err
+					if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+						return sleepErr
 					}
 					continue
 				}
@@ -162,15 +163,17 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		}
 
 		reader := bytes.NewReader(binary)
-		_, err = m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
+		_, err := m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
 		if err != nil {
+			const warnMessage = "Failed to put object"
+			lastErr = fmt.Errorf("%s: %w", warnMessage, err)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
-			common.Warn("Failed to put object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			common.Warn(warnMessage, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return sleepErr
 			}
 			continue
 		}
@@ -178,23 +181,25 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		return nil
 	}
 
-	return err
+	return lastErr
 }
 
 // Get retrieves an object from MinIO
 func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Warn("failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -206,13 +211,14 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 			return err
 		}()
 		if readErr != nil {
+			lastErr = readErr
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			m.reconnect()
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -220,7 +226,7 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, lastErr
 }
 
 // Remove removes an object from MinIO

@@ -18,14 +18,18 @@ import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
+  initialCompilationValues,
   initialGoExtractorValues,
+  initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  transformCompilationParams,
   transformExtractorParams,
+  transformGeneralChunkerParams,
   transformParserParams,
   transformTitleChunkerParams,
   transformTokenChunkerParams,
@@ -37,6 +41,19 @@ export const FileNodeId = 'File';
 
 export function getOperatorType(operatorId: string): Operator {
   return (operatorId.split(':')[0] || operatorId) as Operator;
+}
+
+// The dataset-level metadata group stored at parser_config.metadata. The group
+// is shaped {enabled, metadata, built_in_metadata}; the boolean enabled flag
+// and the built_in_metadata array identify it among other values.
+function isDatasetMetadataGroup(value: any): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof value.enabled === 'boolean' &&
+    Array.isArray(value.built_in_metadata)
+  );
 }
 
 export function transformParserConfigSetups(
@@ -239,6 +256,17 @@ function transformTokenChunkerConfigToForm(
   return result;
 }
 
+function transformGeneralChunkerConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformTokenChunkerConfigToForm(config);
+  result.table_context_size = Number(config?.table_context_size ?? 0);
+  result.image_context_size = Number(config?.image_context_size ?? 0);
+  delete result.image_table_context_window;
+  delete result.delimiter_mode;
+  return result;
+}
+
 /**
  * Converts TitleChunker config from API/DSL format to form format.
  * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
@@ -308,11 +336,50 @@ export function transformApiConfigToForm(
       return transformTokenizerConfigToForm(config);
     case Operator.TokenChunker:
       return transformTokenChunkerConfigToForm(config);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
       return config ?? {};
   }
+}
+
+/**
+ * Converts a saved parser_config (API format, keyed by operator id) to the
+ * form format used by the operator tabs. Configs without pipeline keys
+ * (built-in parse type) are returned as-is.
+ *
+ * The dataset-level metadata group is authoritative for Extractor nodes,
+ * mirroring buildOperatorNode, so the values seeded into the outer form match
+ * what the operator tabs initialize from.
+ */
+export function transformSavedParserConfigToForm(
+  parserConfig?: Record<string, any>,
+): Record<string, any> | undefined {
+  if (
+    !parserConfig ||
+    typeof parserConfig !== 'object' ||
+    Array.isArray(parserConfig) ||
+    !Object.keys(parserConfig).some((key) => key.includes(':'))
+  ) {
+    return parserConfig;
+  }
+
+  const formParserConfig: Record<string, any> = {};
+  for (const [operatorId, config] of Object.entries(parserConfig)) {
+    const operatorType = getOperatorType(operatorId);
+    const apiConfig =
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(parserConfig.metadata)
+        ? { ...config, metadata: parserConfig.metadata }
+        : (config as Record<string, any>);
+    formParserConfig[operatorId] = transformApiConfigToForm(
+      operatorType,
+      apiConfig,
+    );
+  }
+  return formParserConfig;
 }
 
 /**
@@ -330,10 +397,14 @@ export function transformFormConfigToApi(
       return transformParserParams(config as any);
     case Operator.Extractor:
       return transformExtractorParams(config as any);
+    case Operator.Compiler:
+      return transformCompilationParams(config as Record<string, any>);
     case Operator.Tokenizer:
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
       return transformTokenChunkerParams(config as any);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
     default:
@@ -341,7 +412,7 @@ export function transformFormConfigToApi(
   }
 }
 
-function normalizeOperatorForm(
+export function normalizeOperatorForm(
   operatorId: string,
   rawForm: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -367,9 +438,19 @@ function normalizeOperatorForm(
         ...cloneDeep(initialTokenChunkerValues),
         ...rawForm,
       };
+    case Operator.GeneralChunker:
+      return {
+        ...cloneDeep(initialGeneralChunkerValues),
+        ...rawForm,
+      };
     case Operator.Extractor:
       return {
         ...cloneDeep(getInitialExtractorValues()),
+        ...rawForm,
+      };
+    case Operator.Compiler:
+      return {
+        ...cloneDeep(initialCompilationValues),
         ...rawForm,
       };
     case Operator.Tokenizer:
@@ -397,10 +478,24 @@ export function buildOperatorNode(
   };
 
   if (!isEmpty(pipelineParserConfig)) {
+    let apiConfig = pipelineParserConfig[operatorId];
+    // Dataset-level auto-metadata lives at parser_config.metadata; the
+    // backend preserves that object and re-scopes it into every Extractor
+    // node on write, so it is the authoritative source for the metadata
+    // toggle's initial state — prefer it over a possibly stale per-node copy.
+    if (
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(pipelineParserConfig.metadata)
+    ) {
+      apiConfig = {
+        ...apiConfig,
+        metadata: pipelineParserConfig.metadata,
+      };
+    }
     // user overrides from API (now also form format)
     Object.assign(
       rawForm,
-      transformApiConfigToForm(operatorType, pipelineParserConfig[operatorId]), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
+      transformApiConfigToForm(operatorType, apiConfig), // Convert API config to form format, then merge (DSL template is baseline, API overrides)
     );
   }
 

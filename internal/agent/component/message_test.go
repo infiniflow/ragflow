@@ -118,6 +118,37 @@ func TestMessage_NoTemplate(t *testing.T) {
 	}
 }
 
+func TestMessage_DanglingReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-dangling", "task-dangling")
+	ctx := withStateForTest(t.Context(), state)
+
+	for _, text := range []string{
+		"{{Agent:Deleted@content}}",
+		"prefix {{Agent:Deleted@content}} suffix",
+	} {
+		_, err := c.Invoke(ctx, nil, map[string]any{"text": text})
+		if err == nil || err.Error() != "Can't find variable: 'Agent:Deleted@content'" {
+			t.Errorf("Invoke(%q) error = %v, want clean missing-variable error", text, err)
+		}
+	}
+}
+
+func TestMessage_ExistingEmptyReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-empty", "task-empty")
+	state.SetVar("Agent:Empty", "content", "")
+	ctx := withStateForTest(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "{{Agent:Empty@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
+	}
+}
+
 func TestMessage_RuntimeContentInput(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
@@ -379,6 +410,27 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 	}
 	if got := strings.Join(streamed, ""); got != "raw answer" {
 		t.Fatalf("streamed events: got %q, want live delta", got)
+	}
+}
+
+func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-error", "task-deferred-error")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, _ runtime.AgentDeltaSink) (map[string]any, error) {
+			return map[string]any{"_ERROR": "**ERROR**: upstream 402"}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	completed := false
+	runtime.RegisterDeferredNode(ctx, "agent_0", func() { completed = true })
+
+	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
+		t.Fatalf("Invoke error = %v, want upstream 402", err)
+	}
+	if completed {
+		t.Fatal("deferred node completed after result _ERROR")
 	}
 }
 

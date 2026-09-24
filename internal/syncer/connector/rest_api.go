@@ -18,7 +18,6 @@ package connector
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,14 +133,10 @@ var (
 	restAPI429DefaultWait = 30 * time.Second
 )
 
-// restAPISSRFAllowLoopback is a test hook that lets unit tests exercise the
-// real HTTP path against httptest servers bound to loopback. Production code
-// keeps it false so loopback/private endpoints stay blocked.
-var restAPISSRFAllowLoopback bool
-
 // NewRestAPIConnector parses a connector config and returns a connector. It
-// performs schema validation and the base-URL SSRF check but performs no
-// network I/O. Credentials are read from config["credentials"].
+// performs schema validation and the base-URL SSRF check (which resolves the
+// hostname to enforce the shared guard) but performs no HTTP request I/O.
+// Credentials are read from config["credentials"].
 func NewRestAPIConnector(config map[string]any) (*RestAPIConnector, error) {
 	cfg, err := parseRestAPIConfig(config)
 	if err != nil {
@@ -546,7 +541,9 @@ func (c *RestAPIConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 		windowStart:   windowStart,
 		windowEnd:     request.WindowEnd.UTC(),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -625,160 +622,90 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		currentHeaders[k] = v
 	}
 	currentBody := c.cfg.RequestBody
-	currentAuth := c.basicAuth
-	previousNetloc := restAPINetloc(currentURL)
-
-	for hop := 0; hop <= restAPIMaxRedirects; hop++ {
-		hostname, pinIP, err := assertRestAPIURLSafe(ctx, currentURL)
-		if err != nil {
-			return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + err.Error()}
-		}
-
-		var resp *http.Response
-		var respErr error
-		for wait := 0; wait < restAPI429MaxWaits; wait++ {
-			resp, respErr = c.doRequest(ctx, currentMethod, currentURL, currentHeaders, queryParams, currentBody, currentAuth, hostname, pinIP)
-			if respErr != nil {
-				return nil, respErr
-			}
-			if resp.StatusCode != http.StatusTooManyRequests {
-				break
-			}
-			retryAfter := restAPI429DefaultWait
-			if raw := resp.Header.Get("Retry-After"); raw != "" {
-				if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds >= 0 {
-					retryAfter = time.Duration(seconds) * time.Second
-				}
-			}
-			resp.Body.Close()
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(retryAfter):
-			}
-		}
-		if respErr != nil {
-			return nil, respErr
-		}
-		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
-			return nil, &RateLimitTriedTooManyTimesError{Message: fmt.Sprintf("REST API rate limited: exceeded '%d' retries (too many requests)", restAPI429MaxWaits)}
-		}
-
-		if restAPIIsRedirect(resp.StatusCode) {
-			location := resp.Header.Get("Location")
-			if location == "" {
-				return c.handleResponse(resp)
-			}
-			nextURL, err := restAPIResolveURL(currentURL, location)
-			if err != nil {
-				resp.Body.Close()
-				return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + err.Error()}
-			}
-			nextNetloc := restAPINetloc(nextURL)
-			if nextNetloc != "" && nextNetloc != previousNetloc {
-				currentHeaders = restAPIStripAuthHeaders(currentHeaders)
-				currentAuth = nil
-			}
-			previousNetloc = nextNetloc
-			if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
-				currentMethod = "GET"
-				currentBody = nil
-				queryParams = nil
-			}
-			resp.Body.Close()
-			currentURL = nextURL
-			continue
-		}
-		return c.handleResponse(resp)
-	}
-	return nil, &ConnectorValidationError{Message: fmt.Sprintf("Exceeded %d redirects fetching %q", restAPIMaxRedirects, currentURL)}
-}
-
-func (c *RestAPIConnector) doRequest(
-	ctx context.Context,
-	method, rawURL string,
-	headers map[string]string,
-	params map[string]any,
-	body map[string]any,
-	auth *restAPIBasicAuth,
-	hostname string,
-	pinIP net.IP,
-) (*http.Response, error) {
-	transport := newRestAPIPinnedTransport(hostname, pinIP)
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   restAPIRequestTimeout,
-		// Redirects are handled manually so auth headers can be stripped on
-		// cross-origin hops and each hop is re-validated against SSRF.
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	fullURL := rawURL
-	if encoded := restAPIEncodeParams(params); encoded != "" {
-		sep := "?"
-		if strings.Contains(rawURL, "?") {
-			sep = "&"
-		}
-		fullURL = rawURL + sep + encoded
-	}
-
-	var req *http.Request
-	var err error
-	switch method {
-	case "GET":
-		req, err = http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
-	case "POST":
-		var payload []byte
-		if body == nil {
-			payload = []byte("{}")
+	var bodyBytes []byte
+	if currentMethod == http.MethodPost {
+		if currentBody == nil {
+			bodyBytes = []byte("{}")
 		} else {
-			payload, err = json.Marshal(body)
+			var err error
+			bodyBytes, err = json.Marshal(currentBody)
 			if err != nil {
 				return nil, &ConnectorValidationError{Message: "REST API request body is not valid JSON"}
 			}
 		}
-		req, err = http.NewRequestWithContext(ctx, http.MethodPost, fullURL, strings.NewReader(string(payload)))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
+	}
+	currentAuth := c.basicAuth
+	previousNetloc := connectorNetloc(currentURL)
+
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:       currentMethod,
+		RawURL:       currentURL,
+		Body:         bodyBytes,
+		Headers:      currentHeaders,
+		Timeout:      restAPIRequestTimeout,
+		MaxRedirects: restAPIMaxRedirects,
+		Prepare: func(req *http.Request, hop connectorRequestHop) error {
+			if hop.Method == http.MethodPost && req.Header.Get("Content-Type") == "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			if currentAuth != nil {
+				req.SetBasicAuth(currentAuth.username, currentAuth.password)
+			}
+			if encoded := restAPIEncodeParams(queryParams); encoded != "" {
+				sep := "?"
+				if strings.Contains(hop.URL, "?") {
+					sep = "&"
+				}
+				fullURL, err := url.Parse(hop.URL + sep + encoded)
+				if err != nil {
+					return err
+				}
+				req.URL = fullURL
+			}
+			return nil
+		},
+		RetryStatus: func(resp *http.Response, attempt int) (time.Duration, bool) {
+			if resp.StatusCode != http.StatusTooManyRequests {
+				return 0, false
+			}
+			if attempt >= restAPI429MaxWaits {
+				return 0, false
+			}
+			wait := restAPI429DefaultWait
+			if raw := resp.Header.Get("Retry-After"); raw != "" {
+				if seconds, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && seconds >= 0 {
+					wait = time.Duration(seconds) * time.Second
+				}
+			}
+			return wait, true
+		},
+		NextHop: func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop {
+			nextNetloc := connectorNetloc(nextURL)
+			if nextNetloc != "" && nextNetloc != previousNetloc {
+				currentAuth = nil
+			}
+			previousNetloc = nextNetloc
+			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
+				hop.Method = http.MethodGet
+				hop.Body = nil
+				queryParams = nil
+			}
+			hop.URL = nextURL
+			return hop
+		},
+	})
+	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, &ConnectorValidationError{Message: "Unsafe REST API URL: " + unsafe.Err.Error()}
 		}
-	default:
-		return nil, &ConnectorValidationError{Message: fmt.Sprintf("Unsupported HTTP method: %s", method)}
-	}
-	if err != nil {
 		return nil, err
 	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		resp.Body.Close()
+		return nil, &RateLimitTriedTooManyTimesError{Message: fmt.Sprintf("REST API rate limited: exceeded '%d' retries (too many requests)", restAPI429MaxWaits)}
 	}
-	if auth != nil {
-		req.SetBasicAuth(auth.username, auth.password)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		transport.CloseIdleConnections()
-		return nil, err
-	}
-	resp.Body = &restAPICloseIdleBody{body: resp.Body, transport: transport}
-	return resp, nil
-}
-
-// restAPICloseIdleBody closes the underlying response body and then releases
-// the pinned transport's idle connections, so the per-request transports do
-// not leak keep-alive sockets during long paginated syncs.
-type restAPICloseIdleBody struct {
-	body      io.ReadCloser
-	transport *http.Transport
-}
-
-func (b *restAPICloseIdleBody) Read(p []byte) (int, error) { return b.body.Read(p) }
-
-func (b *restAPICloseIdleBody) Close() error {
-	err := b.body.Close()
-	b.transport.CloseIdleConnections()
-	return err
+	return c.handleResponse(resp)
 }
 
 func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
@@ -790,8 +717,8 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 	case status >= 400 && status < 500 && status != http.StatusTooManyRequests:
 		return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API request failed with non-retriable client error status %d", status)}
 	case status >= 500:
-		// The "http <status>" wording lets the syncer's task-level retry
-		// classifier (isTransientSyncError) recognize exhausted server errors.
+		// Keep the "http <status>" wording so the failure surfaces clearly in
+		// the sync task error message.
 		return nil, fmt.Errorf("REST API request failed with http %d", status)
 	}
 
@@ -806,26 +733,6 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 		return nil, &ConnectorValidationError{Message: "REST API response is not valid JSON"}
 	}
 	return value, nil
-}
-
-// newRestAPIPinnedTransport resolves the target once (in assertRestAPIURLSafe)
-// and pins that address for the actual connection, preventing DNS rebinding.
-func newRestAPIPinnedTransport(hostname string, pinIP net.IP) *http.Transport {
-	dialer := &net.Dialer{Timeout: restAPIRequestTimeout, KeepAlive: 30 * time.Second}
-	return &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			_, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				port = "443"
-			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
-		},
-		TLSClientConfig: &tls.Config{
-			ServerName: hostname,
-			MinVersion: tls.VersionTLS12,
-		},
-		ForceAttemptHTTP2: true,
-	}
 }
 
 // buildURLWithTemplates substitutes {key} placeholders in the URL and returns
@@ -875,176 +782,23 @@ func restAPIEncodeParams(params map[string]any) string {
 	return values.Encode()
 }
 
-func restAPINetloc(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return parsed.Host
-}
-
-func restAPIResolveURL(base, location string) (string, error) {
-	baseParsed, err := url.Parse(base)
-	if err != nil {
-		return "", err
-	}
-	ref, err := url.Parse(location)
-	if err != nil {
-		return "", err
-	}
-	return baseParsed.ResolveReference(ref).String(), nil
-}
-
-func restAPIIsRedirect(status int) bool {
-	switch status {
-	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
-		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
-		return true
-	}
-	return false
-}
-
-var restAPIAuthSensitiveHeaders = map[string]struct{}{
-	"authorization":       {},
-	"proxy-authorization": {},
-	"apikey":              {},
-	"api-key":             {},
-	"x-api-key":           {},
-	"x-auth-token":        {},
-}
-
-func restAPIStripAuthHeaders(headers map[string]string) map[string]string {
-	out := make(map[string]string, len(headers))
-	for k, v := range headers {
-		if _, sensitive := restAPIAuthSensitiveHeaders[strings.ToLower(k)]; sensitive {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // SSRF protection
 // ---------------------------------------------------------------------------
 
-// validateRestAPIURLForSSRF performs quick deny-list checks plus DNS
-// resolution. Resolution failure is logged and tolerated because the
-// per-request check re-validates.
+// validateRestAPIURLForSSRF is the config-time SSRF check for the REST API
+// connector. It delegates to the shared connector guard, which validates the
+// scheme, rejects localhost and non-public literal addresses, and resolves the
+// hostname. The per-request path re-validates and DNS-pins every hop.
 func validateRestAPIURLForSSRF(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return &ConnectorValidationError{Message: "REST API connector URL must include a hostname."}
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return &ConnectorValidationError{Message: fmt.Sprintf("Unsupported URL scheme for REST API connector: %q. Only http/https are allowed.", parsed.Scheme)}
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return &ConnectorValidationError{Message: "REST API connector URL must include a hostname."}
-	}
-	if strings.EqualFold(hostname, "localhost") {
-		return &ConnectorValidationError{Message: fmt.Sprintf("REST API connector URL hostname %q is not allowed (localhost is blocked).", hostname)}
-	}
-	if restAPISSRFAllowLoopback {
-		return nil
-	}
-	addrs, err := net.LookupIP(hostname)
-	if err != nil {
-		// DNS failure is not an SSRF condition by itself; the per-request
-		// check will surface it if it matters.
-		return nil
-	}
-	for _, addr := range addrs {
-		if !restAPIIPIsGlobal(restAPIEffectiveIP(addr)) {
-			return &ConnectorValidationError{Message: fmt.Sprintf(
-				"REST API connector URL %q resolves to disallowed address %s (localhost, private, link-local, reserved, or multicast addresses are blocked).",
-				rawURL, addr)}
-		}
-	}
-	return nil
+	return validateConnectorURL(rawURL)
 }
 
 // assertRestAPIURLSafe mirrors ssrf_guard.assert_url_is_safe: every resolved
 // address must be globally routable. It returns the hostname and the first
 // validated IP so the caller can pin DNS.
-func assertRestAPIURLSafe(ctx context.Context, rawURL string) (string, net.IP, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", nil, fmt.Errorf("URL is missing a host.")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", nil, fmt.Errorf("Disallowed URL scheme: %q. Only [http https] are allowed.", parsed.Scheme)
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return "", nil, fmt.Errorf("URL is missing a host.")
-	}
-	if restAPISSRFAllowLoopback {
-		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-		if err != nil {
-			return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
-		}
-		if len(addrs) == 0 {
-			return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-		}
-		return hostname, addrs[0].IP, nil
-	}
-
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-	if err != nil {
-		return "", nil, fmt.Errorf("Could not resolve hostname %q: %v", hostname, err)
-	}
-	var first net.IP
-	for _, addr := range addrs {
-		eff := restAPIEffectiveIP(addr.IP)
-		if !restAPIIPIsGlobal(eff) {
-			return "", nil, fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed.", addr.IP)
-		}
-		if first == nil {
-			first = addr.IP
-		}
-	}
-	if first == nil {
-		return "", nil, fmt.Errorf("Hostname %q resolved to no addresses.", hostname)
-	}
-	return hostname, first, nil
-}
-
-// restAPIEffectiveIP returns the IPv4 equivalent for IPv4-mapped IPv6
-// addresses, mirroring ssrf_guard._effective_ip.
-func restAPIEffectiveIP(ip net.IP) net.IP {
-	if v4 := ip.To4(); v4 != nil && len(ip) == net.IPv6len {
-		return v4
-	}
-	return ip
-}
-
-// restAPIIPIsGlobal mirrors ipaddress.is_global for the address classes that
-// matter in practice.
-func restAPIIPIsGlobal(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() {
-		return false
-	}
-	if v4 := ip.To4(); v4 != nil {
-		first := v4[0]
-		// 0.0.0.0/8, 100.64.0.0/10 (CGNAT), 192.0.0.0/24 (IETF protocol
-		// assignments), 198.18.0.0/15 (benchmarking), 240.0.0.0/4, broadcast.
-		if first == 0 || first == 100 || (first == 192 && v4[1] == 0) ||
-			(first == 198 && v4[1]&0xfe == 18) || first >= 240 {
-			return false
-		}
-		return true
-	}
-	// IPv6 documentation range (2001:db8::/32) is not globally routable.
-	if len(ip) == net.IPv6len && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
-		return false
-	}
-	return true
+func assertRestAPIURLSafe(_ context.Context, rawURL string) (string, net.IP, error) {
+	return assertConnectorURLSafe(rawURL)
 }
 
 // ---------------------------------------------------------------------------
@@ -1105,18 +859,20 @@ func (c *RestAPIConnector) applyCursorPagination(params map[string]any, cursor s
 // restAPIItemIterator mirrors _iter_items: it walks pages applying the
 // configured pagination and stopping when the source reports no more items.
 type restAPIItemIterator struct {
-	c         *RestAPIConnector
-	pageCount int
-	page      int
-	offset    int
-	limit     int
-	perPage   int
-	cursor    string
-	finished  bool
+	c           *RestAPIConnector
+	pageCount   int
+	page        int
+	offset      int
+	limit       int
+	perPage     int
+	cursor      string
+	finished    bool
+	lastPos     *restAPISyncCursor
+	seenCursors map[string]struct{}
 }
 
 func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
-	it := &restAPIItemIterator{c: c}
+	it := &restAPIItemIterator{c: c, seenCursors: map[string]struct{}{}}
 	if perPage, err := c.resolvePageSize(); err == nil {
 		it.perPage = perPage
 	} else {
@@ -1138,6 +894,9 @@ func newRestAPIItemIterator(c *RestAPIConnector) *restAPIItemIterator {
 		it.limit = it.perPage
 	}
 	it.cursor = strings.TrimSpace(stringConfig(c.cfg.PaginationConfig["initial_cursor"]))
+	if it.cursor != "" {
+		it.seenCursors[it.cursor] = struct{}{}
+	}
 	return it
 }
 
@@ -1146,6 +905,7 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	if it.finished || it.pageCount >= it.c.cfg.MaxPages {
 		return nil, nil
 	}
+	it.lastPos = it.positionCursor()
 	params := map[string]any{}
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
@@ -1178,7 +938,8 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 	}
 
 	items := restAPIExtractItems(response, it.c.cfg.ItemsPath)
-	if len(items) == 0 {
+	hasNext, reportsHasNext := restAPIExtractHasNextPage(response, it.c.cfg.PaginationConfig)
+	if len(items) == 0 && !(it.c.cfg.PaginationType == restAPIPaginationCursor && reportsHasNext && hasNext) {
 		it.finished = true
 		return nil, nil
 	}
@@ -1200,29 +961,45 @@ func (it *restAPIItemIterator) nextPage(ctx context.Context) ([]map[string]any, 
 			it.offset += it.limit
 		}
 	case restAPIPaginationCursor:
+		if reportsHasNext && !hasNext {
+			it.finished = true
+			break
+		}
 		next := restAPIExtractNextCursor(response, it.c.cfg.PaginationConfig)
 		if next == "" {
 			it.finished = true
+		} else if _, repeated := it.seenCursors[next]; repeated {
+			return nil, fmt.Errorf("rest api pagination repeated cursor %q: %w", next, ErrSyncResumeInvalid)
 		} else {
+			it.seenCursors[next] = struct{}{}
 			it.cursor = next
 		}
 	}
 	return items, nil
 }
 
-// positionAfterPage returns the resume position after the page that was just
-// consumed, i.e. the next page to fetch. It is nil for pagination_type=none,
-// which never emits checkpoints.
-func (it *restAPIItemIterator) positionAfterPage() *restAPISyncCursor {
+// positionCursor returns the position of the page that was just fetched. It is
+// nil for pagination_type=none, which never emits checkpoints.
+func (it *restAPIItemIterator) positionCursor() *restAPISyncCursor {
 	switch it.c.cfg.PaginationType {
 	case restAPIPaginationPage:
-		return &restAPISyncCursor{Page: it.page}
+		return &restAPISyncCursor{Page: it.page, SourceID: ""}
 	case restAPIPaginationOffset:
-		return &restAPISyncCursor{Offset: it.offset}
+		return &restAPISyncCursor{Offset: it.offset, SourceID: ""}
 	case restAPIPaginationCursor:
-		return &restAPISyncCursor{Cursor: it.cursor}
+		return &restAPISyncCursor{Cursor: it.cursor, SourceID: ""}
 	}
 	return nil
+}
+
+// currentPagePosition returns the position of the page fetched by the most
+// recent nextPage call. It keeps the page position, not the next page.
+func (it *restAPIItemIterator) currentPagePosition() *restAPISyncCursor {
+	if it.lastPos == nil {
+		return nil
+	}
+	pos := *it.lastPos
+	return &pos
 }
 
 // ---------------------------------------------------------------------------
@@ -1277,6 +1054,19 @@ func restAPIExtractItems(response any, itemsPath string) []map[string]any {
 		}
 	}
 	return out
+}
+
+func restAPIExtractHasNextPage(response any, paginationConfig map[string]any) (bool, bool) {
+	field := strings.TrimSpace(stringConfig(paginationConfig["has_next_page_field"]))
+	if field == "" {
+		return false, false
+	}
+	dict, ok := response.(map[string]any)
+	if !ok {
+		return false, false
+	}
+	value, ok := dict[field].(bool)
+	return value, ok
 }
 
 // restAPIExtractNextCursor mirrors _extract_next_cursor.
@@ -2083,68 +1873,131 @@ func restAPITimeISO(t time.Time) string {
 // Sync session
 // ---------------------------------------------------------------------------
 
-// restAPISyncCursor is the page-boundary resume position serialized into
-// SyncCheckpoint.Cursor. It stores the next page to fetch for the configured
-// pagination type; pagination_type=none never produces a checkpoint.
+// restAPISyncCursor is the resume position serialized into SyncCheckpoint.Cursor.
+// It stores the current page to fetch and the source document that was last
+// committed from that page; pagination_type=none never produces a checkpoint.
 type restAPISyncCursor struct {
-	Page   int    `json:"page,omitempty"`
-	Offset int    `json:"offset,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
+	Page     int    `json:"page,omitempty"`
+	Offset   int    `json:"offset,omitempty"`
+	Cursor   string `json:"cursor,omitempty"`
+	SourceID string `json:"source_id,omitempty"`
 }
 
-// restAPIPageState tracks one fetched page until all of its documents have
-// been handed out in emitted batches. nextPos is the resume position after the
-// page (nil for pagination_type=none).
-type restAPIPageState struct {
-	remaining int
-	nextPos   *restAPISyncCursor
+// restAPIBufferedDocument carries the checkpoint position for an individual
+// source document so a retried task can resume at the last emitted document.
+type restAPIBufferedDocument struct {
+	document   SourceDocument
+	checkpoint *SyncCheckpoint
 }
 
 // restAPISyncSession streams items lazily so large APIs are not fully
 // materialized in memory.
 type restAPISyncSession struct {
-	connector     *RestAPIConnector
-	iterator      *restAPIItemIterator
-	batchSize     int
-	fromBeginning bool
-	windowStart   *time.Time
-	windowEnd     time.Time
-	pending       []SourceDocument
-	pages         []restAPIPageState
-	drained       *restAPISyncCursor
+	connector      *RestAPIConnector
+	iterator       *restAPIItemIterator
+	batchSize      int
+	fromBeginning  bool
+	windowStart    *time.Time
+	windowEnd      time.Time
+	pending        []restAPIBufferedDocument
+	resumePosition *restAPISyncCursor
+	resumeSourceID string
 }
 
-// applyResume restores the next page to fetch from a saved checkpoint. Invalid
-// or empty cursors are ignored, mirroring the tolerant resume of other
-// connectors.
-func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) {
+// applyResume restores the checkpoint page and source anchor. Cursors that are
+// malformed, mismatch the configured pagination type, or carry no source anchor
+// are invalid because resuming would silently skip changed data.
+func (s *restAPISyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+		if checkpoint == nil {
+			return nil
+		}
+		return fmt.Errorf("rest api sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor restAPISyncCursor
 	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
-		return
+		return fmt.Errorf("rest api sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("rest api sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	switch s.connector.cfg.PaginationType {
 	case restAPIPaginationPage:
-		if cursor.Page > 0 {
-			s.iterator.page = cursor.Page
+		if cursor.Page <= 0 || cursor.Offset != 0 || cursor.Cursor != "" {
+			return fmt.Errorf("rest api sync cursor does not match page pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.page = cursor.Page
 	case restAPIPaginationOffset:
-		if cursor.Offset > 0 {
-			s.iterator.offset = cursor.Offset
+		if cursor.Page != 0 || cursor.Cursor != "" {
+			return fmt.Errorf("rest api sync cursor does not match offset pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.offset = cursor.Offset
 	case restAPIPaginationCursor:
-		if cursor.Cursor != "" {
-			s.iterator.cursor = cursor.Cursor
+		if cursor.Page != 0 || cursor.Offset != 0 {
+			return fmt.Errorf("rest api sync cursor does not match cursor pagination: %w", ErrSyncResumeInvalid)
 		}
+		s.iterator.cursor = cursor.Cursor
+	default:
+		return fmt.Errorf("rest api sync checkpoint cannot resume pagination_type=none: %w", ErrSyncResumeInvalid)
+	}
+	position := cursor
+	position.SourceID = ""
+	s.resumePosition = &position
+	s.resumeSourceID = sourceID
+	return nil
+}
+
+// filterResumedDocuments drops every document at or before the checkpoint anchor.
+// The anchor must still exist on the checkpoint page, otherwise the listing has
+// changed and the runner should restart the whole fixed window.
+func (s *restAPISyncSession) filterResumedDocuments(candidates []SourceDocument) ([]SourceDocument, error) {
+	if s.resumeSourceID == "" {
+		return candidates, nil
+	}
+	if s.resumePosition == nil || !restAPISyncCursorPositionEqual(s.iterator.currentPagePosition(), s.resumePosition) {
+		return nil, fmt.Errorf("rest api sync resume page no longer matches checkpoint: %w", ErrSyncResumeInvalid)
+	}
+	for index, doc := range candidates {
+		if doc.SourceID == s.resumeSourceID {
+			s.resumePosition = nil
+			s.resumeSourceID = ""
+			return candidates[index+1:], nil
+		}
+	}
+	return nil, fmt.Errorf("rest api resume anchor %q was not found on the checkpoint page: %w", s.resumeSourceID, ErrSyncResumeInvalid)
+}
+
+func restAPISyncCursorPositionEqual(left, right *restAPISyncCursor) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	return left.Page == right.Page && left.Offset == right.Offset && left.Cursor == right.Cursor
+}
+
+// restAPISyncCheckpoint records the current page position plus the document
+// that was last emitted from it.
+func restAPISyncCheckpoint(position *restAPISyncCursor, doc SourceDocument) *SyncCheckpoint {
+	if position == nil {
+		return nil
+	}
+	cursor := *position
+	cursor.SourceID = doc.SourceID
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return nil
+	}
+	updatedAt := doc.UpdatedAt.UTC()
+	return &SyncCheckpoint{
+		Cursor:    string(raw),
+		SourceID:  doc.SourceID,
+		UpdatedAt: &updatedAt,
 	}
 }
 
-// NextBatch returns the next batch of source documents. The batch carries a
-// checkpoint only when at least one page has been fully handed out: the
-// checkpoint points at the next page to fetch, so a retried task re-fetches at
-// most the page where the last batch ended.
+// NextBatch returns the next batch of source documents. The batch checkpoint
+// points back to the page of its last document, so a retried task re-fetches
+// that page and skips through the saved source anchor.
 func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	for len(s.pending) < s.batchSize {
 		items, err := s.iterator.nextPage(ctx)
@@ -2154,7 +2007,7 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		if items == nil {
 			break
 		}
-		pageDocs := 0
+		candidates := make([]SourceDocument, 0, len(items))
 		for _, item := range items {
 			doc, err := s.connector.itemToDocument(item)
 			if err != nil {
@@ -2166,10 +2019,19 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 					continue
 				}
 			}
-			s.pending = append(s.pending, doc)
-			pageDocs++
+			candidates = append(candidates, doc)
 		}
-		s.pages = append(s.pages, restAPIPageState{remaining: pageDocs, nextPos: s.iterator.positionAfterPage()})
+		candidates, err = s.filterResumedDocuments(candidates)
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		position := s.iterator.currentPagePosition()
+		for _, doc := range candidates {
+			s.pending = append(s.pending, restAPIBufferedDocument{
+				document:   doc,
+				checkpoint: restAPISyncCheckpoint(position, doc),
+			})
+		}
 	}
 	if len(s.pending) == 0 {
 		return SyncBatch{}, io.EOF
@@ -2178,32 +2040,16 @@ func (s *restAPISyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if end > len(s.pending) {
 		end = len(s.pending)
 	}
-	batch := SyncBatch{Documents: s.pending[:end]}
+	documents := make([]SourceDocument, 0, end)
+	var checkpoint *SyncCheckpoint
+	for _, buffered := range s.pending[:end] {
+		documents = append(documents, buffered.document)
+		if buffered.checkpoint != nil {
+			checkpoint = buffered.checkpoint
+		}
+	}
 	s.pending = s.pending[end:]
-
-	// Advance the resume point past every page fully covered by the batches
-	// emitted so far. A page whose tail is still pending keeps the checkpoint
-	// at the page start, so a retry re-fetches at most that one page.
-	for len(s.pages) > 0 {
-		if s.pages[0].remaining > end {
-			s.pages[0].remaining -= end
-			break
-		}
-		end -= s.pages[0].remaining
-		if s.pages[0].nextPos != nil {
-			s.drained = s.pages[0].nextPos
-		}
-		s.pages = s.pages[1:]
-		if end == 0 {
-			break
-		}
-	}
-	if s.drained != nil {
-		if raw, err := json.Marshal(s.drained); err == nil {
-			batch.Checkpoint = &SyncCheckpoint{Cursor: string(raw)}
-		}
-	}
-	return batch, nil
+	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
 // Close releases the session.

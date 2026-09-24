@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
@@ -16,6 +18,32 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		valid   bool
+	}{
+		{name: "missing", payload: `{}`, valid: false},
+		{name: "empty", payload: `{"instances":[]}`, valid: false},
+		{name: "empty element", payload: `{"instances":[""]}`, valid: false},
+		{name: "instance", payload: `{"instances":["instance-a"]}`, valid: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req DropProviderInstanceRequest
+			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
+				t.Fatal(err)
+			}
+			err := binding.Validator.ValidateStruct(&req)
+			if (err == nil) != tt.valid {
+				t.Fatalf("validation error = %v, valid = %v", err, tt.valid)
+			}
+		})
+	}
+}
 
 func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -82,6 +110,70 @@ func decodeProviderHandlerResponse(t *testing.T, recorder *httptest.ResponseReco
 		t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
 	}
 	return body
+}
+
+func TestFilterUnsupportedProviders(t *testing.T) {
+	providers := []map[string]interface{}{
+		{"name": "OpenAI"},
+		{"name": "MinerU.Net"},
+		{"name": "MinerU"},
+	}
+
+	got := filterUnsupportedProviders(providers)
+
+	names := make([]string, 0, len(got))
+	for _, provider := range got {
+		name, ok := provider["name"].(string)
+		if !ok {
+			t.Fatalf("provider without name: %v", provider)
+		}
+		names = append(names, name)
+	}
+	want := []string{"OpenAI", "MinerU"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+}
+
+func TestValidateInstanceName(t *testing.T) {
+	tests := []struct {
+		name  string
+		valid bool
+	}{
+		{name: "my_instance", valid: true},
+		{name: "Instance123", valid: true},
+		{name: "_123", valid: true},
+		{name: "my-instance", valid: true},
+		{name: "-my-instance-1", valid: true},
+		{name: "", valid: false},
+		{name: "my instance", valid: false},
+		{name: "实例", valid: false},
+		{name: "instância", valid: false},
+		{name: "instance!", valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestProviderHandlerCreateProviderInstanceRejectsInvalidInstanceName(t *testing.T) {
+	ctx, recorder := newProviderHandlerRequest(
+		t,
+		map[string]interface{}{"instance_name": "my instance!"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+	)
+
+	NewProviderHandler(nil, service.NewModelProviderService()).CreateProviderInstance(ctx)
+
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
+		t.Fatalf("code = %v, want %v", body["code"], common.CodeBadRequest)
+	}
 }
 
 func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {

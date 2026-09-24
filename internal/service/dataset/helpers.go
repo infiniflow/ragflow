@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -14,6 +15,24 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// keepDatasetOrderTerms narrows the requested terms to the columns the dataset
+// list has always accepted, which is a smaller set than the knowledge base row
+// exposes. A list with nothing left falls back to create_time in the first
+// requested direction, which is what an unrecognised single name did.
+func keepDatasetOrderTerms(terms []dao.OrderTerm) []dao.OrderTerm {
+	kept := make([]dao.OrderTerm, 0, len(terms))
+	for _, term := range terms {
+		column := strings.TrimSpace(term.Column)
+		if _, ok := datasetAllowedOrderByFields[column]; ok {
+			kept = append(kept, dao.OrderTerm{Column: column, Desc: term.Desc})
+		}
+	}
+	if len(kept) == 0 {
+		return []dao.OrderTerm{{Column: "create_time", Desc: len(terms) > 0 && terms[0].Desc}}
+	}
+	return kept
+}
 
 // Package-level vars and constants used by the dataset service.
 var (
@@ -37,7 +56,6 @@ var (
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -46,19 +64,37 @@ const (
 	graphPhaseCommunityDone  = "community_done"
 )
 
-// validateParserID validates parser_id against the built-in pipeline registry.
-func validateParserID(chunkMethod string) error {
-	if chunkMethod == "knowledge_graph" {
-		return nil
+// canonicalDatasetParserID resolves a parser ID to its canonical builtin ID.
+// The registry retains legacy aliases such as naive -> general for old clients.
+func canonicalDatasetParserID(parserID string) (string, error) {
+	if parserID == "knowledge_graph" {
+		return parserID, nil
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil || registry == nil {
-		return errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
+		return "", errors.New("parser_id validation unavailable: builtin pipeline registry not loaded")
 	}
-	if registry.IsValid(chunkMethod) {
-		return nil
+	template, ok := registry.Get(parserID)
+	if ok {
+		return template.ParserID, nil
 	}
-	return parserIDError()
+	return "", parserIDError()
+}
+
+// validateParserID validates parser_id against the built-in pipeline registry.
+func validateParserID(parserID string) error {
+	_, err := canonicalDatasetParserID(parserID)
+	return err
+}
+
+// datasetParserIDForResponse returns the canonical parser ID when a legacy
+// persisted value remains resolvable. Unknown stored values are preserved.
+func datasetParserIDForResponse(parserID string) string {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
+		return parserID
+	}
+	return canonicalID
 }
 
 func parserIDError() error {
@@ -157,9 +193,209 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 		return errors.New("parser_config must be valid JSON")
 	}
 	if len(data) > 65535 {
-		return fmt.Errorf("parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
 	}
 	return nil
+}
+
+func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+	for key := range parserConfig {
+		if strings.Contains(key, ":") {
+			return nil // Component-scoped DSL parameters are validated by BuildParserConfig.
+		}
+	}
+	allowed := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
+	for key := range parserConfig {
+		if !allowed[key] {
+			return fmt.Errorf("Extra inputs are not permitted: %s", key)
+		}
+	}
+	intBounds := map[string][2]float64{"auto_keywords": {0, 32}, "auto_questions": {0, 10}, "chunk_token_num": {1, 2048}, "topn_tags": {1, 10}, "task_page_size": {1, 100000000}}
+	for key, bounds := range intBounds {
+		if value, ok := parserConfig[key]; ok {
+			if value == nil && key == "task_page_size" {
+				continue
+			}
+			n, ok := value.(float64)
+			if !ok || n != float64(int64(n)) {
+				return errors.New("Input should be a valid integer")
+			}
+			if n < bounds[0] {
+				return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
+			}
+			if n > bounds[1] {
+				return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
+			}
+		}
+	}
+	if value, ok := parserConfig["delimiter"]; ok {
+		s, ok := value.(string)
+		if !ok {
+			return errors.New("Input should be a valid string")
+		}
+		if len(s) == 0 {
+			return errors.New("String should have at least 1 character")
+		}
+	}
+	if value, ok := parserConfig["html4excel"]; ok {
+		if _, ok := value.(bool); !ok {
+			return errors.New("Input should be a valid boolean")
+		}
+	}
+	if value, ok := parserConfig["tag_kb_ids"]; ok {
+		list, ok := value.([]interface{})
+		if !ok {
+			return errors.New("Input should be a valid list")
+		}
+		for _, item := range list {
+			if _, ok := item.(string); !ok {
+				return errors.New("Input should be a valid string")
+			}
+		}
+	}
+	if value, ok := parserConfig["pages"]; ok {
+		if value == nil {
+			return nil
+		}
+		list, ok := value.([]interface{})
+		if !ok {
+			return errors.New("Input should be a valid list")
+		}
+		for _, item := range list {
+			row, ok := item.([]interface{})
+			if !ok || len(row) != 2 {
+				return errors.New("Input should be a valid list")
+			}
+			for _, bound := range row {
+				n, ok := bound.(float64)
+				if !ok || n != float64(int64(n)) {
+					return errors.New("Input should be a valid integer")
+				}
+			}
+		}
+	}
+	if value, ok := parserConfig["filename_embd_weight"]; ok {
+		n, ok := value.(float64)
+		if !ok {
+			return errors.New("Input should be a valid number")
+		}
+		if n < 0 {
+			return errors.New("Input should be greater than or equal to 0")
+		}
+		if n > 1 {
+			return errors.New("Input should be less than or equal to 1")
+		}
+	}
+	for _, key := range []string{"raptor", "graphrag", "parent_child"} {
+		value, ok := parserConfig[key]
+		if !ok {
+			continue
+		}
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			return errors.New("Input should be a valid dictionary")
+		}
+		if key == "graphrag" {
+			if v, exists := obj["use_graphrag"]; exists {
+				if _, ok := v.(bool); !ok {
+					return errors.New("Input should be a valid boolean")
+				}
+			}
+			if v, exists := obj["entity_types"]; exists {
+				list, ok := v.([]interface{})
+				if !ok {
+					return errors.New("Input should be a valid list")
+				}
+				for _, item := range list {
+					if _, ok := item.(string); !ok {
+						return errors.New("Input should be a valid string")
+					}
+				}
+			}
+			if v, exists := obj["method"]; exists {
+				method, ok := v.(string)
+				if !ok || (method != "light" && method != "general" && method != "ner") {
+					return errors.New("Input should be 'light', 'general' or 'ner'")
+				}
+			}
+			for _, name := range []string{"community", "resolution"} {
+				if v, exists := obj[name]; exists {
+					if _, ok := v.(bool); !ok {
+						return errors.New("Input should be a valid boolean")
+					}
+				}
+			}
+		}
+		if key == "raptor" {
+			if v, exists := obj["use_raptor"]; exists {
+				if _, ok := v.(bool); !ok {
+					return errors.New("Input should be a valid boolean")
+				}
+			}
+			if v, exists := obj["prompt"]; exists {
+				if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
+					return errors.New("String should have at least 1 character")
+				}
+			}
+			for name, bounds := range map[string][2]float64{"max_token": {1, 2048}, "max_cluster": {1, 1024}, "random_seed": {0, 9223372036854775807}} {
+				if v, exists := obj[name]; exists {
+					n, ok := v.(float64)
+					if !ok || n != float64(int64(n)) {
+						return errors.New("Input should be a valid integer")
+					}
+					if n < bounds[0] {
+						return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
+					}
+					if n > bounds[1] {
+						return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
+					}
+				}
+			}
+			if v, exists := obj["clustering_threshold"]; exists {
+				n, ok := v.(float64)
+				if !ok {
+					return errors.New("Input should be a valid number")
+				}
+				if n < 0 {
+					return errors.New("Input should be greater than or equal to 0")
+				}
+				if n > 1 {
+					return errors.New("Input should be less than or equal to 1")
+				}
+			}
+		}
+		if key == "parent_child" {
+			if v, exists := obj["use_parent_child"]; exists {
+				if _, ok := v.(bool); !ok {
+					return errors.New("Input should be a valid boolean")
+				}
+			}
+			if v, exists := obj["children_delimiter"]; exists {
+				if s, ok := v.(string); !ok || s == "" {
+					return errors.New("String should have at least 1 character")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateParserConfig validates the shared REST parser_config schema.
+func ValidateParserConfig(parserConfig map[string]interface{}) error {
+	return validateDatasetParserConfig(parserConfig)
+}
+
+// ValidateDocumentParserConfig validates known public parser_config fields.
+// Documents retain unknown parser settings for parser-specific consumers.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
+	known := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
+	config := make(map[string]interface{}, len(parserConfig))
+	for key, value := range parserConfig {
+		if known[key] || strings.Contains(key, ":") {
+			config[key] = value
+		}
+	}
+	return validateDatasetParserConfig(config)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
@@ -178,6 +414,27 @@ func normalizeDatasetID(id string) (string, error) {
 		return "", errors.New("Invalid UUID format")
 	}
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
+}
+
+// datasetLanguageLimit mirrors the max_length of CreateDatasetReq.language in
+// the Python request model.
+const datasetLanguageLimit = 32
+
+// normalizeDatasetLanguage trims a dataset language and applies the same
+// constraints as CreateDatasetReq.language in Python
+// (strip_whitespace=True, min_length=1, max_length=32), so both backends accept
+// and reject the same values. The length is counted in characters, not bytes,
+// because pydantic counts characters — a byte count would reject valid
+// non-ASCII language names well below the documented limit.
+func normalizeDatasetLanguage(language string) (string, error) {
+	normalized := strings.TrimSpace(language)
+	if normalized == "" {
+		return "", errors.New("String should have at least 1 character")
+	}
+	if utf8.RuneCountInString(normalized) > datasetLanguageLimit {
+		return "", fmt.Errorf("String should have at most %d characters", datasetLanguageLimit)
+	}
+	return normalized, nil
 }
 
 // pythonStringListRepr renders a string slice the way Python prints a list of
@@ -223,10 +480,11 @@ func datasetUpdateParserID(req service.UpdateDatasetRequest) (string, bool, erro
 	if !provided {
 		return "", false, nil
 	}
-	if err := validateParserID(parserID); err != nil {
+	canonicalID, err := canonicalDatasetParserID(parserID)
+	if err != nil {
 		return "", true, err
 	}
-	return parserID, true, nil
+	return canonicalID, true, nil
 }
 
 func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, error) {
@@ -249,7 +507,7 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	return embdID, true, nil
 }
 
-func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
 	if next == nil {
 		next = entity.JSONMap{}
 	}
@@ -266,6 +524,63 @@ func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming
 	}
 	if mm != nil {
 		next["metadata"] = mm
+	}
+	var parentChild map[string]any
+	if incoming != nil {
+		if value, ok := incoming["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild == nil && existing != nil {
+		if value, ok := existing["parent_child"].(map[string]any); ok {
+			parentChild = value
+		}
+	}
+	if parentChild != nil {
+		next["parent_child"] = parentChild
+	}
+	requestedChildren := make(map[string]interface{})
+	for componentID, value := range incoming {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := value.(map[string]interface{}); ok {
+			if enabled, provided := requested["enable_children"].(bool); provided && !enabled {
+				requestedChildren[componentID] = []string{}
+			} else if _, provided := requested["children_delimiters"]; provided {
+				if params, ok := next[componentID].(map[string]interface{}); ok {
+					requestedChildren[componentID] = params["children_delimiters"]
+				}
+			}
+		}
+	}
+	// Re-derive delimiters from parent_child, then keep explicit chunker edits
+	// (or an existing chunker setting on a partial update) over that fallback.
+	pipelinepkg.ApplyParentChildChunkerConfig(next, map[string]interface{}(next))
+	_, parentChildUpdated := incoming["parent_child"]
+	for componentID, value := range next {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if delimiters, provided := requestedChildren[componentID]; provided {
+			params["children_delimiters"] = delimiters
+			continue
+		}
+		if parentChildUpdated {
+			continue
+		}
+		if previous, ok := existing[componentID].(map[string]interface{}); ok {
+			if delimiters, present := previous["children_delimiters"]; present {
+				params["children_delimiters"] = delimiters
+			}
+			if enabled, present := previous["enable_children"]; present {
+				params["enable_children"] = enabled
+			}
+		}
 	}
 	return next
 }
@@ -311,28 +626,6 @@ func cloneJSONValue(value interface{}) interface{} {
 	default:
 		return typed
 	}
-}
-
-func normalizeDatasetUpdateExt(ext map[string]interface{}) map[string]interface{} {
-	if ext == nil {
-		return nil
-	}
-	updates := make(map[string]interface{}, len(ext))
-	for key, value := range ext {
-		switch key {
-		case "chunk_method":
-			updates["parser_id"] = value
-		case "token_num", "chunk_num", "parser_config":
-			continue
-		case "pagerank":
-			if v, ok := value.(float64); ok {
-				updates[key] = int64(v)
-			}
-		default:
-			updates[key] = value
-		}
-	}
-	return updates
 }
 
 func normalizeMetadataConfigFields(fields []service.MetadataConfigField, fieldName string) ([]map[string]interface{}, error) {

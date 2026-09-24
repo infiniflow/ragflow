@@ -44,7 +44,7 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -90,7 +90,7 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response
@@ -138,6 +138,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 type openaiEmbeddingResponse struct {
 	Data   []openaiEmbeddingData `json:"data"`
+	ID     string                `json:"id"`
 	Model  string                `json:"model"`
 	Object string                `json:"object"`
 	Usage  openaiUsage           `json:"usage"`
@@ -204,13 +205,17 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request Embe
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI embeddings API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var parsed openaiEmbeddingResponse
@@ -225,6 +230,15 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request Embe
 		embeddingData.Index = dataElem.Index
 		embeddings = append(embeddings, embeddingData)
 	}
+
+	// The provider's own token count is the oracle the ingest path calibrates
+	// its tokenizer against (see internal/tokenizer: ObserveUsage). Reporting it
+	// also fixes token accounting, which previously saw 0 tokens for every
+	// embedding call on this driver.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
@@ -259,13 +273,17 @@ func (o *OpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Parse response
@@ -318,13 +336,17 @@ func (o *OpenAIModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		respBody, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI ASR API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI ASR API error: %s, body: %s", resp.Status, string(respBody))
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI ASR API error: %s, body: %s", resp.Status, string(respBody))
 	}
 
 	return decodeOpenAIASRResponse(respBody, responseFormat)
@@ -348,7 +370,10 @@ func (o *OpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("OpenAI ASR stream API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
 		return fmt.Errorf("OpenAI ASR stream API error: %s, body: %s", resp.Status, string(respBody))
 	}
 
@@ -437,13 +462,17 @@ func (o *OpenAIModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("OpenAI TTS API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
+		return nil, fmt.Errorf("OpenAI TTS API error: %s, body: %s", resp.Status, string(body))
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI TTS API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	return &TTSResponse{Audio: body}, nil
@@ -469,7 +498,10 @@ func (o *OpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("OpenAI TTS stream API error: %s, failed to read error response body: %w", resp.Status, err)
+		}
 		return fmt.Errorf("OpenAI TTS stream API error: %s, body: %s", resp.Status, string(body))
 	}
 

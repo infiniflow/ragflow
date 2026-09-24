@@ -17,8 +17,9 @@
 package connector
 
 import (
-	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -75,6 +76,10 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	remotePath := normalizeWebDAVPath(stringConfig(config["remote_path"]))
 	username := strings.TrimSpace(stringConfig(credentials["username"]))
 	password := stringConfig(credentials["password"])
+	httpClient, err := newWebDAVHTTPClient(strings.TrimSpace(stringConfig(config["ca_cert_path"])))
+	if err != nil {
+		return nil, err
+	}
 	connector := &WebDAVConnector{
 		baseURL:       baseURL,
 		remotePath:    remotePath,
@@ -84,10 +89,8 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 		password:      password,
 		sizeThreshold: webDAVSizeThreshold(),
 		client: &webdavClient{
-			baseURL: baseURL,
-			httpClient: &http.Client{
-				Timeout: webdavRequestTimeout,
-			},
+			baseURL:    baseURL,
+			httpClient: httpClient,
 		},
 	}
 	connector.client.username = username
@@ -97,6 +100,39 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	return connector, nil
 }
 
+func newWebDAVHTTPClient(caCertPath string) (*http.Client, error) {
+	client := &http.Client{Timeout: webdavRequestTimeout}
+	if caCertPath == "" {
+		return client, nil
+	}
+
+	caPEM, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("failed to read WebDAV CA certificate %q: %v", caCertPath, err)}
+	}
+	rootCAs, err := x509.SystemCertPool()
+	if err != nil || rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	if !rootCAs.AppendCertsFromPEM(caPEM) {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("WebDAV CA certificate %q contains no valid PEM certificates", caCertPath)}
+	}
+
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unsupported default HTTP transport type %T", http.DefaultTransport)
+	}
+	transport := defaultTransport.Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	} else {
+		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+	}
+	transport.TLSClientConfig.RootCAs = rootCAs
+	client.Transport = transport
+	return client, nil
+}
+
 // Validate validates WebDAV settings and credentials by probing the remote path.
 func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	if c == nil {
@@ -104,6 +140,9 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	}
 	if c.baseURL == "" {
 		return fmt.Errorf("WebDAV base URL is required")
+	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return err
 	}
 	if c.username == "" || c.password == "" {
 		return fmt.Errorf("WebDAV requires username and password credentials")
@@ -131,7 +170,7 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 			return fmt.Errorf("remote path '%s' does not exist on WebDAV server", c.remotePath)
 		}
 	}
-	return fmt.Errorf("WebDAV validation failed for path '%s': %v", testPath, err)
+	return fmt.Errorf("WebDAV validation failed for path '%s': %w", testPath, err)
 }
 
 // ValidateConnectorSetting validates WebDAV settings from an unsaved config.
@@ -177,7 +216,9 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
 	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -257,20 +298,21 @@ func (s *webdavSyncSession) Close() error {
 }
 
 // applyResume advances past the last committed WebDAV document when retrying a task.
-func (s *webdavSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *webdavSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
 	}
 	sourceID := firstNonEmpty(checkpoint.SourceID, checkpoint.Cursor)
 	if sourceID == "" {
-		return
+		return fmt.Errorf("webdav sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, doc := range s.documents {
 		if doc.SourceID == sourceID {
 			s.index = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("webdav resume anchor %q was not found in the current listing: %w", sourceID, ErrSyncResumeInvalid)
 }
 
 // webdavSyncCheckpoint returns a resume point after a committed WebDAV document.
@@ -366,16 +408,18 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "PROPFIND", resolved, bytes.NewReader([]byte(webdavPropfindBody)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Depth", "1")
-	req.Header.Set("Content-Type", "application/xml")
+	headers := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  "PROPFIND",
+		RawURL:  resolved,
+		Body:    []byte(webdavPropfindBody),
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -392,14 +436,17 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 
 // download fetches a file body over GET.
 func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	headers := map[string]string{}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  fileURL,
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}

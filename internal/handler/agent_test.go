@@ -871,6 +871,34 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
+func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "workflow_started", Data: `{"inputs":"hello"}`},
+		{Type: "error", Data: `{"message":"Can't find variable: 'Agent:Deleted@content'","kind":"user"}`},
+	}}
+	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+	var response struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Code != int(common.CodeServerError) || response.Message != "Can't find variable: 'Agent:Deleted@content'" {
+		t.Fatalf("response = %+v, want runner error", response)
+	}
+}
+
 // TestAgentChatCompletions_NonStreamingPreservesThinkMarkers covers the
 // non-streaming aggregation: start_to_think/end_to_think message events must
 // survive as <think> tags in the final content, mirroring Python
@@ -974,10 +1002,10 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DerivesUserInputFromInputs covers the wait-for-user
-// resume path used by the front-end: the follow-up submit posts `inputs`
-// instead of a top-level `query`. The handler must lift the nested field value
-// and pass it through as the resumed user input.
+// TestAgentChatCompletions_DerivesUserInputFromInputs covers the form-submit
+// path used by the front-end: named inputs must keep their field names even
+// when only one field is present, so Begin can distinguish an explicit update
+// from ordinary conversational query text.
 func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -993,8 +1021,52 @@ func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	if captured != "a b c d e" {
-		t.Errorf("userInput = %#v, want %q (nested inputs.value)", captured, "a b c d e")
+	got, ok := captured.(map[string]any)
+	if !ok || got["text"] != "a b c d e" {
+		t.Errorf("userInput = %#v, want named text input", captured)
+	}
+}
+
+func TestAgentChatCompletions_MissingOptionalInputValueIsNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","inputs":{"a":{"name":"a","type":"line","optional":true}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok {
+		t.Fatalf("userInput type = %T, want map[string]any", captured)
+	}
+	if value, exists := got["a"]; !exists || value != nil {
+		t.Fatalf("userInput[a] = %#v, exists=%v, want nil", value, exists)
+	}
+}
+
+func TestAgentChatCompletions_PreservesNamedInputsAlongsideQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"Hello","inputs":{"name":{"name":"name","value":"Alice","type":"line"}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok || got["name"] != "Alice" || got["query"] != "Hello" {
+		t.Fatalf("userInput = %#v, want name=Alice query=Hello", captured)
 	}
 }
 
@@ -1111,12 +1183,9 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	if !ok {
 		t.Fatalf("usage = %#v, want object", resp["usage"])
 	}
-	wantPromptTokens := tokenizer.NumTokensFromString("Be concise.") +
-		tokenizer.NumTokensFromString("What is 1+1?") +
-		tokenizer.NumTokensFromString("2") +
-		tokenizer.NumTokensFromString("hi")
+	wantPromptTokens := tokenizer.NumTokensFromString("hi")
 	if got := int(usage["prompt_tokens"].(float64)); got != wantPromptTokens {
-		t.Errorf("prompt_tokens = %d, want all message content counted as %d", got, wantPromptTokens)
+		t.Errorf("prompt_tokens = %d, want only the latest message content counted as %d", got, wantPromptTokens)
 	}
 	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
 		t.Errorf("usage totals do not add up: %v", usage)
@@ -1280,13 +1349,6 @@ func TestAgentChatCompletions_OpenAICompat_MapsErrors(t *testing.T) {
 		errorType   string
 		wantMessage string
 	}{
-		{
-			name:        "session busy",
-			err:         service.ErrAgentSessionBusy,
-			status:      http.StatusConflict,
-			errorType:   "invalid_request_error",
-			wantMessage: "already running",
-		},
 		{
 			name:        "operating error",
 			err:         service.ErrAgentNotOwner,
@@ -1590,75 +1652,6 @@ func decodeOpenAICompatStream(t *testing.T, body string) ([]map[string]interface
 	return chunks, done
 }
 
-// TestRerunAgent_RequiresAllFields covers the 101 branch: missing
-// any of id / dsl / component_id -> "required argument are missing: ..."
-func TestRerunAgent_RequiresAllFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cases := []struct {
-		name    string
-		body    string
-		missing string
-	}{
-		{"empty", `{}`, "id,dsl,component_id"},
-		{"only_id", `{"id":"x"}`, "dsl,component_id"},
-		{"id_dsl", `{"id":"x","dsl":{}}`, "component_id"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-				strings.NewReader(tc.body))
-			c.Request.Header.Set("Content-Type", "application/json")
-			c.Set("user", &entity.User{ID: "u1"})
-			c.Set("user_id", "u1")
-
-			ctx := t.Context()
-			h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-			h.RerunAgent(c)
-
-			var resp map[string]interface{}
-			_ = json.Unmarshal(w.Body.Bytes(), &resp)
-			if code, _ := resp["code"].(float64); code != float64(common.CodeArgumentError) {
-				t.Errorf("code = %v, want 101", code)
-			}
-			if msg, _ := resp["message"].(string); !strings.Contains(msg, "required argument are missing") {
-				t.Errorf("message = %q, want to contain 'required argument are missing'", msg)
-			}
-		})
-	}
-}
-
-// TestRerunAgent_AcceptsCompleteRequest covers the happy path: all
-// three required fields present + documentService wired with an
-// accessible document -> 200 / code 0.
-//
-// Round 6: now that RerunAgent fails closed when documentService is
-// nil, the happy path needs an accessible stub. We use the deny-all
-// stub flipped to accessible=true so the gate passes.
-func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"x","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	stub := &stubDocService{accessible: true}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Errorf("code = %v, want 0 (msg=%v)", code, resp["message"])
-	}
-}
-
 // TestPromptsReturnsHardcodedFields covers the contract: the data
 // payload must contain the four authoring guideline keys.
 func TestPromptsReturnsHardcodedFields(t *testing.T) {
@@ -1684,131 +1677,6 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 			t.Errorf("prompts.data should contain %q, got: %v", key, data)
 		}
 	}
-}
-
-// TestGetAgentWebhookLogsReturnsEmptyPoll covers the contract: the
-// payload must be {events:[], finished:false, next_since_ts:0}. This
-// test exercises the handler's auth + response-shape path against a
-// real (in-memory) user_canvas row.
-func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	db := setupHandlerAgentsTestDB(t)
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
-
-	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/webhook/logs?since_ts=0", nil)
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	h.GetAgentWebhookLogs(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Fatalf("code = %v, want 0; body=%s", code, w.Body.String())
-	}
-	data, _ := resp["data"].(map[string]interface{})
-	if events, _ := data["events"].([]interface{}); len(events) != 0 {
-		t.Errorf("events = %v, want []", events)
-	}
-	if finished, _ := data["finished"].(bool); finished {
-		t.Errorf("finished = true, want false")
-	}
-	if _, ok := data["next_since_ts"]; !ok {
-		t.Errorf("missing next_since_ts key")
-	}
-}
-
-// TestRerunAgent_RejectsInaccessibleDocument mirrors PR #15145:
-// POST /api/v1/agents/rerun gates on DocumentService.accessible
-// (the python "is the document reachable by this tenant" check)
-// before accepting the request. Without documentService wired,
-// the gate is skipped (existing behaviour, returns success). With
-// it wired, an inaccessible doc must return CodeDataError + "Document
-// not found." so a caller cannot probe whether a doc exists in
-// another tenant.
-func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"doc-victim","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	// Wire a stub documentService that denies all access. The setter
-	// now accepts a narrow documentAccessChecker interface (PR review
-	// round 5), so the deny-all stub injects cleanly without standing
-	// up the real DocumentService (DB, storage, ...).
-	stub := &stubDocService{accessible: false}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
-		t.Errorf("deny-all stub: want code %d (Document not found), got %v (msg=%v)",
-			common.CodeDataError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "Document not found") {
-		t.Errorf("deny-all stub: want message to contain 'Document not found', got %q", msg)
-	}
-}
-
-// TestRerunAgent_NoDocumentServiceFailsClosed pins PR review round 6,
-// Major #2: a nil documentService is now treated as a wiring
-// misconfiguration that would create an auth bypass, NOT a
-// backward-compatible "skip the gate" state. The handler must
-// return 500 / "server misconfiguration" so a missing
-// dependency is loud and gets fixed, instead of silently
-// allowing any caller to rerun an arbitrary doc id.
-func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"doc-anything","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	// Note: no WithDocumentService call → documentService is nil.
-	// Production wiring (cmd/server_main.go) always calls
-	// WithDocumentService; a nil here means the handler was
-	// constructed without its required dependency.
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
-		t.Errorf("nil documentService: want code %d (fail closed), got %v (msg=%v)",
-			common.CodeServerError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "server misconfiguration") {
-		t.Errorf("nil documentService: want message to mention misconfiguration, got %q", msg)
-	}
-}
-
-type stubDocService struct {
-	accessible bool
-}
-
-func (s *stubDocService) Accessible(_, _ string) bool {
-	return s.accessible
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that the

@@ -51,17 +51,8 @@ var imageExtensions = map[string]bool{
 }
 
 // PictureParser handles image files for OCR and VLM description.
-// Mirrors the configuration from setups["picture"]:
-//   - vlm.llm_id  →  VLMModelID (IMAGE2TEXT model for describe)
-//   - output_format
-//   - image_context_size
-//   - layout_recognize  →  ("@PaddleOCR:model_name" or empty)
 type PictureParser struct {
-	VLMModelID       string // vlm.llm_id — the IMAGE2TEXT model
-	OutputFormat     string
-	ImageContextSize int    // default 0
-	LayoutRecognize  string // layout_recognize (e.g. "@PaddleOCR")
-	VideoPrompt      string // for video-in-image detection (Python fallback)
+	OutputFormat string
 }
 
 // NewPictureParser constructs a PictureParser.
@@ -70,28 +61,13 @@ func NewPictureParser() *PictureParser {
 }
 
 // ConfigureFromSetup reads picture-specific configuration from the
-// parser setup map. Extracts vlm.llm_id, output_format,
-// image_context_size, layout_recognize, and video_prompt.
+// parser setup map.
 func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if vlm, ok := setup["vlm"].(map[string]any); ok {
-		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
-			p.VLMModelID = llmID
-		}
-	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
-	}
-	if v, ok := setup["image_context_size"].(float64); ok {
-		p.ImageContextSize = int(v)
-	}
-	if v, ok := setup["layout_recognize"].(string); ok && v != "" {
-		p.LayoutRecognize = v
-	}
-	if v, ok := setup["video_prompt"].(string); ok && v != "" {
-		p.VideoPrompt = v
 	}
 }
 
@@ -119,11 +95,11 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		}
 	}
 
-	// OutputFormat, VLMModelID, ImageContextSize, and LayoutRecognize
-	// are consumed by maybeDispatchImage at the component layer.
+	// Parser output is normalized to JSON at the component boundary, so an
+	// absent backend format defaults to JSON here as well.
 	outFmt := p.OutputFormat
 	if outFmt == "" {
-		outFmt = "text"
+		outFmt = "json"
 	}
 
 	return ParseResult{

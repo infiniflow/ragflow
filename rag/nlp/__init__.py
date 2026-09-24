@@ -32,6 +32,7 @@ from common.token_utils import num_tokens_from_string
 # Re-exported below for backwards compatibility; the canonical parser lives
 # in ``rag.nlp.delim``.
 from rag.nlp.delim import (
+    DEFAULT_DELIMITER,
     compile_delimiter_pattern,
     has_wrapped_delimiter,
     normalize_text_newlines,
@@ -151,14 +152,39 @@ all_codecs = [
 
 
 def find_codec(blob):
-    detected = chardet.detect(blob[:1024])
-    if detected["confidence"] > 0.5:
-        if detected["encoding"] == "ascii":
+    sample = blob[:1024]
+
+    # A blob that decodes as UTF-8 is UTF-8; nothing else needs to be guessed.
+    # Check this first because chardet can report a confident single-byte guess
+    # for short UTF-8 text, and callers decode with errors="ignore", so a wrong
+    # codec is silently lossy instead of raising. The second decode covers a
+    # multi-byte character that the 1024-byte sample cuts in half.
+    try:
+        sample.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        try:
+            blob.decode("utf-8")
             return "utf-8"
+        except UnicodeDecodeError:
+            pass
+
+    detected = chardet.detect(sample)
+    encoding = detected["encoding"]
+    if encoding:
+        # Honor the detection whenever it decodes the sample. The loop below
+        # returns the first codec that does not raise, and legacy single-byte
+        # codecs (cp037, utf_16) decode arbitrary bytes without error, so a
+        # low-confidence detection still beats the loop's first non-raising hit.
+        try:
+            sample.decode(encoding)
+            return encoding
+        except (UnicodeDecodeError, LookupError) as e:
+            logging.debug("find_codec: detection %r (%.2f) did not decode the sample: %s", encoding, detected["confidence"] or 0.0, e)
 
     for c in all_codecs:
         try:
-            blob[:1024].decode(c)
+            sample.decode(c)
             return c
         except Exception:
             pass
@@ -169,6 +195,37 @@ def find_codec(blob):
             pass
 
     return "utf-8"
+
+
+def decode_text(blob, document_type="text"):
+    """Decode document bytes without silently accepting weak codec guesses."""
+    bom_codecs = (
+        (b"\x00\x00\xfe\xff", "utf-32-be"),
+        (b"\xff\xfe\x00\x00", "utf-32-le"),
+        (b"\xfe\xff", "utf-16-be"),
+        (b"\xff\xfe", "utf-16-le"),
+        (b"\xef\xbb\xbf", "utf-8-sig"),
+    )
+    for bom, encoding in bom_codecs:
+        if blob.startswith(bom):
+            return blob.decode(encoding), encoding
+
+    try:
+        return blob.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    detected = chardet.detect(blob[:1024])
+    encoding = detected.get("encoding")
+    confidence = detected.get("confidence") or 0.0
+    if encoding and encoding.lower().replace("-", "") in {"gb2312", "gbk"}:
+        encoding = "gb18030"
+    if not encoding or confidence < 0.8:
+        raise UnicodeError(f"Unable to reliably detect {document_type} encoding (confidence={confidence:.2f})")
+    try:
+        return blob.decode(encoding), encoding
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise UnicodeError(f"Unable to decode {document_type} as {encoding}") from exc
 
 
 QUESTION_PATTERN = [
@@ -421,6 +478,27 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
 
+        tokenize(d, ck, eng, language=language)
+        res.append(d)
+    return res
+
+
+def tokenize_chunks_with_positions(chunks_with_pos, doc, eng, child_delimiters_pattern=None, language="English"):
+    """Tokenize chunks that already carry real positions (Excel sheet/row).
+
+    chunks_with_pos: iterable of (text, position) where position is a 5-tuple
+    suitable for add_positions (first component 0-based).
+    """
+    res = []
+    for ck, pos in chunks_with_pos:
+        if not ck or not str(ck).strip():
+            continue
+        d = copy.deepcopy(doc)
+        add_positions(d, [pos])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck.removeprefix("\n")
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
+            continue
         tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
@@ -801,7 +879,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     return chunks
 
 
-def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False):
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0, return_context=False, section_page_offset: int = 0):
     from deepdoc.parser import PdfParser
 
     if table_context_size <= 0:
@@ -837,6 +915,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
+            page += section_page_offset
             page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):
@@ -892,8 +971,11 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
 
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
-        if isinstance(tb, list):
-            tb = "\n".join(tb)
+        # Context extraction needs text, but list payloads identify images for
+        # tokenize_table; restore that shape before returning the media block.
+        image_rows = tb if isinstance(tb, list) else None
+        if image_rows is not None:
+            tb = "\n".join(image_rows)
 
         i = 0
         blks = page_bucket.get(page, [])
@@ -931,6 +1013,8 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             contexts.append((upper.strip(), lower.strip()))
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
+        if image_rows is not None:
+            tb = image_rows if tb == _tb else [tb]
         res.append(((img, tb), poss))
     return contexts if return_context else res
 
@@ -958,7 +1042,7 @@ def remove_contents_table(sections, eng=False):
             nonlocal sections
             return (sections[i] if isinstance(sections[i], str) else sections[i][0]).strip()
 
-        if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
+        if not re.match(r"(contents|目录|目次|tableofcontents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0]), flags=re.IGNORECASE):
             i += 1
             continue
         sections.pop(i)
@@ -1363,7 +1447,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
     return out
 
 
-def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
         return []
@@ -1426,7 +1510,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     return _apply_overlap_unconditional(cks, overlapped_percent)
 
 
-def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split texts (with images) into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not texts or len(texts) != len(images):
         return [], []
@@ -1561,6 +1645,12 @@ def concat_img(img1, img2):
 
 
 def _build_cks(sections, delimiter):
+    """Split ``(text, image, table)`` sections into typed chunks.
+
+    Text is buffered and split on the parsed ``delimiter`` field; each table
+    or image section becomes its own chunk. Returns
+    ``(cks, tables, images, has_custom)``.
+    """
     cks = []
     tables = []
     images = []
@@ -1575,6 +1665,29 @@ def _build_cks(sections, delimiter):
     pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
+
+    def _flush_seg():
+        """Emit pending text before a table/image chunk is appended.
+
+        Plain text is buffered in ``seg`` and only flushed when a delimiter
+        matches, whereas table/image chunks are appended immediately. Without
+        this flush the buffered text lands *after* the table/image, breaking
+        document order and swapping context_above / context_below in
+        _add_context() (which decides "above"/"below" by array position).
+        """
+        nonlocal seg
+        if seg and seg.strip():
+            s = seg.strip()
+            cks.append(
+                {
+                    "text": s,
+                    "image": None,
+                    "ck_type": "text",
+                    "tk_nums": num_tokens_from_string(s),
+                }
+            )
+        seg = ""
+
     for text, image, table in sections:
         # normalize text: ensure string and prepend newline for continuity
         if not text:
@@ -1584,6 +1697,7 @@ def _build_cks(sections, delimiter):
 
         if table:
             # table chunk
+            _flush_seg()
             ck_text = text + str(table)
             idx = len(cks)
             cks.append(
@@ -1599,6 +1713,7 @@ def _build_cks(sections, delimiter):
 
         if image:
             # image chunk (text kept as-is for context)
+            _flush_seg()
             idx = len(cks)
             cks.append(
                 {
@@ -1782,7 +1897,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
 def naive_merge_docx(
     sections,
     chunk_token_num=128,
-    delimiter="\n。；！？",
+    delimiter=DEFAULT_DELIMITER,
     table_context_size=0,
     image_context_size=0,
 ):

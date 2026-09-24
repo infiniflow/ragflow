@@ -179,7 +179,7 @@ def _load_file_api_module(monkeypatch):
 
     web_utils_mod = ModuleType("api.utils.web_utils")
     web_utils_mod.CONTENT_TYPE_MAP = {"txt": "text/plain"}
-    web_utils_mod.apply_safe_file_response_headers = lambda response, content_type, ext: response.headers.update({"content_type": content_type, "ext": ext})
+    web_utils_mod.apply_download_file_response_headers = lambda response, content_type, ext, filename=None: response.headers.update({"content_type": content_type, "ext": ext, "filename": filename})
     monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     common_pkg = ModuleType("common")
@@ -269,6 +269,15 @@ def test_list_files_validation_error(monkeypatch):
 
 
 @pytest.mark.p2
+def test_list_files_success_offloads_to_thread_pool(monkeypatch):
+    module = _load_file_api_module(monkeypatch)
+
+    res = _run(module.list_files("tenant1"))
+    assert res["code"] == 0
+    assert res["data"] == {"files": [], "total": 0}
+
+
+@pytest.mark.p2
 def test_move_uses_new_payload_shape(monkeypatch):
     module = _load_file_api_module(monkeypatch)
 
@@ -328,6 +337,7 @@ def test_download_falls_back_to_document_storage(monkeypatch):
     assert res.data == b"fallback-blob"
     assert res.headers["content_type"] == "text/plain"
     assert res.headers["ext"] == "txt"
+    assert res.headers["filename"] == "doc.txt"
 
 
 @pytest.mark.p2
@@ -685,7 +695,7 @@ def test_convert_files_mode_add_and_replace_unit(monkeypatch):
     assert len(inserted) == 2
     assert removed == [("doc-f1", "tenant-1"), ("doc-f2", "tenant-1")]
     assert deleted_doc_links == ["doc-f1", "doc-f2"]
-    assert deleted_file_links == ["f1", "f2"]
+    assert deleted_file_links == []
 
 
 @pytest.mark.p2
@@ -898,6 +908,51 @@ def test_create_folder_rejects_slash_in_name(monkeypatch):
     ok, message = _run(module.create_folder("tenant1", "/", "pf1", module.FileType.FOLDER.value))
     assert ok is False
     assert message == 'Folder name cannot contain "/"'
+
+
+@pytest.mark.p2
+def test_create_folder_success_offloads_sync_work(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+
+    ok, data = _run(module.create_folder("tenant1", "new-folder", "pf1", module.FileType.FOLDER.value))
+    assert ok is True
+    assert data["name"] == "new-folder"
+    assert data["parent_id"] == "pf1"
+    assert data["type"] == module.FileType.FOLDER.value
+
+
+@pytest.mark.p2
+def test_upload_file_uses_root_folder_when_parent_missing(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    seen_ids = []
+
+    monkeypatch.setattr(
+        module.FileService,
+        "get_by_id",
+        lambda file_id: (True, SimpleNamespace(id=file_id, name=str(file_id))),
+    )
+    monkeypatch.setattr(module.FileService, "get_id_list_by_id", lambda *_args, **_kwargs: ["root"])
+    monkeypatch.setattr(
+        module.FileService,
+        "create_folder",
+        lambda _file, parent_id, _names, _len_id, *_args: SimpleNamespace(id=parent_id),
+    )
+    monkeypatch.setattr(
+        module.settings,
+        "STORAGE_IMPL",
+        SimpleNamespace(
+            obj_exist=lambda *_args, **_kwargs: False,
+            put=lambda bucket, location, blob: seen_ids.append((bucket, location, blob)),
+            rm=lambda *_args, **_kwargs: None,
+            move=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    ok, data = _run(module.upload_file("tenant1", "", [_DummyUploadFile("a.txt", b"hello")]))
+    assert ok is True
+    assert data[0]["name"] == "a.txt"
+    assert data[0]["parent_id"] == "root"
+    assert seen_ids == [("root", "a.txt", b"hello")]
 
 
 @pytest.mark.p2

@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { AudioExtensions } from '@/constants/common';
 import { UploadResponseDataType } from '@/interfaces/database/chat';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { currentReg, parseCitationIndex } from '@/utils/chat';
@@ -66,4 +67,14 @@ export function isImageFile(
     return mimeType.startsWith('image/');
   }
   return ImageExtensions.includes(getExtension(file.name));
+}
+
+export function isAudioFile(
+  file: File | IDocumentInfo | UploadResponseDataType,
+): boolean {
+  const mimeType = getFileMimeType(file);
+  if (mimeType) {
+    return mimeType.startsWith('audio/');
+  }
+  return AudioExtensions.includes(getExtension(file.name));
 }

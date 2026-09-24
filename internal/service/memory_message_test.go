@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +17,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 )
@@ -36,6 +40,60 @@ func TestMemoryIndexNameMatchesPythonPrefix(t *testing.T) {
 	t.Setenv(common.EnvESIndexPrefix, "legacy")
 	if got := memoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
 		t.Fatalf("memoryIndexName() with prefix = %q", got)
+	}
+}
+
+// The FusionExpr weight slots are [text, vector], and keywords_similarity_weight is the
+// text weight, so it belongs in slot 0. Both this and Python's
+// api/db/joint_services/memory_message_service.py emitted the pair reversed, which handed
+// every memory search the inverse of the requested hybrid balance. The weights below are
+// asymmetric on purpose: an even split cannot tell the two orders apart.
+func TestMemoryFusionWeightsPutTheKeywordWeightInTheTextSlot(t *testing.T) {
+	for _, keywordsSimilarityWeight := range []float64{0.7, 0.9, 0.2} {
+		weights := memoryFusionWeights(keywordsSimilarityWeight)
+		parts := strings.Split(weights, ",")
+		if len(parts) != 2 {
+			t.Fatalf("memoryFusionWeights(%v) = %q, want two comma-separated weights", keywordsSimilarityWeight, weights)
+		}
+
+		textWeight, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			t.Fatalf("text weight %q: %v", parts[0], err)
+		}
+		vectorWeight, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			t.Fatalf("vector weight %q: %v", parts[1], err)
+		}
+
+		// Compared with a tolerance, not for equality: the slot each weight lands in is
+		// the invariant, and %.2f is as valid a rendering here as %.6g.
+		if math.Abs(textWeight-keywordsSimilarityWeight) > 1e-9 {
+			t.Fatalf("text weight = %v, want %v (from %q)", textWeight, keywordsSimilarityWeight, weights)
+		}
+		if math.Abs(vectorWeight-(1-keywordsSimilarityWeight)) > 1e-9 {
+			t.Fatalf("vector weight = %v, want %v (from %q)", vectorWeight, 1-keywordsSimilarityWeight, weights)
+		}
+	}
+}
+
+// The slot test above deliberately accepts any numeric rendering, so nothing there
+// would notice a quiet return to %g. This pins the other half: the strings below are
+// what Python's :g emits for the same inputs in
+// api/db/joint_services/memory_message_service.py, so a regression that reintroduces
+// 0.30000000000000004 on the Go side turns this red. 0.1234567 is here because it is
+// the case that actually exercises the six-digit rounding.
+func TestMemoryFusionWeightsMatchesPythonFormatting(t *testing.T) {
+	for _, testCase := range []struct {
+		keywordsSimilarityWeight float64
+		want                     string
+	}{
+		{keywordsSimilarityWeight: 0.7, want: "0.7,0.3"},
+		{keywordsSimilarityWeight: 0.9, want: "0.9,0.1"},
+		{keywordsSimilarityWeight: 0.1234567, want: "0.123457,0.876543"},
+	} {
+		if got := memoryFusionWeights(testCase.keywordsSimilarityWeight); got != testCase.want {
+			t.Fatalf("memoryFusionWeights(%v) = %q, want %q", testCase.keywordsSimilarityWeight, got, testCase.want)
+		}
 	}
 }
 
@@ -119,6 +177,8 @@ func setupMemoryMessageTestDB(t *testing.T) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
+		&entity.Task{},
+		&entity.MemoryTask{},
 	); err != nil {
 		t.Fatalf("failed to migrate memory test tables: %v", err)
 	}
@@ -128,6 +188,131 @@ func setupMemoryMessageTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&[]*entity.User{
+		{ID: "user-1", Nickname: "Owner"},
+		{ID: "user-2", Nickname: "Alpha"},
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	status := "1"
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "ut-1", UserID: "user-1", TenantID: "user-2", Role: "normal", InvitedBy: "user-2", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-1", Name: "one", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic | dao.MemoryTypeEpisodic | dao.MemoryTypeProcedural, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-2", Name: "two", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+		{ID: "mem-3", Name: "three", TenantID: "user-2", MemoryType: dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if filters.Total != 3 {
+		t.Fatalf("unexpected owner aggregate: %+v", filters)
+	}
+	if got, want := filters.Filter.Owner, []MemoryFilterOption{
+		{ID: "user-2", Label: "Alpha", Count: 1},
+		{ID: "user-1", Label: "Owner", Count: 2},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("owner filter = %+v, want %+v", got, want)
+	}
+	if got, want := filters.Filter.MemoryType, []MemoryFilterOption{
+		{ID: "raw", Label: "raw", Count: 2},
+		{ID: "semantic", Label: "semantic", Count: 2},
+		{ID: "episodic", Label: "episodic", Count: 1},
+		{ID: "procedural", Label: "procedural", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("memory type filter = %+v, want %+v", got, want)
+	}
+	if got, want := filters.Filter.StorageType, []MemoryFilterOption{
+		{ID: "table", Label: "table", Count: 2},
+		{ID: "graph", Label: "graph", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("storage type filter = %+v, want %+v", got, want)
+	}
+
+	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters refresh: %v", err)
+	}
+	if !reflect.DeepEqual(refreshed, filters) {
+		t.Fatalf("refreshed filters = %+v, want %+v", refreshed, filters)
+	}
+}
+
+func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.Create(&[]*entity.User{
+		{ID: "user-1", Nickname: "Owner"},
+		{ID: "user-2", Nickname: "Zeta"},
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	status := "1"
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "ut-1", UserID: "user-1", TenantID: "user-2", Role: "normal", InvitedBy: "user-2", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("seed user tenant: %v", err)
+	}
+	oldest, middle, newest := int64(100), int64(200), int64(300)
+	for _, memory := range []*entity.Memory{
+		{ID: "mem-episodic", Name: "episodic oldest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeEpisodic, StorageType: "graph", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &oldest}},
+		{ID: "mem-procedural", Name: "procedural middle", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeProcedural, StorageType: "alpha", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &middle}},
+		{ID: "mem-semantic", Name: "semantic newest", TenantID: "user-1", MemoryType: dao.MemoryTypeRaw | dao.MemoryTypeSemantic, StorageType: "table", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionMe), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+		{ID: "mem-shared", Name: "shared noncanonical storage", TenantID: "user-2", MemoryType: dao.MemoryTypeSemantic, StorageType: "zeta", EmbdID: "embd", LLMID: "llm", Permissions: string(entity.TenantPermissionTeam), ForgettingPolicy: string(ForgettingPolicyFIFO), BaseModel: entity.BaseModel{CreateTime: &newest}},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory: %v", err)
+		}
+	}
+
+	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters: %v", err)
+	}
+	if got, want := filters.Filter.Owner, []MemoryFilterOption{
+		{ID: "user-1", Label: "Owner", Count: 3},
+		{ID: "user-2", Label: "Zeta", Count: 1},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("owner filter = %+v, want %+v", got, want)
+	}
+	gotTypes := make([]string, 0, len(filters.Filter.MemoryType))
+	for _, option := range filters.Filter.MemoryType {
+		gotTypes = append(gotTypes, option.ID)
+	}
+	if want := []string{"raw", "semantic", "episodic", "procedural"}; !slices.Equal(gotTypes, want) {
+		t.Fatalf("memory type facet order = %v, want %v", gotTypes, want)
+	}
+	gotStorage := make([]string, 0, len(filters.Filter.StorageType))
+	for _, option := range filters.Filter.StorageType {
+		gotStorage = append(gotStorage, option.ID)
+	}
+	if want := []string{"table", "graph", "alpha", "zeta"}; !slices.Equal(gotStorage, want) {
+		t.Fatalf("storage type facet order = %v, want %v", gotStorage, want)
+	}
+
+	bumped := int64(400)
+	if err := dao.DB.Model(&entity.Memory{ID: "mem-semantic"}).Update("update_time", bumped).Error; err != nil {
+		t.Fatalf("bump update_time: %v", err)
+	}
+	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	if err != nil {
+		t.Fatalf("ListMemoryFilters refresh: %v", err)
+	}
+	if !reflect.DeepEqual(refreshed, filters) {
+		t.Fatalf("refreshed filters = %+v, want %+v", refreshed, filters)
+	}
 }
 
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
@@ -167,7 +352,7 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 			service := NewMemoryService()
 			service.docEngine = docEngine
 
-			if err := service.ForgetMessage(context.Background(), "user-1", "memory-1", 42); err != nil {
+			if err := service.ForgetMessage(t.Context(), "user-1", "memory-1", 42); err != nil {
 				t.Fatalf("ForgetMessage() error = %v", err)
 			}
 			if docEngine.updateCond["id"] != "memory-1_42" {
@@ -224,7 +409,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 
 	svc := NewMemoryService()
 	samePermission := " TEAM "
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Description: sptr("member edit"),
 		Permissions: &samePermission,
 	}); err != nil {
@@ -232,7 +417,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 	}
 
 	nextPermission := "me"
-	if _, err := svc.UpdateMemory(context.Background(), "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Permissions: &nextPermission,
 	}); err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
@@ -305,13 +490,13 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 	}
 
 	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService().UpdateMemory(context.Background(), "member-1", "mem-model", &UpdateMemoryRequest{
+	if _, err := NewMemoryService().UpdateMemory(t.Context(), "member-1", "mem-model", &UpdateMemoryRequest{
 		LLMID: &llmID,
 	}); err != nil {
 		t.Fatalf("UpdateMemory model error = %v", err)
 	}
 
-	updated, err := dao.NewMemoryDAO().GetByID(context.Background(), dao.DB, "mem-model")
+	updated, err := dao.NewMemoryDAO().GetByID(t.Context(), dao.DB, "mem-model")
 	if err != nil {
 		t.Fatalf("get updated memory: %v", err)
 	}
@@ -434,6 +619,116 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 }
 
+// A caller may not list memories of a tenant they have not joined, even when
+// the target memories carry the team permission. Python list_memory clamps the
+// requested tenant_id filter to the caller's joined tenants; the Go port
+// passed the requested ids straight through, so ?tenant_id=<foreign> listed
+// that tenant's team-shared memories.
+func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	for _, u := range []*entity.User{
+		{ID: "user-1", Nickname: "Caller"},
+		{ID: "tenant-2", Nickname: "Foreign owner"},
+	} {
+		if err := dao.DB.Create(u).Error; err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+	if err := dao.DB.Create(&entity.Memory{
+		ID:               "mem-foreign-team",
+		Name:             "Foreign team memory",
+		TenantID:         "tenant-2",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		EmbdID:           "embd",
+		LLMID:            "llm",
+		Permissions:      string(TenantPermissionTeam),
+		ForgettingPolicy: string(ForgettingPolicyFIFO),
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	resp, err := NewMemoryService().ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 0 || len(resp.MemoryList) != 0 {
+		t.Fatalf("foreign tenant filter must return no memories, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+}
+
+// A caller who has joined the tenant may still use the tenant_id filter, and a
+// mixed filter keeps only the joined ids.
+func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	for _, u := range []*entity.User{
+		{ID: "user-1", Nickname: "Caller"},
+		{ID: "tenant-2", Nickname: "Joined owner"},
+		{ID: "tenant-3", Nickname: "Foreign owner"},
+	} {
+		if err := dao.DB.Create(u).Error; err != nil {
+			t.Fatalf("seed user: %v", err)
+		}
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "ut-user-1-tenant-2",
+		UserID:   "user-1",
+		TenantID: "tenant-2",
+		Role:     "normal",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("seed user_tenant: %v", err)
+	}
+	for _, m := range []*entity.Memory{
+		{
+			ID:               "mem-joined-team",
+			Name:             "Joined team memory",
+			TenantID:         "tenant-2",
+			MemoryType:       dao.MemoryTypeRaw,
+			StorageType:      "table",
+			EmbdID:           "embd",
+			LLMID:            "llm",
+			Permissions:      string(TenantPermissionTeam),
+			ForgettingPolicy: string(ForgettingPolicyFIFO),
+		},
+		{
+			ID:               "mem-foreign-team",
+			Name:             "Foreign team memory",
+			TenantID:         "tenant-3",
+			MemoryType:       dao.MemoryTypeRaw,
+			StorageType:      "table",
+			EmbdID:           "embd",
+			LLMID:            "llm",
+			Permissions:      string(TenantPermissionTeam),
+			ForgettingPolicy: string(ForgettingPolicyFIFO),
+		},
+	} {
+		if err := dao.DB.Create(m).Error; err != nil {
+			t.Fatalf("seed memory %s: %v", m.ID, err)
+		}
+	}
+
+	ctx := t.Context()
+
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
+		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+
+	resp, err = NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10)
+	if err != nil {
+		t.Fatalf("ListMemories: %v", err)
+	}
+	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
+		t.Fatalf("mixed filter must drop the unjoined tenant, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+}
+
 func seedMemoryMessages(t *testing.T) {
 	t.Helper()
 
@@ -493,7 +788,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		AgentResponse: "hello",
 	}
 
-	ok, detail, err := svc.AddMessage(context.Background(), "", []string{"mem-owned"}, msg)
+	ok, detail, err := svc.AddMessage(t.Context(), "", []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("AddMessage: %v", err)
 	}
@@ -501,7 +796,7 @@ func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
 		t.Fatalf("AddMessage with empty current user = (%v, %q), want permission-filtered not found", ok, detail)
 	}
 
-	ok, detail, err = svc.saveAgentMessage(context.Background(), []string{"mem-owned"}, msg)
+	ok, detail, err = svc.saveAgentMessage(t.Context(), []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("saveAgentMessage: %v", err)
 	}
@@ -541,7 +836,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	got, code, err := svc.GetMessages(context.Background(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
+	got, code, err := svc.GetMessages(t.Context(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
 	if err != nil {
 		t.Fatalf("GetMessages error: %v", err)
 	}
@@ -559,8 +854,16 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	if req == nil {
 		t.Fatal("expected doc engine search request")
 	}
-	if !reflect.DeepEqual(req.IndexNames, []string{"memory_user-1"}) {
-		t.Fatalf("IndexNames = %v, want [memory_user-1]", req.IndexNames)
+	// The per-memory index name gains a `_<memoryID>` suffix on infinity
+	// (see memorySearchIndexNames). The engine type is process-global and set
+	// by sibling integration tests, so make the expectation engine-aware rather
+	// than hard-coding the non-infinity name.
+	wantIndexName := "memory_user-1"
+	if engine.GetEngineType() == "infinity" {
+		wantIndexName = "memory_user-1_mem-owned"
+	}
+	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
+		t.Fatalf("IndexNames = %v, want [%s]", req.IndexNames, wantIndexName)
 	}
 	if len(req.KbIDs) != 0 {
 		t.Fatalf("KbIDs = %v, want empty for memory message search", req.KbIDs)
@@ -615,7 +918,7 @@ func TestSearchMessageFiltersAccessibleMemoryAndDefaultsStatus(t *testing.T) {
 		"top_n":                      5,
 	}
 
-	got, code, err := svc.SearchMessage(context.Background(), "user-1", filter, params)
+	got, code, err := svc.SearchMessage(t.Context(), "user-1", filter, params)
 	if err != nil {
 		t.Fatalf("SearchMessage error: %v", err)
 	}
@@ -654,7 +957,7 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	docEngine := &memoryMessageDocEngine{}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
 
-	ok, err := svc.UpdateMessage(context.Background(), "user-1", "mem-owned", 42, true)
+	ok, err := svc.UpdateMessage(t.Context(), "user-1", "mem-owned", 42, true)
 	if err != nil {
 		t.Fatalf("UpdateMessage error: %v", err)
 	}

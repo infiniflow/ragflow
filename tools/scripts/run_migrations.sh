@@ -16,13 +16,43 @@
 set -e
 
 PY="${PY:-python3}"
-CONFIG="${1:-conf/service_conf.yaml}"
+CONFIG="conf/service_conf.yaml"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --config)
+            # Require a real file. mysql_migration.py:90 turns any config-load
+            # failure into a warning and falls back to host=localhost user=root
+            # database=rag_flow, and this script also passes --execute, so an
+            # empty, whitespace, flag-shaped or missing path would silently
+            # migrate the default database instead of failing.
+            if [ $# -lt 2 ] || [ -z "${2//[[:space:]]/}" ] || [ ! -f "$2" ] || [ "${2#-}" != "$2" ]; then
+                echo "Error: --config requires the path of an existing file" >&2
+                exit 1
+            fi
+            CONFIG="$2"
+            shift 2
+            ;;
+        *)
+            echo "Error: unknown argument: $1" >&2
+            echo "Usage: PY=python3 tools/scripts/run_migrations.sh [--config CONFIG_PATH]" >&2
+            exit 1
+            ;;
+    esac
+done
+
 DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
 DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
 
-if [[ "$DB_TYPE_NORMALIZED" == "postgres" || "$DB_TYPE_NORMALIZED" == "postgresql" || "$DB_TYPE_NORMALIZED" == "gaussdb" || "$DB_TYPE_NORMALIZED" == "gauss" ]]; then
+if [[ "$DB_TYPE_NORMALIZED" == "gaussdb" || "$DB_TYPE_NORMALIZED" == "gauss" ]]; then
+    echo "Skipping model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+    echo "GaussDB is not supported by the postgres/mysql migration scripts yet; use a manual upgrade path."
+    exit 0
+fi
+
+if [[ "$DB_TYPE_NORMALIZED" == "postgres" || "$DB_TYPE_NORMALIZED" == "postgresql" ]]; then
     MIGRATION_SCRIPT="tools/scripts/postgres_migration.py"
-    ENGINE_LABEL="PostgreSQL/GaussDB"
+    ENGINE_LABEL="PostgreSQL"
 else
     MIGRATION_SCRIPT="tools/scripts/mysql_migration.py"
     ENGINE_LABEL="MySQL"
@@ -43,7 +73,7 @@ echo "Running model provider table migrations (${ENGINE_LABEL}, DB_TYPE=${DB_TYP
     --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
     --config "$CONFIG" \
     --execute \
-    --database-version "v0.27.0" \
+    --database-version "v0.27.2" \
     --mark-database-version-on-success
 
 echo "Model provider table migrations completed."

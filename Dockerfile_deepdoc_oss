@@ -1,6 +1,6 @@
 # OSS DeepDoc server — minimal image with ONNX-only inference.
-# Build: docker build -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
-# With mirror (China): docker build --build-arg NEED_MIRROR=1 -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+# Build: docker build -f Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+# With mirror (China): docker build --build-arg NEED_MIRROR=1 -f Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
 
 FROM ubuntu:24.04
 

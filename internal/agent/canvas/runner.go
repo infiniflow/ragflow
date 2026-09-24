@@ -119,10 +119,13 @@ type MessageEvent struct {
 }
 
 // MessageEndEvent is the JSON payload for Type=="message_end" frames.
+// Attachment mirrors Python's _build_message_end: the {doc_id, format,
+// file_name} descriptor of a Message-component file export, present
+// only when one was produced.
 type MessageEndEvent struct {
-	Status     *string       `json:"status,omitempty"`
-	Attachment []interface{} `json:"attachment,omitempty"`
-	Reference  interface{}   `json:"reference,omitempty"`
+	Status     *string        `json:"status,omitempty"`
+	Attachment map[string]any `json:"attachment,omitempty"`
+	Reference  interface{}    `json:"reference,omitempty"`
 }
 
 // WaitingForUserEvent is the JSON payload for Type=="waiting_for_user"
@@ -270,8 +273,11 @@ func (r *Runner) Run(
 		return out
 	}
 
-	// Generate the message identifier the RunFunc and SSE envelope need.
-	messageID := utility.GenerateToken()
+	// Reuse a persisted question's identifier for the RunFunc and SSE envelope.
+	messageID, _ := root["__message_id__"].(string)
+	if messageID == "" {
+		messageID = utility.GenerateToken()
+	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,

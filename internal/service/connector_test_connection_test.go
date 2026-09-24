@@ -42,7 +42,7 @@ func TestConnectorServiceTestConnectorUsesRequestConfig(t *testing.T) {
 		"source": "mock",
 		"config": entity.JSONMap{"from": "request"},
 	}
-	if err := svc.TestConnector(context.Background(), "conn-1", "tenant-1", request); err != nil {
+	if err := svc.TestConnector(t.Context(), "conn-1", "tenant-1", request); err != nil {
 		t.Fatalf("TestConnector failed: %v", err)
 	}
 	if capturedConfig["from"] != "request" {
@@ -64,7 +64,7 @@ func TestConnectorServiceTestConnectorAllowsUnsavedConnectorWithSource(t *testin
 	svc := NewConnectorService()
 	svc.connectorRegistry = registry
 
-	err := svc.TestConnector(context.Background(), "missing", "tenant-1", entity.JSONMap{
+	err := svc.TestConnector(t.Context(), "missing", "tenant-1", entity.JSONMap{
 		"source": "mock",
 		"config": entity.JSONMap{"ok": true},
 	})
@@ -87,7 +87,7 @@ func TestConnectorServiceTestConnectorSurfacesRawValidationError(t *testing.T) {
 	svc := NewConnectorService()
 	svc.connectorRegistry = registry
 
-	err := svc.TestConnector(context.Background(), "missing", "tenant-1", entity.JSONMap{
+	err := svc.TestConnector(t.Context(), "missing", "tenant-1", entity.JSONMap{
 		"source": "mock",
 		"config": entity.JSONMap{"ok": true},
 	})
@@ -104,7 +104,7 @@ func TestConnectorServiceTestConnectorRejectsMissingConfigForMissingConnector(t 
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 
-	err := NewConnectorService().TestConnector(context.Background(), "missing", "tenant-1", nil)
+	err := NewConnectorService().TestConnector(t.Context(), "missing", "tenant-1", nil)
 	if !errors.Is(err, ErrConnectorNotFound) {
 		t.Fatalf("error = %v, want ErrConnectorNotFound", err)
 	}
@@ -128,7 +128,7 @@ func TestConnectorServiceTestConnectorRejectsUnauthorizedConnector(t *testing.T)
 		t.Fatalf("insert connector: %v", err)
 	}
 
-	err := NewConnectorService().TestConnector(context.Background(), "conn-1", "user-2", entity.JSONMap{
+	err := NewConnectorService().TestConnector(t.Context(), "conn-1", "user-2", entity.JSONMap{
 		"source": "mock",
 		"config": entity.JSONMap{"ok": true},
 	})
@@ -144,7 +144,7 @@ func TestConnectorServiceTestConnectorRejectsUnsupportedSource(t *testing.T) {
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 
-	err := NewConnectorService().TestConnector(context.Background(), "missing", "tenant-1", entity.JSONMap{
+	err := NewConnectorService().TestConnector(t.Context(), "missing", "tenant-1", entity.JSONMap{
 		"source": "unknown",
 		"config": entity.JSONMap{"ok": true},
 	})
@@ -167,7 +167,7 @@ func TestConnectorServiceTestConnectorRejectsConnectorWithoutValidator(t *testin
 	svc := NewConnectorService()
 	svc.connectorRegistry = registry
 
-	err := svc.TestConnector(context.Background(), "missing", "tenant-1", entity.JSONMap{
+	err := svc.TestConnector(t.Context(), "missing", "tenant-1", entity.JSONMap{
 		"source": "plain",
 		"config": entity.JSONMap{"ok": true},
 	})

@@ -30,6 +30,7 @@ from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, Order
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
+from common.float_utils import format_minimum_should_match_percent
 
 ATTEMPT_TIME = 2
 
@@ -385,7 +386,7 @@ class OSConnection(DocStoreConnection):
                 use_text = True
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
-                    minimum_should_match = str(int(minimum_should_match * 100)) + "%"
+                    minimum_should_match = format_minimum_should_match_percent(minimum_should_match)
                 bqry.must.append(Q("query_string", fields=m.fields, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
 
@@ -548,6 +549,7 @@ class OSConnection(DocStoreConnection):
     def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
         doc = copy.deepcopy(newValue)
         doc.pop("id", None)
+        condition["kb_id"] = knowledgebaseId
         if "id" in condition and isinstance(condition["id"], str):
             # update specific single document
             chunkId = condition["id"]

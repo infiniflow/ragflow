@@ -3,10 +3,12 @@ package service
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // TestValidateTemplatePayload_AcceptsJSONMapConfig covers the create-from-UI
@@ -150,5 +152,65 @@ func TestLoadWikiPresets_FrontendContract(t *testing.T) {
 		if _, ok := decoded["page_example"]; ok {
 			t.Errorf("preset %q: stale \"page_example\" key in JSON payload: %s", preset.ID, blob)
 		}
+	}
+}
+
+func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err = os.Chdir("../.."); err != nil {
+		t.Fatalf("chdir to repo root: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+
+	dir := filepath.Join("api", "db", "init_data", "compilation_templates")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read builtin template directory: %v", err)
+	}
+	wantIDs := make(map[string]struct{})
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" && filepath.Ext(entry.Name()) != ".yml" {
+			continue
+		}
+		wantIDs[strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))] = struct{}{}
+	}
+
+	templates, err := loadBuiltinTemplates()
+	if err != nil {
+		t.Fatalf("loadBuiltinTemplates: %v", err)
+	}
+	if len(templates) != len(wantIDs) {
+		t.Fatalf("loaded %d builtin templates, want %d YAML definitions", len(templates), len(wantIDs))
+	}
+
+	for _, template := range templates {
+		if _, ok := wantIDs[template.ID]; !ok {
+			t.Errorf("loaded unexpected builtin template %q", template.ID)
+		}
+		if template.Config["kind"] == nil {
+			t.Errorf("builtin template %q has no config.kind", template.ID)
+		}
+		if _, err := common.KindToVariant(template.Kind); err != nil {
+			t.Errorf("builtin template %q kind %q is not supported: %v", template.ID, template.Kind, err)
+		}
+		// Tree intentionally carries empty entity/relation stubs for the shared
+		// form shape; those fields are not part of the tree template contract.
+		if template.Kind != "tree" {
+			payload := map[string]interface{}{
+				"name":   template.DisplayName,
+				"kind":   template.Kind,
+				"config": map[string]interface{}(template.Config),
+			}
+			if err := ValidateTemplatePayload(payload, true); err != nil {
+				t.Errorf("builtin template %q failed validation: %v", template.ID, err)
+			}
+		}
+		delete(wantIDs, template.ID)
+	}
+	for id := range wantIDs {
+		t.Errorf("builtin YAML %q was not loaded", id)
 	}
 }

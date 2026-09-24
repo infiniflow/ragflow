@@ -195,11 +195,11 @@ func TestSession_ConcurrentValueAccess(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			err := SetRunLocalValue(context.Background(), fmt.Sprintf("key_%d", id), fmt.Sprintf("val_%d", id))
+			err := SetRunLocalValue(t.Context(), fmt.Sprintf("key_%d", id), fmt.Sprintf("val_%d", id))
 			if err != nil && !errors.Is(err, errNotInAgentExec) {
 				errs <- fmt.Errorf("SetRunLocalValue: %w", err)
 			}
-			_, _, err = GetRunLocalValue(context.Background(), "test")
+			_, _, err = GetRunLocalValue(t.Context(), "test")
 			if err != nil && !errors.Is(err, errNotInAgentExec) {
 				errs <- fmt.Errorf("GetRunLocalValue: %w", err)
 			}

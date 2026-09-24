@@ -14,28 +14,27 @@
 #  limitations under the License.
 #
 
+import csv
 import logging
 import re
-import csv
 from copy import deepcopy
 from io import BytesIO
 from timeit import default_timer as timer
+
+from docx import Document
+from markdown import markdown
 from openpyxl import load_workbook
 
 from common.constants import MAXIMUM_PAGE_NUMBER
-from deepdoc.parser.utils import get_text
-from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
-from rag.nlp import rag_tokenizer, tokenize_table, concat_img
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser
-from docx import Document
-from markdown import markdown
-
 from common.float_utils import get_float
+from deepdoc.parser import DocxParser, ExcelParser, PdfParser
+from deepdoc.parser.utils import get_text
+from rag.nlp import add_positions, concat_img, docx_question_level, has_qbullet, is_english, qbullets_category, rag_tokenizer, random_choices, tokenize_table
 
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
-        if not binary:
+        if binary is None:
             wb = load_workbook(fnm)
         else:
             wb = load_workbook(BytesIO(binary))
@@ -50,7 +49,8 @@ class Excel(ExcelParser):
             for i, r in enumerate(rows):
                 q, a = "", ""
                 for cell in r:
-                    if not cell.value:
+                    # A 0, 0.0, or False answer is falsy but is real content.
+                    if cell.value is None or str(cell.value).strip() == "":
                         continue
                     if not q:
                         q = str(cell.value)
@@ -63,9 +63,9 @@ class Excel(ExcelParser):
                 else:
                     fails.append(str(i + 1))
                 if len(res) % 999 == 0:
-                    callback(len(res) * 0.6 / total, ("Extract pairs: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                    callback(len(res) * 0.6 / total, (f"Extract pairs: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, (f"Extract pairs: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
         return res
 
@@ -74,25 +74,25 @@ class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
+        logging.debug(f"OCR({from_page}~{to_page}): {timer() - start:.2f}s")
         start = timer()
         self._layouts_rec(zoomin, drop=False)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+        callback(0.63, f"Layout analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+        callback(0.65, f"Table analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._text_merge()
-        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
+        callback(0.67, f"Text merged ({timer() - start:.2f}s)")
         tbls = self._extract_table_figure(True, zoomin, True, True)
         # self._naive_vertical_merge()
         # self._concat_downward()
         # self._filter_forpages()
-        logging.debug("layouts: {}".format(timer() - start))
+        logging.debug(f"layouts: {timer() - start}")
         sections = [b["text"] for b in self.boxes]
         bull_x0_list = []
         q_bull, reg = qbullets_category(sections)
@@ -167,7 +167,7 @@ class Pdf(PdfParser):
         tbl_right = tbls[tbl_index][1][0][2]
         tbl_top = tbls[tbl_index][1][0][3]
         tbl_bottom = tbls[tbl_index][1][0][4]
-        tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
+        tbl_tag = f"@@{tbl_pn}\t{tbl_left:.1f}\t{tbl_right:.1f}\t{tbl_top:.1f}\t{tbl_bottom:.1f}##"
         _tbl_text = "".join(tbls[tbl_index][0][1])
         return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, _tbl_text
 
@@ -177,7 +177,7 @@ class Docx(DocxParser):
         pass
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -205,6 +205,11 @@ class Docx(DocxParser):
                     level_stack.pop()
                 question_stack.append(p_text)
                 level_stack.append(question_level)
+            if from_page <= pn < to_page:
+                # A text box keeps its text out of `Paragraph.text` and is never a
+                # question, so it belongs to the answer of the enclosing section.
+                for box_text in self.extract_text_boxes(p):
+                    last_answer = f"{last_answer}\n{box_text}"
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
@@ -337,12 +342,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 question, answer = arr
             i += 1
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
 
@@ -372,18 +377,18 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = row
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+        qai_list, tbls = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

@@ -430,6 +430,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowTasks()
 	case TokenLog:
 		return p.parseAdminShowLogCommands()
+	case TokenHardware:
+		return p.parseAdminShowHardware()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -2714,8 +2716,8 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 			p.nextToken() // consume NUMBER
 		}
 
-		if messageCount <= 0 || messageCount > 100 {
-			return nil, fmt.Errorf("message count cannot be less than 0 or greater than 100")
+		if messageCount <= 0 || messageCount > common.MaxManualPullMessages {
+			return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
 		}
 
 		cmd = NewCommand("user_pull_message_command")
@@ -3070,6 +3072,18 @@ func (p *Parser) parseAdminShowLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
 	cmd := NewCommand("admin_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShowHardware() (*Command, error) {
+	p.nextToken() // consume HARDWARE
+	cmd := NewCommand("admin_show_hardware")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

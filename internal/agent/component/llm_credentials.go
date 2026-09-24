@@ -71,6 +71,42 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 	return modelID, driver, apiKey, baseURL, nil
 }
 
+// modelImageCapability reports an explicitly known image capability. The
+// second result is false when the model is unknown, so local/test drivers keep
+// their historical multimodal behavior.
+func modelImageCapability(ctx context.Context, db *gorm.DB, modelRef, modelName string) (supports, known bool) {
+	if db != nil && modelRef != "" {
+		if row, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && row != nil {
+			return entity.ModelType(row.ModelType).Has(entity.ModelTypeImage2Text), true
+		}
+	}
+	if modelName == "" {
+		return false, false
+	}
+	model := dao.GetModelProviderManager().GetModelByNameOrAlias(modelName)
+	if model == nil || len(model.ModelTypes) == 0 {
+		return false, false
+	}
+	for _, typ := range model.ModelTypes {
+		if strings.EqualFold(typ, "vision") || strings.EqualFold(typ, "image2text") {
+			return true, true
+		}
+	}
+	return false, true
+}
+
+func rejectUnsupportedImages(ctx context.Context, db *gorm.DB, state *runtime.CanvasState, modelRef, modelName string) error {
+	if state == nil {
+		return nil
+	}
+	if _, images := collectSysFiles(state); len(images) > 0 {
+		if supports, known := modelImageCapability(ctx, db, modelRef, modelName); known && !supports {
+			return runtime.NewUserFacingError(fmt.Sprintf(`Image input is not supported by the selected model %q. Please select a vision-capable model.`, modelRef))
+		}
+	}
+	return nil
+}
+
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
 func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
@@ -319,21 +355,22 @@ func isBareTenantModelID(s string) bool {
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
-// provider segments.
+// provider segments. The split is right-anchored — provider is the last
+// segment, instance the second-to-last, and everything left of them is the
+// model name, which may itself contain '@' (e.g. LM Studio quant-suffixed
+// ids). Mirrors Python's split_model_name (rsplit("@", 2)).
 //
 //	"model@provider"          -> ("model", "default", "provider")
 //	"model@instance@provider" -> ("model", "instance", "provider")
-//	4+ parts                  -> ("parts[0]", "parts[1]", "parts[2]")
+//	"model@tag@inst@provider" -> ("model@tag", "inst", "provider")
 func parseLLMIDParts(s string) (modelName, instanceName, providerName string) {
 	parts := strings.Split(strings.TrimSpace(s), "@")
 	switch len(parts) {
 	case 2:
 		return parts[0], "default", parts[1]
-	case 3:
-		return parts[0], parts[1], parts[2]
 	default:
-		if len(parts) >= 4 {
-			return parts[0], parts[1], parts[2]
+		if len(parts) >= 3 {
+			return strings.Join(parts[:len(parts)-2], "@"), parts[len(parts)-2], parts[len(parts)-1]
 		}
 		return s, "", ""
 	}

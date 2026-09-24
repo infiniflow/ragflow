@@ -59,6 +59,8 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 		return NewTableChunker(params)
 	case ComponentNamePageChunker:
 		return NewPageChunker(params)
+	case ComponentNameGeneralChunker:
+		return NewGeneralChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
@@ -89,7 +91,9 @@ func stringListFromAny(in []any) []string {
 // content. invokeTextPayload decides whether an active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
-// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Legacy single-string parsing is performed by GeneralChunker at its
+// configuration boundary; the shared regex helper only consumes canonical
+// delimiter lists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
@@ -98,9 +102,10 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
 // glued to a segment: re.split with a captured group keeps delimiters at odd
 // indices, and only the even-index (text) parts are kept. This is the
-// behavior every delimiter path (primary and children, text/markdown/html
-// and JSON) must reproduce so a split chunk reads "first sentence here"
-// without the trailing delimiter.
+// behavior shared TokenChunker paths and General's primary/Markdown splits
+// reproduce so a split chunk reads "first sentence here" without the trailing
+// delimiter. General's legacy-compatible children split is implemented
+// separately because that path keeps the delimiter attached to its parent.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
@@ -130,14 +135,24 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 // chunk-doc helpers
 // ---------------------------------------------------------------------------
 
-// itemText returns the text payload from a JSON-style chunk item,
-// preferring "text", then "content_with_weight".
+// requireChunkText enforces the pre-index wire contract before chunk-id
+// generation or image upload.
+func requireChunkText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
+}
+
+// itemText returns the canonical pre-index text payload from a chunk item.
 func itemText(it schema.ChunkDoc) (string, bool) {
 	if it.Text != "" {
 		return it.Text, true
-	}
-	if it.ContentWithWeight != "" {
-		return it.ContentWithWeight, true
 	}
 	return "", false
 }
@@ -166,6 +181,16 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 // swizzle the count strategy in one place if needed.
 func tokenizeStr(s string) int { return tokenizer.NumTokensFromString(s) }
 
+// setChunkText replaces a chunk's body together with the token count that
+// describes it, so a caller cannot leave the two out of sync. TKNums is read as
+// a budget by the media window walk and by the merge thresholds, and it is
+// emitted as tk_nums, so a body replaced on its own silently misreports the
+// chunk's size. Merge paths that join several units keep their summed count.
+func setChunkText(ck *schema.ChunkDoc, text string) {
+	ck.Text = text
+	ck.TKNums = intPtr(tokenizeStr(text))
+}
+
 // toString normalises a chunk-map field to a string. Empty strings
 // for missing fields.
 func toString(v any) string {
@@ -193,11 +218,46 @@ func emptyOutputs() map[string]any {
 // model resolution) is NOT re-emitted here — it lives in the workflow-wide
 // CanvasState.Globals bag (seeded at pipeline start, published by the File
 // component) and read directly from ctx. See runtime.CanvasState.Globals.
+//
+// Media context is materialized into the chunk body here, the chunker's last
+// step: every variant passes through this builder, so the folded text is what
+// the chunk id, the extractor, the tokenizer and the index write all see.
 func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
+	materialized := make([]schema.ChunkDoc, len(chunks))
+	for i := range chunks {
+		materialized[i] = materializeMediaContext(chunks[i])
+	}
 	return map[string]any{
 		"output_format": "chunks",
-		"chunks":        schema.ChunkDocsToMaps(chunks),
+		"chunks":        schema.ChunkDocsToMaps(materialized),
 	}
+}
+
+// materializeMediaContext folds a media chunk's surrounding context into its
+// body and clears the two fields that carried it. Python's chunker emits the
+// same shape — its finalize builds remove_tag(context_above + text +
+// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
+// 359) — which is why Python persists the context inside the chunk body.
+// Folding here also puts the context into the chunk id (ChunkID hashes the
+// body), matching Python's id, which hashes the context-bearing body.
+//
+// Tag stripping runs after the merge, as in Python: the payload was already
+// stripped by the chunker, so this only covers the context, which is collected
+// from neighbouring units.
+//
+// The body goes through setChunkText, so TKNums keeps describing the body the
+// chunk carries now instead of the bare payload it replaced.
+//
+// Only media chunks carry context (attachMediaContext and
+// attachGeneralMediaContext write it), so text chunks pass through untouched.
+func materializeMediaContext(ck schema.ChunkDoc) schema.ChunkDoc {
+	if ck.ContextAbove == "" && ck.ContextBelow == "" {
+		return ck
+	}
+	setChunkText(&ck, removeTag(schema.ContextualText(ck)))
+	ck.ContextAbove = ""
+	ck.ContextBelow = ""
+	return ck
 }
 
 // withName returns a shallow copy of inputs with name set, so a component can

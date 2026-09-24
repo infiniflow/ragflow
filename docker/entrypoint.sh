@@ -259,72 +259,110 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
+# Run the model provider table migrations. The Go backend owns those tables when
+# it serves the API, so it runs its own --migrate action instead of the Python
+# script.
+function run_model_provider_migrations() {
+    DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+    DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
+    if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
+        # Postgres-shaped migration SQL is not safe on GaussDB (distributed/ORA
+        # mode). run_migrations.sh also no-ops for GaussDB.
+        echo "Skipping model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        return 0
+    fi
+
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Running model provider table migrations (go)..."
+        bin/ragflow_server --migrate
+    else
+        # run_migrations.sh selects mysql_migration.py or postgres_migration.py
+        # from DB_TYPE so postgres upgrades get model_type merge and tenant_*_id
+        # backfill (#18755 / #18756).
+        tools/scripts/run_migrations.sh
+    fi
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
-ensure_docling
-ensure_db_init
+
+run_with_restart() {
+  local process_name="$1"
+  shift
+
+  while true; do
+    echo "Attempt to start ${process_name}..."
+    set +e
+    "$@"
+    local exit_code=$?
+    set -e
+    echo "${process_name} exited with code ${exit_code}. Restarting in 1 second..."
+    sleep 1
+  done
+}
+
+# Initialize the database schema before any of the services below start.
+# This used to run inside the web server block only, so hosts that ran e.g.
+# just the admin server, data sync, MCP server, or task executors never
+# initialized the schema.
+#
+# Under the go scheme the Go backend owns the schema: its --migrate action and
+# dao.InitDB create and converge the tables. Skip the Python initialization so a
+# single side owns the schema.
+if [[ "${API_PROXY_SCHEME}" != "go" ]]; then
+    ensure_db_init
+fi
 
 if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
-    # run_migrations.sh selects mysql_migration.py or postgres_migration.py
-    # from DB_TYPE so postgres/gaussdb upgrades get the same table-init and
-    # tenant_*_id backfill as MySQL.
-    tools/scripts/run_migrations.sh
+    run_model_provider_migrations
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        while true; do
-            echo "Attempt to start Admin python server..."
-            "$PY" admin/server/admin_server.py
-            echo "Admin python server started"
-            sleep 1;
-        done &
+        echo "Attempt to start Admin python server..."
+        run_with_restart "Admin python server" "$PY" admin/server/admin_server.py &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Starting Admin go server..."
-            bin/ragflow_server --admin
-            echo "Admin go server started."
-            sleep 1;
-        done &
+        echo "Starting Admin go server..."
+        run_with_restart "Admin go server" bin/ragflow_server --admin &
     fi
 fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
+    ensure_docling
+
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow python server..."
-            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-            echo "RAGFlow python server started."
-            sleep 1;
-        done &
+        echo "Attempt to start RAGFlow python server..."
+        run_with_restart "RAGFlow python server" "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
     fi
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        while true; do
-            echo "Starting RAGFlow go server..."
-            bin/ragflow_server --api
-            echo "RAGFlow go server started."
-            sleep 1;
-        done &
+        echo "Starting RAGFlow go server..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --api &
     fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    while true; do
-        "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        echo "Starting data sync (go)..."
+        run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
+    else
+        echo "Starting data sync..."
+        run_with_restart "Data sync" "$PY" rag/svr/sync_data_source.py &
+    fi
 fi
 
-if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
+# The Go backend serves MCP in-process from --api (POST /mcp on the main API
+# port) and exposes the same ragflow_retrieval, ragflow_list_datasets and
+# ragflow_list_chats tools. The standalone Python MCP server would only
+# duplicate it, so the go scheme relies on the built-in endpoint instead.
+if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]] && [[ "${API_PROXY_SCHEME}" != "go" ]]; then
     start_mcp_server
 fi
 
@@ -340,29 +378,23 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
         fi
 
         if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            while true; do
-                echo "Starting go ingestor..."
-                bin/ragflow_server --ingestor
-                sleep 1;
-            done &
+            echo "Starting ingestor..."
+            run_with_restart "ingestor" bin/ragflow_server --ingestor &
         fi
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
-              echo "Starting python task executor..."
-              task_exe "${i}" "${HOST_ID}" &
-              sleep 1;
-          fi
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+                echo "Starting python task executor..."
+                task_exe "${i}" "${HOST_ID}" &
+                sleep 1;
+            fi
 
-          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-              while true; do
-                  echo "Starting go ingestor..."
-                  bin/ragflow_server --ingestor
-                  sleep 1;
-              done &
+            if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+                echo "Starting ingestor..."
+                run_with_restart "ingestor" bin/ragflow_server --ingestor &
           fi
         done
     fi

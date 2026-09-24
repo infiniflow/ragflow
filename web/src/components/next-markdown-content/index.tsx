@@ -17,9 +17,13 @@
 import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { SafeImg } from '@/components/safe-img';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import {
+  MarkdownRemarkPlugins,
+  MarkdownRemarkPluginsLite,
+} from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { supportsSourceLocate } from '@/utils/source-locate';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import DOMPurify from 'dompurify';
@@ -45,7 +49,6 @@ import {
   replaceThinkToSection,
   unescapeAngleBrackets,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
@@ -65,7 +68,7 @@ import {
 import message from '../ui/message';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => parseCitationIndex(match);
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
@@ -182,11 +185,17 @@ function MarkdownContent({
   clickDocumentButton,
   content,
   loading,
+  disableMath = false,
 }: {
   content: string;
   loading: boolean;
   reference?: IReferenceObject;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
+  /**
+   * When true, disables LaTeX math rendering (remark-math + rehype-katex).
+   * Use this for user-generated content where `$` should be treated as literal text.
+   */
+  disableMath?: boolean;
 }) {
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
@@ -230,15 +239,15 @@ function MarkdownContent({
       documentUrl?: string,
     ) =>
       () => {
-        if (fileExtension !== 'pdf') {
-          if (!documentUrl) {
-            return;
-          }
-          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
-          window.open(nextLink, '_blank');
-        } else {
-          clickDocumentButton?.(documentId, chunk);
+        if (supportsSourceLocate(fileExtension) && clickDocumentButton) {
+          clickDocumentButton(documentId, chunk);
+          return;
         }
+        if (!documentUrl) return;
+        window.open(
+          `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
+          '_blank',
+        );
       },
     [clickDocumentButton],
   );
@@ -263,7 +272,10 @@ function MarkdownContent({
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? {};
-      const chunkItem = chunks[chunkIndex];
+      // Agent reference.chunks is a Record keyed by the original citation ID
+      // (e.g. "3092e7ae6831b877"); the caller maps those IDs to a positional
+      // display index, so look up the N-th entry by insertion order.
+      const chunkItem = Object.values(chunks)[chunkIndex];
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -307,12 +319,14 @@ function MarkdownContent({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={cn(styles.referenceImagePreview)}
                 ></Image>
               </HoverCardContent>
@@ -363,18 +377,28 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      // Assign each unique citation marker a stable display number based on
+      // its first occurrence, so the same ID always renders as the same [N]
+      // chip. The actual chunk lookup uses that index against the positional
+      // order of IReferenceObject.chunks (see getReferenceInfo).
+      const keyToDisplay = new Map<number | string, number>();
+      const replacedText = reactStringReplace(text, currentReg, (match) => {
+        const chunkKey = getChunkKey(match);
+        let displayIndex = keyToDisplay.get(chunkKey);
+        if (displayIndex === undefined) {
+          displayIndex = keyToDisplay.size;
+          keyToDisplay.set(chunkKey, displayIndex);
+        }
 
         return (
-          <HoverCard key={i}>
+          <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                Fig. {chunkIndex + 1}
+                [{displayIndex + 1}]
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(chunkIndex)}
+              {renderPopoverContent(displayIndex)}
             </HoverCardContent>
           </HoverCard>
         );
@@ -385,19 +409,25 @@ function MarkdownContent({
     [renderPopoverContent],
   );
 
-  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const dir = getDirAttribute(content?.replace(currentReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
       <Markdown
-        rehypePlugins={[
-          rehypeRaw,
-          RehypeSanitizeAssistantMarkdown,
-          rehypeWrapReference,
-          rehypeKatex,
-        ]}
-        remarkPlugins={MarkdownRemarkPlugins}
+        rehypePlugins={
+          disableMath
+            ? [rehypeRaw, RehypeSanitizeAssistantMarkdown, rehypeWrapReference]
+            : [
+                rehypeRaw,
+                RehypeSanitizeAssistantMarkdown,
+                rehypeWrapReference,
+                rehypeKatex,
+              ]
+        }
+        remarkPlugins={
+          disableMath ? MarkdownRemarkPluginsLite : MarkdownRemarkPlugins
+        }
         urlTransform={(url, key) => {
           if (
             key === 'src' &&

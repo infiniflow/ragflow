@@ -18,22 +18,26 @@ package component
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"ragflow/internal/common"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"ragflow/internal/utility"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // Test setup: enable the test-only SSRF bypass for tests in this
 // file (the happy-path httptest server lives on 127.0.0.1, which
 // the production guard rejects). The bypass is now a process-
-// memory boolean (utility.AllowAnyHostForTest) instead of an
+// memory boolean (common.AllowAnyHostForTest) instead of an
 // env var — the previous form (ALLOW_ANY_HOST env) was a live
 // runtime toggle any operator could flip to disable the guard
 // globally. PR review round 6, Major #3.
@@ -43,9 +47,9 @@ import (
 // tests below rely on the bypass being on.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
-	prev := utility.AllowAnyHostForTest
-	utility.AllowAnyHostForTest = enabled
-	t.Cleanup(func() { utility.AllowAnyHostForTest = prev })
+	prev := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = enabled
+	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
@@ -145,6 +149,52 @@ func TestInvoke_UsesNodeParams(t *testing.T) {
 	}
 	if got, _ := out["result"].(string); got != "configured" {
 		t.Errorf("result = %q, want configured", got)
+	}
+}
+
+func TestInvokeHeadersToleratesInvalidInput(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  any
+		want map[string]any
+	}{
+		{name: "malformed JSON", raw: `{"Authorization":"Bearer secret-token"`, want: nil},
+		{name: "empty", raw: "", want: nil},
+		{name: "array", raw: `["secret-token"]`, want: nil},
+		{name: "scalar", raw: `true`, want: nil},
+		{name: "null", raw: "null", want: nil},
+		{name: "unsupported", raw: 42, want: nil},
+		{name: "object", raw: `{"X-Test":"yes"}`, want: map[string]any{"X-Test": "yes"}},
+		{name: "direct map", raw: map[string]any{"X-Test": "yes"}, want: map[string]any{"X-Test": "yes"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := invokeHeaders(tt.raw)
+			if err != nil {
+				t.Fatalf("invokeHeaders() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("invokeHeaders() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInvokeHeadersDoesNotLogRawPayload(t *testing.T) {
+	previous := zap.L()
+	core, logs := observer.New(zap.WarnLevel)
+	zap.ReplaceGlobals(zap.New(core))
+	t.Cleanup(func() { zap.ReplaceGlobals(previous) })
+
+	const secret = "Bearer secret-token"
+	if _, err := invokeHeaders(`{"Authorization":"` + secret); err != nil {
+		t.Fatalf("invokeHeaders() error = %v", err)
+	}
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+			t.Fatalf("log contains raw header payload: %#v", entry)
+		}
 	}
 }
 
@@ -391,14 +441,14 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	// "rebinds" to a different answer afterward.
 	// We achieve "rebinding" by stubbing the DNS lookup
 	// to return a different IP on a second call.
-	originalLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		// Always return the already-running fake proxy. If the
 		// Invoke transport re-resolves proxy.test.invalid instead
 		// of using the pinned IP, the request will never hit it.
 		return []string{pinnedProxyIP}, nil
 	}
-	t.Cleanup(func() { utility.LookupHost = originalLookup })
+	t.Cleanup(func() { common.LookupHost = originalLookup })
 
 	c, _ := NewInvokeComponent(nil)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)

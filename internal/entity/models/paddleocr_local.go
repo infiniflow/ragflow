@@ -40,7 +40,7 @@ func NewPaddleOCRLocalModel(baseURL map[string]string, urlSuffix URLSuffix) *Pad
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(true),
+			httpClient: common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -106,6 +106,9 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		return nil, fmt.Errorf("local PaddleOCR requires file content, but content is empty")
 	}
 
+	algorithm := paddleOCRAlgorithm(ocrConfig, apiConfig)
+	apiConfig = paddleOCRResolvedAPIConfig(apiConfig)
+
 	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -124,11 +127,9 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	}
 
 	reqData := map[string]interface{}{
-		"file":     base64Str,
-		"fileType": fileType,
-	}
-	if ocrConfig != nil && strings.TrimSpace(ocrConfig.Algorithm) != "" {
-		reqData["algorithm"] = ocrConfig.Algorithm
+		"file":      base64Str,
+		"fileType":  fileType,
+		"algorithm": algorithm,
 	}
 
 	jsonData, err := json.Marshal(reqData)
@@ -149,10 +150,6 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		req.Header.Set("Authorization", auth)
 	}
 
-	algorithm := ""
-	if ocrConfig != nil {
-		algorithm = ocrConfig.Algorithm
-	}
 	common.Info("paddleocr local submit: sending",
 		zap.String("driver", p.Name()),
 		zap.String("url", url),
@@ -241,7 +238,7 @@ func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConf
 	for _, model := range provider.Models {
 		modelList = append(modelList, ListModelResponse{
 			Name:          model.Name,
-			ContentLength: model.ContentLength,
+			ContextLength: model.ContextLength,
 			MaxOutput:     model.MaxOutput,
 			ModelTypes:    model.ModelTypes,
 			Thinking:      model.Thinking,

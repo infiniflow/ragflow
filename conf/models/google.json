@@ -10,11 +10,12 @@
   "class": "gemini",
   "models": [
     {
-      "name": "gemini-2.5-flash",
-      "content_length": 1048576,
+      "name": "gemini-3.8-flash",
+      "context_length": 1048576,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "thinking": {
         "default_value": true,
@@ -25,7 +26,159 @@
       }
     },
     {
-      "name": "text-embedding-004",
+      "name": "gemini-3.6-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3.5-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3.1-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3.1-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3.1-flash-lite",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3-flash-preview",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3-pro-preview",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-2.5-flash-lite",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-embedding-001",
       "max_tokens": 2048,
       "model_types": [
         "embedding"
@@ -37,12 +190,28 @@
     "thinking": {
       "default_value": true,
       "supported_models": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.1-pro",
+        "gemini-3.1-flash",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-2.5-pro",
         "gemini-2.5-flash"
       ]
     },
     "reasoning_effort": {
       "default_value": "high",
       "supported_modes": [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3.1-pro",
+        "gemini-3.1-flash",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+        "gemini-2.5-pro",
         "gemini-2.5-flash"
       ]
     }

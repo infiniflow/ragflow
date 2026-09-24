@@ -150,8 +150,9 @@ type GoogleModel struct {
 func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel {
 	return &GoogleModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -165,7 +166,12 @@ func (g *GoogleModel) Name() string {
 }
 
 func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.ClientConfig {
-	return &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)}}
+	return &genai.ClientConfig{
+		APIKey:      apiKey,
+		Backend:     genai.BackendGeminiAPI,
+		HTTPClient:  g.baseModel.httpClient,
+		HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)},
+	}
 }
 
 func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {

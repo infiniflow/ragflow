@@ -93,6 +93,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -153,11 +154,51 @@ type Embedder interface {
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
-// EmbedderResolver resolves the embedder for one tokenizer invocation.
-// embeddingModel is the Tokenizer-scoped embedding-model identifier (from the
-// component's setups); an empty value tells the resolver to fall back to the
-// dataset's configured model.
-type EmbedderResolver func(ctx context.Context, tenantID, kbID, embeddingModel string) (Embedder, error)
+// EmbedderTrimmer is an OPTIONAL extension of Embedder, implemented by embedders
+// that can count with the embedding model's own tokenizer (or a calibrated upper
+// bound of it) instead of cl100k_base. When present the component uses it for
+// every truncation, because cl100k and a model's own tokenizer disagree by up to
+// ~2% and the sign of the disagreement depends on the content: a chunk that
+// cl100k scores just under the limit can be over it in the model's tokenizer,
+// which the provider answers with a 400 and, before this, the loss of the whole
+// document. See internal/tokenizer/embedding_token_limits.md.
+type EmbedderTrimmer interface {
+	Trim(text string) (trimmed string, tokens int)
+}
+
+// EmbedderMaxResolver is the optional counterpart that exposes the input window
+// to honour: the model's declared value, then the provider catalog's
+// context_length. Without it the component has to guess, and guessing 8192
+// overshoots the window of every model with a smaller one.
+type EmbedderMaxResolver interface {
+	ResolveMaxTokens() int
+}
+
+// trimForEmbedding trims `text` the best way the embedder allows.
+func trimForEmbedding(embedder Embedder, text string) string {
+	if trimmer, ok := embedder.(EmbedderTrimmer); ok {
+		trimmed, _ := trimmer.Trim(text)
+		return trimmed
+	}
+	return truncateForEmbedding(text, resolveEmbedderMaxTokens(embedder))
+}
+
+// resolveEmbedderMaxTokens is the window the embedder will actually honour.
+func resolveEmbedderMaxTokens(embedder Embedder) int {
+	if resolver, ok := embedder.(EmbedderMaxResolver); ok {
+		return resolver.ResolveMaxTokens()
+	}
+	return embedder.MaxTokens()
+}
+
+// EmbedderResolver resolves the embedder and its dataset-bound embedding-model
+// id for one tokenizer invocation. The resolver derives the model exclusively
+// from the knowledgebase's configured embd_id (see internal/ingestion/task/
+// embedder.go); it never reads any embedding identifier from the DSL. The
+// returned embdID is the stable string the tokenizer keys its per-chunk
+// embedding cache on, so a KB whose embedding model changes yields a different
+// key and never serves a stale vector.
+type EmbedderResolver func(ctx context.Context, tenantID, kbID string) (Embedder, string, error)
 
 // DefaultEmbedderResolver is the production embedder resolver. It is nil in
 // this leaf package — which must not import internal/service (see the
@@ -174,8 +215,9 @@ var DefaultEmbedderResolver EmbedderResolver
 // Inputs:
 //
 //	tenant_id  (string, optional) — used to resolve the embedding model
-//	kb_id      (string, optional) — dataset whose embd_id is used when the
-//	                             setups embedding_model is unset
+//	kb_id      (string, optional) — dataset whose embd_id selects the embedding
+//	                             model. The model always comes from the dataset;
+//	                             the DSL never configures it.
 //	output_format (string) — one of json/markdown/text/html/chunks
 //	chunks        (list[map]) — chunk list when output_format == "chunks"
 //	json          (list[map]) — structured parser payload when output_format == "json" or unset
@@ -191,9 +233,8 @@ var DefaultEmbedderResolver EmbedderResolver
 //	output_format                — always "chunks" (matches python set_output)
 //	_created_time / _elapsed_time — TrackElapsed bookkeeping
 type TokenizerComponent struct {
-	param          schema.TokenizerParam
-	resolver       EmbedderResolver
-	embeddingModel string
+	param    schema.TokenizerParam
+	resolver EmbedderResolver
 }
 
 // NewTokenizerComponent constructs a production TokenizerComponent from DSL
@@ -215,7 +256,6 @@ func NewTokenizerComponentWithResolver(params map[string]any, resolver EmbedderR
 
 func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (runtime.Component, error) {
 	p := schema.TokenizerParam{}.Defaults()
-	embeddingModel := ""
 	if params != nil {
 		if v, ok := params["search_method"]; ok {
 			// Replace (not append) so a caller-supplied
@@ -256,35 +296,18 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 				p.Fields = append(p.Fields, t...)
 			}
 		}
-		embeddingModel = embeddingModelFromSetups(params)
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("tokenizer: param check: %w", err)
 	}
-	return &TokenizerComponent{param: p, resolver: resolver, embeddingModel: embeddingModel}, nil
-}
-
-// embeddingModelFromSetups extracts the embedding-model identifier from the
-// component's setups map (params["setups"]["embedding_model"]). The embedding
-// model id is a Tokenizer-scoped setup rather than a run-level global so it is
-// never mistaken for, e.g., a chat model id shared across components. Empty
-// when unset — the resolver then falls back to the dataset's configured model.
-func embeddingModelFromSetups(params map[string]any) string {
-	setups, ok := params["setups"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	if v, ok := setups["embedding_model"].(string); ok {
-		return strings.TrimSpace(v)
-	}
-	return ""
+	return &TokenizerComponent{param: p, resolver: resolver}, nil
 }
 
 // Inputs returns the parameter metadata.
 func (c *TokenizerComponent) Inputs() map[string]string {
 	return map[string]string{
 		"tenant_id":     "Tenant identifier used to resolve the embedding model (mirrors python self._canvas._tenant_id).",
-		"kb_id":         "Optional knowledgebase identifier used to resolve the bound embedding model when the setups embedding_model is unset.",
+		"kb_id":         "Knowledgebase identifier used to resolve the bound embedding model (kb.embd_id). The embedding model is taken exclusively from the dataset; the DSL must not configure it.",
 		"output_format": "Upstream payload discriminator: json / markdown / text / html / chunks.",
 		"chunks":        "List of chunk maps when output_format == \"chunks\".",
 		"json":          "Structured parser payload when output_format == \"json\" or unset.",
@@ -327,10 +350,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	name := globals.GlobalOrInput(ctx, inputs, "name", "")
 	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
 	kbID := globals.GlobalOrInput(ctx, inputs, "kb_id", "")
-	// The embedding-model id is a Tokenizer-scoped setup (params["setups"]),
-	// resolved at construction, not a run-level global — see
-	// embeddingModelFromSetups.
-	embeddingModel := c.embeddingModel
 
 	// decodeTokenizerFromUpstream validates `name`; carry the resolved
 	// name into the decode input so both a Globals-backed run and a
@@ -350,8 +369,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("input_chunks", len(chunks)),
 	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
-
-	normalizeChunkTextFallback(chunks)
 
 	// chunk_order_int is the position of the chunk in the (post-filter) reading
 	// sequence. It is set unconditionally on every surviving chunk so that all
@@ -382,7 +399,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// so embedding is skipped there — debug only exercises parse+chunk and
 	// must stay side-effect free.
 	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
-		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
+		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, name, chunks, chunkcache.Client())
 		if err != nil {
 			return nil, err
 		}
@@ -408,7 +425,7 @@ func copyPipelineControlValues(output, input map[string]any) {
 	}
 }
 
-func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, embeddingModel, name string, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, int, error) {
+func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, name string, chunks []schema.ChunkDoc, store chunkcache.Store) ([]schema.ChunkDoc, int, error) {
 	if len(chunks) == 0 {
 		return chunks, 0, nil
 	}
@@ -421,7 +438,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if resolver == nil {
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but no embedder resolver configured")
 	}
-	embedder, err := resolver(ctx, tenantID, kbID, embeddingModel)
+	embedder, embdID, err := resolver(ctx, tenantID, kbID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("tokenizer: resolve embedder: %w", err)
 	}
@@ -429,21 +446,64 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		return nil, 0, fmt.Errorf("tokenizer: embedding requested but encoder resolution returned nil")
 	}
 
+	// store may be nil (no redis configured / unit test); cache lookups then
+	// degrade to a no-op and every chunk is embedded normally.
+
+	// resolved[i] holds the content embedding vector for chunks[i] once known:
+	// either served from the per-chunk cache (isHit) or produced by the batch
+	// Encode below. nil means the chunk produced no embeddable text. trunc is the
+	// exact text fed to the model, carried so the Set-side key matches the
+	// Get-side key (the key includes the embedded text, not just the chunk id).
+	type resolvedVec struct {
+		content []float64
+		isHit   bool
+		trunc   string
+	}
+	resolved := make([]*resolvedVec, len(chunks))
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
+	// truncs[i] is the embedded text for texts[i] / pairs[i]; carried so the
+	// Set-side key matches the Get-side key for freshly embedded content.
+	truncs := make([]string, 0, len(chunks))
+	// cacheHits counts the chunks served from the per-chunk embedding cache;
+	// they are already-resolved work, so the progress fraction starts from them.
+	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if txt == "" {
 			continue
 		}
+		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
+		// text) triples reuse the previous content vector, skipping the embed
+		// round-trip on resume. The key includes the text that is actually
+		// embedded — after field selection (c.param.Fields) and truncation — not
+		// just the chunk id. A tokenizer-config or model change alters the
+		// embedded input; reusing the prior vector for that case would serve a
+		// stale embedding for up to the cache TTL. embdID must be non-empty or
+		// every model would collapse onto one key and served vectors could come
+		// from a different model.
+		trunc := trimForEmbedding(embedder, txt)
+		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
+			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
+				var vec []float64
+				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
+					resolved[i] = &resolvedVec{content: vec, isHit: true, trunc: trunc}
+					cacheHits++
+					continue
+				}
+			}
+		}
 		texts = append(texts, trunc)
+		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
 	if len(texts) == 0 {
-		return chunks, 0, nil
+		// Nothing to embed — but cache hits may still need to be written through.
+		if store == nil {
+			return chunks, 0, nil
+		}
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -483,6 +543,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if batchSize <= 0 {
 		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
 	}
+	embedTotal := cacheHits + len(texts)
 	for start := 0; start < len(texts); start += batchSize {
 		end := start + batchSize
 		if end > len(texts) {
@@ -499,53 +560,79 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 			tokenCount += result.TokenCount
 		}
 		contentResults = append(contentResults, batchResults...)
+		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
+	}
+	if len(texts) == 0 && embedTotal > 0 {
+		// With no cache misses the batch loop never runs, so the phase would
+		// otherwise report nothing at all; every content embedding is already
+		// resolved, which is the loop's completion value.
+		runtime.ReportComponentFraction(ctx, 1)
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight
+	// Wire freshly embedded content into the resolved slice; cache hits already
+	// carry their vector from the loop above.
 	for i, idx := range pairs {
-		merged := append([]float64(nil), contentResults[i].Vector...)
+		resolved[idx] = &resolvedVec{content: contentResults[i].Vector, trunc: truncs[i]}
+	}
+	for i, re := range resolved {
+		if re == nil {
+			continue
+		}
+		merged := append([]float64(nil), re.content...)
 		if hasTitleVec {
-			merged, err = mergeEmbeddingVectors(titleVec, contentResults[i].Vector, titleWeight)
+			merged, err = mergeEmbeddingVectors(titleVec, re.content, titleWeight)
 			if err != nil {
 				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
-		if err := chunks[idx].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
+		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
+		}
+		// Backfill the per-chunk cache only for freshly embedded content; cache
+		// hits are left untouched. The key intentionally omits title weighting:
+		// the content vector is title-weight independent, so identical chunk
+		// content reuses across runs even when only the filename weight changes.
+		// The embedded text (trunc) is part of the key so a config/model change
+		// that alters the embedded input forces a fresh embed rather than serving
+		// a stale vector.
+		if !re.isHit {
+			if chunkID, ok := chunks[i].GetExtraString("id"); ok && embdID != "" && store != nil {
+				if b, merr := json.Marshal(re.content); merr == nil {
+					chunkcache.Set(ctx, store, chunkcache.Key("emb", embdID, chunkID, re.trunc), string(b))
+				}
+			}
 		}
 	}
 	return chunks, tokenCount, nil
 }
 
 // defaultEmbeddingTokenLimit is the safe fallback used when an embedder reports
-// no token limit (maxTokens <= 0). It both prevents empty embedding inputs and
-// keeps truncation active for every path instead of passing the full text through.
-const defaultEmbeddingTokenLimit = 8192
+// no token limit at all. It is deliberately conservative: overshooting a model's
+// window is a rejected request, while undershooting only truncates.
+const defaultEmbeddingTokenLimit = tokenizer.EmbeddingTokenLimitDefault
 
-// truncateForEmbedding keeps the first maxTokens tokens of text so it fits the
-// embedding model's limit.
+// truncateForEmbedding keeps the first `limit` cl100k tokens of text so it fits
+// the embedding model's limit.
 //
-// For a positive maxTokens it mirrors Python common/token_utils.py:183-185
-// `truncate(string, max_len)` (keep the first max_len tokens).
+// This is the LEGACY path: it is used only when the embedder cannot trim for
+// itself (i.e. it does not implement EmbedderTrimmer), such as a test stub. The
+// production embedder counts with the model's own tokenizer instead, because
+// cl100k alone is not the model's tokenizer and the difference is
+// content-dependent.
 //
-// An unconfigured embedder reports maxTokens <= 0. Rather than mirror Python's
-// behaviour of returning "" (which would make the embeddings API reject the whole
-// batch with "inputs cannot be empty"), Go clamps the limit to a safe default
-// (defaultEmbeddingTokenLimit = 8192). This both prevents empty inputs AND keeps
-// truncation active for every path (Builtin and generic) instead of silently
-// passing the full, untruncated text when no limit is configured.
+// Two changes from the original implementation, both fixing the same incident:
+//
+//   - the margin is proportional (tokenizer.EmbeddingTokenLimit) instead of a
+//     flat 10 tokens, which was 0.12% of an 8192-token window — an order of
+//     magnitude smaller than the disagreement between two tokenizers;
+//   - the fallback limit is the resolved window (declared value, then the
+//     catalog's context_length, then a conservative default) rather than a
+//     hard-coded 8192, which overshoots the window of every smaller model.
 func truncateForEmbedding(text string, maxTokens int) string {
-	if maxTokens <= 0 {
-		maxTokens = defaultEmbeddingTokenLimit
-	}
-	// Keep a 10-token safety margin, mirroring Python's embedding path
-	// (rag/svr/task_executor.py uses `mdl.max_length - 10`). Only apply it
-	// when the limit is large enough; for small limits (<=10) keep the full
-	// value so the result stays non-empty instead of collapsing to "".
-	if maxTokens > 10 {
-		maxTokens -= 10
-	}
-	return tokenizer.TrimContentToTokenLimit(text, maxTokens)
+	declared := tokenizer.ResolveEmbeddingMaxTokens(maxTokens, 0)
+	limit := tokenizer.EmbeddingTokenLimit(declared)
+	return tokenizer.TrimContentToTokenLimit(text, limit)
 }
 
 func mergeEmbeddingVectors(titleVec, contentVec []float64, titleWeight float64) ([]float64, error) {
@@ -606,14 +693,14 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 		raw = cloneChunkDocs(in.JSONResult)
 	}
 	// Keep only chunks that have retrievable content: a chunk is dropped only
-	// when both text and content_with_weight are empty. The ContentWithWeight
-	// guard preserves the Parser path, whose blocks carry content_with_weight
-	// without text; normalizeChunkTextFallback backfills text afterwards, so
-	// this guard is required to avoid dropping legitimate Parser blocks before
-	// the backfill runs.
+	// when canonical text and both media-context fields are empty.
+	// Context-bearing media chunks may intentionally have no display text, but
+	// their surrounding prose is still searchable and must survive to the
+	// tokenizer.
 	filtered := raw[:0]
 	for _, ck := range raw {
-		if ck.Text == "" && ck.ContentWithWeight == "" {
+		if strings.TrimSpace(ck.Text) == "" &&
+			strings.TrimSpace(ck.ContextAbove) == "" && strings.TrimSpace(ck.ContextBelow) == "" {
 			continue
 		}
 		filtered = append(filtered, ck)
@@ -666,27 +753,6 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
 	}
 	return out
-}
-
-// normalizeChunkTextFallback populates each chunk's "text" key
-// from "content_with_weight" when "text" is absent or empty. Mirrors
-// the python rag/flow/tokenizer.py:111 fallback so a chunk that
-// arrives from the parser path with only the structured
-// content_with_weight field still tokenizes.
-//
-// The function mutates the input slice in place; callers should
-// not retain separate copies of the chunks map. If both fields
-// are present, the existing "text" wins — preserves the python
-// contract where the chunker's emitted text is authoritative.
-func normalizeChunkTextFallback(chunks []schema.ChunkDoc) {
-	for i := range chunks {
-		if chunks[i].Text != "" {
-			continue
-		}
-		if chunks[i].ContentWithWeight != "" {
-			chunks[i].Text = chunks[i].ContentWithWeight
-		}
-	}
 }
 
 // tokenizeChunks annotates each chunk with title_tks, content_ltks,
@@ -771,7 +837,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 				smt = st
 			}
 			ck.ContentSmLtks = smt
-		} else if t := ck.Text; strings.TrimSpace(t) != "" {
+		} else if t := schema.ContextualText(*ck); strings.TrimSpace(t) != "" {
 			tt, err := tok.Tokenize(t)
 			if err != nil {
 				return fmt.Errorf("tokenizer: text tokenize: %w", err)
@@ -801,9 +867,7 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 	for _, f := range fields {
 		switch f {
 		case "text":
-			b.WriteString(ck.Text)
-		case "content_with_weight":
-			b.WriteString(ck.ContentWithWeight)
+			b.WriteString(schema.ContextualText(ck))
 		case "questions":
 			b.WriteString(ck.Questions)
 		case "keywords":
@@ -858,7 +922,7 @@ func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []
 }
 
 func requiresFullTextTokens(ck schema.ChunkDoc) bool {
-	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(ck.Text) != ""
+	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(schema.ContextualText(ck)) != ""
 }
 
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {

@@ -43,7 +43,10 @@ function DatasetLabel({ text }: { text: string }) {
   );
 }
 
-export function useDisableDifferenceEmbeddingDataset(name: string) {
+export function useDisableDifferenceEmbeddingDataset(
+  name: string,
+  ownerTenantId?: string,
+) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
   const [searchString, setSearchString] = useState('');
@@ -53,7 +56,12 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(false, debouncedSearchString);
+  } = useFetchKnowledgeList(
+    false,
+    debouncedSearchString,
+    undefined,
+    ownerTenantId,
+  );
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
@@ -63,7 +71,10 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   // pages, filtered out by the search box), so resolve them by ID to echo
   // their names back in the form field. A dataset that has been deleted
   // comes back missing and its badge falls back to the raw id.
-  const { data: selectedDatasets } = useFetchDatasetsByIds(selectedDatasetIds);
+  const { data: selectedDatasets } = useFetchDatasetsByIds(
+    selectedDatasetIds,
+    ownerTenantId,
+  );
 
   const datasetList = useMemo(() => {
     return Array.from(
@@ -81,47 +92,44 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   // (e.g. "BAAI/bge-m3@renew@SILICONFLOW" vs "BAAI/bge-m3@COPY@SILICONFLOW").
   const selectedEmbedBaseName = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
-    return getEmbeddingBaseName(data?.embedding_model);
+    return getEmbeddingBaseName(
+      data?.embedding_model_name || data?.embedding_model,
+    );
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    return (
-      datasetList
-        // Datasets without chunks are not selectable. A stale selected value
-        // (emptied or deleted dataset) is excluded as well — the MultiSelect
-        // badge falls back to rendering its raw id and stays removable.
-        .filter((item) => item.chunk_count > 0)
-        .map((item: IDataset) => {
-          return {
-            label: item.name,
-            icon: () => (
-              <RAGFlowAvatar
-                className="size-4"
-                avatar={item.avatar}
-                name={item.name}
-              />
-            ),
-            suffix: (
-              <section className="flex gap-2">
-                <DatasetLabel text={item.nickname} />
-                <DatasetLabel
-                  text={
-                    item.embedding_model_name
-                      ? item.embedding_model_name
-                      : item.embedding_model
-                  }
-                />
-              </section>
-            ),
-            value: item.id,
-            disabled:
-              item.chunk_method === DocumentParserType.Tag ||
-              (selectedEmbedBaseName !== '' &&
-                getEmbeddingBaseName(item.embedding_model) !==
-                  selectedEmbedBaseName),
-          };
-        })
-    );
+    return datasetList.map((item: IDataset) => {
+      return {
+        label: item.name,
+        icon: () => (
+          <RAGFlowAvatar
+            className="size-4"
+            avatar={item.avatar}
+            name={item.name}
+          />
+        ),
+        suffix: (
+          <section className="flex gap-2">
+            <DatasetLabel text={item.nickname} />
+            <DatasetLabel
+              text={
+                item.embedding_model_name
+                  ? item.embedding_model_name
+                  : item.embedding_model
+              }
+            />
+          </section>
+        ),
+        value: item.id,
+        disabled:
+          item.chunk_count === 0 ||
+          item.chunk_method === DocumentParserType.Tag ||
+          (selectedEmbedBaseName !== '' &&
+            getEmbeddingBaseName(
+              item.embedding_model_name || item.embedding_model,
+            ) !== selectedEmbedBaseName),
+      };
+    });
   }, [datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -142,10 +150,12 @@ export function KnowledgeBaseFormField({
   showVariable = false,
   name = 'dataset_ids',
   required = false,
+  ownerTenantId,
 }: {
   showVariable?: boolean;
   name?: string;
   required?: boolean;
+  ownerTenantId?: string;
 }) {
   const { t } = useTranslation();
 
@@ -156,7 +166,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name);
+  } = useDisableDifferenceEmbeddingDataset(name, ownerTenantId);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 

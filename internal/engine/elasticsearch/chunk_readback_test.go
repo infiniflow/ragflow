@@ -15,7 +15,6 @@
 package elasticsearch
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -85,9 +84,11 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 		"important_kwd":        []string{"k1"},
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
-	if _, err := engine.InsertChunks(context.Background(), []map[string]interface{}{chunk}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
+	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
@@ -107,6 +108,8 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 	assertStoredField(t, doc, "important_kwd", []interface{}{"k1"})
 	assertStoredField(t, doc, "page_num_int", float64(1))
 	assertStoredField(t, doc, "position_int", float64(2))
+	assertStoredField(t, doc, "mom_id", "parent-1")
+	assertStoredField(t, doc, "available_int", float64(0))
 	// InsertChunks overrides kb_id with datasetID on write.
 	assertStoredField(t, doc, "kb_id", "kb-1")
 }

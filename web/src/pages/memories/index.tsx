@@ -4,6 +4,7 @@ import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { pick } from 'lodash';
@@ -12,7 +13,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { defaultMemoryFields } from './constants';
-import { useFetchMemoryList, useRenameMemory, useSelectFilters } from './hooks';
+import {
+  useFetchMemoryFilters,
+  useFetchMemoryList,
+  useRenameMemory,
+  useSelectFilters,
+} from './hooks';
 import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
 
@@ -26,12 +32,15 @@ export default function MemoryList() {
     isLoading,
     pagination,
     searchString,
+    setSearchString,
     handleInputChange,
     setPagination,
     refetch: refetchList,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
   } = useFetchMemoryList();
+  const { data: filterData } = useFetchMemoryFilters();
 
   const {
     openCreateModal,
@@ -58,10 +67,16 @@ export default function MemoryList() {
     },
     [setPagination],
   );
-  useGoToPreviousPageOnEmpty(list?.data?.memory_list?.length, isLoading);
+  useGoToPreviousPageOnEmpty(list?.data?.memory_list?.length, isLoading, {
+    deletionKey: ListDeletionKey.MemoryList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
-  const { filters } = useSelectFilters();
+  const { filters } = useSelectFilters(filterData);
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {

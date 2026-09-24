@@ -26,6 +26,7 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
@@ -46,10 +47,24 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
     useSetModalState(false);
 
+  const {
+    formContainerRef,
+    handleInvalidSubmit,
+    modelSettingOpen,
+    onModelSettingOpenChange,
+    advancedSettingOpen,
+    onAdvancedSettingOpenChange,
+  } = useRevealSubmitErrors();
+
   type FormSchemaType = z.infer<typeof formSchema>;
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
+    // shouldUnregister: false keeps every field mounted in the form state, which
+    // includes all nine per-provider *_api_key fields. Switching provider therefore
+    // KEEPS the keys already typed for the others and saves them with the dialog —
+    // deliberate (a user may switch back), but it is why the payload can carry more
+    // than one provider key.
     shouldUnregister: false,
     mode: 'onChange',
     defaultValues: {
@@ -125,10 +140,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     });
   }
 
-  function onInvalid(errors: any) {
-    void errors;
-  }
-
   useEffect(() => {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
@@ -145,7 +156,8 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       ...omit(data, 'top_k'),
       prompt_config: {
         ...data.prompt_config,
-        web_search_provider: getWebSearchProvider(data.prompt_config),
+        // reset() skips undefined values, so fall back to '' to clear the field
+        web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
@@ -202,13 +214,20 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+                ref={formContainerRef}
+                onSubmit={form.handleSubmit(onSubmit, handleInvalidSubmit)}
                 className="flex-1 flex flex-col min-h-0"
               >
                 <ScrollArea viewportClassName="[&>div]:!block">
                   <section className="p-5 space-y-6 overflow-auto flex-1 min-h-0">
-                    <ChatBasicSetting></ChatBasicSetting>
-                    <ChatPromptEngine></ChatPromptEngine>
+                    <ChatBasicSetting
+                      collapseOpen={modelSettingOpen}
+                      onCollapseOpenChange={onModelSettingOpenChange}
+                    ></ChatBasicSetting>
+                    <ChatPromptEngine
+                      collapseOpen={advancedSettingOpen}
+                      onCollapseOpenChange={onAdvancedSettingOpenChange}
+                    ></ChatPromptEngine>
                   </section>
                 </ScrollArea>
 

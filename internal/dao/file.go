@@ -45,11 +45,29 @@ func (dao *FileDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 	return &file, nil
 }
 
+// GetByIDAndTenant gets a file by ID scoped to the given tenant. Callers that
+// resolve a user-supplied file ID (e.g. parser_config.tags.tag_file_id, which
+// the dataset update API accepts from the client) MUST use this instead of
+// GetByID: an unscoped ID lookup crosses tenant boundaries and is an IDOR
+// (CWE-639). An empty id or tenantID fails closed with gorm.ErrRecordNotFound
+// so callers see the same "not found" as a missing row.
+func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenantID string) (*entity.File, error) {
+	if id == "" || tenantID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var file entity.File
+	err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 // GetByPfID gets files by parent folder ID with pagination and filtering.
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 
@@ -66,18 +84,21 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 	} else {
 		query = query.Where("parent_id = ?", pfID)
 	}
+	if excludeSkills {
+		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
+	}
 
 	// Count total
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderBy + " " + orderDirection)
+	// Apply ordering. Route orderBy through fileOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against fileOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: fileOrderClause
+	query = query.Order(fileOrderClause(terms))
 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
@@ -435,6 +456,9 @@ func reparentAndDeleteFolder(ctx context.Context, db *gorm.DB, dupID, keepID str
 
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
+
+// SkillsFolderName is the folder name for skills
+const SkillsFolderName = "skills"
 
 // InitDatasetDocs initializes dataset documents for tenant.
 // This matches Python's FileService.init_dataset_docs method.

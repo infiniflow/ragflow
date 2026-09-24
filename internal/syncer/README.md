@@ -213,7 +213,7 @@ Supplementary details (beyond the diagram):
 
 - `OpenSync`'s `WindowEnd` is fixed when the task starts; a re-run reuses the same window from the checkpoint state.
 - Batch checkpoints are only saved after the batch job returns successfully; a failed batch is reprocessed on the next run.
-- Per-document failures first go through document-level retries with `ItemRetryCount = 3`; task-level transient errors then go through task rescheduling with `maxTransientTaskRetries = 3`.
+- Per-document failures first go through document-level retries with `ItemRetryCount = 3`; task-level execution errors are then retried — whitelisted transient errors 3 times, other errors 2 times.
 - A failed claim `Ack`s the current message and re-publishes the wake-up after 3 seconds if the task is still scheduled.
 - Connector/KB lock contention calls `RescheduleClaimed` and re-publishes the wake-up after 3 seconds.
 - `Ack` only confirms the current NATS message has been handled; it does not mean the task succeeded.
@@ -439,7 +439,7 @@ The models are defined in `internal/syncer/connector/models.go`.
 Here "retry/resume" refers to task-level continuation at batch/document granularity, not resumable byte-range downloads of a single HTTP download.
 
 > [!NOTE]
-> The current design guarantees continuation from after the last successfully committed batch after a task failure. It does not guarantee that a partially downloaded remote file resumes from a byte range.
+> The current design continues from after the last successfully committed batch only while the saved anchor still exists in the current source listing. It does not guarantee that a partially downloaded remote file resumes from a byte range.
 
 Happy path:
 
@@ -457,6 +457,17 @@ Resume after failure:
 - The last batch that was not committed successfully is reprocessed. This is expected behavior.
 - The upsert path must stay idempotent; reprocessing the same `SourceID` must not produce duplicate documents.
 
+Anchor invalidation:
+
+Continuation is only trustworthy while the saved source anchor still exists in
+the current listing. If a connector returns `ErrSyncResumeInvalid` from
+`OpenSync` or `NextBatch`, `SyncRunner` clears the connector checkpoint, resets
+the accumulated stats, and restarts the same fixed sync window from the
+beginning with `Resume=nil`. The restart is bounded by
+`MaxAnchorRestartCount` (default 2); after that the task fails rather than
+guessing a new offset. Connectors enforce this through
+`ErrSyncResumeInvalid` in `connector/models.go`.
+
 Requirements when implementing checkpoints:
 
 - Batch output order must be stable. Common approaches: sort by update time, remote pagination order, or source ID.
@@ -465,10 +476,10 @@ Requirements when implementing checkpoints:
 - If only `SourceID` is saved, the next run must be able to re-enumerate and skip data before that ID.
 - Do not commit checkpoints inside the connector; checkpoints are only saved by the runner after a batch succeeds.
 
-Transient-error retries work on two layers:
+Retries work on two layers:
 
 - Document level: `SyncRunner.processDocumentWithRetry` retries per-document failures matching `service.IsRetryable(err)` with exponential backoff.
-- Task level: `TaskWorker` retries tasks for transient sync errors such as timeout, 429, 5xx, and connection reset, up to `maxTransientTaskRetries` times.
+- Task level: `TaskWorker` retries every task execution error (user or system cancellation excluded). Whitelisted transient errors (timeout, 429, 5xx, connection reset, ...) are retried 3 times; all other errors are retried 2 times. When the retry budget is exhausted, the task is marked FAIL and its error message states how many retries were made and the last error.
 
 > [!WARNING]
 > Checkpoints are only saved by the runner after a batch job succeeds. Connectors must not persist "how far sync has progressed" themselves in `NextBatch` or `Fetch`; otherwise failed re-runs diverge from the runner's commit point.
@@ -481,7 +492,7 @@ Task-execution validation:
 
 - `TaskCoordinator.Execute` calls `connector.Validate(ctx)` at the start of every task.
 - This validates the saved configuration.
-- Failure leads to task failure or a transient-error retry.
+- Failure leads to a task-level retry (transient errors 3 times, others 2 times), then task failure.
 
 Test-connection validation:
 
@@ -567,4 +578,3 @@ Tests that need real MySQL, MinIO, Elasticsearch, Infinity, LLMs, or external Sa
 > + [feat[Go]: complete the base for data Syncer - #17890](https://github.com/infiniflow/ragflow/pull/17890)
 > + [feat[Go]: monitoring NATs and refactoring concurrency logic - #18049](https://github.com/infiniflow/ragflow/pull/18049)
 > + [feat[Go]: resuming transmission from the point of interruption during data source synchronisation - #18176](https://github.com/infiniflow/ragflow/pull/18176)
-

@@ -14,11 +14,17 @@ import (
 
 // PipelineMetrics records diagnostic counts at each pipeline stage.
 type PipelineMetrics struct {
-	BoxesInitial   int
-	BoxesTextMerge int
-	BoxesVertMerge int
-	BoxesFinal     int
-	TablesCount    int
+	BoxesInitial int
+	// BoxesTOCRemoved / BoxesHeaderFooterRemoved count the boxes dropped by the
+	// optional box-level content removal passes, so the box budget can be
+	// reconciled: BoxesInitial - BoxesTOCRemoved - BoxesHeaderFooterRemoved >=
+	// BoxesTextMerge.
+	BoxesTOCRemoved          int
+	BoxesHeaderFooterRemoved int
+	BoxesTextMerge           int
+	BoxesVertMerge           int
+	BoxesFinal               int
+	TablesCount              int
 }
 
 // ParseResult encapsulates all outputs from a single Parse() call.
@@ -237,6 +243,26 @@ type ParserConfig struct {
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
 	Pages [][]int
+	// RemoveTOC enables box-level table-of-contents page removal in
+	// Parser.buildLayout. Detection relies on leader-dot boxes and per-box
+	// geometry that are destroyed by the later TextMerge pass, so it is gated
+	// onto the box-level pipeline there rather than the section-level
+	// post-process.
+	RemoveTOC bool
+	// RemoveHeaderFooter enables box-level running header / footer removal in
+	// Parser.buildLayout. It operates on intact box geometry (page zones and
+	// cross-page text repetition) before TextMerge can fold a header box into
+	// a body section.
+	RemoveHeaderFooter bool
+	// OnPageDone, when set, is called as each page finishes, from the worker
+	// that parsed it — not after every page has been submitted — so the first
+	// report arrives with the first completed page on any document size (done
+	// counts completed pages, in completion order; total is the number of
+	// pages to process). Calls are ordered and serialized but run on page
+	// workers, so the callback must be fast and non-blocking. It lets callers
+	// surface parse progress without the parser knowing about any progress
+	// sink; nil disables the callback at zero cost.
+	OnPageDone func(done, total int)
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
@@ -294,6 +320,22 @@ type DocAnalyzer interface {
 	OCRDetect(ctx context.Context, cropped image.Image) ([]OCRBox, error)
 	OCRRecognize(ctx context.Context, cropped image.Image) ([]OCRText, error)
 	Health() bool
+}
+
+// NativeDocAnalyzerFactory, when set, supplies the local in-process DeepDoc
+// backend. The native backend (internal/deepdoc/parser/pdf/inference/
+// native_analyzer) registers itself here from its Register at process start;
+// the parser package then reads it without ever importing onnxruntime. It is
+// nil in builds/tests that do not opt into the native backend. The setter lives
+// in this dependency-free type package (rather than in the parser) so the
+// native backend implementation can register itself without importing the
+// parser, which would otherwise create a parser -> pdf -> native_analyzer ->
+// parser import cycle.
+var NativeDocAnalyzerFactory func() (DocAnalyzer, bool)
+
+// SetNativeDocAnalyzerFactory registers the in-process DeepDoc analyzer.
+func SetNativeDocAnalyzerFactory(f func() (DocAnalyzer, bool)) {
+	NativeDocAnalyzerFactory = f
 }
 
 // ── Outline ────────────────────────────────────────────────────────────

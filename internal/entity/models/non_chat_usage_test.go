@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"strings"
 	"testing"
 )
 
@@ -36,11 +37,17 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 		{
 			name: "aliyun",
 			newModel: func(baseURL string) ModelDriver {
-				return NewAliyunModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
+				// Aliyun's native embedding API is the only transport carrying
+				// text_type, and the driver ignores a configured base URL that is
+				// neither a DashScope host nor already native (".../api/v1") —
+				// otherwise it falls back to the real DashScope endpoint.
+				return NewAliyunModel(map[string]string{"default": baseURL + "/api/v1"}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
 			},
-			embeddingBody: `{"id":"embed-aliyun","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			// Native response shapes: output.embeddings / request_id, and a usage
+			// block that reports total_tokens only (input/output stay 0).
+			embeddingBody: `{"request_id":"embed-aliyun","output":{"embeddings":[{"text_index":0,"embedding":[0.1,0.2]}]},"usage":{"total_tokens":7}}`,
 			rerankBody:    `{"id":"rerank-aliyun","results":[{"index":0,"relevance_score":0.9}],"usage":{"total_tokens":9}}`,
-			embedInput:    7, embedTotal: 7, rerankTotal: 9,
+			embedTotal:    7, rerankTotal: 9,
 			supportsRerank: true,
 		},
 		{
@@ -132,8 +139,9 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				switch r.URL.Path {
-				case "/embedding":
+				// The aliyun case is addressed through its native ".../api/v1" root.
+				switch path := strings.TrimPrefix(r.URL.Path, "/api/v1"); path {
+				case "/embedding", "/" + aliyunNativeEmbeddingPath:
 					_, _ = w.Write([]byte(tc.embeddingBody))
 				case "/rerank":
 					_, _ = w.Write([]byte(tc.rerankBody))

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net"
@@ -25,7 +24,7 @@ import (
 	"sync"
 	"testing"
 
-	"ragflow/internal/utility"
+	"ragflow/internal/common"
 )
 
 // recordingDialer is an exesqlDialer that records the host it was
@@ -89,7 +88,7 @@ func TestExeSQL_SSRF_RejectsLoopbackLinkLocalAndRFC1918(t *testing.T) {
 				MaxRecords: 10,
 			}).WithExeSQLDialer(rec.dial)
 
-			_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+			_, err := e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 			if err == nil {
 				t.Fatalf("expected SSRF rejection for %q, got nil", c.host)
 			}
@@ -117,7 +116,7 @@ func TestExeSQL_SSRF_RejectsEmptyHost(t *testing.T) {
 		MaxRecords: 10,
 	}).WithExeSQLDialer(rec.dial)
 
-	_, err := e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, err := e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 	if err == nil {
 		t.Fatal("expected SSRF rejection for empty host")
 	}
@@ -132,18 +131,18 @@ func TestExeSQL_SSRF_RejectsEmptyHost(t *testing.T) {
 // TestExeSQL_SSRF_PinsToValidatedIP ensures that when a DNS name
 // resolves to a public IP, InvokableRun dials the validated IP, not
 // the original hostname — closing the TOCTOU window for DNS
-// rebinding. The resolver is stubbed via utility.LookupHost so the
+// rebinding. The resolver is stubbed via common.LookupHost so the
 // test does not depend on real DNS.
 func TestExeSQL_SSRF_PinsToValidatedIP(t *testing.T) {
 	// Stub the resolver so example.test -> 1.2.3.4 (public, stable).
-	origLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		if host == "example.test" {
 			return []string{"1.2.3.4"}, nil
 		}
 		return origLookup(host)
 	}
-	t.Cleanup(func() { utility.LookupHost = origLookup })
+	t.Cleanup(func() { common.LookupHost = origLookup })
 
 	// failFast:true makes the test dialer return an error instead of
 	// opening a real *sql.DB, so the InvokableRun path stops after
@@ -158,7 +157,7 @@ func TestExeSQL_SSRF_PinsToValidatedIP(t *testing.T) {
 		MaxRecords: 10,
 	}).WithExeSQLDialer(rec.dial)
 
-	_, _ = e.InvokableRun(context.Background(), `{"sql":"SELECT 1"}`)
+	_, _ = e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()

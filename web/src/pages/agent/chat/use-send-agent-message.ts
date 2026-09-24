@@ -51,6 +51,18 @@ export function findMessageFromList(eventList: IEventList) {
   let startIndex = -1;
   let endIndex = -1;
   let audioBinary = undefined;
+  // memory_error is surfaced by the backend in the Message component's
+  // output, which lands in a node_finished frame's `outputs` (and possibly
+  // on a message frame). Scan every event so the toast fires regardless of
+  // which frame carries it.
+  const memoryErrorHit = (eventList as any[]).find(
+    (x) => x.data?.memory_error || x.data?.outputs?.memory_error,
+  )?.data;
+  const memoryError = memoryErrorHit
+    ? ((memoryErrorHit.memory_error || memoryErrorHit.outputs?.memory_error) as
+        | string
+        | undefined)
+    : undefined;
   messageEventList.forEach((x, idx) => {
     const { data } = x;
     const { content, start_to_think, end_to_think, audio_binary } = data;
@@ -89,6 +101,7 @@ export function findMessageFromList(eventList: IEventList) {
     id: eventList[0]?.message_id,
     content: nextContent,
     audio_binary: audioBinary,
+    memory_error: memoryError,
     attachment:
       workflowFinished?.data?.outputs?.attachment ||
       messageEndEvent?.data?.attachment ||
@@ -236,6 +249,7 @@ export const useSendAgentMessage = ({
   refetch,
   isTaskMode: isTask,
   releaseMode,
+  activeSessionId,
 }: {
   url?: string;
   addEventList?: (data: IEventList, messageId: string) => void;
@@ -243,7 +257,14 @@ export const useSendAgentMessage = ({
   isShared?: boolean;
   refetch?: () => void;
   isTaskMode?: boolean;
-  releaseMode?: string | null;
+  releaseMode?: boolean | null;
+  /**
+   * Session the page is currently displaying. When provided, streamed
+   * frames that belong to another session are not written into the
+   * displayed message list (the user may switch sessions in Explore
+   * while an answer is still streaming).
+   */
+  activeSessionId?: string;
 }) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
@@ -252,9 +273,31 @@ export const useSendAgentMessage = ({
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
     useSendMessageBySSE(url || api.agentChatCompletion);
   const firstAnswer = answerList[0];
+  // Session that owns the in-flight stream; every SSE frame carries the
+  // session_id it belongs to.
+  const streamSessionId = firstAnswer?.session_id;
+  // Session the pending request was sent to. It is known before the first
+  // SSE frame arrives, so the stream can already be attributed to its
+  // session during connection setup.
+  const [requestedSessionId, setRequestedSessionId] = useState<
+    string | null | undefined
+  >();
+  // Bumped when derivedMessages is replaced externally (Explore hydrates
+  // persisted messages when a session is re-selected) while a stream
+  // owned by the displayed session is in flight, so the streamed answer
+  // is re-applied on top of the hydrated history — the effect below
+  // otherwise only re-runs when a new frame arrives.
+  const [streamReplayToken, setStreamReplayToken] = useState(0);
+  const reapplyStreamedAnswer = useCallback(
+    () => setStreamReplayToken((token) => token + 1),
+    [],
+  );
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
   }, [firstAnswer]);
+  // Guards the memory-save-failure toast so it fires once per (message, error)
+  // instead of repeatedly on every SSE append.
+  const memoryErrorShownRef = useRef<string | undefined>(undefined);
 
   const isTaskMode = useIsTaskMode(isTask);
 
@@ -326,6 +369,10 @@ export const useSendAgentMessage = ({
         // The hook keeps its own session cache for streamed replies, but that cache
         // can lag behind when the user switches sessions in Explore.
         params.session_id = exploreSessionId || sessionId;
+        // Remember the owner before the first frame arrives so
+        // connection-setup loading states are attributed to the right
+        // session.
+        setRequestedSessionId((exploreSessionId || sessionId) ?? null);
         if (releaseMode) {
           params.release = releaseMode;
         }
@@ -336,12 +383,18 @@ export const useSendAgentMessage = ({
       }
 
       try {
+        memoryErrorShownRef.current = undefined;
         const res = await send(params);
 
         clearUploadResponseList();
 
         if (receiveMessageError(res)) {
-          sonnerMessage.error(res?.data?.message);
+          // useSendMessageBySSE already reports application errors from
+          // streamed code != 0 frames. Only HTTP failures need a second
+          // layer's notification because the SSE hook cannot parse them.
+          if (res?.response?.status !== 200) {
+            sonnerMessage.error(res?.data?.message);
+          }
 
           // cancel loading
           setValue(message.content);
@@ -377,6 +430,8 @@ export const useSendAgentMessage = ({
           .join('<br/>'),
         role: MessageType.User,
       });
+      setRequestedSessionId(sessionId ?? null);
+      memoryErrorShownRef.current = undefined;
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
@@ -461,8 +516,27 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment, audio_binary, downloads } =
+    // The stream belongs to the session it was started in. If the user has
+    // switched to a different session while the answer is streaming, do not
+    // write the incoming frames into the message list being displayed.
+    if (
+      activeSessionId !== undefined &&
+      streamSessionId !== undefined &&
+      streamSessionId !== activeSessionId
+    ) {
+      return;
+    }
+    const { content, id, attachment, audio_binary, memory_error, downloads } =
       findMessageFromList(answerList);
+    // Surface memory-save failure (e.g. unavailable embedding model) as a
+    // toast, mirroring the prompt style used for LLM-unavailable errors.
+    if (
+      memory_error &&
+      memoryErrorShownRef.current !== `${id}:${memory_error}`
+    ) {
+      sonnerMessage.warning(memory_error);
+      memoryErrorShownRef.current = `${id}:${memory_error}`;
+    }
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
 
@@ -493,7 +567,13 @@ export const useSendAgentMessage = ({
         });
       }
     }
-  }, [answerList, addNewestOneAnswer]);
+  }, [
+    activeSessionId,
+    answerList,
+    addNewestOneAnswer,
+    streamSessionId,
+    streamReplayToken,
+  ]);
 
   useEffect(() => {
     if (isTaskMode) {
@@ -546,5 +626,8 @@ export const useSendAgentMessage = ({
     removeFile,
     setDerivedMessages,
     addPrologue,
+    streamSessionId,
+    requestedSessionId,
+    reapplyStreamedAnswer,
   };
 };

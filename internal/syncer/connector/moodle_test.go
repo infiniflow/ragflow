@@ -14,16 +14,16 @@ import (
 
 func withMoodleTestHooks(t *testing.T) {
 	t.Helper()
-	origLoopback := restAPISSRFAllowLoopback
+	origLoopback := connectorAllowLoopbackForTest
 	origTries := moodleRetryTries
 	origBaseDelay := moodleRetryBaseDelay
 	origBackoff := moodleRetryBackoff
-	restAPISSRFAllowLoopback = true
+	connectorAllowLoopbackForTest = true
 	moodleRetryTries = 2
 	moodleRetryBaseDelay = time.Millisecond
 	moodleRetryBackoff = 2
 	t.Cleanup(func() {
-		restAPISSRFAllowLoopback = origLoopback
+		connectorAllowLoopbackForTest = origLoopback
 		moodleRetryTries = origTries
 		moodleRetryBaseDelay = origBaseDelay
 		moodleRetryBackoff = origBackoff
@@ -365,6 +365,40 @@ func TestMoodleConnectorOpenSyncResumesFromCheckpoint(t *testing.T) {
 	}
 }
 
+func TestMoodleConnectorOpenSyncResumeRejectsMissingCourse(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, fullSyncMoodleFixtures)
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor:   "moodle_course_999",
+			SourceID: "moodle_course_999",
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	if _, err := session.NextBatch(context.Background()); err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume NextBatch err = %v, want ErrSyncResumeInvalid", err)
+	}
+}
+
+func TestMoodleConnectorOpenSyncResumeRejectsMalformedCursor(t *testing.T) {
+	withMoodleTestHooks(t)
+	server := newTestMoodleServer(t, fullSyncMoodleFixtures)
+	connector := mustMoodleConnector(t, server.URL)
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		FromBeginning: true,
+		Resume: &SyncCheckpoint{
+			Cursor: "moodle_course_not-a-number",
+		},
+	})
+	if session != nil || err == nil || !errors.Is(err, ErrSyncResumeInvalid) {
+		t.Fatalf("resume OpenSync = session %v, err %v, want ErrSyncResumeInvalid", session, err)
+	}
+}
+
 func TestMoodleConnectorOpenSyncDeferredCoursesUntilNextBatch(t *testing.T) {
 	withMoodleTestHooks(t)
 	var courseListCount atomic.Int64
@@ -491,9 +525,9 @@ func TestAddMoodleToken(t *testing.T) {
 
 func TestValidateMoodleURLForSSRF(t *testing.T) {
 	withMoodleTestHooks(t)
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = false
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	if err := validateMoodleURLForSSRF("ftp://example.com"); err == nil {
 		t.Fatalf("expected scheme rejection")
@@ -606,9 +640,9 @@ func TestMoodleConnectorMetadataRedactsFileURL(t *testing.T) {
 }
 
 func TestMoodleAssertURLSafeRejectsCrossOrigin(t *testing.T) {
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = false
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	_, _, err := moodleAssertURLSafe(context.Background(), "https://evil.com/api", "https://example.com")
 	if err == nil {
@@ -617,9 +651,9 @@ func TestMoodleAssertURLSafeRejectsCrossOrigin(t *testing.T) {
 }
 
 func TestMoodleAssertURLSafeLoopbackAllAddresses(t *testing.T) {
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	// All loopback → allowed.
 	_, _, err := moodleAssertURLSafe(context.Background(), "http://127.0.0.1/path", "http://127.0.0.1")

@@ -3,7 +3,10 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { getEntityDisplayName } from '@/components/structure-graph/adapters';
+import {
+  findEntityDisplayNameByKeyword,
+  getEntityDisplayName,
+} from '@/components/structure-graph/adapters';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +25,7 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
 } from '@/hooks/use-knowledge-request';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -45,6 +49,7 @@ interface DatasetStructureViewProps {
 
 export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const queryClient = useQueryClient();
   const knowledgeBaseId = useKnowledgeBaseId();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
@@ -66,7 +71,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   const newlyUploaded = alteration?.newly_uploaded ?? 0;
   const removed = alteration?.removed ?? 0;
-  const hasChanges = newlyUploaded > 0 || removed > 0;
+  const retryPageCount = alteration?.retry_page_count ?? 0;
+  const hasChanges = newlyUploaded > 0 || removed > 0 || retryPageCount > 0;
 
   const handleRunEnd = useCallback(() => {
     queryClient.invalidateQueries({
@@ -76,7 +82,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
     });
   }, [queryClient, knowledgeBaseId, kind]);
-  
+
   useRunEndEffect(structureStatus, handleRunEnd);
 
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
@@ -103,18 +109,30 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       : '';
 
   const handleSelectEntity = useCallback((name: string) => {
-    if (!name) {
-      setGraphKeywords('');
-      setSelectedNodeId('');
-      return;
-    }
+    // Picking an option behaves like an Enter search: refetch the server-side
+    // keyword subgraph for that entity and keep the node highlighted.
     setSelectedNodeId(name);
+    setGraphKeywords(name);
   }, []);
 
-  const handleNoMatchEnter = useCallback((keywords: string) => {
-    setGraphKeywords(keywords);
-    setSelectedNodeId('');
-  }, []);
+  const handleNoMatchEnter = useCallback(
+    (keywords: string) => {
+      // Enter on a keyword that exactly names an entity must behave like
+      // picking it from the dropdown. Only unmatched text falls back to the
+      // raw keyword subgraph with no highlighted node.
+      const entityName = findEntityDisplayNameByKeyword(
+        template?.entities ?? [],
+        keywords,
+      );
+      if (entityName) {
+        handleSelectEntity(entityName);
+        return;
+      }
+      setGraphKeywords(keywords);
+      setSelectedNodeId('');
+    },
+    [template?.entities, handleSelectEntity],
+  );
 
   const handleDeleteStructure = useCallback(async () => {
     const code = await deleteDatasetStructure(kind);
@@ -151,32 +169,35 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <div className="flex justify-between gap-4 px-4 pt-4">
-        <div className="flex items-center gap-2">
-          <ConfirmDeleteDialog
-            title={t('knowledgeCompilation.deleteStructureConfirm', {
-              name: t(ViewModeLabelKeyMap[kind]),
-            })}
-            onOk={handleDeleteStructure}
-          >
-            <Button variant="outline" size="sm" disabled={deleting}>
-              <Trash2 />
-            </Button>
-          </ConfirmDeleteDialog>
-          <CompilationUpdateButton
-            traceData={structureRunData}
-            generateType={generateType}
-            hasChanges={hasChanges}
-            newlyUploaded={newlyUploaded}
-            removed={removed}
-            loading={alterationLoading || runLoading}
-            tooltip={t('knowledgeCompilation.updateStructureTooltip', {
-              newlyUploaded,
-              removed,
-              name: t(ViewModeLabelKeyMap[kind]),
-            })}
-            onClick={handleUpdateClick}
-          />
-        </div>
+        {!isGo && (
+          <div className="flex items-center gap-2">
+            <ConfirmDeleteDialog
+              title={t('knowledgeCompilation.deleteStructureConfirm', {
+                name: t(ViewModeLabelKeyMap[kind]),
+              })}
+              onOk={handleDeleteStructure}
+            >
+              <Button variant="outline" size="sm" disabled={deleting}>
+                <Trash2 />
+              </Button>
+            </ConfirmDeleteDialog>
+            <CompilationUpdateButton
+              traceData={structureRunData}
+              generateType={generateType}
+              hasChanges={hasChanges}
+              newlyUploaded={newlyUploaded}
+              removed={removed}
+              retryPageCount={retryPageCount}
+              loading={alterationLoading || runLoading}
+              tooltip={t('knowledgeCompilation.updateStructureTooltip', {
+                newlyUploaded,
+                removed,
+                name: t(ViewModeLabelKeyMap[kind]),
+              })}
+              onClick={handleUpdateClick}
+            />
+          </div>
+        )}
         {kind === ViewMode.Graph && (
           <SelectWithSearch
             options={entityOptions}
@@ -184,7 +205,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             onChange={handleSelectEntity}
             placeholder={t('knowledgeCompilation.searchEntity')}
             allowClear
-            triggerClassName="w-96 max-w-full"
+            alwaysShowSearch
+            triggerClassName="ml-auto w-96 max-w-full"
             onNoMatchEnter={handleNoMatchEnter}
             disableAutoSelectOnEnter
           />
@@ -193,6 +215,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}
+        totalEntities={data?.total_entities}
+        returnedEntities={data?.returned_entities}
       />
       <UpdateLogSheet
         open={updateSheetOpen}

@@ -308,48 +308,40 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
 
     model_type_filter_bin = calculate_model_type(model_type_filter.lower()) if model_type_filter else None
 
-    providers = TenantModelProviderService.get_by_tenant_id(tenant_id)
-    if not providers:
-        return True, []
-
-    provider_ids = [provider.id for provider in providers]
-    instances = TenantModelInstanceService.get_by_provider_ids(provider_ids)
-    if not instances:
-        return True, []
-    provider_instance_map: dict = {}
-    provider_info_map = {provider.id: provider for provider in providers}
-    instance_info_map = {instance.id: instance for instance in instances}
-    for provider_instance_record in instances:
-        provider_name = provider_info_map[provider_instance_record.provider_id].provider_name if provider_info_map.get(provider_instance_record.provider_id) else ""
-        if provider_instance_map.get(provider_name):
-            provider_instance_map[provider_name].append(provider_instance_record)
-        else:
-            provider_instance_map[provider_name] = [provider_instance_record]
-
-    model_records = TenantModelService.get_models_by_provider_ids_and_instance_ids(provider_ids, list({instance.id for instance in instances}))
-    target_type_records = [record for record in model_records if record.model_type & model_type_filter_bin] if model_type_filter_bin else model_records
-
     model_rank_map: dict = {}
     for factory in FACTORY_LLM_INFOS:
         for llm in factory.get("llm", []):
             model_rank_map[(factory["name"], llm["llm_name"])] = _to_int(llm.get("rank", 500))
 
     factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
-    added_models = [
-        {
-            "model_id": model_record.id,
-            "tenant_id": provider_info_map[model_record.provider_id].tenant_id,
-            "tenant_name": tenant.name,
-            "model_type": get_model_type_human(model_record.model_type),
-            "name": model_record.model_name,
-            "provider_id": model_record.provider_id,
-            "provider_name": provider_info_map[model_record.provider_id].provider_name,
-            "instance_id": model_record.instance_id,
-            "instance_name": instance_info_map[model_record.instance_id].instance_name,
-            "rank": model_rank_map.get((provider_info_map[model_record.provider_id].provider_name, model_record.model_name), 500),
-        }
-        for model_record in target_type_records
-    ]
+    added_models = []
+
+    providers = TenantModelProviderService.get_by_tenant_id(tenant_id)
+    if providers:
+        provider_ids = [provider.id for provider in providers]
+        instances = TenantModelInstanceService.get_by_provider_ids(provider_ids)
+        if instances:
+            provider_info_map = {provider.id: provider for provider in providers}
+            instance_info_map = {instance.id: instance for instance in instances}
+
+            model_records = TenantModelService.get_models_by_provider_ids_and_instance_ids(provider_ids, list({instance.id for instance in instances}))
+            target_type_records = [record for record in model_records if record.model_type & model_type_filter_bin] if model_type_filter_bin else model_records
+
+            added_models = [
+                {
+                    "model_id": model_record.id,
+                    "tenant_id": provider_info_map[model_record.provider_id].tenant_id,
+                    "tenant_name": tenant.name,
+                    "model_type": get_model_type_human(model_record.model_type),
+                    "name": model_record.model_name,
+                    "provider_id": model_record.provider_id,
+                    "provider_name": provider_info_map[model_record.provider_id].provider_name,
+                    "instance_id": model_record.instance_id,
+                    "instance_name": instance_info_map[model_record.instance_id].instance_name,
+                    "rank": model_rank_map.get((provider_info_map[model_record.provider_id].provider_name, model_record.model_name), 500),
+                }
+                for model_record in target_type_records
+            ]
 
     # Add TEI Builtin embedding model if configured
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")

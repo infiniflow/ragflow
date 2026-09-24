@@ -79,7 +79,7 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords string, page, pageSize int, orderBy string, desc bool, ownerIDs []string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
 	var chats []*entity.ChatListItem
 	var total int64
 	var err error
@@ -92,8 +92,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			userID,
 			page,
 			pageSize,
-			orderBy,
-			desc,
+			terms,
 			keywords,
 		)
 		if err != nil {
@@ -112,7 +111,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, orderBy, desc, keywords)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, terms, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -339,12 +338,12 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
-		return nil, common.CodeDataError, errors.New("failed to create chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
 
 	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
+		return nil, common.CodeDataError, fmt.Errorf("failed to retrieve created chat: %w", err)
 	}
 
 	response, err := s.buildCreateChatResponse(ctx, chat)
@@ -436,15 +435,12 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 			}
 		}
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, modelType, llmID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, modelType, llmID)
-	if err != nil {
-		return "", err
-	}
-	return tenantLLMID, nil
+	return target.ModelID, nil
 }
 
 func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -455,15 +451,12 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 	if _, ok := DefaultRerankModels[llmName]; ok {
 		return "", nil
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	tenantRerankID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeRerank, rerankID)
-	if err != nil {
-		return "", err
-	}
-	return tenantRerankID, nil
+	return target.ModelID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -471,8 +464,16 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 	if promptConfig == nil {
 		promptConfig = map[string]interface{}{}
 	}
+	kbIDs, _ := listFromValue(req["kb_ids"])
 	if system, ok := promptConfig["system"]; !ok || !isTruthy(system) {
-		promptConfig["system"] = pyDefaultSystemPrompt
+		if len(kbIDs) > 0 {
+			promptConfig["system"] = pyDefaultSystemPrompt
+		} else {
+			// No dataset bound: do not seed the dataset-oriented default system prompt. Its
+			// hard-coded "not found in the dataset" sentence would otherwise be sent verbatim
+			// to the model on the no-dataset chat path.
+			promptConfig["system"] = ""
+		}
 	}
 	if _, ok := promptConfig["prologue"]; !ok {
 		promptConfig["prologue"] = pyDefaultPrologue
@@ -493,7 +494,6 @@ func applyCreatePromptDefaults(req map[string]interface{}) {
 		promptConfig["refine_multiturn"] = true
 	}
 
-	kbIDs, _ := listFromValue(req["kb_ids"])
 	system, _ := promptConfig["system"].(string)
 	if len(kbIDs) > 0 && !isTruthy(promptConfig["parameters"]) && strings.Contains(system, "{knowledge}") {
 		promptConfig["parameters"] = []interface{}{map[string]interface{}{"key": "knowledge", "optional": false}}
@@ -1089,15 +1089,12 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 			}
 		}
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, modelType, llmID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, modelType, llmID)
-	if err != nil {
-		return "", err
-	}
-	return tenantLLMID, nil
+	return target.ModelID, nil
 }
 
 func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -1108,15 +1105,12 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}
-	modelProvider := NewModelProviderService()
-	if _, _, _, _, err := modelProvider.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID); err != nil {
+	modelSolver := NewModelSolver()
+	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	tenantRerankID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeRerank, rerankID)
-	if err != nil {
-		return "", err
-	}
-	return tenantRerankID, nil
+	return target.ModelID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {
@@ -1323,6 +1317,36 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	// Step 4: Build response with kb_names (same as Python _build_chat_response)
 	// Resolve kb_ids to kb_names
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
+
+	// Normalize fields that the frontend chat-setting form schema requires to
+	// be present and valid. The Python API returns these defaults; the Go
+	// port previously omitted them (rerank_candidates_count=0,
+	// reference_metadata=null), which made the form invalid and silently
+	// blocked Save (no request sent). Mirror Python's defaults without
+	// touching the persisted DB row.
+	if chat.RerankCandidatesCount <= 0 {
+		chat.RerankCandidatesCount = 64
+	}
+	if chat.PromptConfig != nil {
+		refMeta, ok := chat.PromptConfig["reference_metadata"].(map[string]interface{})
+		if !ok || refMeta == nil {
+			refMeta = map[string]interface{}{}
+		}
+		if _, hasInclude := refMeta["include"]; !hasInclude {
+			refMeta["include"] = false
+		}
+		if _, hasFields := refMeta["fields"]; !hasFields {
+			refMeta["fields"] = []interface{}{}
+		}
+		chat.PromptConfig["reference_metadata"] = refMeta
+
+		// refine_multiturn is required by the frontend schema (z.boolean()),
+		// but the DB column omits it (Python defaults to false). Default it
+		// so the chat-setting form validates and Save can be submitted.
+		if _, hasRefine := chat.PromptConfig["refine_multiturn"]; !hasRefine {
+			chat.PromptConfig["refine_multiturn"] = false
+		}
+	}
 
 	return &GetChatResponse{
 		Chat:       chat,

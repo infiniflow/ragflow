@@ -399,7 +399,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
 			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
-			"inputs", "outputs":
+			"inputs", "outputs", "user_id":
 		default:
 			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
 		}
@@ -422,6 +422,9 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
 	} else if ok {
 		defaults.MemoryIDs = ids
+	}
+	if v, ok := stringParam(params, "user_id"); ok {
+		defaults.UserID = v
 	}
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v

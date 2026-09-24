@@ -61,8 +61,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
+	case "hubris":
+		return NewHubrisModel(baseURL, urlSuffix), nil
 	case "lm-studio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
+	case "llmman":
+		return NewLlmmanModel(baseURL, urlSuffix), nil
 	case "ollama":
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
@@ -79,10 +83,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
 	case "baiduyiyan":
 		return NewBaiduModel(baseURL, urlSuffix), nil
+	case "cheaper inference":
+		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
+	case "daoxe":
+		return NewDaoxeModel(baseURL, urlSuffix), nil
 	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
@@ -139,6 +147,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "monkeyocrv2":
+		return NewMonkeyOCRv2Model(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
@@ -163,6 +173,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFunASRModel(baseURL, urlSuffix), nil
 	case "greenpt":
 		return NewGreenPTModel(baseURL, urlSuffix), nil
+	case "synthorai":
+		return NewSynthoraiModel(baseURL, urlSuffix), nil
+	case "anonrouter":
+		return NewAnonRouterModel(baseURL, urlSuffix), nil
+	case "api-route":
+		return NewApiRouteModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

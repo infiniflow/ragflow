@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -38,6 +39,29 @@ type tenantModelExtra struct {
 }
 
 var resolveTenantModelByType = defaultResolveTenantModelByType
+
+// resolveModelConfig resolves a specific model reference (tenant-model ID or
+// "name@instance@provider" composite) to a driver. Exposed as a package var so
+// per-call model-selection tests can inject a fake without a live MySQL.
+var resolveModelConfig = defaultResolveModelConfig
+
+// configuredMediaModelID extracts a per-call model reference from a parser setup.
+// Image parsing stores the VLM model reference in parse_method when it is not
+// "ocr" (mirroring Python rag/flow/parser/parser.py:_image). Other media
+// families use vlm.llm_id, matching the frontend parser form.
+func configuredMediaModelID(setup schema.ParserSetup, family string) string {
+	if family == "image" {
+		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
+			return ref
+		}
+	}
+	if vlm, ok := setup["vlm"].(map[string]any); ok {
+		if ref, _ := vlm["llm_id"].(string); ref != "" {
+			return ref
+		}
+	}
+	return getStringOr(setup, "llm_id", "")
+}
 
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	tenantDAO := dao.NewTenantDAO()
@@ -87,11 +111,10 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 	providerDAO := dao.NewTenantModelProviderDAO()
 	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
-		// Some OCR providers are registered under sibling names: the cloud
-		// "PaddleOCR" provider and the local "PaddleOCR.local" provider expose
-		// the same OCR capability. Tolerate the alternate spelling before
-		// giving up so a tenant configured with either name resolves.
-		for _, alias := range paddleOCRProviderAliases() {
+		// Some OCR capabilities are registered under sibling provider names
+		// (cloud vs. local). Tolerate the alternate spelling before giving up
+		// so a tenant configured with either name resolves.
+		for _, alias := range ocrProviderAliases(providerName) {
 			if alias == providerName {
 				continue
 			}
@@ -125,12 +148,21 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 	return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
 }
 
-// paddleOCRProviderAliases returns the registered provider names that expose
-// PaddleOCR OCR models: the cloud "PaddleOCR" provider and the local
-// "PaddleOCR.local" provider. Both carry OCR-typed models and route through
-// the PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
-func paddleOCRProviderAliases() []string {
-	return []string{"PaddleOCR", "PaddleOCR.local"}
+// ocrProviderAliases returns the registered provider names that expose the
+// same OCR capability as providerName: the cloud "PaddleOCR" provider and
+// the local "PaddleOCR.local" provider are interchangeable, and so are the
+// local "MinerU" provider and the remote "MinerU.Net" provider. The PDF
+// dispatch resolves a tenant's OCR model regardless of which spelling was
+// configured.
+func ocrProviderAliases(providerName string) []string {
+	switch providerName {
+	case "PaddleOCR", "PaddleOCR.local":
+		return []string{"PaddleOCR", "PaddleOCR.local"}
+	case "MinerU", "MinerU.Net":
+		return []string{"MinerU", "MinerU.Net"}
+	default:
+		return []string{providerName}
+	}
 }
 
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
@@ -164,7 +196,7 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func resolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
 		return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)

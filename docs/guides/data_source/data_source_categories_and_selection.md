@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 RAGFlow supports many data sources. It is recommended to first select a major category according to the content source, and then go to the corresponding data source configuration. The following categories help users quickly determine which connection method to choose.
 
-**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
+**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
 
 **Object storage**: Used to synchronize large numbers of files in buckets or containers. This category is suitable for historical data archiving, batch file import, and centralized management of cloud files. It includes S3, Google Cloud Storage, Oracle Storage, R2, and Azure Blob Storage.
 
@@ -24,6 +24,6 @@ RAGFlow supports many data sources. It is recommended to first select a major ca
 
 **Business systems and tables**: Used to synchronize CRM, tickets, online tables, courses, or operation records. This category is suitable for building business ledgers and service knowledge bases. It includes Salesforce, Airtable, Dingtalk AI Table, Zendesk, and Moodle.
 
-**General APIs and subscriptions**: Used to connect custom APIs or public subscription feeds. This category is suitable for business systems without standard connectors and for collecting public content. It includes REST API and RSS.
+**General APIs and subscriptions**: Used to connect custom APIs, X search results, or public subscription feeds. This category is suitable for business systems without standard connectors and for collecting public content. It includes REST API, Xquik, RSS, and Sitemap.
 
 Account version note: In this manual, **Personal Edition** and **Enterprise Edition** refer to the external system account or service version, not the RAGFlow license. Whether synchronization is available ultimately depends on whether the external system allows the current account to access the target content and API.

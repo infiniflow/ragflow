@@ -20,11 +20,15 @@ interface ChatBasicSettingProps {
   prefix?: string;
   option?: Record<string, any>;
   hideName?: boolean;
+  collapseOpen?: boolean;
+  onCollapseOpenChange?: (open: boolean) => void;
 }
 
 export default function ChatBasicSetting({
   prefix = '',
   hideName = false,
+  collapseOpen,
+  onCollapseOpenChange,
 }: ChatBasicSettingProps) {
   const { t } = useTranslate('chat');
   const form = useFormContext();
@@ -49,6 +53,8 @@ export default function ChatBasicSetting({
         prefix={llmSettingPrefix}
         llmId={prefixName(prefix, 'llm_id')}
         showCollapse
+        collapseOpen={collapseOpen}
+        onCollapseOpenChange={onCollapseOpenChange}
       ></LlmSettingFieldItems>
 
       <FormField

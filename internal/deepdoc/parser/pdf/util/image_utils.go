@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"image"
-	"image/jpeg"
 	"image/png"
 )
 
@@ -33,13 +32,4 @@ func DecodeBase64PNG(b64 string) (image.Image, error) {
 		return nil, err
 	}
 	return png.Decode(bytes.NewReader(data))
-}
-
-// EncodeJPEG encodes img as JPEG bytes with quality 90.
-func EncodeJPEG(img image.Image) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

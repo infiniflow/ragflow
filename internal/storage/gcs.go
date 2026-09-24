@@ -111,7 +111,7 @@ func (m *GCSStorage) Remove(ctx context.Context, bucketName, objectName string, 
 
 	obj := m.client.Bucket(bucketName).Object(objectName)
 	if err := obj.Delete(ctx); err != nil {
-		return fmt.Errorf("fail to delete object: %v", err)
+		return fmt.Errorf("fail to delete object: %w", err)
 	}
 
 	return nil

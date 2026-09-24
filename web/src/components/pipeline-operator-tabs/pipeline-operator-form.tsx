@@ -24,16 +24,32 @@ import TokenChunkerForm from '@/pages/agent/form/token-chunker-form';
 import TokenizerForm from '@/pages/agent/form/tokenizer-form';
 import { getOperatorType } from '@/utils/pipeline-operator';
 import { memo, useCallback } from 'react';
+import { FieldErrors } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 type PipelineOperatorFormProps = {
   node: RAGFlowNodeType;
   onValuesChange?: (values: any) => void;
+  externalErrors?: FieldErrors;
+  // Dataset-side embeddings show a fixed set of parser file types; only the
+  // canvas parser allows add/remove.
+  fixedFileFormats?: boolean;
 };
+
+// Derive the built-in parser name from the chunker node name, e.g.
+// "Table Chunker" -> "Table".
+function getBuiltinParserName(node: RAGFlowNodeType): string {
+  return String(node.data?.name ?? '').replace(/\s*Chunker$/, '');
+}
 
 const PipelineOperatorForm = ({
   node,
   onValuesChange,
+  externalErrors,
+  fixedFileFormats,
 }: PipelineOperatorFormProps) => {
+  const { t } = useTranslation();
+
   const operatorType = getOperatorType(
     (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
   );
@@ -52,6 +68,8 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
+          fixedFileFormats={fixedFileFormats}
         />
       );
     case Operator.TokenChunker:
@@ -60,6 +78,17 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
+        />
+      );
+    case Operator.GeneralChunker:
+      return (
+        <TokenChunkerForm
+          node={node}
+          onValuesChange={handleValuesChange}
+          hideOutputs
+          externalErrors={externalErrors}
+          isGeneralChunker
         />
       );
     case Operator.TitleChunker:
@@ -68,6 +97,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Extractor:
@@ -76,6 +106,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Compiler:
@@ -84,6 +115,7 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
       );
     case Operator.Tokenizer:
@@ -92,7 +124,21 @@ const PipelineOperatorForm = ({
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs
+          externalErrors={externalErrors}
         />
+      );
+    case Operator.TableChunker:
+    case Operator.QAChunker:
+    case Operator.OneChunker:
+    case Operator.PageChunker:
+      // These chunkers have no configurable parameters — the built-in parser
+      // handles chunking internally.
+      return (
+        <div className="p-4 text-sm text-text-secondary">
+          {t('knowledgeConfiguration.noConfigChunkerHint', {
+            name: getBuiltinParserName(node),
+          })}
+        </div>
       );
     default:
       return null;

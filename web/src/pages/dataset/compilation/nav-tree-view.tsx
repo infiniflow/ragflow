@@ -4,22 +4,31 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateStatus } from '@/constants/knowledge';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { useTranslation } from 'react-i18next';
 
 import { useCompilationNav } from './hooks/use-compilation-nav';
+import { NavCompilingState } from './nav-compiling-state';
 import { NavTreeLeftPanel } from './nav-tree-left-panel';
 
 export function NavTreeView() {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const {
     navList,
     navLoading,
+    navError,
     keywords,
+    activeKeywords,
     childrenMap,
+    childrenErrorParents,
     structureMap,
     selectedNode,
     deleteNavLoading,
     deleteNodeLoading,
+    navRunData,
+    navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
@@ -28,6 +37,24 @@ export function NavTreeView() {
     handleDeleteNode,
   } = useCompilationNav();
 
+  const compiling =
+    isGo &&
+    (navStatus === GenerateStatus.Running ||
+      navStatus === GenerateStatus.Failed);
+  // First compile: no tree content to show yet, so replace the panels with
+  // the progress board. A keywords-filtered empty result keeps the panels so
+  // the user can keep editing the filter.
+  const firstCompileRunning =
+    compiling &&
+    !navLoading &&
+    !navError &&
+    !activeKeywords &&
+    (navList?.total ?? 0) === 0;
+
+  if (firstCompileRunning) {
+    return <NavCompilingState status={navStatus} data={navRunData} />;
+  }
+
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <ResizablePanelGroup direction="horizontal" className="flex-1">
@@ -35,11 +62,15 @@ export function NavTreeView() {
           <NavTreeLeftPanel
             navList={navList}
             navLoading={navLoading}
+            navError={navError}
             keywords={keywords}
+            activeKeywords={activeKeywords}
             childrenMap={childrenMap}
+            childrenErrorParents={childrenErrorParents}
             structureMap={structureMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}
+            traceData={navRunData}
             onKeywordsChange={handleKeywordsChange}
             onNodeClick={handleNodeClick}
             onNodeExpand={handleNodeExpand}
@@ -70,7 +101,8 @@ export function NavTreeView() {
                     {t('knowledgeCompilation.description')}
                   </h4>
                   <p className="whitespace-pre-wrap">
-                    {selectedNode.description || t('knowledgeCompilation.navNoDescription')}
+                    {selectedNode.description ||
+                      t('knowledgeCompilation.navNoDescription')}
                   </p>
                 </div>
                 {selectedNode.keywords && selectedNode.keywords.length > 0 && (

@@ -21,7 +21,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useMemo } from 'react';
 import { ControllerRenderProps, FieldValues } from 'react-hook-form';
 import { LIST_MODEL_FIELD_NAMES, LIST_MODEL_PROVIDERS } from '../constants';
-import { FACTORIES_WITH_BASE_URL, getProviderConfig } from '../field-config';
+import { getProviderConfig } from '../field-config';
 import type { FieldConfig, SelectOption } from '../types';
 
 interface UseProviderFieldsParams {
@@ -142,17 +142,17 @@ export const useProviderFields = ({
             if (Array.isArray(mt)) return mt.includes('tts');
             return mt === 'tts';
           };
+        // Driven by the provider catalog (`GET /providers`): a provider needs a
+        // base_url iff it advertises one or more URLs in its `url` map.
         case 'showBaseUrl':
-          return () =>
-            FACTORIES_WITH_BASE_URL.some((x) => x === llmFactory) ||
-            llmFactory?.toLowerCase() === 'Anthropic'.toLowerCase();
+          return () => (baseUrlOptions?.length ?? 0) > 0;
         case 'showGroupId':
           return () => llmFactory?.toLowerCase() === 'Minimax'.toLowerCase();
         default:
           return undefined;
       }
     };
-  }, [hideWhenInstanceExists, llmFactory]);
+  }, [hideWhenInstanceExists, llmFactory, baseUrlOptions]);
 
   // For each inputSelect field, build a URL → regionKey map from its
   // options (either inline `field.options` or the shared `baseUrlOptions`).

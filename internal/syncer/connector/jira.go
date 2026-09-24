@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -112,7 +111,6 @@ func NewJiraConnector(config map[string]any) (*JiraConnector, error) {
 		commentEmailBlacklist: jiraStringSet(jiraStringSlice(config["comment_email_blacklist"])),
 		client:                &http.Client{Timeout: jiraRequestTimeout},
 	}
-	c.client.CheckRedirect = c.checkRedirect
 	if len(c.labelsToSkip) == 0 {
 		c.labelsToSkip = jiraStringSet(strings.Split(os.Getenv("JIRA_CONNECTOR_LABELS_TO_SKIP"), ","))
 	}
@@ -132,6 +130,9 @@ func (c *JiraConnector) Validate(ctx context.Context) error {
 	parsed, err := url.Parse(c.baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return &ConnectorValidationError{Message: "invalid Jira base URL"}
+	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return &ConnectorValidationError{Message: err.Error()}
 	}
 	if c.apiToken == "" && (c.userEmail == "" || c.password == "") {
 		return &ConnectorMissingCredentialError{Message: "Jira credentials must include either an API token or username/password."}
@@ -181,7 +182,9 @@ func (c *JiraConnector) OpenSync(ctx context.Context, request SyncRequest) (Sync
 		windowEnd:     end,
 		fromBeginning: request.FromBeginning,
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -482,29 +485,33 @@ func (c *JiraConnector) syncTimezoneFromServer(ctx context.Context) error {
 
 func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, query url.Values, body any, out any) (http.Header, error) {
 	apiURL := c.apiURL(apiPath, query)
-	var reader io.Reader
+	var data []byte
 	if body != nil {
-		data, err := json.Marshal(body)
+		var err error
+		data, err = json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, apiURL, reader)
-	if err != nil {
-		return nil, err
-	}
-	c.authorize(req)
+	headers := map[string]string{"Accept": "application/json"}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		headers["Content-Type"] = "application/json"
 	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:        method,
+		RawURL:        apiURL,
+		Body:          data,
+		Headers:       headers,
+		Timeout:       jiraRequestTimeout,
+		Base:          c.client,
+		Prepare:       func(req *http.Request, _ connectorRequestHop) error { c.authorize(req); return nil },
+		CheckRedirect: c.checkRedirect,
+	})
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
+	data, err = io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
 	if err != nil {
 		return resp.Header, err
 	}
@@ -532,12 +539,14 @@ func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte,
 	if !sameJiraOrigin(parsed, base) {
 		return nil, fmt.Errorf("Jira attachment origin %q does not match the configured base URL", parsed.Scheme+"://"+parsed.Host)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.authorize(req)
-	resp, err := c.client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        rawURL,
+		Timeout:       jiraRequestTimeout,
+		Base:          c.client,
+		Prepare:       func(req *http.Request, _ connectorRequestHop) error { c.authorize(req); return nil },
+		CheckRedirect: c.checkRedirect,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -600,11 +609,16 @@ type jiraSyncSession struct {
 	nextPageToken string
 	done          bool
 	resumeSource  string
+	resumeSkip    bool
+	resumeChecked bool
 }
 
 func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	if s.done {
 		return SyncBatch{}, io.EOF
+	}
+	if err := s.validateResumeSource(ctx); err != nil {
+		return SyncBatch{}, err
 	}
 	documents := make([]SourceDocument, 0, s.batchSize)
 	var checkpoint *SyncCheckpoint
@@ -614,7 +628,7 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			return SyncBatch{}, err
 		}
 		for _, issue := range page.Issues {
-			if s.resumeSource != "" {
+			if s.resumeSkip && s.resumeSource != "" {
 				if s.connector.issueURL(issue.Key) == s.resumeSource {
 					s.resumeSource = ""
 				}
@@ -649,6 +663,28 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	return SyncBatch{Documents: documents, Checkpoint: checkpoint}, nil
 }
 
+func (s *jiraSyncSession) validateResumeSource(ctx context.Context) error {
+	if s.resumeSource == "" || s.resumeChecked {
+		return nil
+	}
+	s.resumeChecked = true
+	prefix := strings.TrimRight(s.connector.baseURL, "/") + "/browse/"
+	key := strings.TrimPrefix(s.resumeSource, prefix)
+	if key == "" || key == s.resumeSource {
+		return fmt.Errorf("jira sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	var page jiraSearchPage
+	if err := s.connector.searchJQL(ctx, fmt.Sprintf(`key = "%s"`, strings.ReplaceAll(key, `"`, `\"`)), 0, 1, jiraSlimFields, "", &page); err != nil {
+		return err
+	}
+	for _, issue := range page.Issues {
+		if s.connector.issueURL(issue.Key) == s.resumeSource {
+			return nil
+		}
+	}
+	return fmt.Errorf("jira resume anchor %q was not found in the current listing: %w", s.resumeSource, ErrSyncResumeInvalid)
+}
+
 func (s *jiraSyncSession) Close() error { return nil }
 
 func (s *jiraSyncSession) nextIssuePage(ctx context.Context) (jiraSearchPage, error) {
@@ -667,20 +703,27 @@ func (s *jiraSyncSession) nextIssuePage(ctx context.Context) (jiraSearchPage, er
 	return page, nil
 }
 
-func (s *jiraSyncSession) applyResume(checkpoint *SyncCheckpoint) {
+func (s *jiraSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
-		return
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("jira sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor jiraSyncCursor
-	if checkpoint.Cursor != "" && json.Unmarshal([]byte(checkpoint.Cursor), &cursor) == nil {
-		s.startAt = cursor.StartAt
-		s.nextPageToken = cursor.NextPageToken
-		if s.startAt == 0 && s.nextPageToken == "" {
-			s.resumeSource = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		}
-		return
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return fmt.Errorf("jira sync cursor is invalid: %w", ErrSyncResumeInvalid)
 	}
-	s.resumeSource = checkpoint.SourceID
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	prefix := strings.TrimRight(s.connector.baseURL, "/") + "/browse/"
+	if sourceID == "" || !strings.HasPrefix(sourceID, prefix) {
+		return fmt.Errorf("jira sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
+	}
+	s.resumeSource = sourceID
+	s.startAt = cursor.StartAt
+	s.nextPageToken = cursor.NextPageToken
+	s.resumeSkip = s.startAt == 0 && s.nextPageToken == ""
+	return nil
 }
 
 type jiraPruneSession struct {

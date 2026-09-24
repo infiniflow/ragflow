@@ -13,17 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
-import json
 import logging
-from peewee import IntegrityError
 from langfuse import Langfuse
-from common import settings
-from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
+from common.constants import LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.db.services.user_service import TenantService
 
 
 class LLMFactoriesService(CommonService):
@@ -32,150 +27,6 @@ class LLMFactoriesService(CommonService):
 
 class TenantLLMService(CommonService):
     model = TenantLLM
-
-    @staticmethod
-    def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
-        if not raw_api_key:
-            return raw_api_key, None, None
-
-        try:
-            parsed = json.loads(raw_api_key)
-        except Exception:
-            return raw_api_key, None, None
-
-        if not isinstance(parsed, dict):
-            return raw_api_key, None, None
-
-        is_tools = bool(parsed["is_tools"]) if "is_tools" in parsed else None
-        if set(parsed.keys()) <= {"api_key", "is_tools"}:
-            return parsed.get("api_key", ""), is_tools, None
-
-        return parsed.get("api_key", raw_api_key), is_tools, raw_api_key
-
-    @staticmethod
-    def _encode_api_key_config(raw_api_key: str, is_tools: bool | None) -> str:
-        if is_tools is None:
-            return raw_api_key
-
-        try:
-            parsed = json.loads(raw_api_key or "{}")
-        except Exception:
-            parsed = None
-
-        if isinstance(parsed, dict):
-            payload = dict(parsed)
-            payload["is_tools"] = bool(is_tools)
-            return json.dumps(payload)
-
-        return json.dumps({"api_key": raw_api_key or "", "is_tools": bool(is_tools)})
-
-    @classmethod
-    @DB.connection_context()
-    def get_api_key(cls, tenant_id, model_name, model_type=None):
-        mdlnm, fid = TenantLLMService.split_model_name_and_factory(model_name)
-        model_type_val = model_type.value if hasattr(model_type, "value") else model_type
-        query_kwargs = {"tenant_id": tenant_id, "llm_name": mdlnm}
-        if model_type_val is not None:
-            query_kwargs["model_type"] = model_type_val
-        if not fid:
-            objs = cls.query(**query_kwargs)
-        else:
-            objs = cls.query(**query_kwargs, llm_factory=fid)
-
-        if (not objs) and fid:
-            if fid == "LocalAI":
-                mdlnm += "___LocalAI"
-            elif fid == "HuggingFace":
-                mdlnm += "___HuggingFace"
-            elif fid == "OpenAI-API-Compatible":
-                mdlnm += "___OpenAI-API"
-            elif fid == "VLLM":
-                mdlnm += "___VLLM"
-            query_kwargs["llm_name"] = mdlnm
-            objs = cls.query(**query_kwargs, llm_factory=fid)
-        if not objs:
-            return None
-        return objs[0]
-
-    @classmethod
-    @DB.connection_context()
-    def get_my_llms(cls, tenant_id):
-        fields = [cls.model.id, cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name, cls.model.used_tokens, cls.model.status]
-        objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
-
-        return list(objs)
-
-    @staticmethod
-    def split_model_name_and_factory(model_name):
-        arr = model_name.split("@")
-        if len(arr) < 2:
-            return model_name, None
-        if len(arr) > 2:
-            return "@".join(arr[0:-1]), arr[-1]
-
-        # model name must be xxx@yyy
-        try:
-            model_factories = settings.FACTORY_LLM_INFOS
-            model_providers = set([f["name"] for f in model_factories])
-            if arr[-1] not in model_providers:
-                return model_name, None
-            return arr[0], arr[-1]
-        except Exception as e:
-            logging.exception(f"TenantLLMService.split_model_name_and_factory got exception: {e}")
-        return model_name, None
-
-    @classmethod
-    @DB.connection_context()
-    def get_model_config(cls, tenant_id, llm_type, llm_name=None):
-        from api.db.services.llm_service import LLMService
-
-        e, tenant = TenantService.get_by_id(tenant_id)
-        if not e:
-            raise LookupError("Tenant not found")
-
-        if llm_type == LLMType.EMBEDDING.value:
-            mdlnm = tenant.embd_id if not llm_name else llm_name
-        elif llm_type == LLMType.ASR.value:
-            mdlnm = tenant.asr_id if not llm_name else llm_name
-        elif llm_type == LLMType.VISION.value:
-            mdlnm = tenant.img2txt_id if not llm_name else llm_name
-        elif llm_type == LLMType.CHAT.value:
-            mdlnm = tenant.llm_id if not llm_name else llm_name
-        elif llm_type == LLMType.RERANK:
-            mdlnm = tenant.rerank_id if not llm_name else llm_name
-        elif llm_type == LLMType.TTS:
-            mdlnm = tenant.tts_id if not llm_name else llm_name
-        elif llm_type == LLMType.OCR:
-            if not llm_name:
-                raise LookupError("OCR model name is required")
-            mdlnm = llm_name
-        else:
-            assert False, "LLM type error"
-
-        model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
-        mdlnm, fid = TenantLLMService.split_model_name_and_factory(mdlnm)
-        if not model_config:  # for some cases seems fid mismatch
-            model_config = cls.get_api_key(tenant_id, mdlnm, llm_type)
-        if model_config:
-            model_config = model_config.to_dict()
-            api_key, is_tools, api_key_payload = cls._decode_api_key_config(model_config.get("api_key", ""))
-            model_config["api_key"] = api_key
-            if api_key_payload is not None:
-                model_config["api_key_payload"] = api_key_payload
-            if is_tools is not None:
-                model_config["is_tools"] = is_tools
-        elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):
-            embedding_cfg = settings.EMBEDDING_CFG
-            model_config = {"llm_factory": "Builtin", "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
-        else:
-            raise LookupError(f"Model({mdlnm}@{fid}) not authorized")
-
-        llm = LLMService.query(llm_name=mdlnm) if not fid else LLMService.query(llm_name=mdlnm, fid=fid)
-        if not llm and fid:  # for some cases seems fid mismatch
-            llm = LLMService.query(llm_name=mdlnm)
-        if "is_tools" not in model_config and llm:
-            model_config["is_tools"] = llm[0].is_tools
-        return model_config
 
     @classmethod
     @DB.connection_context()
@@ -196,7 +47,7 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in RerankModel:
                 logging.error("Factory not in rerank model. Supported factories: %s", list(RerankModel.keys()))
                 return None
-            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
+            return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], max_token=model_config.get("max_tokens"))
 
         elif model_config["model_type"] == LLMType.VISION.value:
             if model_config["llm_factory"] not in CvModel:
@@ -236,270 +87,6 @@ class TenantLLMService(CommonService):
                 **kwargs,
             )
 
-        return None
-
-    @classmethod
-    @DB.connection_context()
-    def increase_usage(cls, tenant_id, llm_type, used_tokens, llm_name=None):
-        e, tenant = TenantService.get_by_id(tenant_id)
-        if not e:
-            logging.error(f"Tenant not found: {tenant_id}")
-            return 0
-
-        llm_map = {
-            LLMType.EMBEDDING.value: tenant.embd_id if not llm_name else llm_name,
-            LLMType.ASR.value: tenant.asr_id,
-            LLMType.VISION.value: tenant.img2txt_id,
-            LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
-            LLMType.RERANK.value: tenant.rerank_id if not llm_name else llm_name,
-            LLMType.TTS.value: tenant.tts_id if not llm_name else llm_name,
-            LLMType.OCR.value: llm_name,
-        }
-
-        mdlnm = llm_map.get(llm_type)
-        if mdlnm is None:
-            logging.error(f"LLM type error: {llm_type}")
-            return 0
-
-        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(mdlnm)
-
-        try:
-            num = (
-                cls.model.update(used_tokens=cls.model.used_tokens + used_tokens)
-                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == llm_name, cls.model.llm_factory == llm_factory if llm_factory else True)
-                .execute()
-            )
-        except Exception:
-            logging.exception("TenantLLMService.increase_usage got exception,Failed to update used_tokens for tenant_id=%s, llm_name=%s", tenant_id, llm_name)
-            return 0
-
-        return num
-
-    @classmethod
-    @DB.connection_context()
-    def increase_usage_by_id(cls, tenant_model_id: int, used_tokens: int):
-        try:
-            update_cnt = cls.model.update(used_tokens=cls.model.used_tokens + used_tokens).where(cls.model.id == tenant_model_id).execute()
-        except Exception as e:
-            logging.exception(f"TenantLLMService.increase_usage got exception {e}, Failed to update used_tokens for tenant_model_id {tenant_model_id}")
-            return 0
-        return update_cnt
-
-    @classmethod
-    @DB.connection_context()
-    def get_openai_models(cls):
-        objs = cls.model.select().where((cls.model.llm_factory == "OpenAI"), ~(cls.model.llm_name == "text-embedding-3-small"), ~(cls.model.llm_name == "text-embedding-3-large")).dicts()
-        return list(objs)
-
-    @classmethod
-    def _collect_mineru_env_config(cls) -> dict | None:
-        cfg = MINERU_DEFAULT_CONFIG
-        found = False
-        for key in MINERU_ENV_KEYS:
-            val = os.environ.get(key)
-            if val:
-                found = True
-                cfg[key] = val
-        return cfg if found else None
-
-    @classmethod
-    @DB.connection_context()
-    def ensure_mineru_from_env(cls, tenant_id: str) -> str | None:
-        """
-        Ensure a MinerU OCR model exists for the tenant if env variables are present.
-        Return the existing or newly created llm_name, or None if env not set.
-        """
-        cfg = cls._collect_mineru_env_config()
-        if not cfg:
-            return None
-
-        saved_mineru_models = cls.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
-
-        def _parse_api_key(raw: str) -> dict:
-            try:
-                return json.loads(raw or "{}")
-            except Exception:
-                return {}
-
-        for item in saved_mineru_models:
-            api_cfg = _parse_api_key(item.api_key)
-            normalized = {k: api_cfg.get(k, MINERU_DEFAULT_CONFIG.get(k)) for k in MINERU_ENV_KEYS}
-            if normalized == cfg:
-                return item.llm_name
-
-        used_names = {item.llm_name for item in saved_mineru_models}
-        idx = 1
-        base_name = "mineru-from-env"
-        while True:
-            candidate = f"{base_name}-{idx}"
-            if candidate in used_names:
-                idx += 1
-                continue
-
-            try:
-                cls.save(
-                    tenant_id=tenant_id,
-                    llm_factory="MinerU",
-                    llm_name=candidate,
-                    model_type=LLMType.OCR.value,
-                    api_key=json.dumps(cfg),
-                    api_base="",
-                    max_tokens=0,
-                )
-                return candidate
-            except IntegrityError:
-                logging.warning("MinerU env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-                used_names.add(candidate)
-                idx += 1
-                continue
-
-    @classmethod
-    def _collect_paddleocr_env_config(cls) -> dict | None:
-        cfg = PADDLEOCR_DEFAULT_CONFIG
-        found = False
-        for key in PADDLEOCR_ENV_KEYS:
-            val = os.environ.get(key)
-            if val:
-                found = True
-                cfg[key] = val
-        return cfg if found else None
-
-    @classmethod
-    @DB.connection_context()
-    def ensure_paddleocr_from_env(cls, tenant_id: str) -> str | None:
-        """
-        Ensure a PaddleOCR model exists for the tenant if env variables are present.
-        Return the existing or newly created llm_name, or None if env not set.
-        """
-        cfg = cls._collect_paddleocr_env_config()
-        if not cfg:
-            return None
-
-        saved_paddleocr_models = cls.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
-
-        def _parse_api_key(raw: str) -> dict:
-            try:
-                return json.loads(raw or "{}")
-            except Exception:
-                return {}
-
-        for item in saved_paddleocr_models:
-            api_cfg = _parse_api_key(item.api_key)
-            normalized = {k: api_cfg.get(k, PADDLEOCR_DEFAULT_CONFIG.get(k)) for k in PADDLEOCR_ENV_KEYS}
-            if normalized == cfg:
-                return item.llm_name
-
-        used_names = {item.llm_name for item in saved_paddleocr_models}
-        idx = 1
-        base_name = "paddleocr-from-env"
-        while True:
-            candidate = f"{base_name}-{idx}"
-            if candidate in used_names:
-                idx += 1
-                continue
-
-            try:
-                cls.save(
-                    tenant_id=tenant_id,
-                    llm_factory="PaddleOCR",
-                    llm_name=candidate,
-                    model_type=LLMType.OCR.value,
-                    api_key=json.dumps(cfg),
-                    api_base="",
-                    max_tokens=0,
-                )
-                return candidate
-            except IntegrityError:
-                logging.warning("PaddleOCR env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-                used_names.add(candidate)
-                idx += 1
-                continue
-
-    @classmethod
-    def _collect_opendataloader_env_config(cls) -> dict | None:
-        cfg = dict(OPENDATALOADER_DEFAULT_CONFIG)
-        found = False
-        for key in OPENDATALOADER_ENV_KEYS:
-            val = os.environ.get(key)
-            if val:
-                found = True
-                cfg[key] = val
-        return cfg if found else None
-
-    @classmethod
-    @DB.connection_context()
-    def ensure_opendataloader_from_env(cls, tenant_id: str) -> str | None:
-        """
-        Ensure an OpenDataLoader OCR model exists for the tenant if env variables are present.
-        Return the existing or newly created llm_name, or None if env not set.
-        """
-        cfg = cls._collect_opendataloader_env_config()
-        if not cfg:
-            return None
-
-        saved_models = cls.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR.value)
-
-        def _parse_api_key(raw: str) -> dict:
-            try:
-                return json.loads(raw or "{}")
-            except Exception:
-                return {}
-
-        for item in saved_models:
-            api_cfg = _parse_api_key(item.api_key)
-            normalized = {k: api_cfg.get(k, OPENDATALOADER_DEFAULT_CONFIG.get(k)) for k in OPENDATALOADER_ENV_KEYS}
-            if normalized == cfg:
-                return item.llm_name
-
-        used_names = {item.llm_name for item in saved_models}
-        idx = 1
-        base_name = "opendataloader-from-env"
-        while True:
-            candidate = f"{base_name}-{idx}"
-            if candidate in used_names:
-                idx += 1
-                continue
-            try:
-                cls.save(
-                    tenant_id=tenant_id,
-                    llm_factory="OpenDataLoader",
-                    llm_name=candidate,
-                    model_type=LLMType.OCR.value,
-                    api_key=json.dumps(cfg),
-                    api_base="",
-                    max_tokens=0,
-                )
-                return candidate
-            except IntegrityError:
-                logging.warning("OpenDataLoader env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-                used_names.add(candidate)
-                idx += 1
-                continue
-
-    @classmethod
-    @DB.connection_context()
-    def delete_by_tenant_id(cls, tenant_id):
-        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()
-
-    @staticmethod
-    def llm_id2llm_type(llm_id: str) -> str | None:
-        from api.db.services.llm_service import LLMService
-
-        llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
-        llm_factories = settings.FACTORY_LLM_INFOS
-        for llm_factory in llm_factories:
-            for llm in llm_factory["llm"]:
-                if llm_id == llm["llm_name"]:
-                    return llm["model_type"].split(",")[-1]
-
-        for llm in LLMService.query(llm_name=llm_id):
-            return llm.model_type
-
-        llm = TenantLLMService.get_or_none(llm_name=llm_id)
-        if llm:
-            return llm.model_type
-        for llm in TenantLLMService.query(llm_name=llm_id):
-            return llm.model_type
         return None
 
 
@@ -556,12 +143,16 @@ class LLM4Tenant:
         Langfuse already exports spans from its own background processor and
         flushes at process exit, so releasing the reference is sufficient here.
         """
-        # Drop the Langfuse reference WITHOUT flushing/shutting down the shared
-        # client (see the docstring above for why this would deadlock).
+        # Release the Langfuse client reference. ``Langfuse.flush()`` waits on
+        # ``Queue.join()`` with no timeout, so we never call it here: the shared
+        # ``LangfuseResourceManager`` flushes its queues at process exit, and
+        # a per-task ``flush()`` would block the task executor indefinitely
+        # if a consumer is wedged. ``self.langfuse = None`` drops our handle so
+        # the next ``LLM4Tenant`` reuses the same shared client.
         self.langfuse = None
 
         # Release underlying model instance if it has a close method
-        if self.mdl and callable(getattr(self.mdl, "close", None)):
+        if self.mdl and hasattr(self.mdl, "close") and callable(getattr(self.mdl, "close")):
             try:
                 self.mdl.close()
             except Exception:

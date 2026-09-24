@@ -185,6 +185,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                     {data?.data?.img_id && (
                       <Image
                         id={data?.data?.img_id}
+                        documentId={doc_id}
                         className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
                       />
                     )}
@@ -202,6 +203,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                           }}
                           maxFileCount={1}
                           hideDropzoneOnMaxFileCount
+                          showFolderTab={false}
                           title={t('chunk.imageUploaderTitle')}
                           description={<></>}
                         />

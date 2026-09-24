@@ -24,7 +24,7 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
 // This method includes init_dataset_docs initialization when parent_id is empty
-func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, orderby string, desc bool, keywords string) (*ListFilesResponse, error) {
+func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
 	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
@@ -45,12 +45,14 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 	}
 
 	// Check if parent folder exists
-	if _, err := s.fileDAO.GetByID(ctx, dao.DB, pfID); err != nil {
+	folder, err := s.fileDAO.GetByID(ctx, dao.DB, pfID)
+	if err != nil {
 		return nil, fmt.Errorf("folder not found")
 	}
 
 	// Get files by parent folder ID
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, orderby, desc, keywords)
+	excludeSkills := folder.ID == folder.ParentID
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +222,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get parent folder
@@ -242,7 +244,7 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 
 	// Permission check
 	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, fmt.Errorf("no authorization")
+		return nil, ErrNoAuthorization
 	}
 
 	// Get all parent folders

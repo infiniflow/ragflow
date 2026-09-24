@@ -150,6 +150,8 @@ class DocumentService(CommonService):
                 .where(cls.model.kb_id == kb_id)
             )
         if doc_ids is not None:
+            if len(doc_ids) == 0:
+                return [], 0
             docs = docs.where(cls.model.id.in_(doc_ids))
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
@@ -1027,6 +1029,51 @@ class DocumentService(CommonService):
         return list(cls.model.select(*fields).where(cls.model.id.in_(docids)).dicts())
 
     @classmethod
+    def _find_image_document_id(cls, kb_id, image_id, doc_id=None):
+        e, kb = KnowledgebaseService.get_by_id(kb_id)
+        if not e:
+            return None
+
+        filters = {"img_id": image_id}
+        if doc_id:
+            filters["doc_id"] = doc_id
+        try:
+            result = settings.docStoreConn.search(
+                ["doc_id", "img_id"],
+                [],
+                filters,
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                search.index_name(kb.tenant_id),
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(result, ["doc_id", "img_id"])
+        except Exception:
+            logging.warning("Failed to resolve document image ownership")
+            return None
+
+        for row in (rows or {}).values():
+            if row.get("img_id") == image_id and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
+                return row["doc_id"]
+        return None
+
+    @classmethod
+    def image_belongs_to_document(cls, doc, image_id):
+        return cls._find_image_document_id(doc.kb_id, image_id, doc.id) == doc.id
+
+    @classmethod
+    def get_by_image_id(cls, kb_id, image_id):
+        doc_id = cls._find_image_document_id(kb_id, image_id)
+        if not doc_id:
+            return False, None
+        e, doc = cls.get_by_id(doc_id)
+        if not e or doc.kb_id != kb_id:
+            return False, None
+        return True, doc
+
+    @classmethod
     @DB.connection_context()
     def update_parser_config(cls, id, config):
         if not config:
@@ -1223,11 +1270,12 @@ class DocumentService(CommonService):
         return {"processing": int(row["processing"]), "finished": int(row["finished"]), "failed": int(row["failed"]), "cancelled": int(cancelled), "downloaded": int(downloaded)}
 
     @classmethod
-    def run(cls, tenant_id: str, doc: dict, kb_table_num_map: dict):
+    def run(cls, tenant_id: str, doc: dict, kb_table_num_map: dict, user_id: str | None = None):
         from api.db.services.task_service import queue_dataflow, queue_tasks
         from api.db.services.file2document_service import File2DocumentService
 
         doc["tenant_id"] = tenant_id
+        llm_user_id = user_id or doc.get("llm_user_id")
         doc_parser = doc.get("parser_id", ParserType.NAIVE)
         if doc_parser == ParserType.TABLE:
             kb_id = doc.get("kb_id")
@@ -1239,10 +1287,10 @@ class DocumentService(CommonService):
                 if kb_table_num_map[kb_id] <= 0:
                     KnowledgebaseService.delete_field_map(kb_id)
         if doc.get("pipeline_id", ""):
-            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"])
+            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"], user_id=llm_user_id)
         else:
             bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
-            queue_tasks(doc, bucket, name, 0)
+            queue_tasks(doc, bucket, name, 0, user_id=llm_user_id)
 
 
 def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=None):

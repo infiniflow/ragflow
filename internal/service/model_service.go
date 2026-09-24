@@ -35,6 +35,31 @@ import (
 	"gorm.io/gorm"
 )
 
+// errModelConfigUnavailable marks model configuration failures that cannot be
+// repaired by retrying the same task.
+var errModelConfigUnavailable = errors.New("model configuration unavailable")
+
+// modelInstanceExtra contains the instance fields consumed during model
+// resolution. Other provider-specific fields remain valid and are ignored.
+type modelInstanceExtra struct {
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+// decodeModelInstanceExtra reads only the endpoint fields used for model
+// resolution, allowing existing rows to retain provider-specific JSON values.
+func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
+	if strings.TrimSpace(raw) == "" {
+		return modelInstanceExtra{}, nil
+	}
+
+	var extra modelInstanceExtra
+	if err := json.Unmarshal([]byte(raw), &extra); err != nil {
+		return modelInstanceExtra{}, err
+	}
+	return extra, nil
+}
+
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
 // Returns modelName, instanceName, providerName separately.
 //
@@ -68,7 +93,7 @@ func parseModelName(compositeName string) (modelName, instanceName, providerName
 
 // splitRightAnchoredModelName is a bare-name-tolerant variant of
 // parseModelName used by the Builtin / TEI short-circuit branches in
-// GetModelConfigFromProviderInstance.
+// model resolution.
 //
 // Those branches must accept a bare model name (no provider suffix) where
 // parseModelName would return an error, while still preserving any '@'
@@ -199,7 +224,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -400,7 +425,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
-			"content_length": model.ContentLength,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"thinking":       model.Thinking,
@@ -647,7 +672,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	// Add models to the instance.
@@ -730,7 +755,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -774,7 +799,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -789,7 +814,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -857,7 +882,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -1005,20 +1029,6 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
-	}
-
-	// The cloud PaddleOCR provider carries its config inside the api_key JSON
-	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
-	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
-	// so the OCR driver authenticates with a plain bearer token. Non-JSON
-	// api_keys (e.g. PaddleOCR.local) pass through untouched.
-	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
-		apiKey = keyAccessToken
-		if baseURL == "" {
-			baseURL = keyBaseURL
-		}
-		apiConfig.ApiKey = &apiKey
-		apiConfig.BaseURL = &baseURL
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
@@ -1332,7 +1342,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -1594,6 +1604,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1838,8 +1849,13 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
-// env key / default config tables for the three OCR providers.
-// Mirrors common/constants.py MINERU_ENV_KEYS, PADDLEOCR_ENV_KEYS, OPENDATALOADER_ENV_KEYS.
+// ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+}
+
+// Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
 		common.EnvMineruAPIServer,
@@ -1872,6 +1888,14 @@ var (
 	}
 	openDataLoaderDefaultConfig = map[string]interface{}{
 		common.EnvOpenDataLoaderAPIServer: "",
+	}
+	monkeyOCRv2EnvKeys = []string{
+		common.EnvMonkeyOCRv2ServerURL,
+		common.EnvMonkeyOCRv2Timeout,
+	}
+	monkeyOCRv2DefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRv2ServerURL: "",
+		common.EnvMonkeyOCRv2Timeout:   600,
 	}
 )
 
@@ -2052,7 +2076,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2202,13 +2226,21 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider %q and instances %q", providerIDOrName, notExistInstances)
 	}
 
-	// Second pass: delete models and instances by IDs.
+	// Second pass: delete models and instances by IDs atomically.
 	// Mirrors Python's: delete_models_by_instance_ids(instance_ids)
 	//                   TenantModelInstanceService.delete_by_ids(instance_ids)
-	if _, err = m.modelDAO.DeleteByInstanceIDs(ctx, dao.DB, instanceIDs); err != nil {
-		return common.CodeServerError, err
-	}
-	if _, err = m.modelInstanceDAO.DeleteByIDs(ctx, dao.DB, instanceIDs); err != nil {
+	// Both deletes share one transaction so a failure of the instance delete
+	// cannot leave the tenant models already removed (partial deletion).
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		if _, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, instanceIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2354,6 +2386,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 			"status":     model.Status,
 			"verify":     verify,
 			"features":   features,
+			"extra":      modelExtra,
 		})
 	}
 
@@ -2554,6 +2587,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
 		model.MaxOutput = extra.MaxTokens
+		model.MaxTokens = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -2593,6 +2627,19 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 		return *extra.MaxTokens, nil
 	}
 	return fallback, nil
+}
+
+func maxTokensFromModelInfo(modelInfo *modelModule.Model, modelType entity.ModelType) int {
+	if modelInfo == nil {
+		return 0
+	}
+	if (modelType == entity.ModelTypeEmbedding || modelType == entity.ModelTypeRerank) && modelInfo.MaxTokens != nil {
+		return *modelInfo.MaxTokens
+	}
+	if modelInfo.MaxOutput != nil {
+		return *modelInfo.MaxOutput
+	}
+	return 0
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
@@ -3052,7 +3099,8 @@ func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName,
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(ctx, &resolvedModelName, rerankRequest, info.APIConfig, modelConfig, nil)
+	rerankModel := modelModule.NewRerankModel(modelDriver, &resolvedModelName, info.APIConfig, maxTokensFromModelInfo(info.ModelInfo, entity.ModelTypeRerank))
+	response, err = rerankModel.Rerank(ctx, rerankRequest, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3187,7 +3235,7 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
 		// A missing default surfaces as a typed error ("no default tts
 		// model is set") instead of a nil-pointer panic.
-		driver, name, defaultConfig, _, derr := m.GetTenantDefaultModelByType(ctx, userID, entity.ModelTypeTTS)
+		target, derr := m.modelSolver().ResolveDefaultModelConfig(ctx, userID, entity.ModelTypeTTS)
 		if derr != nil {
 			return nil, common.CodeNotFound, derr
 		}
@@ -3195,7 +3243,7 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 			modelConfig = &modelModule.TTSConfig{}
 		}
 		var response *modelModule.TTSResponse
-		response, derr = driver.AudioSpeech(ctx, &name, audioContent, defaultConfig, modelConfig, nil)
+		response, derr = target.Driver.AudioSpeech(ctx, &target.ModelName, audioContent, target.APIConfig, modelConfig, nil)
 		if derr != nil {
 			return nil, common.CodeServerError, derr
 		}
@@ -3414,29 +3462,29 @@ func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, inst
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, compositeModelName)
+	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens), nil
+	return modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 }
 
 // GetChatModel  returns a ChatModel wrapper for the given tenant
 func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, compositeModelName)
+	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig), nil
 }
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
 func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
+	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
-	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+	return modelModule.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 }
 
 type AddModelRequest struct {
@@ -3448,335 +3496,218 @@ type AddModelRequest struct {
 	Extra        map[string]interface{} `json:"extra"`
 }
 
-func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	if modelType == entity.ModelTypeOCR {
-		return nil, "", nil, 0, fmt.Errorf("OCR model name is required")
-	}
-
-	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
-	}
-	modelName, modelID := defaultModelRefs(tenant, modelType)
-	if modelID != "" {
-		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(ctx, tenantID, modelType, modelID)
-		if idErr == nil {
-			return driver, resolvedName, apiConfig, maxTokens, nil
-		}
-		common.Warn("GetTenantDefaultModelByType: model_id lookup failed, falling back to model name",
-			zap.String("tenantID", tenantID),
-			zap.String("modelID", modelID),
-			zap.Error(idErr))
-	}
-	if modelName == "" {
-		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
-	}
-
-	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
-}
-
-// GetTenantDefaultModelRef returns the composite model reference (the
-// "<model>@<instance>@<provider>" form stored on the tenant, e.g.
-// "MiniMax-M3@mm@MiniMax") that callers pass on to model config resolution.
-// Unlike GetTenantDefaultModelByType — which resolves the driver/API config and
-// returns a bare model name — this returns the reference verbatim so it can be
-// used as an llmID for a later ResolveModelConfig/Chat round-trip.
-func (m *ModelProviderService) GetTenantDefaultModelRef(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
-	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
-	}
-	modelName, _ := defaultModelRefs(tenant, modelType)
-	if strings.TrimSpace(modelName) == "" {
-		return "", fmt.Errorf("no default %s model is set", modelType)
-	}
-	return modelName, nil
-}
-
-// GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
-func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	common.Debug("GetModelConfigByID",
-		zap.String("userID", userID),
-		zap.String("modelType", modelType.String()),
-		zap.String("modelID", modelID))
-
-	modelEntity, err := m.modelDAO.GetByID(ctx, dao.DB, modelID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("tenant model id=%s not found", modelID)
-		}
-		return nil, "", nil, 0, err
-	}
-	if modelEntity.Status != "active" {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s is disabled", modelID)
-	}
-	if !entity.ModelType(modelEntity.ModelType).Has(modelType) {
-		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
-	}
-
-	providerEntity, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
-		}
-		return nil, "", nil, 0, err
-	}
-	if providerEntity == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
-	}
-
-	if providerEntity.TenantID != userID {
-		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
-		if terr != nil {
-			return nil, "", nil, 0, terr
-		}
-		allowed := false
-		for _, rel := range userTenants {
-			if rel != nil && rel.TenantID == providerEntity.TenantID {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", userID, providerEntity.TenantID)
-		}
-	}
-
-	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("instance id=%s not found for model id=%s", modelEntity.InstanceID, modelID)
-		}
-		return nil, "", nil, 0, err
-	}
-
-	apiKey := instanceEntity.APIKey
-	var extra map[string]string
-	if err := json.Unmarshal([]byte(instanceEntity.Extra), &extra); err != nil {
-		return nil, "", nil, 0, err
-	}
-	region := extra["region"]
-	baseURL := extra["base_url"]
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
-	if providerInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerEntity.ProviderName)
-	}
-	modelDriver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerEntity.ProviderName, region, baseURL)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
-		}
-	}
-	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return modelDriver, modelEntity.ModelName, apiConfig, maxTokens, nil
-}
-
-func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string, string) {
-	if tenant == nil {
-		return "", ""
-	}
-	switch modelType {
-	case entity.ModelTypeChat:
-		return tenant.LLMID, ptrStringValue(tenant.TenantLLMID)
-	case entity.ModelTypeEmbedding:
-		return tenant.EmbdID, ptrStringValue(tenant.TenantEmbdID)
-	case entity.ModelTypeRerank:
-		return tenant.RerankID, ptrStringValue(tenant.TenantRerankID)
-	case entity.ModelTypeSpeech2Text:
-		return tenant.ASRID, ptrStringValue(tenant.TenantASRID)
-	case entity.ModelTypeImage2Text:
-		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
-	case entity.ModelTypeTTS:
-		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
-	case entity.ModelTypeOCR:
-		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
-	default:
-		return "", ""
-	}
-}
-
-func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	if strings.TrimSpace(modelRef) == "" {
-		return nil, "", nil, 0, fmt.Errorf("model ref is required")
-	}
-	if _, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
-		return m.GetModelConfigByID(ctx, tenantID, modelType, modelRef)
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, "", nil, 0, err
-	}
-	return m.GetModelConfigFromProviderInstance(ctx, tenantID, modelType, modelRef)
-}
-
-// ResolveModelContextLength returns the chat model's effective context window
-// (content_length) in tokens, or 0 when unknown. content_length is the total
-// context window and max_output is the generation cap; the
-// knowledge_compiler prompt-budget logic needs the context window, not the
-// output cap. modelRef accepts either a tenant model UUID or a
-// "model@instance@provider" composite name.
+// ResolveModelToolSupport reports whether the resolved chat model supports
+// function calling (tool calls). It mirrors Python dialog_service.rag_agent's
+// `if not getattr(chat_mdl, "is_tools", False)` gate: a model without tool
+// support must skip the outer rag_agent react loop and fall back to the direct
+// graph (Python falls back to async_chat).
 //
-// The resolution is delegated to dao.ResolveModelContentLength so every
-// consumer shares one path: a tenant-configured "max_tokens" override in the
-// tenant_model.extra wins, otherwise the provider catalog's content_length is
-// used (D22/D23).
-func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
+// Precedence mirrors Python's tenant_model_service
+// `"is_tools": model_extra.get("is_tools", is_tool)` (:363): the flag persisted
+// on the tenant model wins, and the provider catalog is only a default for
+// models enrolled without one. That is why the tenant_model row is resolved
+// first — by UUID, or for a composite "model@instance@provider" reference
+// through the tenant's own provider/instance rows. Reading the catalog first
+// instead would send a tenant-disabled model through the outer react loop —
+// where a model that does not actually call tools answers from its own
+// knowledge and the retrieval never runs.
+//
+// The reference is validated before model_extra is read, mirroring Python's
+// get_model_config_by_id (:324-347): a missing or disabled model, a model not
+// enrolled as this type, a missing provider, or a provider the tenant cannot
+// reach returns an error rather than a definitive is_tools answer. Callers treat
+// an error as "no tool support", the same outcome as an unset flag.
+func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
 	if strings.TrimSpace(modelRef) == "" {
-		return 0, fmt.Errorf("model ref is required")
+		return false, fmt.Errorf("model ref is required")
 	}
-	return dao.ResolveModelContentLength(ctx, dao.DB, tenantID, modelRef, "", ""), nil
-}
 
-func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
-	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelName); err == nil {
+	// Tenant-model UUID path. IDs are globally unique and may belong to a
+	// provider shared with a joined tenant, so the lookup itself is unscoped —
+	// tenantCanReachProviderTenant below decides access.
+	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
 		if modelObj.Status != "active" {
-			return "", fmt.Errorf("tenant model id=%s is disabled", modelName)
+			return false, fmt.Errorf("tenant model id=%s is disabled", modelRef)
 		}
 		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
-			return "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelName, modelType.String())
+			return false, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelRef, modelType.String())
 		}
-		if _, _, _, _, err = m.GetModelConfigByID(ctx, tenantID, modelType, modelName); err != nil {
-			return "", err
+		provider, provErr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
+		if provErr != nil && !errors.Is(provErr, gorm.ErrRecordNotFound) {
+			return false, provErr
 		}
-		return modelObj.ID, nil
+		if provider == nil {
+			return false, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelRef)
+		}
+		allowed, accessErr := m.tenantCanReachProviderTenant(ctx, tenantID, provider.TenantID)
+		if accessErr != nil {
+			return false, accessErr
+		}
+		if !allowed {
+			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+		}
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", err
+		return false, err
 	}
 
-	pureModelName, instanceName, providerName, err := parseModelName(modelName)
+	// Composite "model@instance@provider" path. The tenant's own rows are
+	// resolved so a flag persisted on the enrolled model still beats the
+	// catalog, exactly as it does on the UUID path.
+	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-
-	// Builtin provider: Builtin models (e.g. local TEI embeddings) have no
-	// tenant_model_instance records, so there is no tenant-scoped model ID to
-	// resolve.  Downstream resolution (ResolveModelConfig / getModelConfig)
-	// falls through to parseModelName → Builtin routing, which already works.
-	if providerName == "Builtin" && modelType == entity.ModelTypeEmbedding {
-		if builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName); builtinDriver == nil {
-			return "", fmt.Errorf("builtin embedding model %q not found", pureModelName)
-		}
-		return "", nil
-	}
-
 	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
-		return "", fmt.Errorf("provider %q lookup failed: %w", providerName, err)
+		return false, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
 	if provider == nil {
-		return "", fmt.Errorf("provider %q not found for model %q", providerName, modelName)
+		return false, fmt.Errorf("provider %q not found for model %q", providerName, modelRef)
 	}
-
 	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
-		return "", fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+		return false, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
 	}
 	if instance == nil {
-		return "", fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
+		return false, fmt.Errorf("instance %q not found for model %q", instanceName, modelRef)
 	}
-
 	modelObj, err := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", fmt.Errorf("model %q not found for model type %s", modelName, modelType.String())
-		}
-		return "", err
-	}
-	if modelObj.Status != "active" {
-		return "", fmt.Errorf("model %q is disabled", modelName)
-	}
-	return modelObj.ID, nil
-}
-
-func (m *ModelProviderService) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
-	modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef)
 	if err == nil {
 		if modelObj.Status != "active" {
-			return nil, fmt.Errorf("tenant model id=%s is disabled", modelRef)
+			return false, fmt.Errorf("model %q is disabled", modelRef)
 		}
-		return []entity.ModelType{entity.ModelType(modelObj.ModelType)}, nil
+		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
 	}
-	return m.GetModelTypeByName(ctx, tenantID, modelRef)
+
+	// The tenant never enrolled this model as this type: the catalog is the only
+	// source left (the instance api_key payload Python reads here is seeded from
+	// the same catalog at enrolment time).
+	return catalogToolSupport(providerName, pureModelName), nil
 }
 
-// GetModelTypeByName returns the list of model types the given model is enrolled as.
-func (m *ModelProviderService) GetModelTypeByName(ctx context.Context, tenantID, modelName string) ([]entity.ModelType, error) {
-	common.Debug("GetModelTypeByName",
-		zap.String("tenantID", tenantID),
-		zap.String("modelName", modelName))
+// ResolveChatModelTarget resolves the chat model a request will run on: the
+// caller's reference when it has one, the tenant default otherwise — a dialog
+// without an llm_id still runs on the default (dialog_service get_models).
+// Shared by the capability probe and the agentic wiring so the two cannot resolve
+// different models for one request.
+func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
+	if m == nil {
+		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
+	}
+	solver := m.modelSolver()
+	if strings.TrimSpace(modelRef) == "" {
+		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	}
+	// Resolve the enrolled type first: a reference enrolled only as image-to-text
+	// is a valid chat-pipeline input (its driver answers chat requests), and
+	// resolving it as chat would fail the type check outright.
+	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
+}
 
-	pureModelName, instanceName, providerName, err := parseModelName(modelName)
+// modelTargetRef renders a resolved model as the lookups' reference: its
+// tenant_model id, or the composite "model@instance@provider" form.
+func modelTargetRef(target *ModelTarget) string {
+	if target == nil {
+		return ""
+	}
+	if target.ModelID != "" {
+		return target.ModelID
+	}
+	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
+}
+
+// toolSupportFromEnrollment applies the capability precedence the rest of the
+// service uses: the is_tools flag persisted on the enrolled model, then the flag
+// carried by the instance credential payload, then the provider catalog's
+// declaration for the model.
+//
+// Python's precedence has the same shape — model_extra.get("is_tools", is_tool),
+// where is_tool comes out of the instance api_key payload — with the catalog as
+// our last resort, because a tenant may enrol a model the catalog does not
+// describe at all.
+func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
+	if ts, ok := extraToolSupport(extra); ok {
+		return ts
+	}
+	// The instance credential can be a JSON object carrying the key together with
+	// capability flags; extraToolSupport reads is_tools out of either blob and
+	// reports "absent" for a plain credential string.
+	if ts, ok := extraToolSupport(instanceAPIKey); ok {
+		return ts
+	}
+	return catalogToolSupport(providerName, modelName)
+}
+
+// The tool-calling verdict is no longer memoized: it is computed while the model
+// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// so there is no second lookup to amortize.
+
+// tenantCanReachProviderTenant reports whether userID owns the provider's tenant
+// or is a joined member of it. Mirrors Python's tenant_model_service
+// get_model_config_by_id tenant check (:342-347).
+func (m *ModelProviderService) tenantCanReachProviderTenant(ctx context.Context, userID, ownerTenantID string) (bool, error) {
+	if userID == ownerTenantID {
+		return true, nil
+	}
+	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
+	for _, rel := range userTenants {
+		if rel != nil && rel.TenantID == ownerTenantID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
-	// Direct provider lookup
-	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
-	if provErr != nil {
-		return nil, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
+// extraToolSupport reads the is_tools flag persisted on a tenant model's extra
+// JSON. The value is written as a JSON boolean (addModelToInstance stores
+// llm.Tools.Support verbatim) but has historically also been spelled as a
+// string, so both shapes are accepted. ok is false when the key is absent or
+// the extra blob is unreadable, letting the caller fall back to the catalog.
+func extraToolSupport(extra string) (bool, bool) {
+	if strings.TrimSpace(extra) == "" {
+		return false, false
 	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
+		return false, false
+	}
+	v, ok := fields["is_tools"]
+	if !ok {
+		return false, false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t, true
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true"), true
+	case float64:
+		return t != 0, true
+	}
+	return false, false
+}
+
+// catalogToolSupport reports whether a provider's catalog declares the named
+// model as supporting tool (function) calling. Returns false when the provider
+// or model is unknown. Mirrors RAGFlow's model_meta "is_tools" feature derived
+// from conf/models/*.json.
+func catalogToolSupport(providerName, modelName string) bool {
+	pm := dao.GetModelProviderManager()
+	provider := pm.FindProvider(providerName)
 	if provider == nil {
-		return nil, fmt.Errorf("provider %q not found for model %q", providerName, modelName)
+		return false
 	}
-
-	// Direct instance lookup
-	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
-	if instErr != nil {
-		return nil, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
+	mi := pm.FindModel(provider, modelName)
+	if mi == nil || mi.Tools == nil {
+		return false
 	}
-	if instance == nil {
-		return nil, fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
-	}
-
-	// Direct model lookup
-	modelObjs, modelErr := m.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
-	if modelErr == nil && len(modelObjs) > 0 {
-		types := make([]entity.ModelType, 0, len(modelObjs))
-		for _, obj := range modelObjs {
-			types = append(types, entity.ModelType(obj.ModelType))
-		}
-		return types, nil
-	}
-
-	// Fallback: factory LLM catalog
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	// Use the case-insensitive FindProvider / findModel helpers. The Go's
-	// conf/models/*.json files now use the same names as the Python's
-	// conf/llm_factories.json (e.g. "SILICONFLOW"); but a strict
-	// `==` here would still fail for any case mismatch. The rest of the Go codebase
-	// uses these helpers too.
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-	if targetProvider == nil {
-		return nil, fmt.Errorf("model provider config not found: %s", providerName)
-	}
-	for i := range targetProvider.Models {
-		if strings.EqualFold(targetProvider.Models[i].Name, pureModelName) {
-			if len(targetProvider.Models[i].ModelTypes) == 0 {
-				return nil, fmt.Errorf("model %q has no model_types in factory catalog", pureModelName)
-			}
-			return []entity.ModelType{entity.ModelTypeFromString(targetProvider.Models[i].ModelTypes[0])}, nil
-		}
-	}
-	return nil, fmt.Errorf("model %q not found for model %q", pureModelName, modelName)
+	return mi.Tools.Support
 }
 
 type AddCustomModelRequest struct {
@@ -3899,322 +3830,10 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil
-}
-
-// GetModelConfigFromProviderInstance get model config from provider instance
-// modelName@instance@provider or
-// "model@provider" — the provider is required and is looked up directly via
-// tenant_model_provider. For 2-part names the instance defaults to "default".
-// If the model is enrolled in tenant_model, that row is used (and INACTIVE rows
-// raise). Otherwise, the factory's LLM catalog is consulted, with
-// region=intl + siliconflow redirected to the siliconflow_intl factory.
-func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	common.Debug("GetModelConfigFromProviderInstance",
-		zap.String("tenantID", tenantID),
-		zap.String("modelName", modelName),
-		zap.String("modelType", modelType.String()))
-
-	// TEI builtin embedding short-circuit
-	if modelType == entity.ModelTypeEmbedding && strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
-		teiModel := common.GetEnv(common.EnvTEIModel)
-		teiBaseURL := common.GetEnv(common.EnvTEIBaseURL)
-
-		// First try exact match: handles bare model IDs like "model@q8_0"
-		// where '@' is part of the model name itself.
-		if modelName == teiModel {
-			builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
-			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", modelName)
-			}
-			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
-			return builtinDriver, modelName, apiConfig, 0, nil
-		}
-
-		// Then try right-anchored parsing for explicit "model@Builtin" or
-		// "model@instance@Builtin" composite keys.
-		teiPure, _, teiProvider := splitRightAnchoredModelName(modelName)
-		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
-			builtinDriver := modelModule.GetBuiltinEmbeddingModel(teiPure)
-			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin (TEI) embedding model %q not found", teiPure)
-			}
-			apiConfig := &modelModule.APIConfig{ApiKey: nil, Region: nil, BaseURL: &teiBaseURL}
-			return builtinDriver, teiPure, apiConfig, 0, nil
-		}
-	}
-
-	// Generic Builtin provider short-circuit. The tenant_model_provider /
-	// tenant_model_instance tables don't have a row for "Builtin" because it's
-	// a local service, not a tenant-enrolled provider — so the direct lookups
-	// below would raise. Mirrors the private getModelConfig's Builtin branch.
-	//
-	// Gated on ModelTypeEmbedding because the Builtin driver here is the TEI
-	// embedding endpoint; the underlying BuiltinModel's Chat/Rerank/AudioSpeech
-	// /OCR methods all return hard "not supported" errors. A chat/rerank/etc.
-	// request that names a Builtin provider must fall through to the standard
-	// branch, which surfaces an accurate "provider not found" instead of
-	// handing back an embedding-only driver.
-	if modelType == entity.ModelTypeEmbedding {
-		// The Builtin provider is a local service, not a tenant-enrolled
-		// provider. Extract the model name by looking for the @Builtin
-		// suffix explicitly so model names with embedded '@' characters
-		// (e.g. `model@q8_0@Builtin` or bare `model@q8_0` without any
-		// provider suffix) are handled correctly.
-		var pureModelName string
-		switch {
-		case strings.HasSuffix(modelName, "@default@Builtin"):
-			pureModelName = modelName[:len(modelName)-len("@default@Builtin")]
-		case strings.HasSuffix(modelName, "@Builtin"):
-			pureModelName = modelName[:len(modelName)-len("@Builtin")]
-		default:
-			pureModelName = ""
-		}
-		if pureModelName != "" {
-			builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
-			if builtinDriver == nil {
-				return nil, "", nil, 0, fmt.Errorf("builtin embedding model %q not found", pureModelName)
-			}
-			apiKey := ""
-			region := ""
-			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
-			maxTokens := 0
-			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxOutput == nil {
-					maxTokens = 0
-				} else {
-					maxTokens = *mi.MaxOutput
-				}
-			}
-			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
-		}
-	}
-
-	pureModelName, instanceName, providerName, err := parseModelName(modelName)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	// Direct provider lookup
-	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
-	if provErr != nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
-	}
-	if provider == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q not found for model %q", providerName, modelName)
-	}
-
-	// Direct instance lookup
-	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
-	if instErr != nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
-	}
-	if instance == nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q not found for model %q", instanceName, modelName)
-	}
-
-	// Decode api_key and extra fields from the instance row
-	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-	baseURL := extra["base_url"]
-
-	// Direct model lookup
-	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName,
-	)
-	switch {
-	case modelErr == nil:
-		// Happy path: tenant enrolled this model.
-		// INACTIVE check
-		if modelObj.Status == "inactive" {
-			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
-		}
-
-		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-		if providerInfo == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
-		}
-		driver, driverErr := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)
-		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
-		}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxOutput == nil {
-				maxTokens = 0
-			} else {
-				maxTokens = *mi.MaxOutput
-			}
-		}
-		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
-		if driverErr != nil {
-			return nil, "", nil, 0, driverErr
-		}
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
-	case errors.Is(modelErr, gorm.ErrRecordNotFound):
-		// Tenant hasn't enrolled this model. Fall through to the factory catalog.
-		common.Debug("GetModelConfigFromProviderInstance: tenant has no row for model, falling back to factory catalog",
-			zap.String("tenantID", tenantID),
-			zap.String("providerName", providerName),
-			zap.String("instanceName", instanceName),
-			zap.String("modelType", modelType.String()),
-			zap.String("modelName", pureModelName))
-	default:
-		// Surface unexpected DAO errors (e.g. transient DB failure) instead of
-		// silently resolving from the factory catalog — that would mask disabled
-		// or tenant-specific configurations.
-		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
-	}
-
-	// Fallback: factory LLM catalog
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	// Use the case-insensitive FindProvider / findModel helpers. The Go's
-	// conf/models/*.json files now use the same names as the Python's
-	// conf/llm_factories.json (e.g. "SILICONFLOW"); but a strict
-	// `==` here would still fail for any case mismatch even though the Python passes
-	// (its FACTORY_LLM_INFOS and the parsed provider_name happen to agree on
-	// casing). The rest of the Go codebase uses these helpers too.
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-	if targetProvider == nil {
-		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
-	}
-	var llmInfo *modelModule.Model
-	for i := range targetProvider.Models {
-		if strings.EqualFold(targetProvider.Models[i].Name, pureModelName) {
-			llmInfo = targetProvider.Models[i]
-			break
-		}
-	}
-	if llmInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("model config not found: %s", modelName)
-	}
-	driver, driverErr := newModelDriverForBaseURL(targetProvider.ModelDriver, providerName, region, baseURL)
-	if driverErr != nil {
-		return nil, "", nil, 0, driverErr
-	}
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
-	}
-	return driver, llmInfo.Name, apiConfig, maxTokens, nil
-}
-
-// getModelConfig returns the model driver, model name, API config, and max tokens for a model
-func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, compositeModelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	modelName, instanceName, providerName, err := parseModelName(compositeModelName)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	// Check if provider exists (skip for Builtin provider)
-	var providerID string
-	if providerName != "Builtin" {
-		var provider *entity.TenantModelProvider
-		provider, err = m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		if provider == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %s not found", providerName)
-		}
-		providerID = provider.ID
-	} else {
-		common.Debug("getModelConfig skipping provider lookup for Builtin")
-	}
-
-	// Get instance (skip for Builtin provider since it doesn't use tenant_model_instance)
-	var instance *entity.TenantModelInstance
-	if providerName != "Builtin" {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, providerID, instanceName)
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		if instance == nil {
-			return nil, "", nil, 0, fmt.Errorf("instance %s not found for provider %s", instanceName, providerName)
-		}
-		common.Debug("getModelConfig instance found", zap.String("instanceName", instanceName))
-	}
-
-	// TODO: if provider name is Builtin, HOW TO?
-
-	var extra map[string]string
-	var region string
-	var baseURL string
-	if instance != nil {
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		region = extra["region"]
-		baseURL = extra["base_url"]
-	}
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		if providerName != "Builtin" {
-			return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
-		}
-	}
-
-	// Get model info to extract max_tokens
-	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-	maxTokens := 0
-	if err == nil && modelInfo != nil {
-		if modelInfo.MaxOutput == nil {
-			maxTokens = 0
-		} else {
-			maxTokens = *modelInfo.MaxOutput
-		}
-	}
-
-	// For Builtin provider, use empty APIKey and skip tenant_model lookup
-	var apiKey string
-	if providerName == "Builtin" {
-		apiKey = ""
-		// For Builtin, we need to get the ModelDriver from somewhere
-		// Since Builtin models are handled locally, we return a special driver
-		builtinDriver := modelModule.GetBuiltinEmbeddingModel(modelName)
-		if builtinDriver == nil {
-			return nil, "", nil, 0, fmt.Errorf("builtin embedding model %s not found", modelName)
-		}
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
-		return builtinDriver, modelName, apiConfig, maxTokens, nil
-	}
-
-	var modelRecord *entity.TenantModel
-	modelRecord, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, providerID, instance.ID, modelName)
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", nil, 0, fmt.Errorf("tenant model %q lookup failed: %w", modelName, err)
-		}
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
-		if err != nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %s model %s not found", providerName, modelName)
-		}
-	}
-	maxTokens, err = maxTokensFromTenantModelExtra(modelRecord, maxTokens)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	apiKey = instance.APIKey
-
-	driver, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, baseURL)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return driver, modelName, apiConfig, maxTokens, nil
 }
 
 // ListAllModels list all models
@@ -4242,7 +3861,7 @@ func (m *ModelProviderService) isImage2TextLLM(ctx context.Context, tenantID, ll
 	if m == nil || llmID == "" {
 		return false
 	}
-	modelTypes, err := m.ResolveModelType(ctx, tenantID, llmID)
+	modelTypes, err := m.modelSolver().ResolveModelType(ctx, tenantID, llmID)
 	if err != nil {
 		return false
 	}
@@ -4254,17 +3873,63 @@ func (m *ModelProviderService) isImage2TextLLM(ctx context.Context, tenantID, ll
 	return false
 }
 
-// GetChatModelConfig resolves the model configuration for a chat dialog.
-// If llmID is empty, falls back to the tenant's default chat model.
-// When the named LLM is registered as an image2text model, returns the
-// IMAGE2TEXT driver/config instead of CHAT.
-func (m *ModelProviderService) GetChatModelConfig(ctx context.Context, tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	if llmID == "" {
-		return m.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
+// ChatModelRef identifies one chat-capable tenant model together with its
+// human-readable coordinates (provider instance), so callers can log and
+// reason about failover chains. Ref is the tenant_model.id that
+// ResolveModelConfig / GetChatModelConfig accepts verbatim.
+type ChatModelRef struct {
+	Ref          string
+	ModelName    string
+	InstanceName string
+	ProviderName string
+}
+
+// ListTenantChatModelRefs enumerates every ACTIVE chat-capable model the
+// tenant owns across all provider instances. Resolution of each ref is the
+// caller's business — a single broken entry here is not an error for the
+// whole enumeration.
+func (m *ModelProviderService) ListTenantChatModelRefs(ctx context.Context, tenantID string) ([]ChatModelRef, error) {
+	providers, err := m.modelProviderDAO.GetByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, err
 	}
-	modelType := entity.ModelTypeChat
-	if m.isImage2TextLLM(ctx, tenantID, llmID) {
-		modelType = entity.ModelTypeImage2Text
+	if len(providers) == 0 {
+		return nil, nil
 	}
-	return m.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	providerIDs := make([]string, 0, len(providers))
+	providerInfoByID := make(map[string]*entity.TenantModelProvider, len(providers))
+	for _, p := range providers {
+		providerIDs = append(providerIDs, p.ID)
+		providerInfoByID[p.ID] = p
+	}
+	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(instances) == 0 {
+		return nil, nil
+	}
+	instanceIDs := make([]string, 0, len(instances))
+	instanceInfoByID := make(map[string]*entity.TenantModelInstance, len(instances))
+	for _, inst := range instances {
+		instanceIDs = append(instanceIDs, inst.ID)
+		instanceInfoByID[inst.ID] = inst
+	}
+	models, err := m.modelDAO.GetActiveModelsByProviderAndInstanceIDsAndType(
+		ctx, dao.DB, providerIDs, instanceIDs, int(entity.ModelTypeChat))
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]ChatModelRef, 0, len(models))
+	for _, rec := range models {
+		ref := ChatModelRef{Ref: rec.ID, ModelName: rec.ModelName}
+		if inst := instanceInfoByID[rec.InstanceID]; inst != nil {
+			ref.InstanceName = inst.InstanceName
+		}
+		if prov := providerInfoByID[rec.ProviderID]; prov != nil {
+			ref.ProviderName = prov.ProviderName
+		}
+		refs = append(refs, ref)
+	}
+	return refs, nil
 }

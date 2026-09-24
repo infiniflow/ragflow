@@ -235,6 +235,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	req := service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		ChunkIDs:  queryStringList(c, "chunk_ids"),
 		Page:      &page,
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
@@ -256,6 +257,26 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, resp, "success")
+}
+
+func queryStringList(c *gin.Context, name string) []string {
+	values := c.QueryArray(name)
+	seen := make(map[string]struct{}, len(values))
+	ids := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			ids = append(ids, item)
+		}
+	}
+	return ids
 }
 
 func parsePositiveQueryInt(c *gin.Context, name string, defaultValue int) (int, error) {
@@ -528,12 +549,17 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"questions":          true,
 		"available":          true,
 		"positions":          true,
-		"tag_kwd":            true,
-		"tag_feas":           true,
+		// Accepted but never persisted: the UI always sends tag_kwd, so
+		// dropping it here would 400 every chunk edit. Go's tagger writes
+		// tag_feas; tag_kwd belongs to a Python tag dataset
+		// (rag/app/tag.py::beAdoc), which Go never builds. Left out of the
+		// error text below so it does not read as updatable.
+		"tag_kwd":  true,
+		"tag_feas": true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_kwd, tag_feas")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, tag_feas")
 			return
 		}
 	}
@@ -564,14 +590,6 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	if positions, ok := rawBody["positions"].([]interface{}); ok {
 		req.Positions = positions
-	}
-	if tagKwd, ok := rawBody["tag_kwd"].([]interface{}); ok {
-		req.TagKwd = make([]string, len(tagKwd))
-		for i, v := range tagKwd {
-			if s, ok := v.(string); ok {
-				req.TagKwd[i] = s
-			}
-		}
 	}
 	req.TagFeas = rawBody["tag_feas"]
 
@@ -728,11 +746,6 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
-	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-		return
-	}
 	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
@@ -752,7 +765,6 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		Content:           content,
 		ImportantKeywords: importantKeywords,
 		Questions:         questions,
-		TagKwd:            tagKwd,
 		TagFeas:           tagFeas,
 		ImageBase64:       imageBase64,
 	}

@@ -95,15 +95,16 @@ func (e *azureDevOpsHTTPError) Error() string {
 
 // AzureDevOpsConnector reads Azure Repos source files and pull requests.
 type AzureDevOpsConnector struct {
-	organization string
-	indexMode    string
-	projects     []string
-	repositories []string
-	contentTypes string
-	pat          string
-	batchSize    int
-	baseURL      string
-	httpClient   *http.Client
+	organization  string
+	customBaseURL string
+	indexMode     string
+	projects      []string
+	repositories  []string
+	contentTypes  string
+	pat           string
+	batchSize     int
+	baseURL       string
+	httpClient    *http.Client
 }
 
 // azureDevOpsRepository is one repository selected for indexing.
@@ -158,36 +159,69 @@ type azureDevOpsPullRequest struct {
 func NewAzureDevOpsConnector(config map[string]any) (*AzureDevOpsConnector, error) {
 	credentials, _ := config["credentials"].(map[string]any)
 	organization := strings.TrimSpace(stringConfig(config["organization"]))
+	customBaseURL := strings.TrimRight(strings.TrimSpace(stringConfig(config["base_url"])), "/")
+
+	baseURL, effectiveOrg := azureDevOpsResolveURL(organization, customBaseURL)
 
 	connector := &AzureDevOpsConnector{
-		organization: organization,
-		indexMode:    firstNonEmpty(strings.TrimSpace(stringConfig(config["index_mode"])), azureDevOpsIndexModeOrganization),
-		projects:     splitAzureDevOpsList(stringConfig(config["projects"])),
-		repositories: splitAzureDevOpsList(stringConfig(config["repositories"])),
-		contentTypes: firstNonEmpty(strings.TrimSpace(stringConfig(config["content_types"])), azureDevOpsContentBoth),
-		pat:          strings.TrimSpace(stringConfig(credentials["azure_devops_pat"])),
-		batchSize:    configInt(config["batch_size"], defaultAzureDevOpsBatchSize),
-		baseURL:      azureDevOpsOrganizationURL(organization),
-		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		organization:  effectiveOrg,
+		customBaseURL: customBaseURL,
+		indexMode:     firstNonEmpty(strings.TrimSpace(stringConfig(config["index_mode"])), azureDevOpsIndexModeOrganization),
+		projects:      splitAzureDevOpsList(stringConfig(config["projects"])),
+		repositories:  splitAzureDevOpsList(stringConfig(config["repositories"])),
+		contentTypes:  firstNonEmpty(strings.TrimSpace(stringConfig(config["content_types"])), azureDevOpsContentBoth),
+		pat:           strings.TrimSpace(stringConfig(credentials["azure_devops_pat"])),
+		batchSize:     configInt(config["batch_size"], defaultAzureDevOpsBatchSize),
+		baseURL:       baseURL,
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 	}
 	return connector, nil
+}
+
+func azureDevOpsResolveURL(organization, customBaseURL string) (string, string) {
+	cleanBase := strings.TrimRight(strings.TrimSpace(customBaseURL), "/")
+	cleanOrg := strings.TrimRight(strings.TrimSpace(organization), "/")
+
+	if cleanBase != "" {
+		if u, err := url.Parse(cleanBase); err == nil && u.Scheme != "" {
+			u.RawQuery = ""
+			u.Fragment = ""
+			u.ForceQuery = false
+			cleanBase = strings.TrimRight(u.String(), "/")
+		}
+		if cleanOrg == "" {
+			if u, err := url.Parse(cleanBase); err == nil && u.Path != "" {
+				trimmedPath := strings.Trim(u.Path, "/")
+				if trimmedPath != "" {
+					parts := strings.Split(trimmedPath, "/")
+					cleanOrg = parts[len(parts)-1]
+				}
+			}
+			return cleanBase, cleanOrg
+		}
+		if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+			return cleanOrg, cleanOrg
+		}
+		if strings.HasSuffix(cleanBase, "/"+cleanOrg) || strings.HasSuffix(cleanBase, "/"+url.PathEscape(cleanOrg)) {
+			return cleanBase, cleanOrg
+		}
+		return cleanBase + "/" + url.PathEscape(cleanOrg), cleanOrg
+	}
+
+	if cleanOrg == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(cleanOrg, "http://") || strings.HasPrefix(cleanOrg, "https://") {
+		return cleanOrg, cleanOrg
+	}
+	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(cleanOrg), cleanOrg
 }
 
 // azureDevOpsOrganizationURL resolves the API root of a hosted organization or
 // a self-hosted Azure DevOps Server collection.
 func azureDevOpsOrganizationURL(organization string) string {
-	if organization == "" {
-		return ""
-	}
-	if strings.HasPrefix(organization, "http://") {
-		// Rejected in checkSettings; never build a client that would send the
-		// personal access token in cleartext.
-		return ""
-	}
-	if strings.HasPrefix(organization, "https://") {
-		return strings.TrimRight(organization, "/")
-	}
-	return azureDevOpsHostedBaseURL + "/" + url.PathEscape(organization)
+	baseURL, _ := azureDevOpsResolveURL(organization, "")
+	return baseURL
 }
 
 func splitAzureDevOpsList(value string) []string {
@@ -214,13 +248,42 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 		return fmt.Errorf("azure devops connector is nil")
 	}
 	if c.organization == "" {
-		return fmt.Errorf("Invalid connector settings: 'organization' must be provided")
+		return fmt.Errorf("Invalid connector settings: Azure DevOps organization or collection must be provided")
 	}
 	if c.pat == "" {
 		return fmt.Errorf("Missing azure_devops_pat in credentials")
 	}
-	if strings.HasPrefix(c.organization, "http://") {
-		return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTPS, the personal access token is sent in the Authorization header")
+	if c.customBaseURL != "" {
+		if !strings.HasPrefix(c.customBaseURL, "http://") && !strings.HasPrefix(c.customBaseURL, "https://") {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must use HTTP or HTTPS")
+		}
+		u, err := url.Parse(c.customBaseURL)
+		if err != nil || u.Hostname() == "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must include a valid host")
+		}
+		if u.User != nil {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must not contain credentials")
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps base URL must not contain query parameters or fragments")
+		}
+	}
+	if c.organization != "" && strings.Contains(c.organization, "://") {
+		if !strings.HasPrefix(c.organization, "http://") && !strings.HasPrefix(c.organization, "https://") {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URLs must use HTTP or HTTPS")
+		}
+		u, err := url.Parse(c.organization)
+		if err != nil || u.Hostname() == "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must include a valid host")
+		}
+		if u.User != nil {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must not contain credentials")
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("Invalid connector settings: Azure DevOps collection URL must not contain query parameters or fragments")
+		}
+	} else if c.organization != "" && (strings.Contains(c.organization, "?") || strings.Contains(c.organization, "#")) {
+		return fmt.Errorf("Invalid connector settings: Azure DevOps organization must not contain query parameters or fragments")
 	}
 	switch c.indexMode {
 	case azureDevOpsIndexModeOrganization, azureDevOpsIndexModeProjects, azureDevOpsIndexModeRepositories:
@@ -306,7 +369,9 @@ func (c *AzureDevOpsConnector) OpenSync(ctx context.Context, request SyncRequest
 		request:   request,
 		stage:     c.initialStage(),
 	}
-	session.applyResume(request.Resume)
+	if err := session.applyResume(request.Resume); err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -973,7 +1038,9 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 		}
 		s.items = items
 		s.itemsRepo = repo.Key()
-		s.applyFileAnchor(repo)
+		if err := s.applyFileAnchor(repo); err != nil {
+			return nil, err
+		}
 	}
 
 	documents := make([]SourceDocument, 0, limit)
@@ -1005,28 +1072,28 @@ func (s *azureDevOpsSyncSession) nextCodeDocuments(ctx context.Context, repo azu
 //
 // The listing is re-fetched on every resume and can have shifted since the
 // checkpoint was written, so the stored offset is treated as a hint: it is
-// checked first, then the whole listing is searched for the anchor. Only when
-// the anchor is gone — the file was deleted or renamed — does the offset stand
-// on its own.
-func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) {
+// checked first, then the whole listing is searched for the anchor. A missing
+// anchor means the saved progress no longer maps to the source listing.
+func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) error {
 	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStageCode {
-		return
+		return nil
 	}
 	defer s.clearResume()
 
 	if s.fileOffset > 0 && s.fileOffset <= len(s.items) {
 		previous := s.items[s.fileOffset-1]
 		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(previous.Path, "/")) == s.resumeSourceID {
-			return
+			return nil
 		}
 	}
 
 	for index, item := range s.items {
 		if azureDevOpsCodeSourceID(s.connector.organization, repo, strings.TrimPrefix(item.Path, "/")) == s.resumeSourceID {
 			s.fileOffset = index + 1
-			return
+			return nil
 		}
 	}
+	return fmt.Errorf("azure devops file resume anchor %q was not found in repo %s: %w", s.resumeSourceID, repo.Key(), ErrSyncResumeInvalid)
 }
 
 // filterResumedPullRequests drops the pull requests already committed.
@@ -1034,18 +1101,18 @@ func (s *azureDevOpsSyncSession) applyFileAnchor(repo azureDevOpsRepository) {
 // $skip indexes into a listing that shifts as pull requests are opened, so the
 // anchor decides where the page really resumes; the skip value only positions
 // the request.
-func (s *azureDevOpsSyncSession) filterResumedPullRequests(repo azureDevOpsRepository, pullRequests []azureDevOpsPullRequest) []azureDevOpsPullRequest {
+func (s *azureDevOpsSyncSession) filterResumedPullRequests(repo azureDevOpsRepository, pullRequests []azureDevOpsPullRequest) ([]azureDevOpsPullRequest, error) {
 	if s.resumeSourceID == "" || s.resumeRepoKey != repo.Key() || s.resumeStage != azureDevOpsStagePullRequests {
-		return pullRequests
+		return pullRequests, nil
 	}
 	defer s.clearResume()
 
 	for index, pullRequest := range pullRequests {
 		if azureDevOpsPullRequestSourceID(s.connector.organization, repo, pullRequest.PullRequestID) == s.resumeSourceID {
-			return pullRequests[index+1:]
+			return pullRequests[index+1:], nil
 		}
 	}
-	return pullRequests
+	return nil, fmt.Errorf("azure devops pull request resume anchor %q was not found in repo %s: %w", s.resumeSourceID, repo.Key(), ErrSyncResumeInvalid)
 }
 
 func (s *azureDevOpsSyncSession) clearResume() {
@@ -1062,7 +1129,10 @@ func (s *azureDevOpsSyncSession) nextPullRequestDocuments(ctx context.Context, r
 		return nil, err
 	}
 	pageSize := len(pullRequests)
-	pullRequests = s.filterResumedPullRequests(repo, pullRequests)
+	pullRequests, err = s.filterResumedPullRequests(repo, pullRequests)
+	if err != nil {
+		return nil, err
+	}
 
 	documents := make([]SourceDocument, 0, len(pullRequests))
 	for _, pullRequest := range pullRequests {
@@ -1109,13 +1179,26 @@ func (s *azureDevOpsSyncSession) advanceRepo() {
 }
 
 // applyResume advances the session to the last committed position.
-func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
-	if checkpoint == nil || checkpoint.Cursor == "" {
-		return
+func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
+	if checkpoint == nil {
+		return nil
+	}
+	if checkpoint.Cursor == "" {
+		return fmt.Errorf("azure devops sync cursor is missing: %w", ErrSyncResumeInvalid)
 	}
 	var cursor azureDevOpsSyncCursor
-	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil || cursor.RepoKey == "" {
-		return
+	if err := json.Unmarshal([]byte(checkpoint.Cursor), &cursor); err != nil {
+		return fmt.Errorf("azure devops sync cursor is invalid: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.RepoKey == "" {
+		return fmt.Errorf("azure devops sync cursor has no repo anchor: %w", ErrSyncResumeInvalid)
+	}
+	if cursor.Stage != azureDevOpsStageCode && cursor.Stage != azureDevOpsStagePullRequests {
+		return fmt.Errorf("azure devops sync cursor has no valid stage: %w", ErrSyncResumeInvalid)
+	}
+	sourceID := firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
+	if sourceID == "" {
+		return fmt.Errorf("azure devops sync checkpoint has no source anchor: %w", ErrSyncResumeInvalid)
 	}
 	for index, repo := range s.repos {
 		if repo.Key() != cursor.RepoKey {
@@ -1129,9 +1212,10 @@ func (s *azureDevOpsSyncSession) applyResume(checkpoint *SyncCheckpoint) {
 		s.prSkip = cursor.PRSkip
 		s.resumeRepoKey = cursor.RepoKey
 		s.resumeStage = s.stage
-		s.resumeSourceID = firstNonEmpty(cursor.SourceID, checkpoint.SourceID)
-		return
+		s.resumeSourceID = sourceID
+		return nil
 	}
+	return fmt.Errorf("azure devops resume repo %q was not found in the current listing: %w", cursor.RepoKey, ErrSyncResumeInvalid)
 }
 
 type azureDevOpsPruneSession struct {

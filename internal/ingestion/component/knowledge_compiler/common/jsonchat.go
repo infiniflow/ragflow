@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaptinlin/jsonrepair"
+	"ragflow/internal/agent/runtime"
 	appcommon "ragflow/internal/common"
 
 	"go.uber.org/zap"
@@ -55,18 +57,30 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
+	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
 			if !appcommon.IsTransientError(err) {
+				if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, err, true); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 				return nil, err
 			}
 			// Transient chat failure (timeout / transport / provider); retry
 			// with a fresh LLM call.
 			lastErr = err
 		} else {
+			if repaired, repairErr := RepairJSONText(resp.Content); repairErr == nil {
+				if m, unmarshalErr := tryUnmarshalJSONErr(repaired); unmarshalErr == nil {
+					if message, ok := failureReporter.RecoveryMessage(attempt + 1); ok {
+						runtime.ReportProgressMessage(ctx, "Compiler", message)
+					}
+					return m, nil
+				}
+			}
 			candidates := jsonCandidates(resp.Content)
 			for _, candidate := range candidates {
 				if m, ok := tryUnmarshalJSON(candidate); ok {
@@ -87,7 +101,13 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
+			if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, lastErr, true); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
 			break
+		}
+		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
+			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", delay),
@@ -107,6 +127,66 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	return nil, lastErr
 }
 
+// RepairJSONText extracts and repairs a JSON object or array from an LLM response.
+// It accepts plain JSON, fenced JSON, JSON surrounded by prose, and common
+// malformed forms such as trailing commas or unquoted keys. The returned text
+// is guaranteed to be a valid JSON object or array.
+func RepairJSONText(s string) (string, error) {
+	s = appcommon.StripThinkTrailing(s)
+	var lastErr error
+	for _, candidate := range jsonCandidates(s) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			lastErr = fmt.Errorf("empty JSON candidate")
+			continue
+		}
+		if isJSONObjectOrArray(candidate) {
+			return candidate, nil
+		}
+		repaired, err := jsonrepair.Repair(candidate)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if isJSONObjectOrArray(repaired) {
+			return repaired, nil
+		}
+		lastErr = fmt.Errorf("repaired candidate is not a JSON object or array")
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no JSON candidate")
+	}
+	return "", lastErr
+}
+
+func isJSONObjectOrArray(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || (s[0] != '{' && s[0] != '[') {
+		return false
+	}
+	return json.Valid([]byte(s))
+}
+
+// CompactError produces a bounded, single-line error suitable for progress
+// messages. Provider errors may contain credentials, so redact common secret
+// fields and API-key-shaped values before exposing the result to users.
+func CompactError(err error) string {
+	if err == nil {
+		return "unknown error"
+	}
+	const maxLength = 1000
+	message := strings.Join(strings.Fields(err.Error()), " ")
+	message = errorCredentialRE.ReplaceAllString(message, "$1=[REDACTED]")
+	message = errorAPIKeyRE.ReplaceAllString(message, "[REDACTED]")
+	if len(message) > maxLength {
+		return message[:maxLength] + "..."
+	}
+	return message
+}
+
+var errorCredentialRE = regexp.MustCompile(`(?i)(api[-_ ]?key|access[-_ ]?token|authorization|password|secret)\s*["']?\s*[:=]\s*["']?[^,\s}"']+`)
+var errorAPIKeyRE = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]+`)
+
 // jsonCandidates yields progressively "cleaned" versions of an LLM reply that
 // may contain JSON: the raw text, a fenced ```json ... ``` block, and the
 // outermost {...} span.
@@ -117,6 +197,11 @@ func jsonCandidates(s string) []string {
 	}
 	if i := strings.Index(s, "{"); i >= 0 {
 		if j := strings.LastIndex(s, "}"); j > i {
+			cands = append(cands, s[i:j+1])
+		}
+	}
+	if i := strings.Index(s, "["); i >= 0 {
+		if j := strings.LastIndex(s, "]"); j > i {
 			cands = append(cands, s[i:j+1])
 		}
 	}

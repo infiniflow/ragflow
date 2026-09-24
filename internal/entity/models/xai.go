@@ -33,9 +33,9 @@ import (
 )
 
 var (
-	nonStreamCallTimeout = 300 * time.Second
-	streamCallTimeout    = 10 * time.Minute
-	longOpCallTimeout    = 10 * time.Minute
+	nonStreamCallTimeout = 20 * time.Minute
+	streamCallTimeout    = 20 * time.Minute
+	longOpCallTimeout    = 20 * time.Minute
 )
 
 // XAIModel implements ModelDriver for xAI (Grok models)
@@ -49,7 +49,7 @@ func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -85,7 +85,7 @@ func (x *XAIModel) ChatWithMessages(ctx context.Context, modelName string, messa
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response

@@ -2,12 +2,10 @@ import { useSetModalState } from '@/hooks/common-hooks';
 
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
-import { checkEmbedding } from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { useParams, useSearchParams } from 'react-router';
 import { z } from 'zod';
 import { formSchema } from './form-schema';
 
@@ -37,16 +35,6 @@ export const useFetchKnowledgeConfigurationOnMount = (
     const parser_config = {
       ...form.formState?.defaultValues?.parser_config,
       ...knowledgeDetails.parser_config,
-      raptor: {
-        ...form.formState?.defaultValues?.parser_config?.raptor,
-        ...knowledgeDetails.parser_config?.raptor,
-        clustering_method:
-          knowledgeDetails.parser_config?.raptor?.ext?.clustering_method,
-      },
-      graphrag: {
-        ...form.formState?.defaultValues?.parser_config?.graphrag,
-        ...knowledgeDetails.parser_config?.graphrag,
-      },
     };
     const formValues = {
       ...pick({ ...knowledgeDetails, parser_config: parser_config }, [
@@ -92,23 +80,5 @@ export const useRenameKnowledgeTag = () => {
     tagRenameVisible,
     hideTagRenameModal,
     showTagRenameModal: handleShowTagRenameModal,
-  };
-};
-
-export const useHandleKbEmbedding = () => {
-  const { id } = useParams();
-  const [searchParams] = useSearchParams();
-  const knowledgeBaseId = searchParams.get('id') || id;
-  const handleChange = useCallback(
-    async ({ embed_id }: { embed_id: string }) => {
-      const res = await checkEmbedding(knowledgeBaseId || '', {
-        embd_id: embed_id,
-      });
-      return res.data;
-    },
-    [knowledgeBaseId],
-  );
-  return {
-    handleChange,
   };
 };

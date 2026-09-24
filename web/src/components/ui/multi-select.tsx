@@ -37,6 +37,12 @@ export type MultiSelectOptionType = {
   label: React.ReactNode;
   value: string;
   disabled?: boolean;
+  /**
+   * When true, the option is always selected and cannot be deselected.
+   * Unlike `disabled`, locked options are included in "Select All" and
+   * preserved when clearing.
+   */
+  locked?: boolean;
   suffix?: React.ReactNode;
   icon?: React.ComponentType<{ className?: string }>;
 };
@@ -246,6 +252,7 @@ export const MultiSelect = React.forwardRef<
       React.useState<string[]>(defaultValue);
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
     const [isAnimating, setIsAnimating] = React.useState(false);
+    const triggerId = React.useId();
 
     React.useEffect(() => {
       if (isEmpty(selectedValues) && !isEmpty(props.value)) {
@@ -287,23 +294,36 @@ export const MultiSelect = React.forwardRef<
       );
     }, [flatOptions]);
 
-    const preserveDisabledValues = React.useCallback(
-      (values: string[]) => {
-        const disabledSelectedValues = selectedValues.filter((value) =>
-          disabledValueSet.has(value),
-        );
+    const lockedValueSet = React.useMemo(() => {
+      return new Set(
+        flatOptions
+          .filter((option) => option.locked)
+          .map((option) => option.value),
+      );
+    }, [flatOptions]);
 
-        return Array.from(
-          new Set<string>([...disabledSelectedValues, ...values]),
-        );
-      },
-      [disabledValueSet, selectedValues],
-    );
+    const selectableValues = React.useMemo(() => {
+      return flatOptions
+        .filter((option) => !option.disabled || option.locked)
+        .map((option) => option.value);
+    }, [flatOptions]);
 
-    const canRemoveValue = React.useCallback(
-      (value: string) => !disabledValueSet.has(value),
-      [disabledValueSet],
-    );
+    const allSelectableSelected =
+      selectableValues.length > 0 &&
+      selectableValues.every((value) => selectedValues.includes(value));
+
+    // A disabled option can't be picked in the dropdown, but a value that is
+    // already selected must stay removable — e.g. a knowledge base that had
+    // chunks when it was picked may have been emptied since.
+    // Locked options cannot be removed.
+    const removeValue = (value: string) => {
+      if (lockedValueSet.has(value)) {
+        return;
+      }
+      const newSelectedValues = selectedValues.filter((v) => v !== value);
+      setSelectedValues(newSelectedValues);
+      onValueChange(newSelectedValues);
+    };
 
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>,
@@ -312,16 +332,7 @@ export const MultiSelect = React.forwardRef<
         setIsPopoverOpen(true);
       } else if (event.key === 'Backspace' && !event.currentTarget.value) {
         const newSelectedValues = [...selectedValues];
-        const removableIndex = [...newSelectedValues]
-          .reverse()
-          .findIndex((value) => canRemoveValue(value));
-        if (removableIndex < 0) {
-          return;
-        }
-        newSelectedValues.splice(
-          newSelectedValues.length - 1 - removableIndex,
-          1,
-        );
+        newSelectedValues.pop();
         setSelectedValues(newSelectedValues);
         onValueChange(newSelectedValues);
       }
@@ -329,6 +340,10 @@ export const MultiSelect = React.forwardRef<
 
     const toggleOption = (option: string) => {
       if (disabledValueSet.has(option)) {
+        return;
+      }
+      // Locked options cannot be deselected
+      if (lockedValueSet.has(option) && selectedValues.includes(option)) {
         return;
       }
 
@@ -340,9 +355,12 @@ export const MultiSelect = React.forwardRef<
     };
 
     const handleClear = () => {
-      const nextValues = preserveDisabledValues([]);
-      setSelectedValues(nextValues);
-      onValueChange(nextValues);
+      // Keep locked options that are currently selected
+      const lockedSelectedValues = selectedValues.filter((value) =>
+        lockedValueSet.has(value),
+      );
+      setSelectedValues(lockedSelectedValues);
+      onValueChange(lockedSelectedValues);
     };
 
     const handleTogglePopover = () => {
@@ -350,22 +368,17 @@ export const MultiSelect = React.forwardRef<
     };
 
     const clearExtraOptions = () => {
-      const newSelectedValues = preserveDisabledValues(
-        selectedValues.slice(0, maxCount),
-      );
+      const newSelectedValues = selectedValues.slice(0, maxCount);
       setSelectedValues(newSelectedValues);
       onValueChange(newSelectedValues);
     };
 
     const toggleAll = () => {
-      if (selectedValues.length === flatOptions.length) {
+      if (allSelectableSelected) {
         handleClear();
       } else {
-        const allValues = preserveDisabledValues(
-          flatOptions.map((option) => option.value),
-        );
-        setSelectedValues(allValues);
-        onValueChange(allValues);
+        setSelectedValues(selectableValues);
+        onValueChange(selectableValues);
       }
     };
 
@@ -379,6 +392,12 @@ export const MultiSelect = React.forwardRef<
           <Button
             ref={ref}
             {...props}
+            // Own the trigger id, like `SelectWithSearch` does. Radix's Slot
+            // lets child props win, so this keeps shadcn's `FormControl` from
+            // putting the form item id here — otherwise a `FormLabel`
+            // (`<label htmlFor>`) would forward its clicks to this button and
+            // clicking the field label would open the popover.
+            id={triggerId}
             onClick={handleTogglePopover}
             className={cn(
               'flex w-full p-1 rounded-md border border-border-button min-h-10 h-auto placeholder:text-text-disabled items-center justify-between bg-bg-input focus-visible:bg-bg-input hover:bg-bg-input [&_svg]:pointer-events-auto',
@@ -430,15 +449,13 @@ export const MultiSelect = React.forwardRef<
                           >
                             {label ?? value}
                           </div>
-                          {canRemoveValue(value) && (
-                            <XCircle
-                              className="h-4 w-4 cursor-pointer"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleOption(value);
-                              }}
-                            />
-                          )}
+                          <XCircle
+                            className="h-4 w-4 cursor-pointer"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              removeValue(value);
+                            }}
+                          />
                         </div>
                       </Badge>
                     );
@@ -489,7 +506,7 @@ export const MultiSelect = React.forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-auto p-0"
+          className="w-auto min-w-[var(--radix-popover-trigger-width)] p-0"
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
           onFocusOutside={(event) => event.preventDefault()}
@@ -522,7 +539,7 @@ export const MultiSelect = React.forwardRef<
                     <div
                       className={cn(
                         'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary',
-                        selectedValues.length === flatOptions.length
+                        allSelectableSelected
                           ? 'bg-primary text-primary-foreground'
                           : 'opacity-50 [&_svg]:invisible',
                       )}

@@ -56,6 +56,14 @@ def manual_module():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = original
+        # `rag.app.manual` above was imported against the stubs, so it holds
+        # MagicMock bases. Drop it as well, otherwise later tests in the same
+        # session reuse that copy instead of the real module. The import system
+        # also bound `manual` as an attribute of the `rag.app` package, and
+        # `from rag.app import manual` resolves through that attribute without
+        # consulting sys.modules, so both halves have to go.
+        sys.modules.pop("rag.app.manual", None)
+        getattr(sys.modules.get("rag.app"), "__dict__", {}).pop("manual", None)
 
 
 def dummy(prog=None, msg=""):

@@ -59,6 +59,8 @@ import { SwitchFormField } from '../switch-fom-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
 
+const MAX_EMBED_USER_ID_LENGTH = 255;
+
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
   published: z.boolean(),
@@ -67,7 +69,7 @@ const FormSchema = z.object({
   enableStreaming: z.boolean(),
   muteWidget: z.boolean(),
   theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
-  userId: z.string().optional(),
+  userId: z.string().max(MAX_EMBED_USER_ID_LENGTH).optional(),
   widgetTitle: z.string(),
   widgetSubtitle: z.string(),
   widgetFooterText: z.string(),
@@ -79,22 +81,15 @@ const FormSchema = z.object({
   widgetFooterTextColor: z.string(),
 });
 
-export type WidgetSettings = Pick<
-  z.infer<typeof FormSchema>,
-  | 'enableStreaming'
-  | 'muteWidget'
-  | 'widgetTitle'
-  | 'widgetSubtitle'
-  | 'widgetFooterText'
-  | 'widgetFooterLink'
-  | 'widgetAccentColor'
-  | 'widgetBackgroundColor'
-  | 'widgetTextColor'
-  | 'widgetHeaderTextColor'
-  | 'widgetFooterTextColor'
->;
+export type WidgetSettings = z.infer<typeof FormSchema>;
 
 export const defaultWidgetSettings: WidgetSettings = {
+  embedType: 'fullscreen',
+  theme: ThemeEnum.Light,
+  visibleAvatar: false,
+  published: false,
+  locale: '',
+  userId: '',
   enableStreaming: false,
   muteWidget: false,
   widgetTitle: '',
@@ -145,11 +140,6 @@ function EmbedDialog({
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      visibleAvatar: false,
-      published: false,
-      locale: '',
-      embedType: 'fullscreen' as const,
-      theme: ThemeEnum.Light,
       ...defaultWidgetSettings,
       ...initialWidgetSettings,
     },
@@ -300,19 +290,7 @@ window.addEventListener('message',e=>{
       return;
     }
 
-    await onSaveWidgetSettings({
-      enableStreaming: values.enableStreaming,
-      muteWidget: values.muteWidget,
-      widgetTitle: values.widgetTitle,
-      widgetSubtitle: values.widgetSubtitle,
-      widgetFooterText: values.widgetFooterText,
-      widgetFooterLink: values.widgetFooterLink,
-      widgetAccentColor: values.widgetAccentColor,
-      widgetBackgroundColor: values.widgetBackgroundColor,
-      widgetTextColor: values.widgetTextColor,
-      widgetHeaderTextColor: values.widgetHeaderTextColor,
-      widgetFooterTextColor: values.widgetFooterTextColor,
-    });
+    await onSaveWidgetSettings({ ...defaultWidgetSettings, ...values });
   }, [onSaveWidgetSettings, values]);
 
   return (
@@ -431,8 +409,15 @@ window.addEventListener('message',e=>{
                     ></SelectWithSearch>
                   </RAGFlowFormItem>
                   {isAgent && (
-                    <RAGFlowFormItem name="userId" label={t('flow.userId')}>
-                      <Input></Input>
+                    <RAGFlowFormItem
+                      name="userId"
+                      label={t('flow.userId')}
+                      tooltip={t('chat.embedUserIdTooltip')}
+                    >
+                      <Input
+                        maxLength={MAX_EMBED_USER_ID_LENGTH}
+                        placeholder={t('chat.embedUserIdPlaceholder')}
+                      ></Input>
                     </RAGFlowFormItem>
                   )}
                 </TabsContent>

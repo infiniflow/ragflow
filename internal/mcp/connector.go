@@ -19,7 +19,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -49,83 +48,58 @@ func NewServiceConnector(
 	}
 }
 
-// ListDatasets returns newline-delimited JSON, each line being
-// {"id": "...", "description": "..."} for a dataset.
+// ListDatasets fetches every page for discovery (-1), or one capped REST-sized page.
 func (c *ServiceConnector) ListDatasets(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error) {
-	data, _, err := c.listDatasets(ctx, c.userID, page, pageSize, orderby, desc)
-	if err != nil {
-		return "", fmt.Errorf("list datasets: %w", err)
-	}
-
-	var lines []string
-	for _, d := range data {
-		id, _ := d["id"].(string)
-		name := ""
-		if v, ok := d["name"]; ok {
-			if s, ok := v.(string); ok {
-				name = s
+	var data []map[string]any
+	if pageSize == -1 {
+		for page = 1; ; page++ {
+			items, total, err := c.listDatasets(ctx, c.userID, page, 100, orderby, desc)
+			if err != nil {
+				return "", err
+			}
+			data = append(data, items...)
+			if len(items) == 0 || (total > 0 && int64(len(data)) >= total) {
+				break
+			}
+			if err := ctx.Err(); err != nil {
+				return "", err
 			}
 		}
-		desc := ""
-		if v, ok := d["description"]; ok {
-			if s, ok := v.(string); ok {
-				desc = s
-			}
-		}
-		// Match Python output: {"id": "...", "name": "...", "description": "..."}
-		item := map[string]interface{}{
-			"id":          id,
-			"name":        name,
-			"description": desc,
-		}
-		b, err := json.Marshal(item)
+	} else {
+		var err error
+		data, _, err = c.listDatasets(ctx, c.userID, page, min(pageSize, 100), orderby, desc)
 		if err != nil {
-			continue
+			return "", err
 		}
-		lines = append(lines, string(b))
 	}
-	return strings.Join(lines, "\n"), nil
+	return listText(data, false)
 }
 
-// ListChats returns newline-delimited JSON, each line being
-// {"id": "...", "name": "...", "description": "..."} for a chat assistant.
 func (c *ServiceConnector) ListChats(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error) {
 	data, _, err := c.listChats(ctx, c.userID, page, pageSize, orderby, desc)
 	if err != nil {
-		return "", fmt.Errorf("list chats: %w", err)
+		return "", err
 	}
+	return listText(data, true)
+}
 
-	var lines []string
+func listText(data []map[string]any, chats bool) (string, error) {
+	lines := make([]string, 0, len(data))
 	for _, d := range data {
-		id, _ := d["id"].(string)
-		name := ""
-		if v, ok := d["name"]; ok {
-			if s, ok := v.(string); ok {
-				name = s
-			}
+		description, ok := d["description"]
+		if chats && !ok {
+			description = ""
 		}
-		description := ""
-		if v, ok := d["description"]; ok {
-			if s, ok := v.(string); ok {
-				description = s
-			}
-		}
-		item := map[string]interface{}{
-			"id":          id,
-			"name":        name,
-			"description": description,
-		}
+		item := map[string]any{"id": d["id"], "name": d["name"], "description": description}
 		b, err := json.Marshal(item)
 		if err != nil {
-			continue
+			return "", err
 		}
 		lines = append(lines, string(b))
 	}
 	return strings.Join(lines, "\n"), nil
 }
 
-// Retrieval executes a retrieval via the in-process service and returns
-// the result as a JSON string.
 func (c *ServiceConnector) Retrieval(ctx context.Context, req RetrievalRequest) (string, error) {
 	return c.retrieval(ctx, c.userID, req)
 }

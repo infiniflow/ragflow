@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -39,6 +38,14 @@ type FileHandler struct {
 	fileService          *file.FileService
 	userService          *service.UserService
 	file2DocumentService *document.File2DocumentService
+}
+
+func respondFileServiceError(c *gin.Context, err error) {
+	if errors.Is(err, file.ErrNoAuthorization) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "no authorization")
+		return
+	}
+	jsonInternalError(c, err)
 }
 
 // NewFileHandler create file handler
@@ -61,6 +68,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Param page query int false "page number (default: 1, min: 1)"
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
+// @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
 // @Success 200 {object} file.ListFilesResponse
 // @Router /api/v1/files [get]
@@ -107,9 +115,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = descStr != "false"
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ctx := c.Request.Context()
-	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, orderby, desc, keywords)
+	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -173,7 +182,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get parent folder with permission check
 	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -208,7 +217,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -242,7 +251,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -522,15 +531,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Determine content type based on extension and file type
 	contentType := utility.GetContentType(ext, file.Type)
 
-	// Set response headers
-	if contentType != "" {
-		c.Header("Content-Type", contentType)
-	}
-	if utility.ShouldForceAttachment(ext, contentType) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		encodedName := url.QueryEscape(file.Name)
-		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
-	}
+	utility.SetDownloadFileResponseHeaders(c.Writer.Header(), contentType, ext, file.Name)
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)

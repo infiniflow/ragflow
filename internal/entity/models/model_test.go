@@ -17,10 +17,21 @@
 package models
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 // joinModelNames extracts model names from a ListModelResponse slice and
@@ -151,7 +162,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocrv2.json", "paddleocr_local.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -172,6 +183,17 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
 
+	monkeyOCRv2 := pm.FindProvider("MonkeyOCRv2")
+	if monkeyOCRv2 == nil {
+		t.Fatal("MonkeyOCRv2 provider not found")
+	}
+	if _, ok := monkeyOCRv2.ModelDriver.(*MonkeyOCRv2Model); !ok {
+		t.Fatalf("MonkeyOCRv2 ModelDriver=%T, want *models.MonkeyOCRv2Model", monkeyOCRv2.ModelDriver)
+	}
+	if monkeyOCRv2.URLSuffix.DocumentParse != "parse" {
+		t.Errorf("MonkeyOCRv2 doc_parse suffix=%q", monkeyOCRv2.URLSuffix.DocumentParse)
+	}
+
 	paddleOCR := pm.FindProvider("PaddleOCR.local")
 	if paddleOCR == nil {
 		t.Fatal("PaddleOCR.local provider not found")
@@ -181,6 +203,37 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
 		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestModelFactoryCreatesMonkeyOCRv2Driver(t *testing.T) {
+	driver, err := NewModelFactory().CreateModelDriver("MonkeyOCRv2", map[string]string{"default": "http://localhost:8000"}, URLSuffix{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver.Name() != "monkeyocrv2" {
+		t.Fatalf("driver.Name()=%q", driver.Name())
+	}
+}
+
+func TestMonkeyOCRv2DriverVerifiesNativeParseEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/openapi.json" {
+			t.Fatalf("path=%q", request.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"paths":{"/parse":{}}}`))
+	}))
+	defer server.Close()
+
+	driver := NewMonkeyOCRv2Model(map[string]string{"default": server.URL}, URLSuffix{})
+	if _, err := driver.OCRFile(context.Background(), nil, nil, nil, &APIConfig{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	driver = NewMonkeyOCRv2Model(nil, URLSuffix{})
+	apiKey := `{"MONKEYOCRV2_SERVER_URL":"` + server.URL + `"}`
+	if err := driver.CheckConnection(context.Background(), &APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Fatalf("environment-provisioned API config: %v", err)
 	}
 }
 
@@ -306,22 +359,22 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName: %v", err)
 	}
-	if *model.MaxOutput != 32768 || *model.ContentLength != 131072 {
-		t.Errorf("deepseek/deepseek-r1 max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 32768 || *model.ContextLength != 131072 {
+		t.Errorf("deepseek/deepseek-r1 max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 pro: %v", err)
 	}
-	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-pro max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 393216 || *model.ContextLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
 	if err != nil {
 		t.Fatalf("GetModelByName v4 flash: %v", err)
 	}
-	if *model.MaxOutput != 393216 || *model.ContentLength != 1048576 {
-		t.Errorf("deepseek/deepseek-v4-flash max_output=%d content_length=%d", *model.MaxOutput, *model.ContentLength)
+	if *model.MaxOutput != 393216 || *model.ContextLength != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_output=%d context_length=%d", *model.MaxOutput, *model.ContextLength)
 	}
 	if !model.ModelTypeMap["chat"] {
 		t.Errorf("deepseek/deepseek-v4-flash missing chat type map")
@@ -384,8 +437,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
 	}
-	if *deepSeekV4Pro.MaxOutput != 393216 || *deepSeekV4Pro.ContentLength != 1048576 {
-		t.Errorf("DeepSeek-V4-Pro max_output=%d content_length=%d", *deepSeekV4Pro.MaxOutput, *deepSeekV4Pro.ContentLength)
+	if *deepSeekV4Pro.MaxOutput != 393216 || *deepSeekV4Pro.ContextLength != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_output=%d context_length=%d", *deepSeekV4Pro.MaxOutput, *deepSeekV4Pro.ContextLength)
 	}
 	if !deepSeekV4Pro.ModelTypeMap["chat"] {
 		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
@@ -395,8 +448,8 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
 	}
-	if *kimiK26.MaxOutput != 65536 || *kimiK26.ContentLength != 262144 {
-		t.Errorf("Kimi-K2.6 max_output=%d content_length=%d", *kimiK26.MaxOutput, *kimiK26.ContentLength)
+	if *kimiK26.MaxOutput != 65536 || *kimiK26.ContextLength != 262144 {
+		t.Errorf("Kimi-K2.6 max_output=%d context_length=%d", *kimiK26.MaxOutput, *kimiK26.ContextLength)
 	}
 	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
 		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
@@ -406,7 +459,234 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if *glm51.MaxOutput != 128000 || *glm51.ContentLength != 200000 {
-		t.Errorf("GLM-5.1 max_output=%d content_length=%d", *glm51.MaxOutput, *glm51.ContentLength)
+	if *glm51.MaxOutput != 128000 || *glm51.ContextLength != 200000 {
+		t.Errorf("GLM-5.1 max_output=%d context_length=%d", *glm51.MaxOutput, *glm51.ContextLength)
 	}
+}
+
+// TestAllModelsCatalogHasNoDuplicateKeys walks conf/all_models.json as a token stream and
+// fails on any object key that occurs twice in the same object.
+//
+// encoding/json keeps only the last occurrence of a duplicated key, so a catalog that
+// writes a field twice loads fine and behaves exactly as if it were written once - the
+// duplicate is invisible to every test that goes through the parsed structs, which is how
+// thirteen duplicated "tokenizer" fields got into this file and survived review. Only the
+// raw token stream can see them, so the check lives here rather than in a schema validator.
+func TestAllModelsCatalogHasNoDuplicateKeys(t *testing.T) {
+	// Control: the detector has to report a duplicate on input that has one, otherwise the
+	// catalog check below is a no-op that passes on anything. That is not hypothetical -
+	// the first version of the detector drove its state machine off the commas between
+	// members, and json.Decoder.Token does not emit them, so it recognised at most the
+	// first key of each object and reported zero duplicates for this very sample.
+	// The sample also pins that array elements are not mistaken for keys ("p", "p").
+	control := []byte(`{"a": 1, "a": 2, "b": {"c": "x", "c": "y"}, "d": ["p", "p", {"e": 1, "e": 2}]}`)
+	if dups := duplicateJSONKeys(t, control); len(dups) != 3 {
+		t.Fatalf("detector control: got %d duplicates (%v), want 3 (a, c, e)", len(dups), dups)
+	}
+
+	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read %s: %v", target, err)
+	}
+	for _, dup := range duplicateJSONKeys(t, data) {
+		t.Errorf("%s:%d: object key %q appears twice (byte %d); encoding/json keeps only the last one, so the file means something other than it says",
+			target, dup.line, dup.key, dup.offset)
+	}
+}
+
+type duplicateKey struct {
+	key    string
+	offset int64
+	line   int
+}
+
+// duplicateJSONKeys returns every key that occurs twice inside the same JSON object.
+func duplicateJSONKeys(t *testing.T, data []byte) []duplicateKey {
+	t.Helper()
+
+	// One frame per open object or array. expectKey means "the next string in this object
+	// is a key": inside an object Decoder.Token yields key, value, key, value ... because
+	// the commas are not tokens, so after every value one has to expect a key again.
+	type frame struct {
+		object    bool
+		expectKey bool
+		keys      map[string]bool
+	}
+	var (
+		stack []frame
+		dups  []duplicateKey
+	)
+
+	// afterValue marks that the frame on top of the stack has just received a value.
+	afterValue := func() {
+		if n := len(stack); n > 0 {
+			stack[n-1].expectKey = true
+		}
+	}
+
+	dec := json.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatalf("decode catalog: %v", err)
+		}
+		switch v := tok.(type) {
+		case json.Delim:
+			switch v {
+			case '{', '[':
+				// The enclosing object just received a value: whatever follows it is a key,
+				// not a value. The nested frame tracks its own keys from here.
+				if n := len(stack); n > 0 {
+					stack[n-1].expectKey = false
+				}
+				stack = append(stack, frame{object: v == '{', expectKey: v == '{', keys: map[string]bool{}})
+			case '}', ']':
+				if len(stack) > 0 {
+					stack = stack[:len(stack)-1]
+				}
+				afterValue()
+			}
+			continue
+		case string:
+			if n := len(stack); n > 0 && stack[n-1].object && stack[n-1].expectKey {
+				top := &stack[n-1]
+				if top.keys[v] {
+					offset := dec.InputOffset()
+					dups = append(dups, duplicateKey{key: v, offset: offset, line: lineAtOffset(data, offset)})
+				}
+				top.keys[v] = true
+				top.expectKey = false
+				continue
+			}
+		}
+		afterValue()
+	}
+	return dups
+}
+
+// lineAtOffset reports the 1-based line that holds a byte offset.
+func lineAtOffset(data []byte, offset int64) int {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > int64(len(data)) {
+		offset = int64(len(data))
+	}
+	return 1 + bytes.Count(data[:offset], []byte{'\n'})
+}
+
+// TestConfFilesHaveNoDuplicateKeys applies the duplicate-key check to every JSON file
+// under conf/.
+//
+// A definition written into a file that already had one does not win: the parser keeps the
+// last occurrence, so the older copy stays in force and the newer one is silently ignored.
+// That is not hypothetical - conf/infinity_mapping.json carried two deleted_doc_id
+// definitions, and the duplicate key meant the column the doc-delete fix (#17685) added -
+// with its analyzer - never took effect.
+func TestConfFilesHaveNoDuplicateKeys(t *testing.T) {
+	confDir := filepath.Join(findRepoRoot(), "conf")
+	var files []string
+	err := filepath.WalkDir(confDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && strings.HasSuffix(path, ".json") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", confDir, err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("no JSON file under %s; the check would pass vacuously", confDir)
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		for _, dup := range duplicateJSONKeys(t, data) {
+			t.Errorf("%s:%d: object key %q appears twice (byte %d); encoding/json keeps only the last one, so the file means something other than it says",
+				path, dup.line, dup.key, dup.offset)
+		}
+	}
+	t.Logf("checked %d JSON files under conf/", len(files))
+}
+
+// TestAllModelsCatalogTokenizerTagsAreKnown checks the catalog's half of the tokenizer
+// link: every "tokenizer" value it declares has to name a counter the Go side knows.
+//
+// A tag that names nothing fails nowhere. ResolveCounter falls back to cl100k_base, the
+// ingest path counts with the calibrated estimate, and the only trace is a lower-precision
+// count - which is the degradation this field exists to prevent. So a typo in a
+// hand-edited catalog is invisible unless the two lists are compared, which is this.
+//
+// The known ids come from CounterStatuses, not from CounterByID: the bool CounterByID
+// returns means "this counter is available", so on a checkout that has not downloaded the
+// tokenizer assets it is false even for a valid tag. Keying this test off it would fail on
+// every machine without the assets - for the wrong reason. CounterStatuses enumerates the
+// ids whether or not their assets are present.
+func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
+	known := map[string]bool{}
+	for _, status := range tokenizer.CounterStatuses() {
+		known[status.ID] = true
+	}
+	if len(known) == 0 {
+		t.Fatal("tokenizer.CounterStatuses reports no counters; the check would pass vacuously")
+	}
+
+	target := filepath.Join(findRepoRoot(), "conf", "all_models.json")
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read %s: %v", target, err)
+	}
+	var catalog map[string]any
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		t.Fatalf("parse %s: %v", target, err)
+	}
+
+	knownIDs := sortedKeys(known)
+	tags, declared := map[string]int{}, 0
+	for _, section := range catalog {
+		entries, ok := section.([]any)
+		if !ok {
+			continue
+		}
+		for _, entry := range entries {
+			model, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			tag, ok := model["tokenizer"].(string)
+			if !ok || tag == "" {
+				continue
+			}
+			declared++
+			tags[tag]++
+			if !known[tag] {
+				t.Errorf("%s: model %v declares tokenizer %q, which is not a counter id %v; ingest will silently count it with the calibrated estimate",
+					target, model["name"], tag, knownIDs)
+			}
+		}
+	}
+	if declared == 0 {
+		t.Fatalf("%s declares no tokenizer for any model; the check would pass vacuously", target)
+	}
+	t.Logf("catalog tokenizer tags: %v", tags)
+}
+
+// sortedKeys returns the keys of a set, sorted, for a deterministic message.
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
