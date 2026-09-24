@@ -35,6 +35,7 @@ Public entry: ``wiki_map_from_chunks``.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -687,12 +688,19 @@ def _wiki_merge_extracts(extracts: list[dict]) -> dict:
     return out
 
 
+def _wiki_log_scope_id(kb_id: str) -> str:
+    """Return a non-sensitive short scope identifier derived from kb_id."""
+    digest = hashlib.sha256(kb_id.encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
 def _wiki_build_resume_doc(
     chunk_id: str,
     doc_id: str,
     per_chunk_extract: dict,
     chunk_hash: str = "",
-    kb_id: str = "",
+    *,
+    kb_id: str,
 ) -> dict:
     """Build the non-searchable ES doc that records a per-chunk MAP extract.
 
@@ -704,9 +712,9 @@ def _wiki_build_resume_doc(
     The incremental MAP re-run reads it back and compares against the
     current chunk's hash to decide whether to re-extract.
 
-    ``kb_id`` is stamped on the row because every doc-store search in this
-    pipeline injects a ``kb_id`` filter. A MAP row without it is invisible
-    to cache resolution even after a successful bulk write.
+    ``kb_id`` is required and keyword-only. Every doc-store search in this
+    pipeline injects a ``kb_id`` filter, so a MAP row without a knowledge-base
+    id cannot be resolved by ``_wiki_load_map_versions``.
     """
     content_with_weight = json.dumps(per_chunk_extract, ensure_ascii=False)
     doc_id_str = str(doc_id)
@@ -830,6 +838,12 @@ async def _wiki_persist_extracts(
         await thread_pool_exec(settings.docStoreConn.insert, docs, index, kb_id)
     except Exception:
         logging.exception("wiki_map: failed to persist %d resume docs", len(docs))
+    else:
+        logging.info(
+            "wiki_map: persisted %d KB-scoped MAP resume rows scope=%s",
+            len(docs),
+            _wiki_log_scope_id(kb_id),
+        )
 
 
 async def _wiki_scan_current_chunk_state(
