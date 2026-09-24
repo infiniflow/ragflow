@@ -38,7 +38,7 @@
 //   - EMBEDDING MODEL RESOLUTION: mirrored. Python uses
 //     `LLMBundle(tenant_id, embd_id).encode([...])` from
 //     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
-//     through `service.ModelProviderService.GetEmbeddingModel`
+//     through the model solver injected by the ingestion task package
 //     (callers inject the resolver, see `DefaultEmbedderResolver`).
 //     The component does NOT directly construct a model driver —
 //     the resolution path depends on tenant/DAO context that lives

@@ -923,10 +923,11 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
+	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Truncate text to prevent exceeding model's max input length
 	maxLen := embeddingModel.MaxTokens
@@ -961,11 +962,12 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
+	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Truncate texts to prevent exceeding model's max input length
 	maxLen := embeddingModel.MaxTokens
@@ -1019,10 +1021,11 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
+	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"

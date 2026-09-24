@@ -84,7 +84,7 @@ func TestTransformChunkFields_IngestionShape(t *testing.T) {
 }
 
 // TestTransformChunkFieldsHexEncodesNativeIntSlices pins the Go-native slice
-// shapes the ingestion pipeline produces: AddPositions emits []int / [][]int
+// shapes the ingestion pipeline produces: addPDFPositions emits []int / [][]int
 // (internal/ingestion/task/indexdoc/position.go), and the Infinity columns are
 // VARCHAR holding the hex form. Left unconverted, Infinity rejects the insert
 // with "Not support to convert Tensor(int64,5) to Varchar" (3049).

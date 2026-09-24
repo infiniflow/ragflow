@@ -656,7 +656,7 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]b
 				if bt == "Nu" {
 					continue // numeric cell in a numeric table: ignored
 				}
-				if colHit[ri][ci] || bt != "Nu" {
+				if colHit[ri][ci] {
 					h++
 				}
 			}

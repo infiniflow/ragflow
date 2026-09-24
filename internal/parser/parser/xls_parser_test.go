@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -46,14 +47,16 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 		t.Fatalf("res.JSON should have structured table items")
 	}
 	item := res.JSON[0]
-	if item["ck_type"] != "table_header" {
-		t.Errorf("header ck_type = %v, want table_header", item["ck_type"])
+	if item["ck_type"] != "table" {
+		t.Errorf("table item ck_type = %v, want table", item["ck_type"])
 	}
-	if len(res.JSON) < 2 || res.JSON[1]["text"] != "Header1：Val1; Header2：Val2" {
-		t.Errorf("row item = %#v", res.JSON)
+	text, _ := item["text"].(string)
+	if !strings.Contains(text, "<tr><th>Header1</th><th>Header2</th></tr>") ||
+		!strings.Contains(text, "<tr><td>Val1</td><td>Val2</td></tr>") {
+		t.Errorf("table markup = %q, want captioned header and data row", text)
 	}
 	if item["doc_type_kwd"] != "table" {
-		t.Errorf("header doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
+		t.Errorf("doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
 	}
 
 	// Configure output format to "json"
@@ -87,11 +90,11 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	if res.OutputFormat != "json" {
 		t.Errorf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
 	}
-	if len(res.JSON) < 2 {
-		t.Fatalf("res.JSON = %#v, want header and row", res.JSON)
+	if len(res.JSON) != 1 {
+		t.Fatalf("res.JSON = %#v, want one segmented HTML table item", res.JSON)
 	}
-	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
-		t.Errorf("items should be header and row, got %#v", res.JSON)
+	if res.JSON[0]["ck_type"] != "table" {
+		t.Errorf("item ck_type = %v, want table", res.JSON[0]["ck_type"])
 	}
 
 	// Even if configured to legacy "html", format is unified to "json"

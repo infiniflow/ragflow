@@ -2489,7 +2489,7 @@ func numericRow(row interface{}, out *[]interface{}) bool {
 // flat []interface{} the hex encoder takes. Two shapes reach the engine: values
 // decoded from JSON arrive as []interface{} (numbers as float64), while a chunk
 // built IN PROCESS carries Go's typed slices (the ingestion pipeline's
-// AddPositions emits []int / [][]int). Both must be encoded, because these
+// addPDFPositions emits []int / [][]int). Both must be encoded, because these
 // columns are VARCHAR holding the hex form: handing Infinity the typed slice
 // makes it try to store an int64 tensor and fail with
 // "Not support to convert Tensor(int64,5) to Varchar" (InfinityException 3049).
@@ -2642,7 +2642,7 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		case "position_int", "page_num_int", "top_int":
 			// Python flattens the position rows and hex-encodes every number
 			// (infinity_conn.py: `[num for row in v for num in row]`, "%08x").
-			// The input may be Go-NATIVE: the ingestion pipeline's AddPositions
+			// The input may be Go-NATIVE: the ingestion pipeline's addPDFPositions
 			// emits []int / [][]int, and those used to miss the
 			// []interface{}-only branch and reach Infinity as a raw tensor
 			// ("Not support to convert Tensor(int64,5) to Varchar", 3049).

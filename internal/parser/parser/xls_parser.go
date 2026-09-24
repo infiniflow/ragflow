@@ -22,22 +22,16 @@ import (
 )
 
 type XLSParser struct {
-	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSParser(libType string) (*XLSParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSParser(_ string) (*XLSParser, error) {
 	return &XLSParser{
-		libType:                        libType,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -57,9 +51,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -93,7 +85,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
+	items, warnings, sheetsCount, err := parseXLSXBytes(data)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
