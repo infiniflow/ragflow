@@ -659,13 +659,15 @@ async def get_wiki_graph(tenant_id, dataset_id):
         if isinstance(node, str):
             node = node.strip() or None
         keywords = request.args.get("keywords", "")
-        top_n_arg = request.args.get("top_n") or request.args.get("topN")
+        top_n_arg = request.args.get("top_n")
+        if top_n_arg is None:
+            top_n_arg = request.args.get("topN")
         top_n = None
         if top_n_arg is not None:
             try:
                 top_n = int(top_n_arg)
             except (TypeError, ValueError):
-                top_n = None
+                return get_error_data_result(message="top_n must be an integer", code=RetCode.ARGUMENT_ERROR)
         success, result = await dataset_api_service.get_wiki_graph(
             dataset_id,
             tenant_id,
