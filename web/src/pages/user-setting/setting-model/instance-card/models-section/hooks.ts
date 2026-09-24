@@ -79,12 +79,20 @@ export const normalizeModelTypes = (raw: unknown): string[] =>
  * provider model items. `features` is forwarded via `extra` so the backend
  * can persist per-model flags such as `is_tools`.
  */
-export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
+export const buildModelInfo = (
+  items: IProviderModelItem[],
+  // New (draft) instances default every model to tool-calling enabled;
+  // an explicit per-model `extra.is_tools` below still overrides it.
+  defaultToolsEnabled = false,
+): IModelInfo[] =>
   items.map((m) => ({
     model_name: m.name,
     model_type: m.model_types ?? [],
     max_tokens: m.max_tokens ?? 0,
-    extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
+    extra: {
+      is_tools: defaultToolsEnabled || hasToolFeature(m.features),
+      ...(m.extra ?? {}),
+    },
   }));
 
 /** Resolved credentials for catalog / verify / batch calls.
@@ -449,7 +457,7 @@ export function useModelsDerived({
   // Push the latest per-instance model list up to the host so its
   // save payload can include `model_info`.
   useEffect(() => {
-    onChangeRef.current?.(buildModelInfo(instanceItems));
+    onChangeRef.current?.(buildModelInfo(instanceItems, isDraftInstance));
   }, [instanceItems]);
 
   // Saved instance models come from the backend, both after the initial
@@ -842,7 +850,7 @@ export function useModelMutations({
       api_key: apiKey,
       base_url: baseUrl,
       region: instance?.region ?? 'default',
-      model_info: buildModelInfo(nextModels),
+      model_info: buildModelInfo(nextModels, isDraftInstance),
     });
     filteredModels.forEach((m) => {
       if (!isModelAdded(m.name)) {
