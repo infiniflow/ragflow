@@ -545,18 +545,19 @@ def test_a_table_in_a_control_is_read_and_later_tables_keep_their_titles(docx_mo
 
 
 @pytest.mark.p2
-def test_a_table_caption_reads_a_heading_held_in_a_content_control(docx_modules):
-    """The caption is built from the same heading text the chunk shows."""
+def test_a_table_caption_reads_headings_held_in_content_controls(docx_modules):
+    """The caption is built from the same heading text the chunk shows, at every level."""
 
     def builder(d):
         from docx.oxml import parse_xml
 
-        heading = d.add_heading("", level=1)
-        heading._p.append(parse_xml(f"<w:sdt {W}><w:sdtPr/><w:sdtContent>{_text('Results')}</w:sdtContent></w:sdt>"))
+        for text, level in (("Results", 1), ("Summary", 2)):
+            heading = d.add_heading("", level=level)
+            heading._p.append(parse_xml(f"<w:sdt {W}><w:sdtPr/><w:sdtContent>{_text(text)}</w:sdtContent></w:sdt>"))
         d.add_table(rows=1, cols=1).cell(0, 0).text = "T1"
 
     assert [table for _text_, _image, table in _naive(docx_modules, builder) if table] == [
-        "<table><caption>Table Location: doc > Results</caption><tr><td>T1</td></tr></table>",
+        "<table><caption>Table Location: doc > Results > Summary</caption><tr><td>T1</td></tr></table>",
     ]
 
 
