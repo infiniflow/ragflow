@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -57,11 +56,7 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult emits normalized text items for block-level HTML elements
-// and independent image items for supported <img> sources. Relative sources
-// are carried as locators for the ingestion component to resolve from storage.
-// The walker joins visible text and keeps valid inline image payloads available
-// to the media enhancement stage. External image URLs remain source references
-// and are reported as unsupported by that stage.
+// and independent image items for valid inline image payloads.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// x/net/html assumes UTF-8 input, so a GBK/Big5/Shift-JIS page would
 	// otherwise surface as U+FFFD mojibake. Decode first, mirroring the
@@ -130,8 +125,6 @@ type htmlImageSourceKind uint8
 const (
 	unsupportedHTMLImageSource htmlImageSourceKind = iota
 	inlineHTMLImageSource
-	relativeHTMLImageSourceKind
-	externalHTMLImageSourceKind
 )
 
 func (s *htmlWalkState) warnings() []string {
@@ -364,7 +357,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 				return
 			}
 			flushLeafText(w, out, ckType, trim)
-			appendHTMLImageItem(out, state, src, sourceKind, htmlAttribute(n, "alt"), "", 0, 0)
+			appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
@@ -411,7 +404,6 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 
 type htmlTableImage struct {
 	src    string
-	kind   htmlImageSourceKind
 	alt    string
 	row    int
 	column int
@@ -437,7 +429,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 	*out = append(*out, table)
 	for _, media := range images {
-		appendHTMLImageItem(out, state, media.src, media.kind, media.alt, tableID, media.row, media.column)
+		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
 	}
 }
 
@@ -468,7 +460,6 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				} else {
 					images = append(images, htmlTableImage{
 						src:    src,
-						kind:   kind,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -494,8 +485,8 @@ func removeHTMLImageSource(n *html.Node) {
 	n.Attr = attrs
 }
 
-func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string, sourceKind htmlImageSourceKind, alt, parentTableID string, row, column int) {
-	if comma := strings.IndexByte(src, ','); sourceKind == inlineHTMLImageSource && comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
+	if comma := strings.IndexByte(src, ','); comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
 		src = strings.ToLower(src[:comma]) + src[comma:]
 	}
 	state.mediaOrder++
@@ -505,11 +496,7 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string
 		"ck_type":      "image",
 		"media_order":  state.mediaOrder,
 	}
-	if sourceKind == inlineHTMLImageSource {
-		item["image"] = src
-	} else {
-		item["image_src"] = strings.TrimSpace(src)
-	}
+	item["image"] = src
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
 		item["row_index"] = row
@@ -531,16 +518,10 @@ func usableHTMLImageSource(src string) bool {
 }
 
 func classifyHTMLImageSource(src string) htmlImageSourceKind {
-	switch {
-	case usableHTMLImageSource(src):
+	if usableHTMLImageSource(src) {
 		return inlineHTMLImageSource
-	case relativeHTMLImageSource(src):
-		return relativeHTMLImageSourceKind
-	case externalHTMLImageSource(src):
-		return externalHTMLImageSourceKind
-	default:
-		return unsupportedHTMLImageSource
 	}
+	return unsupportedHTMLImageSource
 }
 
 func isHTMLDataImageSource(src string) bool {
@@ -609,20 +590,6 @@ func base64DecodedSize(payload string, encodedBytes int) (int64, bool) {
 	}
 	decodedSize := int64(encodedBytes/4)*3 + int64(encodedBytes%4)*3/4 - int64(padding)
 	return decodedSize, decodedSize >= 0
-}
-
-func externalHTMLImageSource(src string) bool {
-	u, err := url.Parse(strings.TrimSpace(src))
-	return err == nil && (strings.EqualFold(u.Scheme, "https") || strings.EqualFold(u.Scheme, "http")) && u.Host != ""
-}
-
-func relativeHTMLImageSource(src string) bool {
-	src = strings.TrimSpace(src)
-	if src == "" {
-		return false
-	}
-	u, err := url.Parse(strings.ReplaceAll(src, " ", "%20"))
-	return err == nil && !u.IsAbs() && u.Host == "" && u.Opaque == "" && u.Path != "" && !strings.HasPrefix(u.Path, "/")
 }
 
 func htmlAttribute(n *html.Node, key string) string {

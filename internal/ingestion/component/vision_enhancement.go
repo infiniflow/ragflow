@@ -196,10 +196,6 @@ func maybeDispatchVisionEnhancement(
 			items = append(items, i)
 			continue
 		}
-		if src, _ := item["image_src"].(string); strings.TrimSpace(src) != "" {
-			items = append(items, i)
-			continue
-		}
 		if _, ok := parser.ExtractPDFPositions(item); ok {
 			items = append(items, i)
 		}
@@ -246,15 +242,6 @@ func maybeDispatchVisionEnhancement(
 	defer cropper.Close()
 	modified := false
 	parseMethod := getStringOr(setup, "parse_method", "")
-	var htmlBucket, htmlPath string
-	var hasHTMLLocation bool
-	var htmlLocationUnavailable, htmlImageUnsupported, htmlImageUnresolved int
-	for _, itemIdx := range items {
-		if source, _ := dispatched.JSON[itemIdx]["image_src"].(string); strings.TrimSpace(source) != "" {
-			htmlBucket, htmlPath, hasHTMLLocation = htmlSourceStorageLocation(ctx, db, inputs)
-			break
-		}
-	}
 	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
@@ -296,23 +283,6 @@ func maybeDispatchVisionEnhancement(
 			}
 			defer release()
 			item := dispatched.JSON[itemIdx]
-			if imagePayload, _ := item["image"].(string); imagePayload == "" {
-				if source, _ := item["image_src"].(string); strings.TrimSpace(source) != "" {
-					if !hasHTMLLocation {
-						if isExternalHTMLImageURL(source) {
-							htmlImageUnsupported++
-						} else {
-							htmlLocationUnavailable++
-						}
-					} else if err := resolveHTMLImageSource(itemCtx, htmlBucket, htmlPath, item); err != nil && ctx.Err() == nil {
-						if errors.Is(err, errUnsupportedHTMLImageSource) {
-							htmlImageUnsupported++
-						} else {
-							htmlImageUnresolved++
-						}
-					}
-				}
-			}
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				if ctx.Err() == nil && vlmReady {
@@ -373,24 +343,6 @@ func maybeDispatchVisionEnhancement(
 		}(slot, resource.VLMData)
 	}
 	wg.Wait()
-	if htmlLocationUnavailable > 0 {
-		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf(
-			"HTML image enhancement skipped %d image source(s): document storage location unavailable",
-			htmlLocationUnavailable,
-		))
-	}
-	if htmlImageUnsupported > 0 {
-		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf(
-			"HTML image enhancement skipped %d unsupported or non-relative image source(s); only paths within document storage are supported",
-			htmlImageUnsupported,
-		))
-	}
-	if htmlImageUnresolved > 0 {
-		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf(
-			"HTML image enhancement could not read or validate %d image source(s) from document storage",
-			htmlImageUnresolved,
-		))
-	}
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
