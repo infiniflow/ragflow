@@ -33,6 +33,7 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -316,6 +317,42 @@ func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]a
 		globals[k] = v
 	}
 	return sys, env, globals
+}
+
+// MergeNamespaces adds the supplied values to the three shared namespaces.
+// Existing keys are preserved unless replaced by an incoming value.
+func (s *CanvasState) MergeNamespaces(sys, env, globals map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureInitializedLocked()
+	maps.Copy(s.Sys, sys)
+	maps.Copy(s.Env, env)
+	maps.Copy(s.Globals, globals)
+}
+
+// ReplaceNamespaces replaces the three shared namespaces with defensive
+// copies of the supplied maps.
+func (s *CanvasState) ReplaceNamespaces(sys, env, globals map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Sys = maps.Clone(sys)
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	s.Env = maps.Clone(env)
+	if s.Env == nil {
+		s.Env = make(map[string]any)
+	}
+	s.Globals = maps.Clone(globals)
+	if s.Globals == nil {
+		s.Globals = make(map[string]any)
+	}
 }
 
 // SetHistory replaces the conversation history with a defensive copy.
