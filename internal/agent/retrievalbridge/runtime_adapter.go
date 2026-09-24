@@ -65,29 +65,15 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if db == nil {
 		db = dao.DB
 	}
-	toolReq := agenttool.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		MemoryIDs:                req.MemoryIDs,
-		TopN:                     req.TopN,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		TopK:                     req.TopK,
-		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
-		UseKG:                    req.UseKG,
-		SimilarityThreshold:      req.SimilarityThreshold,
-		AllowDenseFallback:       new(false),
-		CrossLanguages:           req.CrossLanguages,
-		RetrievalFrom:            req.RetrievalFrom,
-		DocScope:                 req.DocScope,
-		TenantID:                 req.TenantID,
-		// rank_feature (Python retrieve: rank_feature=label_question(question,
-		// self.kbs)) — forwarded from the RAGTools-computed value so the agentic
-		// tool stays authoritative; the adapter falls back to its own resolution.
-		RankFeature: rankFeatureOrNil(req.RankFeature),
-		// OnlyOriginalText restricts retrieval to ordinary document chunks (no
-		// compile_kwd) — Python hybrid_search's must_not={"exists":"compile_kwd"}.
-		ExcludeCompiled: req.OnlyOriginalText,
-	}
+	// RetrievalRequest is shared by the runtime and tool layers, so preserve it
+	// whole. A field-by-field copy previously dropped RerankID, causing agent
+	// completions to silently use local KNN scoring even when a reranker was set.
+	toolReq := agenttool.RetrievalRequest(req)
+	toolReq.AllowDenseFallback = new(false)
+	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
+	// Python hybrid_search excludes compiled products from plain retrieval via
+	// must_not={"exists":"compile_kwd"}.
+	toolReq.ExcludeCompiled = req.OnlyOriginalText
 	chunks, err := svc.Search(ctx, db, toolReq)
 	if err != nil {
 		return nil, err

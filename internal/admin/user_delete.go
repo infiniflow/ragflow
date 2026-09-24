@@ -220,7 +220,7 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	if docEngine == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0) {
 		return fmt.Errorf("document engine is unavailable for user data cleanup")
 	}
-	if store == nil && (len(data.datasets) > 0 || len(data.documents) > 0 || len(data.files) > 0) {
+	if store == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0 || len(data.files) > 0) {
 		return fmt.Errorf("storage is unavailable for user data cleanup")
 	}
 	datasetIDs := make(map[string]struct{}, len(data.datasetIDs))
@@ -259,6 +259,21 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 			return fmt.Errorf("remove dataset bucket %s: %w", datasetNameID, err)
 		}
 		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
+	}
+	if data.ownedTenantID != "" {
+		downloadBucket := fmt.Sprintf("%s-downloads", data.ownedTenantID)
+		exists, err := store.BucketExistsWithError(ctx, downloadBucket)
+		if err != nil {
+			return fmt.Errorf("check downloads bucket %s: %w", downloadBucket, err)
+		}
+		if !exists {
+			common.Warn("Downloads bucket already missing", zap.String("bucket", downloadBucket))
+		} else {
+			if err := store.RemoveBucket(ctx, downloadBucket); err != nil {
+				return fmt.Errorf("remove downloads bucket %s: %w", downloadBucket, err)
+			}
+			common.Info("Removed downloads bucket", zap.String("bucket", downloadBucket))
+		}
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
@@ -527,8 +542,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		}
 	}
 	commitQuery := tx.Model(&entity.FileCommit{}).Where("author_id = ?", userID)
-	if len(data.fileIDs) > 0 {
-		commitQuery = commitQuery.Or("folder_id IN ?", data.fileIDs)
+	commitFolderIDs := append(append([]string{}, data.fileIDs...), data.datasetIDs...)
+	if len(commitFolderIDs) > 0 {
+		commitQuery = commitQuery.Or("folder_id IN ?", commitFolderIDs)
 	}
 	if err = commitQuery.Pluck("id", &commitIDs).Error; err != nil {
 		return err
