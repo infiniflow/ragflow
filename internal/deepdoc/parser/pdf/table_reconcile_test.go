@@ -199,8 +199,8 @@ func TestMergeContainedCandidateRows_DropsDisjointRowsAlreadyInParent(t *testing
 }
 
 func TestMergeContainedCandidateRows_DropsSubstringRowsWithMatchingColumns(t *testing.T) {
-	parent := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{{{Text: "ABC", Y0: 10, Y1: 20}}}}
-	child := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{{{Text: "BC", Y0: 10, Y1: 20}}}}
+	parent := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{{{Text: "ABCDEFG", Y0: 10, Y1: 20}}}}
+	child := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{{{Text: "BCDEFG", Y0: 10, Y1: 20}}}}
 	if !mergeContainedCandidateRows(&parent, child, true) {
 		t.Fatal("a cropped row already contained in the same parent row is duplicate")
 	}
@@ -271,5 +271,124 @@ func TestReconcileContainedPageTables_DropsCoarserShortFragment(t *testing.T) {
 	}
 	if got := reconcileContainedPageTables([]pageTableCandidate{parent, child}, nil); len(got) != 1 {
 		t.Fatalf("a short crop with coarser columns and identical rows is redundant, got %d candidates", len(got))
+	}
+}
+
+func TestMergeContainedCandidateRows_KeepsCrossRowRebundlingSeparate(t *testing.T) {
+	parent := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "BC", Y0: 0, Y1: 10}}, {{Text: "CB", Y0: 10, Y1: 20}},
+	}}
+	rebundled := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "BB", Y0: 0, Y1: 10}}, {{Text: "CC", Y0: 10, Y1: 20}},
+	}}
+	if mergeContainedCandidateRows(&parent, rebundled, true) {
+		t.Fatal("an equal character total paired differently must not drop the child")
+	}
+	if len(parent.Grid) != 2 || parent.Grid[0][0].Text != "BC" || parent.Grid[1][0].Text != "CB" {
+		t.Fatalf("a rejected merge must leave the parent grid untouched: %v", parent.Grid)
+	}
+	duplicate := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "BC", Y0: 0, Y1: 10}}, {{Text: "CB", Y0: 10, Y1: 20}},
+	}}
+	if !mergeContainedCandidateRows(&parent, duplicate, true) {
+		t.Fatal("rows that pair in order with the parent band are still redundant")
+	}
+	if len(parent.Grid) != 2 || parent.Grid[0][0].Text != "BC" || parent.Grid[1][0].Text != "CB" {
+		t.Fatalf("an equal-count merge must keep the parent rows: %v", parent.Grid)
+	}
+	finer := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "B", Y0: 0, Y1: 5}}, {{Text: "C", Y0: 5, Y1: 10}}, {{Text: "CB", Y0: 10, Y1: 20}},
+	}}
+	if !mergeContainedCandidateRows(&parent, finer, true) {
+		t.Fatal("a finer child whose rows pair in order must keep repairing the parent band")
+	}
+	if len(parent.Grid) != 3 || parent.Grid[0][0].Text != "B" || parent.Grid[1][0].Text != "C" || parent.Grid[2][0].Text != "CB" {
+		t.Fatalf("parent band was not replaced by its lossless split: %v", parent.Grid)
+	}
+}
+
+// TestMergeContainedCandidateRows_AbsorbsCoarserShorterChild pins that the
+// ordered-pairing guard stays on the cases that can lose a row pairing. A child
+// with fewer rows than the parent band it covers only re-bundles the same text:
+// nothing is spliced in and the parent's finer split stays the emitted truth, so
+// requiring an in-order match there just turned the redundant crop into a second
+// table on the page.
+func TestMergeContainedCandidateRows_AbsorbsCoarserShorterChild(t *testing.T) {
+	parent := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "项", Y0: 0, Y1: 10}}, {{Text: "目", Y0: 10, Y1: 20}}, {{Text: "名", Y0: 20, Y1: 30}},
+	}}
+	coarser := pdftype.TableItem{Scale: 1, Grid: [][]pdftype.TSRCell{
+		{{Text: "项目名", Y0: 0, Y1: 30}},
+	}}
+	if !mergeContainedCandidateRows(&parent, coarser, true) {
+		t.Fatal("a merged one-row crop of the same band is still duplicate")
+	}
+	if len(parent.Grid) != 3 || parent.Grid[0][0].Text != "项" || parent.Grid[1][0].Text != "目" || parent.Grid[2][0].Text != "名" {
+		t.Fatalf("absorbing a coarser child must keep the parent's finer split: %v", parent.Grid)
+	}
+}
+
+func TestReconcileContainedPageTables_KeepsRowCoveringLittleOfParentRow(t *testing.T) {
+	region := pdftype.DLARegion{X0: 0, X1: 200, Y0: 0, Y1: 100}
+	newParent := func() pageTableCandidate {
+		return pageTableCandidate{
+			item: pdftype.TableItem{Scale: 1, Cells: []pdftype.TSRCell{
+				{X0: 0, X1: 200, Label: "table column"},
+			}, Grid: [][]pdftype.TSRCell{
+				{{Text: "A", Y0: 0, Y1: 10}}, {{Text: "项目名称数量单价", Y0: 10, Y1: 20}},
+			}},
+			boxIdx: []int{0, 1}, region: region,
+		}
+	}
+	newChild := func(text string) pageTableCandidate {
+		return pageTableCandidate{
+			item: pdftype.TableItem{Scale: 1, Cells: []pdftype.TSRCell{
+				{X0: 0, X1: 200, Label: "table column"},
+			}, Grid: [][]pdftype.TSRCell{{{Text: text, Y0: 10, Y1: 20}}}},
+			boxIdx: []int{1}, region: region,
+		}
+	}
+	if got := reconcileContainedPageTables([]pageTableCandidate{newParent(), newChild("项目名称")}, nil); len(got) != 2 {
+		t.Fatalf("a child row holding half of the parent row text is a body row of its own, got %d candidates", len(got))
+	}
+	if got := reconcileContainedPageTables([]pageTableCandidate{newParent(), newChild("目名称数量单价")}, nil); len(got) != 1 {
+		t.Fatalf("a child row covering the parent row almost completely is duplicate, got %d candidates", len(got))
+	}
+}
+
+func TestCoarserShortCandidate_CountsDistinctColumns(t *testing.T) {
+	columns := func(spans ...[2]float64) []pdftype.TSRCell {
+		out := make([]pdftype.TSRCell, 0, len(spans))
+		for _, span := range spans {
+			out = append(out, pdftype.TSRCell{X0: span[0], X1: span[1], Label: "table column"})
+		}
+		return out
+	}
+	cells := func(n int) []pdftype.TSRCell {
+		out := make([]pdftype.TSRCell, n)
+		for i := range out {
+			out[i] = pdftype.TSRCell{Text: "v", Y0: 0, Y1: 10}
+		}
+		return out
+	}
+	// Four real columns, each detected twice by TSR.
+	parent := pdftype.TableItem{Scale: 1, Cells: columns(
+		[2]float64{0, 20}, [2]float64{0, 20}, [2]float64{20, 40}, [2]float64{20, 40},
+		[2]float64{40, 60}, [2]float64{40, 60}, [2]float64{60, 80}, [2]float64{60, 80},
+	), Grid: [][]pdftype.TSRCell{cells(4), cells(4)}}
+	finer := pdftype.TableItem{Scale: 1, Cells: columns(
+		[2]float64{0, 16}, [2]float64{16, 32}, [2]float64{32, 48}, [2]float64{48, 64}, [2]float64{64, 80},
+	), Grid: [][]pdftype.TSRCell{cells(5)}}
+	if len(parent.Cells) <= len(finer.Cells) {
+		t.Fatal("fixture must emit more raw column cells in the parent than in the child")
+	}
+	if coarserShortCandidate(parent, finer) {
+		t.Fatal("duplicated parent column cells must not make a finer child look coarser")
+	}
+	coarser := pdftype.TableItem{Scale: 1, Cells: columns(
+		[2]float64{0, 40}, [2]float64{40, 80},
+	), Grid: [][]pdftype.TSRCell{cells(2)}}
+	if !coarserShortCandidate(parent, coarser) {
+		t.Fatal("a child with fewer distinct columns is still the coarser fragment")
 	}
 }

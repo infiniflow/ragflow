@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
@@ -69,16 +70,10 @@ func coarserShortCandidate(parent, child pdf.TableItem) bool {
 	if len(child.Grid) == 0 || len(child.Grid) > maxCoarseFragmentRows || len(parent.Grid) == 0 {
 		return false
 	}
-	columnCount := func(item pdf.TableItem) int {
-		count := 0
-		for _, cell := range item.Cells {
-			if strings.HasSuffix(cell.Label, "table column") {
-				count++
-			}
-		}
-		return count
-	}
-	return columnCount(parent) >= minParentColumns && columnCount(parent) > columnCount(child) && len(child.Grid[0]) >= 2
+	// TSR repeats a column line more often than it misses one, so only distinct
+	// columns may decide which side is coarser.
+	parentColumns, childColumns := len(dedupPageColumns(parent)), len(dedupPageColumns(child))
+	return parentColumns >= minParentColumns && parentColumns > childColumns && len(child.Grid[0]) >= 2
 }
 
 func removeSharedPageRows(candidates []pageTableCandidate, boxes []pdf.TextBox) []pageTableCandidate {
@@ -160,36 +155,40 @@ func boxIDSlicesOverlap(a, b []int) bool {
 	return false
 }
 
-func compatibleTableColumns(a, b pdf.TableItem) bool {
+// dedupPageColumns maps every TSR column line of item into page space and
+// collapses near-coincident duplicates, so a repeated detection of the same
+// column counts once.
+func dedupPageColumns(item pdf.TableItem) []pdf.TSRCell {
 	const duplicateColumnTolerance = 5.0
+	if item.Scale <= 0 {
+		return nil
+	}
+	var out []pdf.TSRCell
+	for _, cell := range item.Cells {
+		if strings.HasSuffix(cell.Label, "table column") {
+			out = append(out, pdf.TSRCell{
+				X0: (cell.X0 + item.CropOffX) / item.Scale,
+				X1: (cell.X1 + item.CropOffX) / item.Scale,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].X0 < out[j].X0 })
+	unique := out[:0]
+	for _, column := range out {
+		if len(unique) > 0 && math.Abs(column.X0-unique[len(unique)-1].X0) <= duplicateColumnTolerance &&
+			math.Abs(column.X1-unique[len(unique)-1].X1) <= duplicateColumnTolerance {
+			continue
+		}
+		unique = append(unique, column)
+	}
+	return unique
+}
+
+func compatibleTableColumns(a, b pdf.TableItem) bool {
 	const singleColumnTolerance = 10.0
 	const columnCenterTolerance = 8.0
 	const minMatchingColumnFraction = 0.7
-	columns := func(item pdf.TableItem) []pdf.TSRCell {
-		if item.Scale <= 0 {
-			return nil
-		}
-		var out []pdf.TSRCell
-		for _, cell := range item.Cells {
-			if strings.HasSuffix(cell.Label, "table column") {
-				out = append(out, pdf.TSRCell{
-					X0: (cell.X0 + item.CropOffX) / item.Scale,
-					X1: (cell.X1 + item.CropOffX) / item.Scale,
-				})
-			}
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].X0 < out[j].X0 })
-		unique := out[:0]
-		for _, column := range out {
-			if len(unique) > 0 && math.Abs(column.X0-unique[len(unique)-1].X0) <= duplicateColumnTolerance &&
-				math.Abs(column.X1-unique[len(unique)-1].X1) <= duplicateColumnTolerance {
-				continue
-			}
-			unique = append(unique, column)
-		}
-		return unique
-	}
-	left, right := columns(a), columns(b)
+	left, right := dedupPageColumns(a), dedupPageColumns(b)
 	if len(left) == 0 || len(right) == 0 {
 		return false
 	}
@@ -263,10 +262,18 @@ func mergeContainedCandidateRows(parent *pdf.TableItem, child pdf.TableItem, mat
 		if !matchingColumns {
 			return childRowsCoveredByParent(*parent, child, false)
 		}
+		// Identical character totals can come from two different ways of
+		// bundling the same OCR lines. Where the child splits the band at
+		// least as finely as the parent, only a consistent in-order pairing of
+		// child rows onto the selected parent rows proves the texts agree;
+		// otherwise keep both candidates so no row loses its real pairing. A
+		// coarser child with fewer rows just re-bundles the same band, and the
+		// parent's finer split stays the emitted truth, so it needs no such
+		// proof to be absorbed.
+		if len(child.Grid) >= len(selected) && !sameOrderedRowCharacters(parent.Grid, selected, child.Grid) {
+			return false
+		}
 		if len(child.Grid) > len(selected) {
-			if !sameOrderedRowCharacters(parent.Grid, selected, child.Grid) {
-				return false
-			}
 			merged := make([][]pdf.TSRCell, 0, len(parent.Grid)-len(selected)+len(child.Grid))
 			first := selected[0]
 			skip := make(map[int]bool, len(selected))
@@ -337,6 +344,7 @@ func runeCountsEqual(a, b map[rune]int) bool {
 }
 
 func childRowsCoveredByParent(parent, child pdf.TableItem, allowSubstring bool) bool {
+	const minimumCoveredRowTextPercent = 85
 	used := make(map[int]bool)
 	for _, childRow := range child.Grid {
 		childText := normalizedGridRowText(childRow)
@@ -354,7 +362,15 @@ func childRowsCoveredByParent(parent, child pdf.TableItem, allowSubstring bool) 
 				continue
 			}
 			parentText := normalizedGridRowText(parentRow)
-			if childText == parentText || allowSubstring && strings.Contains(parentText, childText) {
+			if childText == parentText {
+				used[i] = true
+				matched = true
+				break
+			}
+			// A crop may lose the ends of a merged parent row, but a row that
+			// only fills a fraction of it is a different body row.
+			if allowSubstring && strings.Contains(parentText, childText) &&
+				utf8.RuneCountInString(childText)*100 >= utf8.RuneCountInString(parentText)*minimumCoveredRowTextPercent {
 				used[i] = true
 				matched = true
 				break
