@@ -81,6 +81,22 @@ func (d *SyncTaskDAO) DB() *gorm.DB {
 	return d.db
 }
 
+// ListDatasetSyncTasks returns non-scheduled sync tasks for connectors that
+// are still linked to the dataset. Newest rows are returned first so callers
+// can select the latest run per connector without database-specific windows.
+func (d *SyncTaskDAO) ListDatasetSyncTasks(ctx context.Context, datasetID string) ([]entity.SyncLogs, error) {
+	var tasks []entity.SyncLogs
+	err := d.db.WithContext(ctx).
+		Model(&entity.SyncLogs{}).
+		Select("sync_logs.*").
+		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
+		Where("sync_logs.kb_id = ? AND sync_logs.task_type = ? AND sync_logs.status <> ?", datasetID, TaskTypeSync, SyncStatusSchedule).
+		Distinct().
+		Order("COALESCE(sync_logs.update_time, 0) DESC, sync_logs.id DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
 type dueSyncTaskRow struct {
 	entity.SyncLogs
 	ConnectorRefreshFreq int64          `gorm:"column:connector_refresh_freq"`

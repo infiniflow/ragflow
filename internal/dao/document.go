@@ -461,6 +461,19 @@ func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenant
 	return count, err
 }
 
+// CountByKBAndSourceTypes counts documents from the selected sources in one dataset.
+func (dao *DocumentDAO) CountByKBAndSourceTypes(ctx context.Context, db *gorm.DB, kbID string, sourceTypes []string) (int64, error) {
+	if len(sourceTypes) == 0 {
+		return 0, nil
+	}
+
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("kb_id = ? AND source_type IN ?", kbID, sourceTypes).
+		Count(&count).Error
+	return count, err
+}
+
 // SumSizeByDatasetID returns the total document size for a dataset.
 func (dao *DocumentDAO) SumSizeByDatasetID(ctx context.Context, db *gorm.DB, datasetID string) (int64, error) {
 	var total int64
