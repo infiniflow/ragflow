@@ -12,6 +12,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"os"
@@ -174,6 +175,44 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 				return
 			}
 			out[i].Image = "data:image/png;base64," + img
+
+			// Stream the freshly cropped preview to object storage and drop
+			// the in-memory base64 immediately, instead of carrying every
+			// chunk's image until the later batch upload pass
+			// (imageUploadDecorator). The batch pass is idempotent: it skips
+			// any chunk whose img_id is already set, so an upload that fails
+			// here simply falls through to that retry path. kb_id is empty
+			// only in canvas debug (dry-run) mode, where no persist stage
+			// runs and the decorator's debug branch drops the raw bytes.
+			if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
+				if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
+					// Key the streamed upload under the chunk's canonical id,
+					// so the MinIO object is stored under exactly the key the
+					// decorator (imageUploadDecorator) later exposes as
+					// ck["id"] and the persist/retrieval path looks it up by.
+					// canonicalChunkText is the single source for that id text:
+					// it folds media context and strips position tags, so the
+					// value equals the tag-stripped (finalized) text the
+					// decorator derives — for every chunk type, including
+					// image/table chunks whose text still carries position tags
+					// when there is no media context. crop depends only on
+					// positions, so reading the canonical text here does not
+					// alter the cropped image or the chunker's later output
+					// text.
+					chunkID := canonicalChunkID(docID, out[i])
+					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
+						out[i].ImgID = imgID
+						out[i].Image = ""
+						out[i].ID = chunkID
+					} else {
+						// Note: the document text is intentionally NOT logged
+						// here (CWE-532). The upload is retried at the persist
+						// stage, so the error is enough to diagnose.
+						common.Warn("cropImageChunks: preview upload failed; will retry at persist stage",
+							zap.Error(uerr))
+					}
+				}
+			}
 		}(i, ck, positions)
 	}
 	wg.Wait()

@@ -1134,7 +1134,12 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunk.Text = removeTag(chunk.Text)
-		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" {
+		// Keep a chunk whenever it still carries retrievable content. A
+		// streamed crop upload sets ImgID and clears Image, so an uploaded
+		// media chunk (text may be only a position tag, or empty) must be
+		// retained via its ImgID — otherwise the already-uploaded image is
+		// dropped and its MinIO object orphaned.
+		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" && chunk.ImgID == "" {
 			continue
 		}
 		visible = append(visible, chunk)
