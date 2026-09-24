@@ -93,11 +93,13 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, u
 		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
 	}
-	if run.RunCount == nil || *run.RunCount <= 0 {
+	if !isReadableIngestionLog(run) {
 		return nil, common.CodeDataError, errors.New("log not found")
 	}
 	response := &IngestionMessagesResponse{}
-	response.RunCount = *run.RunCount
+	if run.RunCount != nil {
+		response.RunCount = *run.RunCount
+	}
 	response.Terminal = isTerminalIngestionLogStatus(run.OperationStatus)
 
 	page, err := dao.NewIngestionTaskLogDAO().ListEventsPageByPipelineLogID(ctx, dao.DB, logID, limit, afterID, beforeID)
@@ -124,6 +126,16 @@ func isTerminalIngestionLogStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
+	if log == nil {
+		return false
+	}
+	if log.DocumentID == entity.DatasetLogDocumentID {
+		return log.RunCount == nil
+	}
+	return log.RunCount != nil && *log.RunCount > 0
 }
 
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
@@ -202,7 +214,7 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
 	}
-	if log.RunCount == nil || *log.RunCount <= 0 {
+	if !isReadableIngestionLog(log) {
 		return nil, common.CodeDataError, errors.New("log not found")
 	}
 

@@ -2,12 +2,15 @@ package pdf
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
-	"log/slog"
 	"math"
 	"sort"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -139,7 +142,8 @@ func resolvePagesToProcess(ranges [][]int, pageCount int) []int {
 func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 	outlines, outlineErr := engine.Outlines()
 	if outlineErr != nil {
-		slog.Warn("Failed to extract PDF outlines; continuing without them", "err", outlineErr)
+		common.Warn("deepdoc pdf parse: extract outlines failed; continuing without them",
+			zap.Error(outlineErr))
 		outlines = nil
 	}
 	return outlines
@@ -173,7 +177,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	ctx = context.WithValue(ctx, pageNumCtxKey, pg)
 	chars, extractErr := engine.ExtractChars(pg)
 	if extractErr != nil {
-		slog.Warn("processPage: ExtractChars failed", "page", pg, "err", extractErr)
+		common.Warn("deepdoc pdf parse: processPage ExtractChars failed",
+			zap.Int("page", pg), zap.Error(extractErr))
 		chars = nil
 	}
 	medianH := util.MedianCharHeight(chars)
@@ -194,7 +199,9 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	}
 
 	// First pass: render at the default DLA DPI (216 DPI).
+	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render start"))
 	pageImg, renderErr := p.renderPageToImage(ctx, engine, pg)
+	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render done"))
 	pageZoom := pdf.DlaScale
 	var ocrBoxes []pdf.TextBox
 	var updatedChars []pdf.TextChar
@@ -204,13 +211,17 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	var dlaRegions []pdf.DLAPageRegions
 
 	if pageImg != nil && renderErr == nil {
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr start"))
 		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer, pageZoom)
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr done"))
 		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
 			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
+		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "dla_tsr done"))
 	}
 
 	if renderErr != nil {
-		slog.Warn("processPage: RenderPageToImage failed", "page", pg, "err", renderErr)
+		common.Warn("deepdoc pdf parse: processPage RenderPageToImage failed",
+			zap.Int("page", pg), zap.Error(renderErr))
 	}
 
 	// Per-page zoom retry: if no boxes were produced at the default zoom
@@ -220,7 +231,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		// render to an unsafe DPI and spike memory on large pages.
 		const maxRetryZoom = 9.0
 		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
-		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
+		common.Debug("deepdoc pdf parse: per-page zoom retry",
+			zap.Int("page", pg), zap.Float64("zoom", retryZoom))
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer, retryZoom)
@@ -229,7 +241,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 			pageImg = retryImg
 			pageZoom = retryZoom
 		} else if retryRenderErr != nil {
-			slog.Warn("processPage: retry-zoom render failed", "page", pg, "err", retryRenderErr)
+			common.Warn("deepdoc pdf parse: processPage retry-zoom render failed",
+				zap.Int("page", pg), zap.Error(retryRenderErr))
 		}
 	}
 
@@ -354,6 +367,12 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 // visibility, while context cancellation still stops new dispatch and lets
 // in-flight work observe ctx.Err().
 //
+// OnPageDone is reported by the worker itself as its page finishes (see
+// pageProgress), not by the collection loop below: the loop only starts after
+// every page has been submitted, and SubmitTo blocks once the worker queue is
+// full, so collector-side reporting would stay silent until submission
+// finished, then deliver every completion in one burst.
+//
 // Pages are returned sorted by page number so callers can stream them
 // directly into downstream assembly without re-sorting.
 func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
@@ -377,6 +396,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 
 	type pageTaskResult = utility.WorkerPoolResult[pageTask, pageResult]
 	resultCh := make(chan pageTaskResult, len(pages))
+	progress := &pageProgress{total: len(pages), onDone: p.Config.OnPageDone}
 
 	submitted := 0
 	for _, pg := range pages {
@@ -386,6 +406,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 			pageNumber:  pg,
 			docAnalyzer: docAnalyzer,
 			tb:          tb,
+			progress:    progress,
 		}
 		if err := parserPageWorkerPool().SubmitTo(ctx, task, resultCh); err != nil {
 			recordErr(err)
@@ -405,6 +426,10 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 			recordErr(r.Err)
 		}
 		resultMap[r.PageNumber] = &r
+		common.Info("deepdoc pdf parse: page finished",
+			zap.Int("page", r.PageNumber),
+			zap.Int("done", i+1),
+			zap.Int("total", submitted))
 	}
 
 	results := make([]*pageResult, 0, len(pages))
@@ -439,8 +464,9 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 		if r == nil {
 			continue
 		}
-		if r.Err != nil {
-			slog.Warn("page worker failed", "page", r.PageNumber, "err", r.Err)
+		if r.Err != nil && !errors.Is(r.Err, context.Canceled) {
+			common.Warn("deepdoc pdf parse: page worker failed",
+				zap.Int("page", r.PageNumber), zap.Error(r.Err))
 		}
 		// Store per-page PDF-point dimensions for buildLayout.
 		if r.PageHeight > 0 {
@@ -609,18 +635,22 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 
 	tb := NewTableBuilderFor(docAnalyzer)
 	pages := resolvePagesToProcess(p.Config.Pages, pageCount)
+	common.Info("deepdoc pdf parse: total pages",
+		zap.Int("page_count", pageCount),
+		zap.Int("pages_to_parse", len(pages)))
 	if len(p.Config.Pages) > 0 {
-		slog.Info("deepdoc pdf parse: page ranges applied",
-			"configured_ranges", p.Config.Pages,
-			"page_count", pageCount,
-			"pages_to_parse", pages)
+		common.Info("deepdoc pdf parse: page ranges applied",
+			zap.Any("configured_ranges", p.Config.Pages),
+			zap.Int("page_count", pageCount),
+			zap.Ints("pages_to_parse", pages))
 	} else {
-		slog.Debug("deepdoc pdf parse: parsing all pages", "page_count", pageCount)
+		common.Info("deepdoc pdf parse: parsing all pages", zap.Int("page_count", pageCount))
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
-	if pageErr != nil {
-		slog.Warn("runPageWorkers: some pages failed", "err", pageErr)
+	if pageErr != nil && !errors.Is(pageErr, context.Canceled) {
+		common.Warn("deepdoc pdf parse: runPageWorkers some pages failed",
+			zap.Error(pageErr))
 	}
 
 	result, err := p.assembleDocument(ctx, pages, pageResults, outlines)

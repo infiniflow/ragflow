@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
 )
@@ -47,19 +48,21 @@ func (s stubRetrievalService) Search(_ context.Context, _ *gorm.DB, req runtime.
 	return s.chunks, nil
 }
 
-// stubDocEngine implements engine.DocEngine by only serving GetChunk; the rest
-// of the (large) interface is promoted from a nil field and never called by
-// this test.
+// stubDocEngine serves the document-scoped Search used by retrieval_by_children;
+// the rest of the (large) interface is promoted from a nil field and never
+// called by this test.
 type stubDocEngine struct {
 	engine.DocEngine
 	parents map[string]map[string]any
 }
 
-func (s stubDocEngine) GetChunk(_ context.Context, _, chunkID string, _ []string) (interface{}, error) {
-	if p, ok := s.parents[chunkID]; ok {
-		return p, nil
+func (s stubDocEngine) Search(_ context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
+	parentID, _ := req.Filter["id"].(string)
+	docID, _ := req.Filter["doc_id"].(string)
+	if p, ok := s.parents[parentID]; ok && p["doc_id"] == docID {
+		return &enginetypes.SearchResult{Chunks: []map[string]interface{}{p}}, nil
 	}
-	return nil, fmt.Errorf("parent %s not found", chunkID)
+	return &enginetypes.SearchResult{}, nil
 }
 
 // TestRuntimeRetrieverPreservesUnsetControls pins the presence semantics of the
@@ -140,8 +143,8 @@ func TestChunkAggRetrievePropagatesError(t *testing.T) {
 func TestRuntimeRetrieverPromotesChildrenToParent(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
-		{ID: "child-1", Content: "frag one", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
-		{ID: "child-2", Content: "frag two", DatasetID: "kb-1", MomID: "parent-1", Score: 0.8},
+		{ID: "child-1", Content: "frag one", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
+		{ID: "child-2", Content: "frag two", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.8},
 		{ID: "top-1", Content: "standalone", DatasetID: "kb-1", Score: 0.9},
 	}})
 	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
@@ -224,7 +227,7 @@ func TestHybridSearchSkipsWhenNoChildren(t *testing.T) {
 func TestBM25SearchDoesPromoteChildren(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
-		{ID: "child-1", Content: "frag", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
+		{ID: "child-1", Content: "frag", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
 	}})
 	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
 

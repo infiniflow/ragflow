@@ -63,9 +63,9 @@ const (
 // into per-variant sub-batches and dispatch each to its own dataset-level
 // compile path. TaskTypes preserves the original frontend-facing category for
 // each template, so structure sub-kinds such as Graph, Timeline, and PageIndex
-// can be logged separately. Both fields are empty (nil) for deleted events and
-// for events published before they existed; the consumer falls back to the
-// legacy unified path when the fields are absent.
+// can be logged separately. Both fields are empty (nil) for events published
+// before they existed; the consumer falls back to the legacy unified path when
+// the fields are absent.
 type BacklogEntry struct {
 	DocID     string   `json:"doc_id"`
 	EventType string   `json:"event_type"`
@@ -96,7 +96,7 @@ type Publisher interface {
 	// each other's backlog, and it always pairs the append with a notify.
 	// variants carries the doc-level compile types (tree/structure/wiki/mindmap)
 	// for completed events; taskTypes carries the frontend-facing categories for
-	// those templates. Both are nil for deleted events.
+	// those templates, including the products removed by deleted events.
 	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, variants, taskTypes []string) error
 }
 

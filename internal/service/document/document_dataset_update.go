@@ -162,6 +162,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
 			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 			if tenantErr == nil && tenant != nil {
 				cleaned = service.ApplyComponentScopedParserConfig(
@@ -467,6 +468,7 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	if _, ok := config["raptor"]; !ok {
 		delete(merged, "raptor")
 	}
+	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
 
 	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),

@@ -81,7 +81,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -465,6 +464,9 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// truncs[i] is the embedded text for texts[i] / pairs[i]; carried so the
 	// Set-side key matches the Get-side key for freshly embedded content.
 	truncs := make([]string, 0, len(chunks))
+	// cacheHits counts the chunks served from the per-chunk embedding cache;
+	// they are already-resolved work, so the progress fraction starts from them.
+	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		txt := htmlTableRE.ReplaceAllString(raw, " ")
@@ -487,6 +489,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 				var vec []float64
 				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
 					resolved[i] = &resolvedVec{content: vec, isHit: true, trunc: trunc}
+					cacheHits++
 					continue
 				}
 			}
@@ -516,7 +519,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// skip is the correct behavior (go_intentional). Do NOT "align" this to
 	// the DSL.
 	if trimmedName == "" {
-		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
+		common.Warn("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
 		// Encode the raw name (no TrimSpace) to mirror Python
 		// tokenizer.py:95 which passes name verbatim to embedding. The
@@ -539,6 +542,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	if batchSize <= 0 {
 		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
 	}
+	embedTotal := cacheHits + len(texts)
 	for start := 0; start < len(texts); start += batchSize {
 		end := start + batchSize
 		if end > len(texts) {
@@ -555,6 +559,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			tokenCount += result.TokenCount
 		}
 		contentResults = append(contentResults, batchResults...)
+		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
+	}
+	if len(texts) == 0 && embedTotal > 0 {
+		// With no cache misses the batch loop never runs, so the phase would
+		// otherwise report nothing at all; every content embedding is already
+		// resolved, which is the loop's completion value.
+		runtime.ReportComponentFraction(ctx, 1)
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight

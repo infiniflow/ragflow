@@ -123,8 +123,15 @@ func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tena
 func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (f *fakeUploadStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeUploadStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
@@ -248,6 +255,7 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
 }
 
 type failingDeleteDocEngine struct {
@@ -286,11 +294,13 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -308,10 +318,12 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
 	updateValues     []map[string]interface{}
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
 		{"id": "tree-1", "compile_kwd": "tree"},
@@ -825,8 +837,16 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "path/to/blob"
-	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
+	insertTestFile(t, "file-1", "dataset-folder-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	store := newFakeUploadStorage()
+	if err := store.Put(t.Context(), "kb-1", loc, []byte("document")); err != nil {
+		t.Fatalf("store document blob: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -847,6 +867,9 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
+	}
+	if store.ObjExist(ctx, "kb-1", loc) {
+		t.Fatal("document blob should be deleted")
 	}
 }
 
@@ -1879,7 +1902,7 @@ func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	svc := testDocumentService(t)
 	// Should not panic with no f2d mappings
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "no-mappings")
+	svc.cleanupFileReferences(ctx, "no-mappings", "kb-1")
 }
 
 func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
@@ -1892,7 +1915,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -1917,7 +1940,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d for doc-1 gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -2475,8 +2498,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 2 {
 		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
@@ -2583,6 +2609,9 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
 		t.Fatalf("available_int = %#v, want 0", got)
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
 	}
 }
 
@@ -3405,6 +3434,43 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
+	}
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+}
+
 // TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
 // for the "pages" range: an invalid range (from<1) aborts the request with
 // CodeDataError instead of being silently dropped or persisted.
@@ -3434,6 +3500,36 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
+func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{
+			"parent_child": map[string]any{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+	parentChild, ok := resp.ParserConfig["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("parent_child = %#v, want persisted public setting", resp.ParserConfig["parent_child"])
 	}
 }
 

@@ -675,49 +675,81 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
-	// Add models to the instance.
-	if len(modelInfo) > 0 {
-		for _, model := range modelInfo {
-			if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
-				return common.CodeServerError, err
-			}
+	// Add models to the instance. The instance row above is already committed
+	// (TenantModelInstanceDAO.Create owns its own transaction), so a failure
+	// here has to be undone explicitly or the tenant keeps a half-populated
+	// instance and can no longer reuse the instance name.
+	if err = m.addModelsToNewInstance(ctx, tenantID, providerName, instanceName, region, modelInfo, bedrockAPIKeyAuth); err != nil {
+		if rollbackErr := m.rollbackCreatedInstance(ctx, instanceID); rollbackErr != nil {
+			common.Logger.Error("failed to roll back model instance after model creation failure",
+				zap.String("instance_id", instanceID), zap.Error(rollbackErr))
 		}
-	} else if !bedrockAPIKeyAuth {
-		// model_info not provided — add all factory default models.
-		// Mirrors Python's create_provider_instance
-		// (api/apps/services/provider_api_service.py:506-531).
-		targetFactoryName := providerName
-		if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-			targetFactoryName = "siliconflow_intl"
-		}
-		factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
-		if factoryProvider != nil {
-			for _, llm := range factoryProvider.Models {
-				extraMap := make(map[string]interface{})
-				if llm.Tools != nil {
-					extraMap["is_tools"] = llm.Tools.Support
-				}
-				if llm.Thinking != nil {
-					extraMap["thinking"] = llm.Thinking.DefaultValue
-				}
-				if err = m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
-					ModelName:  llm.Name,
-					ModelTypes: llm.ModelTypes,
-					MaxTokens: func() int {
-						if llm.MaxOutput != nil {
-							return *llm.MaxOutput
-						}
-						return 8192
-					}(),
-					Extra: extraMap,
-				}); err != nil {
-					return common.CodeServerError, err
-				}
-			}
-		}
+		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
+}
+
+// addModelsToNewInstance creates the models of a freshly created provider
+// instance, either the requested ones or the provider's factory defaults.
+func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenantID, providerName, instanceName, region string, modelInfo []CreateInstanceModelInfo, bedrockAPIKeyAuth bool) error {
+	if len(modelInfo) > 0 {
+		for _, model := range modelInfo {
+			if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if bedrockAPIKeyAuth {
+		return nil
+	}
+	// model_info not provided — add all factory default models.
+	// Mirrors Python's create_provider_instance
+	// (api/apps/services/provider_api_service.py:506-531).
+	targetFactoryName := providerName
+	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
+		targetFactoryName = "siliconflow_intl"
+	}
+	factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	if factoryProvider == nil {
+		return nil
+	}
+	for _, llm := range factoryProvider.Models {
+		extraMap := make(map[string]interface{})
+		if llm.Tools != nil {
+			extraMap["is_tools"] = llm.Tools.Support
+		}
+		if llm.Thinking != nil {
+			extraMap["thinking"] = llm.Thinking.DefaultValue
+		}
+		if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
+			ModelName:  llm.Name,
+			ModelTypes: llm.ModelTypes,
+			MaxTokens: func() int {
+				if llm.MaxOutput != nil {
+					return *llm.MaxOutput
+				}
+				return 8192
+			}(),
+			Extra: extraMap,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rollbackCreatedInstance removes a provider instance together with any models
+// already created under it, so a failed instance creation leaves nothing behind.
+func (m *ModelProviderService) rollbackCreatedInstance(ctx context.Context, instanceID string) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, []string{instanceID}); err != nil {
+			return err
+		}
+		_, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, []string{instanceID})
+		return err
+	})
 }
 
 // CreateNameOnlyProviderInstance creates a provider instance with only a name,
@@ -3496,118 +3528,6 @@ type AddModelRequest struct {
 	Extra        map[string]interface{} `json:"extra"`
 }
 
-// ResolveModelToolSupport reports whether the resolved chat model supports
-// function calling (tool calls). It mirrors Python dialog_service.rag_agent's
-// `if not getattr(chat_mdl, "is_tools", False)` gate: a model without tool
-// support must skip the outer rag_agent react loop and fall back to the direct
-// graph (Python falls back to async_chat).
-//
-// Precedence mirrors Python's tenant_model_service
-// `"is_tools": model_extra.get("is_tools", is_tool)` (:363): the flag persisted
-// on the tenant model wins, and the provider catalog is only a default for
-// models enrolled without one. That is why the tenant_model row is resolved
-// first — by UUID, or for a composite "model@instance@provider" reference
-// through the tenant's own provider/instance rows. Reading the catalog first
-// instead would send a tenant-disabled model through the outer react loop —
-// where a model that does not actually call tools answers from its own
-// knowledge and the retrieval never runs.
-//
-// The reference is validated before model_extra is read, mirroring Python's
-// get_model_config_by_id (:324-347): a missing or disabled model, a model not
-// enrolled as this type, a missing provider, or a provider the tenant cannot
-// reach returns an error rather than a definitive is_tools answer. Callers treat
-// an error as "no tool support", the same outcome as an unset flag.
-func (m *ModelProviderService) ResolveModelToolSupport(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (bool, error) {
-	if strings.TrimSpace(modelRef) == "" {
-		return false, fmt.Errorf("model ref is required")
-	}
-
-	// Tenant-model UUID path. IDs are globally unique and may belong to a
-	// provider shared with a joined tenant, so the lookup itself is unscoped —
-	// tenantCanReachProviderTenant below decides access.
-	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
-		if modelObj.Status != "active" {
-			return false, fmt.Errorf("tenant model id=%s is disabled", modelRef)
-		}
-		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
-			return false, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelRef, modelType.String())
-		}
-		provider, provErr := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
-		if provErr != nil && !errors.Is(provErr, gorm.ErrRecordNotFound) {
-			return false, provErr
-		}
-		if provider == nil {
-			return false, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelRef)
-		}
-		allowed, accessErr := m.tenantCanReachProviderTenant(ctx, tenantID, provider.TenantID)
-		if accessErr != nil {
-			return false, accessErr
-		}
-		if !allowed {
-			return false, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
-		}
-		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, err
-	}
-
-	// Composite "model@instance@provider" path. The tenant's own rows are
-	// resolved so a flag persisted on the enrolled model still beats the
-	// catalog, exactly as it does on the UUID path.
-	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
-	if err != nil {
-		return false, err
-	}
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
-	if err != nil {
-		return false, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
-	}
-	if provider == nil {
-		return false, fmt.Errorf("provider %q not found for model %q", providerName, modelRef)
-	}
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
-	if err != nil {
-		return false, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
-	}
-	if instance == nil {
-		return false, fmt.Errorf("instance %q not found for model %q", instanceName, modelRef)
-	}
-	modelObj, err := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
-	if err == nil {
-		if modelObj.Status != "active" {
-			return false, fmt.Errorf("model %q is disabled", modelRef)
-		}
-		return toolSupportFromEnrollment(modelObj.Extra, "", provider.ProviderName, modelObj.ModelName), nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
-	}
-
-	// The tenant never enrolled this model as this type: the catalog is the only
-	// source left (the instance api_key payload Python reads here is seeded from
-	// the same catalog at enrolment time).
-	return catalogToolSupport(providerName, pureModelName), nil
-}
-
-// ResolveChatModelTarget resolves the chat model a request will run on: the
-// caller's reference when it has one, the tenant default otherwise — a dialog
-// without an llm_id still runs on the default (dialog_service get_models).
-// Shared by the capability probe and the agentic wiring so the two cannot resolve
-// different models for one request.
-func (m *ModelProviderService) ResolveChatModelTarget(ctx context.Context, tenantID, modelRef string) (*ModelTarget, error) {
-	if m == nil {
-		return nil, fmt.Errorf("%w: model provider service is not initialized", errModelConfigUnavailable)
-	}
-	solver := m.modelSolver()
-	if strings.TrimSpace(modelRef) == "" {
-		return solver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
-	}
-	// Resolve the enrolled type first: a reference enrolled only as image-to-text
-	// is a valid chat-pipeline input (its driver answers chat requests), and
-	// resolving it as chat would fail the type check outright.
-	return solver.ResolveModelConfig(ctx, tenantID, solver.ResolveChatModelType(ctx, tenantID, modelRef), modelRef)
-}
-
 // modelTargetRef renders a resolved model as the lookups' reference: its
 // tenant_model id, or the composite "model@instance@provider" form.
 func modelTargetRef(target *ModelTarget) string {
@@ -3618,28 +3538,6 @@ func modelTargetRef(target *ModelTarget) string {
 		return target.ModelID
 	}
 	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
-}
-
-// toolSupportFromEnrollment applies the capability precedence the rest of the
-// service uses: the is_tools flag persisted on the enrolled model, then the flag
-// carried by the instance credential payload, then the provider catalog's
-// declaration for the model.
-//
-// Python's precedence has the same shape — model_extra.get("is_tools", is_tool),
-// where is_tool comes out of the instance api_key payload — with the catalog as
-// our last resort, because a tenant may enrol a model the catalog does not
-// describe at all.
-func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
-	if ts, ok := extraToolSupport(extra); ok {
-		return ts
-	}
-	// The instance credential can be a JSON object carrying the key together with
-	// capability flags; extraToolSupport reads is_tools out of either blob and
-	// reports "absent" for a plain credential string.
-	if ts, ok := extraToolSupport(instanceAPIKey); ok {
-		return ts
-	}
-	return catalogToolSupport(providerName, modelName)
 }
 
 // The tool-calling verdict is no longer memoized: it is computed while the model
@@ -3663,51 +3561,6 @@ func (m *ModelProviderService) tenantCanReachProviderTenant(ctx context.Context,
 		}
 	}
 	return false, nil
-}
-
-// extraToolSupport reads the is_tools flag persisted on a tenant model's extra
-// JSON. The value is written as a JSON boolean (addModelToInstance stores
-// llm.Tools.Support verbatim) but has historically also been spelled as a
-// string, so both shapes are accepted. ok is false when the key is absent or
-// the extra blob is unreadable, letting the caller fall back to the catalog.
-func extraToolSupport(extra string) (bool, bool) {
-	if strings.TrimSpace(extra) == "" {
-		return false, false
-	}
-	var fields map[string]interface{}
-	if err := json.Unmarshal([]byte(extra), &fields); err != nil {
-		return false, false
-	}
-	v, ok := fields["is_tools"]
-	if !ok {
-		return false, false
-	}
-	switch t := v.(type) {
-	case bool:
-		return t, true
-	case string:
-		return strings.EqualFold(strings.TrimSpace(t), "true"), true
-	case float64:
-		return t != 0, true
-	}
-	return false, false
-}
-
-// catalogToolSupport reports whether a provider's catalog declares the named
-// model as supporting tool (function) calling. Returns false when the provider
-// or model is unknown. Mirrors RAGFlow's model_meta "is_tools" feature derived
-// from conf/models/*.json.
-func catalogToolSupport(providerName, modelName string) bool {
-	pm := dao.GetModelProviderManager()
-	provider := pm.FindProvider(providerName)
-	if provider == nil {
-		return false
-	}
-	mi := pm.FindModel(provider, modelName)
-	if mi == nil || mi.Tools == nil {
-		return false
-	}
-	return mi.Tools.Support
 }
 
 type AddCustomModelRequest struct {

@@ -239,6 +239,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// observability concern, not a data dependency.
 	runCtx = runtime.WithProgressCallback(runCtx, p.componentProgressCallback(ctx))
 	runCtx = runtime.WithProgressMessageCallback(runCtx, p.componentProgressMessageCallback(ctx))
+	runCtx = runtime.WithProgressFractionCallback(runCtx, p.componentFractionCallback(ctx))
 
 	current := cloneMapOrEmpty(inputs)
 
@@ -354,7 +355,15 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		// higher-level "Task ... failed" branch.
 		switch ev.Phase {
 		case runtime.PhaseError:
-			if ev.Err != nil {
+			if errors.Is(ev.Err, context.Canceled) {
+				// A user cancel is a normal control path; the authoritative
+				// "Task ... cancelled" line is logged by the service layer, so
+				// keep this at debug to avoid duplicate noise.
+				common.Debug("component progress: canceled",
+					zap.String("component", ev.Component),
+					zap.String("task_id", p.taskID),
+					zap.String("document_id", p.documentID))
+			} else if ev.Err != nil {
 				common.Error("component progress: error", ev.Err,
 					zap.String("component", ev.Component),
 					zap.String("task_id", p.taskID),
@@ -390,6 +399,28 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 
 type detailedProgressSink interface {
 	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+// fractionProgressSink is the optional interface through which the pipeline
+// forwards in-flight component fractions (pages parsed, chunks embedded) to
+// the sink's progress tracker. Mirrors detailedProgressSink: a sink that does
+// not implement it simply receives no fraction channel.
+type fractionProgressSink interface {
+	OnComponentFraction(ctx context.Context, component string, fraction float64)
+}
+
+// componentFractionCallback forwards fraction reports to the sink. The sink
+// only mutates in-memory state here (its flusher owns persistence), so the
+// run context is passed through without the WithoutCancel fallback that the
+// I/O-bound callbacks need.
+func (p *Pipeline) componentFractionCallback(ctx context.Context) runtime.ProgressFractionCallback {
+	sink, ok := p.sink.(fractionProgressSink)
+	if !ok {
+		return nil
+	}
+	return func(component string, fraction float64) {
+		sink.OnComponentFraction(ctx, component, fraction)
+	}
 }
 
 func (p *Pipeline) componentProgressMessageCallback(ctx context.Context) runtime.ProgressMessageCallback {

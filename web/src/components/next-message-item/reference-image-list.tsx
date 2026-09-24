@@ -28,7 +28,6 @@ import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
-
 type IProps = {
   referenceChunks?: IReferenceChunk[] | Record<string, IReferenceChunk>;
   messageContent: string;
@@ -51,19 +50,34 @@ const getButtonVisibilityClass = (imageCount: number) => {
   return map[imageCount] || (imageCount >= 6 ? '@2xl:hidden' : '');
 };
 
+/**
+ * ImagePhotoView renders an image with PhotoView preview wrapper.
+ * Only wraps with PhotoView when the image URL is ready to prevent
+ * PhotoView from registering an empty src which causes blank preview.
+ *
+ * @param id - The image identifier used to fetch the image
+ * @param documentId - The document identifier for the image
+ * @param index - The display index of the image in the list
+ */
 function ImagePhotoView({ id, documentId, index }: ImageItem) {
   const src = useDocumentImageUrl(id, documentId);
 
-  return (
-    <PhotoView src={src}>
-      <Image
-        id={id}
-        documentId={documentId}
-        className="h-40 w-full"
-        label={`[${index + 1}]`}
-      />
-    </PhotoView>
+  const imageElement = (
+    <Image
+      id={id}
+      documentId={documentId}
+      className="h-40 w-full"
+      label={`[${index + 1}]`}
+    />
   );
+
+  // When src is not yet available, render image without PhotoView
+  // to avoid PhotoView caching an empty src that would show blank preview
+  if (!src) {
+    return imageElement;
+  }
+
+  return <PhotoView src={src}>{imageElement}</PhotoView>;
 }
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {

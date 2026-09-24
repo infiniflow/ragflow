@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -755,5 +756,798 @@ func TestRemoveHeaderFooterBoxes_DropsPageNumberFooter(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Fatalf("expected only the 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_AlternatingEvenOdd verifies bilateral alternating
+// headers where even pages have the book title and odd pages have the chapter title.
+func TestRemoveHeaderFooterBoxes_AlternatingEvenOdd(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 8)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 8; pg++ {
+		heights[pg] = pageHeight
+		if pg%2 == 0 {
+			boxes = append(boxes, tb("DEEP LEARNING BOOK", pg, 72, 250, 30, 45))
+		} else {
+			boxes = append(boxes, tb("CHAPTER THREE: CONVOLUTION", pg, 250, 500, 30, 45))
+		}
+		boxes = append(boxes, tb("Body text on this page that represents substantial content.", pg, 72, 450, 160, 180))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "DEEP LEARNING") || strings.Contains(b.Text, "CHAPTER THREE") {
+			t.Fatalf("alternating header %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 8 {
+		t.Fatalf("expected 8 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChapterVaryingConsecutiveRun verifies that chapter-varying
+// running headers appearing on consecutive pages with stable Y coordinates are removed.
+func TestRemoveHeaderFooterBoxes_ChapterVaryingConsecutiveRun(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 10)
+	for pg := 0; pg < 10; pg++ {
+		heights[pg] = pageHeight
+	}
+
+	var boxes []pdf.TextBox
+	// Pages 2, 3, 4: Chapter 1 (only 3 of 10 pages, 30% < 50%)
+	for pg := 2; pg <= 4; pg++ {
+		boxes = append(boxes, tb("Chapter 1: Overview", pg, 72, 220, 35.0, 48.0))
+		boxes = append(boxes, tb("Body paragraph for chapter 1.", pg, 72, 450, 160, 180))
+	}
+	// Pages 5, 6, 7: Chapter 2 (only 3 of 10 pages, 30% < 50%)
+	for pg := 5; pg <= 7; pg++ {
+		boxes = append(boxes, tb("Chapter 2: Methods", pg, 72, 220, 35.1, 48.1))
+		boxes = append(boxes, tb("Body paragraph for chapter 2.", pg, 72, 450, 160, 180))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "Chapter 1:") || strings.Contains(b.Text, "Chapter 2:") {
+			t.Fatalf("chapter header %q should have been removed by locality run", b.Text)
+		}
+	}
+	if len(got) != 6 {
+		t.Fatalf("expected 6 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_WhitespaceGapExpandedZone verifies that a header sitting
+// beyond the base 10% ratio (at 11.3%) is removed when separated from body text by >= 18pt gap.
+func TestRemoveHeaderFooterBoxes_WhitespaceGapExpandedZone(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		// Bottom at 95.0 on 842.0 is 11.28% (> 10%)
+		boxes = append(boxes, tb("COMPANY CONFIDENTIAL HEADER", pg, 72, 300, 40, 95))
+		// Body starts at 135.0 (Gap = 135 - 95 = 40pt >= 18pt)
+		boxes = append(boxes, tb("First line of body text sitting comfortably below the gap.", pg, 72, 450, 135, 155))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "COMPANY CONFIDENTIAL") {
+			t.Fatalf("expanded zone header %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_WhitespaceGapProtectsTightBody verifies that text at 11%
+// without a whitespace gap to content below is NOT removed as a header.
+func TestRemoveHeaderFooterBoxes_WhitespaceGapProtectsTightBody(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		// Top at 75, Bottom at 92 (10.9% > 10%)
+		boxes = append(boxes, tb("Section Heading At Top", pg, 72, 250, 75, 92))
+		// Content right below at Top: 98 (Gap = 98 - 92 = 6pt < 18pt)
+		boxes = append(boxes, tb("Tight paragraph line directly following heading.", pg, 72, 450, 98, 115))
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var headings int
+	for _, b := range got {
+		if strings.Contains(b.Text, "Section Heading") {
+			headings++
+		}
+	}
+	if headings != 4 {
+		t.Fatalf("tight heading must be preserved by whitespace gap protection, got %d of 4", headings)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ShortDocumentPageNumbers verifies that formatted page
+// numbers are removed even on 1- or 2-page documents.
+func TestRemoveHeaderFooterBoxes_ShortDocumentPageNumbers(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Invoice Body Page 1", 0, 72, 400, 160, 180),
+		tb("Page 1 of 2", 0, 250, 350, 810, 825),
+		tb("Invoice Body Page 2", 1, 72, 400, 160, 180),
+		tb("Page 2 of 2", 1, 250, 350, 810, 825),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "of 2") {
+			t.Fatalf("page number %q must be removed on 2-page doc", b.Text)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected only the 2 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DLASemanticTagDirectDrop verifies that boxes explicitly
+// tagged as LayoutType header/footer in margin zones are dropped immediately.
+func TestRemoveHeaderFooterBoxes_DLASemanticTagDirectDrop(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		{Text: "Header Tagged By DLA", PageNumber: 0, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "header"},
+		tb("Body text here.", 0, 72, 400, 160, 180),
+		{Text: "Footer Tagged By DLA", PageNumber: 0, X0: 72, X1: 300, Top: 820, Bottom: 835, LayoutType: "footer"},
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != 1 || got[0].Text != "Body text here." {
+		t.Fatalf("DLA tagged header and footer must be dropped, got %v", got)
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_LayoutTypeTitleAllowed verifies that a running header
+// misclassified by DLA as LayoutTypeTitle is still processed and removed.
+func TestRemoveHeaderFooterBoxes_LayoutTypeTitleAllowed(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 0, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 0.", 0, 72, 400, 160, 180),
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 1, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 1.", 1, 72, 400, 160, 180),
+		{Text: "PROCEEDINGS OF ACM", PageNumber: 2, X0: 72, X1: 300, Top: 30, Bottom: 45, LayoutType: "title"},
+		tb("Body on page 2.", 2, 72, 400, 160, 180),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "PROCEEDINGS") {
+			t.Fatalf("header %q with LayoutType 'title' should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_RomanNumerals verifies roman numeral page numbers.
+func TestRemoveHeaderFooterBoxes_RomanNumerals(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Preface body zero.", 0, 72, 400, 160, 180),
+		tb("- iv -", 0, 280, 320, 820, 835),
+		tb("Preface body one.", 1, 72, 400, 160, 180),
+		tb("- v -", 1, 280, 320, 820, 835),
+		tb("Preface body two.", 2, 72, 400, 160, 180),
+		tb("- vi -", 2, 280, 320, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "- ") {
+			t.Fatalf("roman numeral footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChineseNumerals verifies Chinese page numbers.
+func TestRemoveHeaderFooterBoxes_ChineseNumerals(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("正文第一页。", 0, 72, 400, 160, 180),
+		tb("第 一 页", 0, 280, 350, 820, 835),
+		tb("正文第二页。", 1, 72, 400, 160, 180),
+		tb("第 二 页", 1, 280, 350, 820, 835),
+		tb("正文第三页。", 2, 72, 400, 160, 180),
+		tb("第 三 页", 2, 280, 350, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.HasPrefix(b.Text, "第 ") {
+			t.Fatalf("Chinese page number footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected only 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestStrictDecoratedPagePattern_ChineseSlashGong tests Chinese page-number formats
+// with "/共", "共", and comma separators.
+func TestStrictDecoratedPagePattern_ChineseSlashGong(t *testing.T) {
+	cases := []string{
+		"第1页/共10页",
+		"第 1 页 / 共 10 页",
+		"第1页/共10",
+		"第1页 共10页",
+		"第1页/10页",
+		"第1页,共10页",
+		"第1页，共10页",
+		"第一页/共十页",
+		"第一页 共十页",
+		"第 1 页",
+		"第一页",
+	}
+	for _, c := range cases {
+		if !strictDecoratedPagePattern.MatchString(c) {
+			t.Errorf("expected %q to match strictDecoratedPagePattern, but did not", c)
+		}
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_ChineseSlashGong verifies that "第1页/共10页" is removed.
+func TestRemoveHeaderFooterBoxes_ChineseSlashGong(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("正文第一页内容。", 0, 72, 400, 160, 180),
+		tb("第1页/共10页", 0, 280, 380, 820, 835),
+		tb("正文第二页内容。", 1, 72, 400, 160, 180),
+		tb("第2页/共10页", 1, 280, 380, 820, 835),
+		tb("正文第三页内容。", 2, 72, 400, 160, 180),
+		tb("第3页/共10页", 2, 280, 380, 820, 835),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "共10页") {
+			t.Fatalf("Chinese page footer %q should have been removed", b.Text)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 body boxes, got %d", len(got))
+	}
+}
+
+// TestFindStableConsecutiveRunIndices_SlidingWindow tests sliding window behavior in
+// findStableConsecutiveRunIndices, specifically verifying that initial outliers do
+// not block subsequent qualifying runs.
+func TestFindStableConsecutiveRunIndices_SlidingWindow(t *testing.T) {
+	// Case 1: Outlier at page 1 (top 30), stable run at pages 2, 3, 4 (top 40)
+	metas1 := []boxMeta{
+		{page: 1, top: 30},
+		{page: 2, top: 40},
+		{page: 3, top: 40},
+		{page: 4, top: 40},
+	}
+	if len(findStableConsecutiveRunIndices(metas1, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 2..4 stable run despite page 1 outlier")
+	}
+
+	// Case 2: Stable run at pages 1, 2, 3 (top 40), outlier at page 4 (top 30)
+	metas2 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 3, top: 40},
+		{page: 4, top: 30},
+	}
+	if len(findStableConsecutiveRunIndices(metas2, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 1..3 stable run")
+	}
+
+	// Case 3: Divergent tops across all pages (no 3 consecutive pages within 4.0)
+	metas3 := []boxMeta{
+		{page: 1, top: 10},
+		{page: 2, top: 30},
+		{page: 3, top: 50},
+		{page: 4, top: 70},
+	}
+	if len(findStableConsecutiveRunIndices(metas3, 3, 4.0)) != 0 {
+		t.Errorf("expected no run for divergent tops")
+	}
+
+	// Case 4: Page gap breaks consecutive run
+	metas4 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 4, top: 40},
+		{page: 5, top: 40},
+	}
+	if len(findStableConsecutiveRunIndices(metas4, 3, 4.0)) != 0 {
+		t.Errorf("expected no run when no consecutive run reaches minRun=3")
+	}
+
+	// Case 5: Run after a page gap meets minRun=3
+	metas5 := []boxMeta{
+		{page: 1, top: 40},
+		{page: 2, top: 40},
+		{page: 4, top: 40},
+		{page: 5, top: 40},
+		{page: 6, top: 40},
+	}
+	if len(findStableConsecutiveRunIndices(metas5, 3, 4.0)) == 0 {
+		t.Errorf("expected pages 4..6 run after page gap")
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox verifies that a local
+// consecutive run (pages 1, 2, 3) removes those running headers while preserving a distant,
+// isolated occurrence of the exact same text on page 10.
+func TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 12)
+	for pg := 0; pg < 12; pg++ {
+		heights[pg] = pageHeight
+	}
+
+	var boxes []pdf.TextBox
+	// Running chapter header on consecutive pages 1, 2, 3 (top = 35)
+	for pg := 1; pg <= 3; pg++ {
+		boxes = append(boxes, tb("Chapter 1: Foundations", pg, 72, 250, 35, 48))
+		boxes = append(boxes, tb(fmt.Sprintf("Body text on page %d.", pg), pg, 72, 450, 160, 180))
+	}
+	// Pages 4..9 have other body text
+	for pg := 4; pg <= 9; pg++ {
+		boxes = append(boxes, tb(fmt.Sprintf("Regular body on page %d.", pg), pg, 72, 450, 160, 180))
+	}
+	// Page 10 has an isolated text box in the margin with the SAME text "Chapter 1: Foundations",
+	// but it is NOT part of a consecutive run (isolated single occurrence).
+	isolatedBox := tb("Chapter 1: Foundations", 10, 72, 250, 35, 48)
+	boxes = append(boxes, isolatedBox)
+	boxes = append(boxes, tb("Body text on page 10 referencing chapter 1.", 10, 72, 450, 160, 180))
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+
+	// Pages 1, 2, 3 headers must be removed:
+	for _, b := range got {
+		if (b.PageNumber >= 1 && b.PageNumber <= 3) && strings.Contains(b.Text, "Chapter 1: Foundations") {
+			t.Errorf("running header on page %d should have been removed", b.PageNumber)
+		}
+	}
+
+	// Page 10 isolated box must be PRESERVED:
+	foundIsolated := false
+	for _, b := range got {
+		if b.PageNumber == 10 && b.Text == "Chapter 1: Foundations" {
+			foundIsolated = true
+			break
+		}
+	}
+	if !foundIsolated {
+		t.Errorf("distant isolated box on page 10 should be preserved, but was dropped!")
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_BareFooterPageNumberWithGapDropped verifies that a bare
+// Arabic page number in the footer zone with clear whitespace above is cleanly removed.
+func TestRemoveHeaderFooterBoxes_BareFooterPageNumberWithGapDropped(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Page 0 body content.", 0, 72, 400, 160, 200),
+		tb("1", 0, 290, 310, 810, 825), // gapAbove = 810 - 200 = 610pt >> 18pt
+		tb("Page 1 body content.", 1, 72, 400, 160, 200),
+		tb("2", 1, 290, 310, 810, 825),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if b.Text == "1" || b.Text == "2" {
+			t.Fatalf("bare page number %q with clear whitespace above must be dropped", b.Text)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 body boxes remaining, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved verifies that a tight bare
+// number in the bottom 10% (e.g. footnote index with gapAbove < 18pt) is protected.
+func TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Main body paragraph here.", 0, 72, 400, 100, 200),
+		tb("Footnote explanation text at bottom.", 0, 72, 400, 790, 804), // bottom = 804
+		tb("1", 0, 72, 85, 810, 822),                                     // top = 810, gapAbove = 6pt < 18pt!
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	foundFootnoteNum := false
+	for _, b := range got {
+		if b.Text == "1" {
+			foundFootnoteNum = true
+			break
+		}
+	}
+	if !foundFootnoteNum {
+		t.Fatalf("tight footnote number '1' (gapAbove < 18pt) must be preserved, but was dropped!")
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected all 3 boxes to be kept, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument verifies that a 4-digit
+// year (e.g. "2024") in the footer margin on a 2-page document is NOT misidentified as a page number.
+func TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		tb("Legal Agreement Page 1", 0, 72, 400, 160, 200),
+		tb("2024", 0, 280, 320, 810, 825), // gapAbove >> 18pt, but value 2024 > 20
+		tb("Legal Agreement Page 2", 1, 72, 400, 160, 200),
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	foundYear := false
+	for _, b := range got {
+		if b.Text == "2024" {
+			foundYear = true
+			break
+		}
+	}
+	if !foundYear {
+		t.Fatalf("footer year '2024' (value > maxAllowed) must be preserved, but was dropped!")
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected all 3 boxes to be kept, got %d", len(got))
+	}
+}
+
+// tightFooter builds one page for the sequence-track tests: a body line ending
+// at bottom, a bare-number box 5pt under it at Top=755 (below the 757.8 footer
+// line, inside the 0.86 expanded band without its gap) — geometry the zone gate
+// rejects, leaving the +1 sequence as the only evidence.
+func tightFooter(pg int, numText string) []pdf.TextBox {
+	return []pdf.TextBox{
+		tb(fmt.Sprintf("Body paragraph on page %d with a little extra length to stay unique.", pg), pg, 72, 500, 100, 750),
+		tb(numText, pg, 400, 420, 755, 766),
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved verifies that bare page
+// numbers sitting tight under body text — rejected by both the base footer line
+// and the expanded band's whitespace requirement — are removed by the sequence
+// track when they step by one across consecutive pages.
+func TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved(t *testing.T) {
+	pageHeight := 842.0
+	t.Run("arabic", func(t *testing.T) {
+		heights := make(map[int]float64, 10)
+		var boxes []pdf.TextBox
+		for pg := 0; pg < 10; pg++ {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, fmt.Sprintf("%d", pg+1))...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("page number %q survived the sequence track", b.Text)
+			}
+		}
+		if len(got) != 10 {
+			t.Fatalf("expected 10 body boxes, got %d", len(got))
+		}
+	})
+	t.Run("roman", func(t *testing.T) {
+		heights := make(map[int]float64, 6)
+		boxes := []pdf.TextBox{}
+		romans := []string{"I", "II", "III", "IV", "V", "VI"}
+		for pg, r := range romans {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, r)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("Roman page number %q survived the sequence track", b.Text)
+			}
+		}
+		if len(got) != 6 {
+			t.Fatalf("expected 6 body boxes, got %d", len(got))
+		}
+	})
+}
+
+// TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved verifies the sequence
+// track's guards: numbers that do not step by one, and runs shorter than 3
+// consecutive pages, are left alone.
+func TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved(t *testing.T) {
+	pageHeight := 842.0
+	t.Run("non_stepping", func(t *testing.T) {
+		heights := make(map[int]float64, 5)
+		var boxes []pdf.TextBox
+		nums := []string{"3", "7", "12", "15", "19"}
+		for pg, n := range nums {
+			heights[pg] = pageHeight
+			boxes = append(boxes, tightFooter(pg, n)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 10 {
+			t.Fatalf("non-stepping numbers must be preserved, got %d kept boxes", len(got))
+		}
+	})
+	t.Run("run_too_short", func(t *testing.T) {
+		// +1 steps exist (1,2 and 4,5) but each chain is broken before length 3.
+		heights := make(map[int]float64, 6)
+		var boxes []pdf.TextBox
+		for pg := 0; pg < 6; pg++ {
+			heights[pg] = pageHeight
+		}
+		boxes = append(boxes, tightFooter(0, "1")...)
+		boxes = append(boxes, tightFooter(1, "2")...)
+		boxes = append(boxes, tightFooter(3, "4")...)
+		boxes = append(boxes, tightFooter(4, "5")...)
+		boxes = append(boxes, tb("Plain body line, no number box on this page.", 2, 72, 500, 100, 750))
+		boxes = append(boxes, tb("Plain body line here too.", 5, 72, 500, 100, 750))
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 10 {
+			t.Fatalf("2-page number chains must be preserved, got %d kept boxes", len(got))
+		}
+	})
+}
+
+// TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard verifies the sequence
+// track bounds TOTAL Y span across a chain, not just each hop: per-hop drift
+// that accumulates past seqMaxDy must not remove the run, while a chain whose
+// full span stays inside the threshold still does.
+func TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard(t *testing.T) {
+	pageHeight := 842.0
+	footerAt := func(pg int, numText string, top float64) []pdf.TextBox {
+		return []pdf.TextBox{
+			tb(fmt.Sprintf("Body paragraph on page %d with a little extra length to stay unique.", pg), pg, 72, 500, 100, 674),
+			tb(numText, pg, 400, 420, top, top+11), // Top 680-ish: wide band, zone stays empty (gap 6pt, above 724.1 line only)
+		}
+	}
+	t.Run("accumulating_drift_preserved", func(t *testing.T) {
+		heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+		var boxes []pdf.TextBox
+		tops := []float64{680, 684, 688} // each hop 4pt, total span 8pt > seqMaxDy
+		for pg, top := range tops {
+			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		if len(got) != 6 {
+			t.Fatalf("chain drifting 8pt in total must be preserved, got %d kept boxes", len(got))
+		}
+	})
+	t.Run("within_span_removed", func(t *testing.T) {
+		heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+		var boxes []pdf.TextBox
+		tops := []float64{680, 681.5, 683} // total span 3pt <= seqMaxDy
+		for pg, top := range tops {
+			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
+		}
+		got := RemoveHeaderFooterBoxes(boxes, heights)
+		for _, b := range got {
+			if _, ok := parseBareNumberValue(b.Text); ok {
+				t.Fatalf("page number %q survived the sequence track", b.Text)
+			}
+		}
+		if len(got) != 3 {
+			t.Fatalf("chain within total-drift span must be removed, got %d kept boxes", len(got))
+		}
+	})
+}
+
+// TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved verifies that a
+// stepping year sequence in the footer band ("2024","2025","2026") is protected
+// by the page-count ceiling even though it would otherwise satisfy the +1 chain.
+func TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 3)
+	var boxes []pdf.TextBox
+	years := []string{"2024", "2025", "2026"}
+	for pg, y := range years {
+		heights[pg] = pageHeight
+		boxes = append(boxes, tightFooter(pg, y)...)
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	keptYears := make(map[string]bool, len(years))
+	for _, b := range got {
+		keptYears[b.Text] = true
+	}
+	for _, y := range years {
+		if !keptYears[y] {
+			t.Fatalf("year footer %q must be preserved: its value exceeds the page-number ceiling", y)
+		}
+	}
+	if len(got) != 6 {
+		t.Fatalf("year footers exceed the page-number ceiling and must be preserved, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved verifies the wide
+// sequence bands never admit non-numeric text: a repeated section heading 6pt
+// above the page bottom must survive even though its text repeats on every page.
+func TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 4)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		heights[pg] = pageHeight
+		boxes = append(boxes, tb("Body text filling most of the page above the heading.", pg, 72, 500, 100, 724))
+		boxes = append(boxes, tb("Quarterly Report Summary", pg, 72, 300, 730, 742)) // gapAbove = 6pt, repeats identically
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var headings int
+	for _, b := range got {
+		if b.Text == "Quarterly Report Summary" {
+			headings++
+		}
+	}
+	if headings != 4 || len(got) != 8 {
+		t.Fatalf("tight repeated text headings must be preserved, got %d of 4 headings (%d boxes)", headings, len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_SitePromoVariantInHeaderRemoved verifies that margin
+// lines advertising a download site are removed even when the wrapper text varies
+// page to page and no recurrence track can see them.
+func TestRemoveHeaderFooterBoxes_SitePromoVariantInHeaderRemoved(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 4)
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 4; pg++ {
+		heights[pg] = pageHeight
+		// The body is written out per page; only the promo lines matter.
+		boxes = append(boxes, tb(fmt.Sprintf("Substantive body content of page %d goes here.", pg), pg, 72, 450, 160, 700))
+		if pg < 2 {
+			boxes = append(boxes, tb("更多的书籍免费下载 http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52))
+		} else {
+			boxes = append(boxes, tb("欢迎访问！http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52))
+		}
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo %q survived despite varying wrappers", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_BodyUrlKept verifies the site-promo rule cannot
+// reach into the body: a mid-page URL box and a long prose line containing a
+// URL are both kept.
+func TestRemoveHeaderFooterBoxes_BodyUrlKept(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight}
+	boxes := []pdf.TextBox{
+		// Mid-page short URL: inside no band at all.
+		tb("http://a.cn/x", 0, 72, 130, 400, 415),
+		// > 60 runes: length-capped out even though it starts in the top band.
+		tb("See http://example.com/very/long/path/for/the/annual/errata/annex which continues well beyond sixty runes.", 1, 72, 500, 40, 55),
+		tb("Ordinary body text.", 1, 72, 300, 500, 520),
+	}
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	if len(got) != 3 {
+		t.Fatalf("body URLs must be preserved, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_DropsPromoCompanion verifies that a fixed slogan
+// riding in the same margin band as a dropped site-promo ad is learned from the
+// pages where they co-occur and propagated to every page, so the ad is gone
+// even where its URL line was never detected.
+func TestRemoveHeaderFooterBoxes_DropsPromoCompanion(t *testing.T) {
+	pageHeight := 842.0 // header band: bottom <= 117.9; body starts well below.
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight, 3: pageHeight}
+	const slogan = "木瓜树  更多的书籍免费下载"
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ { // pages 0,1,2: ad URL + slogan companion
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			tb(slogan, pg, 60, 300, 60, 72),
+			tb(fmt.Sprintf("Substantive body content of page %d.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+	// page 3 carries only the slogan line, no URL.
+	boxes = append(boxes,
+		tb(slogan, 3, 60, 300, 60, 72),
+		tb("Substantive body content of page 3.", 3, 72, 450, 200, 700),
+	)
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo survived: %q", b.Text)
+		}
+		if strings.Contains(b.Text, "木瓜树") {
+			t.Fatalf("promo companion slogan survived: %q", b.Text)
+		}
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 4 body boxes, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_PromoCompanionKeepsTitle verifies a LayoutType
+// "title" line that merely shares the header band with an ad is never harvested
+// as a companion, so legitimate running section titles survive.
+func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsTitle(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	titles := []string{"[图甲]", "[图乙]", "[图丙]"} // unique per page: no recurrence to lean on
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			pdf.TextBox{Text: titles[pg], PageNumber: pg, X0: 60, X1: 200, Top: 60, Bottom: 72, LayoutType: "title"},
+			tb(fmt.Sprintf("Body content of page %d here.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	seenTitle := 0
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") {
+			t.Fatalf("site promo survived: %q", b.Text)
+		}
+		if strings.HasPrefix(b.Text, "[图") {
+			seenTitle++
+		}
+	}
+	if seenTitle != 3 {
+		t.Fatalf("all 3 title lines must survive as companions excluded, got %d", seenTitle)
+	}
+	if len(got) != 6 {
+		t.Fatalf("expected 3 titles + 3 bodies, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer verifies a short
+// non-title band peer that co-occurs with the ad on only one page is not
+// harvested — the page-count floor stops one-off neighbours.
+func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer(t *testing.T) {
+	pageHeight := 842.0
+	heights := map[int]float64{0: pageHeight, 1: pageHeight, 2: pageHeight}
+	const slogan = "木瓜树  更多的书籍免费下载"
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes,
+			tb("http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52),
+			tb(slogan, pg, 60, 300, 60, 72),
+			tb(fmt.Sprintf("Body content of page %d here.", pg), pg, 72, 450, 200, 700),
+		)
+	}
+	// A short slogan-like peer present only on page 0, next to its ad.
+	boxes = append(boxes, tb("扫码加入读书群", 0, 60, 300, 80, 92))
+
+	got := RemoveHeaderFooterBoxes(boxes, heights)
+	var keptRare int
+	for _, b := range got {
+		if strings.Contains(b.Text, "law58") || strings.Contains(b.Text, "木瓜树") {
+			t.Fatalf("promo/slogan survived: %q", b.Text)
+		}
+		if b.Text == "扫码加入读书群" {
+			keptRare++
+		}
+	}
+	if keptRare != 1 {
+		t.Fatalf("rare single-page peer must survive, got %d", keptRare)
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected 3 bodies + 1 rare peer, got %d", len(got))
 	}
 }

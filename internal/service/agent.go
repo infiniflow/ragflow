@@ -1865,6 +1865,17 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	return out, nil
 }
 
+// runReleasedAgent runs the most recently published version of a canvas.
+// Public agent runs keep using RunAgent's editable/latest-version behavior;
+// this path is reserved for the agentbot release=true contract.
+func (s *AgentService) runReleasedAgent(ctx context.Context, userID, canvasID, sessionID string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+	version, err := s.versionDAO.GetLatestReleased(ctx, dao.DB, canvasID)
+	if err != nil {
+		return nil, fmt.Errorf("load latest released version for canvas %q: %w", canvasID, err)
+	}
+	return s.RunAgent(ctx, userID, canvasID, sessionID, version.ID, userInput, files)
+}
+
 // validateAgentChatModels rejects stale Agent model references before saving or
 // execution. Agent components always invoke a chat model; model-free canvases
 // contain no Agent component and pass through.
@@ -2299,7 +2310,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, err
 			}
 			if shouldTreatAsCompletedLoopRun(err, answer) {
-				appendAssistantHistory(state, assistantOutput)
+				appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, canvas.NewInternalRunError(
@@ -2320,7 +2331,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 				wfPayload := map[string]interface{}{
 					"inputs":       map[string]any{"query": userInput},
-					"outputs":      workflowOutputs(answer, downloads, attachment),
+					"outputs":      workflowOutputsFromTerminal(assistantOutput),
 					"elapsed_time": now - startedAt,
 					"created_at":   now,
 				}
@@ -2356,11 +2367,14 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				return state, nil
 			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-			return nil, fmt.Errorf("canvas invoke: %w", err)
+			return nil, canvasInvokeError(err)
 		}
 
-		// Emit message + message_end (mirrors Python's ans dict).
-		appendAssistantHistory(state, assistantOutput)
+		// Persist the Agent answer for subsequent Agent prompts. The terminal
+		// Message output is presentation data and may wrap the answer with
+		// template literals; retaining it in the prompt history makes the model
+		// reproduce and amplify those literals on later turns.
+		appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, canvas.NewInternalRunError(
@@ -2383,7 +2397,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// per-run token usage across all LLM calls in this turn.
 		wfPayload := map[string]interface{}{
 			"inputs":       map[string]any{"query": userInput},
-			"outputs":      workflowOutputs(answer, downloads, attachment),
+			"outputs":      workflowOutputsFromTerminal(assistantOutput),
 			"elapsed_time": now - startedAt,
 			"created_at":   now,
 		}
@@ -2493,6 +2507,17 @@ func workflowOutputs(content string, downloads, attachment any) any {
 		out["attachment"] = attachment
 	}
 	return out
+}
+
+// workflowOutputsFromTerminal preserves the terminal component's complete
+// visible content in workflow_finished while retaining the established compact
+// string shape when it has no downloads or attachment.
+func workflowOutputsFromTerminal(output map[string]any) any {
+	if len(output) == 0 {
+		return ""
+	}
+	content, _ := output["content"].(string)
+	return workflowOutputs(content, output["downloads"], output["attachment"])
 }
 
 // emptyAttachmentValue reports whether an attachment descriptor is
@@ -2883,6 +2908,18 @@ func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
+}
+
+func canvasInvokeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "[GraphRunError] no tasks to execute") &&
+		strings.Contains(msg, "last completed nodes: [Switch:") {
+		return errors.New("canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
+	}
+	return fmt.Errorf("canvas invoke: %w", err)
 }
 
 // markRunSucceeded records the run as completed successfully via

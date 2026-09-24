@@ -212,7 +212,9 @@ func runDirectFallback(ctx context.Context, deps RAGTools, req runtime.RunReques
 
 const (
 	// evidenceBudgetTokens is the token ceiling of the evidence block.
-	evidenceBudgetTokens = 8000
+	// The compose path still fits the whole prompt to the model window
+	// (AnswerDeps.MaxLength / chat.FitMessages), so this is an upper bound.
+	evidenceBudgetTokens = 80000
 	// evidencePoolQuota: claim pseudo-chunk
 	// cap across the whole first prefetch.
 	evidencePoolQuota = 24

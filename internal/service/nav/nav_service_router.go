@@ -28,8 +28,11 @@ package nav
 
 import (
 	"context"
-	"log"
 	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // navServiceMaxDocs is the router-local fallback doc count when the caller
@@ -72,7 +75,7 @@ func (NavServiceRouter) Route(ctx context.Context, tenantID, kbID, query string,
 	if err != nil {
 		// A backend failure is NOT "no structure": log and let the caller fall
 		// back rather than disabling the tool for the session.
-		log.Printf("[Dataset navigation search] NavService.Search failed for kb=%s: %v", kbID, err)
+		common.Warn("dataset navigation search: NavService.Search failed", zap.String("kb_id", kbID), zap.Error(err))
 		return nil, err
 	}
 	// Empty non-nil slice = structure exists, this query routed to nothing.

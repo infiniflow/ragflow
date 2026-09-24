@@ -664,6 +664,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 			Index:      indexName,
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
+			Refresh:    "wait_for",
 		}
 		res, err := req.Do(ctx, e.client)
 		if err != nil {

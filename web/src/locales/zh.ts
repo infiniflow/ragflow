@@ -53,7 +53,7 @@ export default {
       s: '秒',
       pleaseSelect: '请选择',
       pleaseInput: '请输入',
-      modelUnavailable: '之前选择的模型已被删除，请重新选择',
+      modelUnavailable: '所选模型不可用（已删除或无权限），请重新选择',
       submit: '提交',
       clear: '清空',
       embedIntoSite: '嵌入网站',
@@ -860,6 +860,8 @@ export default {
       entityTypes: 'Entity 类型',
       compilationTemplate: '算子',
       compilationTemplateRequired: '请选择算子',
+      compilationTemplateUnavailable:
+        '所选算子不可用（已删除或无权限），请重新选择',
       createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
@@ -2418,6 +2420,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       stringTransformDescription:
         '修改文本内容，目前支持文本分割、文本拼接操作',
       foundation: '基础',
+      tool: '工具',
       tools: '工具',
       dataManipulation: '数据操控',
       dialog: '对话',
@@ -2440,7 +2443,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       msg: '消息',
       msgTip: '输出上游组件的变量内容或者自己输入的文本。',
       messagePlaceholder: '请输入您的消息内容，使用‘/’快速插入变量。',
-      messageMsg: '请输入消息或删除此字段。',
+      messageMsg: '消息不能为空',
       addField: '新增字段',
       addMessage: '新增消息',
       loop: '循环',
@@ -3045,10 +3048,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
-      nodeFormInvalid: '无法保存：“{{name}}” 配置有误，请先修正',
-      agentModelMissing: '无法保存：“{{name}}” 未选择模型，请先选择',
-      retrievalDatasetMissing: '无法保存：“{{name}}” 未选择知识库，请先选择',
-      retrievalMemoryMissing: '无法保存：“{{name}}” 未选择记忆，请先选择',
+      nodeFormInvalid: '配置有误，请先修正',
+      agentModelMissing: '未选择模型，请先选择',
+      extractorModelMissing: '未选择模型，请先选择',
+      retrievalDatasetMissing: '未选择知识库，请先选择',
+      retrievalMemoryMissing: '未选择记忆，请先选择',
+      checklist: '检查清单',
+      checklistEmpty: '未发现问题',
+      checklistTitle: '请先解决以下问题再运行或发布',
+      checklistResolveBefore: '请先解决检查清单中的问题',
+      issueNotConnected: '该步骤未与任何算子连接',
+      issueVariableInvalid: '变量失效：{{variable}}',
+      memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
         '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
       retrievalTemplateMemoryHint:
@@ -3057,12 +3068,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
+      generalChunkerDescription:
+        '通用文本分块方式，适用于大多数文档类型，可灵活控制块大小、重叠和上下文范围。',
       tokenChunker: '按 Token 分块',
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
+      manualChunkerDescription:
+        '手册类文档分块方式，适用于产品手册、用户指南等，可根据文档结构进行分块并保留必要的上下文。',
       oneChunkerDescription: '此 Chunker 无需额外配置。',
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
@@ -3101,7 +3116,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       searchMethodTip: `决定该知识库启用的搜索方式，可选择全文、向量，或两者兼有。
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名 Embedding 权重',
-      parserMethod: '解析方法',
+      parserMethod: '解析器',
       tableResultType: '表格返回形式',
       markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:

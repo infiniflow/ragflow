@@ -64,6 +64,7 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint-go.sh:/ragflow/entrypoint.sh
+      - ${RAGFLOW_SSH_KNOWN_HOSTS:-${HOME}/.ssh/known_hosts}:${SSH_KNOWN_HOSTS:-/etc/ragflow/ssh_known_hosts}:ro
     env_file: .env-go
     # Route the Go services' cache/queue backend to the separate Kvrocks service.
     # The Python services use the Valkey `redis` service, which the Go deployment
@@ -114,6 +115,7 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint-go.sh:/ragflow/entrypoint.sh
+      - ${RAGFLOW_SSH_KNOWN_HOSTS:-${HOME}/.ssh/known_hosts}:${SSH_KNOWN_HOSTS:-/etc/ragflow/ssh_known_hosts}:ro
     env_file: .env-go
     # Route the Go services' cache/queue backend to the separate Kvrocks service.
     # The Python services use the Valkey `redis` service, which the Go deployment
