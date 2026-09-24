@@ -34,10 +34,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type tenantModelExtra struct {
-	MaxTokens *int `json:"max_tokens"`
-}
-
 var resolveTenantModelByType = defaultResolveTenantModelByType
 
 // resolveModelConfig resolves a specific model reference (tenant-model ID or
@@ -247,18 +243,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
+	// maxTokens is the catalog generation cap. The tenant model's
+	// extra["max_tokens"] is a context-window override and is resolved by
+	// dao.ResolveModelContentLength; it must not replace this output cap.
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxOutput != nil {
 		maxTokens = *mi.MaxOutput
-	}
-	if strings.TrimSpace(modelObj.Extra) != "" {
-		var tenantExtra tenantModelExtra
-		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
-			return nil, "", nil, 0, err
-		}
-		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			maxTokens = *tenantExtra.MaxTokens
-		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
@@ -305,18 +295,12 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
+		// maxTokens is the catalog generation cap. The tenant model's
+		// extra["max_tokens"] is a context-window override and is resolved by
+		// dao.ResolveModelContentLength; it must not replace this output cap.
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxOutput != nil {
 			maxTokens = *mi.MaxOutput
-		}
-		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
-			var tenantExtra tenantModelExtra
-			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
-				return nil, "", nil, 0, err
-			}
-			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				maxTokens = *tenantExtra.MaxTokens
-			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
