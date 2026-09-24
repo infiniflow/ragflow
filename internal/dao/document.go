@@ -435,14 +435,14 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 }
 
 // ListParserConfigsByKBIDs returns each dataset's distinct document
-// parser_config, keyed by dataset ID. A document copies the dataset's config
-// at upload and may then be overridden per document, so a dataset whose
-// documents were never customized collapses to a single row.
+// parser_config that declares a tag source file, keyed by dataset ID.
 //
-// That collapse is the premise this query relies on: parser_config also carries
-// per-document state such as page ranges, so once every document has been
-// customized the DISTINCT stops collapsing and the caller reads one full
-// longtext row per distinct config.
+// Because parser_config is a LONGTEXT column and also carries per-document
+// state such as page ranges, an unconstrained DISTINCT across all documents
+// forces disk temporary tables and filesort over large JSON blobs. Filtering
+// by `parser_config LIKE '%tag_file_id%'` drops the vast majority of
+// documents that carry no tag configuration before distinct deduplication,
+// avoiding OOM and slow queries on large datasets.
 func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]entity.JSONMap, error) {
 	if len(kbIDs) == 0 {
 		return nil, nil
@@ -451,10 +451,15 @@ func (dao *DocumentDAO) ListParserConfigsByKBIDs(ctx context.Context, db *gorm.D
 		KbID         string         `gorm:"column:kb_id"`
 		ParserConfig entity.JSONMap `gorm:"column:parser_config;type:longtext"`
 	}
-	if err := db.WithContext(ctx).Table("document").
+	query := db.WithContext(ctx).Table("document").
 		Distinct("kb_id", "parser_config").
-		Where("kb_id IN ?", kbIDs).
-		Find(&rows).Error; err != nil {
+		Where("kb_id IN ?", kbIDs)
+	if db.Dialector.Name() == "sqlite" {
+		query = query.Where("CAST(parser_config AS TEXT) LIKE '%tag_file_id%'")
+	} else {
+		query = query.Where("parser_config LIKE '%tag_file_id%'")
+	}
+	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 
