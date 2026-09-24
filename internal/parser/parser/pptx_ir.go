@@ -35,10 +35,13 @@ import (
 //
 // Pure Go (no cgo) so the IR → items transform is unit-testable without
 // the office_oxide native library.
-func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
+func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[string]any, error) {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil, fmt.Errorf("presentation ir-json decode: %w", err)
+	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
 	}
 	items := make([]map[string]any, 0, len(ir.Sections))
 	for i, sec := range ir.Sections {
@@ -59,20 +62,28 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 			"doc_type_kwd": "text",
 			"slide_number": i + 1,
 		})
-		var images [][]byte
-		for _, el := range sec.Elements {
-			images = append(images, docxIRImagesInElements([]docxIRElement{el})...)
-		}
-		for mediaOrder, data := range images {
-			items = append(items, map[string]any{
+		mediaOrder := 0
+		forEachDOCXIRImage(sec.Elements, func(data []byte) bool {
+			mediaOrder++
+			imageItem := map[string]any{
 				"text":         "",
-				"image":        base64.StdEncoding.EncodeToString(data),
+				"image":        nil,
 				"doc_type_kwd": "image",
 				"ck_type":      "image",
 				"slide_number": i + 1,
-				"media_order":  mediaOrder + 1,
-			})
-		}
+				"media_order":  mediaOrder,
+			}
+			included, keepWalking := budget.include(data)
+			if included {
+				imageItem["image"] = base64.StdEncoding.EncodeToString(data)
+			} else if keepWalking {
+				imageItem["media_omitted"] = true
+			} else {
+				return false
+			}
+			items = append(items, imageItem)
+			return keepWalking
+		})
 	}
 	return items, nil
 }
@@ -87,6 +98,9 @@ func itemsAllEmpty(items []map[string]any) bool {
 			return false
 		}
 		if image, _ := it["image"].(string); strings.TrimSpace(image) != "" {
+			return false
+		}
+		if omitted, _ := it["media_omitted"].(bool); omitted {
 			return false
 		}
 	}

@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +106,9 @@ func isUsableVisionImage(raw string) bool {
 	if raw == "" {
 		return false
 	}
+	if len(raw) > maxVLMEncodedBytes+256 {
+		return false
+	}
 	if strings.HasPrefix(raw, "data:image/") {
 		idx := strings.Index(raw, "base64,")
 		if idx < 0 {
@@ -114,6 +118,9 @@ func isUsableVisionImage(raw string) bool {
 	}
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return true
+	}
+	if len(raw) > maxVLMEncodedBytes {
+		return false
 	}
 	cleaned := strings.Map(func(r rune) rune {
 		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
@@ -125,14 +132,20 @@ func isUsableVisionImage(raw string) bool {
 }
 
 func isValidBase64(s string) bool {
-	if s == "" {
+	if s == "" || len(s) > maxVLMEncodedBytes {
 		return false
 	}
-	if _, err := base64.StdEncoding.DecodeString(s); err == nil {
-		return true
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		decoded := base64.NewDecoder(encoding, strings.NewReader(s))
+		n, err := io.CopyN(io.Discard, decoded, int64(maxVLMImageBytes)+1)
+		if n > int64(maxVLMImageBytes) {
+			return false
+		}
+		if err == io.EOF {
+			return n > 0
+		}
 	}
-	_, err := base64.RawStdEncoding.DecodeString(s)
-	return err == nil
+	return false
 }
 
 // visionImageCropper yields a vision-usable base64 image for a parsed item.

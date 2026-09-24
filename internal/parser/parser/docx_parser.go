@@ -68,8 +68,8 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 
 // ParseWithResult produces structured JSON items (when
 // p.outputFormat == "json") or markdown (default) from a
-// docx document. Embedded images are extracted in both paths
-// for downstream vision-figure dispatch.
+// docx document. The JSON path emits bounded image items; the
+// Markdown path attaches bounded figure metadata to the file result.
 //
 // JSON path mirrors python parser.py:_docx() output_format == "json".
 // Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
@@ -106,22 +106,15 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	// Extract IR JSON for section building (JSON path) and
-	// embedded-image extraction (both paths).
+	// embedded-image extraction on the Markdown path.
 	irJSON, irErr := doc.ToIRJSON()
-	var figures []DOCXFigure
-	if irErr == nil {
-		figures = extractDOCXFiguresFromIR(irJSON)
-	}
-	if len(figures) > 0 {
-		fileMeta["figures"] = buildFiguresMap(figures)
-	}
 
 	if p.outputFormat == "json" {
 		if irErr != nil {
 			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
 		}
-		var sections []map[string]any
-		sections = buildDOCXJSONSections(irJSON)
+		budget := newEmbeddedMediaBudget()
+		sections := buildDOCXJSONSections(irJSON, budget)
 		// remove_header_footer: drop sections whose normalized text
 		// matches a docx header/footer entry (mirrors Python
 		// parser.py:889-891 extract_docx_header_footer_texts +
@@ -143,6 +136,15 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 			OutputFormat: "json",
 			File:         fileMeta,
 			JSON:         sections,
+			Warnings:     budget.warnings(),
+		}
+	}
+
+	budget := newEmbeddedMediaBudget()
+	if irErr == nil {
+		figures := extractDOCXFiguresFromIR(irJSON, budget)
+		if len(figures) > 0 {
+			fileMeta["figures"] = buildFiguresMap(figures)
 		}
 	}
 
@@ -187,6 +189,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		OutputFormat: "markdown",
 		File:         fileMeta,
 		Markdown:     md,
+		Warnings:     budget.warnings(),
 	}
 }
 

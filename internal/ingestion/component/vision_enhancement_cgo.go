@@ -20,6 +20,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"image"
 	"math"
 	"sync"
@@ -57,9 +58,10 @@ type visionPDFCropper struct {
 	db     *gorm.DB
 	inputs map[string]any
 
-	once   sync.Once
-	engine deepdoctype.PDFEngine
-	engErr error
+	mu          sync.Mutex
+	initialized bool
+	engine      deepdoctype.PDFEngine
+	engErr      error
 }
 
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
@@ -159,24 +161,39 @@ func pdfPagesRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNums map[in
 }
 
 func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
-	c.once.Do(func() {
-		data, err := c.acquireSource(ctx)
-		if err != nil || len(data) == 0 {
-			c.engErr = err
-			return
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.initialized {
+		return c.engErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := c.acquireSource(ctx)
+	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
 		}
-		// Only PDFs can be cropped. Guard against other binary types so a
-		// docx/markdown item that happens to reach here stays a no-op.
-		if len(data) < 5 || string(data[:5]) != "%PDF-" {
-			return
-		}
-		eng, oerr := visionEngineOpener(data)
-		if oerr != nil {
-			c.engErr = oerr
-			return
-		}
-		c.engine = eng
-	})
+		c.initialized = true
+		c.engErr = err
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Empty and non-PDF sources are deterministic no-op results for this
+	// invocation. Context-derived failures above remain retryable for later
+	// items, whose per-image contexts have fresh deadlines.
+	c.initialized = true
+	if len(data) == 0 || len(data) < 5 || string(data[:5]) != "%PDF-" {
+		return nil
+	}
+	eng, err := visionEngineOpener(data)
+	if err != nil {
+		c.engErr = err
+		return err
+	}
+	c.engine = eng
 	return c.engErr
 }
 
@@ -197,6 +214,8 @@ func (c *visionPDFCropper) acquireSource(ctx context.Context) ([]byte, error) {
 }
 
 func (c *visionPDFCropper) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.engine != nil {
 		return c.engine.Close()
 	}

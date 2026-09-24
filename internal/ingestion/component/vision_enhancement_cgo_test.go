@@ -292,3 +292,73 @@ func TestVisionCropImage_EngineClosedAfterUse(t *testing.T) {
 		t.Fatal("engine should be closed after use")
 	}
 }
+
+func TestVisionCropImage_RetriesAfterTransientSourceFailure(t *testing.T) {
+	oldFetcher := visionSourceFetcher
+	oldOpener := visionEngineOpener
+	t.Cleanup(func() {
+		visionSourceFetcher = oldFetcher
+		visionEngineOpener = oldOpener
+	})
+
+	fetchCalls := 0
+	visionSourceFetcher = func(context.Context, string, string) ([]byte, error) {
+		fetchCalls++
+		if fetchCalls == 1 {
+			return nil, context.DeadlineExceeded
+		}
+		return []byte("%PDF-fake-engine-bytes"), nil
+	}
+	visionEngineOpener = func([]byte) (deepdoctype.PDFEngine, error) {
+		return mockVisionEngine{}, nil
+	}
+
+	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
+	if err != nil {
+		t.Fatalf("newVisionImageCropper: %v", err)
+	}
+	t.Cleanup(func() { _ = cropper.Close() })
+
+	if _, err := cropper.Crop(context.Background(), cgoPositions()); err != nil {
+		t.Fatalf("first Crop: %v", err)
+	}
+	img, err := cropper.Crop(context.Background(), cgoPositions())
+	if err != nil {
+		t.Fatalf("second Crop: %v", err)
+	}
+	if img == nil || img.Raster == nil {
+		t.Fatal("second Crop returned no raster after the source fetch recovered")
+	}
+	if fetchCalls != 2 {
+		t.Fatalf("source fetch calls = %d, want 2 after transient failure", fetchCalls)
+	}
+}
+
+func TestVisionCropImage_CanceledParentDoesNotRetrySource(t *testing.T) {
+	oldFetcher := visionSourceFetcher
+	t.Cleanup(func() { visionSourceFetcher = oldFetcher })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	fetchCalls := 0
+	visionSourceFetcher = func(context.Context, string, string) ([]byte, error) {
+		fetchCalls++
+		cancel()
+		return nil, context.Canceled
+	}
+
+	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
+	if err != nil {
+		t.Fatalf("newVisionImageCropper: %v", err)
+	}
+	t.Cleanup(func() { _ = cropper.Close() })
+
+	if img, err := cropper.Crop(ctx, cgoPositions()); err != nil || img != nil {
+		t.Fatalf("first Crop = (%#v, %v), want best-effort no result after cancellation", img, err)
+	}
+	if _, err := cropper.Crop(ctx, cgoPositions()); err == nil {
+		t.Fatal("subsequent Crop with a canceled parent context should return its cancellation")
+	}
+	if fetchCalls != 1 {
+		t.Fatalf("source fetch calls = %d, want one; canceled parent must prevent retries", fetchCalls)
+	}
+}

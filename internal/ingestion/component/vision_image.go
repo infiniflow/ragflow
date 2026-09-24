@@ -26,9 +26,11 @@ import (
 )
 
 const (
-	maxOCRImageBytes  = 32 << 20
-	maxOCRImagePixels = 40_000_000
-	maxOCRImageEdge   = 12_000
+	maxOCRImageBytes   = 32 << 20
+	maxOCRImagePixels  = 40_000_000
+	maxOCRImageEdge    = 12_000
+	maxVLMImageBytes   = 32 << 20
+	maxVLMEncodedBytes = (maxVLMImageBytes+2)/3*4 + 256
 )
 
 func materializeInlineVisionImage(raw string) (*visionImage, error) {
@@ -68,13 +70,16 @@ func decodeVisionPayload(raw string) ([]byte, error) {
 		}
 		encoded = encoded[comma+1:]
 	}
+	maxEncodedBytes := (maxOCRImageBytes+2)/3*4 + 256
+	if len(encoded) == 0 || len(encoded) > maxEncodedBytes {
+		return nil, fmt.Errorf("vision image: encoded payload exceeds limit")
+	}
 	encoded = strings.Map(func(r rune) rune {
 		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
 			return -1
 		}
 		return r
 	}, encoded)
-	maxEncodedBytes := (maxOCRImageBytes+2)/3*4 + 256
 	if len(encoded) == 0 || len(encoded) > maxEncodedBytes {
 		return nil, fmt.Errorf("vision image: encoded payload exceeds limit")
 	}

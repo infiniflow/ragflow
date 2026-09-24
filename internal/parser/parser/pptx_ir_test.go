@@ -171,7 +171,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, err := buildPPTXJSONSections(tt.irJSON)
+			items, err := buildPPTXJSONSections(tt.irJSON, newEmbeddedMediaBudget())
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("buildPPTXJSONSections: want error, got items %+v", items)
@@ -206,7 +206,7 @@ func TestBuildPPTXJSONSections_ExtractsSlideImagesInOrder(t *testing.T) {
 		{"type":"table","rows":[{"cells":[{"content":[{"type":"image","data":"aW1hZ2U="}]}]}]}
 	]},{"elements":[{"type":"image","data":"c2Vjb25k"}]}]}`
 
-	items, err := buildPPTXJSONSections(irJSON)
+	items, err := buildPPTXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if err != nil {
 		t.Fatalf("buildPPTXJSONSections: %v", err)
 	}
