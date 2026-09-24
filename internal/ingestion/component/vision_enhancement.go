@@ -14,9 +14,9 @@
 // limitations under the License.
 //
 
-// Package component — vision figure enhancement: enriches parsed JSON items
-// (PDF / DOCX / Markdown, OutputFormat=="json") with vision-model descriptions
-// of embedded images/tables. Mirrors Python's enhance_media_sections_with_vision
+// Package component — vision media enhancement: enriches parsed JSON items
+// with local OCR and vision-model descriptions of embedded images/tables.
+// Mirrors Python's enhance_media_sections_with_vision
 // (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
 
 package component
@@ -49,6 +49,7 @@ import (
 var (
 	figureVisionPromptBuilder func(language string) (string, error) = buildFigureVisionPrompt
 	visionChatInvoker                                               = defaultVisionChatInvoker
+	visionImageCropperFactory                                       = newVisionImageCropper
 )
 
 const (
@@ -225,7 +226,7 @@ func maybeDispatchVisionEnhancement(
 	// Materialize one resource at a time. The VLM semaphore is acquired before
 	// materialization, so at most visionEnhancementConcurrency encoded payloads
 	// remain live while model requests run.
-	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
+	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
 		return dispatched, false, nil
 	}
@@ -286,6 +287,11 @@ func maybeDispatchVisionEnhancement(
 			}
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload}
+					}
+				}
 				return
 			}
 			if imageWithinOCRLimits(resource.Raster) && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending && ocrCtx.Err() == nil {

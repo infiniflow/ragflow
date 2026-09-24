@@ -19,11 +19,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/png"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -82,14 +84,100 @@ type imagePromptCaptureDriver struct {
 	modelModule.ModelDriver
 	mu       sync.Mutex
 	captured []modelModule.Message
+	ctxErr   error
 }
 
 func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	d.mu.Lock()
 	d.captured = append(d.captured, messages...)
+	d.ctxErr = ctx.Err()
 	d.mu.Unlock()
 	ans := "captured"
 	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+func TestMaybeDispatchImageRunsLocalOCRWithoutTenant(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	originalResolver := resolveTenantModelByType
+	resolvedModel := false
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolvedModel = true
+		return nil, "", nil, 0, errors.New("no tenant")
+	}
+	t.Cleanup(func() { resolveTenantModelByType = originalResolver })
+
+	setups := defaultSetups()
+	setups["image"]["layout_recognize"] = ""
+	result, handled, err := maybeDispatchImage(
+		t.Context(), dao.DB, utility.FileTypeVISUAL, "no-tenant.png", encoded.Bytes(), nil, setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want local image OCR")
+	}
+	if analyzer.detectCalls != 1 {
+		t.Fatalf("OCR detect calls = %d, want 1", analyzer.detectCalls)
+	}
+	if resolvedModel {
+		t.Fatal("VLM model resolution ran without a tenant")
+	}
+	if got := result.JSON[0]["text"]; got != strings.TrimSpace(strings.Repeat("recognized ", 4)) {
+		t.Errorf("image text = %q, want local OCR text", got)
+	}
+}
+
+func TestMaybeDispatchImageOCRBudgetFallsBackToVLMWithLiveParent(t *testing.T) {
+	analyzer := &budgetVisionOCRAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	originalBudget := visionOCRInvokeBudget
+	visionOCRInvokeBudget = 20 * time.Millisecond
+	t.Cleanup(func() { visionOCRInvokeBudget = originalBudget })
+
+	originalResolver := resolveTenantModelByType
+	driver := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return driver, "img-model", &modelModule.APIConfig{}, 0, nil
+	}
+	t.Cleanup(func() { resolveTenantModelByType = originalResolver })
+
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	parentCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	setups := defaultSetups()
+	setups["image"]["layout_recognize"] = ""
+	result, handled, err := maybeDispatchImage(
+		parentCtx, dao.DB, utility.FileTypeVISUAL, "budget.png", encoded.Bytes(),
+		map[string]any{"tenant_id": "t1"}, setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM fallback after OCR budget expiry")
+	}
+	if got := analyzer.detectCalls.Load(); got != 1 {
+		t.Fatalf("OCR detect calls = %d, want 1", got)
+	}
+	if driver.ctxErr != nil {
+		t.Errorf("VLM context error = %v, want live parent context", driver.ctxErr)
+	}
+	if got := result.JSON[0]["text"]; got != "captured" {
+		t.Errorf("image text = %q, want VLM fallback response", got)
+	}
 }
 
 // firstUserText extracts the text of the first "text" content part from the

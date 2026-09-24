@@ -49,6 +49,14 @@ type visionEnhanceFakeDriver struct {
 	modelModule.ModelDriver
 }
 
+type failingVisionImageCropper struct{ err error }
+
+func (c failingVisionImageCropper) Crop(context.Context, map[string]any) (*visionImage, error) {
+	return nil, c.err
+}
+
+func (failingVisionImageCropper) Close() error { return nil }
+
 func TestMediaOCRStatus_UsesPerItemMarker(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -365,6 +373,44 @@ func TestVisionEnhancement_AppendsLocalOCRBeforeVLM(t *testing.T) {
 	}
 	if len(invoker.images) != 1 {
 		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_CropFailureFallsBackToInlineImage(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	originalFactory := visionImageCropperFactory
+	visionImageCropperFactory = func(context.Context, *gorm.DB, map[string]any) (visionImageCropper, error) {
+		return failingVisionImageCropper{err: errors.New("crop failed")}, nil
+	}
+	t.Cleanup(func() { visionImageCropperFactory = originalFactory })
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want inline VLM fallback")
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+	if !strings.HasPrefix(invoker.images[0], "data:image/png;base64,") {
+		t.Errorf("VLM image URL = %q, want inline PNG data URI", invoker.images[0])
+	}
+	if got, want := result.JSON[0]["text"], "a diagram of a pipeline"; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
 	}
 }
 
