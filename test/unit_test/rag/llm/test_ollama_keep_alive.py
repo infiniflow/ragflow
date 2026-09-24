@@ -15,6 +15,8 @@
 #
 """``OLLAMA_KEEP_ALIVE`` accepts Ollama's duration strings, not just integers."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from rag.llm.cv_model import OllamaCV
@@ -59,3 +61,15 @@ def test_models_prefer_explicit_keep_alive(monkeypatch, model_cls):
     monkeypatch.setenv("OLLAMA_KEEP_ALIVE", "not-a-duration")
     model = model_cls("x", "bge-m3", base_url="http://localhost:11434", ollama_keep_alive="10m")
     assert model.keep_alive == "10m"
+
+
+@pytest.mark.parametrize("method", ["describe", "describe_with_prompt"])
+def test_ollama_cv_generate_sends_keep_alive(monkeypatch, method):
+    monkeypatch.setenv("OLLAMA_KEEP_ALIVE", "5m")
+    model = OllamaCV("x", "llava", base_url="http://localhost:11434")
+    model.client = MagicMock()
+    model.client.generate.return_value = {"response": "a cat"}
+
+    getattr(model, method)(b"image-bytes")
+
+    assert model.client.generate.call_args.kwargs["keep_alive"] == "5m"

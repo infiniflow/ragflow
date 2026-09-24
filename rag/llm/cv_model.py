@@ -845,6 +845,7 @@ class OllamaCV(Base):
                 prompt=prompt[0]["content"],
                 images=[image],
                 think=False,
+                keep_alive=self.keep_alive,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -859,6 +860,7 @@ class OllamaCV(Base):
                 prompt=vision_prompt[0]["content"],
                 images=[image],
                 think=False,
+                keep_alive=self.keep_alive,
             )
             ans = response["response"].strip()
             return ans, 128
