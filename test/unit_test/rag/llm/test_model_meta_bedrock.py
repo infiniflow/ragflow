@@ -132,9 +132,9 @@ def _profile_only_client():
             "inferenceTypesSupported": ["ON_DEMAND"],
         },
         {
-            "modelId": "amazon.titan-embed-text-v2:0:8k",
+            "modelId": "meta.llama3-3-70b-instruct-v1:0:128k",
             "inputModalities": ["TEXT"],
-            "outputModalities": ["EMBEDDING"],
+            "outputModalities": ["TEXT"],
             "inferenceTypesSupported": [],
         },
         {
