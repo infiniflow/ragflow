@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -2545,14 +2546,61 @@ func numericSlice(v interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
+// jsonListFields are the list-valued columns Infinity stores as `json`. Python
+// json-encodes them before the insert (infinity_conn.py:557-558); the Go SDK
+// cannot encode a []string constant (expression_parser.go -> 3058).
+var jsonListFields = map[string]bool{
+	"source_chunk_ids":         true,
+	"source_doc_ids":           true,
+	"compilation_template_ids": true,
+	"doc_ids_kwd":              true,
+	"entity_names_kwd":         true,
+	"outlinks_kwd":             true,
+	"related_kb_pages_kwd":     true,
+	"rechunked_from_chunk_ids": true,
+}
+
+// jsonListValue renders a list field as the JSON string its column stores; a
+// string comes back as-is, so re-transforming a doc is idempotent.
+func jsonListValue(v interface{}) interface{} {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	switch list := v.(type) {
+	case []string:
+		return marshalJSONList(list)
+	case []interface{}:
+		return marshalJSONList(list)
+	default:
+		if rv := reflect.ValueOf(v); rv.IsValid() && (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) {
+			return marshalJSONList(v)
+		}
+		return "[]"
+	}
+}
+
+// marshalJSONList encodes a list, falling back to the column default "[]".
+func marshalJSONList(v interface{}) string {
+	if rv := reflect.ValueOf(v); rv.IsValid() && rv.Len() == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // transformChunkFields converts chunk field names to Infinity format.
 // Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
 // Also handles:
 // - kb_id: extracts first element if it's a list
 // - position_int, page_num_int, top_int: converts arrays to hex strings
+// - jsonListFields: list -> JSON string (Infinity json columns)
 // - tag_kwd: joins with ### separator
 // - question_kwd: joins with newline separator
-// - chunk_data: dict -> JSON string
+// - other *_kwd keyword fields: lists join with ###
+// - chunk_data / extra: dict -> JSON string (chunk-table varchar columns)
 // - Missing embeddings filled with zeros if embeddingCols provided
 func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]interface{}) map[string]interface{} {
 	d := make(map[string]interface{})
@@ -2653,16 +2701,28 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			}
 		case "chunk_data":
 			d["chunk_data"] = utility.ConvertMapToJSONString(v)
+		case "extra":
+			// Python json-encodes a dict-valued `extra` (infinity_conn.py:572-581);
+			// raw, the SDK reads the map as a sparse-vector literal and rejects the
+			// string keys. meta_fields is not a chunk column — InsertMetadata
+			// encodes it on the doc-meta path (infinity/metadata.go).
+			d[k] = utility.ConvertMapToJSONString(v)
 		default:
 			// Check for *_feas fields
 			if strings.HasSuffix(k, "_feas") {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
+			} else if jsonListFields[k] {
+				d[k] = jsonListValue(v)
 			} else if fieldKeyword(k) {
-				// keyword fields with list values -> ### joined
-				if list, ok := v.([]interface{}); ok {
+				// keyword fields with list values -> ### joined; accept the
+				// Go-native []string as well as []interface{}.
+				switch list := v.(type) {
+				case []string:
+					d[k] = strings.Join(list, "###")
+				case []interface{}:
 					d[k] = strings.Join(utility.ConvertToStringSlice(list), "###")
-				} else {
+				default:
 					d[k] = v
 				}
 			} else {
