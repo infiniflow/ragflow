@@ -46,8 +46,12 @@ class MonkeyOCRv2Parser:
     def extract_positions(text):
         positions = []
         for tag in re.findall(r"@@[0-9-]+\t[-0-9.\t]+##", text):
-            page, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
-            positions.append((int(page) - 1, float(left), float(right), float(top), float(bottom)))
+            try:
+                page, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
+                positions.append((int(page) - 1, float(left), float(right), float(top), float(bottom)))
+            except ValueError:
+                # a '-' can land in a coordinate slot; skip the tag, as ExtractPositions in internal/deepdoc/parser/pdf/util/position.go does
+                continue
         return positions
 
     def parse_pdf(self, filepath, binary=None, callback=None, page_from=0, page_to=99999, **_kwargs):
