@@ -410,6 +410,7 @@ class SereneDBConnection(DocStoreConnection):
         text_query = text_topn = None
         vec_col = vec_data = vec_topn = None
         vec_threshold = 0.0
+        has_vec_threshold = False
         vector_weight = 0.5
         for m in match_expressions:
             if isinstance(m, MatchTextExpr):
@@ -423,7 +424,9 @@ class SereneDBConnection(DocStoreConnection):
                 vec_col = m.vector_column_name
                 vec_data = list(m.embedding_data)
                 vec_topn = m.topn
-                vec_threshold = float((m.extra_options or {}).get("similarity", 0.0))
+                if "similarity" in (m.extra_options or {}):
+                    vec_threshold = float(m.extra_options["similarity"])
+                    has_vec_threshold = True
             elif isinstance(m, FusionExpr):
                 if m.method == "weighted_sum" and "weights" in (m.fusion_params or {}):
                     vector_weight = float(m.fusion_params["weights"].split(",")[1])
@@ -448,17 +451,37 @@ class SereneDBConnection(DocStoreConnection):
                 )
                 search_type = "fulltext"
             elif vec_data:
-                # Similarity threshold goes straight in the ANN scan's WHERE (relies on the
-                # 26.07.4 fix #964 — on <26.07.4 a vector-op predicate here silently emptied the
-                # result and had to be applied outside the scan).
+                # The threshold is deliberately NOT in the WHERE clause: SereneDB compiles it
+                # to `Vector Range / Radius <= -0` and enumerates ~8.5M of 42.8M rows so TOP_N
+                # can keep 10. 104,095ms -> 626ms. No sibling backend constrains the search
+                # this way, and search.py re-applies the threshold anyway against the HYBRID
+                # score, not pure vector similarity - so the predicate could drop a chunk with
+                # a strong term match. Cost: the IVF index answers approximately, recall@10
+                # 88% at nprobe=8, 93% at 32, 97% at 128.
                 vec_n = _norm_column(len(vec_data))
                 qv = "ARRAY[" + ",".join(str(float(x)) for x in _l2_normalize(vec_data)) + f"]::FLOAT[{len(vec_data)}]"
                 n = limit if limit > 0 else (vec_topn or 10)
+                # _vec_sim is the RAW similarity: _score adds pagerank, so a 0.75 similarity
+                # with 0.10 of pagerank would pass a 0.80 threshold. Subquery so the distance
+                # is computed once. pagerank_fea is itself selectable, so it joins the inner
+                # projection only when the caller did not ask for it - twice is ambiguous.
+                inner_extra = "" if PAGERANK_FLD in output_fields else f", {PAGERANK_FLD}"
                 rows, _ = self._run(
-                    f"SELECT {fields_expr}, -({vec_n} <#> {qv}) + {pagerank_expr} AS _score "
-                    f"FROM {idx} WHERE {filters_expr} AND -({vec_n} <#> {qv}) >= {vec_threshold} "
-                    f"ORDER BY {vec_n} <#> {qv} LIMIT {n} OFFSET {offset}"
+                    f"SELECT {fields_expr}, _vec_sim, _vec_sim + {pagerank_expr} AS _score FROM ("
+                    f"SELECT {fields_expr}{inner_extra}, -({vec_n} <#> {qv}) AS _vec_sim "
+                    f"FROM {idx} WHERE {filters_expr} "
+                    f"ORDER BY {vec_n} <#> {qv} LIMIT {n} OFFSET {offset}) t"
                 )
+                # fields_expr is exactly output_fields, so _vec_sim lands at that index and
+                # _score just after it.
+                sim_i = len(output_fields)
+                # Whenever a threshold was GIVEN, not only a positive one: similarity is
+                # -(v <#> q) and is legitimately negative, so 0 and below are real cutoffs.
+                if has_vec_threshold:
+                    # NULL similarity is DROPPED: the vector columns are nullable, and a
+                    # chunk with no vector must not survive a threshold.
+                    rows = [r for r in rows if r[sim_i] is not None and r[sim_i] >= vec_threshold]
+                rows = [tuple(r[:sim_i]) + tuple(r[sim_i + 1:]) for r in rows]
                 search_type = "vector"
             elif agg_fields:
                 self._aggregation(result, index_name, agg_fields, filters_expr)
@@ -506,7 +529,7 @@ WITH lex AS (
 lexn AS (SELECT id, s / NULLIF(MAX(s) OVER (), 0) AS sn FROM lex),
 vec AS (
     SELECT id, -({vec_n} <#> {qv}) AS sim
-    FROM {idx} WHERE {filters_expr} AND -({vec_n} <#> {qv}) >= {vec_threshold}
+    FROM {idx} WHERE {filters_expr}
     ORDER BY {vec_n} <#> {qv} LIMIT {v_n}),
 fused AS (
     SELECT COALESCE(l.id, v.id) AS id,

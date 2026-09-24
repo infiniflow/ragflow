@@ -197,10 +197,14 @@ func TestBuildFulltextSQLSingleColumn(t *testing.T) {
 	mustNotContain(t, sql, "title_tks @@")
 }
 
-func TestBuildVectorSQLThresholdInWhere(t *testing.T) {
+// The similarity threshold must NOT reach the WHERE clause: there it compiles to
+// a radius search instead of a top-k lookup (104,095 ms vs 626 ms on 42.8M rows).
+// Elasticsearch applies it as a post-filter, OpenSearch drops it, and RAGFlow
+// re-applies it against the hybrid score afterwards.
+func TestBuildVectorSQLThresholdNotInWhere(t *testing.T) {
 	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2}
 	sql := buildVectorSQL("t", "id", "TRUE", pm, 10, 5)
-	mustContain(t, sql, "-(q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2]) >= 0.2")
+	mustNotContain(t, sql, ">= 0.2")
 	mustContain(t, sql, "ORDER BY q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2] LIMIT 10 OFFSET 5")
 }
 
