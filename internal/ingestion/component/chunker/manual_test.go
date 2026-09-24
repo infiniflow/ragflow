@@ -429,3 +429,94 @@ func TestManualChunker_MixedPositionedAndPlain(t *testing.T) {
 		t.Fatalf("coordinate-free records lost original order in %q", joined)
 	}
 }
+
+// TestNewManualChunker_StripsUnsupportedTitleParams pins the issue #20139
+// contract: the three title-family params that the operator form accepts but
+// ManualChunker cannot honour (`method`, `chunk_token_cap`,
+// `include_heading_content`) must not be propagated to `c.param`, regardless
+// of what the caller passed. The fix strips them inside NewManualChunker
+// with a `common.Warn` so the silent-ignore failure mode becomes a visible
+// log line. Runtime semantics are unchanged because the group path would
+// have ignored them anyway.
+func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{
+			name: "method downgrade attempt is dropped",
+			params: map[string]any{
+				"method":                  "naive",
+				"chunk_token_cap":         128,
+				"include_heading_content": true,
+			},
+		},
+		{
+			name: "method upgrade attempt is dropped",
+			params: map[string]any{
+				"method":                  "hierarchy",
+				"chunk_token_cap":         256,
+				"include_heading_content": false,
+			},
+		},
+		{
+			name: "only cap and heading flag set",
+			params: map[string]any{
+				"chunk_token_cap":         1024,
+				"include_heading_content": true,
+			},
+		},
+		{
+			name:   "no unsupported params is the baseline",
+			params: map[string]any{"levels": [][]string{{`^# `}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := mustManual(t, tc.params)
+			if got, want := c.param.TitleChunkerParam.Method, "group"; got != want {
+				t.Errorf("Method = %q, want %q (ManualChunker pins method=group)", got, want)
+			}
+			if got := c.param.TitleChunkerParam.ChunkTokenCap; got != 0 {
+				t.Errorf("ChunkTokenCap = %d, want 0 (stripped before Update)", got)
+			}
+			if got := c.param.TitleChunkerParam.IncludeHeadingContent; got != false {
+				t.Errorf("IncludeHeadingContent = %v, want false (stripped before Update)", got)
+			}
+		})
+	}
+}
+
+// TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes pins that the
+// three pinned keys do not bleed into the rest of the conf: levels, hierarchy
+// and root_chunk_as_heading still flow through to `c.param` exactly as before.
+func TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes(t *testing.T) {
+	c := mustManual(t, map[string]any{
+		"method":                  "naive", // dropped
+		"chunk_token_cap":         999,     // dropped
+		"include_heading_content": true,    // dropped
+		"levels":                  [][]string{{`^# `}, {`^## `}},
+		"hierarchy":               2,
+		"root_chunk_as_heading":   true,
+	})
+	if len(c.param.TitleChunkerParam.Levels) != 2 {
+		t.Errorf("Levels len = %d, want 2", len(c.param.TitleChunkerParam.Levels))
+	} else {
+		if got := c.param.TitleChunkerParam.Levels[0]; len(got) == 0 || got[0] != "^# " {
+			t.Errorf("Levels[0] = %#v, want [\"^# \"]", got)
+		}
+		if got := c.param.TitleChunkerParam.Levels[1]; len(got) == 0 || got[0] != "^## " {
+			t.Errorf("Levels[1] = %#v, want [\"^## \"]", got)
+		}
+	}
+	if c.param.TitleChunkerParam.Hierarchy == nil || *c.param.TitleChunkerParam.Hierarchy != 2 {
+		t.Errorf("Hierarchy = %v, want pointer to 2", c.param.TitleChunkerParam.Hierarchy)
+	}
+	if !c.param.TitleChunkerParam.RootChunkAsHeading {
+		t.Errorf("RootChunkAsHeading = false, want true")
+	}
+	if c.param.TitleChunkerParam.Method != "group" {
+		t.Errorf("Method = %q, want group (still pinned even with other params set)", c.param.TitleChunkerParam.Method)
+	}
+}
