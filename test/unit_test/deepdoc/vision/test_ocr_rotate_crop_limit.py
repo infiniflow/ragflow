@@ -18,8 +18,8 @@ from deepdoc.vision.ocr import _OPENCV_REMAP_MAX_DIM, OCR
 
 def _cv2_runtime_available() -> bool:
     try:
-        cv2.resize(np.zeros((2, 2, 3), dtype=np.uint8), (1, 1))
-        return True
+        out = cv2.resize(np.zeros((2, 2, 3), dtype=np.uint8), (1, 1))
+        return isinstance(out, np.ndarray) and out.shape == (1, 1, 3)
     except Exception:
         return False
 
@@ -37,7 +37,7 @@ requires_cv2 = pytest.mark.skipif(
 def _ocr_stub() -> OCR:
     """Bypass model loading; only exercise get_rotate_crop_image geometry."""
     ocr = object.__new__(OCR)
-    ocr.text_recognizer = [MagicMock()]
+    ocr.text_recognizer = [MagicMock(return_value=[[("text", 0.99)]])]
     return ocr
 
 
