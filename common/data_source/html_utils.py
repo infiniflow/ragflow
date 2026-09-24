@@ -39,6 +39,34 @@ def strip_newlines(document: str) -> str:
     return re.sub(r"[\n\r]+", " ", document)
 
 
+# A space is inserted where two elements meet, because `<span>a</span><span>b</span>`
+# is two words to a reader. These are the characters that say otherwise: they
+# attach to the text on one side, and a browser renders no gap there.
+_ATTACHES_TO_TEXT_BEFORE = frozenset(",.;:!?%)]}»”’…")
+_ATTACHES_TO_TEXT_AFTER = frozenset("([{«“‘")
+# Straight quotes open or close depending on where they stand.
+_STRAIGHT_QUOTES = frozenset("'\"")
+
+
+def _attaches_across(before: str, after: str) -> bool:
+    """Whether the text on either side of an element boundary joins with no gap.
+
+    A straight single quote at the start of `after` continues a contraction or
+    closes a quotation (`<b>don</b>'t`), so it attaches to `before`. A straight
+    double quote there closes a quotation only while one is open on the current
+    line (`"<i>q</i>"`); otherwise it opens one (`<b>Note</b>"warning"`) and keeps
+    its gap. At the end of `before` a straight quote opens a quotation only when a
+    space or an opening bracket, or nothing, precedes it.
+    """
+    if after[0] in _ATTACHES_TO_TEXT_BEFORE or after[0] == "'":
+        return True
+    if after[0] == '"' and before[before.rfind("\n") + 1 :].count('"') % 2:
+        return True
+    if before[-1] in _ATTACHES_TO_TEXT_AFTER:
+        return True
+    return before[-1] in _STRAIGHT_QUOTES and (len(before) == 1 or before[-2].isspace() or before[-2] in _ATTACHES_TO_TEXT_AFTER)
+
+
 def format_element_text(element_text: str, link_href: str | None) -> str:
     element_text_no_newlines = strip_newlines(element_text)
 
@@ -136,8 +164,10 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
             if element_text:
                 content_to_add = element_text if verbatim_output > 0 else format_element_text(element_text, link_href)
 
-                # Don't join separate elements without any spacing
-                if (text and not text[-1].isspace()) and (content_to_add and not content_to_add[0].isspace()):
+                # Don't join separate elements without any spacing, unless the
+                # character on either side of the join is one that attaches --
+                # `<b>word</b>.` is a word and a full stop, not "word ."
+                if (text and not text[-1].isspace()) and (content_to_add and not content_to_add[0].isspace()) and not _attaches_across(text, content_to_add):
                     text += " "
 
                 text += content_to_add

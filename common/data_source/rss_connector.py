@@ -10,6 +10,7 @@ import feedparser
 import requests
 
 from common.data_source.config import INDEX_BATCH_SIZE, REQUEST_TIMEOUT_SECONDS, DocumentSource
+from common.data_source.html_utils import format_document_soup
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import (
     Document,
@@ -244,7 +245,14 @@ class RSSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def _normalize_text(value: Any) -> str:
         if not isinstance(value, str):
             return ""
-        return bs4.BeautifulSoup(value, "html.parser").get_text("\n", strip=True)
+        soup = bs4.BeautifulSoup(value, "html.parser")
+        if soup.find() is None:
+            # Plain text (an Atom type="text" summary): keep its line breaks.
+            return soup.get_text().strip()
+        # get_text("\n") put every text node on a line of its own, so each link or
+        # bold word cut its sentence into pieces. Read the markup the way the other
+        # HTML connectors do: one line per block, inline elements in the flow.
+        return format_document_soup(soup)
 
     @staticmethod
     def _struct_time_to_utc(value: struct_time | tuple[Any, ...]) -> datetime:
