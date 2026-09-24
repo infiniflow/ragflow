@@ -7,24 +7,25 @@ sidebar_custom_props: {
 ---
 # Configuration
 
-Configurations for deploying RAGFlow via Docker.
+Configuration reference for deploying the Go implementation of RAGFlow with Docker Compose.
 
 ## Guidelines
 
-When it comes to system configurations, you will need to manage the following files:
+The Go Docker deployment uses the following files:
 
-- [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env): Contains important environment variables for Docker.
-- [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template): Configures the back-end services. It specifies the system-level configuration for RAGFlow and is used by its API server and task executor. Upon container startup, the `service_conf.yaml` file will be generated based on this template file. This process replaces any environment variables within the template, allowing for dynamic configuration tailored to the container's environment.
-- [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): The Docker Compose file for starting up the RAGFlow service.
+- [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env): Defines the Docker image, service profiles, published ports, credentials, and other deployment environment variables.
+- [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template): Defines the configuration consumed by the Go services. The container generates `service_conf.yaml` from this template and substitutes its environment variables during startup.
+- [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): Starts the Go RAGFlow service together with the dependencies selected through Compose profiles.
+- [docker-compose-base.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-base.yml): Defines shared dependencies such as the document engine, metadata database, MinIO, Kvrocks, NATS, and ClickHouse.
 
-To update the default HTTP serving port (80), go to [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml) and change `80:80`
-to `<YOUR_SERVING_PORT>:80`.
+To change the public HTTP or HTTPS port, update `SVR_WEB_HTTP_PORT` or
+`SVR_WEB_HTTPS_PORT` in **docker/.env**. Their defaults are `80` and `443`.
 
 :::tip NOTE
 Updates to the above configurations require a reboot of all containers to take effect:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
 ```
 
 :::
@@ -32,17 +33,21 @@ docker compose -f docker/docker-compose.yml up -d
 ## Docker Compose
 
 - **docker-compose.yml**
-  Sets up environment for RAGFlow and its dependencies.
+  Starts the Go RAGFlow service and selects the required dependency profiles.
 - **docker-compose-base.yml**
-  Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
-
-:::danger IMPORTANT
-We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve them.
-:::
+  Defines the shared dependency services used by the selected document engine,
+  metadata database, object storage, cache, queue, and analytical storage.
 
 ## Docker Environment Variables
 
-The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
+The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains the environment variables for the Go Docker deployment.
+
+### Metadata Database
+
+- `DB_TYPE`
+  The business metadata database type. Defaults to `mysql`. Set it to `oceanbase` when connecting to OceanBase through its MySQL-compatible protocol.
+- `METADATA_DB_PROFILE`
+  The Compose profile for the metadata database. Defaults to `mysql`.
 
 ### Elasticsearch
 
@@ -61,7 +66,10 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 ### Resource Management
 
 - `MEM_LIMIT`
-  The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
+  The maximum memory available to each Compose service that applies this limit.
+  It is a per-container upper limit, not the minimum host memory, the total
+  memory reserved by RAGFlow, or a guarantee that every container consumes this
+  amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
 
 ### MySQL
 
@@ -70,7 +78,11 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `MYSQL_PORT`
   The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
 - `EXPOSE_MYSQL_PORT`
-  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
+  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
+- `MYSQL_MAX_PACKET`
+  The maximum MySQL communication packet size in bytes. Defaults to
+  `1073741824` bytes (`1 GiB`). Keep the MySQL server's
+  `max_allowed_packet` setting compatible when using an external database.
 
 ### MinIO
 
@@ -85,21 +97,38 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `MINIO_PASSWORD`
   The password for MinIO.
 
-### Redis
+### Kvrocks
 
-- `REDIS_PORT`
-  The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
-- `REDIS_USERNAME`
-  Optional Redis ACL username when using Redis 6+ authentication.
+Kvrocks provides the Redis-compatible cache. It is separate from the NATS JetStream message queue.
+
+- `KVROCKS_HOST`
+  The hostname used by the Go services. Keep the default `kvrocks` when using the provided Compose deployment.
+- `KVROCKS_PORT`
+  The host port mapped to the Kvrocks container port `6379`. Defaults to `6379`.
 - `REDIS_PASSWORD`
-  The password for Redis.
+  The password used to access Kvrocks through its Redis-compatible protocol.
+
+### NATS
+
+NATS JetStream provides the message queue used by the Go services.
+
+- `NATS_HOST`
+  The NATS hostname used inside the Compose network. Defaults to `nats`.
+- `NATS_PORT`
+  The internal NATS client port. Defaults to `4222`.
+- `EXPOSE_NATS_PORT`
+  The NATS port published on the Docker host.
 
 ### RAGFlow
 
 - `SVR_HTTP_PORT`
-  The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
+  The target Go API port published by Compose. Defaults to `9380`. Normal browser and API traffic should use the public Nginx port unless direct access is required.
+- `ADMIN_SVR_HTTP_PORT`
+  The target Go Admin port published by Compose. Defaults to `9381`.
+- `SVR_WEB_HTTP_PORT`, `SVR_WEB_HTTPS_PORT`
+  The public Nginx ports. Defaults to `80` and `443`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2` (the RAGFlow Docker image without embedding models).
+  The Go RAGFlow image used by `docker-compose.yml`. Select the official Go image for the required release, or use the locally built `ragflow:go-local` image.
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -112,10 +141,44 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### Embedding Service
 
 - `TEI_MODEL`
-  The embedding model which text-embeddings-inference serves. Allowed values are one of `Qwen/Qwen3-Embedding-0.6B`(default), `BAAI/bge-m3`, and `BAAI/bge-small-en-v1.5`.
+  The embedding model served by the optional local text-embeddings-inference
+  service. Its memory requirement depends on the model, runtime backend,
+  precision, batch-token limit, and concurrency. The `tei-cpu` profile uses
+  system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes
+  system RAM. Verify peak usage on the target hardware and reserve additional
+  host memory for RAGFlow and the other enabled services.
 
 - `TEI_PORT`
   The port used to expose the text-embeddings-inference service to the host machine, allowing **external** access to the text-embeddings-inference service running inside the Docker container. Defaults to `6380`.
+
+### OceanBase and SeekDB Memory
+
+- `OB_MEMORY_LIMIT`
+  The memory limit configured for the bundled OceanBase service. Defaults to
+  `10G`.
+- `OB_SYSTEM_MEMORY`
+  The OceanBase system-memory setting. Defaults to `2G`.
+- `OB_DATAFILE_SIZE`
+  The configured size of the OceanBase data file. Defaults to `20G`.
+- `OB_LOG_DISK_SIZE`
+  The configured size of the OceanBase log disk. Defaults to `20G`.
+- `SEEKDB_MEMORY_LIMIT`
+  The memory limit passed to the bundled SeekDB service. Defaults to `2G`.
+
+For an OceanBase deployment, use at least 4 CPU cores and 32 GB host memory as a
+starting point, leaving room beyond OceanBase's own
+[production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993)
+for the other RAGFlow services. Set `MEM_LIMIT` to no less than
+`OB_MEMORY_LIMIT`; a 12 GiB container limit is recommended, expressed as
+`MEM_LIMIT=12884901888` in **docker/.env**. The
+[SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd)
+specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk
+space. These values apply to their respective database services only and do not
+replace the resource recommendation for the complete RAGFlow deployment.
+The OceanBase data-file and log-disk defaults account for `40G` before
+container images, RAGFlow object storage, indexes, and logs. Plan additional
+free disk space for the complete deployment rather than treating `40G` as the
+host disk requirement.
 
 ### Timezone
 
@@ -144,7 +207,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 ## Service Configuration
 
-[service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
+[service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration used by the Go API, Admin, Ingestor, and Syncer services.
 
 ### `ragflow`
 
@@ -158,8 +221,9 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `user`: The username for MySQL.
 - `password`: The password for MySQL.
 - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
-- `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
-- `stale_timeout`: Timeout in seconds.
+- `max_connections`: The maximum number of concurrent connections in the MySQL connection pool. Defaults to `900` in the Go deployment configuration.
+- `stale_timeout`: The connection stale timeout in seconds. Defaults to `300` in the Go deployment configuration.
+- `max_allowed_packet`: The maximum communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`).
 
 ### `minio`
 
@@ -193,12 +257,12 @@ When using an external storage backend, you can remove the `minio` service from 
 
 For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
 
-### `redis`
+### `kvrocks`
 
-- `host`: The Redis serving IP *and* port inside the Docker container. Defaults to `redis:6379`.
-- `db`: The Redis database index to use. Defaults to `1`.
-- `username`: Optional Redis ACL username (Redis 6+).
-- `password`: The password for the specified Redis user.
+- `host`: The Kvrocks address used by the Go services. Defaults to `kvrocks:6379` in the Compose deployment.
+- `db`: The logical database index. Defaults to `1`.
+- `username`: Optional Kvrocks ACL username.
+- `password`: The password used by the Go services to access Kvrocks.
 
 ### `oauth`
 

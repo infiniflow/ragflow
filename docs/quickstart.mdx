@@ -19,9 +19,10 @@ This guide deploys the Go backend with the repository's Go Docker image and Comp
 
 ## Prerequisites
 
-- CPU &ge; 4 cores (x86-64);
-- RAM &ge; 16 GB;
-- Disk &ge; 50 GB;
+- A recommended starting configuration of 4 CPU cores (x86-64), 16 GB RAM,
+  and 50 GB free disk space. Actual requirements depend on the document engine,
+  data volume, parsing workload, and concurrency. Local models and OceanBase
+  require additional resources;
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit;
 - Access to the dependency image `infiniflow/ragflow_deps:latest` during the image build, and to an LLM and embedding model at runtime.
 
@@ -43,29 +44,29 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
    ```
 
-3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env-go`. The same file controls `DOC_ENGINE`, `DEVICE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
+3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. The same file controls `DOC_ENGINE`, `DEVICE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
 4. Start the Go service and its dependencies:
 
    ```bash
    cd docker
-   docker compose --env-file .env-go -f docker-compose-go.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
    ```
 
-   The default `DEVICE=cpu` selects `ragflow-cpu`. For the GPU Compose service, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference; selecting `DEVICE=gpu` does not change these DeepDoc operations.
+   The default `DEVICE=cpu` selects `ragflow-cpu`. For the GPU Compose service, set `DEVICE=gpu` in `.env` and configure the NVIDIA container runtime on the host. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference; selecting `DEVICE=gpu` does not change these DeepDoc operations.
 
    :::caution Development checkouts
-   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env-go` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
+   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
    :::
 
 5. Check that the service is running:
 
    ```bash
-   docker compose --env-file .env-go -f docker-compose-go.yml ps
-   docker compose --env-file .env-go -f docker-compose-go.yml logs -f ragflow-cpu
+   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose --env-file .env -f docker-compose.yml logs -f ragflow-cpu
    ```
 
    If you selected `DEVICE=gpu`, use `ragflow-gpu` in the logs command. After initialization, check the Go API and its dependencies through the web port from another terminal:
@@ -74,9 +75,9 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   This check works for both CPU and GPU deployments. A successful response has HTTP status 200. If you changed `SVR_WEB_HTTP_PORT` in `.env-go`, include that port in the URL. Wait for this check to pass before opening the web interface.
+   This check works for both CPU and GPU deployments. A successful response has HTTP status 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL. Wait for this check to pass before opening the web interface.
 
-6. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env-go`, include that port in the URL.
+6. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL.
 
 The Go container runs the API server, ingestion workers, and data synchronization. Its startup script runs the Go database migrations before starting the services.
 

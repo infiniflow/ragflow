@@ -14,9 +14,9 @@ Build the Go backend and web frontend into a local Docker image for development 
 
 ## Prerequisites
 
-- CPU &ge; 4 cores
-- RAM &ge; 16 GB
-- Disk &ge; 50 GB
+- A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB
+  free disk space. Actual requirements depend on the selected document engine,
+  local models, build concurrency, and data volume.
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
 - Access to the `infiniflow/ragflow_deps:latest` and `infiniflow/github_action_runner:latest` images during the build
 
@@ -29,19 +29,19 @@ The documented Go image target is `linux/amd64`. On an Apple Silicon Mac, Docker
 - **Linux ARM64:** Use a native build only after preparing ARM64-compatible dependency images and native libraries, and validate the selected document engine for the target architecture. The commands in this guide target AMD64.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
 
-Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. If a port is already in use, change the corresponding value in `docker/.env-go` and `docker/.env` together where both files define the same dependency.
+Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. For the Go deployment, change the corresponding values in `docker/.env`; use `docker/.env` only when a separate command explicitly loads that file.
 
 ## Build the Go image
 
-Run the build from the repository root. Keep the `.git` directory in the build context: `Dockerfile_go` uses it to stamp the image version.
+Run the build from the repository root. Keep the `.git` directory in the build context: `Dockerfile` uses it to stamp the image version.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow
-docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
 ```
 
-`Dockerfile_go` builds the Go server and web frontend. `infiniflow/ragflow_deps:latest` supplies document models and tokenizer assets; `infiniflow/github_action_runner:latest` supplies the build toolchain and prebuilt ONNX Runtime libraries. You do not need to build either dependency image separately for this command.
+`Dockerfile` builds the Go server and web frontend. `infiniflow/ragflow_deps:latest` supplies document models and tokenizer assets; `infiniflow/github_action_runner:latest` supplies the build toolchain and prebuilt ONNX Runtime libraries. You do not need to build either dependency image separately for this command.
 
 ## Start the service
 
@@ -51,26 +51,26 @@ For the default Elasticsearch document engine on Linux, set `vm.max_map_count` t
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env-go`. That file also controls the document engine, CPU or GPU selection, ports, and dependency credentials. Change the default passwords before making the service accessible over a network.
+Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. That file also controls the document engine, CPU or GPU selection, ports, and dependency credentials. Change the default passwords before making the service accessible over a network.
 
 ```bash
 cd docker
-docker compose --env-file .env-go -f docker-compose-go.yml up -d
+docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env-go` and configure the NVIDIA container runtime on the host. This selection can make GPUs available to components that explicitly support them, but it does not enable GPU execution for the open-source 1.0 Go DeepDoc backend.
+The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env` and configure the NVIDIA container runtime on the host. This selection can make GPUs available to components that explicitly support them, but it does not enable GPU execution for the open-source 1.0 Go DeepDoc backend.
 
 ## Verify the service
 
 ```bash
-docker compose --env-file .env-go -f docker-compose-go.yml ps
-docker compose --env-file .env-go -f docker-compose-go.yml logs --tail 50 ragflow-cpu
+docker compose --env-file .env -f docker-compose.yml ps
+docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
-Use `ragflow-gpu` in the logs command if you selected GPU. A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env-go`, use that port in the health-check URL and when opening the web interface in a browser.
+Use `ragflow-gpu` in the logs command if you selected GPU. A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in the health-check URL and when opening the web interface in a browser.
 
-For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env-go`. Use this only for local development; keep it `false` for production.
+For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env`. Use this only for local development; keep it `false` for production.
 
 ## macOS with Docker Desktop
 
@@ -81,7 +81,7 @@ The same Go image and Compose file work on macOS. On Apple Silicon, keep `--plat
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
    ```
 
 2. If you use the default Elasticsearch document engine, set `vm.max_map_count` inside Docker Desktop's Linux virtual machine:
@@ -92,12 +92,12 @@ The same Go image and Compose file work on macOS. On Apple Silicon, keep `--plat
 
    Repeat this command after restarting Docker Desktop. It is unnecessary when using another document engine such as Infinity.
 
-3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env-go`, then start the Go stack:
+3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`, then start the Go stack:
 
    ```bash
    cd docker
-   docker compose --env-file .env-go -f docker-compose-go.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Wait for the health check to return HTTP 200, then open `http://localhost` in a browser. Include `SVR_WEB_HTTP_PORT` in both URLs if you changed its default value. The older `docker-compose-macos.yml` builds the non-Go `Dockerfile`; use `docker-compose-go.yml` for this image.
+   Wait for the health check to return HTTP 200, then open `http://localhost` in a browser. Include `SVR_WEB_HTTP_PORT` in both URLs if you changed its default value.

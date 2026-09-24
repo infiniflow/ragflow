@@ -59,16 +59,16 @@ RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
 
 If no superuser exists, this option currently creates `admin@ragflow.io` with the initial password `admin`. Change that password immediately after the first login. It does not reset the password of an existing superuser.
 
-To change the Admin listening port, set `admin.http_port` in the server configuration. Do not rely on `--port` for Admin unless that option is explicitly documented as controlling the Admin HTTP listener.
+To change the Admin listening port, set `admin.http_port` in the server configuration.
 
-For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. Do not rely on `--admin-host <host:port>`: the current server parses that flag but its heartbeat client does not use it. When changing the Admin port, also update the CLI connection address and the health-check URLs below.
+For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. When changing the Admin port, also update the CLI connection address and the health-check URLs below.
 
 ## Start with Docker Compose
 
-For the Go deployment, use `docker/docker-compose-go.yml` and its `.env-go` file. The `ragflow-cpu` service already passes `--enable-adminserver` and `--init-superuser` to the Go entrypoint. The entrypoint runs migrations before starting the server processes; it then starts Admin before the API server and ingestor. Its optional syncer starts earlier, so its heartbeat may appear only after Admin becomes available.
+For the Go deployment, use `docker/docker-compose.yml` and its `.env` file. The `ragflow-cpu` service already passes `--enable-adminserver` and `--init-superuser` to the Go entrypoint. The entrypoint runs migrations before starting the server processes; it then starts Admin before the API server and ingestor. Its optional syncer starts earlier, so its heartbeat may appear only after Admin becomes available.
 
 ```bash
-docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml --profile cpu up -d
+docker compose --env-file docker/.env -f docker/docker-compose.yml --profile cpu up -d
 ```
 
 The Go Compose deployment exposes the Admin Service on `9381` and the API server on `9380` by default. Use `ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published host ports.

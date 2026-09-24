@@ -401,7 +401,7 @@ To protect system security, the database address must pass server-side security 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | sql | string | Yes | `{sys.query}` | SQL to execute. Canvas variables can be included. |
-| db_type | string | Yes | mysql | Supports `mysql`, `postgres`, `mariadb`, `mssql`, `IBMDB2`, `trino`, and `oceanbase`. |
+| db_type | string | Yes | mysql | Supports `mysql`, `postgres`, `mariadb`, `mssql`, `trino`, and `oceanbase`. |
 | database | string | Yes | Empty | Database name. Trino uses `catalog.schema` or `catalog`. |
 | username | string | Yes | Empty | Database account. |
 | host | string | Yes | Empty | Database address, which must pass server-side security checks. |
@@ -417,7 +417,6 @@ To protect system security, the database address must pass server-side security 
 | Database Type | postgres | PostgreSQL |
 | Database Type | mariadb | MariaDB |
 | Database Type | mssql | Microsoft SQL Server |
-| Database Type | IBMDB2 | IBM DB2 |
 | Database Type | trino | Trino |
 | Database Type | oceanbase | OceanBase |
 

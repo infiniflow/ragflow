@@ -249,7 +249,7 @@ LIST SERVICES;
 RAGFlow(admin)> LIST SERVICES;
 ```
 
-The result can include MySQL, Elasticsearch, MinIO, Redis, NATS, Go API servers, ingestors, and file syncers.
+The result can include MySQL, Elasticsearch, MinIO, the Kvrocks cache, the NATS message queue, Go API servers, ingestors, and file syncers.
 
 #### 2.2 SHOW SERVICE
 
@@ -470,70 +470,9 @@ LIST ENVS;
 RAGFlow(admin)> LIST ENVS;
 ```
 
-### 5. Provider commands
+### 5. Ingestion commands
 
-#### 5.1 LIST AVAILABLE PROVIDERS
-
-Requests the list of available model providers.
-
-This syntax is recognized by the Go CLI, but the current open-source Admin Service does not implement the operation and returns `'list model providers' is not supported`.
-
-**Syntax**
-
-```sql
-LIST AVAILABLE PROVIDERS;
-```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST AVAILABLE PROVIDERS;
-'list model providers' is not supported
-```
-
-#### 5.2 SHOW PROVIDER
-
-Shows information about a specific model provider.
-
-**Syntax**
-
-```sql
-SHOW PROVIDER '<provider>';
-```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<provider>` | Yes | Provider name, such as `OpenAI`. |
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW PROVIDER 'OpenAI';
-```
-
-#### 5.3 LIST PROVIDER MODELS
-
-Lists the models defined for a provider.
-
-**Syntax**
-
-```sql
-LIST PROVIDER '<provider>' MODELS;
-```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<provider>` | Yes | Provider name, such as `OpenAI`. |
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST PROVIDER 'OpenAI' MODELS;
-```
-
-### 6. Ingestion commands
-
-#### 6.1 LIST INGESTORS
+#### 5.1 LIST INGESTORS
 
 Lists ingestors that have registered with the Admin Service through heartbeats.
 
@@ -549,7 +488,7 @@ LIST INGESTORS;
 RAGFlow(admin)> LIST INGESTORS;
 ```
 
-#### 6.2 LIST INGESTION TASKS
+#### 5.2 LIST INGESTION TASKS
 
 Lists ingestion tasks known to the Admin Service.
 
@@ -565,11 +504,11 @@ LIST INGESTION TASKS;
 RAGFlow(admin)> LIST INGESTION TASKS;
 ```
 
-### 7. API server commands
+### 6. API server commands
 
 `LIST API SERVER` and `SHOW API SERVER` inspect API server connections saved in the CLI configuration. They do not query the Admin Service heartbeat registry. To find running Go API servers registered by heartbeat, use `LIST SERVICES` and look for `type=api_server`.
 
-#### 7.1 LIST API SERVER
+#### 6.1 LIST API SERVER
 
 Lists API server connections saved in the local CLI configuration.
 
@@ -587,7 +526,7 @@ RAGFlow(admin)> LIST API SERVER;
 
 An empty local configuration produces `No data to print` even when a Go API server is running and registered with the Admin Service.
 
-#### 7.2 SHOW API SERVER
+#### 6.2 SHOW API SERVER
 
 Shows one API server connection from the local CLI configuration.
 
@@ -609,11 +548,11 @@ RAGFlow(admin)> SHOW API SERVER 'default';
 
 If the name does not exist in the local configuration, the command returns `api_server=N/A`.
 
-### 8. Message queue commands
+### 7. Message queue commands
 
 The MQ commands operate on the NATS JetStream task stream used by ingestors. When an ingestor is running, it can consume a published test message before a subsequent `MQ LIST` or `MQ PULL` command observes it.
 
-#### 8.1 MQ SHOW
+#### 7.1 MQ SHOW
 
 Shows message queue statistics, including consumer, message, pending, waiting, and acknowledgement counts.
 
@@ -629,7 +568,7 @@ MQ SHOW;
 RAGFlow(admin)> MQ SHOW;
 ```
 
-#### 8.2 MQ LIST
+#### 7.2 MQ LIST
 
 Lists messages currently retained in the task stream. The optional `PENDING` keyword is accepted by the CLI.
 
@@ -649,7 +588,7 @@ MQ LIST [PENDING];
 RAGFlow(admin)> MQ LIST;
 ```
 
-#### 8.3 MQ PUBLISH
+#### 7.3 MQ PUBLISH
 
 Publishes a test message to the ingestion task subject.
 
@@ -672,7 +611,7 @@ SUCCESS
 
 A successful response confirms that NATS JetStream accepted the message. If an ingestor is waiting for work, it can consume and acknowledge the message immediately.
 
-#### 8.4 MQ PULL
+#### 7.4 MQ PULL
 
 Manually pulls messages from the ingestion task consumer. The default count is `1`. By default, pulled messages are acknowledged; `NOACK` negatively acknowledges them so that they can be redelivered.
 
@@ -693,9 +632,9 @@ MQ PULL [<count>] [NOACK];
 RAGFlow(admin)> MQ PULL 1 NOACK;
 ```
 
-### 9. Meta-commands
+### 8. Meta-commands
 
-#### 9.1 HELP
+#### 8.1 HELP
 
 Shows CLI help.
 
@@ -713,7 +652,7 @@ Shows CLI help.
 RAGFlow(admin)> \help
 ```
 
-#### 9.2 PWD
+#### 8.2 PWD
 
 Shows the current working directory.
 
@@ -729,7 +668,7 @@ Shows the current working directory.
 RAGFlow(admin)> \pwd
 ```
 
-#### 9.3 QUIT
+#### 8.3 QUIT
 
 Exits the CLI.
 
