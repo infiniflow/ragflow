@@ -12,6 +12,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 
@@ -141,6 +142,28 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			continue
 		}
 		out[i].Image = "data:image/png;base64," + img
+
+		// Stream the freshly cropped preview to object storage and drop the
+		// in-memory base64 immediately, instead of carrying every chunk's
+		// image until the later batch upload pass (imageUploadDecorator).
+		// For a large PDF this bounds peak Go-heap retention during the
+		// chunker stage to a single chunk's image rather than the whole
+		// document's worth of base64 previews. The batch pass is idempotent:
+		// it skips any chunk whose img_id is already set, so an upload that
+		// fails here simply falls through to that retry path. kb_id is empty
+		// only in canvas debug (dry-run) mode, where no persist stage runs
+		// and the decorator's debug branch drops the raw bytes instead.
+		if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
+			if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
+				if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, common.ChunkID(docID, out[i].Text), raw); uerr == nil {
+					out[i].ImgID = imgID
+					out[i].Image = ""
+				} else {
+					common.Warn("cropImageChunks: preview upload failed; will retry at persist stage",
+						zap.String("chunk", out[i].Text), zap.Error(uerr))
+				}
+			}
+		}
 	}
 	return out
 }

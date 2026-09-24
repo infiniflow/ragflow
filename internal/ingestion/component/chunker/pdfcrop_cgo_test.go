@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"image"
 	"strings"
+	"sync"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/schema"
 )
@@ -260,5 +263,146 @@ func TestCropImageChunks_RenderFailureSkipsChunk(t *testing.T) {
 	// mockCropEngine renders successfully, so a non-empty crop is expected.
 	if !strings.HasPrefix(out[0].Image, "data:image/png;base64,") {
 		t.Errorf("chunk image = %q, want data:image/png;base64, prefix", out[0].Image)
+	}
+}
+
+// recordingUploader captures every upload invocation so tests can assert on
+// the streaming-upload behavior of cropImageChunks.
+type recordingUploader struct {
+	mu    sync.Mutex
+	calls []uploadCall
+}
+
+type uploadCall struct {
+	kbID    string
+	chunkID string
+	dataLen int
+}
+
+func (r *recordingUploader) upload(ctx context.Context, kbID, chunkID string, data []byte) (string, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, uploadCall{kbID: kbID, chunkID: chunkID, dataLen: len(data)})
+	r.mu.Unlock()
+	// Mirror the production key format used by imageUploadDecorator so the
+	// test can confirm cropImageChunks produces the same reference.
+	return kbID + "-" + chunkID, nil
+}
+
+// withIngestionGlobals returns a ctx carrying kb_id / doc_id in the run-level
+// CanvasState.Globals bag, exactly as the production ingestion pipeline
+// seeds them via SeedIngestionGlobals before the chunker runs.
+func withIngestionGlobals(t *testing.T, kbID, docID string) context.Context {
+	t.Helper()
+	st := runtime.NewCanvasState("test-run", "test-session")
+	st.SetGlobal("kb_id", kbID)
+	st.SetGlobal("doc_id", docID)
+	return runtime.WithState(context.Background(), st)
+}
+
+// TestCropImageChunks_StreamingUpload verifies that, when a KB is present,
+// cropImageChunks uploads each freshly cropped preview immediately and drops
+// the in-memory base64, instead of holding every chunk's image until the
+// later batch upload pass. This is the memory fix: peak Go-heap retention
+// during the chunker stage of a large PDF collapses from "whole document" to
+// "one chunk".
+func TestCropImageChunks_StreamingUpload(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := mockCropEngine{}
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	chunks := []schema.ChunkDoc{
+		{CKType: "image", Text: "img-chunk", PDFPositions: pos},
+		{CKType: "table", Text: "tbl-chunk", PDFPositions: pos},
+		{CKType: "text", Text: "txt-chunk", PDFPositions: pos},
+	}
+	out := cropImageChunks(ctx, eng, chunks)
+	if len(out) != len(chunks) {
+		t.Fatalf("len(out) = %d, want %d", len(out), len(chunks))
+	}
+
+	for i, ck := range out {
+		if ck.ImgID == "" {
+			t.Errorf("chunk %d (%s): ImgID empty, want uploaded id", i, ck.CKType)
+		}
+		if ck.Image != "" {
+			t.Errorf("chunk %d (%s): Image = %q, want cleared after upload", i, ck.CKType, ck.Image)
+		}
+	}
+	if len(rec.calls) != len(chunks) {
+		t.Fatalf("upload calls = %d, want %d", len(rec.calls), len(chunks))
+	}
+	for i, c := range rec.calls {
+		if c.dataLen == 0 {
+			t.Errorf("call %d: uploaded empty bytes", i)
+		}
+		// cropImageChunks passes the bare chunk id (hash of docID+text); the
+		// uploader composes the img_id as "<kb_id>-<chunkID>".
+		wantID := common.ChunkID("doc1", chunks[i].Text)
+		if c.chunkID != wantID {
+			t.Errorf("call %d: chunkID = %q, want %q", i, c.chunkID, wantID)
+		}
+		// The stored img_id must equal what the uploader returns.
+		wantImgID := "kb1-" + wantID
+		if out[i].ImgID != wantImgID {
+			t.Errorf("chunk %d: ImgID = %q, want %q", i, out[i].ImgID, wantImgID)
+		}
+	}
+}
+
+// TestCropImageChunks_NoUploadWhenKBAbsent locks the canvas-debug (dry-run)
+// path: with no CanvasState (and thus no kb_id), cropImageChunks must NOT
+// upload and must retain the base64 preview in memory — the decorator's
+// debug branch is responsible for dropping it, and no persist stage will run.
+func TestCropImageChunks_NoUploadWhenKBAbsent(t *testing.T) {
+	ctx := context.Background() // no CanvasState → kb_id == ""
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := mockCropEngine{}
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	chunks := []schema.ChunkDoc{{CKType: "image", PDFPositions: pos}}
+	out := cropImageChunks(ctx, eng, chunks)
+
+	if len(rec.calls) != 0 {
+		t.Fatalf("upload calls = %d, want 0 (kb_id absent)", len(rec.calls))
+	}
+	if !strings.HasPrefix(out[0].Image, "data:image/png;base64,") {
+		t.Errorf("Image not retained: %q", out[0].Image)
+	}
+	if out[0].ImgID != "" {
+		t.Errorf("ImgID = %q, want empty", out[0].ImgID)
+	}
+}
+
+// TestCropImageChunks_UploadFailureFallsThroughToBatchPass verifies that a
+// failed streaming upload keeps the base64 preview so the later idempotent
+// batch upload pass (imageUploadDecorator) can retry it.
+func TestCropImageChunks_UploadFailureFallsThroughToBatchPass(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+
+	orig := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, _, _ string, _ []byte) (string, error) {
+		return "", fmt.Errorf("boom")
+	}
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := mockCropEngine{}
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	chunks := []schema.ChunkDoc{{CKType: "image", Text: "img-chunk", PDFPositions: pos}}
+	out := cropImageChunks(ctx, eng, chunks)
+
+	if out[0].ImgID != "" {
+		t.Errorf("ImgID = %q, want empty after failed upload", out[0].ImgID)
+	}
+	if !strings.HasPrefix(out[0].Image, "data:image/png;base64,") {
+		t.Errorf("Image not retained after failed upload: %q", out[0].Image)
 	}
 }
