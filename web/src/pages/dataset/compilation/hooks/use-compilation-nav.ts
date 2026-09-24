@@ -66,12 +66,11 @@ export function useCompilationNav() {
 
   const { data: childrenData, isError: childrenError } =
     useFetchDatasetNavChildren(loadingParent, activeKeywords);
+  // Opened documents get their FULL structure graph, without the nav keywords: a
+  // keyword-filtered read would hide every entity that does not match (keyword
+  // drill-down lives in the structure view's own search box).
   const { data: structureData, isPlaceholderData: structurePlaceholder } =
-    useFetchDocumentStructureGraphById(
-      kbId,
-      loadingDocId ?? '',
-      activeKeywords || undefined,
-    );
+    useFetchDocumentStructureGraphById(kbId, loadingDocId ?? '');
 
   useEffect(() => {
     if (!loadingParent || !childrenData) {

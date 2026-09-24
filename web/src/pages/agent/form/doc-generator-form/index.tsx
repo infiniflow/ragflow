@@ -1,20 +1,20 @@
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { FormContainer } from '@/components/form-container';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { Form } from '@/components/ui/form';
+import { Input, NumberInput } from '@/components/ui/input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { Switch } from '@/components/ui/switch';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useEffect, useMemo } from 'react';
+import i18n from '@/locales/config';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import {
+  DocGeneratorFormatFeatures,
+  DocGeneratorFormatOptions,
+  DocGeneratorOutputFormat,
+} from '../../constant/doc-generator';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output, transferOutputs } from '../components/output';
@@ -22,29 +22,29 @@ import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-form-change';
 
+const FormSchema = z.object({
+  output_format: z.nativeEnum(DocGeneratorOutputFormat),
+  content: z.string().min(1, i18n.t('flow.contentRequired')),
+  filename: z.string().optional(),
+  header_text: z.string().optional(),
+  footer_text: z.string().optional(),
+  watermark_text: z.string().optional(),
+  add_page_numbers: z.boolean(),
+  add_timestamp: z.boolean(),
+  include_download_info_in_content: z.boolean(),
+  font_size: z.coerce.number().min(12, i18n.t('flow.fontSizeMin')),
+  outputs: z.object({
+    doc_id: z.object({ type: z.string() }),
+    filename: z.object({ type: z.string() }),
+    mime_type: z.object({ type: z.string() }),
+    size: z.object({ type: z.string() }),
+    download: z.object({ type: z.string() }),
+  }),
+});
+
 function DocGeneratorForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const values = useValues(node);
-
-  const FormSchema = z.object({
-    output_format: z.string().default('pdf'),
-    content: z.string().min(1, 'Content is required'),
-    filename: z.string().optional(),
-    header: z.string().optional(),
-    footer: z.string().optional(),
-    watermark: z.string().optional(),
-    add_page_numbers: z.boolean(),
-    add_timestamp: z.boolean(),
-    include_download_info_in_content: z.boolean(),
-    font_size: z.coerce.number().min(12, 'Font size must be at least 12'),
-    outputs: z.object({
-      doc_id: z.object({ type: z.string() }),
-      filename: z.object({ type: z.string() }),
-      mime_type: z.object({ type: z.string() }),
-      size: z.object({ type: z.string() }),
-      download: z.object({ type: z.string() }),
-    }),
-  });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues: values,
@@ -52,25 +52,14 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
   });
 
   const outputFormat = form.watch('output_format');
-  const formOutputs = form.watch('outputs');
 
-  const supportsDocumentDecorations =
-    outputFormat === 'pdf' || outputFormat === 'docx';
-
-  const supportsTimestamp =
-    outputFormat === 'pdf' ||
-    outputFormat === 'docx' ||
-    outputFormat === 'txt' ||
-    outputFormat === 'markdown' ||
-    outputFormat === 'html';
+  const formatFeatures = DocGeneratorFormatFeatures[outputFormat];
+  const supportsDocumentDecorations = formatFeatures.decorations;
+  const supportsTimestamp = formatFeatures.timestamp;
 
   const outputList = useMemo(() => {
-    return transferOutputs(formOutputs ?? values.outputs);
-  }, [formOutputs, values.outputs]);
-
-  useEffect(() => {
-    form.setValue('outputs', values.outputs);
-  }, [form, values.outputs]);
+    return transferOutputs(values.outputs);
+  }, [values.outputs]);
 
   useWatchFormChange(node?.id, form);
 
@@ -78,203 +67,71 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <FormContainer>
-          <FormField
-            control={form.control}
-            name="output_format"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Output Format</FormLabel>
-                <FormControl>
-                  <SelectWithSearch
-                    {...field}
-                    options={[
-                      { label: 'PDF', value: 'pdf' },
-                      { label: 'DOCX', value: 'docx' },
-                      { label: 'TXT', value: 'txt' },
-                      { label: 'Markdown', value: 'markdown' },
-                      { label: 'HTML', value: 'html' },
-                    ]}
-                  ></SelectWithSearch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <RAGFlowFormItem label={t('flow.outputFormat')} name="output_format">
+            <SelectWithSearch
+              options={DocGeneratorFormatOptions}
+            ></SelectWithSearch>
+          </RAGFlowFormItem>
 
-          <FormField
-            control={form.control}
-            name="content"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.content')}</FormLabel>
-                <FormControl>
-                  <PromptEditor
-                    {...field}
-                    showToolbar={true}
-                    placeholder="Enter markdown content..."
-                  ></PromptEditor>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <RAGFlowFormItem label={t('flow.content')} name="content">
+            <PromptEditor
+              showToolbar={true}
+              placeholder={t('flow.contentPlaceholder')}
+            ></PromptEditor>
+          </RAGFlowFormItem>
 
-          <FormField
-            control={form.control}
+          <SwitchFormField
+            vertical={false}
+            label={t('flow.includeDownloadInfoInContent')}
             name="include_download_info_in_content"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <FormLabel>
-                    {t(
-                      'flow.includeDownloadInfoInContent',
-                      'Append download info to content',
-                    )}
-                  </FormLabel>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
           />
 
-          <FormField
-            control={form.control}
-            name="filename"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('flow.filename')}</FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    placeholder="document.ext (auto-generated if empty)"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <RAGFlowFormItem label={t('flow.filename')} name="filename">
+            <Input placeholder={t('flow.filenamePlaceholder')}></Input>
+          </RAGFlowFormItem>
 
           {supportsDocumentDecorations && (
             <>
-              <FormField
-                control={form.control}
-                name="font_size"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('flow.fontSize')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="number"
-                        min={12}
-                        onChange={(e) => field.onChange(e.target.value)}
-                        onBlur={(e) => {
-                          field.onBlur();
-                          const value = Number(e.target.value);
-                          field.onChange(
-                            Number.isFinite(value) && value >= 12 ? value : 12,
-                          );
-                        }}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <RAGFlowFormItem label={t('flow.fontSize')} name="font_size">
+                {(field) => <NumberInput min={12} {...field}></NumberInput>}
+              </RAGFlowFormItem>
 
-              <FormField
-                control={form.control}
-                name="header"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Header Text</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Header text" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <RAGFlowFormItem label={t('flow.headerText')} name="header_text">
+                <Input placeholder={t('flow.headerText')}></Input>
+              </RAGFlowFormItem>
 
-              <FormField
-                control={form.control}
-                name="footer"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Footer Text</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Footer text" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {outputFormat === 'pdf' && (
-                <FormField
-                  control={form.control}
-                  name="watermark"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('flow.watermarkText')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Watermark text" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <RAGFlowFormItem label={t('flow.footerText')} name="footer_text">
+                <Input placeholder={t('flow.footerText')}></Input>
+              </RAGFlowFormItem>
+
+              {outputFormat === DocGeneratorOutputFormat.Pdf && (
+                <RAGFlowFormItem
+                  label={t('flow.watermarkText')}
+                  name="watermark_text"
+                >
+                  <Input placeholder={t('flow.watermarkText')}></Input>
+                </RAGFlowFormItem>
               )}
 
-              <FormField
-                control={form.control}
+              <SwitchFormField
+                vertical={false}
+                label={t('flow.addPageNumbers')}
                 name="add_page_numbers"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between">
-                    <FormLabel>{t('flow.addPageNumbers')}</FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
               />
             </>
           )}
 
           {supportsTimestamp && (
-            <FormField
-              control={form.control}
+            <SwitchFormField
+              vertical={false}
+              label={t('flow.addTimestamp')}
               name="add_timestamp"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between">
-                  <FormLabel>{t('flow.addTimestamp')}</FormLabel>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
             />
           )}
-
-          <FormField
-            control={form.control}
-            name="outputs"
-            render={() => <div></div>}
-          />
         </FormContainer>
       </FormWrapper>
       <div className="p-5">
-        <Output list={outputList}></Output>
+        <Output list={outputList} isFormRequired></Output>
       </div>
     </Form>
   );

@@ -16,7 +16,7 @@
 
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';

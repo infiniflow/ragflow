@@ -18,6 +18,12 @@ import { useTranslation } from 'react-i18next';
 import { UpdateLogSheet } from './update-log-sheet';
 import { buildNavTreeData, NavEntityClickHandler } from './utils/nav-tree';
 
+// TreeView only computes expandedItemIds when initialSelectedItemId is truthy;
+// combined with expandAll, any truthy id makes every branch mount open. A
+// sentinel that matches no real node forces expand-all without highlighting any
+// row as selected (same trick as skills-left-panel).
+const NavExpandAllSentinelId = '__nav-tree-expand-all-sentinel__';
+
 type NavNodeDeleteActionProps = {
   name: string;
   parentName: string | null;
@@ -152,6 +158,10 @@ export function NavTreeLeftPanel({
         childrenMap,
         childrenErrorParents,
         structureMap,
+        // A search response is a pruned forest (hits + the cluster path above
+        // them), so it is nested from the payload instead of being fetched
+        // branch by branch.
+        searchMode: !!activeKeywords,
         getActions: renderNavActions,
         onNodeClick,
         onNodeExpand,
@@ -161,6 +171,7 @@ export function NavTreeLeftPanel({
       }),
     [
       navList?.items,
+      activeKeywords,
       childrenMap,
       childrenErrorParents,
       structureMap,
@@ -244,6 +255,11 @@ export function NavTreeLeftPanel({
             <TreeView
               key={activeKeywords}
               data={treeData}
+              // Search: mount the matched branches open (sentinel trick above).
+              expandAll={!!activeKeywords}
+              initialSelectedItemId={
+                activeKeywords ? NavExpandAllSentinelId : undefined
+              }
               expandOnRowClick={false}
               defaultNodeIcon={Folder}
               defaultLeafIcon={FileText}
