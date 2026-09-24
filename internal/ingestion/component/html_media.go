@@ -99,12 +99,9 @@ func resolveRelativeHTMLImagePath(htmlObjectPath, imageSource string) (string, b
 	}
 	baseDir := path.Dir(cleanHTMLPath)
 	assetPath := path.Clean(path.Join(baseDir, sourceURL.Path))
-	if path.IsAbs(assetPath) || assetPath == "." || assetPath == ".." || strings.HasPrefix(assetPath, "../") {
-		return "", false
-	}
 	// Relative references may leave the HTML directory, but must stay inside
 	// the current storage bucket.
-	if assetPath == ".." || strings.HasPrefix(assetPath, "../") {
+	if path.IsAbs(assetPath) || assetPath == "." || assetPath == ".." || strings.HasPrefix(assetPath, "../") {
 		return "", false
 	}
 	return assetPath, true

@@ -59,15 +59,9 @@ func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 // ParseWithResult emits normalized text items for block-level HTML elements
 // and independent image items for supported <img> sources. Relative sources
 // are carried as locators for the ingestion component to resolve from storage.
-// The walker is a pure-Go replacement for the previous `fmt.Printf` debug output: it descends
-// the html.Parse tree, joins visible text, and keeps image payloads available
-// to the parser's media enhancement stage.
-//
-// Phase 2.5 (Slice 1) of port-rag-flow-pipeline-to-go.md makes
-// HTMLParser a ParseResultProducer so the dispatch seam routes
-// the html family through the structured path. Inline formatting such as
-// bold and links stays in the parent text; supported images are emitted as
-// separate items so OCR and vision enhancement can consume their payloads.
+// The walker joins visible text and keeps valid inline image payloads available
+// to the media enhancement stage. External image URLs remain source references
+// and are reported as unsupported by that stage.
 func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// x/net/html assumes UTF-8 input, so a GBK/Big5/Shift-JIS page would
 	// otherwise surface as U+FFFD mojibake. Decode first, mirroring the
