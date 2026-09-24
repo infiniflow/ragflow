@@ -48,6 +48,58 @@ def index_name(uid):
     return f"ragflow_{uid}"
 
 
+def build_retrieval_debug(
+    *,
+    candidate_ids: list,
+    sorted_ids: list,
+    sorted_scores: list,
+    sorted_term_scores: list,
+    sorted_vector_scores: list,
+    valid_ids: list,
+    returned_ids: list,
+    similarity_threshold: float,
+    vector_similarity_weight: float,
+    max_dropped: int = 50,
+) -> dict:
+    """Shape the opt-in retrieval diagnosis payload.
+
+    Reports the candidate -> threshold -> returned funnel and, for chunks
+    dropped by the similarity threshold, their per-signal scores and the
+    reason they were removed. This only reshapes values the retrieval path
+    already computed; it changes no retrieval behaviour and is only produced
+    when a caller opts in with ``debug=True``.
+    """
+    returned = set(returned_ids)
+    dropped = []
+    for cid, score, term_score, vector_score in zip(sorted_ids, sorted_scores, sorted_term_scores, sorted_vector_scores):
+        if cid in returned:
+            continue
+        if score < similarity_threshold:
+            item = {
+                "chunk_id": cid,
+                "similarity": float(score),
+                "reason": "below_similarity_threshold",
+            }
+            if term_score is not None:
+                item["term_similarity"] = float(term_score)
+            if vector_score is not None:
+                item["vector_similarity"] = float(vector_score)
+            if term_score is None or vector_score is None:
+                item["fused_similarity"] = float(score)
+            dropped.append(item)
+    return {
+        "funnel": {
+            "candidates": len(candidate_ids),
+            "after_threshold": len(valid_ids),
+            "returned": len(returned_ids),
+        },
+        "similarity_threshold": float(similarity_threshold),
+        "vector_similarity_weight": float(vector_similarity_weight),
+        "dropped_total": len(dropped),
+        "dropped": dropped[:max_dropped],
+    }
+
+
 def _chunk_scalar(value) -> str:
     """Normalize a doc-store scalar that Infinity may return as a one-item list."""
     if isinstance(value, (list, tuple)):
@@ -726,6 +778,7 @@ class Dealer:
         knn_top_k=1024,  # Advanced knn parameter
         knn_num_candidates=2048,  # Advanced knn parameter
         allow_dense_fallback=True,
+        debug: bool = False,
     ):
         """
         Pagination is neither efficient nor reliable for this retrieval when rerank is enabled because the system must:
@@ -777,6 +830,19 @@ class Dealer:
         sres = await self._prune_deleted_chunks(sres)
         if sres.total == 0:
             ranks["doc_aggs"] = []
+            if debug:
+                zero_scores = [0.0] * len(sres.ids)
+                ranks["debug"] = build_retrieval_debug(
+                    candidate_ids=sres.ids,
+                    sorted_ids=sres.ids,
+                    sorted_scores=zero_scores,
+                    sorted_term_scores=[None] * len(sres.ids),
+                    sorted_vector_scores=[None] * len(sres.ids),
+                    valid_ids=[],
+                    returned_ids=[],
+                    similarity_threshold=similarity_threshold,
+                    vector_similarity_weight=vector_similarity_weight,
+                )
             return ranks
 
         term_similarity_weight = 1 - vector_similarity_weight
@@ -790,6 +856,9 @@ class Dealer:
             bool(rerank_mdl),
         )
 
+        debug_tsim = None
+        debug_vsim = None
+
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
@@ -799,6 +868,7 @@ class Dealer:
                 vector_similarity_weight,
                 rank_feature=rank_feature,
             )
+            debug_tsim, debug_vsim = tsim, vsim
         else:
             if settings.DOC_ENGINE_INFINITY:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
@@ -806,6 +876,8 @@ class Dealer:
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
+                debug_tsim = [None] * len(sim)
+                debug_vsim = [None] * len(sim)
             elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                 # OceanBase still returns chunk vectors in the result; use
                 # the historical local rerank that depends on them.
@@ -816,6 +888,7 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+                debug_tsim, debug_vsim = tsim, vsim
             elif settings.DOC_ENGINE_GAUSSDB:
                 # GaussDB computes fusion and PageRank in SQL; tag features are
                 # applied locally to the returned candidate window.
@@ -824,6 +897,8 @@ class Dealer:
                 sim = sql_scores + self._tag_feature_scores(rank_feature, sres)
                 tsim = sql_scores
                 vsim = sql_scores
+                debug_tsim = [None] * len(sim)
+                debug_vsim = [None] * len(sim)
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it
@@ -838,6 +913,7 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+                debug_tsim, debug_vsim = tsim, vsim
 
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
@@ -856,11 +932,36 @@ class Dealer:
 
         if filtered_count == 0:
             ranks["doc_aggs"] = []
+            if debug:
+                ranks["debug"] = build_retrieval_debug(
+                    candidate_ids=[sres.ids[i] for i in sorted_idx],
+                    sorted_ids=[sres.ids[i] for i in sorted_idx],
+                    sorted_scores=[float(sim_np[i]) for i in sorted_idx],
+                    sorted_term_scores=[debug_tsim[i] for i in sorted_idx],
+                    sorted_vector_scores=[debug_vsim[i] for i in sorted_idx],
+                    valid_ids=[],
+                    returned_ids=[],
+                    similarity_threshold=post_threshold,
+                    vector_similarity_weight=vector_similarity_weight,
+                )
             return ranks
 
         begin = (page - 1) * page_size
         end = begin + page_size
         page_idx = valid_idx[begin:end]
+
+        if debug:
+            ranks["debug"] = build_retrieval_debug(
+                candidate_ids=[sres.ids[i] for i in sorted_idx],
+                sorted_ids=[sres.ids[i] for i in sorted_idx],
+                sorted_scores=[float(sim_np[i]) for i in sorted_idx],
+                sorted_term_scores=[debug_tsim[i] for i in sorted_idx],
+                sorted_vector_scores=[debug_vsim[i] for i in sorted_idx],
+                valid_ids=[sres.ids[i] for i in valid_idx],
+                returned_ids=[sres.ids[i] for i in page_idx],
+                similarity_threshold=post_threshold,
+                vector_similarity_weight=vector_similarity_weight,
+            )
 
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
