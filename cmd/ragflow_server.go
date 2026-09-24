@@ -33,18 +33,18 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
-	native "ragflow/internal/deepdoc/native"
-	pdf "ragflow/internal/deepdoc/parser/pdf"
+	"ragflow/internal/deepdoc/native"
+	"ragflow/internal/deepdoc/parser/pdf"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/rag/agentic-rag"
+	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
-	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
@@ -65,21 +65,21 @@ import (
 	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/utility"
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer | deepdoc
+	mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
 	helpFlag      bool
 	versionFlag   bool
 	logLevel      *string
-	migrateDB     bool
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
@@ -91,11 +91,21 @@ type serverArgs struct {
 	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	deepdocInferenceConcurrency *int
+	// ingestorMaxConcurrentWorkers, when set, overrides the ingestor worker
+	// count (NATS consumer count K) from env/config. nil means "unspecified".
+	ingestorMaxConcurrentWorkers *int
+	// ingestorPageConcurrency, when set, overrides the per-document page
+	// concurrency (N) from env/config. nil means "unspecified".
+	ingestorPageConcurrency *int
+	// deepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
+	// budget from env/config. nil means "unspecified" (0 means "all cores").
+	deepdocInferenceCPUCores *int
 }
 
 func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
+	// Mode flags share one variable, so the last one passed wins.
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
@@ -118,6 +128,36 @@ func parseArgs() (*serverArgs, error) {
 				}
 				args.deepdocInferenceConcurrency = &n
 				continue
+			case "--ingestor-max-concurrent-workers":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
+				}
+				args.ingestorMaxConcurrentWorkers = &n
+				continue
+			case "--ingestor-page-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
+				}
+				args.ingestorPageConcurrency = &n
+				continue
+			case "--deepdoc-inference-cpu-cores":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+				}
+				if n < 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+				}
+				args.deepdocInferenceCPUCores = &n
+				continue
 			}
 		}
 
@@ -125,8 +165,6 @@ func parseArgs() (*serverArgs, error) {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
-		case "--migrate":
-			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -138,6 +176,9 @@ func parseArgs() (*serverArgs, error) {
 			args.mode = &serverMode
 		case "--deepdoc":
 			serverMode = "deepdoc"
+			args.mode = &serverMode
+		case "--migrate":
+			serverMode = "migrate"
 			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
@@ -212,14 +253,50 @@ func parseArgs() (*serverArgs, error) {
 				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
 			}
 			args.deepdocInferenceConcurrency = &n
+		case "--ingestor-max-concurrent-workers":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--ingestor-max-concurrent-workers requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
+			}
+			args.ingestorMaxConcurrentWorkers = &n
+		case "--ingestor-page-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--ingestor-page-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
+			}
+			args.ingestorPageConcurrency = &n
+		case "--deepdoc-inference-cpu-cores":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-cpu-cores requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
+			}
+			if n < 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
+			}
+			args.deepdocInferenceCPUCores = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
 
-	if args.migrateDB && args.mode != nil {
-		return nil, errors.New("--migrate cannot be combined with a server mode")
-	}
 	return args, nil
 }
 
@@ -244,31 +321,63 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	return configured
 }
 
-// resolveDeepDocInferenceConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(4) and returns the
-// resolved DeepDoc inference concurrency budget.
-func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
-	val := 4
+// resolveIngestorMaxConcurrentWorkers applies the precedence
+// CLI flag > environment variable > config file > default(1) and returns the
+// resolved ingestor worker count (K), validating it against the inclusive
+// range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
+// non-integer value at any layer is a fatal startup error.
+func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int, error) {
+	val := config.MinIngestorWorkers
 	if configured > 0 {
 		val = configured
 	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			val = n
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
 		}
+		val = n
 	}
-	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
-	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
-	// value is already positive; no extra >0 guard is needed here.
-	if args.deepdocInferenceConcurrency != nil {
-		val = *args.deepdocInferenceConcurrency
+	if args.ingestorMaxConcurrentWorkers != nil {
+		val = *args.ingestorMaxConcurrentWorkers
 	}
-	return val
+	if val < config.MinIngestorWorkers || val > config.MaxIngestorWorkers {
+		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
+			val, config.MinIngestorWorkers, config.MaxIngestorWorkers)
+	}
+	return val, nil
+}
+
+// resolveIngestorPageConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(2) and returns the
+// resolved per-document page concurrency (N), validating it against the
+// inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
+// non-integer value at any layer is a fatal startup error.
+func resolveIngestorPageConcurrency(args *serverArgs, configured int) (int, error) {
+	val := 2 // default page concurrency
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
+		}
+		val = n
+	}
+	if args.ingestorPageConcurrency != nil {
+		val = *args.ingestorPageConcurrency
+	}
+	if val < config.MinPageConcurrency || val > config.MaxPageConcurrency {
+		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
+			val, config.MinPageConcurrency, config.MaxPageConcurrency)
+	}
+	return val, nil
 }
 
 func printHelp(args *serverArgs) {
 	switch {
-	case args.mode == nil:
+	case args.mode == nil || *args.mode == "migrate":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
@@ -285,6 +394,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
@@ -324,6 +435,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
@@ -363,7 +476,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if arguments.helpFlag || (arguments.mode == nil && !arguments.migrateDB) {
+	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
 		os.Exit(1)
 	}
@@ -371,13 +484,6 @@ func main() {
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
-	}
-
-	if arguments.migrateDB {
-		if err = runMigrate(ctx, arguments); err != nil {
-			common.Fatal("Failed to run database migration", zap.Error(err))
-		}
-		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -459,6 +565,10 @@ func main() {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
 		}
+	case "migrate":
+		if arguments.name == nil {
+			serverName = "migrate"
+		}
 	default:
 		err = errors.New(*arguments.mode)
 		common.Error("invalid server mode", err)
@@ -474,7 +584,10 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		registerNativeDeepDoc(arguments)
+		if err := registerNativeDeepDoc(arguments); err != nil {
+			common.Error("Failed to register in-process DeepDoc backend", err)
+			os.Exit(1)
+		}
 	default:
 	}
 
@@ -492,9 +605,20 @@ func main() {
 		}()
 	}
 
-	// Initialize database
-	if err = dao.InitDB(ctx, false); err != nil {
+	// Initialize database. The migrate mode stops here: it needs neither the
+	// downgrade check nor any of the engines started below, so it can run
+	// before any server mode boots (see docker/entrypoint-go.sh and
+	// docker/launch_backend_service.sh).
+	migrate := *arguments.mode == "migrate"
+	if migrate {
+		common.Info("Running database migrations")
+	}
+	if err = dao.InitDB(ctx, migrate); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+	if migrate {
+		common.Info("Database migrations completed")
+		return
 	}
 
 	if err = checkDatabaseVersion(ctx); err != nil {
@@ -643,58 +767,6 @@ func checkDatabaseVersion(ctx context.Context) error {
 	return nil
 }
 
-// runMigrate runs the database schema and data migrations and returns. It is
-// the whole of the standalone --migrate action: load the configuration, run
-// dao.InitDB with migrations enabled, then exit. It deliberately does not call
-// registerNativeDeepDoc or initialize the doc engine, Redis, storage or the
-// message queue, so it can run on its own, before any server mode boots (see
-// docker/entrypoint-go.sh and docker/launch_backend_service.sh).
-func runMigrate(ctx context.Context, args *serverArgs) error {
-	const serverName = "migrate"
-
-	if err := server.InitLocalVariables(); err != nil {
-		return fmt.Errorf("initialize local variables: %w", err)
-	}
-
-	logLevel := selectedLogLevel(args, "")
-	if err := common.InitLogger(logLevel, common.FileOutput{Filename: serverName + ".log", Path: "logs"}, serverName); err != nil {
-		return fmt.Errorf("initialize logger: %w", err)
-	}
-
-	var configPath string
-	if args.configPath != nil {
-		configPath = *args.configPath
-	}
-	if err := server.Init(configPath); err != nil {
-		return fmt.Errorf("initialize configuration: %w", err)
-	}
-
-	globalConfig := server.GetConfig()
-	server.SetServerName(serverName)
-	logConfig := globalConfig.GetLogConfig()
-	logLevel = selectedLogLevel(args, logConfig.Level)
-	globalConfig.SetLogLevel(logLevel)
-
-	common.SyncLog()
-	if err := common.InitLogger(logLevel, common.FileOutput{
-		Filename:   serverName + ".log",
-		Path:       logConfig.Path,
-		MaxSize:    logConfig.MaxSize,
-		MaxBackups: logConfig.MaxBackups,
-		MaxAge:     logConfig.MaxAge,
-		Compress:   logConfig.Compress,
-	}, serverName); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
-
-	common.Info("Running database migrations")
-	if err := dao.InitDB(ctx, true); err != nil {
-		return fmt.Errorf("initialize database: %w", err)
-	}
-	common.Info("Database migrations completed")
-	return nil
-}
-
 func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 
 	globalConfig := server.GetConfig()
@@ -728,7 +800,7 @@ func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every peer.
 	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
 		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
@@ -845,14 +917,16 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// the consumer is available.
 	globalConfig := server.GetConfig()
 	ingestorCfg := globalConfig.GetIngestorConfig()
-	const maxIngestorConcurrency = int32(1<<30 - 1)
-	if ingestorCfg.MaxConcurrentWorkers > int(maxIngestorConcurrency) {
-		return fmt.Errorf("ingestor max_concurrent_workers %d exceeds maximum %d", ingestorCfg.MaxConcurrentWorkers, maxIngestorConcurrency)
+	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
+	// and fail fast on an out-of-range value.
+	workers, err := resolveIngestorMaxConcurrentWorkers(args, ingestorCfg.MaxConcurrentWorkers)
+	if err != nil {
+		return err
 	}
 	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
-	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(*args.name, int32(workers), []string{"pdf", "docx", "txt"})
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -895,7 +969,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
+		fmt.Sprintf("ingestor-%s", ingestor.ID()[:8]),
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -949,7 +1023,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
-		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
+		fmt.Sprintf("syncer-%s", fileSyncer.ID()[:8]),
 		0,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -1167,7 +1241,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
-		modelProviderService,
+		modelSolver,
 		metadataService,
 		retrievalService,
 		documentDAO,
@@ -1238,7 +1312,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	ginEngine := gin.New()
 	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
 	ginEngine.RemoveExtraSlash = true
-	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// Only honor X-Forwarded-For / X-Real-IP from the configured proxies
 	// (default: the loopback nginx bundled in the image), never from every
 	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
 	// login audit records, so gin's trust-everything default would let any
@@ -1352,7 +1426,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", apiServerConfig.HTTPPort),
+		fmt.Sprintf("ragflow-server-%s", utility.GenerateUUID()[:8]),
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
@@ -1466,6 +1540,23 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
 }
 
+// inferenceTotalCores returns the CPU budget the DeepDoc inference config is
+// validated against. It uses runtime.GOMAXPROCS(0) instead of runtime.NumCPU()
+// so the budget reflects the cgroup CPU quota inside containers: Go 1.25+ derives
+// GOMAXPROCS from the quota (CGroups v2 cpu.max / v1 cpu.cfs_quota_us), whereas
+// runtime.NumCPU() reports the host's affinity-mask core count and ignores a
+// container's CPU limit. Without this, a 2-CPU-limit pod on a 64-core host would
+// "resolve" inference_cpu_cores: 0 to 64 and let inference_concurrency: 16 pass
+// validation, oversubscribing the box the fail-fast guard in
+// native.ValidateInferenceConfig exists to prevent.
+func inferenceTotalCores() int {
+	n := goruntime.GOMAXPROCS(0)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 // registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
 // inference backend. The server is built with -tags cgo and links ONNX Runtime
 // statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
@@ -1476,7 +1567,7 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 // Fail-fast contract (P0): the in-process backend must be available at startup
 // (ORT + models present). There is NO silent degradation to an empty analyzer:
 // if the backend is not serving, the server aborts.
-func registerNativeDeepDoc(arguments *serverArgs) {
+func registerNativeDeepDoc(arguments *serverArgs) error {
 	modelDir := resolveDeepDocModelDir()
 	dropScore := resolveDeepDocDropScore()
 
@@ -1498,17 +1589,62 @@ func registerNativeDeepDoc(arguments *serverArgs) {
 	common.Info("in-process DeepDoc backend registered (production backend)",
 		zap.String("model_dir", modelDir))
 
-	// DeepDoc sessions run single-threaded, so the process inference budget is a
-	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
-	// and register it with the native gate every inference call passes through
-	// (internal/deepdoc/native/inference_limit.go); without this the process
-	// would let every page worker call inference at once.
-	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
-	pdf.SetDeepDocConcurrency(budget)
-	native.SetInferenceLimit(budget)
+	// Resolve the DeepDoc in-process inference configuration: the concurrency
+	// budget K (max in-flight Runs) and the CPU-core budget N (max cores
+	// inference may occupy). Both resolve from CLI > env > config > default. K
+	// defaults to 1; N defaults to "unset", which is derived from K so each Run
+	// stays single-threaded by default (the prior behaviour). An explicit N = 0
+	// means "all cores". All values are fail-fast validated against the process's
+	// cgroup-aware CPU budget at startup (see native.ValidateInferenceConfig and
+	// inferenceTotalCores), so a misconfiguration aborts rather than silently
+	// oversubscribing the box.
+	cfg := server.GetConfig()
+	K, _, errK := cfg.ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
+	if errK != nil {
+		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
+	}
+	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(arguments.deepdocInferenceCPUCores)
+	if errN != nil {
+		common.Fatal("invalid deepdoc inference cpu cores", zap.Error(errN))
+	}
+	// When N is unset, derive it from K so each Run opens with a single intra-op
+	// thread (coresPerInference = max(1, K/K) = 1), preserving the prior
+	// single-core-per-run semantics. An explicit N (including 0 = all cores) is
+	// honoured as-is below.
+	resolvedN := rawN
+	if !explicitN {
+		resolvedN = K
+	}
+	totalCores := inferenceTotalCores()
+	// Validate K and N against the process's CPU budget (cgroup-aware) and
+	// derive the per-Run intra-op thread count (max(1, N/K)). N == 0 resolves to
+	// all cores here.
+	coresPerInference, totalCPUCores, errV := native.ValidateInferenceConfig(totalCores, resolvedN, K)
+	if errV != nil {
+		common.Fatal("invalid deepdoc inference configuration", zap.Error(errV))
+	}
+	// Register the per-session intra-op thread count before any model session is
+	// created (the native package reads it on every SessionOptions build).
+	native.SetIntraOpThreads(coresPerInference)
+	pdf.SetDeepDocConcurrency(K)
+	native.SetInferenceLimit(K)
 	common.Info("in-process DeepDoc inference limit registered",
-		zap.Int("max_concurrent_inference", budget),
+		zap.Int("max_concurrent_inference", K),
+		zap.Int("cpu_cores_per_inference", coresPerInference),
+		zap.Int("total_cpu_cores_budget", totalCPUCores),
 		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
+
+	// Resolve the per-document page concurrency (N) from CLI > env > config >
+	// default(2) and register it with the shared page worker pool. Fail fast on
+	// an out-of-range value.
+	pageConcurrency, err := resolveIngestorPageConcurrency(arguments, server.GetConfig().GetIngestorConfig().PageConcurrency)
+	if err != nil {
+		return err
+	}
+	pdf.SetPageConcurrency(pageConcurrency)
+	common.Info("in-process DeepDoc page worker pool registered",
+		zap.Int("page_concurrency", pageConcurrency))
+	return nil
 }
 
 // logTokenizerCounters reports, once at startup, which embedding tokenizers this process

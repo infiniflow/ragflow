@@ -46,7 +46,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
+	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"

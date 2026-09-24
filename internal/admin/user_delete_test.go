@@ -72,17 +72,18 @@ func (e *deletionEngine) DeleteMetadata(_ context.Context, condition map[string]
 
 type deletionStorage struct {
 	storage.Storage
-	buckets   []string
-	files     []string
-	err       error
-	bucketErr error
-	missing   bool
-	checkErr  error
+	buckets      []string
+	emptyBuckets []string
+	files        []string
+	err          error
+	bucketErr    error
+	missing      bool
+	checkErr     error
 }
 
 func (s *deletionStorage) RemoveBucket(_ context.Context, bucket string) error {
-	if s.err != nil {
-		return s.err
+	if s.bucketErr != nil {
+		return s.bucketErr
 	}
 	s.buckets = append(s.buckets, bucket)
 	return nil
@@ -91,7 +92,7 @@ func (s *deletionStorage) RemoveEmptyBucket(_ context.Context, bucket string) er
 	if s.bucketErr != nil {
 		return s.bucketErr
 	}
-	s.buckets = append(s.buckets, bucket)
+	s.emptyBuckets = append(s.emptyBuckets, bucket)
 	return nil
 }
 func (s *deletionStorage) Remove(_ context.Context, bucket, name string, _ ...string) error {
@@ -123,7 +124,7 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{},
 		&entity.ChatChannel{}, &entity.UserCanvas{}, &entity.UserCanvasVersion{},
 		&entity.Search{}, &entity.Memory{}, &entity.MemoryTask{}, &entity.MCPServer{},
-		&entity.SkillSpace{}, &entity.SkillSearchConfig{},
+		&entity.SkillSearchConfig{},
 		&entity.CompilationTemplate{}, &entity.CompilationTemplateGroup{},
 		&entity.EvaluationDataset{}, &entity.EvaluationCase{}, &entity.EvaluationRun{}, &entity.EvaluationResult{},
 		&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{},
@@ -240,8 +241,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	if err := db.First(&team, "id = ?", "team-kb").Error; err != nil || team.DocNum != 1 || team.TokenNum != 3 || team.ChunkNum != 4 {
 		t.Fatalf("joined dataset counters = %+v, err=%v", team, err)
 	}
-	if !slices.Equal(store.buckets, []string{"own-kb", "own-folder"}) || !slices.Equal(store.files, []string{"own-kb/own.pdf", "team-kb/joined.pdf", "own-folder/own.pdf", "team-folder/joined.pdf"}) {
-		t.Fatalf("storage cleanup = buckets %v, files %v", store.buckets, store.files)
+	if !slices.Equal(store.buckets, []string{"own-kb"}) || !slices.Equal(store.emptyBuckets, []string{"own-folder"}) || !slices.Equal(store.files, []string{"own-kb/own.pdf", "team-kb/joined.pdf", "own-folder/own.pdf", "team-folder/joined.pdf"}) {
+		t.Fatalf("storage cleanup = buckets %v, empty buckets %v, files %v", store.buckets, store.emptyBuckets, store.files)
 	}
 	if !slices.Contains(docEngine.dropped, "ragflow_user-1") || !slices.Contains(docEngine.dropped, "memory_user-1") || !slices.Contains(docEngine.deleted, "doc_id:[joined-doc]") || !slices.Contains(docEngine.deleted, "metadata:id:[joined-doc]") {
 		t.Fatalf("index cleanup = dropped %v, deleted %v", docEngine.dropped, docEngine.deleted)
@@ -292,7 +293,7 @@ func TestDeleteUserKeepsUserWhenExternalCleanupFails(t *testing.T) {
 	}
 }
 
-func TestDeleteUserContinuesWhenEmptyBucketRemovalFails(t *testing.T) {
+func TestDeleteUserKeepsUserWhenDatasetBucketRemovalFails(t *testing.T) {
 	db := setupUserDeletionDB(t)
 	if err := db.Exec("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0").Error; err != nil {
 		t.Fatal(err)
@@ -302,13 +303,13 @@ func TestDeleteUserContinuesWhenEmptyBucketRemovalFails(t *testing.T) {
 	}
 	service := NewService()
 	service.deleteEngine = &deletionEngine{}
-	service.deleteStorage = &deletionStorage{bucketErr: errors.New("bucket is not empty")}
-	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err != nil {
-		t.Fatalf("DeleteUser after bucket removal failure: %v", err)
+	service.deleteStorage = &deletionStorage{bucketErr: errors.New("storage unavailable")}
+	if _, err := service.DeleteUser(t.Context(), "user@example.com"); err == nil || !strings.Contains(err.Error(), "remove dataset bucket Dataset (dataset): storage unavailable") {
+		t.Fatalf("DeleteUser error = %v", err)
 	}
 	var count int64
-	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("user retained after bucket failure: count=%d, err=%v", count, err)
+	if err := db.Model(&entity.User{}).Where("id = ?", "user-1").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("user deleted after bucket failure: count=%d, err=%v", count, err)
 	}
 }
 

@@ -3527,6 +3527,7 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
       agentModelMissing: 'No model selected, please choose one first',
+      extractorModelMissing: 'No model selected, please choose one first',
       retrievalDatasetMissing: 'No dataset selected, please choose one first',
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
@@ -3547,12 +3548,16 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      generalChunkerDescription:
+        'A general-purpose chunking method for most document types, with flexible control over chunk size, overlap, and context.',
       tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      manualChunkerDescription:
+        'A chunking method for manual-style documents such as product manuals and user guides, with structure-aware splitting that preserves relevant context.',
       oneChunkerDescription:
         'No additional configuration is required for this chunker.',
       qAChunkerDescription:

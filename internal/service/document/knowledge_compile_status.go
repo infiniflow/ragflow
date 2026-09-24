@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	knowledge_compile "ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/knowledge_compile"
 
 	"go.uber.org/zap"
 )
@@ -38,12 +38,6 @@ func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Contex
 	if err != nil {
 		common.Warn("document mutation: failed to resolve knowledge compile variants",
 			zap.String("document_id", documentID), zap.Error(err))
-		if status == 0 {
-			if publishErr := knowledge_compile.PublishDisabled(ctx, tenantID, datasetID, documentID, nil, nil); publishErr != nil {
-				common.Warn("document mutation: failed to publish fallback knowledge compile disable",
-					zap.String("document_id", documentID), zap.Error(publishErr))
-			}
-		}
 		return
 	}
 	if len(variants) == 0 {

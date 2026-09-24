@@ -39,7 +39,6 @@ type userDeletionData struct {
 	documents     []entity.Document
 	files         []entity.File
 	memories      []entity.Memory
-	spaces        []entity.SkillSpace
 	datasetIDs    []string
 	documentIDs   []string
 	fileIDs       []string
@@ -211,9 +210,6 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 		if err := db.Select("id", "tenant_id").Where("tenant_id = ?", data.ownedTenantID).Find(&data.memories).Error; err != nil {
 			return nil, fmt.Errorf("load memories: %w", err)
 		}
-		if err := db.Select("id", "tenant_id").Where("tenant_id = ?", data.ownedTenantID).Find(&data.spaces).Error; err != nil {
-			return nil, fmt.Errorf("load skill spaces: %w", err)
-		}
 	}
 	return data, nil
 }
@@ -235,33 +231,34 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 		if document.Location == nil || *document.Location == "" {
 			continue
 		}
+		docNameID := namedDocument(document)
 		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
 		if err != nil {
 			return fmt.Errorf("check document %s: %w", document.ID, err)
 		}
 		if !exists {
-			common.Warn("Document object already missing", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+			common.Warn("Document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 			continue
 		}
 		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
-			return fmt.Errorf("remove document %s: %w", document.ID, err)
+			return fmt.Errorf("remove document %s: %w", docNameID, err)
 		}
-		common.Info("Removed document object", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+		common.Info("Removed document object", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 	}
 	for _, dataset := range data.datasets {
+		datasetNameID := namedID(dataset.Name, dataset.ID)
 		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
 		if err != nil {
 			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset bucket already missing", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+			common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 			continue
 		}
-		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
-			common.Warn("Unable to remove empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID), zap.Error(err))
-		} else {
-			common.Info("Removed empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
+			return fmt.Errorf("remove dataset bucket %s: %w", datasetNameID, err)
 		}
+		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 	}
 	for _, file := range data.files {
 		if file.SourceType != string(entity.FileSourceKnowledgebase) && file.Location != nil && *file.Location != "" && file.Type != "folder" {
@@ -367,11 +364,6 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 					return fmt.Errorf("remove document metadata for dataset %s: %w", kbID, err)
 				}
 			}
-		}
-	}
-	for _, space := range data.spaces {
-		if err := docEngine.DropChunkStore(ctx, servicepkg.SkillIndexName(space.TenantID, space.ID), "skill"); err != nil {
-			return fmt.Errorf("remove skill index %s: %w", space.ID, err)
 		}
 	}
 	return nil
@@ -700,7 +692,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			{"memories", &entity.Memory{}},
 			{"MCP servers", &entity.MCPServer{}},
 			{"skill search configurations", &entity.SkillSearchConfig{}},
-			{"skill spaces", &entity.SkillSpace{}},
 			{"compilation templates", &entity.CompilationTemplate{}},
 			{"compilation template groups", &entity.CompilationTemplateGroup{}},
 			{"pipeline logs", &entity.PipelineOperationLog{}},

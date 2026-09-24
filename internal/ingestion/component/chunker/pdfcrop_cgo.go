@@ -151,7 +151,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // region (Python restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
 //
-// CKType is the chunker-layer refinement (heading/table_header/table_row/text/
+// CKType is the chunker-layer refinement (heading/text/image/table/
 // image/table). General and token chunkers always set it before cropping, so
 // they are handled by the CKType branch above. Group and hierarchy chunkers
 // forward the parser's output verbatim, which carries only the coarser

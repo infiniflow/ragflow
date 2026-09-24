@@ -4,9 +4,6 @@ import (
 	"math"
 	"sort"
 
-	"go.uber.org/zap"
-
-	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -133,7 +130,18 @@ func findTableAnchors(boxes []pdf.TextBox, tables []pdf.TableItem) []struct{ ti,
 
 // buildTableHTMLs constructs HTML for each table, converting cells to page space first.
 // Returns a map from table index to HTML string.
+//
+// It indexes the table-layout boxes by page once (see indexTableLayoutBoxes) and
+// then, per table, restricts the box scan to the pages the table occupies instead
+// of the whole document. The naive version rescanned every box for every table
+// (O(tables*boxes*positions) on a large document); on a 3,000-page PDF this was
+// the dominant CPU cost of the parse stage (~95% of a profile sample). The
+// page-bucketed scan is equivalent — boxOverlapsPositionPage already requires a
+// box and a position to share a page, so a box outside the table's pages can
+// never match under either implementation. collectTableBoxes carries the full
+// equivalence argument and is guarded by TestCollectTableBoxesByPageEquivalence.
 func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string {
+	boxesByPage, boxesNoPage := indexTableLayoutBoxes(boxes)
 	htmls := make(map[int]string)
 	for ti := range tables {
 		if len(tables[ti].Cells) == 0 {
@@ -142,24 +150,109 @@ func buildTableHTMLs(boxes []pdf.TextBox, tables []pdf.TableItem) map[int]string
 		// Convert TSR cells from crop-pixel space to page-global 72 DPI
 		s := tables[ti].Scale
 		pageGlobalCells := CellSliceToPageSpace(tables[ti].Cells, tables[ti].CropOffX, tables[ti].CropOffY, s)
-		// Collect only table-labelled boxes
-		var tableBoxes []pdf.TextBox
-		for i := range boxes {
-			if boxes[i].LayoutType != pdf.LayoutTypeTable {
-				continue
-			}
-			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPosition(boxes[i], tp) {
-					tableBoxes = append(tableBoxes, boxes[i])
-					break
-				}
-			}
-		}
-		common.Debug("extractTableAndReplace constructTable",
-			zap.Int("table", ti), zap.Int("cells", len(pageGlobalCells)), zap.Int("boxes", len(tableBoxes)))
+		tableBoxes := collectTableBoxes(boxes, tables[ti], boxesByPage, boxesNoPage)
 		htmls[ti] = ConstructTable(pageGlobalCells, tableBoxes, tables[ti].Caption, &tables[ti])
 	}
 	return htmls
+}
+
+// indexTableLayoutBoxes buckets the table-layout boxes by page so callers can
+// restrict a per-table scan to just the boxes on the pages the table occupies.
+// Boxes without page metadata (HasPageNumber false) are page-agnostic and
+// returned separately: boxOverlapsPositionPage skips the page check for them, so
+// they must be tested against every table.
+//
+// Key on HasPageNumber, not on PageNumber == 0: page numbers are 0-based, so the
+// legitimate first page carries PageNumber == 0 and must still be scoped to its
+// page. Only truly page-less boxes go to noPage.
+func indexTableLayoutBoxes(boxes []pdf.TextBox) (byPage map[int][]int, noPage []int) {
+	byPage = make(map[int][]int, len(boxes))
+	for i := range boxes {
+		if boxes[i].LayoutType != pdf.LayoutTypeTable {
+			continue
+		}
+		if boxes[i].HasPageNumber {
+			byPage[boxes[i].PageNumber] = append(byPage[boxes[i].PageNumber], i)
+		} else {
+			noPage = append(noPage, i)
+		}
+	}
+	return byPage, noPage
+}
+
+// collectTableBoxes returns the table-layout boxes belonging to tbl, in ascending
+// box-index order — the order buildTableHTMLs has always used and that
+// ConstructTable relies on for deterministic output. It only scans boxes on the
+// pages tbl occupies (plus page-agnostic boxes) instead of the full document.
+//
+// Equivalence to the brute-force O(boxes*positions) scan:
+//   - boxOverlapsPositionPage requires a box and a position to agree on page
+//     (when both carry page metadata). A table-layout box on a page tbl does not
+//     occupy can therefore never match tbl under either implementation, so
+//     excluding it is safe.
+//   - When tbl has a position with no PageNumbers (page-agnostic), the page check
+//     is skipped for that position, so any table-layout box may match. The
+//     implementation detects this and falls back to scanning every table-layout
+//     box for that table, which is exactly what the brute force does.
+//   - Candidates are sorted ascending before the overlap test, reproducing the
+//     original whole-document scan order that ConstructTable depends on.
+func collectTableBoxes(boxes []pdf.TextBox, tbl pdf.TableItem, boxesByPage map[int][]int, boxesNoPage []int) []pdf.TextBox {
+	// Collect candidate box indices.
+	var cand []int
+	hasAgnosticPos := false
+	for pi := range tbl.Positions {
+		if len(tbl.Positions[pi].PageNumbers) == 0 {
+			hasAgnosticPos = true
+			break
+		}
+	}
+	if hasAgnosticPos {
+		// Any table-layout box may overlap a page-agnostic position, so the
+		// candidate set is every table-layout box (mirrors the brute force).
+		cand = make([]int, 0, len(boxes))
+		for i := range boxes {
+			if boxes[i].LayoutType == pdf.LayoutTypeTable {
+				cand = append(cand, i)
+			}
+		}
+	} else {
+		// Boxes on distinct pages live in disjoint buckets, so once a table's
+		// page numbers are de-duplicated, concatenating the buckets plus the
+		// page-agnostic boxes needs no per-box de-duplication. Positions are few,
+		// so de-duplicating the (typically tiny) page-number list is cheaper than
+		// a per-table map of boxes. A table can list the same page several times
+		// (multiple positions on one page), which is exactly why the dedup is needed.
+		var pgNums []int
+		for pi := range tbl.Positions {
+			pgNums = append(pgNums, tbl.Positions[pi].PageNumbers...)
+		}
+		seenPage := make(map[int]bool, len(pgNums))
+		uniqPages := pgNums[:0]
+		for _, p := range pgNums {
+			if !seenPage[p] {
+				seenPage[p] = true
+				uniqPages = append(uniqPages, p)
+			}
+		}
+		cand = make([]int, 0, len(uniqPages)*8+len(boxesNoPage))
+		for _, p := range uniqPages {
+			cand = append(cand, boxesByPage[p]...)
+		}
+		cand = append(cand, boxesNoPage...)
+	}
+	// cand preserves no particular order; sort ascending so the returned boxes
+	// follow the original whole-document scan order.
+	sort.Ints(cand)
+	var tableBoxes []pdf.TextBox
+	for _, bi := range cand {
+		for pi := range tbl.Positions {
+			if boxOverlapsPositionPage(boxes[bi], tbl.Positions[pi]) {
+				tableBoxes = append(tableBoxes, boxes[bi])
+				break
+			}
+		}
+	}
+	return tableBoxes
 }
 
 // insertTableBoxes filters out boxes in removeSet and inserts table HTML boxes at anchor positions.
@@ -203,26 +296,88 @@ func insertTableBoxes(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map
 // (r"(数据|资料|图表)*来源[:： ]") are removed entirely without replacement —
 // matching Python's _extract_table_figure discard behavior.
 
+// pagePosition pairs a table index with one of its Position indices. It is used
+// to build a per-page index so callers only test a box against table positions
+// on the same page instead of the full cross product.
+type pagePosition struct {
+	tableIdx int
+	posIdx   int
+}
+
+// indexTablePositions buckets each table Position by the pages it occupies. A
+// Position with no PageNumbers is page-agnostic — boxOverlapsPositionPage falls
+// back to an X/Y-only test for it — so it is returned separately as noPage and
+// must be tested against every box. all returns every (table, position) pair and
+// is used as the fallback when a box itself carries no page metadata.
+//
+// Correctness note: a box on page P can only match a Position whose PageNumbers
+// contains P (boxOverlapsPositionPage enforces this). A cross-page table whose
+// positions sit on pages 5, 6, 7 is therefore placed in byPage[5], [6] and [7];
+// a box on page 6 only sees the table's page-6 position. This is exactly
+// equivalent to the unindexed cross product and never drops a valid match.
+func indexTablePositions(tables []pdf.TableItem) (byPage map[int][]pagePosition, noPage []pagePosition, all []pagePosition) {
+	byPage = make(map[int][]pagePosition, len(tables))
+	for ti := range tables {
+		for pi := range tables[ti].Positions {
+			pos := tables[ti].Positions[pi]
+			pp := pagePosition{tableIdx: ti, posIdx: pi}
+			all = append(all, pp)
+			if len(pos.PageNumbers) == 0 {
+				noPage = append(noPage, pp)
+				continue
+			}
+			for _, p := range pos.PageNumbers {
+				byPage[p] = append(byPage[p], pp)
+			}
+		}
+	}
+	return byPage, noPage, all
+}
+
 // MarkNoMergeTables traverses boxes in page order. When a caption, title, or
 // reference immediately follows a table, the preceding table is marked NoMerge
 // to prevent cross-page merge. Matches Python's nomerge_lout_no.
 func MarkNoMergeTables(boxes []pdf.TextBox, tables []pdf.TableItem) {
+	byPage, noPage, all := indexTablePositions(tables)
 	var lastTableTI int = -1
 	for i := range boxes {
 		lt := boxes[i].LayoutType
 		if lt == pdf.LayoutTypeTable {
-			matched := false
-			for ti := range tables {
-				for _, tp := range tables[ti].Positions {
-					if boxOverlapsPosition(boxes[i], tp) {
-						lastTableTI = ti
-						matched = true
-						break
+			// Restrict candidates to positions on this box's page, plus the
+			// page-agnostic positions. A box without page metadata (HasPageNumber
+			// false) falls back to the full set (boxOverlapsPositionPage skips
+			// the page check for it). Note we key on HasPageNumber, not on
+			// PageNumber == 0: page numbers are 0-based, so the legitimate first
+			// page carries PageNumber == 0 and must still be scoped to its page.
+			// The original cross-product keeps the highest-indexed table a box
+			// overlaps as lastTableTI. Candidates are not strictly ordered by
+			// table index here (page-specific positions on this page precede the
+			// page-agnostic noPage positions, which are appended last), so we must
+			// not blindly overwrite lastTableTI on every match: a lower-indexed
+			// page-agnostic table sitting at the tail would otherwise win over a
+			// higher-indexed page-specific table. Keep the maximum index instead,
+			// which is order-independent and reproduces the original semantics
+			// exactly. seen avoids re-testing a table whose positions span
+			// several slots on the page.
+			var cands []pagePosition
+			if !boxes[i].HasPageNumber {
+				cands = all
+			} else {
+				cands = append(cands, byPage[boxes[i].PageNumber]...)
+				cands = append(cands, noPage...)
+			}
+			lastTableTI = -1
+			seen := make(map[int]bool)
+			for _, c := range cands {
+				if seen[c.tableIdx] {
+					continue
+				}
+				if boxOverlapsPositionPage(boxes[i], tables[c.tableIdx].Positions[c.posIdx]) {
+					seen[c.tableIdx] = true
+					if c.tableIdx > lastTableTI {
+						lastTableTI = c.tableIdx
 					}
 				}
-			}
-			if !matched {
-				lastTableTI = -1
 			}
 			continue
 		}
@@ -255,18 +410,40 @@ func buildRemoveSet(boxes []pdf.TextBox) map[int]bool {
 // buildReplacementsAfterMerge maps each table to overlapping table-layout boxes,
 // producing the replacement list. Must be called AFTER MergeTablesAcrossPages so
 // that tableIdx in each replacement refers to the correct merged-table slot.
+//
+// The match for a box on page P is restricted to table positions on page P (plus
+// any page-agnostic positions), via the per-page index built by
+// indexTablePositions. This turns the O(tables*boxes*positions) cross product
+// into a page-local scan; it is equivalent to the unindexed version because
+// boxOverlapsPositionPage already requires a box and position to share a page.
 func buildReplacementsAfterMerge(boxes []pdf.TextBox, tables []pdf.TableItem, removeSet map[int]bool) []replacement {
+	byPage, noPage, all := indexTablePositions(tables)
 	var reps []replacement
-	for ti := range tables {
-		for i := range boxes {
-			if boxes[i].LayoutType != pdf.LayoutTypeTable || removeSet[i] {
+	for i := range boxes {
+		if boxes[i].LayoutType != pdf.LayoutTypeTable || removeSet[i] {
+			continue
+		}
+		var cands []pagePosition
+		if !boxes[i].HasPageNumber {
+			cands = all
+		} else {
+			cands = append(cands, byPage[boxes[i].PageNumber]...)
+			cands = append(cands, noPage...)
+		}
+		// Emit one replacement per (table, box) overlap pair. A box can overlap
+		// several tables on its page (plus the page-agnostic positions), and the
+		// original cross-product implementation added a replacement for each such
+		// table — so we must not stop at the first match. seen de-duplicates by
+		// table: a table that spans several positions on the page is still a
+		// single replacement for this box.
+		seen := make(map[int]bool)
+		for _, c := range cands {
+			if seen[c.tableIdx] {
 				continue
 			}
-			for _, tp := range tables[ti].Positions {
-				if boxOverlapsPosition(boxes[i], tp) {
-					reps = append(reps, replacement{tableIdx: ti, boxIdx: i})
-					break
-				}
+			if boxOverlapsPositionPage(boxes[i], tables[c.tableIdx].Positions[c.posIdx]) {
+				seen[c.tableIdx] = true
+				reps = append(reps, replacement{tableIdx: c.tableIdx, boxIdx: i})
 			}
 		}
 	}
@@ -442,8 +619,32 @@ func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 	return FilterBoxesByRemoveSet(boxes, removeSet)
 }
 
-// boxOverlapsPosition checks if a pdf.TextBox overlaps a pdf.Position with margin.
-func boxOverlapsPosition(box pdf.TextBox, pos pdf.Position) bool {
+// boxOverlapsPositionPage reports whether a pdf.TextBox overlaps a
+// pdf.Position, additionally requiring the box to live on a page the position
+// spans. Table positions and table-layout boxes are both stored in page-local
+// coordinates (Y resets to ~0 at the top of every page), so a position's Y
+// band is shared by the boxes of every page. Without the page constraint a
+// single page-local position matches the same Y band on all pages, which (a)
+// inflates the table/box replacement cross-product into a multi-GB reps slice
+// and (b) makes a table wrongly claim boxes that live on other pages. When page
+// metadata is missing on either side (an empty Position.PageNumbers, or a box
+// whose HasPageNumber is false) we fall back to the X/Y-only check so legacy
+// call paths keep working. HasPageNumber is used instead of `box.PageNumber !=
+// 0` because page numbers are 0-based: the legitimate first page has
+// PageNumber == 0 and must NOT be treated as "missing".
+func boxOverlapsPositionPage(box pdf.TextBox, pos pdf.Position) bool {
+	if len(pos.PageNumbers) > 0 && box.HasPageNumber {
+		onSamePage := false
+		for _, p := range pos.PageNumbers {
+			if p == box.PageNumber {
+				onSamePage = true
+				break
+			}
+		}
+		if !onSamePage {
+			return false
+		}
+	}
 	const margin = 2.0
 	return box.X0 <= pos.Right+margin && box.X1 >= pos.Left-margin &&
 		box.Top <= pos.Bottom+margin && box.Bottom >= pos.Top-margin

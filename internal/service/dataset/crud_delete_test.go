@@ -29,7 +29,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
+func TestDeleteDatasetRemovesTemporaryFiles(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
@@ -40,7 +40,7 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 	if err := store.Put(t.Context(), "kb-1", "tracked", []byte("content")); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Put(t.Context(), "kb-1", "untracked", []byte("content")); err != nil {
+	if err := store.Put(t.Context(), "kb-1", "temporary", []byte("content")); err != nil {
 		t.Fatal(err)
 	}
 	factory := storage.GetStorageFactory()
@@ -58,17 +58,20 @@ func TestDeleteDatasetLeavesNonemptyBucket(t *testing.T) {
 	}
 	service := testDatasetUpdateService(t)
 	if err := service.deleteDataset(t.Context(), "tenant-1", kb); err != nil {
-		t.Fatalf("delete dataset with nonempty bucket: %v", err)
+		t.Fatalf("delete dataset with temporary file: %v", err)
 	}
-	if !store.ObjExist(t.Context(), "kb-1", "untracked") {
-		t.Fatal("dataset deletion removed an untracked object")
+	if store.ObjExist(t.Context(), "kb-1", "temporary") {
+		t.Fatal("dataset deletion retained a temporary object")
 	}
 	if store.ObjExist(t.Context(), "kb-1", "tracked") {
 		t.Fatal("dataset deletion retained a document object")
 	}
+	if store.BucketExists(t.Context(), "kb-1") {
+		t.Fatal("dataset deletion retained the bucket")
+	}
 	var count int64
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("dataset retained after storage failure: count=%d, err=%v", count, err)
+		t.Fatalf("dataset retained after deletion: count=%d, err=%v", count, err)
 	}
 	if entries := logs.FilterMessage("Removed dataset document object").All(); len(entries) != 1 || entries[0].ContextMap()["document"] != "Document (doc-1)" || entries[0].ContextMap()["dataset"] != "Dataset (kb-1)" {
 		t.Errorf("document deletion logs = %v", entries)

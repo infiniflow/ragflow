@@ -9,7 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 
 	"go.uber.org/zap"

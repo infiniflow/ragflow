@@ -36,7 +36,6 @@ const csvSheetName = "Data"
 type CSVParser struct {
 	ParseMethod                    string
 	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -64,9 +63,7 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -108,10 +105,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	decoded, encName := DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
-		var emptyJSON []map[string]any
-		if p.HTML4Excel {
-			emptyJSON = []map[string]any{NewTableJSONItem("<table><caption>Data</caption></table>", csvSheetName, [][]float64{{1, 1, 1, 1, 1}})}
-		}
 		return ParseResult{
 			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
@@ -121,7 +114,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 				"format":   "csv",
 				"sheets":   1,
 			},
-			JSON: emptyJSON,
 		}
 	}
 
@@ -142,14 +134,9 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	for i := range dataRows {
 		dataRows[i] = i + 2
 	}
-	var items []map[string]any
-	if p.HTML4Excel {
-		if table := recordsToHTMLTableItem(records, csvSheetName, 1, 1, dataRows); table != nil {
-			items = []map[string]any{table}
-		}
-	} else {
-		items = recordsToSpreadsheetItems(records, csvSheetName, 1, 1, dataRows)
-	}
+	// One wire shape for csv as for xlsx: a single segmented HTML table with
+	// row-aligned positions (csv has no in-cell image anchors).
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{

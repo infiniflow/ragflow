@@ -411,7 +411,7 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 			return ln < rn, nil
 		case ">=":
 			return ln >= rn, nil
-		case "<=":
+		default:
 			return ln <= rn, nil
 		}
 	}
