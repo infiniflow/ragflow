@@ -17,9 +17,11 @@
 from quart import Response, request
 
 from api.apps import current_user, login_required
+from api.db import CanvasCategory
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
-from api.db.services.user_service import TenantService
+from api.db.services.canvas_service import UserCanvasService
+from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_ids, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.web_utils import get_float, safe_json_parse
@@ -59,6 +61,58 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
     return {"mcpServers": exported_servers}
 
 
+def _shared_mcp_metadata(mcp_id):
+    exists, server = MCPServerService.get_by_id(mcp_id)
+    if not exists or server is None:
+        return None
+    memberships = UserTenantService.get_tenants_by_user_id(current_user.id)
+    if not any(t["tenant_id"] == server.tenant_id and t["role"] in {"normal", "owner"} for t in memberships):
+        return None
+    selected = set()
+    referenced = False
+    for canvas in UserCanvasService.query(user_id=server.tenant_id, permission="team", canvas_category=CanvasCategory.Agent):
+        dsl = safe_json_parse(canvas.dsl)
+        if not isinstance(dsl, dict):
+            continue
+        components = dsl.get("components")
+        if not isinstance(components, dict):
+            continue
+        for component in components.values():
+            if not isinstance(component, dict):
+                continue
+            obj = component.get("obj")
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("component_name") != "Agent":
+                continue
+            params = obj.get("params")
+            if not isinstance(params, dict):
+                continue
+            mcp_list = params.get("mcp")
+            if not isinstance(mcp_list, list):
+                continue
+            for mcp in mcp_list:
+                if not isinstance(mcp, dict):
+                    continue
+                if mcp.get("mcp_id") == mcp_id:
+                    tools = mcp.get("tools")
+                    if not isinstance(tools, dict):
+                        continue
+                    referenced = True
+                    selected.update(tools.keys())
+    if not referenced:
+        return None
+    variables = safe_json_parse(server.variables)
+    if not isinstance(variables, dict):
+        return None
+    catalog = variables.get("tools")
+    if not isinstance(catalog, dict):
+        return None
+    fields = {"name", "title", "description", "inputSchema", "outputSchema", "annotations", "enabled"}
+    tools = {name: {k: v for k, v in meta.items() if k in fields} for name, meta in catalog.items() if name in selected and isinstance(meta, dict)}
+    return {"id": server.id, "name": server.name, "server_type": server.server_type, "url": "", "variables": {"tools": tools}, "read_only": True}
+
+
 def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple[str, str, str | None]:
     if not isinstance(url, str) or not url:
         return "", "", invalid_message
@@ -91,6 +145,12 @@ async def list_mcp() -> Response:
 
     try:
         servers = MCPServerService.get_servers(current_user.id, mcp_ids, 0, 0, orderby, desc, keywords) or []
+        owned_ids = {server["id"] for server in servers}
+        for mcp_id in dict.fromkeys(mcp_ids):
+            if mcp_id not in owned_ids:
+                shared = _shared_mcp_metadata(mcp_id)
+                if shared and (not keywords or keywords.lower() in shared["name"].lower()):
+                    servers.append(shared)
         total = len(servers)
 
         if page_number and items_per_page:
@@ -114,6 +174,9 @@ def detail(mcp_id: str) -> Response:
         mcp_server = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
 
         if mcp_server is None:
+            shared = _shared_mcp_metadata(mcp_id)
+            if shared is not None:
+                return get_json_result(data=shared)
             return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
 
         return get_json_result(data=mcp_server.to_dict())
