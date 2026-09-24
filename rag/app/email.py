@@ -97,15 +97,14 @@ def chunk(
         elif content_type == "multipart/alternative":
             # The parts render the same body, in increasing order of preference
             # (RFC 2046, 5.1.4), so only the last one that yields readable text is
-            # used; an empty rendering falls back to the one before it.
+            # used. A rendering this parser cannot read, such as text/calendar, or
+            # an empty one falls back to the one before it.
             for part in reversed(list(msg.iter_parts())):
-                part_type = part.get_content_type()
-                if part_type in ("text/plain", "text/html") or part.is_multipart():
-                    text_start, html_start = len(text_txt), len(html_txt)
-                    _add_content(part, part_type)
-                    added = text_txt[text_start:] + [re.sub(r"<[^>]*>", " ", html) for html in html_txt[html_start:]]
-                    if any(piece.strip() for piece in added):
-                        break
+                text_start, html_start = len(text_txt), len(html_txt)
+                _add_content(part, part.get_content_type())
+                added = text_txt[text_start:] + [re.sub(r"<[^>]*>", " ", html) for html in html_txt[html_start:]]
+                if any(piece.strip() for piece in added):
+                    break
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
