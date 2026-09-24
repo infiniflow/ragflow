@@ -113,10 +113,8 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 }
 
 // applyKnowledgebaseParserConfig merges the dataset-scoped parser_config keys
-// (llm_id, enable_metadata, metadata) into the document before it is parsed,
-// mirroring the Python path (api/apps/restful_apis/document_api.py). The reparse
-// dialog's "apply dataset config" option sets StartParseOptions.ApplyKB; without
-// this the flag is dead and the option silently does nothing.
+// (llm_id, enable_metadata, metadata) into the document's existing config and
+// persists the merged result before parsing when ApplyKB is requested.
 func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase) error {
 	if doc == nil || kb == nil {
 		return nil
