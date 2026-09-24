@@ -406,3 +406,51 @@ func TestCropImageChunks_UploadFailureFallsThroughToBatchPass(t *testing.T) {
 		t.Errorf("Image not retained after failed upload: %q", out[0].Image)
 	}
 }
+
+// TestCropImageChunks_StreamingUploadUsesFinalizedText verifies that the
+// streaming upload keys the image under the chunk's FINALIZED text — after
+// removeTag + context fold — rather than the raw pre-finalization text. This
+// is what makes the stored img_id match the canonical chunk id that
+// imageUploadDecorator assigns later (register.go) and Python's convention.
+// Without this, media chunks whose text changes during finalization (context
+// folding or position-tag stripping) would be stored under a different key
+// than their canonical id.
+func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := mockCropEngine{}
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	// ContextAbove is folded into the body by materializeMediaContext, so the
+	// finalized text differs from the raw Text.
+	chunks := []schema.ChunkDoc{
+		{CKType: "image", Text: "body", ContextAbove: "ABOVE ", PDFPositions: pos},
+	}
+	out := cropImageChunks(ctx, eng, chunks)
+
+	if len(out) != 1 {
+		t.Fatalf("len(out) = %d, want 1", len(out))
+	}
+	if len(rec.calls) != 1 {
+		t.Fatalf("upload calls = %d, want 1", len(rec.calls))
+	}
+
+	// Finalized text = removeTag(ContextAbove + removeTag(Text) + ContextBelow)
+	//                 = "ABOVE body".
+	wantID := common.ChunkID("doc1", "ABOVE body")
+	rawID := common.ChunkID("doc1", "body")
+
+	if rec.calls[0].chunkID == rawID {
+		t.Errorf("upload keyed by raw text %q; want finalized-text key %q", rawID, wantID)
+	}
+	if rec.calls[0].chunkID != wantID {
+		t.Errorf("upload chunkID = %q, want %q", rec.calls[0].chunkID, wantID)
+	}
+	if out[0].ImgID != "kb1-"+wantID {
+		t.Errorf("ImgID = %q, want %q", out[0].ImgID, "kb1-"+wantID)
+	}
+}

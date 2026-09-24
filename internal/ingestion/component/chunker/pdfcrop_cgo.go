@@ -155,7 +155,16 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		// and the decorator's debug branch drops the raw bytes instead.
 		if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
 			if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
-				if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, common.ChunkID(docID, out[i].Text), raw); uerr == nil {
+				// Key the upload under the chunk's FINALIZED text (after
+				// removeTag + context fold), not the raw pre-finalization
+				// text. This makes the stored img_id match the canonical
+				// chunk id that imageUploadDecorator assigns later
+				// (register.go) and Python's convention, so retrieval and
+				// any id-derived storage key stay consistent. Crop only
+				// depends on positions, so finalizing the text here does
+				// not alter the cropped image or the chunker's output text.
+				chunkID := common.ChunkID(docID, finalChunkTextForID(out[i]))
+				if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
 					out[i].ImgID = imgID
 					out[i].Image = ""
 				} else {
@@ -166,6 +175,16 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		}
 	}
 	return out
+}
+
+// finalChunkTextForID returns the chunk text as the chunker will finalize it
+// (removeTag + context fold via materializeMediaContext) so the image upload
+// key equals the canonical chunk id that imageUploadDecorator assigns later.
+// It operates on a copy and does not mutate the caller's ChunkDoc; the
+// chunker's own output text is still finalized downstream in chunkOutputs.
+func finalChunkTextForID(ck schema.ChunkDoc) string {
+	ck.Text = removeTag(ck.Text)
+	return materializeMediaContext(ck).Text
 }
 
 // needsCrop reports whether a chunk should be cropped to a page-region
