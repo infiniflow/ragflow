@@ -86,7 +86,7 @@ func (f *FillupComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// State is required by the engine contract; we don't read from it
 	// here, but we still extract it to fail loudly if the engine forgot
 	// to wire it (consistent with UserFillUp's behavior).
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("Fillup: %w", err)
 	}
 

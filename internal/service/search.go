@@ -423,11 +423,12 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		Question:   question,
 		DatasetIDs: datasetIDs,
 		ModelID:    modelID,
-		Options:    askOptionsFromSearchConfig(searchID, searchConfig),
+		Options:    BuildAskStreamOptions(searchID, searchConfig),
 	}, common.CodeSuccess, nil
 }
 
-func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
+// BuildAskStreamOptions maps a saved search configuration to Ask retrieval options.
+func BuildAskStreamOptions(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
 	opts := AskStreamOptions{
 		SearchID:       searchID,
 		DocIDs:         stringSliceFromSearchConfig(searchConfig["doc_ids"]),

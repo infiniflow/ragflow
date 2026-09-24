@@ -1983,7 +1983,7 @@ func passageFromChunk(c map[string]any) map[string]any {
 // caller sits in the parent agentic_rag package (agentic_rag.go), not
 // inside retrieval.
 func PublishReferences(ctx context.Context, kb *Kbinfos) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return
 	}
@@ -2096,7 +2096,7 @@ func chunksToMaps(chunks []runtime.RetrievalChunk) []map[string]any {
 // what CanvasState.GetVar exposes. Exported so the agentic_rag package's Run can call
 // it.
 func TenantIDFromContext(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}

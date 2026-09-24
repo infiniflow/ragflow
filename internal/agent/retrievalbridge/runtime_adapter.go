@@ -65,12 +65,15 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if db == nil {
 		db = dao.DB
 	}
-	// RetrievalRequest is the same runtime-owned type on both sides. Forward it
-	// whole so new fields cannot disappear at this bridge, then apply the two
-	// Agentic caller policies owned here.
+	// RetrievalRequest is shared by the runtime and tool layers, so preserve it
+	// whole. A field-by-field copy previously dropped RerankID, causing agent
+	// completions to silently use local KNN scoring even when a reranker was set.
 	toolReq := agenttool.RetrievalRequest(req)
 	toolReq.AllowDenseFallback = new(false)
 	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
+	// Python hybrid_search excludes compiled products from plain retrieval via
+	// must_not={"exists":"compile_kwd"}.
+	toolReq.ExcludeCompiled = req.OnlyOriginalText
 	chunks, err := svc.Search(ctx, db, toolReq)
 	if err != nil {
 		return nil, err
