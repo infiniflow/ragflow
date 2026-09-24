@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -226,6 +227,46 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 		return buf.Bytes(), nil
 	}
 
+	return nil, lastErr
+}
+
+// GetLimited retrieves an object while keeping the buffered response within
+// maxBytes. It reads one extra byte to detect oversized objects.
+func (m *MinioStorage) GetLimited(ctx context.Context, bucket, fnm string, maxBytes int64, tenantID ...string) ([]byte, error) {
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("storage read limit must not be negative")
+	}
+	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
+	for i := 0; i < 2; i++ {
+		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
+		if err != nil {
+			lastErr = err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			m.reconnect()
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
+			}
+			continue
+		}
+		data, readErr := func() ([]byte, error) {
+			defer obj.Close()
+			return readLimitedObject(obj, maxBytes)
+		}()
+		if readErr == nil || errors.Is(readErr, ErrObjectTooLarge) {
+			return data, readErr
+		}
+		lastErr = readErr
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		m.reconnect()
+		if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+			return nil, sleepErr
+		}
+	}
 	return nil, lastErr
 }
 

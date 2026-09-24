@@ -106,6 +106,34 @@ func (m *MemoryStorage) Get(ctx context.Context, bucket, fnm string, tenantID ..
 	return out, nil
 }
 
+func (m *MemoryStorage) GetLimited(ctx context.Context, bucket, fnm string, maxBytes int64, tenantID ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("storage read limit must not be negative")
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bucketMap, ok := m.objects[bucket]
+	if !ok {
+		return nil, fmt.Errorf("memory storage: bucket %q: %w", bucket, ErrMemoryNotFound)
+	}
+	data, ok := bucketMap[fnm]
+	if !ok {
+		return nil, fmt.Errorf("memory storage: object %q in bucket %q: %w", fnm, bucket, ErrMemoryNotFound)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, ErrObjectTooLarge
+	}
+
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out, nil
+}
+
 // Remove deletes an object from the in-memory backend. Removing a
 // non-existent key is a no-op and returns nil.
 func (m *MemoryStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
