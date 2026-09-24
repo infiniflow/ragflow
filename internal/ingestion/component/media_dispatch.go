@@ -114,10 +114,8 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return parser.ParseResult{}, true,
-			fmt.Errorf("parser: image requires tenant_id")
-	}
+	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
+	defer cancelOCR()
 
 	// --- Phase 1: OCR ---
 	var ocrText string
@@ -136,23 +134,37 @@ func maybeDispatchImage(
 
 	// Step 1b: Fallback to local ONNX OCR (DeepDoc /predict/ocr).
 	// Mirrors Python's picture.py:ocr(np.array(img)) from deepdoc.vision.
-	if ocrText == "" {
-		if txt, err := runLocalImageOCR(ctx, binary); err == nil && txt != "" {
-			ocrText = txt
-		}
+	release, err := sharedOCRMediaAdmission().acquire(ctx)
+	if err != nil {
+		return parser.ParseResult{}, true, err
 	}
+	var dataURI string
+	func() {
+		defer release()
+		if ocrText == "" && ocrCtx.Err() == nil {
+			if img, _, decodeErr := decodeOCRImage(binary); decodeErr == nil {
+				if txt, ocrErr := runLocalImageOCRImage(ocrCtx, img); ocrErr == nil && strings.TrimSpace(txt) != "" {
+					ocrText = strings.TrimSpace(txt)
+				}
+			}
+		}
+		// Keep payload encoding under the same process admission as decode/OCR;
+		// release it before model resolution and the network call.
+		imageB64 := base64.StdEncoding.EncodeToString(binary)
+		dataURI = "data:" + imageMIME(filename) + ";base64," + imageB64
+	}()
+	return maybeDispatchImageVLM(ctx, db, dataURI, ocrText, tenantID, setup, inputs)
+}
 
-	// The image family always emits a structured JSON item carrying the
-	// image attachment (data URI) and doc_type_kwd, mirroring Python
-	// rag/app/picture.py:71-72 (doc["image"]=img, doc["doc_type_kwd"]=
-	// "image"). picture.py has no "text" output mode — it always returns
-	// a structured doc — so output_format is hardcoded to "json" and any
-	// setup override is ignored. The former behavior returned a bare Text
-	// string, which dropped the image attachment, set doc_type to "text",
-	// and on the default json path produced JSON=nil so downstream
-	// Chunkers rejected the payload with errRequiredField{"json"}.
-	imageB64 := base64.StdEncoding.EncodeToString(binary)
-	dataURI := "data:" + imageMIME(filename) + ";base64," + imageB64
+func maybeDispatchImageVLM(
+	ctx context.Context,
+	db *gorm.DB,
+	dataURI string,
+	ocrText string,
+	tenantID string,
+	setup schema.ParserSetup,
+	inputs map[string]any,
+) (parser.ParseResult, bool, error) {
 
 	// --- Phase 2: VLM description (when OCR text is short) ---
 	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
@@ -160,6 +172,9 @@ func maybeDispatchImage(
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 	if vlmGateShouldSkip(ocrText, lang) {
 		// OCR returned substantial text — skip VLM.
+		return imageDispatchResult(ocrText, dataURI), true, nil
+	}
+	if tenantID == "" {
 		return imageDispatchResult(ocrText, dataURI), true, nil
 	}
 
@@ -452,31 +467,8 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 	return client.ParseImage(binary, filename)
 }
 
-// runLocalImageOCR detects and recognizes text in an image using the
-// in-process DeepDoc analyzer (ONNX models served locally via the native
-// backend). Mirrors Python's deepdoc.vision.OCR local ONNX pipeline; the
-// external HTTP service is no longer a backend (see parser.GetDocAnalyzer).
-//
-// Pipeline:
-//  1. Decode image bytes → image.Image
-//  2. OCRDetect → find text region boxes
-//  3. For each box: crop → OCRRecognize → text
-//  4. Sort boxes by Y, then X (reading order)
-//  5. Join all recognized text with newlines
-func runLocalImageOCR(ctx context.Context, binary []byte) (string, error) {
-	release, err := sharedOCRMediaAdmission().acquire(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-
-	img, _, err := decodeOCRImage(binary)
-	if err != nil {
-		return "", err
-	}
-	return runLocalImageOCRImage(ctx, img)
-}
-
+// runLocalImageOCRImage detects and recognizes text using the in-process
+// DeepDoc analyzer (ONNX models served locally via the native backend).
 func runLocalImageOCRImage(ctx context.Context, img image.Image) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
