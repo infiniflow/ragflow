@@ -215,11 +215,25 @@ describe('ParsingStatusCell', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('re-parses straight away without the drop-chunks confirmation', () => {
+    it('asks for confirmation before dropping existing chunks', () => {
       renderCell({
         run: undefined,
         ingestion_status: IngestionTaskStatus.COMPLETED,
         chunk_count: 3,
+        parser_config: { enable_metadata: true },
+      });
+
+      fireEvent.click(screen.getByTestId('document-parse-toggle'));
+
+      expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
+      expect(mockRunDocumentByIds).not.toHaveBeenCalled();
+    });
+
+    it('re-parses a chunkless document straight away without confirmation', () => {
+      renderCell({
+        run: undefined,
+        ingestion_status: IngestionTaskStatus.COMPLETED,
+        chunk_count: 0,
         parser_config: { enable_metadata: true },
       });
 
