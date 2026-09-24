@@ -1478,16 +1478,27 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 	if eng == nil {
 		return nil, nil
 	}
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled Wiki documents for graph: %w", err)
+	}
+	if statusAvailable && len(enabledIDs) == 0 {
+		return nil, nil
+	}
 	const batchSize = 2000
 	bySlug := make(map[string]wikiPageProjection)
 	for offset := 0; ; offset += batchSize {
+		filter := map[string]interface{}{
+			"compile_kwd": compileKwdWikiPage, "available_int": 0,
+			"scope_kwd": "doc", "kb_id": kb,
+		}
+		if statusAvailable {
+			filter["doc_id"] = enabledIDs
+		}
 		result, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:      []string{kb},
-			Filter: map[string]interface{}{
-				"compile_kwd": compileKwdWikiPage, "available_int": 0,
-				"scope_kwd": "doc", "kb_id": kb,
-			},
+			Filter:     filter,
 			SelectFields: []string{
 				"slug_kwd", "page_type_kwd", "title_kwd", "entity_names_kwd",
 				"summary_with_weight", "outlinks_kwd", "source_doc_ids", "source_chunk_ids",
