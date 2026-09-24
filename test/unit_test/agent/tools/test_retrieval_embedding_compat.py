@@ -13,19 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for agent Retrieval KB/memory embedding compatibility.
+"""Regression tests for Retrieval embedding model checks.
 
-Datasets may store a tenant_model UUID or a ``model@instance@provider``
-composite in ``embd_id``. Chat/assistant selection treats those as compatible
-when they share a tenant_embd_id / base name. The Retrieval canvas component
-must use the same ``validate_dataset_embedding_models`` comparison rather than
-comparing raw ``embd_id`` strings.
+Knowledge bases and memories are compared with
+``validate_dataset_embedding_models``. A set that does not share one resolved
+embedding model is rejected.
 
 This test loads only the relevant function definitions via AST so it does not
 pull in the full ``api.db.db_models`` import chain.
 """
 
 import ast
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,7 +52,10 @@ def _exec_functions(src_path, names, ns):
 
 
 def _load_shared_embedding_id(resolved_names):
-    ns = {"get_composite_model_name_by_ids": lambda _ids: resolved_names}
+    ns = {
+        "get_composite_model_name_by_ids": lambda _ids: resolved_names,
+        "logger": logging.getLogger("agent.tools.retrieval"),
+    }
     _exec_functions(
         _KB_SERVICE,
         ("_base_model_name", "_kb_embedding_base_name", "validate_dataset_embedding_models"),
