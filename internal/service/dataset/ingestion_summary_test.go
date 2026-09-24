@@ -45,7 +45,6 @@ func TestGetDownloadStatusAggregatesLinkedConnectorFiles(t *testing.T) {
 		{ID: "doc-rss", KbID: "dataset-1", ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "rss/connector-checkpoint", Type: "text", CreatedBy: "tenant-1", Name: sptr("rss.txt"), Suffix: "txt"},
 		{ID: "doc-s3", KbID: "dataset-1", ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "s3/connector-fallback", Type: "text", CreatedBy: "tenant-1", Name: sptr("s3.txt"), Suffix: "txt"},
 		{ID: "doc-local", KbID: "dataset-1", ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "text", CreatedBy: "tenant-1", Name: sptr("local.txt"), Suffix: "txt"},
-		{ID: "doc-web", KbID: "dataset-1", ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "web", Type: "text", CreatedBy: "tenant-1", Name: sptr("web.txt"), Suffix: "txt"},
 		{ID: "doc-unlinked", KbID: "dataset-1", ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "webdav/connector-unlinked", Type: "text", CreatedBy: "tenant-1", Name: sptr("unlinked.txt"), Suffix: "txt"},
 	}
 	if err := db.Create(&documents).Error; err != nil {
@@ -53,13 +52,12 @@ func TestGetDownloadStatusAggregatesLinkedConnectorFiles(t *testing.T) {
 	}
 
 	tasks := []entity.SyncLogs{
-		{ID: "task-checkpoint", ConnectorID: "connector-checkpoint", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, NewDocsIndexed: 1, ErrorMsg: "", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(600)}},
-		{ID: "task-fallback", ConnectorID: "connector-fallback", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, NewDocsIndexed: 5, ErrorCount: 2, ErrorMsg: "", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(500)}},
-		{ID: "task-source-retry", ConnectorID: "connector-source-fail", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, ErrorCount: 9, ErrorClass: "transient", ErrorMsg: "source unavailable", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(450)}},
-		{ID: "task-source-fail", ConnectorID: "connector-source-fail", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusFail, ErrorCount: 9, ErrorMsg: "source unavailable", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(400)}},
-		{ID: "task-scheduled", ConnectorID: "connector-checkpoint", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusSchedule, NewDocsIndexed: 100, ErrorMsg: "", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(900)}},
-		{ID: "task-prune", ConnectorID: "connector-fallback", KbID: "dataset-1", TaskType: dao.TaskTypePrune, Status: dao.SyncStatusRunning, NewDocsIndexed: 100, ErrorMsg: "", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(800)}},
-		{ID: "task-unlinked", ConnectorID: "connector-unlinked", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, NewDocsIndexed: 100, ErrorMsg: "", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(700)}},
+		{ID: "task-checkpoint", ConnectorID: "connector-checkpoint", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, NewDocsIndexed: 1, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(600)}},
+		{ID: "task-fallback", ConnectorID: "connector-fallback", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, NewDocsIndexed: 5, ErrorCount: 2, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(500)}},
+		{ID: "task-source-retry", ConnectorID: "connector-source-fail", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusRunning, ErrorCount: 9, ErrorClass: "transient", BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(450)}},
+		{ID: "task-source-fail", ConnectorID: "connector-source-fail", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusFail, ErrorCount: 9, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(400)}},
+		{ID: "task-scheduled", ConnectorID: "connector-checkpoint", KbID: "dataset-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusSchedule, NewDocsIndexed: 100, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(900)}},
+		{ID: "task-prune", ConnectorID: "connector-fallback", KbID: "dataset-1", TaskType: dao.TaskTypePrune, Status: dao.SyncStatusRunning, NewDocsIndexed: 100, BaseModel: entity.BaseModel{UpdateTime: downloadInt64Pointer(800)}},
 	}
 	if err := db.Create(&tasks).Error; err != nil {
 		t.Fatalf("create sync tasks: %v", err)

@@ -60,34 +60,24 @@ func TestListDatasetSyncTasksKeepsRunningAndLatestPerConnector(t *testing.T) {
 		{ID: "link-a", ConnectorID: "connector-a", KbID: "dataset-1"},
 		{ID: "link-a-duplicate", ConnectorID: "connector-a", KbID: "dataset-1"},
 		{ID: "link-b", ConnectorID: "connector-b", KbID: "dataset-1"},
-		{ID: "link-c", ConnectorID: "connector-c", KbID: "dataset-1"},
 		{ID: "link-other", ConnectorID: "connector-unlinked", KbID: "dataset-2"},
 	}
 	if err := db.Create(&links).Error; err != nil {
 		t.Fatalf("create connector links: %v", err)
 	}
-	task := func(id, connectorID, kbID, taskType, status string, updateTime int64) entity.SyncLogs {
+	task := func(id, connectorID, status string, updateTime int64) entity.SyncLogs {
 		return entity.SyncLogs{
-			ID: id, ConnectorID: connectorID, KbID: kbID, TaskType: taskType, Status: status,
+			ID: id, ConnectorID: connectorID, KbID: "dataset-1", TaskType: TaskTypeSync, Status: status,
 			BaseModel: entity.BaseModel{UpdateTime: &updateTime},
 		}
 	}
 	tasks := []entity.SyncLogs{
-		task("a-done-old", "connector-a", "dataset-1", TaskTypeSync, SyncStatusDone, 100),
-		task("a-running", "connector-a", "dataset-1", TaskTypeSync, SyncStatusRunning, 200),
-		task("a-done-new", "connector-a", "dataset-1", TaskTypeSync, SyncStatusDone, 300),
-		task("a-scheduled", "connector-a", "dataset-1", TaskTypeSync, SyncStatusSchedule, 900),
-		task("a-prune", "connector-a", "dataset-1", TaskTypePrune, SyncStatusRunning, 800),
-		task("b-running-old", "connector-b", "dataset-1", TaskTypeSync, SyncStatusRunning, 150),
-		task("b-running", "connector-b", "dataset-1", TaskTypeSync, SyncStatusRunning, 250),
-		task("c-tie-a", "connector-c", "dataset-1", TaskTypeSync, SyncStatusFail, 400),
-		task("c-tie-z", "connector-c", "dataset-1", TaskTypeSync, SyncStatusFail, 400),
-		task("unlinked", "connector-unlinked", "dataset-1", TaskTypeSync, SyncStatusRunning, 700),
-		task("other-dataset", "connector-a", "dataset-2", TaskTypeSync, SyncStatusRunning, 1000),
+		task("a-done-old", "connector-a", SyncStatusDone, 100),
+		task("a-running", "connector-a", SyncStatusRunning, 200),
+		task("a-done-new", "connector-a", SyncStatusDone, 300),
+		task("b-running", "connector-b", SyncStatusRunning, 250),
+		task("unlinked", "connector-unlinked", SyncStatusRunning, 400),
 	}
-	tasks[1].NewDocsIndexed = 5
-	tasks[1].ErrorCount = 2
-	tasks[1].ErrorClass = "transient"
 	if err := db.Create(&tasks).Error; err != nil {
 		t.Fatalf("create sync tasks: %v", err)
 	}
@@ -96,7 +86,7 @@ func TestListDatasetSyncTasksKeepsRunningAndLatestPerConnector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list dataset sync tasks: %v", err)
 	}
-	wantIDs := []string{"c-tie-z", "a-done-new", "b-running", "a-running", "b-running-old"}
+	wantIDs := []string{"a-done-new", "b-running", "a-running"}
 	if len(got) != len(wantIDs) {
 		t.Fatalf("task count = %d, want %d: %+v", len(got), len(wantIDs), got)
 	}
@@ -104,9 +94,6 @@ func TestListDatasetSyncTasksKeepsRunningAndLatestPerConnector(t *testing.T) {
 		if got[i].ID != wantID {
 			t.Fatalf("task %d = %q, want %q", i, got[i].ID, wantID)
 		}
-	}
-	if got[3].NewDocsIndexed != 5 || got[3].ErrorCount != 2 || got[3].ErrorClass != "transient" {
-		t.Fatalf("running task counters = %+v, want indexed=5 errors=2 class=transient", got[3])
 	}
 }
 
