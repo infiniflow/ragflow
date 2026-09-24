@@ -2404,10 +2404,10 @@ class LiteLLMBase(ABC):
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
-            completion_args["stop"] = stop
+            gen_conf["stop"] = stop
+        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         # Ask the provider to include authoritative usage in the final streaming chunk.
         # drop_params=True ensures this is silently ignored by providers that don't support it.
         completion_args.setdefault("stream_options", {})["include_usage"] = True
