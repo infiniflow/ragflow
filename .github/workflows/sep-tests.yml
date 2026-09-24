@@ -604,10 +604,18 @@ jobs:
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
                PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -619,8 +627,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
@@ -1340,10 +1348,18 @@ jobs:
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
                PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -1355,8 +1371,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
@@ -2012,10 +2028,18 @@ jobs:
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
                PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
-               PARTITION_SIZE=6000
+               PARTITION_SIZE=3000
+               # Keep every (base + offset) host port BELOW the Linux ephemeral
+               # range (net.ipv4.ip_local_port_range, default 32768-60999). An
+               # outbound connection from the host can transiently squat on a port
+               # inside that range, and `docker compose up` then fails with
+               # "address already in use" even though the reservation succeeded —
+               # the reservation cannot see it because `docker ps` only lists
+               # container-published ports. Largest base is 23820, so offsets must
+               # stay under 8948 for the ceiling to clear 32768.
                case "${DOC_ENGINE}" in
-                 elasticsearch) PARTITION_BASE=1000 ;;
-                 infinity) PARTITION_BASE=31000 ;;
+                 elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+                 infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -2027,8 +2051,8 @@ jobs:
                #     a docker network named ragflow-ci-port-<port> on the shared daemon. docker
                #     network create is NOT idempotent (fails on name conflict), so only one runner
                #     can claim a given port. This is per-PORT, not per-offset, because different
-               #     (base, offset) pairs can produce the same host port (e.g. 6380+36497 ==
-               #     9380+33497 == 42877); a per-offset guard cannot prevent that collision.
+               #     (base, offset) pairs can produce the same host port (e.g. 6380+5999 ==
+               #     9380+2999 == 12379); a per-offset guard cannot prevent that collision.
                #   - port availability = docker ps published ports (sees every container on the
                #     shared daemon regardless of which runner started it).
                # No file-system sharing required, no host netns required.
