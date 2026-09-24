@@ -38,6 +38,20 @@ def markdown_links(monkeypatch):
 TABLE = "<table><tr><td>A</td><td>B</td></tr></table>"
 
 
+def test_punctuation_after_an_inline_element_attaches_to_it():
+    # The join rule used to put a space at every element boundary.
+    assert _fmt('<p>Hello <b>world</b>! See <a href="#">this</a>.</p>') == "Hello world! See this."
+
+
+def test_brackets_and_quotes_around_an_inline_element_attach_to_it():
+    assert _fmt('<p>A <b>bold</b>, a <i>slant</i>; and (<b>x</b>) "<i>q</i>" <b>don</b>\'t.</p>') == ('A bold, a slant; and (x) "q" don\'t.')
+
+
+def test_adjacent_inline_words_still_get_a_space():
+    # Control: two elements with no punctuation between them are still two words.
+    assert _fmt("<p><span>alpha</span><span>beta</span></p>") == "alpha beta"
+
+
 def test_paragraph_after_table_keeps_its_newline():
     assert "\nAfter" in _fmt(f"<p>Before</p>{TABLE}<p>After</p>")
 
