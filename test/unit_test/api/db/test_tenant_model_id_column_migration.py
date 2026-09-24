@@ -209,7 +209,8 @@ def test_migrate_db_invokes_postgres_model_provider_data_migration(monkeypatch):
     monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
     monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
-    monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
+    ensure_events = []
+    monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: ensure_events.append("ensure_indexes"))
     monkeypatch.setattr(db_models, "migrate_postgres_family_model_provider_tables", lambda: events.append("pg_model_provider"))
 
     db_models.migrate_db()
@@ -217,3 +218,4 @@ def test_migrate_db_invokes_postgres_model_provider_data_migration(monkeypatch):
     assert "pg_model_provider" in events
     assert events.index("pg_model_provider") > events.index("tenant_model_id_types")
     assert events.index("pg_model_provider") > events.index("relax")
+    assert ensure_events == ["ensure_indexes"]

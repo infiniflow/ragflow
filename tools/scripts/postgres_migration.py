@@ -14,11 +14,13 @@
 #  limitations under the License.
 #
 """
-PostgreSQL / GaussDB data migration script.
+PostgreSQL data migration script.
 
 Same stages as mysql_migration.py (provider tables, model_type_merge,
 tenant_model_id_migration). Used for in-place upgrades when DB_TYPE is
-postgres or gaussdb, where the MySQL-only docker path never ran.
+postgres, where the MySQL-only docker path never ran.
+
+GaussDB (DB_TYPE=gaussdb) is not routed here; see run_migrations.sh.
 """
 
 import logging

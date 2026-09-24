@@ -207,4 +207,4 @@ def test_migrate_db_does_not_alter_model_type_in_place_before_merge():
     assert "migrate_postgres_family_model_provider_tables()" in migrate_db
     assert "migrate_tenant_model_id_column_types(migrator)" in migrate_db
     assert "Fallback only:" in migrate_db
-    assert migrate_db.index("ensure_model_indexes(migrator)") < migrate_db.index("migrate_postgres_family_model_provider_tables()")
+    assert migrate_db.index("migrate_postgres_family_model_provider_tables()") < migrate_db.index("ensure_model_indexes(migrator)")

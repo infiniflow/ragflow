@@ -2049,10 +2049,14 @@ def migrate_tenant_model_id_column_types(migrator):
     ``migrate_postgres_family_model_provider_tables()`` later for seeding,
     ``model_type`` merge, and id backfill.
 
-    There is no matching in-place ALTER for ``tenant_model.model_type``:
-    converting that column before ``tenant_model_seeding`` / ``model_type_merge``
-    would skip those stages. Both column types rely on the script (or that
-    startup fallback) for the real work.
+    There is no matching in-place ALTER for ``tenant_model.model_type`` on any
+    dialect: converting that column before ``tenant_model_seeding`` /
+    ``model_type_merge`` would skip those stages. Postgres/GaussDB also run
+    ``migrate_postgres_family_model_provider_tables()`` for seeding, merge, and
+    backfill. MySQL/OceanBase non-Docker deployments that skip
+    ``run_migrations.sh`` get only this ``tenant_*_id`` fallback — they must run
+    ``mysql_migration.py`` manually or #18755 (``model_type`` bitmask merge) can
+    persist.
     """
     target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
@@ -2129,39 +2133,117 @@ def migrate_tenant_model_id_column_types(migrator):
             )
 
 
+MODEL_PROVIDER_MIGRATION_VERSION_MARKER = "mysql_migration.database.version"
+MODEL_PROVIDER_MIGRATION_FINAL_VERSION = "v0.27.0"
+
+
+def _parse_model_provider_migration_version(version: str | None) -> tuple[int, ...] | None:
+    if not version:
+        return None
+    normalized = version.strip()
+    if normalized.startswith(("v", "V")):
+        normalized = normalized[1:]
+    parts = []
+    for token in normalized.split("."):
+        if not token.isdigit():
+            return None
+        parts.append(int(token))
+    return tuple(parts) or None
+
+
+def _model_provider_migration_complete(
+    current_version: str | None,
+    target_version: str = MODEL_PROVIDER_MIGRATION_FINAL_VERSION,
+) -> bool:
+    current = _parse_model_provider_migration_version(current_version)
+    target = _parse_model_provider_migration_version(target_version)
+    if current is None or target is None:
+        return False
+    max_len = max(len(current), len(target))
+    current_padded = current + (0,) * (max_len - len(current))
+    target_padded = target + (0,) * (max_len - len(target))
+    return current_padded >= target_padded
+
+
+def _get_model_provider_migration_version() -> str | None:
+    try:
+        if not DB.table_exists("system_settings"):
+            return None
+        cursor = DB.execute_sql(
+            "SELECT value FROM system_settings WHERE name = %s",
+            (MODEL_PROVIDER_MIGRATION_VERSION_MARKER,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 def _load_model_provider_migration_module():
     import importlib.util
 
     script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tools", "scripts", "mysql_migration.py")
+    if not os.path.isfile(script_path):
+        raise FileNotFoundError(f"Model provider migration script not found: {script_path}")
     spec = importlib.util.spec_from_file_location("ragflow_mysql_migration", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load model provider migration module from {script_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 def migrate_postgres_family_model_provider_tables():
-    """Startup fallback: run provider stages if the pre-startup script did not.
+    """Run model-provider data stages on PostgreSQL when the marker is behind v0.27.0.
 
     Mirrors ``tools/scripts/postgres_migration.py`` / ``mysql_migration.py``
     (``tenant_model_seeding`` → ``model_type_merge`` → ``tenant_model_id_migration``).
-    Docker ``run_migrations.sh`` is the primary path; this runs after schema
-    alters so in-place postgres/gaussdb upgrades still merge ``model_type`` and
-    backfill ``tenant_*_id`` when the script was skipped. Stages are idempotent.
+    Docker ``run_migrations.sh`` is the primary path. This startup fallback runs
+    only when ``system_settings`` records a migration version below v0.27.0 so
+    steady-state boots avoid loading the migration script. Import or execution
+    failures are logged and do not abort service startup.
+
+    GaussDB is intentionally excluded: the postgres-shaped migration SQL is not
+    safe on distributed GaussDB (ORA mode). Use a dedicated upgrade path.
+
+    MySQL/OceanBase have no matching ``model_type`` fallback in ``migrate_db()``;
+    non-Docker deployments must run ``mysql_migration.py`` / ``run_migrations.sh``.
 
     Do not ALTER ``tenant_model.model_type`` to integer before these stages.
     """
-    if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:
+    if settings.DATABASE_TYPE.upper() != "POSTGRES":
         return
+
+    try:
+        current_version = _get_model_provider_migration_version()
+        if _model_provider_migration_complete(current_version):
+            logging.info(
+                "Skipping postgres-family model-provider migration; version marker is %s",
+                current_version,
+            )
+            return
+    except Exception as ex:
+        logging.warning(
+            "Failed to read model-provider migration version marker; will attempt fallback: %s",
+            ex,
+        )
 
     database_cfg = settings.DATABASE or {}
     database_name = database_cfg.get("name") or database_cfg.get("database") or "rag_flow"
-    module = _load_model_provider_migration_module()
-    module.run_using_existing_connection(
-        peewee_db=DB,
-        dialect="postgres",
-        database_name=database_name,
-        options=database_cfg.get("options"),
-    )
+    try:
+        module = _load_model_provider_migration_module()
+        module.run_using_existing_connection(
+            peewee_db=DB,
+            dialect="postgres",
+            database_name=database_name,
+            options=database_cfg.get("options"),
+        )
+    except Exception as ex:
+        logging.critical(
+            "Failed postgres-family model-provider migration fallback; service will continue: %s",
+            ex,
+            exc_info=True,
+        )
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2707,8 +2789,10 @@ def migrate_db():
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
-    ensure_model_indexes(migrator)
+    # Run data stages before ensure_model_indexes: ModelTypeMergeStage swaps
+    # tenant_model and would discard indexes created on the pre-merge table.
     migrate_postgres_family_model_provider_tables()
+    ensure_model_indexes(migrator)
 
 
 def migrate_model_type_names():

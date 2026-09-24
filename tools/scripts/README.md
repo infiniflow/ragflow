@@ -3,7 +3,7 @@
 This directory contains database-related utility scripts for RAGFlow.
 
 - **mysql_migration.py**: Data migration between tables with stage-based execution (MySQL / OceanBase)
-- **postgres_migration.py**: Same stages as mysql_migration.py for PostgreSQL and GaussDB
+- **postgres_migration.py**: Same stages as mysql_migration.py for PostgreSQL (`DB_TYPE=postgres`)
 - **db_schema_sync.py**: Database schema synchronization using peewee-migrate
 
 ---
@@ -168,14 +168,13 @@ python mysql_migration.py --stages tenant_model_provider --config /path/to/confi
 
 ## postgres_migration.py
 
-PostgreSQL / GaussDB counterpart to `mysql_migration.py`. It runs the same stages
+PostgreSQL counterpart to `mysql_migration.py`. It runs the same stages
 (`tenant_model_provider` through `tenant_model_id_migration`) with Postgres SQL
 (`TO_TIMESTAMP`, `USING …::text`, `ON CONFLICT`). `run_migrations.sh` selects
-this script when `DB_TYPE` is `postgres`, `postgresql`, `gaussdb`, or `gauss`.
+this script when `DB_TYPE` is `postgres` or `postgresql`.
 
-For GaussDB metadata, connection settings come from `GAUSSDB_METADATA_*`
-environment variables (not the `gaussdb:` DOC_ENGINE section in
-`service_conf.yaml`).
+`DB_TYPE=gaussdb` does not run this script; GaussDB needs a dedicated migration
+path (distributed/ORA incompatibilities with postgres-shaped SQL).
 
 Pre-startup `run_migrations.sh` is the primary path for both `model_type`
 merge and `tenant_*_id` conversion/backfill. `migrate_db()` only reruns the

@@ -370,11 +370,13 @@ class PostgresMigrationDatabase(MigrationDatabase):
         self.execute_sql(f"ALTER TABLE {q_table} ALTER COLUMN {q_col} TYPE varchar(32) USING {q_col}::text")
 
     def add_auto_increment_unique_id_column(self, table_name: str):
-        seq = f"{table_name}_id_seq"
+        seq_name = f"{table_name}_id_seq"
+        q_seq = self.quote_ident(seq_name)
         q_table = self.quote_ident(table_name)
-        self.execute_sql(f"CREATE SEQUENCE IF NOT EXISTS {seq}")
-        self.execute_sql(f"ALTER TABLE {q_table} ADD COLUMN id BIGINT UNIQUE DEFAULT nextval('{seq}')")
-        self.execute_sql(f"ALTER SEQUENCE {seq} OWNED BY {table_name}.id")
+        q_id = self.quote_ident("id")
+        self.execute_sql(f"CREATE SEQUENCE IF NOT EXISTS {q_seq}")
+        self.execute_sql(f"ALTER TABLE {q_table} ADD COLUMN {q_id} BIGINT UNIQUE DEFAULT nextval('{seq_name}')")
+        self.execute_sql(f"ALTER SEQUENCE {q_seq} OWNED BY {q_table}.{q_id}")
 
     def create_table(self, table_name: str, columns: list[str], indexes: list[tuple[str, list[str], bool]] | None = None):
         indexes = indexes or []

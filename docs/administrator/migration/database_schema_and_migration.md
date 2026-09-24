@@ -17,7 +17,7 @@ Sync schemas and migrate data using official RAGFlow scripts.
 RAGFlow handles schema updates and migrations automatically at startup. However, for high-volume environments like Kubernetes, massive datasets can cause initialization to exceed 10 minutes, potentially triggering container timeouts or health check failures. To avoid this, you can disable the built-in auto-initialization and manually run these provided scripts to complete database upgrades before launching the service:
 
 - [mysql_migration.py](#mysql_migrationpy): Migrates data between MySQL tables.
-- [postgres_migration.py](#postgres_migrationpy): Same model-provider stages for PostgreSQL and GaussDB.
+- [postgres_migration.py](#postgres_migrationpy): Same model-provider stages for PostgreSQL.
 - [db_schema_sync.py](#db_schema_syncpy): Syncs database schemas and manages changes using peewee-migrate.
 
 ## Mysql_migration.py
@@ -41,17 +41,23 @@ The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/s
 
 ## Postgres_migration.py
 
-The [postgres_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/postgres_migration.py) script is the PostgreSQL / GaussDB equivalent of `mysql_migration.py`. It shares the same stages, including:
+The [postgres_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/postgres_migration.py) script is the PostgreSQL equivalent of `mysql_migration.py`. It shares the same stages, including:
 
 - Creating `tenant_model_provider`, `tenant_model_instance`, and `tenant_model` when they are missing
 - Merging `tenant_model.model_type` into an integer bitmask (`model_type_merge`)
 - Converting integer `tenant_*_id` columns to `varchar(32)` **and** backfilling them from `llm_id` / `embd_id` by resolving `tenant_model.id` (`tenant_model_id_migration`)
 
-`tools/scripts/run_migrations.sh` selects this script automatically when `DB_TYPE` is `postgres` or `gaussdb`. That pre-startup path is where column-type conversion and data stages run (`model_type_merge` and `tenant_model_id_migration`).
+`tools/scripts/run_migrations.sh` selects this script automatically when `DB_TYPE` is `postgres`. That pre-startup path is where column-type conversion and data stages run (`model_type_merge` and `tenant_model_id_migration`). `DB_TYPE=gaussdb` skips these scripts until a GaussDB-specific migration path exists.
 
-`migrate_db()` is only a fallback if the script did not run: it may retype leftover integer `tenant_*_id` columns, then invokes the same stages. It does **not** ALTER `tenant_model.model_type` to integer first — `tenant_model_seeding` and `model_type_merge` skip when that column is already an integer, which would leave unmerged duplicate rows.
+`migrate_db()` is a fallback when the pre-startup script did not run or did not finish:
 
-For GaussDB, connection parameters come from `GAUSSDB_METADATA_*` environment variables.
+| Database | `tenant_*_id` fallback in `migrate_db()` | `model_type` merge fallback in `migrate_db()` |
+|----------|------------------------------------------|-----------------------------------------------|
+| PostgreSQL | Yes (column retype) | Yes (`migrate_postgres_family_model_provider_tables()`, skipped when the version marker is already `v0.27.0`) |
+| GaussDB | Yes (column retype via `migrate_db()`) | **No** — postgres-shaped migration SQL is not run on GaussDB |
+| MySQL / OceanBase | Yes (column retype) | **No** — run `mysql_migration.py` / `run_migrations.sh` manually |
+
+Neither path ALTERs `tenant_model.model_type` to integer first — `tenant_model_seeding` and `model_type_merge` skip when that column is already an integer, which would leave unmerged duplicate rows.
 
 ## Db_schema_sync.py
 

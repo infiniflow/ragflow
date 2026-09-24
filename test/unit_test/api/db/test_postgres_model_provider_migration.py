@@ -172,16 +172,37 @@ def test_tenant_model_id_stage_clears_unresolved_legacy_ids():
     assert any(params == ("kb-1",) and "= ''" in sql for sql, params in updates)
 
 
-def test_migrate_postgres_family_is_gated_to_postgres_and_gaussdb():
+def test_postgres_add_auto_increment_quotes_sequence_and_id():
+    mod = load_migration_module()
+    recorder = RecordingDB()
+    db = mod.PostgresMigrationDatabase(mod.MigrationConfig(database="rag_flow"), peewee_db=recorder)
+
+    db.add_auto_increment_unique_id_column("tenant_llm")
+
+    assert recorder.queries == [
+        ('CREATE SEQUENCE IF NOT EXISTS "tenant_llm_id_seq"', None),
+        (
+            'ALTER TABLE "tenant_llm" ADD COLUMN "id" BIGINT UNIQUE DEFAULT nextval(\'tenant_llm_id_seq\')',
+            None,
+        ),
+        ('ALTER SEQUENCE "tenant_llm_id_seq" OWNED BY "tenant_llm"."id"', None),
+    ]
+
+
+def test_migrate_postgres_family_is_gated_to_postgres_only():
     source = (REPO_ROOT / "api" / "db" / "db_models.py").read_text()
     func = source.split("def migrate_postgres_family_model_provider_tables():", 1)[1].split("\ndef ", 1)[0]
 
-    assert 'if settings.DATABASE_TYPE.upper() not in {"POSTGRES", "GAUSSDB"}:' in func
-    _gate, rest = func.split('{"POSTGRES", "GAUSSDB"}:', 1)
-    assert "return" in rest.split("database_cfg", 1)[0]
+    assert 'if settings.DATABASE_TYPE.upper() != "POSTGRES":' in func
+    _gate, rest = func.split('!= "POSTGRES":', 1)
+    assert "return" in rest.split("current_version", 1)[0]
+    assert "_model_provider_migration_complete(current_version)" in rest
+    assert "_load_model_provider_migration_module()" in rest
     assert "run_using_existing_connection(" in rest
     assert 'dialect="postgres"' in rest
     assert "peewee_db=DB" in rest
+    assert "except Exception as ex:" in rest
+    assert "service will continue" in rest
 
 
 def test_run_using_existing_connection_runs_both_version_groups(monkeypatch):
@@ -210,3 +231,67 @@ def test_normalize_migration_dialect_maps_gaussdb(monkeypatch):
     assert mod.normalize_migration_dialect("gaussdb") == "postgres"
     assert mod.normalize_migration_dialect("postgres") == "postgres"
     assert mod.normalize_migration_dialect("mysql") == "mysql"
+
+
+def test_model_provider_migration_version_helpers():
+    from api.db import db_models
+
+    assert db_models._model_provider_migration_complete("v0.27.0")
+    assert db_models._model_provider_migration_complete("v0.28.0")
+    assert not db_models._model_provider_migration_complete("v0.26.0")
+    assert not db_models._model_provider_migration_complete(None)
+
+
+def test_migrate_postgres_family_noop_on_gaussdb(monkeypatch):
+    from api.db import db_models
+    from common import settings
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "gaussdb")
+    calls = []
+    monkeypatch.setattr(
+        db_models,
+        "_load_model_provider_migration_module",
+        lambda: calls.append("load") or None,
+    )
+
+    db_models.migrate_postgres_family_model_provider_tables()
+
+    assert calls == []
+
+
+def test_migrate_postgres_family_skips_when_marker_is_current(monkeypatch):
+    from api.db import db_models
+    from common import settings
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "postgres")
+    monkeypatch.setattr(db_models, "_get_model_provider_migration_version", lambda: "v0.27.0")
+    calls = []
+    monkeypatch.setattr(
+        db_models,
+        "_load_model_provider_migration_module",
+        lambda: calls.append("load") or None,
+    )
+
+    db_models.migrate_postgres_family_model_provider_tables()
+
+    assert calls == []
+
+
+def test_migrate_postgres_family_swallows_import_errors(monkeypatch, caplog):
+    import logging
+
+    from api.db import db_models
+    from common import settings
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "postgres")
+    monkeypatch.setattr(db_models, "_get_model_provider_migration_version", lambda: None)
+
+    def boom():
+        raise RuntimeError("missing script")
+
+    monkeypatch.setattr(db_models, "_load_model_provider_migration_module", boom)
+
+    with caplog.at_level(logging.CRITICAL):
+        db_models.migrate_postgres_family_model_provider_tables()
+
+    assert any("service will continue" in rec.message for rec in caplog.records)
