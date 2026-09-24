@@ -545,6 +545,43 @@ def test_a_table_in_a_control_is_read_and_later_tables_keep_their_titles(docx_mo
 
 
 @pytest.mark.p2
+def test_a_table_caption_reads_a_heading_held_in_a_content_control(docx_modules):
+    """The caption is built from the same heading text the chunk shows."""
+
+    def builder(d):
+        from docx.oxml import parse_xml
+
+        heading = d.add_heading("", level=1)
+        heading._p.append(parse_xml(f"<w:sdt {W}><w:sdtPr/><w:sdtContent>{_text('Results')}</w:sdtContent></w:sdt>"))
+        d.add_table(rows=1, cols=1).cell(0, 0).text = "T1"
+
+    assert [table for _text_, _image, table in _naive(docx_modules, builder) if table] == [
+        "<table><caption>Table Location: doc > Results</caption><tr><td>T1</td></tr></table>",
+    ]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("page_break", "first_page"),
+    [
+        (f'<w:ins w:id="9" {REVISION}><w:r><w:br w:type="page"/></w:r></w:ins>', "First page"),
+        ("<w:sdt><w:sdtPr/><w:sdtContent><w:r><w:lastRenderedPageBreak/><w:t>.</w:t></w:r></w:sdtContent></w:sdt>", "First page."),
+    ],
+    ids=["page-break-in-an-insertion", "rendered-break-in-a-control"],
+)
+def test_page_breaks_in_nested_runs_are_counted(docx_modules, page_break, first_page):
+    """A page break sits in a run the text is read from, so it moves what follows to the next page."""
+
+    def builder(d):
+        _append(d, _paragraph(_text("First page") + page_break))
+        d.add_paragraph("Second page")
+
+    lines = docx_modules.naive()("doc.docx", _build_docx(builder), from_page=0, to_page=1)
+
+    assert [text for text, _image, _table in lines] == [first_page]
+
+
+@pytest.mark.p2
 def test_a_plain_paragraph_reads_exactly_as_before(docx_modules):
     """Direct runs, a tab, a line break and a hyperlink: the same text as Paragraph.text."""
 

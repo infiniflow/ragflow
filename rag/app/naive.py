@@ -659,7 +659,7 @@ class Docx(DocxParser):
                     if level_match:
                         level = int(level_match.group(1))
                         if level <= 7:  # Support up to 7 heading levels
-                            title_text = block.text.strip()
+                            title_text = self.paragraph_text(block).strip()
                             if title_text:  # Avoid empty titles
                                 nearest_title = (level, title_text)
                                 break
@@ -689,7 +689,7 @@ class Docx(DocxParser):
                                 level = int(level_match.group(1))
                                 # Find any heading with a higher level
                                 if level < current_level:
-                                    title_text = block.text.strip()
+                                    title_text = self.paragraph_text(block).strip()
                                     if title_text:  # Avoid empty titles
                                         titles.append((level, title_text))
                                         current_level = level
@@ -796,8 +796,9 @@ class Docx(DocxParser):
                     for box_text in self.extract_text_boxes(p):
                         lines.append({"text": self.__clean(box_text), "image": None, "table": None})
 
-                for run in p.runs:
-                    xml = run._element.xml
+                # Count page breaks in the same runs the text is read from.
+                for run in self.paragraph_runs(p):
+                    xml = run.xml
                     if "lastRenderedPageBreak" in xml:
                         pn += 1
                         continue

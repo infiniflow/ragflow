@@ -108,6 +108,17 @@ class RAGFlowDocxParser:
                 yield from RAGFlowDocxParser.body_blocks(child)
 
     @staticmethod
+    def paragraph_runs(paragraph):
+        """The `w:r` elements whose text is the text of `paragraph`, in document order.
+
+        Includes the runs nested below the paragraph, which `Paragraph.runs` leaves
+        out, and skips deleted and moved-away revisions, ruby guides, text boxes and
+        the `mc:Fallback` copy.
+        """
+        element = paragraph._element
+        return [run for run in element.iter(RUN_TAG) if not _has_ancestor_in(run, SKIPPED_RUN_ANCESTOR_TAGS, stop=element)]
+
+    @staticmethod
     def paragraph_text(paragraph):
         """The text of `paragraph`, including runs nested below the paragraph.
 
@@ -115,8 +126,7 @@ class RAGFlowDocxParser:
         insertion, an inline content control, the result of a simple field or a
         smart tag is missing from it. Deleted text stays out.
         """
-        element = paragraph._element
-        return "".join(run.text for run in element.iter(RUN_TAG) if not _has_ancestor_in(run, SKIPPED_RUN_ANCESTOR_TAGS, stop=element))
+        return "".join(run.text for run in RAGFlowDocxParser.paragraph_runs(paragraph))
 
     @staticmethod
     def extract_text_boxes(paragraph):
