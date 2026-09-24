@@ -99,13 +99,27 @@ def test_a_text_attachment_is_read_as_an_attachment_only():
 
 
 @pytest.mark.p2
-def test_an_empty_preferred_alternative_falls_back_to_the_one_before_it():
+@pytest.mark.parametrize("html", ["<html><body>  </body></html>", "<html><body><p>&nbsp;</p></body></html>"])
+def test_an_empty_preferred_alternative_falls_back_to_the_one_before_it(html):
     msg = _message()
-    msg.add_alternative("<html><body>  </body></html>", subtype="html")
+    msg.add_alternative(html, subtype="html")
 
     text = _chunk_text(msg)
 
     assert text.count("Plain rendering of the body.") == 1
+
+
+@pytest.mark.p2
+def test_an_empty_plain_rendering_listed_last_falls_back_to_the_html():
+    msg = EmailMessage()
+    msg["From"] = "sender@example.com"
+    msg["Subject"] = "quarterly numbers"
+    msg.set_content("<html><body><p>HTML rendering of the body.</p></body></html>", subtype="html")
+    msg.add_alternative("  \n", subtype="plain")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
 
 
 @pytest.mark.p2

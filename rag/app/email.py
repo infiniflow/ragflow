@@ -98,11 +98,12 @@ def chunk(
             # The parts render the same body, in increasing order of preference
             # (RFC 2046, 5.1.4), so only the last one that yields readable text is
             # used. A rendering this parser cannot read, such as text/calendar, or
-            # an empty one falls back to the one before it.
+            # one without text falls back to the one before it. HTML is judged by
+            # what HtmlParser makes of it, which is what gets indexed.
             for part in reversed(list(msg.iter_parts())):
                 text_start, html_start = len(text_txt), len(html_txt)
                 _add_content(part, part.get_content_type())
-                added = text_txt[text_start:] + [re.sub(r"<[^>]*>", " ", html) for html in html_txt[html_start:]]
+                added = text_txt[text_start:] + HtmlParser.parser_txt("\n".join(html_txt[html_start:]), chunk_token_num=parser_config["chunk_token_num"])
                 if any(piece.strip() for piece in added):
                     break
         elif "multipart" in content_type:
