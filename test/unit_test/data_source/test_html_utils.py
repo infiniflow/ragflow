@@ -47,6 +47,14 @@ def test_brackets_and_quotes_around_an_inline_element_attach_to_it():
     assert _fmt('<p>A <b>bold</b>, a <i>slant</i>; and (<b>x</b>) "<i>q</i>" <b>don</b>\'t.</p>') == ('A bold, a slant; and (x) "q" don\'t.')
 
 
+def test_a_straight_double_quote_after_an_element_closes_only_an_open_quotation():
+    assert _fmt('<p>He said "<i>hi</i>" twice</p>') == 'He said "hi" twice'
+    # No quotation is open, so this one opens and the element keeps its gap.
+    assert _fmt('<p><b>Note</b>"warning"</p>') == 'Note "warning"'
+    # Only the current line counts: an inch mark in an earlier paragraph opens nothing here.
+    assert _fmt('<p>A 5" screen</p><p><b>Note</b>"warning"</p>') == 'A 5" screen\nNote "warning"'
+
+
 def test_adjacent_inline_words_still_get_a_space():
     # Control: two elements with no punctuation between them are still two words.
     assert _fmt("<p><span>alpha</span><span>beta</span></p>") == "alpha beta"

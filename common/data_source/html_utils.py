@@ -51,12 +51,16 @@ _STRAIGHT_QUOTES = frozenset("'\"")
 def _attaches_across(before: str, after: str) -> bool:
     """Whether the text on either side of an element boundary joins with no gap.
 
-    A straight quote at the start of `after` closes a quotation or begins a
-    contraction (`<b>don</b>'t`), so it attaches to `before`. At the end of
-    `before` it opens a quotation only when a space or an opening bracket, or
-    nothing, precedes it.
+    A straight single quote at the start of `after` continues a contraction or
+    closes a quotation (`<b>don</b>'t`), so it attaches to `before`. A straight
+    double quote there closes a quotation only while one is open on the current
+    line (`"<i>q</i>"`); otherwise it opens one (`<b>Note</b>"warning"`) and keeps
+    its gap. At the end of `before` a straight quote opens a quotation only when a
+    space or an opening bracket, or nothing, precedes it.
     """
-    if after[0] in _ATTACHES_TO_TEXT_BEFORE or after[0] in _STRAIGHT_QUOTES:
+    if after[0] in _ATTACHES_TO_TEXT_BEFORE or after[0] == "'":
+        return True
+    if after[0] == '"' and before[before.rfind("\n") + 1 :].count('"') % 2:
         return True
     if before[-1] in _ATTACHES_TO_TEXT_AFTER:
         return True
