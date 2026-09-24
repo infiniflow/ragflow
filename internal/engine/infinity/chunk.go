@@ -70,7 +70,10 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	var mappingFile string
 
 	tableName = buildChunkTableName(baseName, datasetID)
-	if datasetID == "skill" {
+	if strings.HasPrefix(baseName, "memory_") {
+		mappingFile = "message_infinity_mapping.json"
+		common.Info("Creating memory index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
+	} else if datasetID == "skill" {
 		mappingFile = "skill_infinity_mapping.json"
 		common.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
 	} else {
