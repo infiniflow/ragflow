@@ -121,8 +121,8 @@ func TestResolveHTMLImageSourceLoadsRelativeAsset(t *testing.T) {
 		"image_src":       "images/chart.png",
 		"parent_table_id": "html-table-1",
 	}
-	if !resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item) {
-		t.Fatal("resolveHTMLImageSource() = false, want true")
+	if err := resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item); err != nil {
+		t.Fatalf("resolveHTMLImageSource: %v", err)
 	}
 	if _, ok := item["image_src"]; ok {
 		t.Fatalf("unresolved image source remains after storage lookup: %+v", item)
@@ -147,8 +147,8 @@ func TestResolveHTMLImageSourceLoadsParentRelativeAssetWithinBucket(t *testing.T
 	}
 
 	item := map[string]any{"doc_type_kwd": "image", "image_src": "../assets/chart.png"}
-	if !resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item) {
-		t.Fatal("resolveHTMLImageSource() = false, want parent-relative asset to resolve within bucket")
+	if err := resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item); err != nil {
+		t.Fatalf("resolveHTMLImageSource: %v", err)
 	}
 	if _, ok := item["image_src"]; ok {
 		t.Fatalf("image_src remains after resolution: %+v", item)
@@ -195,6 +195,54 @@ func TestVisionEnhancementLoadsRelativeHTMLImageForOCR(t *testing.T) {
 	}
 	if got := result.JSON[0]["text"]; got != "chart alt\n"+strings.TrimSpace(strings.Repeat("recognized ", 4)) {
 		t.Errorf("image text = %q, want alt plus OCR result", got)
+	}
+}
+
+func TestVisionEnhancementWarnsWhenHTMLImageSourceCannotBeResolved(t *testing.T) {
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "chart alt",
+			"doc_type_kwd": "image",
+			"image_src":    "images/missing.png",
+		}},
+	}
+	result, _, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeHTML, dispatched,
+		map[string]any{}, map[string]schema.ParserSetup{"html": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "HTML image enhancement skipped 1 image source") {
+		t.Fatalf("warnings = %v, want a warning for the unresolved image source", result.Warnings)
+	}
+}
+
+func TestVisionEnhancementWarnsWhenHTMLImageSourceIsExternal(t *testing.T) {
+	for _, inputs := range []map[string]any{
+		{"bucket": "html-assets", "path": "docs/report.html"},
+		{},
+	} {
+		dispatched := parser.ParseResult{
+			OutputFormat: "json",
+			JSON: []map[string]any{{
+				"text":         "chart alt",
+				"doc_type_kwd": "image",
+				"image_src":    "https://example.com/chart.png",
+			}},
+		}
+		result, _, err := maybeDispatchVisionEnhancement(
+			t.Context(), dao.DB, utility.FileTypeHTML, dispatched,
+			inputs,
+			map[string]schema.ParserSetup{"html": {}},
+		)
+		if err != nil {
+			t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+		}
+		if !strings.Contains(strings.Join(result.Warnings, "\n"), "unsupported or non-relative image source") {
+			t.Fatalf("warnings = %v, want a warning that external sources are unsupported", result.Warnings)
+		}
 	}
 }
 

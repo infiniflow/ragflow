@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
 )
 
@@ -40,15 +41,37 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	if result.JSON[0]["doc_type_kwd"] != "table" || result.JSON[0]["source_table_id"] != "html-table-1" {
 		t.Errorf("table item = %+v", result.JSON[0])
 	}
-	wantPayloads := []string{htmlMediaDataURI, "https://example.com/second.png"}
-	for i, payload := range wantPayloads {
+	if result.JSON[1]["image"] != htmlMediaDataURI {
+		t.Errorf("inline image payload = %v, want data URI", result.JSON[1]["image"])
+	}
+	if result.JSON[2]["image_src"] != "https://example.com/second.png" || result.JSON[2]["image"] != nil {
+		t.Errorf("external image item = %+v, want unresolved source", result.JSON[2])
+	}
+	for i := range result.JSON[1:] {
 		item := result.JSON[i+1]
-		if item["doc_type_kwd"] != "image" || item["image"] != payload || item["parent_table_id"] != "html-table-1" {
+		if item["doc_type_kwd"] != "image" || item["parent_table_id"] != "html-table-1" {
 			t.Errorf("image item %d = %+v", i, item)
 		}
 		if item["row_index"] != 1 || item["column_index"] != i+1 || item["media_order"] != i+1 {
 			t.Errorf("image item %d position = %+v", i, item)
 		}
+	}
+}
+
+func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
+	payload := base64.StdEncoding.EncodeToString(make([]byte, maxEmbeddedImageBytes+1))
+	input := "<p><img alt=\"large\" src=\"data:image/png;base64," + payload + "\"></p>"
+	result := NewHTMLParser().ParseWithResult(context.Background(), "large.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	for _, item := range result.JSON {
+		if item["doc_type_kwd"] == "image" {
+			t.Fatal("oversized data URI emitted as an image item")
+		}
+	}
+	if len(result.Warnings) == 0 {
+		t.Fatal("oversized inline image should produce a parser warning")
 	}
 }
 
