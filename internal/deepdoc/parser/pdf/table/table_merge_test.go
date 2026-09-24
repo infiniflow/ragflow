@@ -788,6 +788,74 @@ func TestMergeTablesAcrossPages_UsesContinuationCellsWhenGridIsMissing(t *testin
 	}
 }
 
+func TestMergeTablesAcrossPages_DropsContainedDuplicateTableFragment(t *testing.T) {
+	parent := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{
+			{{Text: "序号", X0: 0, X1: 20}, {Text: "材料名称", X0: 20, X1: 100}},
+			{{Text: "1", X0: 0, X1: 20}, {Text: "螺纹钢", X0: 20, X1: 100}},
+			{{Text: "2", X0: 0, X1: 20}, {Text: "水泥", X0: 20, X1: 100}},
+		},
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 10},
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 10, Bottom: 20},
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 20, Bottom: 30},
+		},
+	}
+	fragment := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{
+			{{Text: "1", X0: 0, X1: 20}, {Text: "螺纹钢", X0: 20, X1: 100}},
+		},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 10, Bottom: 20}},
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{parent, fragment}, nil, nil)
+	if len(merged) != 1 {
+		t.Fatalf("a fully contained table fragment must not be emitted beside its complete table, got %d items", len(merged))
+	}
+	if got := RowsToStrings(merged[0].Grid); len(got) != 3 || got[2][1] != "水泥" {
+		t.Fatalf("deduplicating a fragment must preserve the complete table: %v", got)
+	}
+}
+
+func TestMergeTablesAcrossPages_DropsContainedFragmentWithPartialRowText(t *testing.T) {
+	position := pdf.Position{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 10, Bottom: 20}
+	parent := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{{Text: "44白玻4mmm²/2829/30/303132//13%", X0: 0, X1: 100}}},
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 10},
+			position,
+		},
+	}
+	fragment := pdf.TableItem{
+		Grid:      [][]pdf.TSRCell{{{Text: "44白玻4mmm²/2829/30/303132//", X0: 0, X1: 100}}},
+		Positions: []pdf.Position{position},
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{parent, fragment}, nil, nil)
+	if len(merged) != 1 {
+		t.Fatalf("a contained fragment whose row text is fully present in the complete table must be dropped despite partial row text, got %d items", len(merged))
+	}
+}
+
+func TestMergeTablesAcrossPages_KeepsContainedTableWithUniqueText(t *testing.T) {
+	parent := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{{Text: "parent row", X0: 0, X1: 100}}},
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 10},
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 10, Bottom: 20},
+		},
+	}
+	nested := pdf.TableItem{
+		Grid:      [][]pdf.TSRCell{{{Text: "nested-only value", X0: 0, X1: 100}}},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 10, Bottom: 20}},
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{parent, nested}, nil, nil)
+	if len(merged) != 2 {
+		t.Fatalf("a contained table with text absent from the parent must remain distinct, got %d items", len(merged))
+	}
+}
+
 // TestGridsHaveUniformWidth pins the per-ROW uniformity guarantee that gates
 // index padding: a row narrower than its page's maximum signals a locally
 // missed separator, and index padding would shift its values left under the
