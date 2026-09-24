@@ -184,6 +184,8 @@ type tablePositionKey struct {
 	left, right, top, bottom float64
 }
 
+const minimumContainedRowTextPercent = 85
+
 func deduplicateTableFragments(tables []pdf.TableItem) []pdf.TableItem {
 	if len(tables) <= 1 {
 		return tables
@@ -281,7 +283,7 @@ func tableRowsContained(parentRows, childRows []string) bool {
 					continue
 				}
 				childRunes, parentRunes := utf8.RuneCountInString(child), utf8.RuneCountInString(parent)
-				if childRunes*100 >= parentRunes*85 {
+				if childRunes*100 >= parentRunes*minimumContainedRowTextPercent {
 					match = i
 					break
 				}
