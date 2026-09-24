@@ -71,9 +71,6 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	toolReq := agenttool.RetrievalRequest(req)
 	toolReq.AllowDenseFallback = new(false)
 	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
-	// Python hybrid_search excludes compiled products from plain retrieval via
-	// must_not={"exists":"compile_kwd"}.
-	toolReq.ExcludeCompiled = req.OnlyOriginalText
 	chunks, err := svc.Search(ctx, db, toolReq)
 	if err != nil {
 		return nil, err

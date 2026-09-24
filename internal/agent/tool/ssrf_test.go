@@ -18,19 +18,27 @@ package tool
 
 import (
 	"net"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestValidateURLForSSRF(t *testing.T) {
+	originalLookupHost := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "example.com" {
+			return []string{"93.184.216.34"}, nil
+		}
+		return originalLookupHost(host)
+	}
+	t.Cleanup(func() { common.LookupHost = originalLookupHost })
+
 	cases := []struct {
 		name    string
 		rawURL  string
 		wantErr bool
 	}{
-		// Public targets: should pass (DNS may still fail in CI; we
-		// accept both "ok" and "resolve error").
+		// Public targets: should pass.
 		{"https_public", "https://example.com/", false},
 		{"http_public", "http://1.1.1.1/", false},
 
@@ -68,10 +76,7 @@ func TestValidateURLForSSRF(t *testing.T) {
 					t.Errorf("validateURLForSSRF(%q) = %q, want an ssrf-tagged error", tc.rawURL, err)
 				}
 			} else if err != nil {
-				// Public target may fail DNS in CI; tolerate resolve errors.
-				if !strings.Contains(err.Error(), "resolve") {
-					t.Errorf("validateURLForSSRF(%q) = %q, want nil or resolve error", tc.rawURL, err)
-				}
+				t.Errorf("validateURLForSSRF(%q) = %q, want nil", tc.rawURL, err)
 			}
 		})
 	}
@@ -122,41 +127,24 @@ func TestResolveAndValidate(t *testing.T) {
 	})
 
 	t.Run("hostname_resolves_to_public", func(t *testing.T) {
-		// example.com is required to resolve to a public IP per RFC 2606.
-		// The DNS lookup is wrapped in a goroutine with a 2s deadline so
-		// sandboxed CI environments without upstream DNS can skip the
-		// test rather than hang the suite (the default LookupIP honours
-		// no timeout; this was the root cause of the 60s test timeout
-		// during the rebinding-hardening review).
-		type result struct {
-			host string
-			ip   net.IP
-			err  error
+		originalLookupHost := common.LookupHost
+		common.LookupHost = func(host string) ([]string, error) {
+			if host == "example.test" {
+				return []string{"93.184.216.34"}, nil
+			}
+			return originalLookupHost(host)
 		}
-		ch := make(chan result, 1)
-		go func() {
-			h, ip, err := ResolveAndValidate("https://example.com/")
-			ch <- result{h, ip, err}
-		}()
-		select {
-		case r := <-ch:
-			if r.err != nil {
-				if strings.Contains(r.err.Error(), "resolve") {
-					t.Skipf("DNS unavailable in CI: %v", r.err)
-				}
-				t.Fatalf("ResolveAndValidate(example.com) = %v, want nil", r.err)
-			}
-			if r.host != "example.com" {
-				t.Errorf("host = %q, want example.com", r.host)
-			}
-			if r.ip == nil {
-				t.Fatalf("ip = nil, want non-nil")
-			}
-			if r.ip.IsLoopback() || r.ip.IsPrivate() || r.ip.IsLinkLocalUnicast() {
-				t.Errorf("ip = %s, want a public address", r.ip)
-			}
-		case <-time.After(2 * time.Second):
-			t.Skip("DNS lookup for example.com timed out — sandboxed CI without upstream DNS")
+		t.Cleanup(func() { common.LookupHost = originalLookupHost })
+
+		host, ip, err := ResolveAndValidate("https://example.test/")
+		if err != nil {
+			t.Fatalf("ResolveAndValidate(example.test) = %v, want nil", err)
+		}
+		if host != "example.test" {
+			t.Errorf("host = %q, want example.test", host)
+		}
+		if !ip.Equal(net.ParseIP("93.184.216.34")) {
+			t.Errorf("ip = %s, want 93.184.216.34", ip)
 		}
 	})
 
@@ -181,6 +169,38 @@ func TestResolveAndValidate(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestResolveAndValidateProductionEnvCannotDisableGuard(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "true")
+
+	if _, _, err := ResolveAndValidate("http://127.0.0.1/"); err == nil {
+		t.Fatal("ResolveAndValidate(loopback) = nil, want SSRF rejection")
+	}
+	if _, err := ValidateDBHost("127.0.0.1"); err == nil {
+		t.Fatal("ValidateDBHost(loopback) = nil, want SSRF rejection")
+	}
+}
+
+func TestResolveAndValidateTestHookAllowsLocalhost(t *testing.T) {
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = false })
+
+	host, ip, err := ResolveAndValidate("http://127.0.0.1/")
+	if err != nil {
+		t.Fatalf("ResolveAndValidate(loopback) = %v, want nil with test hook", err)
+	}
+	if host != "127.0.0.1" || !ip.Equal(net.ParseIP("127.0.0.1")) {
+		t.Fatalf("ResolveAndValidate(loopback) = (%q, %v), want (127.0.0.1, 127.0.0.1)", host, ip)
+	}
+
+	dbHost, err := ValidateDBHost("127.0.0.1")
+	if err != nil {
+		t.Fatalf("ValidateDBHost(loopback) = %v, want nil with test hook", err)
+	}
+	if dbHost != "127.0.0.1" {
+		t.Fatalf("ValidateDBHost(loopback) = %q, want 127.0.0.1", dbHost)
+	}
 }
 
 func TestSanitizeURL(t *testing.T) {

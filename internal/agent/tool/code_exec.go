@@ -223,6 +223,7 @@ func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error)
 	}
 	if strings.TrimSpace(r.Stderr) != "" &&
 		!hasStructuredResult &&
+		r.Returned == "" &&
 		len(out.Artifacts) == 0 &&
 		strings.TrimSpace(r.Stdout) == "" {
 		out.Error = r.Stderr
@@ -231,8 +232,8 @@ func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error)
 			fmt.Fprintln(os.Stderr, "code_exec: falling back to stdout deserialization because no structured result metadata was provided")
 		}
 		out.RawResult = NormalizeCodeExecOutputValue(resolvedValue)
-		out.ActualType = InferCodeExecActualType(out.RawResult)
-		out.Content = RenderCodeExecCanonicalContent(out.RawResult)
+		out.ActualType = inferCodeExecActualType(out.RawResult)
+		out.Content = renderCodeExecCanonicalContent(out.RawResult)
 	}
 	common.Debug("CodeExec tool",
 		zap.Any("structured_result", r.StructuredResult),
@@ -384,6 +385,9 @@ func resolveCodeExecResultValue(r *SandboxResponse) (any, bool) {
 		if present, _ := r.StructuredResult["present"].(bool); present {
 			return r.StructuredResult["value"], false
 		}
+	}
+	if r != nil && r.Returned != "" {
+		return r.Returned, false
 	}
 	return deserializeCodeExecStdout(r.Stdout), true
 }

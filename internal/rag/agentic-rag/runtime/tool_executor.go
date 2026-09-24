@@ -2041,11 +2041,11 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		SimilarityThreshold:      req.SimilarityThreshold,
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		TenantID:                 req.TenantID,
+		MetaDataFilter:           req.MetaDataFilter,
 		RankFeature:              &req.RankFeature,
-		// ExcludeCompiled maps Python hybrid_search's
-		// must_not={"exists":"compile_kwd"} onto the runtime request's
-		// OnlyOriginalText (the "no compile_kwd" exclusion).
-		OnlyOriginalText: req.ExcludeCompiled,
+		// Python hybrid_search always excludes compile_kwd rows from the base
+		// retrieval; use_compiled controls a separate expansion step.
+		ExcludeCompiled: req.ExcludeCompiled,
 	})
 	if err != nil {
 		return nil, err
