@@ -106,7 +106,7 @@ Use **Search** when you want to find and inspect relevant knowledge directly, an
 
 ### How do I build a RAGFlow image from scratch?
 
-Build the Go image from the repository root with `Dockerfile_go`, then set `RAGFLOW_IMAGE` in **docker/.env-go**. See the [quickstart guide](./quickstart.mdx#start-up-the-server) for the current commands and prerequisites.
+Build the Go image from the repository root with `Dockerfile`, then set `RAGFLOW_IMAGE` in **docker/.env**. See the [quickstart guide](./quickstart.mdx#start-up-the-server) for the current commands and prerequisites.
 
 ---
 
@@ -148,7 +148,7 @@ Check that the Go API and Admin services started, then review the RAGFlow contai
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs -f ragflow-cpu` from the repository root when using the CPU Compose service; use `ragflow-gpu` for the GPU service). The Go services log these startup messages:
+You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` from the repository root when using the CPU Compose service; use `ragflow-gpu` for the GPU service). The Go services log these startup messages:
 
 ```text
 Starting api server: ...
@@ -170,11 +170,11 @@ The Go deployment uses Kvrocks as its Redis-compatible cache, although this warn
 
 1. From the repository root, confirm that Kvrocks is running:
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml ps kvrocks
+   docker compose --env-file docker/.env -f docker/docker-compose.yml ps kvrocks
    ```
 2. Inspect the Kvrocks logs:
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs kvrocks
+   docker compose --env-file docker/.env -f docker/docker-compose.yml logs kvrocks
    ```
 3. Check the Go service logs for connection-refused, authentication, or DNS errors. The standard Go Compose deployment connects to `kvrocks:6379`; for a customized Docker deployment, verify `KVROCKS_HOST` and `KVROCKS_PORT` in the container configuration. For Go processes launched directly on the host, set the reachable `host:port` value in `conf/service_conf.yaml` under `kvrocks.host`; do not rely on the Docker environment variables to override that source configuration.
 4. Call the [system health API](./references/http_api_reference.md#check-system-health). Its `redis` field reports the health of the Redis-compatible Kvrocks connection.
@@ -206,7 +206,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 1. Check the RAGFlow container logs for API, admin, and ingestor startup errors:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs -f ragflow-cpu
+   docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
    ```
 
    Use `ragflow-gpu` instead of `ragflow-cpu` for the GPU Compose service.
@@ -246,7 +246,7 @@ From the repository root, follow the Go service logs written to the mounted log 
 tail -f docker/ragflow-logs/*.log
 ```
 
-To view the container's combined output, use `docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs -f ragflow-cpu` (or `ragflow-gpu` for a GPU deployment).
+To view the container's combined output, use `docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` (or `ragflow-gpu` for a GPU deployment).
 
 ---
 
@@ -255,13 +255,13 @@ To view the container's combined output, use `docker compose --env-file docker/.
 1. From the repository root, check the Go deployment's containers:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml ps
+   docker compose --env-file docker/.env -f docker/docker-compose.yml ps
    ```
 
    Review the RAGFlow service logs:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml logs -f ragflow-cpu
+   docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
    ```
 
    Use `ragflow-gpu` instead of `ragflow-cpu` for a GPU deployment. Check the `nats` and selected document engine services in the same Compose project when diagnosing ingestion or indexing.
@@ -277,7 +277,7 @@ A running container does not necessarily mean that the service inside it is heal
 1. Check the status of the Elasticsearch Docker container:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml ps es01
+   docker compose --env-file docker/.env -f docker/docker-compose.yml ps es01
    ```
 
    A healthy Elasticsearch container should report `healthy`. The default Go Compose deployment exposes Elasticsearch on host port `1200`, while the container listens on port `9200`.
@@ -399,9 +399,9 @@ If your model is not currently supported but has APIs compatible with those of O
 
 The Go file-manager upload endpoint allows up to 1 GiB per file by default. The dataset document upload path has a separate 128 MiB per-file limit. Check which upload endpoint rejected the file before changing deployment settings.
 
-To change the file-manager upload limit in a Go Compose deployment, set `MAX_CONTENT_LENGTH` in **docker/.env-go** to the desired number of bytes. The default 1 GiB value is `1073741824`.
+To change the file-manager upload limit in a Go Compose deployment, set `MAX_CONTENT_LENGTH` in **docker/.env** to the desired number of bytes. The default 1 GiB value is `1073741824`.
 
-If you raise the limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose-go.yml**, then recreate that service. Lowering `MAX_CONTENT_LENGTH` below 1 GiB does not require changing the default Nginx limit.
+If you raise the limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service. Lowering `MAX_CONTENT_LENGTH` below 1 GiB does not require changing the default Nginx limit.
 
 These settings do not raise the dataset document upload path's fixed 128 MiB limit.
 
@@ -420,14 +420,14 @@ For a Go Compose deployment:
 1. Back up the database, object storage, and deployment configuration.
 2. From the repository root, stop the deployment without deleting its volumes:
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml down
+   docker compose --env-file docker/.env -f docker/docker-compose.yml down
    ```
 3. Update the repository to the RAGFlow version you intend to deploy.
-4. Set `RAGFLOW_IMAGE` in **docker/.env-go** to a compatible Go image. If you build from source, build `Dockerfile_go`, tag the image, and use that tag as `RAGFLOW_IMAGE`.
+4. Set `RAGFLOW_IMAGE` in **docker/.env** to a compatible Go image. If you build from source, build `Dockerfile`, tag the image, and use that tag as `RAGFLOW_IMAGE`.
 5. Pull the configured images when using registry images, then start the deployment:
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml pull
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose.yml pull
+   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
    ```
 6. Check the service state and logs, then call `/api/v1/system/healthz` through the configured web endpoint to verify the dependencies.
 
@@ -446,10 +446,10 @@ Existing document indexes are not transferred to Infinity automatically. Back up
 1. Stop the current Go Compose deployment without deleting its volumes:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml down
+   docker compose --env-file docker/.env -f docker/docker-compose.yml down
    ```
 
-2. Set the following value in **docker/.env-go**. Its `COMPOSE_PROFILES` setting includes `DOC_ENGINE`, so this selects the Infinity service when the deployment starts:
+2. Set the following value in **docker/.env**. Its `COMPOSE_PROFILES` setting includes `DOC_ENGINE`, so this selects the Infinity service when the deployment starts:
 
    ```env
    DOC_ENGINE=infinity
@@ -458,8 +458,8 @@ Existing document indexes are not transferred to Infinity automatically. Back up
 3. Start the Go deployment and check its services:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml up -d
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml ps
+   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose.yml ps
    ```
 
 4. Reprocess or reindex the documents so their searchable content is written to Infinity. Verify retrieval before retiring the old Elasticsearch data.
@@ -476,7 +476,12 @@ The internal bucket and object path depend on how and where the file was uploade
 
 ### How do I tune document parsing and embedding throughput?
 
-The Go ingestor currently uses a fixed document indexing batch size of 32. `DOC_BULK_SIZE` does not change it. Embedding request size comes from the model's `batch_size` capability, or defaults to 16 when none is set. For local tuning, `TOKENIZER_EMBEDDING_BATCH_SIZE` overrides that value when set to a positive integer. `EMBEDDING_BATCH_SIZE` does not control this Go path. Larger embedding batches can use more memory; check the model provider's limits before increasing the value.
+Document indexing processes 32 chunks per batch. The embedding request size
+comes from the model's `batch_size` capability, or defaults to `16` when the
+model does not provide one. To tune embedding requests, set
+`TOKENIZER_EMBEDDING_BATCH_SIZE` to a positive integer. Larger batches can use
+more memory and may exceed the model provider's request limit, so increase the
+value gradually and verify parsing on representative documents.
 
 ---
 
@@ -575,7 +580,7 @@ To improve response speed:
 RAGFlow's Go PDF parser calls a remote MinerU API and polls for the parsed result. To use it:
 
 1. Prepare a reachable legacy MinerU API service (FastAPI server, MinerU &ge; 3.3.0 and &lt; 4.0.0). The current Go client uses MinerU's `/file_parse` and `/tasks` routes; MinerU 4 removes these routes in favor of the V1 API and is not compatible with this client.
-2. In **docker/.env-go** or on the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
+2. In **docker/.env** or on the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_API_KEY`: An API key if the MinerU service requires one.
    - `MINERU_BACKEND`: The MinerU backend (matches current MinerU API / CLI `-b` values):
@@ -628,7 +633,7 @@ The Go parser can send `vlm-http-client` or `hybrid-http-client` as the backend 
 
 1. Ensure a MinerU API service is reachable (for example `http://mineru-host:8886`).
 2. Configure the MinerU service to use a reachable OpenAI-compatible server.
-3. Configure the following in **docker/.env-go** (or your shell if running from source):
+3. Configure the following in **docker/.env** (or your shell if running from source):
    - `MINERU_APISERVER=http://mineru-host:8886`
    - `MINERU_BACKEND="vlm-http-client"` (or `"hybrid-http-client"`)
 4. Select MinerU as the PDF parser in the dataset's ingestion settings, then check the ingestor logs if the remote parse request fails.
@@ -641,7 +646,7 @@ For these remote backends, the RAGFlow ingestor needs network access to MinerU. 
 
 ### How do I use an external Docling Serve server for document parsing?
 
-The Go parser uses a remote Docling Serve endpoint. Set the endpoint in the parser configuration (`docling_server_url`) or provide it through `DOCLING_SERVER_URL` in **docker/.env-go**. If the service requires bearer authentication, also set `docling_api_key` in the parser configuration or provide `DOCLING_API_KEY`:
+The Go parser uses a remote Docling Serve endpoint. Set the endpoint in the parser configuration (`docling_server_url`) or provide it through `DOCLING_SERVER_URL` in **docker/.env**. If the service requires bearer authentication, also set `docling_api_key` in the parser configuration or provide `DOCLING_API_KEY`:
 
 ```bash
 DOCLING_SERVER_URL=http://your-docling-serve-host:5001
@@ -667,7 +672,7 @@ This method uses PaddleOCR's official API service with an access token.
 - **Via Environment Variables:**
 
    ```bash
-   # In your docker/.env-go file:
+   # In your docker/.env file:
    PADDLEOCR_API_URL=https://paddleocr.aistudio-app.com/api
    PADDLEOCR_ALGORITHM=PaddleOCR-VL
    PADDLEOCR_ACCESS_TOKEN=your-access-token-here

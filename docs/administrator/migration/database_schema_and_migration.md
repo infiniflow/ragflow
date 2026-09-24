@@ -18,7 +18,7 @@ For a manually started Go backend, run database migration as a standalone step b
 
 The command loads the same database configuration as the Go server, applies schema and data changes, then exits. Use `-f` or `--config` to select a configuration file when needed. Do not combine `--migrate` with `--admin`, `--api`, `--ingestor`, or `--syncer`. Allow enough time for data backfills and schema changes on large databases.
 
-The migration process does not start a server mode or initialize the document engine, Redis/Kvrocks, object storage, or the message queue. It needs access to the configured metadata database and local configuration files. Run it where `conf/models` is available: database initialization loads the model provider definitions from that relative path and fails if the directory cannot be read. The model data migration also tries to read `conf/llm_factories.json`; if the file is absent or unreadable, that input is skipped. Keep the matching configuration files with the new binary.
+The migration process does not start a server mode or initialize the document engine, Kvrocks cache, object storage, or NATS JetStream message queue. It needs access to the configured metadata database and local configuration files. Run it where `conf/models` is available: database initialization loads the model provider definitions from that relative path and fails if the directory cannot be read. The model data migration also tries to read `conf/llm_factories.json`; if the file is absent or unreadable, that input is skipped. Keep the matching configuration files with the new binary.
 
 ## Where migrations are defined
 
@@ -45,11 +45,4 @@ Check the migration logs as well as the exit status before starting services. So
 
 `RAGFLOW_DEV_MODE=true` disables only the code-versus-database downgrade check for Go server processes. It does not run migrations, reverse schema changes, or make an older binary compatible with a newer database. This is especially relevant to development builds: the conversation-history migration records `v1.0.0-rc1.dev1` even when the checkout still reports a `v0.27.x` release. Use it only for a development database in that situation. Set it for each affected server process; keep it unset in production.
 
-## Database support
-
-| Metadata database | Go migration behavior |
-| --- | --- |
-| MySQL | Uses the GORM MySQL driver and runs the Go migration sequence. |
-| OceanBase | Supported through its MySQL-compatible protocol with `DB_TYPE=oceanbase`; the Go DAO still uses the MySQL driver. Test the migration with your OceanBase version and back up first. |
-
-This table concerns the **metadata database**, not the document search engine. Configuring OceanBase as a document engine does not by itself change where metadata migrations run.
+This migration procedure applies to the default MySQL metadata database.

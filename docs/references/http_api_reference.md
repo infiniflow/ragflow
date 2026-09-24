@@ -5639,9 +5639,9 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
 - `memory_size`: (*Body parameter*), `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: (*Body parameter*), `enum<string>`, *Optional*
 
@@ -6512,7 +6512,7 @@ Failure
 
 **GET** `/api/v1/system/healthz`
 
-Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
+Check the health status of RAGFlow's dependencies: metadata database, Kvrocks cache, document engine, object storage, and NATS message queue.
 
 :::caution DEPRECATED
 `GET /v1/system/healthz` is deprecated. Use this endpoint instead.
@@ -6554,6 +6554,7 @@ Content-Type: application/json
   "redis": "ok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "ok"
 }
 ```
@@ -6569,6 +6570,7 @@ Content-Type: application/json
   "redis": "nok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "nok",
   "_meta": {
     "redis": {
@@ -6582,6 +6584,7 @@ Content-Type: application/json
 Explanation:
 
 - Each service is reported as "ok" or "nok".
+- The `redis` field reports the Redis-compatible Kvrocks cache; `message_queue` reports the NATS connection.
 - The top-level `status` reflects overall health.
 - If any service is "nok", detailed error info appears in `_meta`.
 

@@ -21,19 +21,19 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 2. Stop the Go deployment:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml down
+   docker compose --env-file docker/.env -f docker/docker-compose.yml down
    ```
 
 :::caution WARNING
 Do not add `-v` unless you intentionally want to delete the deployment's data volumes.
 :::
 
-3. Set `DOC_ENGINE=infinity` in **docker/.env-go**.
+3. Set `DOC_ENGINE=infinity` in **docker/.env**.
 
 4. Start the Go deployment:
 
    ```bash
-   docker compose --env-file docker/.env-go -f docker/docker-compose-go.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
    ```
 
 5. Reindex the documents and verify retrieval before retiring the previous

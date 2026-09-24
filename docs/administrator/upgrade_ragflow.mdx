@@ -14,7 +14,7 @@ import TabItem from '@theme/TabItem';
 Upgrade RAGFlow to `nightly` or the latest, published release.
 
 :::info NOTE
-Upgrading RAGFlow in itself will *not* remove your uploaded/historical data. However, be aware that `docker compose -f docker/docker-compose.yml down -v` will remove Docker container volumes, resulting in data loss.
+Upgrading RAGFlow in itself will *not* remove your uploaded or historical data. However, `docker compose --env-file docker/.env -f docker/docker-compose.yml down -v` removes Docker container volumes and causes data loss.
 :::
 
 ## Upgrade RAGFlow to `nightly`, the Most Recent, Tested Docker Image
@@ -26,7 +26,7 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 1. Stop the server
 
    ```bash
-   docker compose -f docker/docker-compose.yml down
+   docker compose --env-file docker/.env -f docker/docker-compose.yml down
    ```
 
 2. Update the local code
@@ -35,7 +35,7 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    git pull
    ```
 
-3. Update **ragflow/docker/.env**:
+3. Update **docker/.env**:
 
    ```bash
    RAGFLOW_IMAGE=infiniflow/ragflow:nightly
@@ -44,8 +44,8 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 4. Update RAGFlow image and restart RAGFlow:
 
    ```bash
-   docker compose -f docker/docker-compose.yml pull
-   docker compose -f docker/docker-compose.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose.yml pull
+   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
    ```
 
 ## Upgrade RAGFlow to Given Release
@@ -55,7 +55,7 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 1. Stop the server
 
    ```bash
-   docker compose -f docker/docker-compose.yml down
+   docker compose --env-file docker/.env -f docker/docker-compose.yml down
    ```
 
 2. Update the local code
@@ -70,7 +70,7 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    git checkout -f v0.27.2
    ```
 
-4. Update **ragflow/docker/.env**:
+4. Update **docker/.env**:
 
    ```bash
    RAGFLOW_IMAGE=infiniflow/ragflow:v0.27.2
@@ -79,15 +79,15 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
 5. Update the RAGFlow image and restart RAGFlow:
 
    ```bash
-   docker compose -f docker/docker-compose.yml pull
-   docker compose -f docker/docker-compose.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose.yml pull
+   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
    ```
 
 ## Frequently Asked Questions
 
 ### Do I Need to Back Up My Datasets Before Upgrading RAGFlow?
 
-No, you do not need to. Upgrading RAGFlow in itself will *not* remove your uploaded data or dataset settings. However, be aware that `docker compose -f docker/docker-compose.yml down -v` will remove Docker container volumes, resulting in data loss.
+No, you do not need to. Upgrading RAGFlow in itself will *not* remove your uploaded data or dataset settings. However, `docker compose --env-file docker/.env -f docker/docker-compose.yml down -v` removes Docker container volumes and causes data loss.
 
 ### Upgrade RAGFlow in an Offline Environment (Without Internet Access)
 

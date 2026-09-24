@@ -2359,9 +2359,9 @@ Configurations to update. Available configurations:
 
 - `memory_size`: `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: `enum<string>`, *Optional*
 

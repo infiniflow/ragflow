@@ -69,16 +69,16 @@ Enabling the listener with its default `self-host` mode requires `mcp.host_api_k
 
 ## Docker
 
-For the Go deployment, use `docker/docker-compose-go.yml` with `docker/.env-go`. Uncomment the `mcp` example in `docker/service_conf.yaml.template` or set the equivalent `RAGFLOW_MCP_*` values in `docker/.env-go`. The Go entrypoint generates the runtime configuration from that template.
+For the Go deployment, use `docker/docker-compose.yml` with `docker/.env`. Uncomment the `mcp` example in `docker/service_conf.yaml.template` or set the equivalent `RAGFLOW_MCP_*` values in `docker/.env`. The Go entrypoint generates the runtime configuration from that template.
 
-To connect to the optional listener from outside the container, set its host to `0.0.0.0` and add this mapping under the relevant `ragflow-cpu` or `ragflow-gpu` service's `ports` in `docker/docker-compose-go.yml`:
+To connect to the optional listener from outside the container, set its host to `0.0.0.0` and add this mapping under the relevant `ragflow-cpu` or `ragflow-gpu` service's `ports` in `docker/docker-compose.yml`:
 
 ```yaml
 ports:
   - ${SVR_MCP_PORT}:9382
 ```
 
-The checked-in Go Compose file does not publish port `9382` by default. `SVR_MCP_PORT` is defined in `docker/.env-go`. Adjust the container-side port if you change `mcp.port`. Use `host` mode when external clients must authenticate individually.
+The checked-in Go Compose file does not publish port `9382` by default. `SVR_MCP_PORT` is defined in `docker/.env`. Adjust the container-side port if you change `mcp.port`. Use `host` mode when external clients must authenticate individually.
 
 ## Verify the endpoint
 

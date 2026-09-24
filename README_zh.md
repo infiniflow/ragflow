@@ -162,17 +162,6 @@
   <div style="width:100%;max-width:1000px;height:580px;border:1px dashed #b8c4cc;display:flex;align-items:center;justify-content:center;">系统架构图预留位置（1000 × 580）</div>
 </div>
 
-架构图从入口、元数据、摄取和查询四条关系展示 Go 版 RAGFlow：
-
-- **入口与管理：** UI、SDK 和 API 客户端经 Nginx 负载均衡进入 API service；CLI 连接 Admin service。Admin service 和 API service 访问以 MySQL 为例的 Meta service。
-- **数据摄取（蓝色）：** API service 通过 NATS 消息服务把任务交给 Ingestor service（数据摄取服务）。Ingestor 接收外部数据源的内容，并调用 Retrieval service、Storage service、Model provider 和 DeepDoc 完成索引、存储、模型处理及文档解析。图中的 DeepDoc 涵盖版面分析、OCR 和表格识别。
-- **查询（紫色）：** API service 调用 Retrieval service、Storage service 和 Model provider，组合检索结果并生成回答。
-- **元数据访问（青色）：** Admin service、API service 和 Ingestor service 与 Meta service 交互，维护业务元数据。
-
-图中的 Retrieval service 以 Infinity、Elasticsearch 为例，Storage service 以 MinIO、S3 为例；模型由所配置的 Model provider 提供。这些方框表示功能边界，不代表每个方框都必须单独部署为进程。Go 服务的 API、Admin、Ingestor 和 Syncer 构成完整服务链路，分别通过 `ragflow_server` 的不同模式启动；DeepDoc 在 Go 进程内运行。MCP 和 Sandbox Executor 是可选能力，不属于基础启动链路。
-
-完整链路：React Web、SDK 或 CLI → Nginx → Go API/Admin → Go Ingestor/Syncer → Metadata、Retrieval、Storage、Model Provider 和 DeepDoc。
-
 ## 🏠 本地部署
 
 本地部署提供 Docker 部署和源码启动两种方式：Docker 适合快速体验、集成测试和生产部署；源码启动适合 Go 服务开发、调试和二次开发。Docker 部署无需安装 Go，源码启动需要安装 `go.mod` 指定的 Go 版本；前端开发还需要 Node.js 和 npm。
@@ -181,9 +170,7 @@
 
 #### 📝 Docker 部署前提条件
 
-- CPU ≥ 4 核
-- RAM ≥ 16 GB
-- 磁盘 ≥ 50 GB
+- 建议起步配置：4 核 CPU、16 GB 内存和 50 GB 可用磁盘。实际资源需求取决于文档引擎、数据规模、解析任务和并发量；启用本地模型或 OceanBase 时，请同时满足相应组件的额外资源要求。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): 仅在你打算使用 RAGFlow 的代码执行器（沙箱）功能时才需要安装。
 
@@ -226,7 +213,7 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
    > 首次部署需要先构建 Go 镜像，构建时间取决于网络和机器性能。
 
-   将以下值写入 `docker/.env-go`：
+   将以下值写入 `docker/.env`：
 
    ```dotenv
    RAGFLOW_IMAGE=ragflow:go-local
@@ -234,18 +221,18 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
    ```bash
    cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
    cd docker
-   docker compose --env-file .env-go -f docker-compose-go.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
    ```
 
    默认 MySQL 配置下，Go 镜像入口会先执行数据库迁移，再通过 `bin/ragflow_server` 启动 Syncer、Admin、API 和 Ingestor。
 
-   > 如需 GPU 配置，在 **docker/.env-go** 中设置 `DEVICE=gpu`，并确保宿主机已配置 NVIDIA 容器运行环境。RAGFlow 开源版 1.0 的 DeepDoc 版面分析、OCR 和表格识别使用 CPU 推理；GPU 配置供其他支持 GPU 的组件或外部模型服务使用。
+   > 如需 GPU 配置，在 **docker/.env** 中设置 `DEVICE=gpu`，并确保宿主机已配置 NVIDIA 容器运行环境。RAGFlow 开源版 1.0 的 DeepDoc 版面分析、OCR 和表格识别使用 CPU 推理；GPU 配置供其他支持 GPU 的组件或外部模型服务使用。
 
 4. 服务器启动成功后再次确认服务器状态：
 
-   使用 `docker compose --env-file .env-go -f docker-compose-go.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
+   使用 `docker compose --env-file .env -f docker-compose.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -257,10 +244,10 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
    ```bash
    # CPU 部署
-   docker compose --env-file .env-go -f docker-compose-go.yml logs --tail 50 ragflow-cpu
+   docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
 
    # GPU 部署
-   docker compose --env-file .env-go -f docker-compose-go.yml logs --tail 50 ragflow-gpu
+   docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-gpu
    ```
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
@@ -275,18 +262,18 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
 #### ⚙️ Docker 配置与调整
 
-Go 版 Docker 部署使用 `docker/.env-go` 和 `docker/docker-compose-go.yml`，并使用 Kvrocks 作为 Redis 协议兼容的缓存和队列后端。镜像、端口、密码、文档引擎、模型镜像源及 GPU 配置请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 作为 Redis 协议兼容缓存，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎、模型镜像源及 GPU 配置请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 
 ### 🔧 源码编译 Docker 镜像
 
-Go 版镜像使用仓库根目录的 [Dockerfile_go](./Dockerfile_go)。
+Go 版镜像使用仓库根目录的 [Dockerfile](./Dockerfile)。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow
-docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
 ```
 
 构建依赖、代理参数、平台限制和启动验证步骤请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
@@ -319,7 +306,7 @@ docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144
-   docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml \
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
@@ -381,7 +368,7 @@ docker build --platform linux/amd64 -f Dockerfile_go -t ragflow:go-local .
 
    返回 HTTP 200 表示 API 可以正常响应。前端、ClickHouse 和 DeepDoc 的完整验证步骤请参阅[从源代码启动服务](./docs/develop/launch_ragflow_from_source.md#5-verify-the-startup)。
 
-   开发结束时，在各服务终端按 `Ctrl+C` 停止进程。如需停止依赖但保留容器以便下次使用，运行 `docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需删除依赖容器和 Compose 网络但保留命名数据卷，运行 `docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml down`。
+   开发结束时，在各服务终端按 `Ctrl+C` 停止进程。如需停止依赖但保留容器以便下次使用，运行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需删除依赖容器和 Compose 网络但保留命名数据卷，运行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`。
 
 详情请见 [从源代码启动服务](./docs/develop/launch_ragflow_from_source.md)。
 

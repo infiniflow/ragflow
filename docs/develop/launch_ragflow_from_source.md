@@ -12,6 +12,12 @@ sidebar_custom_props: {
 
 Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
 
+:::note macOS
+This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker
+Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to
+build and run the Go `linux/amd64` image.
+:::
+
 The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout
 analysis, OCR, and table recognition.
 
@@ -19,14 +25,16 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 
 ## Prerequisites
 
-- At least 4 CPU cores, 16 GB RAM, and 50 GB free disk space.
+- A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB
+  free disk space. Actual requirements depend on the selected document engine,
+  local models, data volume, parsing workload, and concurrency.
 - Docker 24.0.0 or later and Docker Compose v2.26.1 or later.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
 - Python 3.10 or later only for `ragflow_deps/download_go_deps.py`, which downloads the native libraries and model resources required by the Go build.
 
-See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. For Ubuntu 24.04 CMake installation details, see `internal/development.md` in the repository. Its Go installation example and `build.sh --help` may mention older versions; follow `go.mod` for the required Go version.
+See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
 ## 1. Get the source and build dependencies
 
@@ -109,13 +117,13 @@ The change made with `sysctl -w` is temporary. To preserve it after a reboot,
 add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
 ```bash
-docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
-docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml ps
+docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
+docker compose --env-file docker/.env -f docker/docker-compose-base.yml ps
 ```
 
 The base Compose file also defines an unprofiled Redis service. Starting every service with `up -d` can make Redis and Kvrocks compete for host port 6379; the explicit service list above starts Kvrocks for the Go backend. Compose may print a warning that `REDIS_PORT` is unset because the unused Redis service is still parsed.
 
-Check that the services are ready before migrating. For this host-run setup, edit **`conf/service_conf.yaml`** if you changed the published ports or credentials in `docker/.env-go`. The defaults include MySQL at `localhost:3306`, Elasticsearch at `localhost:1200`, MinIO at `localhost:9000`, Kvrocks at `localhost:6379`, NATS at `localhost:4222`, and ClickHouse at `localhost:9900`. Do not edit `docker/service_conf.yaml.template` for a Go process launched directly on the host, and no `/etc/hosts` entries for Docker service names are needed.
+Check that the services are ready before migrating. For this host-run setup, edit **`conf/service_conf.yaml`** if you changed the published ports or credentials in `docker/.env`. The defaults include MySQL at `localhost:3306`, Elasticsearch at `localhost:1200`, MinIO at `localhost:9000`, Kvrocks at `localhost:6379`, NATS at `localhost:4222`, and ClickHouse at `localhost:9900`. Do not edit `docker/service_conf.yaml.template` for a Go process launched directly on the host, and no `/etc/hosts` entries for Docker service names are needed.
 
 ## 3. Migrate and launch the Go backend
 
@@ -208,9 +216,9 @@ backend as registered before testing your intended RAGFlow workflow.
 Press `Ctrl+C` in the frontend and Go server terminals. To stop the dependency containers started in step 2:
 
 ```bash
-docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse
+docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse
 ```
 
 `stop` preserves the dependency containers for the next development session.
 To remove the containers and Compose network while keeping named data volumes,
-use `docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml down`.
+use `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
