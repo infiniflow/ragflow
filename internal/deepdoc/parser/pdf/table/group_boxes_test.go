@@ -460,3 +460,22 @@ func TestGroupBoxesByRC_UnlabeledBoxFormsOwnRow(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupBoxesByRC_UnlabeledBoxDoesNotBridgeAnnotatedRows(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 40, Top: 0, Bottom: 10, RTop: 0, RBott: 10, Text: "ROW0", R: 0, C: 0},
+		{X0: 45, X1: 60, Top: 0, Bottom: 10, Text: "LOOSE", R: -1, C: -1},
+		{X0: 70, X1: 100, Top: 0, Bottom: 10, RTop: 0, RBott: 10, Text: "ROW1", R: 1, C: 0},
+	}
+
+	grid := GroupBoxesByRC(boxes)
+	if len(grid) != 2 {
+		t.Fatalf("expected the unannotated box not to bridge R=0 and R=1, got %d rows: %v", len(grid), RowsToStrings(grid))
+	}
+	if !strings.Contains(grid[0][0].Text, "ROW0") {
+		t.Fatalf("first row lost R=0 box: %v", RowsToStrings(grid))
+	}
+	if !strings.Contains(grid[1][0].Text, "ROW1") {
+		t.Fatalf("second row lost R=1 box: %v", RowsToStrings(grid))
+	}
+}

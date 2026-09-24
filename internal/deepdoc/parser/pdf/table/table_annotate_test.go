@@ -634,9 +634,8 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
 }
 
-// TestMatchTableRegions_DeduplicatesOverlappingRegions verifies that a
-// low-confidence sub-table detection nested in a higher-confidence table
-// region is dropped before matching, so one table yields one region.
+// TestMatchTableRegions_DeduplicatesOverlappingRegions verifies that nested
+// detections covering exactly the same OCR boxes collapse to the parent.
 func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
 	regions := []pdf.DLARegion{
 		// Large table covering [0, 0, 1000, 1000] with high confidence
@@ -646,7 +645,11 @@ func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
 		// Independent table elsewhere
 		{X0: 0, Y0: 1200, X1: 1000, Y1: 1500, Label: "table", Confidence: 0.85},
 	}
-	matches := MatchTableRegions(nil, regions, 1.0)
+	boxes := []pdf.TextBox{
+		{X0: 100, X1: 200, Top: 850, Bottom: 900},
+		{X0: 100, X1: 200, Top: 1300, Bottom: 1350},
+	}
+	matches := MatchTableRegions(boxes, regions, 1.0)
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches after deduplicating overlapping sub-table, got %d", len(matches))
 	}
@@ -658,45 +661,89 @@ func TestMatchTableRegions_DeduplicatesOverlappingRegions(t *testing.T) {
 	}
 }
 
-// TestCleanupOverlappingTableRegions_ContainedFragmentCannotSwallowParent
-// pins the DLA failure mode: a dense-grid sub-table false positive sits
-// entirely inside the real table region yet scores HIGHER confidence than the
-// whole-table box. Confidence-only arbitration drops the parent and truncates
-// the table to the fragment; the containment branch must drop the child.
-func TestCleanupOverlappingTableRegions_ContainedFragmentCannotSwallowParent(t *testing.T) {
+// TestMatchTableRegions_ContainedDuplicateCannotSwallowParent pins the DLA
+// failure mode: an identical OCR-box match inside a parent region must not
+// truncate the parent, even when the child scores higher.
+func TestMatchTableRegions_ContainedDuplicateCannotSwallowParent(t *testing.T) {
 	reg := func(x0, y0, x1, y1, conf float64) pdf.DLARegion {
 		return pdf.DLARegion{X0: x0, Y0: y0, X1: x1, Y1: y1, Confidence: conf,
 			Label: pdf.LayoutTypeTable}
 	}
 	parent := reg(0, 0, 100, 100, 0.88) // whole table, slightly lower score
 	child := reg(10, 10, 30, 30, 0.92)  // nested fragment, higher score
-	out := cleanupOverlappingTableRegions([]pdf.DLARegion{parent, child})
-	if len(out) != 1 || out[0].X1 != 100 {
+	box := []pdf.TextBox{{X0: 12, X1: 20, Top: 12, Bottom: 20}}
+	out := MatchTableRegions(box, []pdf.DLARegion{parent, child}, 1)
+	if len(out) != 1 || out[0].Region.X1 != 100 {
 		t.Fatalf("expected only the parent region to survive, got %+v", out)
 	}
 
 	// Mirror image: the EARLIER region is the contained fragment.
-	out = cleanupOverlappingTableRegions([]pdf.DLARegion{child, parent})
-	if len(out) != 1 || out[0].X1 != 100 {
+	out = MatchTableRegions(box, []pdf.DLARegion{child, parent}, 1)
+	if len(out) != 1 || out[0].Region.X1 != 100 {
 		t.Fatalf("expected only the parent region to survive (child first), got %+v", out)
 	}
 
 	// Similar-size heavy overlap is NOT containment: confidence still rules.
 	a := reg(0, 0, 100, 100, 0.85)
 	b := reg(5, 0, 105, 100, 0.92) // ~95% mutual overlap, duplicate detection
-	out = cleanupOverlappingTableRegions([]pdf.DLARegion{a, b})
-	if len(out) != 1 || out[0].X0 != 5 {
+	out = MatchTableRegions([]pdf.TextBox{{X0: 10, X1: 90, Top: 10, Bottom: 90}}, []pdf.DLARegion{a, b}, 1)
+	if len(out) != 1 || out[0].Region.X0 != 5 {
 		t.Fatalf("near-duplicate overlap should keep the higher-confidence box, got %+v", out)
 	}
 }
 
-func TestCleanupOverlappingTableRegions_KeepsAmbiguousPartialOverlap(t *testing.T) {
+func TestMatchTableRegions_KeepsAmbiguousPartialOverlap(t *testing.T) {
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 0, X1: 100, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeTable},
 		{X0: 40, Y0: 0, X1: 140, Y1: 100, Confidence: 0.8, Label: pdf.LayoutTypeTable},
 	}
-	out := cleanupOverlappingTableRegions(regions)
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 20, Top: 10, Bottom: 20},
+		{X0: 120, X1: 140, Top: 10, Bottom: 20},
+	}
+	out := MatchTableRegions(boxes, regions, 1)
 	if len(out) != 2 {
 		t.Fatalf("two table regions with 60%% mutual overlap are ambiguous; want both retained, got %+v", out)
+	}
+}
+
+func TestMatchTableRegions_KeepsHighlyOverlappingRegionsWithDifferentBoxes(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Confidence: 0.9, Label: pdf.LayoutTypeTable},
+		{X0: 5, Y0: 0, X1: 105, Y1: 100, Confidence: 0.8, Label: pdf.LayoutTypeTable},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 4, Top: 10, Bottom: 20},
+		{X0: 101, X1: 105, Top: 10, Bottom: 20},
+	}
+
+	matches := MatchTableRegions(boxes, regions, 1)
+	if len(matches) != 2 {
+		t.Fatalf("high geometric overlap with distinct OCR coverage is ambiguous; keep both regions, got %+v", matches)
+	}
+	if len(matches[0].BoxIdx) != 1 || len(matches[1].BoxIdx) != 1 || matches[0].BoxIdx[0] == matches[1].BoxIdx[0] {
+		t.Fatalf("test requires independent OCR coverage, got %+v", matches)
+	}
+}
+
+func TestMatchTableRegions_KeepsNestedTableWithDistinctBoxCoverage(t *testing.T) {
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: pdf.LayoutTypeTable, Confidence: 0.9},
+		{X0: 40, Y0: 60, X1: 80, Y1: 90, Label: pdf.LayoutTypeTable, Confidence: 0.7},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 5, X1: 20, Top: 5, Bottom: 20},
+		{X0: 45, X1: 65, Top: 65, Bottom: 80},
+	}
+
+	matches := MatchTableRegions(boxes, regions, 1)
+	if len(matches) != 2 {
+		t.Fatalf("nested table with distinct OCR coverage must remain separate, got %d matches: %+v", len(matches), matches)
+	}
+	if len(matches[0].BoxIdx) != 2 || len(matches[1].BoxIdx) != 1 {
+		t.Fatalf("expected parent and child to retain distinct box coverage, got %+v", matches)
+	}
+	if imageOnly := MatchTableRegions(nil, regions, 1); len(imageOnly) != 2 {
+		t.Fatalf("nested image-only table regions lack box evidence for deduplication; keep both, got %+v", imageOnly)
 	}
 }

@@ -153,7 +153,11 @@ func TestBuildTableHTMLs_EmptyMergedGridKeepsContinuationRows(t *testing.T) {
 			{PageNumbers: []int{1}, Left: 0, Right: 200, Top: 0, Bottom: 60},
 		},
 		Scale: 1,
-		Cells: []pdf.TSRCell{{Text: "anchor", X0: 0, Y0: 10, X1: 80, Y1: 20}},
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 10, X1: 80, Y1: 20, Text: "stale anchor"},
+		}},
+		NeedsPageGridFallback: true,
+		Cells:                 []pdf.TSRCell{{Text: "anchor", X0: 0, Y0: 10, X1: 80, Y1: 20}},
 	}}
 	var boxes []pdf.TextBox
 	for page, texts := range [][]string{{"A", "B", "C", "D"}, {"E", "F", "G", "H"}} {
@@ -177,6 +181,34 @@ func TestBuildTableHTMLs_EmptyMergedGridKeepsContinuationRows(t *testing.T) {
 		if !strings.Contains(html, ">"+value+"<") {
 			t.Errorf("missing %q from merged HTML: %s", value, html)
 		}
+	}
+}
+
+func TestBuildTableHTMLs_IncompletePageFallbackKeepsAnchorGrid(t *testing.T) {
+	tables := []pdf.TableItem{{
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 40},
+			{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 0, Bottom: 40},
+		},
+		Scale: 1,
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "known anchor"},
+		}},
+		NeedsPageGridFallback: true,
+		Cells:                 []pdf.TSRCell{{Text: "known anchor", X0: 0, Y0: 0, X1: 100, Y1: 20}},
+	}}
+	boxes := []pdf.TextBox{{
+		Text: "page zero only", LayoutType: pdf.LayoutTypeTable,
+		PageNumber: 0, HasPageNumber: true, X0: 0, X1: 100, Top: 0, Bottom: 20,
+		R: 0, C: 0, RTop: 0, RBott: 20,
+	}}
+
+	html := buildTableHTMLs(boxes, tables)[0]
+	if !strings.Contains(html, ">known anchor<") {
+		t.Fatalf("incomplete page fallback erased the known anchor grid: %s", html)
+	}
+	if strings.Contains(html, "page zero only") {
+		t.Fatalf("partial page fallback must not replace the multi-page grid: %s", html)
 	}
 }
 

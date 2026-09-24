@@ -45,7 +45,6 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 			tableRegs = append(tableRegs, r)
 		}
 	}
-	tableRegs = cleanupOverlappingTableRegions(tableRegs)
 
 	var matches []TableMatch
 	for _, r := range tableRegs {
@@ -59,30 +58,33 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 			matches = append(matches, TableMatch{Region: r, BoxIdx: matched})
 		}
 	}
-	return matches
+	return cleanupOverlappingTableMatches(matches)
 }
 
-// cleanupOverlappingTableRegions removes contained fragments and near-duplicate
-// DLA table regions on the same page. Partial overlap alone is ambiguous.
-func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
+// cleanupOverlappingTableMatches removes near-duplicate table detections.
+// Contained regions are removed only when both detections cover the exact same
+// non-empty set of OCR boxes; otherwise the smaller region may be a real nested
+// table and must remain available to table construction.
+func cleanupOverlappingTableMatches(matches []TableMatch) []TableMatch {
 	const (
 		containedOverlap = 0.7
 		parentOverlap    = 0.4
 		duplicateOverlap = 0.8
+		imageDuplicate   = 0.95
 	)
-	if len(regs) <= 1 {
-		return regs
+	if len(matches) <= 1 {
+		return matches
 	}
-	dropped := make([]bool, len(regs))
-	for i := 0; i < len(regs); i++ {
+	dropped := make([]bool, len(matches))
+	for i := 0; i < len(matches); i++ {
 		if dropped[i] {
 			continue
 		}
-		for j := i + 1; j < len(regs); j++ {
+		for j := i + 1; j < len(matches); j++ {
 			if dropped[j] {
 				continue
 			}
-			a, b := regs[i], regs[j]
+			a, b := matches[i].Region, matches[j].Region
 			ix0 := math.Max(a.X0, b.X0)
 			iy0 := math.Max(a.Y0, b.Y0)
 			ix1 := math.Min(a.X1, b.X1)
@@ -98,14 +100,14 @@ func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
 			}
 			ratioA := interArea / areaA
 			ratioB := interArea / areaB
-			// A small detection inside a larger table can score higher than
-			// its parent, so drop the contained fragment regardless of score.
-			if ratioB >= containedOverlap && ratioA < parentOverlap {
+			sameBoxes := haveSameMatchedBoxes(matches[i].BoxIdx, matches[j].BoxIdx)
+			if ratioB >= containedOverlap && ratioA < parentOverlap && sameBoxes {
 				dropped[j] = true
-			} else if ratioA >= containedOverlap && ratioB < parentOverlap {
+			} else if ratioA >= containedOverlap && ratioB < parentOverlap && sameBoxes {
 				dropped[i] = true
 				break
-			} else if ratioA >= duplicateOverlap && ratioB >= duplicateOverlap {
+			} else if ratioA >= duplicateOverlap && ratioB >= duplicateOverlap &&
+				(sameBoxes || (len(matches[i].BoxIdx) == 0 && len(matches[j].BoxIdx) == 0 && ratioA >= imageDuplicate && ratioB >= imageDuplicate)) {
 				if a.Confidence > b.Confidence {
 					dropped[j] = true
 				} else if b.Confidence > a.Confidence {
@@ -120,13 +122,25 @@ func cleanupOverlappingTableRegions(regs []pdf.DLARegion) []pdf.DLARegion {
 			}
 		}
 	}
-	out := make([]pdf.DLARegion, 0, len(regs))
-	for i, r := range regs {
+	out := make([]TableMatch, 0, len(matches))
+	for i, match := range matches {
 		if !dropped[i] {
-			out = append(out, r)
+			out = append(out, match)
 		}
 	}
 	return out
+}
+
+func haveSameMatchedBoxes(a, b []int) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ── layout annotation ──────────────────────────────────────────────────

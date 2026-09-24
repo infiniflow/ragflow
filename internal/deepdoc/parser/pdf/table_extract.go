@@ -62,12 +62,12 @@ const (
 //
 // Returns:
 //   - annotated: page boxes after DLA/TSR annotation write-back (LayoutType,
-//     LayoutNo, R/C/H/SP fields) — same length as input pageBoxes.
+//     LayoutNo, R/C/H/SP fields), including any table-scoped rescued chars.
 //   - tables:    table candidates detected on this page.
 //   - dlaRegions: page-local DLA regions payload.
 func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	pageImg image.Image, pageBoxes []pdf.TextBox, pg int, renderErr error,
-	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, scale float64,
+	docAnalyzer pdf.DocAnalyzer, tb pdf.TableBuilder, scale float64, embeddedChars []pdf.TextChar,
 ) (annotated []pdf.TextBox, tables []pdf.TableItem,
 	dlaRegions []pdf.DLAPageRegions,
 ) {
@@ -84,10 +84,19 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	}
 	dlaRegions = []pdf.DLAPageRegions{{Page: pg, Regions: regions}}
 
+	// Recover missed embedded characters only after DLA identifies table
+	// regions. Page-wide rescue changes ordinary OCR text and can introduce
+	// decorative glyphs or page numbers into body text and chunking.
+	workingBoxes := append([]pdf.TextBox(nil), pageBoxes...)
+	// Match against an empty page to enumerate DLA table regions even when OCR
+	// missed every text box inside one of them.
+	initialMatches := tbl.MatchTableRegions(nil, regions, scale)
+	workingBoxes = append(workingBoxes, rescueTableChars(workingBoxes, embeddedChars, initialMatches, pg, scale)...)
+
 	// Copy page boxes so DLA annotation can append synthetic figure boxes
 	// without mutating the caller's slice. The annotated copy is what the
 	// caller should use downstream for layout/text-merge.
-	annotated = append([]pdf.TextBox(nil), pageBoxes...)
+	annotated = workingBoxes
 	annotated = tbl.AnnotateBoxLayouts(annotated, regions, scale, float64(pageImg.Bounds().Dy()))
 
 	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
@@ -102,6 +111,70 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 		}
 	}
 	return annotated, items, dlaRegions
+}
+
+func rescueTableChars(boxes []pdf.TextBox, chars []pdf.TextChar, matches []tbl.TableMatch, pg int, scale float64) []pdf.TextBox {
+	if len(chars) == 0 || len(matches) == 0 || scale <= 0 {
+		return nil
+	}
+	type charKey struct {
+		text                string
+		x0, x1, top, bottom float64
+	}
+	charKeyFor := func(c pdf.TextChar) charKey {
+		return charKey{text: c.Text, x0: c.X0, x1: c.X1, top: c.Top, bottom: c.Bottom}
+	}
+	seen := make(map[charKey]struct{})
+	var rescued []pdf.TextBox
+	for _, match := range matches {
+		var tableBoxes []pdf.TextBox
+		for _, b := range boxes {
+			boxChar := pdf.TextChar{X0: b.X0, X1: b.X1, Top: b.Top, Bottom: b.Bottom}
+			if charBoxOverlapRatio(boxChar, match.Region.X0/scale, match.Region.X1/scale,
+				match.Region.Y0/scale, match.Region.Y1/scale) >= 0.4 {
+				tableBoxes = append(tableBoxes, b)
+			}
+		}
+		region := match.Region
+		var candidates []pdf.TextChar
+		for _, c := range chars {
+			if _, ok := seen[charKeyFor(c)]; ok {
+				continue
+			}
+			if charBoxOverlapRatio(c, region.X0/scale, region.X1/scale, region.Y0/scale, region.Y1/scale) >= 0.4 {
+				candidates = append(candidates, c)
+			}
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		for _, c := range candidates {
+			for _, b := range tableBoxes {
+				if charBoxOverlapRatio(c, b.X0, b.X1, b.Top, b.Bottom) > 0.3 {
+					seen[charKeyFor(c)] = struct{}{}
+					break
+				}
+			}
+		}
+		recovered := rescueUnmatchedChars(tableBoxes, candidates, pg)
+		if len(recovered) <= len(tableBoxes) {
+			continue
+		}
+		newBoxes := recovered[len(tableBoxes):]
+		for i := range newBoxes {
+			newBoxes[i].IsOCR = true
+		}
+		rescued = append(rescued, newBoxes...)
+		for _, c := range candidates {
+			for _, b := range newBoxes {
+				if charBoxOverlapRatio(c, b.X0, b.X1, b.Top, b.Bottom) > 0.3 {
+					seen[charKeyFor(c)] = struct{}{}
+					break
+				}
+			}
+		}
+	}
+	return rescued
 }
 
 // processOneTable handles DLA+TSR+OCR for a single table region match.

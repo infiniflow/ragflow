@@ -189,6 +189,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// NeedsPageGridFallback marks a merged grid that is missing at least one
+	// page. ConstructTable may replace it only after page-numbered boxes cover
+	// every page; otherwise the known rows in Grid remain available.
+	NeedsPageGridFallback bool `json:"-"`
 	// Page is the 0-based page index this table was detected on. It is set
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.

@@ -738,12 +738,10 @@ func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
 	}
 }
 
-// TestRebuildMergedGrid_EmptyContinuationGridFallsBackToCells verifies that a
-// degenerate continuation grid (no rows, but its Cells were merged into the
-// anchor by MergeTablesAcrossPages) clears the anchor grid instead of leaving
-// a stale page-0-only grid: ConstructTable then rebuilds rows from the FULL
-// merged cell set rather than omitting the continuation cells.
-func TestRebuildMergedGrid_EmptyContinuationGridFallsBackToCells(t *testing.T) {
+// TestRebuildMergedGrid_EmptyContinuationGridPreservesAnchor verifies that a
+// degenerate continuation grid does not erase known anchor-page rows before
+// page-aware OCR fallback has proved it can rebuild the complete table.
+func TestRebuildMergedGrid_EmptyContinuationGridPreservesAnchor(t *testing.T) {
 	anchor := pdf.TableItem{
 		Grid: [][]pdf.TSRCell{{
 			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "a"},
@@ -753,11 +751,11 @@ func TestRebuildMergedGrid_EmptyContinuationGridFallsBackToCells(t *testing.T) {
 	}
 	emptyCont := [][]pdf.TSRCell{}
 	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{emptyCont})
-	if anchor.Grid != nil {
-		t.Errorf("stale anchor grid must be cleared for the cells fallback, got %d rows", len(anchor.Grid))
+	if len(anchor.Grid) != 1 || anchor.Grid[0][0].Text != "a" || anchor.Grid[0][1].Text != "b" {
+		t.Errorf("empty continuation must not erase known anchor grid: %+v", anchor.Grid)
 	}
-	if anchor.Rows != nil {
-		t.Errorf("stale anchor Rows must be cleared alongside Grid, got %v", anchor.Rows)
+	if len(anchor.Rows) != 1 || anchor.Rows[0][0] != "a" || anchor.Rows[0][1] != "b" {
+		t.Errorf("empty continuation must not erase known anchor rows: %v", anchor.Rows)
 	}
 }
 
@@ -842,6 +840,43 @@ func TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX(t *testing.T) {
 	}
 }
 
+func TestCanonicalColumns_DoesNotMergeColumnsThroughWideCell(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, X1: 100, Text: "a"},
+			{X0: 100, X1: 200, Text: "b"},
+			{X0: 200, X1: 300, Text: "c"},
+		},
+		{
+			// A row-level merged cell overlaps both first columns. It is
+			// intentionally unlabeled, as TSR does not always mark spans.
+			{X0: 0, X1: 200, Text: "merged"},
+			{X0: 200, X1: 300, Text: "c2"},
+		},
+	}
+
+	cols := canonicalColumns(grid)
+	if len(cols) != 3 {
+		t.Fatalf("wide cell must not transitively merge two canonical columns, got %v", cols)
+	}
+	for i, want := range [][2]float64{{0, 100}, {100, 200}, {200, 300}} {
+		if cols[i] != want {
+			t.Errorf("canonical column %d = %v, want %v", i, cols[i], want)
+		}
+	}
+}
+
+func TestAlignGridColsByX_PreservesSubstringCells(t *testing.T) {
+	grid := [][]pdf.TSRCell{{
+		{X0: 0, X1: 40, Text: "123"},
+		{X0: 30, X1: 70, Text: "12"},
+	}}
+	got := alignGridColsByX(grid, [][2]float64{{0, 100}, {100, 200}})
+	if got[0][0].Text != "123 12" {
+		t.Fatalf("colliding but distinct text must both survive, got %q", got[0][0].Text)
+	}
+}
+
 // TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped pins the
 // Jiangxi price-list shape: every continuation page carries a page-header
 // block that TSR labels as a caption; the merged table keeps only the
@@ -900,5 +935,13 @@ func TestIsRepeatedHeader_DoesNotDropUnlabelledDataMatchingHeader(t *testing.T) 
 	data := []pdf.TSRCell{{Text: "Type"}, {Text: "Value"}}
 	if isRepeatedHeader(header, data) {
 		t.Fatal("an unlabelled data row with the same text as the header must be retained")
+	}
+}
+
+func TestIsRepeatedHeader_StripsExplicitSingleColumnHeader(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "单位", Label: "table column header"}}
+	candidate := []pdf.TSRCell{{Text: "单位", Label: "table column header"}}
+	if !isRepeatedHeader(header, candidate) {
+		t.Fatal("an exactly repeated, explicitly labeled single-column header must be stripped")
 	}
 }

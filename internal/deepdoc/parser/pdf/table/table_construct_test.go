@@ -1012,6 +1012,22 @@ func TestCleanupOrphanColumns_PreservesSparseColumnsWithNormalGaps(t *testing.T)
 	}
 }
 
+func TestCleanupOrphanColumns_MergesCloseFragment(t *testing.T) {
+	rows := [][]pdf.TSRCell{
+		{{Text: "A0", X0: 0, X1: 40}, {X0: 45, X1: 60}, {Text: "A2", X0: 70, X1: 100}},
+		{{Text: "B0", X0: 0, X1: 40}, {X0: 45, X1: 60}, {Text: "B2", X0: 70, X1: 100}},
+		{{X0: 0, X1: 40}, {Text: "fragment", X0: 45, X1: 60}, {X0: 70, X1: 100}},
+		{{Text: "C0", X0: 0, X1: 40}, {X0: 45, X1: 60}, {Text: "C2", X0: 70, X1: 100}},
+	}
+	result := CleanupOrphanColumns(rows)
+	if len(result[0]) != 2 {
+		t.Fatalf("orphan within the 25-point fragment gap should merge, got %d columns", len(result[0]))
+	}
+	if !strings.Contains(result[2][0].Text+result[2][1].Text, "fragment") {
+		t.Fatalf("fragment text was lost during merge: %v", RowsToStrings(result))
+	}
+}
+
 // TestCleanupOrphanRows_PreservesSparseRowsWithNormalGaps verifies a lone-cell
 // row separated from its neighbors by more than maxOrphanMergeGap (a subtotal
 // or category row) is preserved instead of merged into an adjacent row.

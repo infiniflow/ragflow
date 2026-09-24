@@ -215,8 +215,12 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr start"))
 		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer, pageZoom)
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr done"))
+		var rescueChars []pdf.TextChar
+		if ocrUsed && len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars) {
+			rescueChars = chars
+		}
 		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
-			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
+			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom, rescueChars)
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "dla_tsr done"))
 	}
 
@@ -237,8 +241,12 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer, retryZoom)
+			var rescueChars []pdf.TextChar
+			if ocrUsed && len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars) {
+				rescueChars = chars
+			}
 			annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
-				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom)
+				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom, rescueChars)
 			pageImg = retryImg
 			pageZoom = retryZoom
 		} else if retryRenderErr != nil {
@@ -319,9 +327,6 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 		if hasCleanChars {
 			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
 			ocrUsed = ocrBoxes != nil
-			if ocrUsed {
-				ocrBoxes = rescueUnmatchedChars(ocrBoxes, chars, pg)
-			}
 		} else {
 			label := "scan page"
 			if len(chars) > 0 && !isScanNoise {
@@ -362,9 +367,8 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	return ocrBoxes, chars, ocrUsed
 }
 
-// rescueUnmatchedChars recovers visible embedded characters that were missed
-// by OCR detection (e.g. isolated table digits, minus signs, percentages) and
-// packages them into text boxes so they are not lost from table and text extraction.
+// rescueUnmatchedChars recovers embedded characters missed by OCR within a
+// matched table region and packages them into text boxes for table assembly.
 func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []pdf.TextBox {
 	if len(chars) == 0 {
 		return boxes
@@ -439,6 +443,7 @@ func rescueBoxes(chars []pdf.TextChar, pg int) []pdf.TextBox {
 		flush := func(end int) {
 			box := lyt.LineToTextBox(sorted[start:end])
 			box.PageNumber = pg
+			box.HasPageNumber = true
 			out = append(out, box)
 		}
 		for i := 1; i < len(sorted); i++ {

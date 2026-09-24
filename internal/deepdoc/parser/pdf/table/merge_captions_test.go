@@ -159,6 +159,13 @@ func TestDedupCaptions_ReplacementKeepsPositionOfFirstReplaced(t *testing.T) {
 	}
 }
 
+func TestDedupCaptions_DoesNotConflateNumberedCaptions(t *testing.T) {
+	got := dedupCaptions([]string{"Table 1", "Table 10"})
+	if len(got) != 2 || got[0] != "Table 1" || got[1] != "Table 10" {
+		t.Fatalf("distinct numbered captions must both survive, got %v", got)
+	}
+}
+
 func TestPickMergedCaption(t *testing.T) {
 	cases := []struct {
 		name, anchor, cont, want string
@@ -166,6 +173,7 @@ func TestPickMergedCaption(t *testing.T) {
 		{"empty anchor takes continuation", "", "Table 1", "Table 1"},
 		{"empty continuation keeps anchor", "Table 1", "", "Table 1"},
 		{"identical stays single", "报告标题", "报告标题", "报告标题"},
+		{"numbered captions stay distinct", "Table 1", "Table 10", "Table 1"},
 		{"anchor contains continuation", "全省价格信息2025年2月", "全省价格信息", "全省价格信息2025年2月"},
 		{"longer continuation replaces", "汇总表", "汇总表信息参考价", "汇总表信息参考价"},
 		{"unrelated continuation dropped, never concatenated", "全省价格信息一、阀门类", "全省价格信息八、电管类", "全省价格信息一、阀门类"},

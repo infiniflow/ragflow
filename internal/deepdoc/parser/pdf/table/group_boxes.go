@@ -45,17 +45,18 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	}
 	SortRFirstly(boxes, rowh/2)
 
-	// Assign row index to each box, resolving unassigned R (-1) into their
-	// own rows without leaking into row 0 (Python construct_table:200-213)
+	// Assign row indices using explicit R boundaries and vertical separation
+	// for unassigned boxes. Keep the last known R across unassigned boxes so
+	// they cannot bridge two annotated rows.
 	curR := 0
-	lastOrigR := boxes[0].R
+	lastKnownR := boxes[0].R
 	btm := boxes[0].Bottom
 	boxes[0].R = curR
 	for i := 1; i < len(boxes); i++ {
 		isNewRow := false
 		origR := boxes[i].R
-		if origR >= 0 && lastOrigR >= 0 {
-			if origR != lastOrigR {
+		if origR >= 0 && lastKnownR >= 0 {
+			if origR != lastKnownR {
 				isNewRow = true
 			}
 		} else if boxes[i].Top >= btm-3.0 {
@@ -64,11 +65,15 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 		if isNewRow {
 			curR++
 			btm = boxes[i].Bottom
-			lastOrigR = origR
+			if origR >= 0 {
+				lastKnownR = origR
+			}
 			boxes[i].R = curR
 		} else {
 			btm = (btm + boxes[i].Bottom) / 2.0
-			lastOrigR = origR
+			if origR >= 0 {
+				lastKnownR = origR
+			}
 			boxes[i].R = curR
 		}
 	}

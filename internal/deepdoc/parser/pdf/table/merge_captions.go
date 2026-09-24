@@ -8,6 +8,30 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
+func hasCaptionFragment(text, fragment string) bool {
+	if fragment == "" {
+		return true
+	}
+	isASCIIWord := func(b byte) bool {
+		return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
+	}
+	for offset := 0; offset < len(text); {
+		i := strings.Index(text[offset:], fragment)
+		if i < 0 {
+			return false
+		}
+		i += offset
+		end := i + len(fragment)
+		leftBoundary := i == 0 || !isASCIIWord(fragment[0]) || !isASCIIWord(text[i-1])
+		rightBoundary := end == len(text) || !isASCIIWord(fragment[len(fragment)-1]) || !isASCIIWord(text[end])
+		if leftBoundary && rightBoundary {
+			return true
+		}
+		offset = i + 1
+	}
+	return false
+}
+
 // captionText is a caption box's text plus its page and top edge, used to
 // order multiple captions of one table in DOCUMENT order before
 // concatenation: page first, then top→bottom within the page. Sorting by the
@@ -53,7 +77,7 @@ func dedupCaptions(captions []string) []string {
 		}
 		contained := false
 		for _, s := range seen {
-			if strings.Contains(s, t) {
+			if hasCaptionFragment(s, t) {
 				contained = true
 				break
 			}
@@ -64,7 +88,7 @@ func dedupCaptions(captions []string) []string {
 		kept := make([]string, 0, len(seen)+1)
 		replaced := false
 		for _, s := range seen {
-			if strings.Contains(t, s) {
+			if hasCaptionFragment(t, s) {
 				if !replaced {
 					kept = append(kept, t)
 					replaced = true
@@ -98,9 +122,9 @@ func pickMergedCaption(anchor, continuation string) string {
 		return a
 	case a == "":
 		return c
-	case strings.Contains(a, c):
+	case hasCaptionFragment(a, c):
 		return a
-	case strings.Contains(c, a):
+	case hasCaptionFragment(c, a):
 		return c
 	default:
 		return a

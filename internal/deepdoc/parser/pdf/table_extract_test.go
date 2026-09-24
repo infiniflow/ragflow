@@ -204,6 +204,30 @@ func TestProcessOneTable_HeaderToleranceScalesWithZoom(t *testing.T) {
 	}
 }
 
+func TestProcessOneTable_DropsTextBeyondHeaderTolerance(t *testing.T) {
+	p := NewParser(pdf.DefaultParserConfig())
+	const scale = 6.0
+	pageImg := image.NewRGBA(image.Rect(0, 0, 500, 400))
+	boxes := []pdf.TextBox{{
+		X0: 110 / scale, X1: 200 / scale, Top: 80 / scale, Bottom: 90 / scale,
+		Text: "UnrelatedAboveTable", LayoutType: pdf.LayoutTypeTable,
+	}}
+	match := tbl.TableMatch{
+		Region: pdf.DLARegion{X0: 100, Y0: 100, X1: 400, Y1: 300, Label: pdf.LayoutTypeTable},
+		BoxIdx: []int{0},
+	}
+	builder := &staticTableBuilder{cells: []pdf.TSRCell{{X0: 30, Y0: 60, X1: 150, Y1: 100, Label: "table row"}}}
+
+	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, scale)
+	for _, row := range item.Grid {
+		for _, cell := range row {
+			if strings.Contains(cell.Text, "UnrelatedAboveTable") {
+				t.Fatalf("text more than 5 PDF points above the first cell was included: grid=%v", item.Grid)
+			}
+		}
+	}
+}
+
 // ocrFillingDoc is like orientationScoringDoc but its OCRRecognize returns
 // text for any cropped image. It exists so a test can prove Go does NOT
 // perform per-cell OCR on empty TSR cells: even though the OCR engine would

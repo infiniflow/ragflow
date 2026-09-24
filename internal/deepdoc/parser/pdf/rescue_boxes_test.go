@@ -22,6 +22,11 @@ func TestRescueBoxes_SplitsWideCellGapsKeepsTightGroups(t *testing.T) {
 	if boxes[0].Text != "a b" || boxes[1].Text != "c d" {
 		t.Errorf("grouping = %q / %q, want %q / %q", boxes[0].Text, boxes[1].Text, "a b", "c d")
 	}
+	for i, box := range boxes {
+		if !box.HasPageNumber || box.PageNumber != 0 {
+			t.Errorf("box %d page metadata = (%v, %d), want (true, 0)", i, box.HasPageNumber, box.PageNumber)
+		}
+	}
 }
 
 // TestRescueUnmatchedChars_StraddlingGroupSurvives is the "345" case end to

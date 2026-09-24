@@ -47,6 +47,12 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 	if item != nil {
 		rows = item.Grid
 	}
+	if item != nil && item.NeedsPageGridFallback && len(boxes) > 0 {
+		if rebuilt := groupFallbackBoxesByPage(boxes, item.Positions); len(rebuilt) > 0 {
+			rows = rebuilt
+			item.NeedsPageGridFallback = false
+		}
+	}
 	if len(rows) == 0 && item != nil && len(boxes) > 0 {
 		rows = groupFallbackBoxesByPage(boxes, item.Positions)
 	}
@@ -144,11 +150,15 @@ func groupFallbackBoxesByPage(boxes []pdf.TextBox, positions []pdf.Position) [][
 	}
 	grids := make([][][]pdf.TSRCell, 0, len(pages))
 	for _, page := range pages {
-		if pageBoxes := pageSet[page]; len(pageBoxes) > 0 {
-			if grid := GroupBoxesByRC(pageBoxes); len(grid) > 0 {
-				grids = append(grids, grid)
-			}
+		pageBoxes := pageSet[page]
+		if len(pageBoxes) == 0 {
+			return nil
 		}
+		grid := GroupBoxesByRC(pageBoxes)
+		if len(grid) == 0 || !HasText(grid) {
+			return nil
+		}
+		grids = append(grids, grid)
 	}
 	return stackGrids(grids...)
 }

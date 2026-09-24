@@ -199,6 +199,7 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 	if len(anchor.Grid) == 0 || len(contGrids) == 0 {
 		return
 	}
+	anchor.NeedsPageGridFallback = false
 	allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)
 	uniCols := 0
 	for _, g := range allGrids {
@@ -209,17 +210,16 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 	keep := true
 	for _, g := range allGrids {
 		if len(g) == 0 {
-			// Degenerate grid with no rows: drop the whole merged grid so
-			// ConstructTable rebuilds from page-numbered boxes, then cells
-			// if boxes are unavailable. Keeping the anchor grid would omit
-			// the continuation page.
+			// A page has no grid rows. Defer replacement to ConstructTable,
+			// which can verify whether page-numbered boxes cover every page.
 			keep = false
 			break
 		}
 	}
 	if !keep {
-		anchor.Grid = nil
-		anchor.Rows = nil
+		// Preserve the known anchor rows until ConstructTable can verify that
+		// page-numbered boxes provide a complete replacement for every page.
+		anchor.NeedsPageGridFallback = true
 	} else {
 		// Stack the unpadded grids first so the padded zero-coordinate
 		// cells stay out of the Y-shift calculation, then align the
@@ -322,16 +322,18 @@ func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool 
 	}
 	headerTexts := make(map[string]bool)
 	headerLabelTexts := make(map[string]bool)
+	headerLabelCount := 0
 	for _, c := range headerRow {
 		t := strings.TrimSpace(c.Text)
 		if t != "" {
 			headerTexts[t] = true
 			if isHeaderLabel(c.Label) {
 				headerLabelTexts[t] = true
+				headerLabelCount++
 			}
 		}
 	}
-	if len(headerLabelTexts) < 2 {
+	if headerLabelCount == 0 {
 		return false
 	}
 	matches := 0
@@ -364,7 +366,8 @@ func isRepeatedHeader(headerRow []pdf.TSRCell, candidateRow []pdf.TSRCell) bool 
 	if candidateNonEmpty == 0 {
 		return false
 	}
-	return exactMatches >= 2 && float64(matches)/float64(candidateNonEmpty) >= 0.5
+	requiredExactMatches := min(2, headerLabelCount)
+	return exactMatches >= requiredExactMatches && float64(matches)/float64(candidateNonEmpty) >= 0.5
 }
 
 // gridYExtent returns the min/max Y0/Y1 across all cells of a grid.
@@ -472,18 +475,26 @@ func gridMaxWidth(g [][]pdf.TSRCell) int {
 	return w
 }
 
-// canonicalColumns derives the column X intervals of a grid by clustering its
-// cell X intervals. Spanning cells are excluded because their bbox is widened
-// across the region they cover, not a single column. Returns nil when fewer
-// than two columns can be derived.
+// canonicalColumns derives column X intervals from the row with the most
+// non-spanning cells, clustering only overlapping intervals in that row.
+// Spanning cells are excluded because their bbox covers multiple columns.
+// Returns nil when fewer than two columns can be derived.
 func canonicalColumns(g [][]pdf.TSRCell) [][2]float64 {
 	var ivs [][2]float64
 	for _, row := range g {
+		rowIntervals := make([][2]float64, 0, len(row))
 		for _, c := range row {
 			if c.X1 <= c.X0 || strings.Contains(c.Label, "spanning") {
 				continue
 			}
-			ivs = append(ivs, [2]float64{c.X0, c.X1})
+			rowIntervals = append(rowIntervals, [2]float64{c.X0, c.X1})
+		}
+		// A row with the most non-spanning cells is the strongest local
+		// evidence for the table's column model. Clustering intervals from
+		// every row lets one unlabeled merged cell bridge two adjacent
+		// columns transitively and collapse the canonical model.
+		if len(rowIntervals) > len(ivs) {
+			ivs = rowIntervals
 		}
 	}
 	if len(ivs) == 0 {
@@ -542,15 +553,23 @@ func alignGridColsByX(grid [][]pdf.TSRCell, cols [][2]float64) [][]pdf.TSRCell {
 				continue
 			}
 			p := &nr[ci]
-			if c.Text != "" && !strings.Contains(p.Text, c.Text) {
-				if p.Text == "" {
-					p.Text = c.Text
+			cText := strings.TrimSpace(c.Text)
+			pText := strings.TrimSpace(p.Text)
+			if cText != "" && pText != cText {
+				if pText == "" {
+					p.Text = cText
 				} else {
-					p.Text += " " + c.Text
+					p.Text = pText + " " + cText
 				}
 			}
-			if c.Label != "" && !strings.Contains(p.Label, c.Label) {
-				p.Label += " " + c.Label
+			cLabel := strings.TrimSpace(c.Label)
+			pLabel := strings.TrimSpace(p.Label)
+			if cLabel != "" && pLabel != cLabel {
+				if pLabel == "" {
+					p.Label = cLabel
+				} else {
+					p.Label = pLabel + " " + cLabel
+				}
 			}
 			if c.X0 < p.X0 {
 				p.X0 = c.X0
