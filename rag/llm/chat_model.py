@@ -66,8 +66,33 @@ class ReActMode(StrEnum):
 
 
 ERROR_PREFIX = "**ERROR**"
+TOOL_ROUND_LIMIT_PROMPT = (
+    "Tool execution limit reached for this answer. Do not call any more tools. "
+    "Using only the tool results already present in the conversation, provide a final answer now. "
+    "If the evidence is insufficient, say so explicitly and suggest one concrete clarification. "
+    "Do not describe this as a conversation or session limit."
+)
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
+
+
+def _merge_tool_call_delta(tool_calls, tool_call):
+    index = tool_call.index
+    if index not in tool_calls:
+        tool_call.function.arguments = tool_call.function.arguments or ""
+        tool_calls[index] = tool_call
+        return
+
+    current = tool_calls[index]
+    if not current.id and tool_call.id:
+        current.id = tool_call.id
+    if not current.function.name and tool_call.function.name:
+        current.function.name = tool_call.function.name
+    current.function.arguments += tool_call.function.arguments or ""
+
+
+def _tool_error_text(err):
+    return f"Tool call failed: {type(err).__name__}"
 
 
 # Generation parameters that are safe to forward to the underlying completion
@@ -516,7 +541,7 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2, default=str) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -684,7 +709,7 @@ class Base(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     logging.info(f"Response tool_calls={response.choices[0].message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in response.choices[0].message.tool_calls])
@@ -710,7 +735,7 @@ class Base(ABC):
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
                 response, token_count = await self._async_chat(history, gen_conf)
                 ans += response
                 # _async_chat set self.last_usage to its own call; fold it into the aggregate.
@@ -790,13 +815,7 @@ class Base(ABC):
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             for tool_call in delta.tool_calls:
-                                index = tool_call.index
-                                if index not in final_tool_calls:
-                                    if not tool_call.function.arguments:
-                                        tool_call.function.arguments = ""
-                                    final_tool_calls[index] = tool_call
-                                else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                                _merge_tool_call_delta(final_tool_calls, tool_call)
                             continue
 
                         if not hasattr(delta, "content") or delta.content is None:
@@ -856,9 +875,14 @@ class Base(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
-                    tcs = list(final_tool_calls.values())
+                    tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
+                    if not tcs:
+                        if answer:
+                            yield total_tokens
+                            return
+                        continue
                     logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
@@ -888,13 +912,12 @@ class Base(ABC):
                         yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
                     messages=history,
                     stream=True,
-                    **self._tool_request_kwargs(tools),
                     **gen_conf,
                     **extra_request_kwargs,
                 )
@@ -2655,7 +2678,7 @@ class LiteLLMBase(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
@@ -2668,7 +2691,7 @@ class LiteLLMBase(ABC):
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
                 response, token_count = await self.async_chat("", history, gen_conf)
                 ans += response
@@ -2752,13 +2775,7 @@ class LiteLLMBase(ABC):
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             for tool_call in delta.tool_calls:
-                                index = tool_call.index
-                                if index not in final_tool_calls:
-                                    if not tool_call.function.arguments:
-                                        tool_call.function.arguments = ""
-                                    final_tool_calls[index] = tool_call
-                                else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                                _merge_tool_call_delta(final_tool_calls, tool_call)
                             continue
 
                         if not hasattr(delta, "content") or delta.content is None:
@@ -2836,9 +2853,14 @@ class LiteLLMBase(ABC):
                             return tc, name, args, result, None
                         except Exception as e:
                             logging.exception(f"Tool call failed: {tc}")
-                            return tc, name, {}, None, e
+                            return tc, name, {}, None, _tool_error_text(e)
 
-                    tcs = list(final_tool_calls.values())
+                    tcs = [tc for tc in final_tool_calls.values() if tc.function.name]
+                    if not tcs:
+                        if answer:
+                            yield total_tokens
+                            return
+                        continue
                     logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
@@ -2874,9 +2896,9 @@ class LiteLLMBase(ABC):
                         yield self._verbose_tool_use(name, args, err if err else result)
 
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
-                history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+                history.append({"role": "user", "content": TOOL_ROUND_LIMIT_PROMPT})
 
-                completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
+                completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
                 completion_args.setdefault("stream_options", {})["include_usage"] = True
                 response = await litellm.acompletion(
                     **completion_args,
