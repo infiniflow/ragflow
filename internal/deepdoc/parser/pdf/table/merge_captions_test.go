@@ -166,6 +166,31 @@ func TestDedupCaptions_DoesNotConflateNumberedCaptions(t *testing.T) {
 	}
 }
 
+func TestDedupCaptions_DoesNotConflateCJKSubstrings(t *testing.T) {
+	got := dedupCaptions([]string{"价格", "材料价格说明"})
+	if len(got) != 2 || got[0] != "价格" || got[1] != "材料价格说明" {
+		t.Fatalf("distinct CJK captions with substring overlap must both survive, got %v", got)
+	}
+}
+
+func TestInjectCaption_DistinguishesNumberedExistingCaption(t *testing.T) {
+	section := pdf.Section{Text: "<table><caption>Table 10</caption><tr></tr></table>", LayoutType: "table"}
+	injectCaption(&section, []string{"Table 1"})
+	want := "<table><caption>Table 10 Table 1</caption><tr></tr></table>"
+	if section.Text != want {
+		t.Fatalf("distinct numbered caption was treated as a substring duplicate: got %q, want %q", section.Text, want)
+	}
+}
+
+func TestInjectCaption_FillsEmptyCaptionElement(t *testing.T) {
+	section := pdf.Section{Text: "<table><caption></caption><tr></tr></table>", LayoutType: "table"}
+	injectCaption(&section, []string{"Table 1"})
+	want := "<table><caption>Table 1</caption><tr></tr></table>"
+	if section.Text != want {
+		t.Fatalf("empty caption element must be filled: got %q, want %q", section.Text, want)
+	}
+}
+
 func TestPickMergedCaption(t *testing.T) {
 	cases := []struct {
 		name, anchor, cont, want string

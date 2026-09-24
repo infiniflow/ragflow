@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
@@ -74,6 +75,41 @@ func TestEnrichOnePageWithDeepDoc_RescuesOnlyInsideTableRegion(t *testing.T) {
 		if box.Text == "BODY" {
 			t.Fatalf("text outside the DLA table region was added as a page box: %+v", box)
 		}
+	}
+}
+
+func TestEnrichOnePageWithDeepDoc_DoesNotPromoteUnmatchedDLARegionFromTextLayer(t *testing.T) {
+	p := NewParser(pdf.DefaultParserConfig())
+	doc := &MockDocAnalyzer{
+		Healthy:    true,
+		DLARegions: []pdf.DLARegion{{X0: 0, Y0: 0, X1: 45, Y1: 90, Label: pdf.LayoutTypeTable}},
+		TSRCells:   []pdf.TSRCell{{X0: 0, Y0: 0, X1: 45, Y1: 90, Label: "table row"}},
+	}
+	pageBoxes := []pdf.TextBox{{
+		Text: "separate OCR text", X0: 22, X1: 29, Top: 2, Bottom: 8,
+	}}
+	chars := []pdf.TextChar{{
+		Text: "prose", X0: 2, X1: 10, Top: 20, Bottom: 26, PageNumber: 0,
+	}}
+
+	annotated, tables, _ := p.enrichOnePageWithDeepDoc(
+		t.Context(), testPageImg(), pageBoxes, 0, nil, doc, NewTableBuilderFor(doc), pdf.DlaScale, chars)
+	if len(tables) != 0 {
+		t.Fatalf("unmatched DLA table region must not become a table from text-layer chars alone: %+v", tables)
+	}
+	if len(annotated) != 1 || annotated[0].Text != "separate OCR text" {
+		t.Fatalf("unmatched text-layer prose was injected into page boxes: %+v", annotated)
+	}
+}
+
+func TestRescueTableChars_DoesNotRescueFromUnmatchedEmptyPageRegion(t *testing.T) {
+	regions := []pdf.DLARegion{{X0: 0, Y0: 0, X1: 45, Y1: 90, Label: pdf.LayoutTypeTable}}
+	matches := tbl.MatchTableRegions(nil, regions, 1)
+	chars := []pdf.TextChar{{Text: "prose", X0: 2, X1: 10, Top: 20, Bottom: 26, PageNumber: 0}}
+
+	got := rescueTableChars(nil, chars, matches, 0, 1)
+	if len(got) != 0 {
+		t.Fatalf("a DLA candidate without OCR evidence must not rescue ordinary text-layer chars: %+v", got)
 	}
 }
 

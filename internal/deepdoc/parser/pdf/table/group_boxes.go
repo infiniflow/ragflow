@@ -1,6 +1,7 @@
 package table
 
 import (
+	"math"
 	"sort"
 	"strings"
 
@@ -32,6 +33,57 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	}
 	if maxR <= 0 {
 		return GroupBoxesByYX(boxes)
+	}
+	// A box can miss its R annotation even when its vertical band clearly
+	// overlaps an annotated row. Attach those boxes before row sequencing so
+	// they do not create a phantom row between two known R values.
+	type rowBand struct{ top, bottom float64 }
+	bands := make(map[int]rowBand)
+	for _, b := range boxes {
+		if b.R < 0 {
+			continue
+		}
+		top, bottom := b.RTop, b.RBott
+		if bottom <= top {
+			top, bottom = b.Top, b.Bottom
+		}
+		band, ok := bands[b.R]
+		if !ok || top < band.top {
+			band.top = top
+		}
+		if !ok || bottom > band.bottom {
+			band.bottom = bottom
+		}
+		bands[b.R] = band
+	}
+	rowIndices := make([]int, 0, len(bands))
+	for r := range bands {
+		rowIndices = append(rowIndices, r)
+	}
+	sort.Ints(rowIndices)
+	for i := range boxes {
+		if boxes[i].R >= 0 {
+			continue
+		}
+		height := boxes[i].Bottom - boxes[i].Top
+		if height <= 0 {
+			continue
+		}
+		bestR, bestOverlap, bestCenterDistance := -1, 0.3, math.MaxFloat64
+		for _, r := range rowIndices {
+			band := bands[r]
+			overlap := math.Min(boxes[i].Bottom, band.bottom) - math.Max(boxes[i].Top, band.top)
+			ratio := overlap / height
+			centerDistance := math.Abs((boxes[i].Top + boxes[i].Bottom - band.top - band.bottom) / 2)
+			if ratio > bestOverlap || (ratio == bestOverlap && centerDistance < bestCenterDistance) {
+				bestR, bestOverlap, bestCenterDistance = r, ratio, centerDistance
+			}
+		}
+		if bestR >= 0 {
+			boxes[i].R = bestR
+			boxes[i].RTop = bands[bestR].top
+			boxes[i].RBott = bands[bestR].bottom
+		}
 	}
 
 	var rowh float64

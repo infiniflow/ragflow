@@ -25,6 +25,26 @@ func TestGroupBoxesByRC_RDiffSplitsRows(t *testing.T) {
 	}
 }
 
+func TestGroupBoxesByRC_MixedAnnotationsKeepUnlabeledBoxWithOverlappingRow(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 40, X1: 60, Top: 0, Bottom: 10, Text: "previous", R: 0, C: 0, RTop: 0, RBott: 10},
+		// This box is in row 1 but missed the row-overlap annotation threshold.
+		{X0: 10, X1: 30, Top: 9, Bottom: 19, Text: "row one left", R: -1, C: 0},
+		{X0: 40, X1: 60, Top: 9, Bottom: 19, Text: "row one right", R: 1, C: 1, RTop: 9, RBott: 19},
+	}
+
+	rows := GroupBoxesByRC(boxes)
+	if len(rows) != 2 {
+		t.Fatalf("an unannotated box overlapping annotated row 1 must not split it into another row, got %d rows: %+v", len(rows), rows)
+	}
+	if len(rows[1]) != 2 {
+		t.Fatalf("row 1 must retain both columns, got %+v", rows[1])
+	}
+	if rows[1][0].Text != "row one left" || rows[1][1].Text != "row one right" {
+		t.Fatalf("mixed R annotations split one physical row: %+v", rows[1])
+	}
+}
+
 func TestGroupBoxesByRC_MergesCloseCols(t *testing.T) {
 	// R=0 has C=0,1. R=1 has C=0,1. C compression → 2 cols each.
 	boxes := []pdf.TextBox{

@@ -88,9 +88,10 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	// regions. Page-wide rescue changes ordinary OCR text and can introduce
 	// decorative glyphs or page numbers into body text and chunking.
 	workingBoxes := append([]pdf.TextBox(nil), pageBoxes...)
-	// Match against an empty page to enumerate DLA table regions even when OCR
-	// missed every text box inside one of them.
-	initialMatches := tbl.MatchTableRegions(nil, regions, scale)
+	// Rescue only inside table regions already supported by OCR boxes. Matching
+	// against an empty page would promote every DLA table candidate, including a
+	// false-positive region over ordinary PDF text.
+	initialMatches := tbl.MatchTableRegions(pageBoxes, regions, scale)
 	workingBoxes = append(workingBoxes, rescueTableChars(workingBoxes, embeddedChars, initialMatches, pg, scale)...)
 
 	// Copy page boxes so DLA annotation can append synthetic figure boxes
@@ -127,6 +128,9 @@ func rescueTableChars(boxes []pdf.TextBox, chars []pdf.TextChar, matches []tbl.T
 	seen := make(map[charKey]struct{})
 	var rescued []pdf.TextBox
 	for _, match := range matches {
+		if len(match.BoxIdx) == 0 {
+			continue
+		}
 		var tableBoxes []pdf.TextBox
 		for _, b := range boxes {
 			boxChar := pdf.TextChar{X0: b.X0, X1: b.X1, Top: b.Top, Bottom: b.Bottom}

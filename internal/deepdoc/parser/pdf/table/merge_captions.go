@@ -4,6 +4,8 @@ import (
 	"html"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -12,9 +14,11 @@ func hasCaptionFragment(text, fragment string) bool {
 	if fragment == "" {
 		return true
 	}
-	isASCIIWord := func(b byte) bool {
-		return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
+	isWordRune := func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsNumber(r)
 	}
+	first, _ := utf8.DecodeRuneInString(fragment)
+	last, _ := utf8.DecodeLastRuneInString(fragment)
 	for offset := 0; offset < len(text); {
 		i := strings.Index(text[offset:], fragment)
 		if i < 0 {
@@ -22,8 +26,16 @@ func hasCaptionFragment(text, fragment string) bool {
 		}
 		i += offset
 		end := i + len(fragment)
-		leftBoundary := i == 0 || !isASCIIWord(fragment[0]) || !isASCIIWord(text[i-1])
-		rightBoundary := end == len(text) || !isASCIIWord(fragment[len(fragment)-1]) || !isASCIIWord(text[end])
+		leftBoundary := i == 0
+		if i > 0 {
+			previous, _ := utf8.DecodeLastRuneInString(text[:i])
+			leftBoundary = !isWordRune(first) || !isWordRune(previous)
+		}
+		rightBoundary := end == len(text)
+		if end < len(text) {
+			next, _ := utf8.DecodeRuneInString(text[end:])
+			rightBoundary = !isWordRune(last) || !isWordRune(next)
+		}
 		if leftBoundary && rightBoundary {
 			return true
 		}
@@ -105,6 +117,22 @@ func dedupCaptions(captions []string) []string {
 	return seen
 }
 
+func containsMergedCaption(text, fragment string) bool {
+	if hasCaptionFragment(text, fragment) {
+		return true
+	}
+	// CJK TSR caption fragments can be split mid-phrase across pages. In this
+	// one cross-page selection, keep the longer rendering when it contains the
+	// entire shorter caption; ordinary caption-list dedup still requires word
+	// boundaries so separate captions are not collapsed.
+	for _, r := range fragment {
+		if r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsNumber(r)) {
+			return false
+		}
+	}
+	return fragment != "" && strings.Contains(text, fragment)
+}
+
 // pickMergedCaption decides the caption of a cross-page merged table: ONE
 // logical table keeps ONE caption, the anchor page's. Continuation pages
 // typically repeat the page-header block (title + that page's section names)
@@ -122,9 +150,9 @@ func pickMergedCaption(anchor, continuation string) string {
 		return a
 	case a == "":
 		return c
-	case hasCaptionFragment(a, c):
+	case containsMergedCaption(a, c):
 		return a
-	case hasCaptionFragment(c, a):
+	case containsMergedCaption(c, a):
 		return c
 	default:
 		return a
@@ -436,10 +464,10 @@ func injectCaption(table *pdf.Section, captions []string) {
 	if startIdx := strings.Index(table.Text, openCap); startIdx >= 0 {
 		if endIdx := strings.Index(table.Text[startIdx:], closeCap); endIdx >= 0 {
 			existingCap := table.Text[startIdx+len(openCap) : startIdx+endIdx]
-			if strings.Contains(existingCap, escaped) {
+			if hasCaptionFragment(existingCap, escaped) {
 				return
 			}
-			if strings.Contains(escaped, existingCap) {
+			if hasCaptionFragment(escaped, existingCap) {
 				table.Text = table.Text[:startIdx+len(openCap)] + escaped + table.Text[startIdx+endIdx:]
 				return
 			}

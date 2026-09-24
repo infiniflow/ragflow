@@ -759,6 +759,35 @@ func TestRebuildMergedGrid_EmptyContinuationGridPreservesAnchor(t *testing.T) {
 	}
 }
 
+func TestMergeTablesAcrossPages_UsesContinuationCellsWhenGridIsMissing(t *testing.T) {
+	anchor := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "anchor row"},
+		}},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 740, Bottom: 800}},
+		Scale:     1,
+	}
+	continuation := pdf.TableItem{
+		Cells: []pdf.TSRCell{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "continuation row 1"},
+			{X0: 0, Y0: 30, X1: 100, Y1: 50, Text: "continuation row 2"},
+		},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 50, Bottom: 110}},
+		Scale:     1,
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, continuation}, nil, map[int]float64{0: 842, 1: 842})
+	if len(merged) != 1 {
+		t.Fatalf("expected one merged table, got %d", len(merged))
+	}
+	if len(merged[0].Grid) != 3 {
+		t.Fatalf("missing continuation grid must not hide text-bearing continuation cells, got grid=%+v", merged[0].Grid)
+	}
+	if got := RowsToStrings(merged[0].Grid); len(got) != 3 || got[1][0] != "continuation row 1" || got[2][0] != "continuation row 2" {
+		t.Fatalf("continuation cell text was not retained in merged rows: %v", got)
+	}
+}
+
 // TestGridsHaveUniformWidth pins the per-ROW uniformity guarantee that gates
 // index padding: a row narrower than its page's maximum signals a locally
 // missed separator, and index padding would shift its values left under the
@@ -862,6 +891,55 @@ func TestCanonicalColumns_DoesNotMergeColumnsThroughWideCell(t *testing.T) {
 	for i, want := range [][2]float64{{0, 100}, {100, 200}, {200, 300}} {
 		if cols[i] != want {
 			t.Errorf("canonical column %d = %v, want %v", i, cols[i], want)
+		}
+	}
+}
+
+func TestCanonicalColumns_IgnoresRowsWithOnlySpanningCellsForConsensus(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, X1: 300, Text: "title", Label: "table spanning"}},
+		{{X0: 0, X1: 300, Text: "note", Label: "table spanning"}},
+		{
+			{X0: 0, X1: 100, Text: "a"},
+			{X0: 100, X1: 200, Text: "b"},
+			{X0: 200, X1: 300, Text: "c"},
+		},
+		{{X0: 0, X1: 300, Text: "footer", Label: "table spanning"}},
+	}
+
+	cols := canonicalColumns(grid)
+	if len(cols) != 3 {
+		t.Fatalf("rows containing only spanning cells must not outvote the body column model, got %v", cols)
+	}
+}
+
+func TestRebuildMergedGrid_DoesNotUseOneOversegmentedRowAsColumnModel(t *testing.T) {
+	row := func(y0 float64, texts ...string) []pdf.TSRCell {
+		cells := make([]pdf.TSRCell, len(texts))
+		width := 300.0 / float64(len(texts))
+		for i, text := range texts {
+			cells[i] = pdf.TSRCell{
+				X0: float64(i) * width, Y0: y0, X1: float64(i+1) * width, Y1: y0 + 20, Text: text,
+			}
+		}
+		return cells
+	}
+	anchor := pdf.TableItem{Grid: [][]pdf.TSRCell{
+		row(0, "a", "b", "c"),
+		row(20, "d", "e", "f"),
+	}}
+	continuation := [][]pdf.TSRCell{
+		row(0, "g", "h", "i"),
+		row(20, "j1", "j2", "k", "l"), // one row was over-segmented by TSR
+	}
+
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{continuation})
+	if len(anchor.Grid) != 4 {
+		t.Fatalf("all rows must remain in the merged grid, got %d", len(anchor.Grid))
+	}
+	for i, got := range anchor.Grid {
+		if len(got) != 3 {
+			t.Fatalf("row %d follows an isolated over-segmented row: got %d columns, want the 3-column consensus", i, len(got))
 		}
 	}
 }

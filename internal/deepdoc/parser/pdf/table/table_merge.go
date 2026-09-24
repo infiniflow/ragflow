@@ -146,7 +146,15 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			// Merge: combine cells and positions.
 			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
-			contGrids = append(contGrids, tables[jt.idx].Grid)
+			contGrid := tables[jt.idx].Grid
+			if len(contGrid) == 0 && HasAnyText(tables[jt.idx].Cells) {
+				// A page can lack its box-derived grid while TSR cells still
+				// carry text. Group those cells while the page boundary is known,
+				// before the flat Cells slice is merged into the anchor.
+				contCells := append([]pdf.TSRCell(nil), tables[jt.idx].Cells...)
+				contGrid = GroupTSRCellsToRows(contCells)
+			}
+			contGrids = append(contGrids, contGrid)
 			if tables[jt.idx].Caption != "" {
 				anchor.Caption = pickMergedCaption(anchor.Caption, tables[jt.idx].Caption)
 			}
@@ -227,7 +235,7 @@ func rebuildMergedGrid(anchor *pdf.TableItem, contGrids [][][]pdf.TSRCell) {
 		if rebuilt := stackGrids(allGrids...); len(rebuilt) > 0 {
 			if gridsHaveUniformWidth(allGrids) {
 				anchor.Grid = padGridCols(rebuilt, uniCols)
-			} else if cols := canonicalColumns(widestGrid(allGrids)); len(cols) >= 2 {
+			} else if cols := canonicalColumns(rebuilt); len(cols) >= 2 {
 				common.Debug("rebuildMergedGrid: per-page column counts differ, aligning by X",
 					zap.Int("maxCols", uniCols), zap.Int("canonicalCols", len(cols)), zap.Int("rows", len(rebuilt)))
 				anchor.Grid = alignGridColsByX(rebuilt, cols)
@@ -451,20 +459,6 @@ func gridsHaveUniformWidth(grids [][][]pdf.TSRCell) bool {
 	return true
 }
 
-// widestGrid returns the grid with the longest row — its columns are the best
-// candidate for the shared column model (TSR can only miss separators, so the
-// page with the most columns detected the most structure).
-func widestGrid(grids [][][]pdf.TSRCell) [][]pdf.TSRCell {
-	var best [][]pdf.TSRCell
-	bestW := 0
-	for _, g := range grids {
-		if w := gridMaxWidth(g); w > bestW {
-			best, bestW = g, w
-		}
-	}
-	return best
-}
-
 func gridMaxWidth(g [][]pdf.TSRCell) int {
 	w := 0
 	for _, row := range g {
@@ -475,12 +469,15 @@ func gridMaxWidth(g [][]pdf.TSRCell) int {
 	return w
 }
 
-// canonicalColumns derives column X intervals from the row with the most
-// non-spanning cells, clustering only overlapping intervals in that row.
-// Spanning cells are excluded because their bbox covers multiple columns.
-// Returns nil when fewer than two columns can be derived.
+// canonicalColumns derives column X intervals from the most common count of
+// non-spanning cells across the stacked rows, clustering only overlapping
+// intervals in a representative row. A single over-segmented row must not
+// redefine every page's column model. Spanning cells are excluded because
+// their bbox covers multiple columns. Returns nil when fewer than two columns
+// can be derived.
 func canonicalColumns(g [][]pdf.TSRCell) [][2]float64 {
-	var ivs [][2]float64
+	var candidates [][][2]float64
+	counts := make(map[int]int)
 	for _, row := range g {
 		rowIntervals := make([][2]float64, 0, len(row))
 		for _, c := range row {
@@ -489,12 +486,25 @@ func canonicalColumns(g [][]pdf.TSRCell) [][2]float64 {
 			}
 			rowIntervals = append(rowIntervals, [2]float64{c.X0, c.X1})
 		}
-		// A row with the most non-spanning cells is the strongest local
-		// evidence for the table's column model. Clustering intervals from
-		// every row lets one unlabeled merged cell bridge two adjacent
-		// columns transitively and collapse the canonical model.
-		if len(rowIntervals) > len(ivs) {
+		candidates = append(candidates, rowIntervals)
+		if len(rowIntervals) > 0 {
+			counts[len(rowIntervals)]++
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	mode, modeCount := 0, 0
+	for count, frequency := range counts {
+		if frequency > modeCount || (frequency == modeCount && count > mode) {
+			mode, modeCount = count, frequency
+		}
+	}
+	var ivs [][2]float64
+	for _, rowIntervals := range candidates {
+		if len(rowIntervals) == mode {
 			ivs = rowIntervals
+			break
 		}
 	}
 	if len(ivs) == 0 {
