@@ -25,7 +25,7 @@ import (
 // canvasTenantID derives the tenant id from canvas state, falling back to
 // user_id. Shared by agentic search and dataset-navigation tools.
 func canvasTenantID(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}
@@ -48,7 +48,7 @@ func canvasDatasetIDs(ctx context.Context, explicit []string) []string {
 		}
 		return out
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return nil
 	}

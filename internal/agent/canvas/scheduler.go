@@ -150,7 +150,7 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 	// downstream components reading via GetStateFromContext see
 	// the upstream outputs the state post handler already wrote.
 	if state != nil {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx); ctxState != nil && ctxState != state {
+		if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil && ctxState != state {
 			localHistory := state.SnapshotHistory()
 			contextHistory := ctxState.SnapshotHistory()
 			localMemory := state.SnapshotMemory()
@@ -221,7 +221,7 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	if cpnID == "" {
 		return out, nil
 	}
-	ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	ctxState, _ := runtime.GetStateFromContext(ctx)
 	for k, v := range out {
 		if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 			continue
@@ -429,7 +429,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
 	genState := func(runCtx context.Context) *CanvasState {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
+		if ctxState, _ := runtime.GetStateFromContext(runCtx); ctxState != nil {
 			st := NewCanvasState(ctxState.RunID, ctxState.SessionID)
 			for cpnID, bucket := range ctxState.Snapshot() {
 				for key, value := range bucket {
@@ -484,12 +484,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					in, _ := input.(map[string]any)
 					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
 				},
 				func(ctx context.Context, loopErr error) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, loopErr)
 				},
 			))
@@ -835,19 +835,4 @@ func wireWorkflowTerminals(
 	}
 	addEndInput(terminalMergeNodeID)
 	return nil
-}
-
-// snapshotOutputs is retained as a thin wrapper around state.Snapshot()
-// for any leftover callers in test/bench files. New code should call
-// state.Snapshot() directly.
-func snapshotOutputs(src map[string]map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(src))
-	for k, v := range src {
-		cp := make(map[string]any, len(v))
-		for kk, vv := range v {
-			cp[kk] = vv
-		}
-		out[k] = cp
-	}
-	return out
 }
