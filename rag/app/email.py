@@ -78,6 +78,9 @@ def chunk(
                 else:
                     target_list.append(payload.decode("utf-8", errors="ignore"))
 
+        # An attachment is chunked on its own below, not as part of the body.
+        if msg.get_content_disposition() == "attachment":
+            return
         if content_type == "text/plain":
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
@@ -86,6 +89,14 @@ def chunk(
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
             _decode_payload(payload, charset, html_txt)
+        elif content_type == "multipart/alternative":
+            # The parts render the same body, in increasing order of preference
+            # (RFC 2046, 5.1.4), so only the last one this parser can read is used.
+            for part in reversed(list(msg.iter_parts())):
+                part_type = part.get_content_type()
+                if part_type in ("text/plain", "text/html") or part.is_multipart():
+                    _add_content(part, part_type)
+                    break
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
