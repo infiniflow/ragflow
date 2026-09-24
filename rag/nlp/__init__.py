@@ -911,7 +911,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             else:
                 poss = []
         if isinstance(txt, str) and "@@" in txt:
-            txt = re.sub(r"@@[0-9-]+\t[0-9.\t]+##", "", txt).strip()
+            txt = re.sub(r"@@[0-9-]+\t[-0-9.\t]+##", "", txt).strip()
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0

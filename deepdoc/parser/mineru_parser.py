@@ -587,10 +587,14 @@ class MinerUParser(RAGFlowPdfParser):
     @staticmethod
     def extract_positions(txt: str):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
-            pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
-            left, right, top, bottom = float(left), float(right), float(top), float(bottom)
-            poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
+        for tag in re.findall(r"@@[0-9-]+\t[-0-9.\t]+##", txt):
+            try:
+                pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
+                left, right, top, bottom = float(left), float(right), float(top), float(bottom)
+                poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
+            except ValueError:
+                # a '-' can land in a coordinate slot; skip the tag, as ExtractPositions in internal/deepdoc/parser/pdf/util/position.go does
+                continue
         return poss
 
     def _find_middle_json(self, output_dir: Path, subdir: Path, file_stem: str, safe_stem: str) -> Path | None:
