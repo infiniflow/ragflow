@@ -173,8 +173,11 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					out[i].ImgID = imgID
 					out[i].Image = ""
 				} else {
+					// Note: the document text is intentionally NOT logged
+					// here (CWE-532). The upload is retried at the persist
+					// stage, so the error is enough to diagnose.
 					common.Warn("cropImageChunks: preview upload failed; will retry at persist stage",
-						zap.String("chunk", out[i].Text), zap.Error(uerr))
+						zap.Error(uerr))
 				}
 			}
 		}
