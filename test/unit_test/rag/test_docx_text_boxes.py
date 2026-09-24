@@ -25,6 +25,10 @@ The tests below build the three shapes Word actually writes — a DrawingML
 shape, a legacy VML shape, and the ``mc:AlternateContent`` pair that holds both
 copies of the same box — and pin the extracted text for the shared helper and
 for each of the four chunkers that use it.
+
+The last group covers the rest of what the naive chunker's walk over the body
+and ``Paragraph.text`` missed: block and inline content controls, custom XML,
+tracked insertions, simple fields and smart tags.
 """
 
 import importlib.util
@@ -442,3 +446,154 @@ def test_manual_docx_keeps_text_box_in_the_section(docx_modules):
     ti_list, _tbls = docx_modules.manual()("manual.docx", _build_docx(builder))
 
     assert any("disconnect the battery first" in text for text, _img in ti_list)
+
+
+# --------------------------------------------------------------------------- #
+# Content controls, tracked changes and other runs below the paragraph
+# --------------------------------------------------------------------------- #
+
+W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+REVISION = 'w:author="a" w:date="2024-01-01T00:00:00Z"'
+
+
+def _append(document, xml):
+    from docx.oxml import parse_xml
+
+    body = document.element.body
+    body.insert(len(body) - 1, parse_xml(xml))  # ahead of the final sectPr
+
+
+def _paragraph(inner):
+    return f"<w:p {W}>{inner}</w:p>"
+
+
+def _text(text):
+    return f'<w:r><w:t xml:space="preserve">{text}</w:t></w:r>'
+
+
+def _naive(docx_modules, builder):
+    return docx_modules.naive()("doc.docx", _build_docx(builder))
+
+
+@pytest.mark.p2
+def test_block_content_controls_are_read(docx_modules):
+    def builder(d):
+        d.add_paragraph("BEFORE")
+        _append(d, f'<w:sdt {W}><w:sdtPr/><w:sdtContent><w:p>{_text("IN A CONTROL")}</w:p></w:sdtContent></w:sdt>')
+        _append(d, f'<w:customXml {W} w:element="clause"><w:p>{_text("IN CUSTOM XML")}</w:p></w:customXml>')
+        d.add_paragraph("AFTER")
+
+    assert [text for text, _image, _table in _naive(docx_modules, builder)] == ["BEFORE", "IN A CONTROL", "IN CUSTOM XML", "AFTER"]
+
+
+@pytest.mark.p2
+def test_runs_nested_in_a_paragraph_are_read(docx_modules):
+    def builder(d):
+        _append(d, _paragraph(_text("Signed by ") + f"<w:sdt><w:sdtPr/><w:sdtContent>{_text('Jane Doe')}</w:sdtContent></w:sdt>"))
+        _append(
+            d,
+            _paragraph(
+                _text("Payment is due in ")
+                # A deleted tab is not delText, so it would still leak into the text.
+                + f'<w:del w:id="1" {REVISION}><w:r><w:tab/><w:delText>60</w:delText></w:r></w:del>'
+                + f'<w:ins w:id="2" {REVISION}>{_text("30")}</w:ins>'
+                + _text(" days")
+            ),
+        )
+        _append(d, _paragraph(_text("Updated ") + f'<w:fldSimple w:instr="DATE">{_text("2024-09-30")}</w:fldSimple>'))
+        _append(d, _paragraph(f'<w:smartTag w:uri="u" w:element="place">{_text("Reutlingen")}</w:smartTag>'))
+
+    assert [text for text, _image, _table in _naive(docx_modules, builder)] == [
+        "Signed by Jane Doe",
+        "Payment is due in 30 days",
+        "Updated 2024-09-30",
+        "Reutlingen",
+    ]
+
+
+@pytest.mark.p2
+def test_runs_that_are_not_the_text_stay_out(docx_modules):
+    """A move's old place, the pronunciation guide of ruby text, and the
+    fallback copy of alternate content are read neither in place of nor in
+    addition to the text they shadow."""
+    mc = 'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"'
+
+    def builder(d):
+        _append(d, _paragraph(f'<w:moveFrom w:id="1" {REVISION}>{_text("OLD PLACE")}</w:moveFrom><w:moveTo w:id="2" {REVISION}>{_text("NEW PLACE")}</w:moveTo>'))
+        _append(d, _paragraph(f'<w:r><w:ruby><w:rubyPr/><w:rt>{_text("kan")}</w:rt><w:rubyBase>{_text("漢")}</w:rubyBase></w:ruby></w:r>'))
+        alternate = f'<mc:AlternateContent><mc:Choice Requires="w14">{_text("CHOICE")}</mc:Choice><mc:Fallback>{_text("FALLBACK")}</mc:Fallback></mc:AlternateContent>'
+        _append(d, f"<w:p {W} {mc}>{alternate}</w:p>")
+
+    assert [text for text, _image, _table in _naive(docx_modules, builder)] == ["NEW PLACE", "漢", "CHOICE"]
+
+
+@pytest.mark.p2
+def test_a_table_in_a_control_is_read_and_later_tables_keep_their_titles(docx_modules):
+    """The table title lookup counts tables the same way the walk does."""
+
+    def builder(d):
+        d.add_heading("Alpha", level=1)
+        table = f"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p>{_text('T1')}</w:p></w:tc></w:tr></w:tbl>"
+        _append(d, f"<w:sdt {W}><w:sdtPr/><w:sdtContent>{table}</w:sdtContent></w:sdt>")
+        d.add_heading("Beta", level=1)
+        d.add_table(rows=1, cols=1).cell(0, 0).text = "T2"
+
+    assert [table for _text_, _image, table in _naive(docx_modules, builder) if table] == [
+        "<table><caption>Table Location: doc > Alpha</caption><tr><td>T1</td></tr></table>",
+        "<table><caption>Table Location: doc > Beta</caption><tr><td>T2</td></tr></table>",
+    ]
+
+
+@pytest.mark.p2
+def test_a_table_caption_reads_headings_held_in_content_controls(docx_modules):
+    """The caption is built from the same heading text the chunk shows, at every level."""
+
+    def builder(d):
+        from docx.oxml import parse_xml
+
+        for text, level in (("Results", 1), ("Summary", 2)):
+            heading = d.add_heading("", level=level)
+            heading._p.append(parse_xml(f"<w:sdt {W}><w:sdtPr/><w:sdtContent>{_text(text)}</w:sdtContent></w:sdt>"))
+        d.add_table(rows=1, cols=1).cell(0, 0).text = "T1"
+
+    assert [table for _text_, _image, table in _naive(docx_modules, builder) if table] == [
+        "<table><caption>Table Location: doc > Results > Summary</caption><tr><td>T1</td></tr></table>",
+    ]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("page_break", "first_page"),
+    [
+        (f'<w:ins w:id="9" {REVISION}><w:r><w:br w:type="page"/></w:r></w:ins>', "First page"),
+        ("<w:sdt><w:sdtPr/><w:sdtContent><w:r><w:lastRenderedPageBreak/><w:t>.</w:t></w:r></w:sdtContent></w:sdt>", "First page."),
+    ],
+    ids=["page-break-in-an-insertion", "rendered-break-in-a-control"],
+)
+def test_page_breaks_in_nested_runs_are_counted(docx_modules, page_break, first_page):
+    """A page break sits in a run the text is read from, so it moves what follows to the next page."""
+
+    def builder(d):
+        _append(d, _paragraph(_text("First page") + page_break))
+        d.add_paragraph("Second page")
+
+    lines = docx_modules.naive()("doc.docx", _build_docx(builder), from_page=0, to_page=1)
+
+    assert [text for text, _image, _table in lines] == [first_page]
+
+
+@pytest.mark.p2
+def test_a_plain_paragraph_reads_exactly_as_before(docx_modules):
+    """Direct runs, a tab, a line break and a hyperlink: the same text as Paragraph.text."""
+
+    def builder(d):
+        paragraph = d.add_paragraph("one\ttwo")
+        paragraph.add_run().add_break()
+        paragraph.add_run("three")
+        _append(d, _paragraph(_text("see ") + f'<w:hyperlink w:anchor="x">{_text("the link")}</w:hyperlink>'))
+
+    from docx import Document
+
+    paragraphs = Document(BytesIO(_build_docx(builder))).paragraphs
+    assert [docx_modules.parser.paragraph_text(p) for p in paragraphs] == [p.text for p in paragraphs]
+    assert [p.text for p in paragraphs] == ["one\ttwo\nthree", "see the link"]

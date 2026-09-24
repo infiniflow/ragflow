@@ -43,12 +43,34 @@ MC_FALLBACK_TAG = MC_NAMESPACE + "Fallback"
 TEXT_BOX_TAG = qn("w:txbxContent")
 RUN_TAG = qn("w:r")
 
+# The body blocks a chunker reads, and the wrappers that hold body blocks of their
+# own: a block-level content control keeps its paragraphs and tables in
+# `w:sdtContent`, and custom XML markup wraps them directly. Word's automatic table
+# of contents, cover pages and every field of a form template are such controls.
+BODY_BLOCK_TAGS = (qn("w:p"), qn("w:tbl"))
+BLOCK_WRAPPER_TAGS = (qn("w:sdt"), qn("w:sdtContent"), qn("w:customXml"))
+
+# Runs below these are not text of their paragraph: deleted and moved-away
+# revisions, the pronunciation guide of ruby text, text boxes (emitted as blocks of
+# their own), and the fallback copy of alternate content.
+SKIPPED_RUN_ANCESTOR_TAGS = frozenset({qn("w:del"), qn("w:moveFrom"), qn("w:rt"), TEXT_BOX_TAG, MC_FALLBACK_TAG})
+
 
 def _has_ancestor(node, tag, stop=None):
     """Whether `node` has an ancestor with `tag`, looking no further than `stop`."""
     parent = node.getparent()
     while parent is not None and parent is not stop:
         if parent.tag == tag:
+            return True
+        parent = parent.getparent()
+    return False
+
+
+def _has_ancestor_in(node, tags, stop):
+    """Whether `node` has an ancestor whose tag is in `tags`, looking no further than `stop`."""
+    parent = node.getparent()
+    while parent is not None and parent is not stop:
+        if parent.tag in tags:
             return True
         parent = parent.getparent()
     return False
@@ -72,6 +94,40 @@ def _is_fallback_copy(box):
 
 
 class RAGFlowDocxParser:
+    @staticmethod
+    def body_blocks(container):
+        """The `w:p` and `w:tbl` elements of `container` in document order.
+
+        Unlike a walk over the body's own children, this includes the paragraphs
+        and tables inside block-level content controls and custom XML markup.
+        """
+        for child in container:
+            if child.tag in BODY_BLOCK_TAGS:
+                yield child
+            elif child.tag in BLOCK_WRAPPER_TAGS:
+                yield from RAGFlowDocxParser.body_blocks(child)
+
+    @staticmethod
+    def paragraph_runs(paragraph):
+        """The `w:r` elements whose text is the text of `paragraph`, in document order.
+
+        Includes the runs nested below the paragraph, which `Paragraph.runs` leaves
+        out, and skips deleted and moved-away revisions, ruby guides, text boxes and
+        the `mc:Fallback` copy.
+        """
+        element = paragraph._element
+        return [run for run in element.iter(RUN_TAG) if not _has_ancestor_in(run, SKIPPED_RUN_ANCESTOR_TAGS, stop=element)]
+
+    @staticmethod
+    def paragraph_text(paragraph):
+        """The text of `paragraph`, including runs nested below the paragraph.
+
+        `Paragraph.text` reads direct runs and hyperlinks only, so a tracked
+        insertion, an inline content control, the result of a simple field or a
+        smart tag is missing from it. Deleted text stays out.
+        """
+        return "".join(run.text for run in RAGFlowDocxParser.paragraph_runs(paragraph))
+
     @staticmethod
     def extract_text_boxes(paragraph):
         """Text of every text box anchored in `paragraph`, in document order.

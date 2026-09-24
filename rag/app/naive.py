@@ -620,7 +620,7 @@ class Docx(DocxParser):
         # Collect all document blocks while maintaining document order
         try:
             # Iterate through all paragraphs and tables in document order
-            for i, block in enumerate(self.doc._element.body):
+            for i, block in enumerate(self.body_blocks(self.doc._element.body)):
                 if block.tag.endswith("p"):  # Paragraph
                     p = Paragraph(block, self.doc)
                     blocks.append(("p", i, p))
@@ -659,7 +659,7 @@ class Docx(DocxParser):
                     if level_match:
                         level = int(level_match.group(1))
                         if level <= 7:  # Support up to 7 heading levels
-                            title_text = block.text.strip()
+                            title_text = self.paragraph_text(block).strip()
                             if title_text:  # Avoid empty titles
                                 nearest_title = (level, title_text)
                                 break
@@ -689,7 +689,7 @@ class Docx(DocxParser):
                                 level = int(level_match.group(1))
                                 # Find any heading with a higher level
                                 if level < current_level:
-                                    title_text = block.text.strip()
+                                    title_text = self.paragraph_text(block).strip()
                                     if title_text:  # Avoid empty titles
                                         titles.append((level, title_text))
                                         current_level = level
@@ -727,7 +727,9 @@ class Docx(DocxParser):
                 lines.append({"text": "", "image": last_image, "table": None, "style": "Image"})
                 last_image = None
 
-        for block in self.doc._element.body:
+        # Also the blocks inside content controls, which a walk over the body's own
+        # children skips; the table indexes match `__get_nearest_title`, which walks alike.
+        for block in self.body_blocks(self.doc._element.body):
             if pn > to_page:
                 break
 
@@ -735,7 +737,7 @@ class Docx(DocxParser):
                 p = Paragraph(block, self.doc)
 
                 if from_page <= pn < to_page:
-                    text = p.text.strip()
+                    text = self.paragraph_text(p).strip()
                     style_name = p.style.name if p.style else ""
 
                     if text:
@@ -794,8 +796,9 @@ class Docx(DocxParser):
                     for box_text in self.extract_text_boxes(p):
                         lines.append({"text": self.__clean(box_text), "image": None, "table": None})
 
-                for run in p.runs:
-                    xml = run._element.xml
+                # Count page breaks in the same runs the text is read from.
+                for run in self.paragraph_runs(p):
+                    xml = run.xml
                     if "lastRenderedPageBreak" in xml:
                         pn += 1
                         continue
