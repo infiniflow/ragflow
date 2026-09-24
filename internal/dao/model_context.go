@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -103,6 +104,13 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 			return nil
 		}
 		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
+		if errors.Is(err, gorm.ErrRecordNotFound) && instanceName == "default" {
+			// Legacy model@provider references implicitly mean "default".
+			// A tenant may have only one active instance under a different
+			// name, so use it before falling back to the provider catalog.
+			instance = soleActiveTenantModelInstance(ctx, db, provider.ID)
+			err = nil
+		}
 		if err != nil || instance == nil || instance.Status != "active" {
 			return nil
 		}
@@ -125,6 +133,27 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 	// intentionally NOT scoped to tenantID. The per-model override and the
 	// catalog fallback apply to whichever tenant holds the UUID.
 	return obj
+}
+
+// soleActiveTenantModelInstance returns the provider's only active instance.
+// It is the unambiguous fallback for legacy two-part model references, whose
+// implicit "default" instance may have been created under another name.
+func soleActiveTenantModelInstance(ctx context.Context, db *gorm.DB, providerID string) *entity.TenantModelInstance {
+	instances, err := NewTenantModelInstanceDAO().GetAllInstancesByProviderID(ctx, db, providerID)
+	if err != nil {
+		return nil
+	}
+	var active *entity.TenantModelInstance
+	for _, instance := range instances {
+		if instance == nil || instance.Status != "active" {
+			continue
+		}
+		if active != nil {
+			return nil
+		}
+		active = instance
+	}
+	return active
 }
 
 // modelExtraMaxTokens returns the per-model "max_tokens" override from the
