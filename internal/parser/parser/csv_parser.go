@@ -28,9 +28,23 @@ import (
 	"encoding/csv"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 const csvSheetName = "Data"
+
+// csvDelimiters are the separators a spreadsheet actually writes into a file
+// named ".csv". Excel writes the list separator of the machine's locale, which
+// is a semicolon across most of Europe, and a tab separated export is routinely
+// saved as .csv. Mirrors CSV_DELIMITERS in deepdoc/parser/excel_parser.py.
+var csvDelimiters = []rune{',', ';', '\t', '|'}
+
+// How much of the file the separator detection looks at. A separator that
+// holds for the first rows holds for the file.
+const (
+	csvSampleBytes = 64 * 1024
+	csvSampleRows  = 20
+)
 
 // CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
@@ -125,12 +139,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	reader := csv.NewReader(strings.NewReader(text))
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
-
-	records, err := reader.ReadAll()
+	records, err := newCSVReader(text, detectCSVDelimiter(text)).ReadAll()
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
 	}
@@ -161,4 +170,88 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		},
 		JSON: items,
 	}
+}
+
+// newCSVReader reads text with the given separator, leniently, the same way for
+// the separator detection and for the rows themselves.
+func newCSVReader(text string, comma rune) *csv.Reader {
+	reader := csv.NewReader(strings.NewReader(text))
+	reader.Comma = comma
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1 // Allow variable column counts, matching Python csv.reader behaviour.
+	return reader
+}
+
+// detectCSVDelimiter returns the separator text was written with, defaulting
+// to a comma. encoding/csv reads with a comma by default, and reading a
+// semicolon separated export that way does not fail: every row becomes a
+// single column holding the whole line, separators included.
+func detectCSVDelimiter(text string) rune {
+	sample, truncated := text, false
+	if len(text) > csvSampleBytes {
+		cut := csvSampleBytes
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		sample, truncated = text[:cut], true
+	}
+	best, bestColumns := ',', 0
+	for _, delimiter := range csvDelimiters {
+		if columns := consistentColumnCount(sample, delimiter, truncated); columns > bestColumns {
+			best, bestColumns = delimiter, columns
+		}
+	}
+	return best
+}
+
+// consistentColumnCount returns the columns per row under delimiter, or 0 when
+// the rows disagree. A separator the file was not written with either does not
+// occur at all (one column) or occurs by accident, and then the rows do not
+// line up. Requiring the same count on every row is what keeps a comma inside a
+// sentence, or a semicolon inside a quoted field, from being read as a
+// separator.
+//
+// When truncated is set, the sample is a prefix of a longer file, so the row it
+// ends in stops wherever the read did, between two fields or inside a quoted
+// one. That row is left out rather than counted as having fewer columns.
+func consistentColumnCount(sample string, delimiter rune, truncated bool) int {
+	reader := newCSVReader(sample, delimiter)
+	var rows [][]string
+	exhausted := false
+	for read := 0; read < csvSampleRows; read++ {
+		row, err := reader.Read()
+		if err != nil {
+			exhausted = true
+			break
+		}
+		if !isBlankCSVRow(row) {
+			rows = append(rows, row)
+		}
+	}
+	if exhausted && truncated && len(rows) > 1 {
+		rows = rows[:len(rows)-1]
+	}
+	count := 0
+	for _, row := range rows {
+		if count != 0 && len(row) != count {
+			return 0
+		}
+		count = len(row)
+	}
+	if count > 1 {
+		return count
+	}
+	return 0
+}
+
+// isBlankCSVRow reports whether every cell of row is empty or whitespace; such
+// a row says nothing about the separator.
+func isBlankCSVRow(row []string) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell) != "" {
+			return false
+		}
+	}
+	return true
 }
