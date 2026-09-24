@@ -473,7 +473,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       redoAll: 'Clear existing chunks',
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
-      clearChunksReparseTip: 'Are you sure to clear chunks to re-phrase?',
+      clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
