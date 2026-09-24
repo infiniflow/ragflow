@@ -818,7 +818,16 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
 	// The embedder resolves the tenant's embedding model on demand, so both
 	// Search and UpsertDoc can embed queries/summaries automatically.
-	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(service.NewModelProviderService(), "")))
+	navModelService := service.NewModelProviderService()
+	navService := nlp.NewNavService(service.NewNavEmbedder(navModelService, ""))
+	// The cluster namer/merger is the counterpart of Python's
+	// _llm_create_summary / _llm_merge: a new cluster is named after the model's
+	// topic title and an existing cluster's description is fused with the joining
+	// document. Passing an empty model ref resolves each tenant's default chat
+	// model on demand; without one the nav service keeps its deterministic
+	// behaviour.
+	navService.SetNavMergeLLM(service.NewNavMergeLLM(navModelService, ""))
+	nav.SetNavService(navService)
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
@@ -1141,8 +1150,12 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 
 	// Install the dataset-nav ES-backed service (internal/service/nav +
 	// internal/service/nlp). The embedder resolves the tenant's embedding model
-	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
-	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
+	// on demand so Search/UpsertDoc can embed queries/summaries automatically,
+	// and the cluster namer/merger resolves the tenant's default chat model the
+	// same way (see the ingestor's wrapping of SetNavMergeLLM).
+	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelProviderService, ""))
+	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelProviderService, ""))
+	nav.SetNavService(apiNavService)
 
 	// Install the compiled-wiki search service. It is backed directly by the
 	// document engine: QueryPages filters the tenant-scoped index to
