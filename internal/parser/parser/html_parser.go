@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -88,7 +89,8 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	walkHTMLBlocks(doc, &items)
+	state := &htmlWalkState{}
+	walkHTMLBlocksWithState(doc, &items, state)
 	// remove_toc: post-parse text heuristic (mirrors Python
 	// parser.py:1087-1088 remove_toc → remove_contents_table).
 	if p.RemoveTOC {
@@ -103,7 +105,8 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 			"name":     filename,
 			"encoding": encName,
 		},
-		JSON: items,
+		JSON:     items,
+		Warnings: state.warnings(),
 	}
 }
 
@@ -123,8 +126,25 @@ func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 }
 
 type htmlWalkState struct {
-	tableSequence int
-	mediaOrder    int
+	tableSequence       int
+	mediaOrder          int
+	skippedInlineImages int
+}
+
+type htmlImageSourceKind uint8
+
+const (
+	unsupportedHTMLImageSource htmlImageSourceKind = iota
+	inlineHTMLImageSource
+	relativeHTMLImageSourceKind
+	externalHTMLImageSourceKind
+)
+
+func (s *htmlWalkState) warnings() []string {
+	if s.skippedInlineImages == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
 }
 
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
@@ -342,10 +362,15 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			if usableHTMLImageSource(src) || relativeHTMLImageSource(src) {
-				flushLeafText(w, out, ckType, trim)
-				appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
+			sourceKind := classifyHTMLImageSource(src)
+			if sourceKind == unsupportedHTMLImageSource {
+				if isHTMLDataImageSource(src) {
+					state.skippedInlineImages++
+				}
+				return
 			}
+			flushLeafText(w, out, ckType, trim)
+			appendHTMLImageItem(out, state, src, sourceKind, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
@@ -392,17 +417,19 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 
 type htmlTableImage struct {
 	src    string
+	kind   htmlImageSourceKind
 	alt    string
 	row    int
 	column int
 }
 
 func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	images, skippedInlineImages := htmlTableImages(n)
+	state.skippedInlineImages += skippedInlineImages
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
 		return
 	}
-	images := htmlTableImages(n)
 	table := map[string]any{
 		"text":         markup,
 		"doc_type_kwd": "table",
@@ -416,12 +443,13 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 	*out = append(*out, table)
 	for _, media := range images {
-		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
+		appendHTMLImageItem(out, state, media.src, media.kind, media.alt, tableID, media.row, media.column)
 	}
 }
 
-func htmlTableImages(table *html.Node) []htmlTableImage {
+func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 	var images []htmlTableImage
+	skippedInlineImages := 0
 	rowCount := 0
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
@@ -437,9 +465,16 @@ func htmlTableImages(table *html.Node) []htmlTableImage {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				if usableHTMLImageSource(src) || relativeHTMLImageSource(src) {
+				kind := classifyHTMLImageSource(src)
+				if kind == unsupportedHTMLImageSource {
+					if isHTMLDataImageSource(src) {
+						skippedInlineImages++
+						removeHTMLImageSource(node)
+					}
+				} else {
 					images = append(images, htmlTableImage{
 						src:    src,
+						kind:   kind,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -452,11 +487,21 @@ func htmlTableImages(table *html.Node) []htmlTableImage {
 		}
 	}
 	walk(table, 0, 0)
-	return images
+	return images, skippedInlineImages
 }
 
-func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
-	if comma := strings.IndexByte(src, ','); usableHTMLImageSource(src) && comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
+func removeHTMLImageSource(n *html.Node) {
+	attrs := n.Attr[:0]
+	for _, attr := range n.Attr {
+		if !strings.EqualFold(attr.Key, "src") {
+			attrs = append(attrs, attr)
+		}
+	}
+	n.Attr = attrs
+}
+
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string, sourceKind htmlImageSourceKind, alt, parentTableID string, row, column int) {
+	if comma := strings.IndexByte(src, ','); sourceKind == inlineHTMLImageSource && comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
 		src = strings.ToLower(src[:comma]) + src[comma:]
 	}
 	state.mediaOrder++
@@ -466,7 +511,7 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 		"ck_type":      "image",
 		"media_order":  state.mediaOrder,
 	}
-	if usableHTMLImageSource(src) {
+	if sourceKind == inlineHTMLImageSource {
 		item["image"] = src
 	} else {
 		item["image_src"] = strings.TrimSpace(src)
@@ -481,23 +526,99 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 
 func usableHTMLImageSource(src string) bool {
 	src = strings.TrimSpace(src)
-	const dataPrefix = "data:image/"
-	if len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix) {
-		separator := strings.IndexByte(src, ',')
-		if separator <= len(dataPrefix) || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-			return false
-		}
-		payload := src[separator+1:]
-		if payload == "" {
-			return false
-		}
-		if _, err := base64.StdEncoding.DecodeString(payload); err == nil {
-			return true
-		}
-		_, err := base64.RawStdEncoding.DecodeString(payload)
-		return err == nil
+	if !isHTMLDataImageSource(src) {
+		return false
 	}
-	u, err := url.Parse(src)
+	separator := strings.IndexByte(src, ',')
+	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
+		return false
+	}
+	return validBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+}
+
+func classifyHTMLImageSource(src string) htmlImageSourceKind {
+	switch {
+	case usableHTMLImageSource(src):
+		return inlineHTMLImageSource
+	case relativeHTMLImageSource(src):
+		return relativeHTMLImageSourceKind
+	case externalHTMLImageSource(src):
+		return externalHTMLImageSourceKind
+	default:
+		return unsupportedHTMLImageSource
+	}
+}
+
+func isHTMLDataImageSource(src string) bool {
+	const dataPrefix = "data:image/"
+	src = strings.TrimSpace(src)
+	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
+}
+
+func validBase64ImagePayload(payload string, maxDecodedBytes int) bool {
+	if maxDecodedBytes < 0 {
+		return false
+	}
+	maxEncodedBytes := base64.StdEncoding.EncodedLen(maxDecodedBytes)
+	encodedBytes := 0
+	for i := 0; i < len(payload); i++ {
+		if payload[i] == '\r' || payload[i] == '\n' {
+			continue
+		}
+		encodedBytes++
+		if encodedBytes > maxEncodedBytes {
+			return false
+		}
+	}
+	if encodedBytes == 0 {
+		return false
+	}
+	decodedSize, ok := base64DecodedSize(payload, encodedBytes)
+	if !ok || decodedSize > int64(maxDecodedBytes) {
+		return false
+	}
+
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		decoder := base64.NewDecoder(encoding, strings.NewReader(payload))
+		decodedBytes, err := io.CopyN(io.Discard, decoder, int64(maxDecodedBytes)+1)
+		if decodedBytes > int64(maxDecodedBytes) {
+			return false
+		}
+		if err == io.EOF {
+			return decodedBytes > 0
+		}
+	}
+	return false
+}
+
+func base64DecodedSize(payload string, encodedBytes int) (int64, bool) {
+	padding := 0
+	sawPadding := false
+	for i := 0; i < len(payload); i++ {
+		if payload[i] == '\r' || payload[i] == '\n' {
+			continue
+		}
+		if payload[i] == '=' {
+			sawPadding = true
+			padding++
+			if padding > 2 {
+				return 0, false
+			}
+			continue
+		}
+		if sawPadding {
+			return 0, false
+		}
+	}
+	if encodedBytes%4 == 1 || (padding > 0 && encodedBytes%4 != 0) {
+		return 0, false
+	}
+	decodedSize := int64(encodedBytes/4)*3 + int64(encodedBytes%4)*3/4 - int64(padding)
+	return decodedSize, decodedSize >= 0
+}
+
+func externalHTMLImageSource(src string) bool {
+	u, err := url.Parse(strings.TrimSpace(src))
 	return err == nil && (strings.EqualFold(u.Scheme, "https") || strings.EqualFold(u.Scheme, "http")) && u.Host != ""
 }
 

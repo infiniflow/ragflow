@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"image"
 	"net/url"
 	"path"
@@ -28,28 +30,38 @@ import (
 	"gorm.io/gorm"
 )
 
+var errUnsupportedHTMLImageSource = errors.New("HTML image source is not a relative in-bucket path")
+
+func isExternalHTMLImageURL(source string) bool {
+	u, err := url.Parse(strings.TrimSpace(source))
+	return err == nil && (strings.EqualFold(u.Scheme, "https") || strings.EqualFold(u.Scheme, "http")) && u.Host != ""
+}
+
 // resolveHTMLImageSource materializes a relative HTML image from the same
 // storage bucket before the shared OCR/VLM media path processes it.
-func resolveHTMLImageSource(ctx context.Context, bucket, htmlPath string, item map[string]any) bool {
+func resolveHTMLImageSource(ctx context.Context, bucket, htmlPath string, item map[string]any) error {
 	if item == nil || bucket == "" || item["doc_type_kwd"] != "image" {
-		return false
+		return errUnsupportedHTMLImageSource
 	}
 	source, _ := item["image_src"].(string)
 	assetPath, ok := resolveRelativeHTMLImagePath(htmlPath, source)
 	if !ok {
-		return false
+		return errUnsupportedHTMLImageSource
 	}
 	data, err := FetchBinaryLimited(ctx, bucket, assetPath, maxOCRImageBytes)
-	if err != nil || len(data) == 0 {
-		return false
+	if err != nil {
+		return fmt.Errorf("read HTML image asset: %w", err)
+	}
+	if len(data) == 0 {
+		return errors.New("HTML image asset is empty")
 	}
 	payload, ok := htmlImageDataURI(data)
 	if !ok {
-		return false
+		return errors.New("HTML image asset is not a supported raster")
 	}
 	item["image"] = payload
 	delete(item, "image_src")
-	return true
+	return nil
 }
 
 func htmlSourceStorageLocation(ctx context.Context, db *gorm.DB, inputs map[string]any) (string, string, bool) {
