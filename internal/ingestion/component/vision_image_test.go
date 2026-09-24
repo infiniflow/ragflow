@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"image"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -41,5 +42,13 @@ func TestMaterializeInlineVisionImageKeepsVLMForOCRDimensionLimit(t *testing.T) 
 	}
 	if materialized.VLMData != dataURI || !isUsableVisionImage(materialized.VLMData) {
 		t.Fatal("oversized OCR input should preserve its valid VLM payload")
+	}
+}
+
+func TestIsUsableVisionImageRejectsPayloadOverVLMByteBudget(t *testing.T) {
+	encodedLength := base64.StdEncoding.EncodedLen(maxVLMImageBytes + 3)
+	payload := strings.Repeat("A", encodedLength)
+	if isUsableVisionImage(payload) {
+		t.Fatal("base64 payload above the VLM byte budget must be rejected")
 	}
 }
