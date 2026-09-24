@@ -126,6 +126,21 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		if !needsCrop(ck) || ck.Image != "" {
 			continue
 		}
+		// A media chunk whose finalized text is empty — no caption, no vision
+		// description, no media context — is not retrievable: its embedding
+		// would be the empty-string vector, so retrieval can never surface it,
+		// and every captionless image/table in a document would otherwise
+		// collapse onto the same canonical id (ChunkID(docID, "")), each
+		// overwrite the other's MinIO object. Skip the crop and upload
+		// entirely; the finalizer then drops the chunk, so no object is
+		// orphaned and no pdfium render / PNG encode / upload is wasted. This
+		// mirrors Python's token_chunker drop of empty-text media chunks.
+		// Text chunks are excluded: a text body always carries content, and the
+		// Chunker-1.3 preview restore must still run for positioned text
+		// regions.
+		if isMediaChunk(ck) && canonicalChunkText(ck) == "" {
+			continue
+		}
 		raw := ck.PDFPositions
 		if len(raw) == 0 {
 			raw = ck.Positions

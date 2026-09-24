@@ -22,7 +22,7 @@ func TestCropImageChunks_ConcurrentCropsAll(t *testing.T) {
 	const n = 64
 	chunks := make([]schema.ChunkDoc, n)
 	for i := 0; i < n; i++ {
-		chunks[i] = schema.ChunkDoc{CKType: "image", PDFPositions: pos}
+		chunks[i] = schema.ChunkDoc{CKType: "image", Text: "cap", PDFPositions: pos}
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	if len(out) != n {
@@ -48,7 +48,7 @@ func TestCropImageChunks_ConcurrentPageCacheReuse(t *testing.T) {
 	const n = 200
 	chunks := make([]schema.ChunkDoc, n)
 	for i := 0; i < n; i++ {
-		chunks[i] = schema.ChunkDoc{CKType: "table", Positions: pos}
+		chunks[i] = schema.ChunkDoc{CKType: "table", Text: "cap", Positions: pos}
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	for i, ck := range out {

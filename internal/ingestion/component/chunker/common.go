@@ -169,6 +169,18 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
+// isMediaChunk reports whether a chunk is an image or table region. It checks
+// CKType first (general/token paths set it) and falls back to DocType
+// (group/hierarchy forward parser output that carries only doc_type_kwd), so
+// it classifies media regardless of which chunker produced the chunk.
+func isMediaChunk(ck schema.ChunkDoc) bool {
+	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
+	if typ == "" {
+		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
+	}
+	return typ == "image" || typ == "table"
+}
+
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
