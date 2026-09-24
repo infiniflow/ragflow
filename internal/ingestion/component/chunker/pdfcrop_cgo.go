@@ -156,22 +156,24 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		// and the decorator's debug branch drops the raw bytes instead.
 		if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
 			if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
-				// Key the upload under exactly the text the canonical
-				// chunk id is derived from later in imageUploadDecorator:
-				// materializeMediaContext folds media context (and strips
-				// tags only when context exists) and is idempotent, so this
-				// matches register.go's ChunkID(docID, requireChunkText(ck))
-				// for EVERY chunk — including image/table chunks whose text
-				// still carries position tags when there is no media
-				// context. Using materializeMediaContext(out[i]) (not a bare
-				// removeTag) is what keeps the key equal to the decorator's
-				// id; crop depends only on positions, so reading the
-				// materialized text here does not alter the cropped image
-				// or the chunker's later output text.
-				chunkID := common.ChunkID(docID, materializeMediaContext(out[i]).Text)
+				// Key the streamed upload under the chunk's canonical id,
+				// so the MinIO object is stored under exactly the key the
+				// decorator (imageUploadDecorator) later exposes as
+				// ck["id"] and the persist/retrieval path looks it up by.
+				// canonicalChunkText is the single source for that id text:
+				// it folds media context and strips position tags, so the
+				// value equals the tag-stripped (finalized) text the
+				// decorator derives — for every chunk type, including
+				// image/table chunks whose text still carries position tags
+				// when there is no media context. crop depends only on
+				// positions, so reading the canonical text here does not
+				// alter the cropped image or the chunker's later output
+				// text.
+				chunkID := canonicalChunkID(docID, out[i])
 				if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
 					out[i].ImgID = imgID
 					out[i].Image = ""
+					out[i].ID = chunkID
 				} else {
 					// Note: the document text is intentionally NOT logged
 					// here (CWE-532). The upload is retried at the persist

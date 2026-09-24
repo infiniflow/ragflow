@@ -455,17 +455,19 @@ func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
 	}
 }
 
-// TestCropImageChunks_StreamingUploadKeepsPositionTagForCanonicalID is the
-// regression test for the most common chunk shape: an image/table chunk whose
-// Text still carries parser position tags (<img>…</img>) but has NO media
-// context (ContextAbove/Below empty). For that shape materializeMediaContext
-// short-circuits and leaves the tags in place, so the canonical chunk id that
-// imageUploadDecorator assigns later (register.go) is keyed on the TAGGED
-// text. The streamed upload key must therefore ALSO be keyed on the tagged
-// text — not on removeTag(text). Keying on removeTag(text) is exactly the
-// divergence this test catches: it fails against the buggy key and passes
-// once the key equals materializeMediaContext(out[i]).Text.
-func TestCropImageChunks_StreamingUploadKeepsPositionTagForCanonicalID(t *testing.T) {
+// TestCropImageChunks_StreamingUploadUsesCanonicalID is the regression test
+// for the most common chunk shape: an image/table chunk whose Text still
+// carries parser position tags (@@…##) but has NO media context
+// (ContextAbove/Below empty). For that shape materializeMediaContext
+// short-circuits and leaves the tags in place, so the raw text still carries
+// them. The canonical chunk id (what imageUploadDecorator assigns later in
+// register.go as ck["id"] and what retrieval looks the object up by) is
+// derived from the TAG-STRIPPED (finalized) text. The streamed upload key
+// MUST therefore also be the tag-stripped canonical id — keying on the raw,
+// tag-bearing text would store the object under a key that never matches
+// ck["id"]. canonicalChunkID is the single source for that id, so the two
+// can never diverge.
+func TestCropImageChunks_StreamingUploadUsesCanonicalID(t *testing.T) {
 	ctx := withIngestionGlobals(t, "kb1", "doc1")
 
 	rec := &recordingUploader{}
@@ -486,18 +488,15 @@ func TestCropImageChunks_StreamingUploadKeepsPositionTagForCanonicalID(t *testin
 		t.Fatalf("upload calls = %d, want 1", len(rec.calls))
 	}
 
-	// The canonical id (and thus the streamed upload key) is derived from
-	// materializeMediaContext, which for a no-context chunk returns the text
-	// WITH its position tag intact.
-	wantID := common.ChunkID("doc1", materializeMediaContext(in).Text)
-	// The buggy key stripped the tag, which would NOT match the decorator.
-	buggyID := common.ChunkID("doc1", removeTag(in.Text))
-
-	if rec.calls[0].chunkID == buggyID {
-		t.Errorf("upload keyed by removeTag(text) %q; canonical id is %q", buggyID, wantID)
-	}
+	// The streamed upload key must be the canonical (tag-STRIPPED) id,
+	// exactly what imageUploadDecorator later exposes as ck["id"].
+	wantID := canonicalChunkID("doc1", in)
 	if rec.calls[0].chunkID != wantID {
-		t.Errorf("upload chunkID = %q, want canonical %q (materializeMediaContext keeps the tag)", rec.calls[0].chunkID, wantID)
+		t.Errorf("upload chunkID = %q, want canonical %q", rec.calls[0].chunkID, wantID)
+	}
+	// Regression guard: it must NOT be the raw tag-bearing variant.
+	if rec.calls[0].chunkID == common.ChunkID("doc1", in.Text) {
+		t.Errorf("upload keyed by raw tag-bearing text %q; must use canonical (tag-stripped) id", common.ChunkID("doc1", in.Text))
 	}
 	if out[0].ImgID != "kb1-"+wantID {
 		t.Errorf("ImgID = %q, want %q", out[0].ImgID, "kb1-"+wantID)

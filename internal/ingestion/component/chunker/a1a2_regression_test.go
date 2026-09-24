@@ -1,3 +1,5 @@
+//go:build cgo
+
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -93,5 +95,26 @@ func TestCropImageChunks_UploadFailureRedactsChunkText(t *testing.T) {
 				t.Errorf("upload-failure log leaks document text %q via field %q", secret, f.Key)
 			}
 		}
+	}
+}
+
+// TestCanonicalChunkIDStripsPositionTags is the regression test for the
+// streaming-upload key consistency Blocker: canonicalChunkID (used both by
+// cropImageChunks for the MinIO object key and, via the decorator, as
+// ck["id"]) must be derived from the tag-STRIPPED text. For the common
+// no-media-context image/table chunk the parser text still carries a position
+// tag (@@…##); keying the upload on the raw text would store the object
+// under a key that never matches the canonical id the retrieval path looks
+// up by.
+func TestCanonicalChunkIDStripsPositionTags(t *testing.T) {
+	in := schema.ChunkDoc{DocType: "image", Text: "abc@@1\t2##"}
+
+	want := common.ChunkID("doc1", removeTag(in.Text)) // tag-stripped
+	if got := canonicalChunkID("doc1", in); got != want {
+		t.Errorf("canonicalChunkID = %q, want tag-stripped id %q", got, want)
+	}
+	// The raw, tag-bearing text must NOT be the id.
+	if got := canonicalChunkID("doc1", in); got == common.ChunkID("doc1", in.Text) {
+		t.Errorf("canonicalChunkID equals tag-bearing id; must strip position tags")
 	}
 }
