@@ -71,12 +71,13 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	for offset := 0; ; offset += 1000 {
 		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        1000,
-			SelectFields: []string{"compile_kwd", "compilation_template_kind_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
+			IndexNames:         []string{indexName},
+			KbIDs:              []string{datasetID},
+			Offset:             offset,
+			Limit:              1000,
+			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd"},
+			Filter:             map[string]any{"doc_id": []string{documentID}},
+			IncludeUnavailable: true,
 		})
 		cancel()
 		if err != nil {
