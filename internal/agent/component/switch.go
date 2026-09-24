@@ -35,7 +35,6 @@ package component
 import (
 	"context"
 	"fmt"
-	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -548,13 +547,6 @@ func isEmptyValue(v any) bool {
 	}
 	return false
 }
-
-// mapsCopyDup is a no-op duplicate alias kept for symmetry with the
-// begin.go / message.go helpers in the package; here Switch doesn't
-// need to copy maps but the alias documents the convention.
-var _ = mapsCopyDup
-
-func mapsCopyDup(dst, src map[string]any) { maps.Copy(dst, src) }
 
 func init() {
 	Register(componentNameSwitch, NewSwitchComponent)
