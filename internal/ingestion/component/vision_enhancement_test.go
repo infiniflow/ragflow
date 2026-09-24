@@ -127,6 +127,26 @@ func TestResolveHTMLImageSourceLoadsRelativeAsset(t *testing.T) {
 	}
 }
 
+func TestResolveHTMLImageSourceLoadsParentRelativeAssetWithinBucket(t *testing.T) {
+	imagePayload := visionTestPNGBase64(t)
+	imageBytes, err := base64.StdEncoding.DecodeString(imagePayload)
+	if err != nil {
+		t.Fatalf("decode test PNG: %v", err)
+	}
+	storage := withMemoryStorage(t)
+	if err := storage.Put(t.Context(), "html-assets", "assets/chart.png", imageBytes); err != nil {
+		t.Fatalf("seed parent-relative image: %v", err)
+	}
+
+	item := map[string]any{"doc_type_kwd": "image", "image_src": "../assets/chart.png"}
+	if !resolveHTMLImageSource(t.Context(), "html-assets", "docs/report.html", item) {
+		t.Fatal("resolveHTMLImageSource() = false, want parent-relative asset to resolve within bucket")
+	}
+	if _, ok := item["image_src"]; ok {
+		t.Fatalf("image_src remains after resolution: %+v", item)
+	}
+}
+
 func TestVisionEnhancementLoadsRelativeHTMLImageForOCR(t *testing.T) {
 	analyzer := &requestContextAnalyzer{}
 	useRequestContextAnalyzer(t, analyzer)
@@ -176,6 +196,9 @@ func TestResolveRelativeHTMLImagePathStaysWithinHTMLDirectory(t *testing.T) {
 	}
 	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "images/my chart.png"); !ok || got != "docs/images/my chart.png" {
 		t.Errorf("space path = %q, %v; want docs/images/my chart.png, true", got, ok)
+	}
+	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "../assets/chart.png"); !ok || got != "assets/chart.png" {
+		t.Errorf("parent-relative path = %q, %v; want assets/chart.png, true", got, ok)
 	}
 	if got, ok := resolveRelativeHTMLImagePath("docs/report.html", "../../private.png"); ok {
 		t.Errorf("path escape resolved to %q", got)

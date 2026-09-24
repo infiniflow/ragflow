@@ -106,6 +106,20 @@ func (m *GCSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 	return data, nil
 }
 
+// GetLimited retrieves an object while keeping the buffered response within
+// maxBytes. It reads one extra byte to detect oversized objects.
+func (m *GCSStorage) GetLimited(ctx context.Context, bucket, fnm string, maxBytes int64, tenantID ...string) ([]byte, error) {
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("storage read limit must not be negative")
+	}
+	r, err := m.client.Bucket(bucket).Object(fnm).NewReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return readLimitedObject(r, maxBytes)
+}
+
 // Remove removes an object from GCS
 func (m *GCSStorage) Remove(ctx context.Context, bucketName, objectName string, tenantID ...string) error {
 

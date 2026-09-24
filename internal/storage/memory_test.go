@@ -19,6 +19,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -62,6 +63,46 @@ func TestMemoryStorage_PutGet(t *testing.T) {
 	if string(got2) != "hello, world" {
 		t.Fatalf("stored bytes were mutated; got %q", got2)
 	}
+}
+
+func TestMemoryStorage_GetLimitedRejectsBeforeCopy(t *testing.T) {
+	ms := newTestMemory(t)
+	if err := ms.Put(t.Context(), "b1", "large", []byte("0123456789")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	if got, err := ms.GetLimited(t.Context(), "b1", "large", 5); !errors.Is(err, ErrObjectTooLarge) || got != nil {
+		t.Fatalf("GetLimited oversized object = %q, %v; want nil, ErrObjectTooLarge", got, err)
+	}
+	got, err := ms.GetLimited(t.Context(), "b1", "large", 10)
+	if err != nil || string(got) != "0123456789" {
+		t.Fatalf("GetLimited exact limit = %q, %v; want original bytes", got, err)
+	}
+}
+
+func TestReadLimitedObjectStopsAfterLimitPlusOne(t *testing.T) {
+	reader := &countingReader{data: []byte("0123456789")}
+	got, err := readLimitedObject(reader, 5)
+	if !errors.Is(err, ErrObjectTooLarge) || got != nil {
+		t.Fatalf("readLimitedObject = %q, %v; want nil, ErrObjectTooLarge", got, err)
+	}
+	if reader.read != 6 {
+		t.Fatalf("bytes read = %d, want limit + 1 (6)", reader.read)
+	}
+}
+
+type countingReader struct {
+	data []byte
+	read int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	if r.read == len(r.data) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.data[r.read:])
+	r.read += n
+	return n, nil
 }
 
 func TestMemoryStorage_GetMissing(t *testing.T) {

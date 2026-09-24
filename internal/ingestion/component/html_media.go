@@ -29,7 +29,7 @@ import (
 )
 
 // resolveHTMLImageSource materializes a relative HTML image from the same
-// storage directory before the shared OCR/VLM media path processes it.
+// storage bucket before the shared OCR/VLM media path processes it.
 func resolveHTMLImageSource(ctx context.Context, bucket, htmlPath string, item map[string]any) bool {
 	if item == nil || bucket == "" || item["doc_type_kwd"] != "image" {
 		return false
@@ -39,8 +39,8 @@ func resolveHTMLImageSource(ctx context.Context, bucket, htmlPath string, item m
 	if !ok {
 		return false
 	}
-	data, err := FetchBinary(ctx, bucket, assetPath)
-	if err != nil || len(data) == 0 || len(data) > maxOCRImageBytes {
+	data, err := FetchBinaryLimited(ctx, bucket, assetPath, maxOCRImageBytes)
+	if err != nil || len(data) == 0 {
 		return false
 	}
 	payload, ok := htmlImageDataURI(data)
@@ -90,8 +90,9 @@ func resolveRelativeHTMLImagePath(htmlObjectPath, imageSource string) (string, b
 	if path.IsAbs(assetPath) || assetPath == "." || assetPath == ".." || strings.HasPrefix(assetPath, "../") {
 		return "", false
 	}
-	// Keep references inside the HTML object's directory tree.
-	if baseDir != "." && (assetPath == baseDir || !strings.HasPrefix(assetPath, baseDir+"/")) {
+	// Relative references may leave the HTML directory, but must stay inside
+	// the current storage bucket.
+	if assetPath == ".." || strings.HasPrefix(assetPath, "../") {
 		return "", false
 	}
 	return assetPath, true

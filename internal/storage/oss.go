@@ -244,6 +244,46 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 	return nil, lastErr
 }
 
+// GetLimited retrieves an object while keeping the buffered response within
+// maxBytes. It reads one extra byte to detect oversized objects.
+func (o *OSSStorage) GetLimited(ctx context.Context, bucket, fnm string, maxBytes int64, tenantID ...string) ([]byte, error) {
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("storage read limit must not be negative")
+	}
+	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
+	for i := 0; i < 2; i++ {
+		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
+		if err != nil {
+			lastErr = err
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			o.reconnect(ctx)
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
+			}
+			continue
+		}
+		data, readErr := func() ([]byte, error) {
+			defer result.Body.Close()
+			return readLimitedObject(result.Body, maxBytes)
+		}()
+		if readErr == nil || errors.Is(readErr, ErrObjectTooLarge) {
+			return data, readErr
+		}
+		lastErr = readErr
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		o.reconnect(ctx)
+		if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+			return nil, sleepErr
+		}
+	}
+	return nil, lastErr
+}
+
 // Remove removes an object from OSS
 func (o *OSSStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
