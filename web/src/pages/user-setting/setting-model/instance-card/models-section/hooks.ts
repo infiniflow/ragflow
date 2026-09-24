@@ -135,6 +135,14 @@ interface UseModelsCatalogArgs {
   baseUrlValue: string | undefined;
 
   instanceDetailsLoaded?: boolean;
+
+  /**
+   * Invoked with the freshly fetched items after every successful catalog
+   * fetch (mount auto-fetch and manual "List models" clicks). Used by
+   * draft cards to auto-merge new models while skipping names the user
+   * has already removed.
+   */
+  onCatalogFetched?: (items: IProviderModelItem[]) => void;
 }
 
 export function useModelsCatalog({
@@ -146,6 +154,7 @@ export function useModelsCatalog({
   apiKeyValue,
   baseUrlValue,
   instanceDetailsLoaded,
+  onCatalogFetched,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -155,6 +164,8 @@ export function useModelsCatalog({
   const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+  const onCatalogFetchedRef = useRef(onCatalogFetched);
+  onCatalogFetchedRef.current = onCatalogFetched;
 
   const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
     const overrides = catalogOverridesRef.current;
@@ -224,9 +235,11 @@ export function useModelsCatalog({
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setCatalog(
-          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        const merged = applyCatalogOverrides(
+          (ret.data as IProviderModelItem[]) ?? [],
         );
+        setCatalog(merged);
+        onCatalogFetchedRef.current?.(merged);
       }
       setHasFetched(true);
     } catch {
