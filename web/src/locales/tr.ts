@@ -475,6 +475,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       redoAll: 'Mevcut parçaları temizle',
       applyAutoMetadataSettings: 'Global otomatik meta veri ayarlarını uygula',
       parseFileTip: 'Ayrıştırmak istediğinizden emin misiniz?',
+      clearChunksReparseTip:
+        'Yeniden ayrıştırmak için parçaları temizlemek istediğinizden emin misiniz?',
       parseFile: 'Dosyayı ayrıştır',
       emptyMetadata: 'Meta veri yok',
       metadataField: 'Meta veri alanı',
@@ -1170,6 +1172,16 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       thinkingLevelHighDescription: 'Derin akıl yürütme',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: 'Maksimum bilişsel çaba',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: 'Özerk derlem keşfi',
+      failoverModels: 'Yedek modeller',
+      failoverModelsTip:
+        'Birincil model bir sağlayıcı hatasıyla karşılaştığında Agentic ajan bu listedeki bir sonraki modele sırayla geçer.',
+      failoverModelsPrimaryLabel: 'Birincil model',
+      failoverModelsNoPrimary: 'Kiracı varsayılanı',
+      failoverModelsEmpty:
+        'Yedek model yok. Sağlayıcı hatasında çalışmayı sürdürebilmek için en az bir tane ekleyin.',
+      failoverModelsAdd: 'Yedek model ekle',
       thinkingTip:
         'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
       quote: 'Alıntı göster',
@@ -2542,7 +2554,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navDeleteNodeDescription:
         'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
       representationEmpty:
-        'Pipeline derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
+        'Hat derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
       claimsPanelTitle: 'İddia · {{name}}',
       claimsTotal: 'Toplam {{count}}',
@@ -2735,6 +2747,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       oneChunkTitle: 'Not',
       oneChunkDescription:
         'Ayrıştırılan tüm bölümler sırayla tek bir parçada birleştirilecektir.',
+      enableVisionEnhancement: 'Görsel geliştirmeyi etkinleştir',
+      enableVisionEnhancementTip:
+        'Görüntü ve tablo bloklarını ayrıştırmak için görsel model kullanın; kapalıyken bunlar düz metin olarak işlenir.',
       flattenMediaToText: 'Görsel modeli devre dışı bırak',
       flattenMediaToTextTip:
         'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
@@ -2927,6 +2942,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       addPageNumbers: 'Sayfa Numarası Ekle',
       addTimestamp: 'Zaman Damgası Ekle',
       watermarkText: 'Filigran Metni',
+      headerText: 'Üst Bilgi Metni',
+      footerText: 'Alt Bilgi Metni',
+      includeDownloadInfoInContent: 'İndirme bilgisini içeriğe ekle',
+      contentPlaceholder: 'Markdown içeriği girin...',
+      filenamePlaceholder:
+        'document.ext (boş bırakılırsa otomatik oluşturulur)',
+      contentRequired: 'İçerik gereklidir',
+      fontSizeMin: 'Yazı tipi boyutu en az 12 olmalıdır',
       channel: 'Kanal',
       channelTip: `Bileşenin girdisi üzerinde metin araması veya haber araması yapın`,
       text: 'Metin',
