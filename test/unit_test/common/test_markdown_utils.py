@@ -153,3 +153,41 @@ def test_a_pipe_in_a_header_cell_stays_inside_the_cell():
 
 def test_a_pipe_outside_a_table_is_left_alone():
     assert html_to_markdown("<p>stdin | stdout</p>").strip() == "stdin | stdout"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        # A SharePoint or OneDrive hyperlink in a .docx routinely holds spaces.
+        (
+            '<a href="https://company.sharepoint.com/Shared Documents/report.docx">Report</a>',
+            "[Report](<https://company.sharepoint.com/Shared Documents/report.docx>)",
+        ),
+        # A closing parenthesis in a query string closes the destination early.
+        ('<a href="https://example.com/s?q=a)b">result</a>', "[result](<https://example.com/s?q=a)b>)"),
+        ('<img src="https://example.com/a b.png" alt="pic"/>', "![pic](<https://example.com/a b.png>)"),
+    ],
+)
+def test_a_destination_that_would_not_survive_a_reparse_is_delimited(html, expected):
+    """A bare Markdown destination ends at the first space and at an unbalanced `)`.
+
+    The truncated tail is then read as body text, so the link points somewhere else and the
+    remainder of the URL is chunked and embedded as prose.
+    """
+    assert html_to_markdown(html).strip() == expected
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ('<a href="https://example.com/a/b?x=1&amp;y=2">ok</a>', "[ok](https://example.com/a/b?x=1&y=2)"),
+        ('<img src="https://example.com/a.png" alt="pic"/>', "![pic](https://example.com/a.png)"),
+        # A base64 data URI is what the DOCX path inlines images as; it carries no
+        # character that needs delimiting, so it has to come through untouched.
+        ('<img src="data:image/png;base64,iVBORw0KGgo=" alt="inline"/>', "![inline](data:image/png;base64,iVBORw0KGgo=)"),
+        # markdownify renders an anchor with no destination as plain text.
+        ('<a href="">empty</a>', "empty"),
+    ],
+)
+def test_a_destination_that_needs_nothing_is_left_alone(html, expected):
+    assert html_to_markdown(html).strip() == expected

@@ -9,7 +9,6 @@ package canvas
 
 import (
 	"context"
-	"sync"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -25,6 +24,6 @@ func withState(ctx context.Context, s *CanvasState) context.Context {
 // GetStateFromContext re-exports runtime.GetStateFromContext so
 // canvas-side callers (and tests that already import canvas) keep
 // compiling without an extra import.
-func GetStateFromContext[S any](ctx context.Context) (S, *sync.Mutex, error) {
-	return runtime.GetStateFromContext[S](ctx)
+func GetStateFromContext(ctx context.Context) (*CanvasState, error) {
+	return runtime.GetStateFromContext(ctx)
 }

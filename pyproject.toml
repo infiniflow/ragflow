@@ -274,6 +274,10 @@ override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
     # attrs 23.x is backward-compatible; moodlepy works fine at runtime with it.
     "attrs>=23.2.0",
+    # numpy 1.26.x has no cp313 wheels on PyPI; uv then builds from source (often fails on
+    # Windows, see infiniflow/ragflow#19928). graspologic pins numpy<2 but works on 2.x.
+    # Cap at <2.4: numba (via hyppo/graspologic) requires numpy<=2.3.
+    "numpy>=2.1.0,<2.4.0",
 ]
 # trio 0.26+ (Python 3.13 compatible) is not yet on the Aliyun mirror.
 # Mark PyPI as explicit so it is used only for packages listed in [tool.uv.sources].

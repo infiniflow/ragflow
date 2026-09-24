@@ -2615,6 +2615,32 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 }
 
+func TestDocumentKnowledgeCompileTypesIncludesUnavailableProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	variants, _, err := svc.documentKnowledgeCompileTypes(t.Context(), "tenant-1", "kb-1", "doc-1")
+	if err != nil {
+		t.Fatalf("documentKnowledgeCompileTypes failed: %v", err)
+	}
+	if docEngine.search == nil || !docEngine.search.IncludeUnavailable {
+		t.Fatalf("knowledge compile type search = %#v, want unavailable products included", docEngine.search)
+	}
+	for _, want := range []string{"tree", "structure", "wiki"} {
+		found := false
+		for _, variant := range variants {
+			if variant == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("variants = %v, missing %q", variants, want)
+		}
+	}
+}
+
 func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

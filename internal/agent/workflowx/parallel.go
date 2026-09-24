@@ -332,6 +332,9 @@ func runParallelInvoke[I, O any](
 			return nil, fmt.Errorf("%w: decode original_inputs_json: %w", ErrParallelResumeStateInvalid, rErr)
 		}
 		effectiveItems = restored
+		if prev.TotalCount != len(effectiveItems) {
+			return nil, fmt.Errorf("%w: total_count %d does not match restored input count %d", ErrParallelResumeStateInvalid, prev.TotalCount, len(effectiveItems))
+		}
 	}
 	if len(effectiveItems) == 0 {
 		return []O{}, nil

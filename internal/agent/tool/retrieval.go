@@ -252,7 +252,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// citation grounding call can read them. The recording is
 	// best-effort — when the canvas state is not
 	// attached (e.g. unit tests), we skip silently.
-	if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
+	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
 		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
 	}
 	result, err := stubJSONWithErr(out)
@@ -328,7 +328,7 @@ func cloneStringAnyMap(src map[string]any) map[string]any {
 }
 
 func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return query, nil
 	}
@@ -362,7 +362,7 @@ func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) 
 	if trimmed == "" {
 		return "", nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return trimmed, nil
 	}
@@ -388,7 +388,7 @@ func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) 
 }
 
 func resolveRetrievalDatasetIDs(ctx context.Context, datasetIDs []string) ([]string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return compactStrings(datasetIDs), nil
 	}
@@ -429,7 +429,7 @@ func resolveRetrievalFilter(ctx context.Context, filter map[string]any) (map[str
 	if filter == nil {
 		return nil, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return cloneStringAnyMap(filter), nil
 	}
@@ -501,7 +501,7 @@ func renderMemoryChunks(chunks []RetrievalChunk) string {
 }
 
 func retrievalTenantID(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}
