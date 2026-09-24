@@ -72,7 +72,6 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	row := map[string]interface{}{
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
-		"tenant_id":           state.TenantID,
 		"kb_id":               state.DatasetID,
 		"compile_kwd":         wikiMapActiveCompileKWD,
 		"scope_kwd":           "doc",
@@ -187,7 +186,6 @@ func wikiMapVersionRow(version kccommon.WikiMapVersion) map[string]interface{} {
 		// Keep immutable MAP history in a separate document namespace so source
 		// document deletion cannot remove a reusable chunk/hash version.
 		"doc_id":              wikiMapCacheDocID(version.DocumentID),
-		"tenant_id":           version.TenantID,
 		"kb_id":               version.DatasetID,
 		"compile_kwd":         wikiMapExtractCompileKWD,
 		"scope_kwd":           "doc",

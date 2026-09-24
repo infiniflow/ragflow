@@ -23,7 +23,6 @@ func wikiIntRow(id, pageType, slug, title, topic, summary string, outlinks int) 
 		"scope_kwd":           "dataset",
 		"compile_kwd":         CompileKwdWikiPage,
 		"slug_kwd":            fullSlug,
-		"artifact_slug_kwd":   fullSlug,
 		"title_kwd":           title,
 		"page_type_kwd":       pageType,
 		"topic_kwd":           topic,

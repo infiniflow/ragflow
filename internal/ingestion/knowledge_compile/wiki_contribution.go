@@ -99,7 +99,6 @@ func (s *engineWikiContributionStore) Put(ctx context.Context, tenantID, dataset
 	row := map[string]any{
 		"id":                  wikiContributionStateID(datasetID, contribution.DocumentID),
 		"doc_id":              "wiki_contribution:" + contribution.DocumentID,
-		"tenant_id":           tenantID,
 		"kb_id":               datasetID,
 		"compile_kwd":         wikiContributionCompileKWD,
 		"scope_kwd":           "doc",

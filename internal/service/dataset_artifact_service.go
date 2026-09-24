@@ -615,7 +615,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")
 	}
 	entityChunks, _, err := s.searchCompiledWithMatch(ctx, tenantID, datasetID, entityFilter,
-		[]string{"id", "slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
+		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "content_with_weight"},
 		0, limit, orderBy, matchExprs)
 	if err != nil {
 		return nil, err
@@ -645,12 +645,23 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
+		// name / aliases / description live in the content_with_weight payload
+		// (as Python writes them); the columns they replaced exist in no mapping.
+		payload := wikiEntityPayload(c)
+		name := firstStringValue(c["title_kwd"])
+		if v := payloadString(payload, "name"); v != "" {
+			name = v
+		}
+		entityType := pageType
+		if v := payloadString(payload, "type"); v != "" {
+			entityType = v
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
 			Slug:           bareSlug,
-			Name:           firstStringValue(c["title_kwd"]),
-			Aliases:        toStringSlice(c["aliases_kwd"]),
-			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           pageType,
+			Name:           name,
+			Aliases:        payloadStrings(payload, "aliases"),
+			Description:    payloadString(payload, "description"),
+			Type:           entityType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
@@ -1062,6 +1073,47 @@ func firstStringValue(v interface{}) string {
 		}
 	}
 	return ""
+}
+
+// wikiEntityPayload decodes the canvas payload a wiki_entity row stores in
+// content_with_weight (Python `_wiki_entity_payload`); the payload is
+// authoritative for name/aliases/description/type.
+func wikiEntityPayload(row map[string]interface{}) map[string]interface{} {
+	raw := firstStringValue(row["content_with_weight"])
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var payload map[string]interface{}
+	if json.Unmarshal([]byte(raw), &payload) != nil {
+		return nil
+	}
+	return payload
+}
+
+// payloadString reads a payload field, accepting the legacy Go key too.
+func payloadString(payload map[string]interface{}, key string) string {
+	if payload == nil {
+		return ""
+	}
+	if v, ok := payload[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	// Legacy Go rows named the same values title / page_type / summary.
+	legacy := map[string]string{"name": "title", "type": "page_type", "description": "summary"}[key]
+	if legacy != "" {
+		if v, ok := payload[legacy].(string); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// payloadStrings returns a string-list payload field.
+func payloadStrings(payload map[string]interface{}, key string) []string {
+	if payload == nil {
+		return []string{}
+	}
+	return toStringSlice(payload[key])
 }
 
 // bareWikiSlug strips only the first path segment from a full wiki slug

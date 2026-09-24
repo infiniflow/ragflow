@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -1380,6 +1381,10 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 // Used by Search() to mutate chunks with derived fields before returning.
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
+		// Decode json-list columns (source_doc_ids, entity_names_kwd, ...) which
+		// Infinity returns as JSON strings, so readers see slices (mirrors ES).
+		decodeJSONListFields(chunk)
+
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -1541,6 +1546,11 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 		for k := range chunk {
 			columnMap[strings.ToLower(k)] = k
 		}
+
+		// Decode JSON-list columns (Infinity returns them as JSON strings) so
+		// readers and the API see real slices, mirroring Python's get_fields ->
+		// parse_json_list normalization (infinity_conn.py:937-947).
+		decodeJSONListFields(chunk)
 
 		// Apply field mappings first (to get derived fields)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks (Python lines 716-719)
@@ -2545,14 +2555,109 @@ func numericSlice(v interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
+// jsonListFields are the list-valued columns Infinity stores as `json`. Python
+// json-encodes them before the insert (infinity_conn.py:557-558); the Go SDK
+// cannot encode a []string constant (expression_parser.go -> 3058).
+var jsonListFields = map[string]bool{
+	"source_chunk_ids":         true,
+	"source_doc_ids":           true,
+	"compilation_template_ids": true,
+	"doc_ids_kwd":              true,
+	"entity_names_kwd":         true,
+	"outlinks_kwd":             true,
+	"related_kb_pages_kwd":     true,
+	"rechunked_from_chunk_ids": true,
+}
+
+// decodeJSONListFields converts Infinity json-column values that arrive as JSON
+// strings back into []interface{} so downstream readers see the same slice shape
+// ES returns. It mirrors the Python Infinity connector's read-side parse_json_list
+// (rag/utils/infinity_conn.py:937-947): a []interface{} passes through; nil/empty
+// becomes []; a JSON string array is decoded; a string that is not JSON (legacy
+// "###"-joined values written by older Go code) is split on "###"; any other
+// scalar value is wrapped in a single-element list. It is a no-op for every
+// other key.
+func decodeJSONListFields(chunk map[string]interface{}) {
+	for k, v := range chunk {
+		if !jsonListFields[strings.ToLower(k)] {
+			continue
+		}
+		switch val := v.(type) {
+		case nil:
+			chunk[k] = []interface{}{}
+		case []interface{}:
+			// Already decoded (e.g. ES returns real arrays).
+		case string:
+			if val == "" {
+				chunk[k] = []interface{}{}
+				continue
+			}
+			var parsed []interface{}
+			if err := json.Unmarshal([]byte(val), &parsed); err == nil {
+				if parsed == nil {
+					parsed = []interface{}{}
+				}
+				chunk[k] = parsed
+				continue
+			}
+			// Legacy varchar encoding: entries joined by "###".
+			parts := strings.Split(val, "###")
+			out := make([]interface{}, 0, len(parts))
+			for _, p := range parts {
+				if p != "" {
+					out = append(out, p)
+				}
+			}
+			chunk[k] = out
+		default:
+			// A non-list JSON scalar (number/object) stored as the column value:
+			// mirror Python's "[parsed]" wrap.
+			chunk[k] = []interface{}{v}
+		}
+	}
+}
+
+// jsonListValue renders a list field as the JSON string its column stores; a
+// string comes back as-is, so re-transforming a doc is idempotent.
+func jsonListValue(v interface{}) interface{} {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	switch list := v.(type) {
+	case []string:
+		return marshalJSONList(list)
+	case []interface{}:
+		return marshalJSONList(list)
+	default:
+		if rv := reflect.ValueOf(v); rv.IsValid() && (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) {
+			return marshalJSONList(v)
+		}
+		return "[]"
+	}
+}
+
+// marshalJSONList encodes a list, falling back to the column default "[]".
+func marshalJSONList(v interface{}) string {
+	if rv := reflect.ValueOf(v); rv.IsValid() && rv.Len() == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // transformChunkFields converts chunk field names to Infinity format.
 // Converts internal field names (like docnm_kwd) to Infinity column names (docnm).
 // Also handles:
 // - kb_id: extracts first element if it's a list
 // - position_int, page_num_int, top_int: converts arrays to hex strings
+// - jsonListFields: list -> JSON string (Infinity json columns)
 // - tag_kwd: joins with ### separator
 // - question_kwd: joins with newline separator
-// - chunk_data: dict -> JSON string
+// - other *_kwd keyword fields: lists join with ###
+// - chunk_data / extra: dict -> JSON string (chunk-table varchar columns)
 // - Missing embeddings filled with zeros if embeddingCols provided
 func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]interface{}) map[string]interface{} {
 	d := make(map[string]interface{})
@@ -2653,16 +2758,28 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			}
 		case "chunk_data":
 			d["chunk_data"] = utility.ConvertMapToJSONString(v)
+		case "extra":
+			// Python json-encodes a dict-valued `extra` (infinity_conn.py:572-581);
+			// raw, the SDK reads the map as a sparse-vector literal and rejects the
+			// string keys. meta_fields is not a chunk column — InsertMetadata
+			// encodes it on the doc-meta path (infinity/metadata.go).
+			d[k] = utility.ConvertMapToJSONString(v)
 		default:
 			// Check for *_feas fields
 			if strings.HasSuffix(k, "_feas") {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
+			} else if jsonListFields[k] {
+				d[k] = jsonListValue(v)
 			} else if fieldKeyword(k) {
-				// keyword fields with list values -> ### joined
-				if list, ok := v.([]interface{}); ok {
+				// keyword fields with list values -> ### joined; accept the
+				// Go-native []string as well as []interface{}.
+				switch list := v.(type) {
+				case []string:
+					d[k] = strings.Join(list, "###")
+				case []interface{}:
 					d[k] = strings.Join(utility.ConvertToStringSlice(list), "###")
-				} else {
+				default:
 					d[k] = v
 				}
 			} else {
