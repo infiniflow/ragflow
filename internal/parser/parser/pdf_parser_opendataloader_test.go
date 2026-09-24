@@ -155,3 +155,52 @@ func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
 		t.Fatalf("item = %s, want sparse row text", string(got))
 	}
 }
+
+// TestOpenDataLoaderItems_CellsFallbackDowngradesLabel pins the
+// producer-side fix for issue #20143: when OpenDataLoader falls back
+// from `html` to cells-as-text, the resulting markup-free text must
+// not be labelled "table" — the QA chunker would silently return zero
+// pairs against concatenated cell bytes. Mirrors the TCADP and SoMark
+// cases in their respective test files.
+func TestOpenDataLoaderItems_CellsFallbackDowngradesLabel(t *testing.T) {
+	root := map[string]any{
+		"type": "table",
+		"cells": []any{
+			map[string]any{"row": 0, "content": "a"},
+			map[string]any{"row": 0, "content": "b"},
+		},
+	}
+	items := openDataLoaderItems(root)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item := items[0]
+	if got := item["doc_type_kwd"]; got != "text" {
+		t.Fatalf("doc_type_kwd = %v, want text (cells fallback has no markup)", got)
+	}
+	if got := item["layout"]; got != "text" {
+		t.Fatalf("layout = %v, want text", got)
+	}
+}
+
+// TestOpenDataLoaderItems_HTMLTableMarkupKeepsLabel pins the positive
+// case: when the OpenDataLoader parser hands back a block whose `html`
+// field carries `<table>` / `<tr>` markup, the item must come back
+// labelled "table" so the QA chunker can split it.
+func TestOpenDataLoaderItems_HTMLTableMarkupKeepsLabel(t *testing.T) {
+	root := map[string]any{
+		"type": "table",
+		"html": "<table><tr><td>a</td><td>b</td></tr></table>",
+	}
+	items := openDataLoaderItems(root)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	item := items[0]
+	if got := item["doc_type_kwd"]; got != "table" {
+		t.Fatalf("doc_type_kwd = %v, want table", got)
+	}
+	if got := item["layout"]; got != "table" {
+		t.Fatalf("layout = %v, want table", got)
+	}
+}

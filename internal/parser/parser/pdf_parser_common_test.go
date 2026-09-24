@@ -877,3 +877,93 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
 }
+
+// TestPDFTextCarriesTableMarkup pins the markup-presence predicate the three
+// PDF parsers (OpenDataLoader, TCADP, SoMark) now use to decide whether an
+// upstream `type=="table"` block deserves the "table" doc_type_kwd. See
+// issue #20143 — when the upstream parser hands back a block labelled
+// "table" but the text is concatenated cell/row bytes instead of real HTML
+// markup, the QA chunker silently returns zero pairs.
+func TestPDFTextCarriesTableMarkup(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"empty", "", false},
+		{"plain text", "col1 | col2\ncol3 | col4", false},
+		{"opens with table tag", "<table><tr><td>a</td></tr></table>", true},
+		{"row tag only", "<tr><td>a</td></tr>", true},
+		{"uppercase tag", "<TABLE><TR><TD>a</TD></TR></TABLE>", true},
+		{"tag with attributes", "<table border='1'><tr><td>a</td></tr></table>", true},
+		{"trailing whitespace around tag", "  <tr><td>a</td></tr>\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pdfTextCarriesTableMarkup(tc.text); got != tc.want {
+				t.Fatalf("pdfTextCarriesTableMarkup(%q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPDFDowngradeLabelIfNoTableMarkup pins the per-item rewrite helper the
+// three parsers share. A "table" item with no markup must come back as
+// ("text", "text"); a "table" item with markup must come back unchanged; a
+// non-table item must be a no-op.
+func TestPDFDowngradeLabelIfNoTableMarkup(t *testing.T) {
+	cases := []struct {
+		name     string
+		in       map[string]any
+		wantType string
+		wantLay  string
+	}{
+		{
+			name:     "table with markup is preserved",
+			in:       map[string]any{"text": "<table><tr><td>a</td></tr></table>", "doc_type_kwd": "table", "layout": "table"},
+			wantType: "table",
+			wantLay:  "table",
+		},
+		{
+			name:     "table without markup downgrades to text",
+			in:       map[string]any{"text": "col1 | col2\ncol3 | col4", "doc_type_kwd": "table", "layout": "table"},
+			wantType: "text",
+			wantLay:  "text",
+		},
+		{
+			name:     "non-table item is untouched",
+			in:       map[string]any{"text": "plain text", "doc_type_kwd": "text", "layout": "text"},
+			wantType: "text",
+			wantLay:  "text",
+		},
+		{
+			name:     "image item is untouched even if text is empty",
+			in:       map[string]any{"text": "[Image]", "doc_type_kwd": "image", "layout": "figure"},
+			wantType: "image",
+			wantLay:  "figure",
+		},
+		{
+			name:     "nil item returns nil",
+			in:       nil,
+			wantType: "",
+			wantLay:  "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := pdfDowngradeLabelIfNoTableMarkup(tc.in)
+			if tc.in == nil {
+				if got != nil {
+					t.Fatalf("got = %v, want nil", got)
+				}
+				return
+			}
+			if got["doc_type_kwd"] != tc.wantType {
+				t.Fatalf("doc_type_kwd = %v, want %v", got["doc_type_kwd"], tc.wantType)
+			}
+			if got["layout"] != tc.wantLay {
+				t.Fatalf("layout = %v, want %v", got["layout"], tc.wantLay)
+			}
+		})
+	}
+}
