@@ -18,6 +18,7 @@ package tool
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -318,6 +319,43 @@ func TestPubMed_BuildByNameRejectsInvalidNodeTypes(t *testing.T) {
 	for _, params := range []map[string]any{{"top_n": 1.5}, {"email": 1}, {"email": ""}} {
 		if _, err := BuildByName("pubmed", params); err == nil {
 			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
+	}
+}
+
+func TestPubMed_KeepsTextInsideInlineMarkup(t *testing.T) {
+	t.Parallel()
+
+	const doc = `<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>87654321</PMID>
+      <Article>
+        <ArticleTitle>Role of <i>Helicobacter pylori</i> in gastric cancer.</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND">Infection with <i>H. pylori</i> raises <b>risk</b> &amp; cost.</AbstractText>
+          <AbstractText Label="RESULTS">Eradication lowers recurrence.</AbstractText>
+        </Abstract>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>`
+
+	var parsed pubmedXMLResponse
+	if err := xml.Unmarshal([]byte(doc), &parsed); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(parsed.Articles) != 1 {
+		t.Fatalf("Articles len = %d, want 1", len(parsed.Articles))
+	}
+
+	result := formatPubMedResult(parsed.Articles[0])
+	if !strings.Contains(result.Title, "Helicobacter pylori") {
+		t.Errorf("Title = %q, want the text inside <i> to survive", result.Title)
+	}
+	for _, want := range []string{"H. pylori", "risk & cost", "Eradication lowers recurrence."} {
+		if !strings.Contains(result.Content, want) {
+			t.Errorf("Content missing %q: %s", want, result.Content)
 		}
 	}
 }
