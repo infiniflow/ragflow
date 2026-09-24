@@ -40,8 +40,8 @@ func TestFinalizeGeneralChunks_KeepsUploadedTagOnlyChunk(t *testing.T) {
 	in := []schema.ChunkDoc{
 		{
 			DocType: "image",
-			Text:    "@@1\t2##", // pure position tag; removeTag -> ""
-			Image:   "",          // cleared by streaming upload
+			Text:    "@@1\t2##",     // pure position tag; removeTag -> ""
+			Image:   "",             // cleared by streaming upload
 			ImgID:   "kb1-deadbeef", // uploaded, non-empty
 		},
 	}
