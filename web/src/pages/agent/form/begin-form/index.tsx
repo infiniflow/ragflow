@@ -30,7 +30,10 @@ function BeginForm({ node }: INextOperatorForm) {
 
   const ModeOptions = useMemo(
     () => [
-      { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
+      {
+        value: AgentDialogueMode.Conversational,
+        label: t('flow.conversational'),
+      },
       { value: AgentDialogueMode.Task, label: t('flow.task') },
       { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
     ],
