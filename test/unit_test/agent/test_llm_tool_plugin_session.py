@@ -26,9 +26,11 @@ class _RecordingSession:
     """Fake MCP session that records the timeout supplied by each call."""
 
     def __init__(self):
+        self.names = []
         self.timeouts = []
 
     def tool_call(self, name: str, arguments: dict, timeout: float = 10) -> str:
+        self.names.append(name)
         self.timeouts.append(timeout)
         return "done"
 
@@ -88,6 +90,7 @@ def _make_named_session(names):
 def test_bare_function_name_resolves_to_unique_indexed_tool():
     session, recording = _make_named_session(["search_archa_metodika_0", "search_archa_data_1"])
     assert asyncio.run(session.tool_call_async("search_archa_data", {})) == "done"
+    assert recording.names == ["search_archa_data"]
     assert session.get_tool_obj("search_archa_metodika").original_name == "search_archa_metodika"
     assert len(recording.timeouts) == 1
 
