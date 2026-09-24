@@ -96,3 +96,37 @@ def test_a_text_attachment_is_read_as_an_attachment_only():
 
     assert text.count("The notes are attached.") == 1
     assert text.count("Attachment line about budgets.") == 1
+
+
+@pytest.mark.p2
+def test_an_empty_preferred_alternative_falls_back_to_the_one_before_it():
+    msg = _message()
+    msg.add_alternative("<html><body>  </body></html>", subtype="html")
+
+    text = _chunk_text(msg)
+
+    assert text.count("Plain rendering of the body.") == 1
+
+
+@pytest.mark.p2
+def test_an_attachment_inside_a_nested_container_is_still_chunked():
+    """The attachment loop only sees the root's own parts, so an attached file
+    one level down reaches it through the body walk."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    inner = MIMEMultipart("mixed")
+    inner.attach(MIMEText("Body inside a nested container.", "plain"))
+    attached = MIMEText("Nested attachment line.", "plain")
+    attached.add_header("Content-Disposition", "attachment", filename="nested.txt")
+    inner.attach(attached)
+    outer = MIMEMultipart("mixed")
+    outer["From"] = "sender@example.com"
+    outer["To"] = "receiver@example.com"
+    outer["Subject"] = "nested parts"
+    outer.attach(inner)
+
+    text = _chunk_text(outer)
+
+    assert text.count("Body inside a nested container.") == 1
+    assert text.count("Nested attachment line.") == 1
