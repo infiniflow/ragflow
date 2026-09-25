@@ -17,6 +17,9 @@ package dao
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -67,6 +70,7 @@ func TestMigrateConnectorCredentialsEncryptsPlaintextRows(t *testing.T) {
 	untouched := map[string]string{
 		"no-credentials": `{"wiki": "x"}`,
 		"invalid-json":   `not json`,
+		"trailing-data":  `{"credentials": {"api_token": "tok-123"}} x`,
 		"encrypted":      `{"credentials": "enc:v1:abc"}`,
 	}
 	insertRawConnector(t, db, "plain", `{"credentials":{"api_token":"tok-123"},"wiki":"x"}`)
@@ -105,6 +109,51 @@ func TestMigrateConnectorCredentialsEncryptsPlaintextRows(t *testing.T) {
 	}
 	if got := rawConnectorConfig(t, db, "plain"); got != migrated {
 		t.Fatalf("second run rewrote the row: %q, want %q", got, migrated)
+	}
+}
+
+func TestMigrateConnectorCredentialsKeepsLargeIntegers(t *testing.T) {
+	t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
+	db := setupConnectorCredentialsTestDB(t)
+	// Both numbers are above 2^53, where a float64 round trip changes them.
+	insertRawConnector(t, db, "c1", `{"credentials":{"app_id":9007199254740993},"channel_id":1234567890123456789}`)
+
+	if err := migrateConnectorCredentials(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	migrated := rawConnectorConfig(t, db, "c1")
+	if !strings.Contains(migrated, `"channel_id":1234567890123456789`) {
+		t.Fatalf("migrated config = %s, want channel_id unchanged", migrated)
+	}
+	var stored map[string]interface{}
+	if err := json.Unmarshal([]byte(migrated), &stored); err != nil {
+		t.Fatalf("migrated config %q is not JSON: %v", migrated, err)
+	}
+	credentials, _ := stored["credentials"].(string)
+	sealed, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(credentials, "enc:v1:"))
+	if err != nil {
+		t.Fatalf("migrated config = %s, want enc:v1: credentials", migrated)
+	}
+	key, err := common.ConnectorKey()
+	if err != nil {
+		t.Fatalf("key: %v", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("gcm: %v", err)
+	}
+	// Compare the plaintext bytes: DecryptConnectorCredentials decodes numbers to float64.
+	plaintext, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], nil)
+	if err != nil {
+		t.Fatalf("decrypt migrated credentials: %v", err)
+	}
+	if string(plaintext) != `{"app_id":9007199254740993}` {
+		t.Fatalf("decrypted credentials = %s, want app_id 9007199254740993", plaintext)
 	}
 }
 

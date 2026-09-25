@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	syncerconnector "ragflow/internal/syncer/connector"
 	connectormock "ragflow/internal/syncer/connector/mock"
@@ -153,6 +154,52 @@ func TestConnectorWithLostKeyCanBeUpdatedAndDeleted(t *testing.T) {
 	deleted, code, err := svc.DeleteConnector(t.Context(), "conn-2", "tenant-1")
 	if err != nil || code != common.CodeSuccess || !deleted {
 		t.Fatalf("DeleteConnector: deleted=%v code=%v err=%v", deleted, code, err)
+	}
+}
+
+func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
+	refreshFreq := int64(30)
+	for _, tc := range []struct {
+		name string
+		req  *UpdateConnectorRequest
+	}{
+		{name: "refresh_freq", req: &UpdateConnectorRequest{RefreshFreq: &refreshFreq}},
+		{name: "cancel", req: &UpdateConnectorRequest{Status: "CANCEL"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
+			db := setupConnectorCredentialsServiceDB(t)
+			insertConnectorWithToken(t, db, "conn-1", "tok-123")
+			if err := db.Create(&entity.SyncLogs{
+				ID:          "task-1",
+				ConnectorID: "conn-1",
+				KbID:        "kb-1",
+				TaskType:    dao.TaskTypeSync,
+				Status:      string(entity.TaskStatusRunning),
+			}).Error; err != nil {
+				t.Fatalf("insert running task: %v", err)
+			}
+			t.Setenv(common.EnvRAGFlowConnectorKey, "")
+
+			_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "tenant-1", tc.req)
+			if err == nil || err.Error() != "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set" || code != common.CodeServerError {
+				t.Fatalf("UpdateConnector: code=%v err=%v, want CodeServerError and the missing key error", code, err)
+			}
+			var connector entity.Connector
+			if err := db.First(&connector, "id = ?", "conn-1").Error; err != nil {
+				t.Fatalf("load connector: %v", err)
+			}
+			if connector.RefreshFreq != 0 || connector.Status != "0" {
+				t.Fatalf("connector refresh_freq/status = %d/%s, want 0/0", connector.RefreshFreq, connector.Status)
+			}
+			var task entity.SyncLogs
+			if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+				t.Fatalf("load task: %v", err)
+			}
+			if task.Status != string(entity.TaskStatusRunning) {
+				t.Fatalf("task status = %s, want running", task.Status)
+			}
+		})
 	}
 }
 
