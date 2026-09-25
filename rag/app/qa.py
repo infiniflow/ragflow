@@ -293,25 +293,37 @@ def beAdoc(d, q, a, eng, row_num=-1):
 # An answer keeps its tables and code blocks when rendered to HTML.
 _MD_ANSWER_EXTENSIONS = ["markdown.extensions.tables", "markdown.extensions.fenced_code"]
 
+# The language fenced_code accepts after an opening fence. It takes nothing else
+# there but its own options, so ```python title=app.py is not a fence to it.
+_FENCED_CODE_LANGUAGE = re.compile(r"\.?[\w#.+-]+")
+
 
 def _render_md_answer(text):
     """Render an answer, with its code blocks where the chunker found them.
 
     The chunker reads fences like the Markdown parser (up to three spaces of
-    indentation, a closing fence at least as long as the opening one), while
-    fenced_code only closes a block on an identical, flush-left fence. So each
-    fence line is rewritten to the form fenced_code reads, and a block the
-    answer leaves open is closed.
+    indentation, any info string, a closing fence at least as long as the
+    opening one), while fenced_code only opens a block on a flush-left fence
+    followed by at most a language, and only closes it on an identical fence.
+    So each fence line is rewritten to the form fenced_code reads, and a block
+    the answer leaves open is closed. As in CommonMark, the indentation of an
+    indented opening fence is removed from the code lines too.
     """
-    lines, fence = [], None
+    lines, fence, indent = [], None, 0
     for line in text.split("\n"):
         if fence is None:
             fence = fence_marker(line)
             if fence is not None:
-                line = line.lstrip(" ")
+                opener = line.lstrip(" ")
+                indent = len(line) - len(opener)
+                info = opener[fence[1] :].split()
+                language = info[0] if info and _FENCED_CODE_LANGUAGE.fullmatch(info[0]) else ""
+                line = fence[0] * fence[1] + language
         elif is_closing_fence(line, *fence):
             line = fence[0] * fence[1]
             fence = None
+        else:
+            line = line[min(indent, len(line) - len(line.lstrip(" "))) :]
         lines.append(line)
     if fence is not None:
         lines.append(fence[0] * fence[1])

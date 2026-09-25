@@ -81,8 +81,11 @@ def test_a_code_block_in_an_answer_stays_a_code_block():
         "```bash\n# install the dependencies first\npip install ragflow\n````",
         "  ```bash\n# install the dependencies first\npip install ragflow\n  ```",
         "```bash\n# install the dependencies first\npip install ragflow",
+        "```bash title=install.sh\n# install the dependencies first\npip install ragflow\n```",
+        "```shell script\n# install the dependencies first\npip install ragflow\n```",
+        "```{.bash .numberLines}\n# install the dependencies first\npip install ragflow\n```",
     ],
-    ids=["closed-by-a-longer-fence", "indented-fence", "left-open"],
+    ids=["closed-by-a-longer-fence", "indented-fence", "left-open", "info-string-with-an-attribute", "info-string-of-two-words", "pandoc-attributes"],
 )
 def test_a_code_block_renders_wherever_the_chunker_finds_one(block):
     """fenced_code only closes a block on an identical, flush-left fence."""
@@ -99,3 +102,14 @@ def test_a_tab_indented_fence_is_not_a_fence():
     pairs = _pairs("# First?\n\n\t```\n\n# Second?\n\nAnswer.\n")
 
     assert [question for question, _ in pairs] == ["First?", "Second?"]
+
+
+@pytest.mark.p2
+def test_an_indented_fence_keeps_its_code_as_written():
+    """CommonMark removes the opening fence's indentation from the code lines."""
+    pairs = _pairs("# How do I define it?\n\n  ```python\n  def f():\n      return 1\n  ```\n")
+
+    answer = pairs[0][1]
+    assert 'class="language-python"' in answer
+    assert "def f():\n    return 1" in answer
+    assert "  def f():" not in answer
