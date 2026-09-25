@@ -276,6 +276,11 @@ class KGSearch(Dealer):
 
     def _community_retrieval_(self, entities, condition, kb_ids, idxnms, topn, max_token):
         ## Community retrieval
+        if not entities:
+            # Without entity anchors an entities_kwd filter would be dropped by
+            # the doc store, degenerating into a match-all over community
+            # reports; return nothing instead of surfacing unrelated reports.
+            return ""
         fields = ["docnm_kwd", "content_with_weight"]
         odr = OrderByExpr()
         odr.desc("weight_flt")
