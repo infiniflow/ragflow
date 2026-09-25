@@ -274,14 +274,18 @@ class RAGFlowExcelParser:
         import pandas as pd
 
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        from_csv = False
         try:
             file_like_object.seek(0)
             df = pd.read_excel(file_like_object, keep_default_na=False)
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
             df = RAGFlowExcelParser._read_csv(file_like_object)
+            from_csv = True
         df = df.replace(r"^\s*$", "", regex=True)
-        return df.to_markdown(index=False)
+        # CSV cells are text as written. tabulate would read a column of
+        # numbers into floats and write 1.50 as 1.5.
+        return df.to_markdown(index=False, disable_numparse=from_csv)
 
     def __call__(self, fnm):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm

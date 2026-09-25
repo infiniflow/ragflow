@@ -240,6 +240,15 @@ def test_markdown_keeps_na_text_and_leaves_blank_cells_empty():
 
 
 @pytest.mark.p2
+def test_markdown_writes_csv_numbers_as_written():
+    markdown = RAGFlowExcelParser().markdown(b"item,amount,id\nA,1.50,12345678901234567890\nB,3,1e5\n")
+
+    assert "| 1.50 " in markdown
+    assert "| 12345678901234567890 " in markdown
+    assert "| 1e5 " in markdown
+
+
+@pytest.mark.p2
 def test_pandas_fallback_keeps_na_text_and_leaves_blank_cells_empty(monkeypatch):
     def _openpyxl_cannot_read(*args, **kwargs):
         raise ValueError("openpyxl cannot read this file")
