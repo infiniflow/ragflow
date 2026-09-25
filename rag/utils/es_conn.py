@@ -630,6 +630,11 @@ class ESConnection(ESConnectionBase):
                 # First check _source
                 if d.get(n) is not None:
                     m[n] = d.get(n)
+                elif n == "_score":
+                    # Hit-level relevance score lives outside _source/fields;
+                    # GraphRAG entity/retrieval consumers read it from here.
+                    if hit.get("_score") is not None:
+                        m[n] = hit["_score"]
                 # Then check fields (ES 9.x stores dense_vector here, not in _source)
                 elif n in hit_fields:
                     vals = hit_fields[n]
@@ -639,6 +644,9 @@ class ESConnection(ESConnectionBase):
                     m[n] = vals
             for n, v in m.items():
                 if isinstance(v, list):
+                    m[n] = v
+                    continue
+                if n == "_score" and isinstance(v, (int, float)):
                     m[n] = v
                     continue
                 if n == "available_int" and isinstance(v, (int, float)):
