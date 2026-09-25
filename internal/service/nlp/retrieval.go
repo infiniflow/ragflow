@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1150,6 +1151,13 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
 		}
+		childMaps := make([]map[string]interface{}, 0, len(childList))
+		for _, child := range childList {
+			childMaps = append(childMaps, child.chunk)
+		}
+		if hl := parentHighlight(parentMap, childMaps); hl != "" {
+			aggregated["highlight"] = hl
+		}
 
 		// Get vector from first child if available
 	childVecLoop:
@@ -1366,4 +1374,55 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 	}
 
 	return out, nil
+}
+
+var emTermPattern = regexp.MustCompile(`(?i)<em>([^<]+)</em>`)
+
+func parentHighlight(parent map[string]interface{}, children []map[string]interface{}) string {
+	if hl, ok := parent["highlight"].(string); ok && strings.Contains(strings.ToLower(hl), "<em>") {
+		return hl
+	}
+	content, _ := parent["content_with_weight"].(string)
+	return markKnownTerms(content, emTerms(children))
+}
+
+func emTerms(chunks []map[string]interface{}) []string {
+	seen := map[string]struct{}{}
+	var terms []string
+	for _, chunk := range chunks {
+		hl, _ := chunk["highlight"].(string)
+		for _, match := range emTermPattern.FindAllStringSubmatch(hl, -1) {
+			term := strings.TrimSpace(match[1])
+			if term == "" {
+				continue
+			}
+			key := strings.ToLower(term)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func markKnownTerms(content string, terms []string) string {
+	if content == "" || len(terms) == 0 {
+		return ""
+	}
+	marked := content
+	replaced := false
+	for _, term := range terms {
+		pattern := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(term))
+		next := pattern.ReplaceAllString(marked, "<em>$0</em>")
+		if next != marked {
+			replaced = true
+			marked = next
+		}
+	}
+	if !replaced {
+		return ""
+	}
+	return marked
 }

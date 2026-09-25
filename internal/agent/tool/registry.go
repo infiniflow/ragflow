@@ -450,7 +450,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TOCEnhance = v
 	}
 	if v, ok := boolParam(params, "highlight"); ok {
-		defaults.Highlight = v
+		defaults.Highlight = boolPtr(v)
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v

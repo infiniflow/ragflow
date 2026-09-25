@@ -62,7 +62,7 @@ type retrievalArgs struct {
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
 	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
-	Highlight                bool           `json:"highlight,omitempty"`
+	Highlight                *bool          `json:"highlight,omitempty"`
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
 	EmptyResponse            string         `json:"empty_response,omitempty"`
@@ -209,7 +209,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
 		TOCEnhance:               args.TOCEnhance,
-		Highlight:                args.Highlight,
+		Highlight:                highlightEnabled(args.Highlight),
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
@@ -316,9 +316,15 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 		args.RetrievalFrom = "memory"
 	}
 	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
-	args.Highlight = args.Highlight || r.defaults.Highlight
+	if args.Highlight == nil {
+		args.Highlight = r.defaults.Highlight
+	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args
+}
+
+func highlightEnabled(value *bool) bool {
+	return value != nil && *value
 }
 
 func cloneStringAnyMap(src map[string]any) map[string]any {

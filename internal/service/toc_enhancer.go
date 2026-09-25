@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -353,6 +354,10 @@ func (e *TOCEnhancer) Enhance(ctx context.Context, kbinfos map[string]interface{
 					}
 				}
 			}
+			marked := markKnownTerms(getString(fresh, "content_with_weight"), emTerms(chunksRaw))
+			if marked != "" {
+				d["highlight"] = marked
+			}
 			chunksRaw = append(chunksRaw, d)
 			id2idx[cid] = len(chunksRaw) - 1
 			added++
@@ -596,6 +601,49 @@ func sortAndTrimChunks(chunks []map[string]interface{}, topN int) []map[string]i
 		chunks = chunks[:topN]
 	}
 	return chunks
+}
+
+var tocEmTermPattern = regexp.MustCompile(`(?i)<em>([^<]+)</em>`)
+
+func emTerms(chunks []map[string]interface{}) []string {
+	seen := map[string]struct{}{}
+	var terms []string
+	for _, chunk := range chunks {
+		hl, _ := chunk["highlight"].(string)
+		for _, match := range tocEmTermPattern.FindAllStringSubmatch(hl, -1) {
+			term := strings.TrimSpace(match[1])
+			if term == "" {
+				continue
+			}
+			key := strings.ToLower(term)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func markKnownTerms(content string, terms []string) string {
+	if content == "" || len(terms) == 0 {
+		return ""
+	}
+	marked := content
+	replaced := false
+	for _, term := range terms {
+		pattern := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(term))
+		next := pattern.ReplaceAllString(marked, "<em>$0</em>")
+		if next != marked {
+			replaced = true
+			marked = next
+		}
+	}
+	if !replaced {
+		return ""
+	}
+	return marked
 }
 
 func asMap(v interface{}) map[string]interface{} {
