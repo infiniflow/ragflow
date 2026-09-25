@@ -173,6 +173,8 @@ def test_valid_payload_creates_connector_with_defaults(monkeypatch):
 _CONNECTOR_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 _ENCRYPTED = "enc:v1:ZGVmZ2hpamtsbW5vMzm/FhC2IvFVBzHK4EVIiS2pKzu5X9Feh/PZO57Rh3K0yyGkLTDmruUEeZB6LtRoLedehJBJUg=="
 _PLAINTEXT = {"api_token": "tok-123", "user": "ada"}
+# Bytes 1..32, not the key _ENCRYPTED was written with.
+_WRONG_KEY = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
 _ENCRYPTED_INPUT_MESSAGE = "config.credentials must be plaintext, not an encrypted value."
 
 
@@ -315,25 +317,55 @@ def test_delete_works_when_the_key_is_lost(monkeypatch):
 
 
 @pytest.mark.p2
-def test_update_accepts_new_credentials_when_the_key_is_lost(monkeypatch):
+@pytest.mark.parametrize("config", [{"credentials": {"api_token": "tok-456"}}, {"sync_deleted_files": True}])
+def test_update_accepts_a_new_config_when_the_key_is_lost(monkeypatch, config):
     monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
     module = _load_connector_api(monkeypatch)
     calls = _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
     REQUEST_JSON.clear()
-    REQUEST_JSON.update({"config": {"credentials": {"api_token": "tok-456"}}})
+    REQUEST_JSON.update({"config": config})
     res = asyncio.run(module.update_connector("conn-1"))
-    assert res == {"code": 0, "message": "", "data": {"id": "conn-1", "name": "kb", "config": {"credentials": {"api_token": "tok-456"}}}}
-    assert calls == [("update_by_id", {"id": "conn-1", "config": {"credentials": {"api_token": "tok-456"}}})]
+    assert res == {"code": 0, "message": "", "data": {"id": "conn-1", "name": "kb", "config": config}}
+    assert calls == [("update_by_id", {"id": "conn-1", "config": config})]
 
 
 @pytest.mark.p2
-@pytest.mark.parametrize("payload", [{"refresh_freq": 7}, {"refresh_freq": 7, "reschedule": True}, {"status": "CANCEL"}, {"status": "SCHEDULE"}])
-def test_update_without_new_credentials_writes_nothing_when_the_key_is_lost(monkeypatch, payload):
+@pytest.mark.parametrize(
+    "payload, writes",
+    [
+        ({"refresh_freq": 7}, [("update_by_id", {"id": "conn-1", "refresh_freq": 7})]),
+        ({"refresh_freq": 7, "reschedule": True}, [("update_by_id", {"id": "conn-1", "refresh_freq": 7}), ("cancel_tasks", "conn-1"), ("schedule_tasks", "conn-1")]),
+        ({"status": "CANCEL"}, [("cancel_tasks", "conn-1")]),
+        ({"status": "SCHEDULE"}, [("schedule_tasks", "conn-1")]),
+    ],
+)
+def test_update_without_a_key_works_for_plaintext_credentials(monkeypatch, payload, writes):
     monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    module = _load_connector_api(monkeypatch)
+    calls = _serve_stored_connector(monkeypatch, module, {"credentials": {"api_token": "tok-123"}})
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update(payload)
+    res = asyncio.run(module.update_connector("conn-1"))
+    assert res == {"code": 0, "message": "", "data": {"id": "conn-1", "name": "kb", "config": {"credentials": {"api_token": "tok-123"}}}}
+    assert calls == writes
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("payload", [{"refresh_freq": 7}, {"refresh_freq": 7, "reschedule": True}, {"status": "CANCEL"}, {"status": "SCHEDULE"}, {"config": None}])
+@pytest.mark.parametrize(
+    "key, message",
+    [
+        ("", "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set"),
+        (_WRONG_KEY, "cannot decrypt connector credentials: wrong RAGFLOW_CONNECTOR_KEY or corrupted value"),
+    ],
+    ids=["unset", "wrong"],
+)
+def test_update_without_new_credentials_writes_nothing_when_the_key_is_lost(monkeypatch, payload, key, message):
+    monkeypatch.setenv("RAGFLOW_CONNECTOR_KEY", key)
     module = _load_connector_api(monkeypatch)
     calls = _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
     REQUEST_JSON.clear()
     REQUEST_JSON.update(payload)
     res = asyncio.run(module.update_connector("conn-1"))
-    assert res == {"code": 102, "message": "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set", "data": None}
+    assert res == {"code": 102, "message": message, "data": None}
     assert calls == []

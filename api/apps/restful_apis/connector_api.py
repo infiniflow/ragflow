@@ -80,7 +80,7 @@ async def update_connector(connector_id):
     if req:
         if has_encrypted_credentials(req.get("config")):
             return _encrypted_credentials_error()
-        if "config" not in req:
+        if req.get("config") is None:
             # The response cannot decrypt the stored credentials either, so fail before any write or task change.
             try:
                 decrypt_connector_config(conn.config)

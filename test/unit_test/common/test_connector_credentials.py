@@ -191,6 +191,13 @@ def _encrypt_bytes(plaintext: bytes) -> str:
 
 
 @pytest.mark.p2
+def test_decrypts_raw_utf8_as_go_writes_it(key):
+    # Go's json.Marshal writes non-ASCII as raw UTF-8; Python writes \u escapes.
+    stored = _encrypt_bytes('{"password": "p\u00e4ssword"}'.encode())
+    assert decrypt_connector_config({"credentials": stored}) == {"credentials": {"password": "p\u00e4ssword"}}
+
+
+@pytest.mark.p2
 @pytest.mark.parametrize("plaintext", [b"not json", b"\x80"])
 def test_decrypt_rejects_an_authentic_payload_that_is_not_json(key, plaintext):
     with pytest.raises(ConnectorCredentialsError) as exc:
