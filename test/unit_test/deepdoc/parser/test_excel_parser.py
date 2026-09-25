@@ -192,6 +192,87 @@ def test_csv_accepts_gb18030_characters_not_supported_by_gbk():
     assert "备注：𠀀" in lines[0][0]
 
 
+# A cell that reads NA (Namibia's country code), N/A or NULL, a ZIP code with a
+# leading zero, an amount written with two decimals, and a blank cell.
+_CSV_AS_WRITTEN = "country,code,zip,amount,status\nNamibia,NA,02139,1.50,N/A\nGermany,DE,10115,,active\nNorway,NO,0150,3,NULL\n"
+
+
+@pytest.mark.p2
+def test_csv_cells_reading_na_or_null_are_kept_as_text():
+    lines = [text for text, _ in RAGFlowExcelParser()(_CSV_AS_WRITTEN.encode())]
+
+    assert "code：NA" in lines[0]
+    assert "status：N/A" in lines[0]
+    assert "status：NULL" in lines[2]
+
+
+@pytest.mark.p2
+def test_csv_values_keep_their_leading_zeros_and_decimals():
+    lines = [text for text, _ in RAGFlowExcelParser()(_CSV_AS_WRITTEN.encode())]
+
+    assert "zip：02139" in lines[0]
+    assert "amount：1.50" in lines[0]
+    assert "zip：0150" in lines[2]
+    assert "amount：3;" in lines[2]
+
+
+@pytest.mark.p2
+def test_a_blank_csv_cell_is_not_indexed_as_nan():
+    parser = RAGFlowExcelParser()
+    lines = [text for text, _ in parser(_CSV_AS_WRITTEN.encode())]
+    table = parser.html(_CSV_AS_WRITTEN.encode(), chunk_rows=256)[0][0]
+
+    assert "amount" not in lines[1]
+    assert "nan" not in " ".join(lines)
+    assert "<td>10115</td><td></td><td>active</td>" in table
+
+
+@pytest.mark.p2
+def test_markdown_keeps_na_text_and_leaves_blank_cells_empty():
+    parser = RAGFlowExcelParser()
+    from_csv = parser.markdown(_CSV_AS_WRITTEN.encode())
+    from_xlsx = parser.markdown(_make_xlsx_with_values(["country", "status", "amount"], ["Germany", "N/A", None]))
+
+    for markdown in (from_csv, from_xlsx):
+        assert "N/A" in markdown
+        assert "nan" not in markdown
+    assert "02139" in from_csv
+
+
+@pytest.mark.p2
+def test_pandas_fallback_keeps_na_text_and_leaves_blank_cells_empty(monkeypatch):
+    def _openpyxl_cannot_read(*args, **kwargs):
+        raise ValueError("openpyxl cannot read this file")
+
+    monkeypatch.setattr(_mod, "load_workbook", _openpyxl_cannot_read)
+
+    workbook = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(_make_xlsx_with_values(["status", "amount"], ["N/A", None])))
+
+    assert list(workbook.active.iter_rows(values_only=True)) == [("status", "amount"), ("N/A", None)]
+
+
+@pytest.mark.p2
+def test_calamine_fallback_keeps_na_text_as_well(monkeypatch):
+    """The last fallback. The default engine stands in for calamine, which is an
+    optional dependency, and receives the same options."""
+    real_read_excel = _mod.pd.read_excel
+
+    def _openpyxl_cannot_read(*args, **kwargs):
+        raise ValueError("openpyxl cannot read this file")
+
+    def _only_calamine(io, *args, **kwargs):
+        if kwargs.pop("engine", None) != "calamine":
+            raise ValueError("the default engine cannot read this file")
+        return real_read_excel(io, *args, **kwargs)
+
+    monkeypatch.setattr(_mod, "load_workbook", _openpyxl_cannot_read)
+    monkeypatch.setattr(_mod.pd, "read_excel", _only_calamine)
+
+    workbook = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(_make_xlsx_with_values(["status"], ["N/A"])))
+
+    assert list(workbook.active.iter_rows(values_only=True)) == [("status",), ("N/A",)]
+
+
 @pytest.mark.p2
 def test_corrupt_csv_encoding_still_fails():
     with pytest.raises(Exception, match="Failed to parse CSV"):
