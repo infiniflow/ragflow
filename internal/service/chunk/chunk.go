@@ -265,6 +265,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
 					chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					// The context window, not the max_output the target carries
+					// alongside it: the metadata filter's prompt budget is
+					// measured against the model's total context.
+					chatModelForFilter.ContextLength = target.ContextLength
 					common.Info("Fetched chat model (from search_config) for metadata filter",
 						zap.String("chatID", chatID),
 						zap.String("tenantID", tenantIDs[0]))
@@ -284,6 +288,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
 					} else {
 						chatModelForFilter = models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+						chatModelForFilter.ContextLength = target.ContextLength
 						common.Info("Fetched chat model (tenant default) for metadata filter",
 							zap.String("tenantID", tenantIDs[0]),
 							zap.String("modelName", modelName))
@@ -305,8 +310,11 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
-			docIDs = filteredDocIDs
+			// nil means no metadata narrowing (Python's None): search the
+			// caller's scope unfiltered rather than scoping to nothing.
+			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets)); filteredDocIDs != nil {
+				docIDs = filteredDocIDs
+			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
 	}

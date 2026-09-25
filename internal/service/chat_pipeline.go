@@ -625,7 +625,7 @@ func (s *ChatPipelineService) AsyncChat(
 					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 				}
 				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
+					if filtered := ApplyMetaDataFilter(
 						ctx,
 						*chat.MetaDataFilter,
 						flattedMeta,
@@ -2354,6 +2354,10 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+		// The context window, not the max_output the target carries alongside
+		// it: prompt budgets (gen_meta_filter's among them) are measured
+		// against the model's total context.
+		chatModel.ContextLength = target.ContextLength
 	}
 
 	// Rerank model.

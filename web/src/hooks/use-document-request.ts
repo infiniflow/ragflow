@@ -256,9 +256,6 @@ export const useFetchDocumentList = (loop = true) => {
         },
       );
       if (ret.data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.allFilters(),
-        });
         return ret.data.data;
       }
 
@@ -372,18 +369,39 @@ export const useFetchDocumentsByIds = (
 };
 
 // get document filter
+const EmptyDocumentFilter: IDocumentInfoFilter = {
+  run_status: {},
+  suffix: {},
+  metadata: {},
+};
+
+const DocumentFilterStaleTimeMs = 30_000;
+
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  loading: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString } = useHandleSearchChange();
   const { id } = useParams();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const [open, setOpen] = useState<number>(0);
+  // The counts are only rendered inside the filter popover, and the backend
+  // builds them by reading the metadata of every document in the dataset.
+  // Fetch them when the popover is first opened and refresh them on later
+  // opens, instead of on every visit to the file list.
+  //
+  // Which dataset was opened, not merely that one was: the page rerenders for
+  // a new dataset id without unmounting this hook, and a boolean would carry
+  // the previous dataset's open state over and fetch the new one's counts
+  // before its popover is ever opened.
+  const [openedDatasetId, setOpenedDatasetId] = useState<string>();
   const datasetId = knowledgeId || id;
-  const { data } = useQuery({
-    queryKey: DocumentKeys.filter(debouncedSearchString, knowledgeId),
+  const filterOpened = !!datasetId && openedDatasetId === datasetId;
+  const { data, dataUpdatedAt, isLoading, isFetching, refetch } = useQuery({
+    queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
+    enabled: filterOpened,
+    staleTime: DocumentFilterStaleTimeMs,
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -394,18 +412,29 @@ export const useGetDocumentFilter = (): {
       }
     },
   });
-  const handleOpenChange = (e: boolean) => {
-    if (e) {
-      const currentOpen = open + 1;
-      setOpen(currentOpen);
-    }
-  };
-  return {
-    filter: data?.filter || {
-      run_status: {},
-      suffix: {},
-      metadata: {},
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open || !datasetId) {
+        return;
+      }
+      if (filterOpened) {
+        if (
+          !isFetching &&
+          Date.now() - dataUpdatedAt >= DocumentFilterStaleTimeMs
+        ) {
+          refetch();
+        }
+        return;
+      }
+      setOpenedDatasetId(datasetId);
     },
+    [dataUpdatedAt, datasetId, filterOpened, isFetching, refetch],
+  );
+  return {
+    filter: data?.filter ?? EmptyDocumentFilter,
+    // Only the very first fetch has nothing to render; later refreshes keep
+    // showing the cached counts.
+    loading: isLoading,
     onOpenChange: handleOpenChange,
   };
 };

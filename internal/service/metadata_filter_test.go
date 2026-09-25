@@ -522,3 +522,62 @@ func TestCompareValuesDirectly(t *testing.T) {
 		}
 	}
 }
+
+// ApplyMetaDataFilter's outcomes must stay distinguishable: "the metadata could
+// not narrow the search" is not the same answer as "no document matches". Python
+// keeps them apart as None vs ["-999"] (common/metadata_utils.py), and the Go
+// side has to, because the returned slice is applied as a hard document scope.
+func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
+	base := []string{"doc-1", "doc-2"}
+	metas := common.MetaData{"author": {"Zhang San": {"doc-1"}}}
+
+	// The generator answering with no conditions is the common case on a large
+	// dataset: either the question names no metadata, or the value space was too
+	// big to show and generation was refused. Neither means "no such document".
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method+" without generated conditions returns no scope", func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"author"}
+			}
+
+			got := ApplyMetaDataFilter(t.Context(), filter, metas, "who wrote it?", chatModel, base, nil)
+
+			if driver.calls != 1 {
+				t.Fatalf("model calls: got %d, want 1", driver.calls)
+			}
+			if got != nil {
+				t.Fatalf("got %v, want nil so the caller keeps its own document scope", got)
+			}
+		})
+	}
+
+	t.Run("manual conditions matching nothing return the sentinel", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "nobody"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != NoMatchDocIDSentinel {
+			t.Fatalf("got %v, want [%s]: the user asked for these exact conditions", got, NoMatchDocIDSentinel)
+		}
+	})
+
+	t.Run("manual conditions that match return their documents", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "Zhang San"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != "doc-1" {
+			t.Fatalf("got %v, want [doc-1]", got)
+		}
+	})
+}
