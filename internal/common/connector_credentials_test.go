@@ -51,7 +51,7 @@ func TestConnectorKey(t *testing.T) {
 	}
 
 	// Python's b64decode(validate=True) rejects line breaks that Go's decoder skips.
-	for _, bad := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString(make([]byte, 16)), testConnectorKey + "\n", testConnectorKey + "\r\n"} {
+	for _, bad := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString(make([]byte, 16)), testConnectorKey + "\n", testConnectorKey + "\r\n", testConnectorKey + "\r", testConnectorKey[:20] + "\n" + testConnectorKey[20:]} {
 		t.Setenv(EnvRAGFlowConnectorKey, bad)
 		key, err = ConnectorKey()
 		if err == nil || key != nil {

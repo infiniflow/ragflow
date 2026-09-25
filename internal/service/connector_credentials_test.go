@@ -165,11 +165,22 @@ func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
 	}{
 		{name: "refresh_freq", req: &UpdateConnectorRequest{RefreshFreq: &refreshFreq}},
 		{name: "cancel", req: &UpdateConnectorRequest{Status: "CANCEL"}},
+		{name: "schedule", req: &UpdateConnectorRequest{Status: string(entity.TaskStatusSchedule)}},
+		{name: "reschedule", req: &UpdateConnectorRequest{Reschedule: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
 			db := setupConnectorCredentialsServiceDB(t)
+			if err := db.AutoMigrate(&entity.Connector2Kb{}, &entity.Knowledgebase{}); err != nil {
+				t.Fatalf("migrate kb tables: %v", err)
+			}
 			insertConnectorWithToken(t, db, "conn-1", "tok-123")
+			if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "kb-1", CreatedBy: "tenant-1", EmbdID: "embd"}).Error; err != nil {
+				t.Fatalf("insert kb: %v", err)
+			}
+			if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+				t.Fatalf("insert connector2kb: %v", err)
+			}
 			if err := db.Create(&entity.SyncLogs{
 				ID:          "task-1",
 				ConnectorID: "conn-1",
@@ -198,6 +209,13 @@ func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
 			}
 			if task.Status != string(entity.TaskStatusRunning) {
 				t.Fatalf("task status = %s, want running", task.Status)
+			}
+			var tasks int64
+			if err := db.Model(&entity.SyncLogs{}).Count(&tasks).Error; err != nil {
+				t.Fatalf("count tasks: %v", err)
+			}
+			if tasks != 1 {
+				t.Fatalf("sync_logs rows = %d, want 1 (no task scheduled)", tasks)
 			}
 		})
 	}

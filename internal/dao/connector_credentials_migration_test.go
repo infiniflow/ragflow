@@ -131,6 +131,9 @@ func TestMigrateConnectorCredentialsKeepsLargeIntegers(t *testing.T) {
 		t.Fatalf("migrated config %q is not JSON: %v", migrated, err)
 	}
 	credentials, _ := stored["credentials"].(string)
+	if !strings.HasPrefix(credentials, "enc:v1:") {
+		t.Fatalf("migrated config = %s, want enc:v1: credentials", migrated)
+	}
 	sealed, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(credentials, "enc:v1:"))
 	if err != nil {
 		t.Fatalf("migrated config = %s, want enc:v1: credentials", migrated)
@@ -146,6 +149,9 @@ func TestMigrateConnectorCredentialsKeepsLargeIntegers(t *testing.T) {
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		t.Fatalf("gcm: %v", err)
+	}
+	if len(sealed) < gcm.NonceSize()+gcm.Overhead() {
+		t.Fatalf("migrated config = %s, sealed value too short", migrated)
 	}
 	// Compare the plaintext bytes: DecryptConnectorCredentials decodes numbers to float64.
 	plaintext, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], nil)
