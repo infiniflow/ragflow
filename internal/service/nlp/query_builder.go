@@ -169,6 +169,33 @@ func (qb *QueryBuilder) RmWWW(txt string) string {
 	return txt
 }
 
+// addHyphenatedPhrases puts complete hyphenated terms ahead of their split
+// tokens so identifiers such as "PPR-9087" are ranked as a whole phrase.
+func (qb *QueryBuilder) addHyphenatedPhrases(query string, txt string) string {
+	var phrases []string
+	terms := strings.Fields(txt)
+	if len(terms) > 256 {
+		terms = terms[:256]
+	}
+	for _, term := range terms {
+		if !strings.Contains(term, "-") {
+			continue
+		}
+		// Infinity treats hyphen as a regular analyzer token, not an
+		// escapable query character. Escaping it would leave a backslash in
+		// the phrase because Infinity does not unescape hyphens.
+		term = strings.ReplaceAll(qb.SubSpecialChar(term), `\-`, "-")
+		if term != "" {
+			phrases = append(phrases, fmt.Sprintf(`"%s"^5.0`, term))
+		}
+	}
+	if len(phrases) == 0 {
+		return query
+	}
+
+	return strings.Join(append(phrases, query), " ")
+}
+
 // AddSpaceBetweenEngZh adds spaces between English letters and Chinese characters to improve tokenization.
 func (qb *QueryBuilder) AddSpaceBetweenEngZh(txt string) string {
 	// (ENG/ENG+NUM) + ZH: e.g., "ABC123中文" -> "ABC123 中文"
@@ -377,6 +404,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 		// query is the final query string built from all query parts.
 		query := strings.Join(q, " ")
+		query = qb.addHyphenatedPhrases(query, txtFinal)
 		return &types.MatchTextExpr{
 			Fields:       qb.queryFields,
 			MatchingText: query,
@@ -591,6 +619,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		if query == "" {
 			query = otxt
 		}
+		query = qb.addHyphenatedPhrases(query, txtChinese)
 		return &types.MatchTextExpr{
 			Fields:       qb.queryFields,
 			MatchingText: query,
