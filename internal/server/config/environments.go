@@ -124,6 +124,11 @@ func (c *Config) GetEnvironments() error {
 		c.environments.SecretKey = envVal
 	}
 
+	// Fail at startup, not on the first connector write.
+	if _, err := common.ConnectorKey(); err != nil {
+		return err
+	}
+
 	if envVal := common.GetEnv(common.EnvEnableRegister); envVal != "" {
 		if c.environments.EnableRegister == nil {
 			c.environments.EnableRegister = new(bool)

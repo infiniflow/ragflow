@@ -248,7 +248,7 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 			Name:        connectorID,
 			Source:      "mock",
 			InputType:   "poll",
-			Config:      entity.JSONMap{"sync_deleted_files": true},
+			Config:      entity.ConnectorConfig{"sync_deleted_files": true},
 			RefreshFreq: 0,
 			PruneFreq:   0,
 			TimeoutSecs: 60,
