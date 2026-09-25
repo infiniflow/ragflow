@@ -65,6 +65,12 @@ def chunk(
     for header, value in msg.items():
         text_txt.append(f"{header}: {value}")
 
+    def _html_sections(documents):
+        # HtmlParser reads the first <body> of the text it is given, so each HTML
+        # part is parsed on its own. Apple Mail, for one, splits an HTML body
+        # around an inline attachment into several HTML parts.
+        return [section for document in documents for section in HtmlParser.parser_txt(document, chunk_token_num=parser_config["chunk_token_num"])]
+
     #  get the email main info
     def _add_content(msg, content_type):
         def _decode_payload(payload, charset, target_list):
@@ -103,12 +109,10 @@ def chunk(
             for part in reversed(list(msg.iter_parts())):
                 text_start, html_start = len(text_txt), len(html_txt)
                 _add_content(part, part.get_content_type())
-                added = text_txt[text_start:] + HtmlParser.parser_txt("\n".join(html_txt[html_start:]), chunk_token_num=parser_config["chunk_token_num"])
+                added = text_txt[text_start:] + _html_sections(html_txt[html_start:])
                 if any(piece.strip() for piece in added):
                     break
-                # A rendering without readable text leaves nothing behind: an
-                # empty HTML document joined before a later HTML part hides that
-                # part from HtmlParser, which reads the first <body> only.
+                # A rendering without readable text leaves nothing behind.
                 del text_txt[text_start:]
                 del html_txt[html_start:]
         elif "multipart" in content_type:
@@ -118,7 +122,7 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line]
+    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in _html_sections(html_txt) if line]
 
     st = timer()
     chunks = naive_merge(

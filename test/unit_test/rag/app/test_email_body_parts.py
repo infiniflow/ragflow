@@ -148,8 +148,8 @@ def test_an_attachment_inside_a_nested_container_is_still_chunked():
 
 @pytest.mark.p2
 def test_an_empty_rendering_does_not_hide_a_later_html_part():
-    """A rejected alternative used to stay in the HTML list, and HtmlParser
-    reads only the first <body> of the joined parts."""
+    """An empty HTML rendering passed over for the plain one, then an inline
+    HTML part after the alternative."""
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
@@ -166,3 +166,46 @@ def test_an_empty_rendering_does_not_hide_a_later_html_part():
 
     assert text.count("Plain rendering of the body.") == 1
     assert text.count("Readable inline part.") == 1
+
+
+def _html_split_around_a_file(before, after, plain):
+    """Apple Mail splits the HTML rendering around an inline attachment, so the
+    body arrives as several HTML parts in a multipart/mixed."""
+    from email.mime.application import MIMEApplication
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    mixed = MIMEMultipart("mixed")
+    mixed.attach(MIMEText(f"<html><body>{before}</body></html>", "html"))
+    report = MIMEApplication(b"%PDF-1.4", "pdf")
+    report.add_header("Content-Disposition", "inline", filename="report.pdf")
+    mixed.attach(report)
+    mixed.attach(MIMEText(f"<html><body>{after}</body></html>", "html"))
+    alternative = MIMEMultipart("alternative")
+    alternative["From"] = "sender@example.com"
+    alternative["Subject"] = "a body split around a file"
+    alternative.attach(MIMEText(plain, "plain"))
+    alternative.attach(mixed)
+    return alternative
+
+
+@pytest.mark.p2
+def test_an_html_body_split_around_an_attachment_is_read_whole():
+    """HtmlParser reads only the first <body> of the text it is given."""
+    msg = _html_split_around_a_file("<p>Text before the file.</p>", "<p>Text after the file.</p>", "Text before the file.\n\n<report.pdf>\n\nText after the file.")
+
+    text = _chunk_text(msg)
+
+    assert text.count("Text before the file.") == 1
+    assert text.count("Text after the file.") == 1
+
+
+@pytest.mark.p2
+def test_an_html_body_that_opens_with_an_attachment_is_the_rendering_read():
+    """The first HTML part is empty then, and the text follows the file."""
+    msg = _html_split_around_a_file("", "<p>HTML rendering of the body.</p>", "Plain rendering of the body.")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+    assert "Plain rendering of the body." not in text
