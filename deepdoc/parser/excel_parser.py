@@ -36,7 +36,10 @@ class RAGFlowExcelParser:
             file_like_object.seek(0)
             binary = file_like_object.read()
         text, _ = decode_text(binary, document_type="CSV document")
-        return pd.read_csv(StringIO(text), on_bad_lines="skip")
+        # Every value as written. A CSV has no types, so `02139` keeps its zero
+        # and `1.50` its decimals, and a cell reading `N/A`, `NA` or `NULL` is
+        # text, not a missing value. A blank cell is an empty string.
+        return pd.read_csv(StringIO(text), on_bad_lines="skip", dtype=str, keep_default_na=False)
 
     @staticmethod
     def _load_excel_to_workbook(file_like_object):
@@ -65,12 +68,12 @@ class RAGFlowExcelParser:
             try:
                 file_like_object.seek(0)
                 try:
-                    dfs = pd.read_excel(file_like_object, sheet_name=None)
+                    dfs = pd.read_excel(file_like_object, sheet_name=None, keep_default_na=False)
                     return RAGFlowExcelParser._dataframe_to_workbook(dfs)
                 except Exception as ex:
                     logging.info(f"pandas with default engine load error: {ex}, try calamine instead")
                     file_like_object.seek(0)
-                    df = pd.read_excel(file_like_object, engine="calamine")
+                    df = pd.read_excel(file_like_object, engine="calamine", keep_default_na=False)
                     return RAGFlowExcelParser._dataframe_to_workbook(df)
             except Exception as e_pandas:
                 raise Exception(f"pandas.read_excel error: {e_pandas}, original openpyxl error: {e}")
@@ -90,6 +93,10 @@ class RAGFlowExcelParser:
             ws.cell(row=1, column=col_num, value=column_name)
         for row_num, row in enumerate(df.values, 2):
             for col_num, value in enumerate(row, 1):
+                # A blank cell stays empty, as openpyxl reads one from a
+                # workbook; written out, NaN would be the text "nan".
+                if (isinstance(value, str) and not value) or pd.isna(value):
+                    continue
                 ws.cell(row=row_num, column=col_num, value=value)
 
     @staticmethod
@@ -267,14 +274,18 @@ class RAGFlowExcelParser:
         import pandas as pd
 
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        from_csv = False
         try:
             file_like_object.seek(0)
-            df = pd.read_excel(file_like_object)
+            df = pd.read_excel(file_like_object, keep_default_na=False)
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
             df = RAGFlowExcelParser._read_csv(file_like_object)
+            from_csv = True
         df = df.replace(r"^\s*$", "", regex=True)
-        return df.to_markdown(index=False)
+        # CSV cells are text as written. tabulate would read a column of
+        # numbers into floats and write 1.50 as 1.5.
+        return df.to_markdown(index=False, disable_numparse=from_csv)
 
     def __call__(self, fnm):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
