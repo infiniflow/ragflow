@@ -342,6 +342,30 @@ func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition 
 	return nil
 }
 
+type parentChildAvailabilityDocEngine struct {
+	fakeChatDocEngine
+	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
+	updateValues     []map[string]interface{}
+}
+
+func (e *parentChildAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
+	return &types.SearchResult{Chunks: []map[string]interface{}{
+		{"id": "parent-1"},
+		{"id": "child-1", "mom_id": "parent-1"},
+		{"id": "child-2", "mom_id": "parent-1"},
+		{"id": "tree-1", "compile_kwd": "tree"},
+		{"id": "wiki-1", "compile_kwd": "wiki_page"},
+	}, Total: 5}, nil
+}
+
+func (e *parentChildAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, _, _ string) error {
+	e.updateConditions = append(e.updateConditions, condition)
+	e.updateValues = append(e.updateValues, newValue)
+	return nil
+}
+
 type metadataDocEngine struct {
 	fakeChatDocEngine
 	records map[string]map[string]interface{}
@@ -2610,8 +2634,31 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
 		t.Fatalf("available_int = %#v, want 0", got)
 	}
-	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
-		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
+	if docEngine.search == nil || !docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, want IncludeUnavailable to find disabled rows", docEngine.search)
+	}
+}
+
+// TestUpdateDocumentChunkAvailabilitySkipsParentsOnEnable ensures parent-child
+// parent rows (no mom_id) stay unavailable when the document is re-enabled.
+func TestUpdateDocumentChunkAvailabilitySkipsParentsOnEnable(t *testing.T) {
+	docEngine := &parentChildAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	if err := svc.updateDocumentChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
+		t.Fatalf("updateDocumentChunkAvailability failed: %v", err)
+	}
+	if len(docEngine.updateConditions) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
+	}
+	ids, ok := docEngine.updateConditions[0]["id"].([]string)
+	want := []string{"child-1", "child-2", "tree-1"}
+	if !ok || !reflect.DeepEqual(ids, want) {
+		t.Fatalf("updated ids = %#v, want %v (parent row excluded)", docEngine.updateConditions[0]["id"], want)
+	}
+	if got := docEngine.updateValues[0]["available_int"]; got != 1 {
+		t.Fatalf("available_int = %#v, want 1", got)
 	}
 }
 
