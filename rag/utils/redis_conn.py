@@ -34,6 +34,15 @@ except Exception:
         REDIS = {}
 
 
+def _total_system_memory_human(info):
+    """Host RAM from INFO MEMORY; managed Redis (e.g. Tair) may omit this field."""
+    for key in ("total_system_memory_human", "maxmemory_human"):
+        value = info.get(key)
+        if value:
+            return value
+    return ""
+
+
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
         self.__consumer = consumer
@@ -159,7 +168,7 @@ class RedisDB:
             "redis_version": info["redis_version"],
             "server_mode": info["server_mode"] if "server_mode" in info else info.get("redis_mode", ""),
             "used_memory": info["used_memory_human"],
-            "total_system_memory": info["total_system_memory_human"],
+            "total_system_memory": _total_system_memory_human(info),
             "mem_fragmentation_ratio": info["mem_fragmentation_ratio"],
             "connected_clients": info["connected_clients"],
             "blocked_clients": info["blocked_clients"],
