@@ -20,7 +20,7 @@ import {
 } from '@/interfaces/database/agent';
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { DateRange } from '../../components/originui/calendar/index';
@@ -138,89 +138,44 @@ const AgentLogPage: React.FC = () => {
     setCurrentDate({ from: dateRange.from, to: dateRange.to });
   };
 
-  const [pagination, setPagination] = useState<{
-    current: number;
-    pageSize: number;
-    total: number;
-  }>({
-    current: 1,
-    pageSize: 10,
-    total: total,
-  });
-
-  useEffect(() => {
-    setPagination((pre) => {
-      return {
-        ...pre,
-        total: total,
-      };
-    });
-  }, [total]);
-
-  const [sortConfig, setSortConfig] = useState<{
-    orderby: string;
-    desc: boolean;
-  } | null>({ orderby: init.orderby, desc: init.desc ? true : false });
-
-  const handlePageChange = (current?: number, pageSize?: number) => {
-    let page = current || 1;
-    if (pagination.pageSize !== pageSize) {
-      page = 1;
-    }
-    setPagination({
-      ...pagination,
-      current: page,
-      pageSize: pageSize || 10,
-    });
+  const handlePageChange = (current: number, pageSize: number) => {
+    setSearchParams((pre) => ({
+      ...pre,
+      page: pre.page_size === pageSize ? current : 1,
+      page_size: pageSize,
+    }));
   };
-
-  const handleSearch = useCallback(
-    (overrides: Partial<typeof searchParams> = {}) => {
-      setSearchParams((pre) => {
-        return {
-          ...pre,
-          from_date: currentDate.from as Date,
-          to_date: currentDate.to as Date,
-          page: pagination.current,
-          page_size: pagination.pageSize,
-          orderby: sortConfig?.orderby || '',
-          desc: sortConfig?.desc as boolean,
-          keywords: keywords,
-          ...overrides,
-        };
-      });
-    },
-    [currentDate, pagination, sortConfig, keywords],
-  );
 
   const handleClickSearch = () => {
     const sameParams =
-      pagination.current === 1 &&
+      searchParams.page === 1 &&
       searchParams.keywords === keywords &&
-      searchParams.from_date === currentDate.from &&
-      searchParams.to_date === currentDate.to;
+      searchParams.from_date?.getTime() === currentDate.from?.getTime() &&
+      searchParams.to_date?.getTime() === currentDate.to?.getTime();
 
     if (sameParams) {
       refetch();
     } else {
-      setPagination((pre) => ({ ...pre, current: 1 }));
-      handleSearch({ page: 1, keywords });
+      setSearchParams((pre) => ({
+        ...pre,
+        from_date: currentDate.from as Date,
+        to_date: currentDate.to as Date,
+        page: 1,
+        keywords,
+      }));
     }
   };
-  useEffect(() => {
-    handleSearch();
-  }, [pagination.current, pagination.pageSize, sortConfig, handleSearch]);
-  // handle sort
+
   const handleSort = (key: string) => {
-    let desc = false;
-    if (sortConfig && sortConfig.orderby === key) {
-      desc = !sortConfig.desc;
-    }
-    setSortConfig({ orderby: key, desc });
+    setSearchParams((pre) => ({
+      ...pre,
+      orderby: key,
+      desc: pre.orderby === key ? !pre.desc : false,
+    }));
   };
 
   const handleReset = () => {
-    setSearchParams({ ...init, page_size: pagination.pageSize });
+    setSearchParams({ ...init, page_size: searchParams.page_size });
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
   };
@@ -241,8 +196,8 @@ const AgentLogPage: React.FC = () => {
       to_date: searchParams.to_date,
       orderby: searchParams.orderby,
       desc: searchParams.desc,
-      page: pagination.current,
-      page_size: pagination.pageSize,
+      page: searchParams.page,
+      page_size: searchParams.page_size,
     });
   };
 
@@ -301,16 +256,14 @@ const AgentLogPage: React.FC = () => {
             <button
               type="button"
               className="bg-foreground  text-text-title-invert  px-4 py-1 rounded"
-              onClick={() => {
-                handleClickSearch();
-              }}
+              onClick={handleClickSearch}
             >
               {t('common.search')}
             </button>
             <button
               type="button"
               className="bg-transparent text-foreground px-4 py-1 rounded border"
-              onClick={() => handleReset()}
+              onClick={handleReset}
             >
               {t('common.reset')}
             </button>
@@ -336,9 +289,9 @@ const AgentLogPage: React.FC = () => {
                     <div className="flex items-center">
                       {column.title}
                       {column.sortable &&
-                        sortConfig?.orderby === column.dataIndex && (
+                        searchParams.orderby === column.dataIndex && (
                           <span className="ml-1">
-                            {sortConfig.desc ? '↓' : '↑'}
+                            {searchParams.desc ? '↓' : '↑'}
                           </span>
                         )}
                     </div>
@@ -398,11 +351,10 @@ const AgentLogPage: React.FC = () => {
         <div className="flex justify-end mt-4 w-full">
           <div className="space-x-2">
             <RAGFlowPagination
-              {...pagination}
-              total={pagination.total}
-              onChange={(page, pageSize) => {
-                handlePageChange(page, pageSize);
-              }}
+              current={searchParams.page}
+              pageSize={searchParams.page_size}
+              total={total}
+              onChange={handlePageChange}
             ></RAGFlowPagination>
           </div>
         </div>
