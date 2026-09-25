@@ -36,7 +36,7 @@ class Chunk(Base):
         self.create_time = ""
         self.create_timestamp = 0.0
         self.dataset_id = None
-        self.document_name = ""
+        self.document_name = res_dict.get("docnm_kwd", "")
         self.document_keyword = ""
         self.document_id = ""
         self.available = True
