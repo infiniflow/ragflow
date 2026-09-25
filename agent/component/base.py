@@ -625,15 +625,13 @@ class ComponentBase(ABC):
         for ref in self.param_refs():
             if not isinstance(ref, str) or not ref:
                 continue
-            # Mirror `Canvas.get_variable_value`'s brace-stripping so a
-            # brace-wrapped reference (`{{producer@output}}`) resolves
-            # to the same component id the runtime lookup will use;
-            # otherwise the split below would have produced `{{producer`
-            # and the scheduler would not defer this node behind the
-            # actual producer. See issue #19360.
-            normalized = ref.strip().strip("{").strip("}").strip(" ").strip("{").strip("}")
-            if normalized.find("@") > 0:
-                ids.append(normalized.split("@", 1)[0])
+            matches = list(self._iter_template_matches(self.variable_ref_patt_re, ref))
+            atomic_refs = [match.group(1) for match in matches] if matches else [ref]
+            for atomic_ref in atomic_refs:
+                # Standalone refs can also be passed with outer braces.
+                normalized = atomic_ref.strip().strip("{").strip("}").strip(" ").strip("{").strip("}")
+                if normalized.find("@") > 0:
+                    ids.append(normalized.split("@", 1)[0])
         return ids
 
     def get_input_form(self) -> dict[str, dict]:

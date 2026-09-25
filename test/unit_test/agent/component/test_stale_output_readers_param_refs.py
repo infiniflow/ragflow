@@ -251,6 +251,18 @@ class TestGetDependencyIdsBraceStrip:
         c = _iteration("  {{  retrieval:0@output  }}  ")
         assert self._deps(c) == ["retrieval:0"]
 
+    def test_embedded_ref_uses_atomic_producer(self):
+        c = _variable_assigner(
+            [{"variable": "user_input", "operator": "set", "parameter": "prefix {{retrieval:0@output}}"}]
+        )
+        assert self._deps(c) == ["retrieval:0"]
+
+    def test_multiple_embedded_refs(self):
+        c = _variable_assigner(
+            [{"variable": "user_input", "operator": "set", "parameter": "{{retrieval:0@output}} and {{llm:0@output}}"}]
+        )
+        assert self._deps(c) == ["retrieval:0", "llm:0"]
+
     def test_brace_only_no_at_skipped(self):
         # A bare-global inside braces still has no producer, so no dep.
         c = _iteration("{{user_query}}")
