@@ -19,143 +19,30 @@ package agentic_rag
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
-// The fan-out stage: decompose the question into first-hop sub-questions, parse what
-// the model wrote, and fetch them programmatically.
+// The opening DECOMPOSITION is gone from this file. It used to be a stage of its own: one chat
+// call asking for 2-5 "fan-out" sub-questions, a shape guard that rejected lines looking like
+// answers rather than queries (fanoutLooksLikeQuery), and a parser that split a prose reply into
+// lines. Its output then became the slot table's `fanout_hint` — while the slot-table call asked
+// the same model, on the same question, for the very queries that stage had just produced.
 //
-// Its parsing is shape-guarded rather than answer-keyed (see fanoutLooksLikeQuery):
-// the model is asked for sub-questions and hands back whatever it produced, so what
-// a line IS decides what the stage does with it.
-// fanoutLooksLikeQuery: reject
-// prose/answer lines before they can enter the retrieval + slot pipeline.
+// Two consequences, both measured on 2026-09-20: the planner phase cost TWO model calls per
+// question (the second-biggest output-token consumer in the run), and the shape guard is the same
+// class of rule the rest of this design removes — a line is not a query because of how it looks.
 //
-// Fan-outs are used verbatim as BM25/hybrid queries and as the slot table's
-// fanout_hint, so an answered fact ("The woman was **X**") must never survive
-// here: it both poisons retrieval and asserts a hallucinated entity as a known
-// aspect.
-func fanoutLooksLikeQuery(line string, loose bool) bool {
-	s := strings.TrimSpace(line)
-	if s == "" {
-		return false
-	}
-	low := strings.ToLower(s)
-	for _, mark := range fanoutAnswerMarks {
-		if strings.Contains(low, mark) {
-			return false
-		}
-	}
-	// The cap counts characters, not bytes; a byte-based cap would reject a legitimate CJK
-	// fan-out well below the 160-character limit.
-	if utf8.RuneCountInString(s) > fanoutMaxChars {
-		return false
-	}
-	words := len(strings.Fields(s))
-	if loose && !strings.HasSuffix(s, "?") && words > fanoutLooseMaxWords {
-		return false
-	}
-	return words <= fanoutMaxWords
-}
-
-// fanoutLineBreak reports whether r is a line boundary.
-// Splitting on "\n" alone misses a lone "\r" and the other Unicode line breaks a model
-// could emit, so the loose path would fuse several fan-out lines into one.
-func fanoutLineBreak(r rune) bool {
-	switch r {
-	case '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-		return true
-	}
-	return false
-}
-
-// parseFanouts: extract fan-outs from a
-// model reply, validating every entry's shape.
-func parseFanouts(text string) []string {
-	var raw []string
-	loose := false
-	if data, ok := extractJSONObject(text).(map[string]any); ok {
-		for _, f := range asSliceOfAny(data["fanouts"]) {
-			if s := strings.TrimSpace(fmt.Sprint(f)); s != "" {
-				raw = append(raw, s)
-			}
-		}
-	} else {
-		// Loose fallback: the model answered in prose. Only lines that still
-		// look like a search query are kept — answer sentences and source
-		// lists are dropped.
-		loose = true
-		// Split on every line boundary, not just "\n".
-		for _, ln := range strings.FieldsFunc(text, fanoutLineBreak) {
-			if strings.TrimSpace(ln) == "" {
-				continue
-			}
-			// The bullet / numbering cutset is stripped from BOTH ends, then whitespace is
-			// trimmed, so a trailing period/digit never leaks into the retrieval query.
-			raw = append(raw, strings.TrimSpace(strings.Trim(ln, "-•0123456789. ")))
-		}
-	}
-	kept := make([]string, 0, len(raw))
-	for _, q := range raw {
-		if fanoutLooksLikeQuery(q, loose) {
-			kept = append(kept, q)
-		}
-	}
-	if len(raw) > 0 && len(kept) == 0 {
-		_LOG.Printf("[Planner] discarding %d fan-out candidate(s): none look like search queries", len(raw))
-	}
-	kept = dedupe(kept)
-	if len(kept) > MaxFanouts {
-		kept = kept[:MaxFanouts]
-	}
-	return kept
-}
-
-// ExpandFanouts: ONE chat call (no
-// tools) producing 2-5 first-hop fan-outs, plus one strict retry when the
-// reply was not parseable JSON (_expand_fanouts).
-//
-// Falls back to the raw question alone on any failure — a fan-out failure never
-// blocks the pipeline.
-func ExpandFanouts(ctx context.Context, deps RAGTools, question string) []string {
-	if question == "" {
-		return nil
-	}
-	if deps.Model == nil {
-		return []string{question}
-	}
-	reply, err := deps.Model.Complete(ctx, []schema.Message{
-		*schema.SystemMessage(fanoutPrompt),
-		*schema.UserMessage("Question: " + question),
-	}, nil)
-	if err != nil {
-		_LOG.Printf("[Planner] fan-out expansion failed; falling back to raw question: %v", err)
-		return []string{question}
-	}
-	fanouts := parseFanouts(reply.Content)
-	if len(fanouts) == 0 {
-		// The model answered the question instead of decomposing it (no JSON,
-		// or JSON that failed the shape guard). One strict retry, then give up.
-		_LOG.Printf("[Planner] fan-out expansion produced no usable sub-question; retrying with a strict JSON instruction")
-		if retry, rerr := deps.Model.Complete(ctx, []schema.Message{
-			*schema.SystemMessage(fanoutPrompt + fanoutStrictRetry),
-			*schema.UserMessage("Question: " + question),
-		}, nil); rerr != nil {
-			_LOG.Printf("[Planner] strict fan-out retry failed: %v", rerr)
-		} else {
-			fanouts = parseFanouts(retry.Content)
-		}
-	}
-	if len(fanouts) == 0 {
-		fanouts = []string{question}
-	}
-	_LOG.Printf("[Planner] fan-out expansion: %d sub-question(s): %v", len(fanouts), fanouts)
-	return fanouts
-}
+// The paper's opening move is ONE call (`first_move`: decompose → the queries to run), and the
+// slot table's own call already produces those queries (`first_queries`). See plannerNode.
 
 // Metadata pre-filter channel: the metadata conditions a sub-question's wording supports.
 //
@@ -406,7 +293,7 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 		*schema.UserMessage("Sub-questions:\n" + strings.Join(listed, "\n")),
 	}, nil)
 	if err != nil {
-		_LOG.Printf("[Prefetch] metadata filter extraction failed; skipping the metadata channel: %v", err)
+		common.Warn("prefetch: metadata filter extraction failed, skipping the metadata channel", zap.Error(err))
 		return nil
 	}
 	filterSets := parseFanoutFilters(reply.Content, queries, allowed)
@@ -426,11 +313,11 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 		// condition-lists are the COMMON, correct answer to a question that names no metadata
 		// value; a non-empty reply here means the guards rejected something.) Newlines are
 		// flattened so the reply stays one log line.
-		flat := strings.ReplaceAll(truncateRunes(reply.Content, 300), "\n", " ")
-		_LOG.Printf("[Prefetch] metadata channel produced no usable condition; reply was: %s", flat)
+		flat := strings.ReplaceAll(runtime.TruncateRunes(reply.Content, 300), "\n", " ")
+		common.Warn("prefetch: metadata channel produced no usable condition", zap.String("reply", flat))
 		return nil
 	}
-	_LOG.Printf("[Prefetch] metadata filters: %v", out)
+	common.Info("prefetch: metadata filters", zap.Any("filters", out))
 	return out
 }
 
@@ -465,28 +352,42 @@ func ExtractFanoutFilters(ctx context.Context, deps RAGTools, fanouts []string) 
 // A/B did not reach at all.
 //
 // Returns the number of NEW snippets admitted to the pool.
-func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN, capacity int, useMetadata bool) int {
+// FanoutSearch runs the opening's per-clue retrieval and admits what it finds.
+//
+// It returns how many passages were NEW to the pool, and the RANKED UNION of the legs' results as
+// chunk ids (see rankOpening): the second value is the opening's product — the ordered preview list
+// the session is handed (o_1) — and it is why the legs' depth is not wasted. Returning only the
+// count left the rank order to be re-derived, a second time, by whoever looked at the pool.
+//
+// useMetadata turns on channel C (the field-driven metadata channel): ONE extraction call for the whole
+// batch, then one scoped retrieval per sub-question, admitted last because its hits are the ones A/B did
+// not reach at all. It is the caller's switch, not a capability probe — the first prefetch round passes
+// true, every later round false.
+//
+// There is no `capacity` parameter here even though the upstream signature has one: the ceiling it
+// computed (maxTotal - len(seen), early-returning as soon as the pool looked full) is exactly what this
+// branch removed. The pool has NO ceiling (see runtime/kbinfos.go) — a call is bounded by its own
+// quotas (rawSnippetQuota / evidencePoolQuota) and by topN, never by how much the pool already holds —
+// and re-adding that ceiling would refuse the very passages an enumeration's late members live in.
+func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries []string, topN int, useMetadata bool) (int, []string) {
 	if len(queries) == 0 || st.KB == nil {
-		return 0
+		return 0, nil
 	}
 	sd := deps.Search
 	if sd.Backend == nil {
-		return 0
+		return 0, nil
 	}
 
-	// Dedup against what kbinfos ALREADY holds, then cap admissions at the remaining room —
-	// the pool is a shared, cross-round ceiling.
+	// Dedup against what kbinfos ALREADY holds. There is no room to compute and no early
+	// return when the pool looks "full": the pool has NO ceiling (see the note in
+	// runtime/kbinfos.go), so a call is bounded only by its own per-call quotas
+	// (rawSnippetQuota / evidencePoolQuota) and by topN — never by how much the pool already
+	// holds. The ceiling computed here is what once refused the passage that would have
+	// reached an enumeration's last members, and what made a rich round's own rewrite land
+	// nowhere (the caller passed the snippet-pool number while the pool held up to twice it).
 	seen := make(map[string]bool, len(st.KB.Chunks))
 	for _, c := range st.KB.Chunks {
 		seen[runtime.ChunkIDOf(c)] = true
-	}
-	maxTotal := capacity
-	if maxTotal <= 0 {
-		maxTotal = MaxSnippetPool
-	}
-	room := maxTotal - len(seen)
-	if room <= 0 {
-		return 0
 	}
 
 	// The planner's output is already []string, but blank entries still have to be dropped.
@@ -497,53 +398,59 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		}
 	}
 	if len(qs) == 0 {
-		return 0
+		return 0, nil
 	}
+	// topN bounds what the CLAIM channel recalls per query (below) and nothing else: the raw
+	// channels' width is their own (fanoutBM25TopN / fanoutHybridTopN).
 	capPerQuery := topN
 	if capPerQuery < 1 {
 		capPerQuery = 1
 	}
 
-	// The fan-outs could run in parallel, but each one only RETRIEVES — kbinfos is mutated
-	// once, back in the caller. This keeps that "retrieve, then mutate once" structure, hence
-	// sequential: the per-request search cache and Kbinfos are shared mutable state that the
-	// retrievals never touch concurrently.
-	type fanoutPair struct {
-		exact    []map[string]any
-		semantic []map[string]any
-		metadata []map[string]any
-	}
-	// Channel C's conditions: ONE chat call for the whole batch, and only when the metadata
-	// channel was asked for AND the dataset offers at least one filterable field. Without that
-	// second gate a metadata-free dataset pays the extraction call and then runs one
-	// guaranteed-empty scoped retrieval per sub-question, every round. A failure yields nil and
-	// the channel is skipped.
+	// The LEGS run in parallel: each one only RETRIEVES — kbinfos is mutated once, below, in a
+	// single admit stretch — and everything the retrievals do share is guarded (the
+	// per-request search cache holds its own mutex). A clue list is what the planner exists to
+	// produce, and searching nine clues one after another is nine round trips; the paper
+	// parallelises its per-clue retrieval for the same reason.
+	//
+	// What this makes explicit: the RETRIEVER contract is concurrent. Production retrievers are
+	// HTTP/DB clients and already are (the multi-session rounds called them concurrently), so
+	// the fixtures that stand in for them must be too — a stub that appends to a field needs a
+	// lock, and the fan-out fixtures carry one.
+	//
+	// Results are written BY INDEX, so the admission order below is the query order whatever the
+	// schedule does — that order is a contract: every fan-out's exact channel is admitted
+	// before any fan-out's semantic channel.
+	//
+	// Channel C's conditions: ONE chat call for the whole batch, and only when the metadata channel was
+	// asked for AND the dataset offers at least one filterable field. Without that second gate a
+	// metadata-free dataset pays the extraction call and then runs one guaranteed-empty scoped retrieval
+	// per sub-question, every round. A failure yields nil and the channel is skipped. The extraction is
+	// SEQUENTIAL on purpose — it is one call for the batch and it must finish before the legs start.
 	var filtersByQuery map[string][]map[string]any
 	if useMetadata {
 		if _, _, ok := fanoutMetadataVocabulary(deps); ok {
 			filtersByQuery = ExtractFanoutFilters(ctx, deps, qs)
 		} else {
-			_LOG.Printf("[Prefetch] metadata channel skipped — the dataset offers no filterable metadata field")
+			common.Info("prefetch: metadata channel skipped, the dataset offers no filterable metadata field")
 		}
 	}
-	pairs := make([]fanoutPair, 0, len(qs))
-	for _, q := range qs {
-		select {
-		case <-ctx.Done():
-			return 0
-		default:
-		}
-		exact, semantic, metadata := fanoutSearchQuery(ctx, sd, q, capPerQuery, filtersByQuery[q])
-		pairs = append(pairs, fanoutPair{exact: exact, semantic: semantic, metadata: metadata})
+	pairs := make([]fanoutPair, len(qs))
+	var wg sync.WaitGroup
+	for i, q := range qs {
+		wg.Add(1)
+		go func(i int, q string) {
+			defer wg.Done()
+			exact, semantic, metadata := fanoutSearchQuery(ctx, sd, q, capPerQuery, filtersByQuery[q])
+			pairs[i] = fanoutPair{exact: exact, semantic: semantic, metadata: metadata}
+		}(i, q)
 	}
+	wg.Wait()
 
 	added := 0
 	rawAdded := 0
-	admit := func(batch []map[string]any) bool {
+	admit := func(batch []map[string]any) {
 		for _, c := range batch {
-			if added >= room {
-				return true
-			}
 			id := runtime.ChunkIDOf(c)
 			isEvidence := strings.HasPrefix(id, "claim_")
 			if id != "" {
@@ -565,7 +472,6 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 				rawAdded++
 			}
 		}
-		return added >= room
 	}
 	// Channel 0: claim/evidence rows lead the pool —
 	// they are the compact, verbatim-bearing proxy for the chunks they source.
@@ -576,7 +482,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 	for _, q := range qs {
 		select {
 		case <-ctx.Done():
-			return 0
+			return 0, nil
 		default:
 		}
 		if !runtime.DatasetHasCompilation(ctx, sd) {
@@ -605,9 +511,7 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 			break
 		}
 		channel0 = append(channel0, kept)
-		if admit(kept) {
-			return added
-		}
+		admit(kept)
 	}
 	// Evidence top-up: an evidence row carries a
 	// verbatim quote but not its surrounding passage, so pull exactly the chunks
@@ -635,33 +539,97 @@ func FanoutSearch(ctx context.Context, deps RAGTools, st *AgenticState, queries 
 		}
 		if len(wanted) > 0 {
 			fetched := runtime.LoadChunksForIDs(ctx, sd, wanted)
-			if len(fetched) > 0 && admit(fetched) {
-				return added
+			if len(fetched) > 0 {
+				admit(fetched)
 			}
 		}
 	}
-	// Channel A across every fan-out first, then channel B, then channel C.
+	// The RANKED UNION, computed BEFORE admission order matters (the pool keeps insertion order,
+	// which is a contract for the citation list; the ranking is the opening's product and is
+	// independent of it). Claims lead because they are verbatim-bearing and compact — the same
+	// reason channel 0 admits them first.
+	ranking := rankOpening(qs, pairs, channel0)
+
+	// Channel A across every fan-out first, then channel B, then channel C — its hits are the ones
+	// A/B did not reach at all.
 	for _, p := range pairs {
-		if admit(p.exact) {
-			return added
-		}
+		admit(p.exact)
 	}
 	for _, p := range pairs {
-		if admit(p.semantic) {
-			return added
-		}
+		admit(p.semantic)
 	}
 	for _, p := range pairs {
-		if admit(p.metadata) {
-			return added
-		}
+		admit(p.metadata)
 	}
-	return added
+	return added, ranking
 }
 
-// fanoutSearchQuery runs one fan-out's three channels. It only retrieves; the caller admits the
-// results. filters are the sub-question's metadata conditions (key/op/value over the session's
-// catalog); an empty list skips channel C.
+// fanoutPair is one clue's two channels, written BY INDEX by the parallel legs (see FanoutSearch).
+type fanoutPair struct {
+	exact    []map[string]any
+	semantic []map[string]any
+	// metadata is channel C's result: the scoped retrieval a sub-question's metadata filters select
+	// (see fanoutSearchQuery and the admission order in FanoutSearch).
+	metadata []map[string]any
+}
+
+// rankOpening fuses the opening's channels into ONE ranked list of chunk ids: reciprocal rank
+// fusion over (clue × channel), claims first.
+//
+// RRF, not a score comparison, because the legs' scores are not comparable — a BM25 score, a vector
+// similarity and a claim's fused rank live on different scales, and the codebase already fuses by
+// reciprocal rank elsewhere (see the claim rows' q_<dim>_vec). The exact (keyword) channel is
+// weighted above the semantic one: it is the deliberate surface probe, and its hits carry the
+// corpus's own wording.
+//
+// This is the opening's o_1: the order the session is handed, and the order that decides which
+// passages it reads first when its clock only affords a couple of calls.
+func rankOpening(queries []string, pairs []fanoutPair, claims [][]map[string]any) []string {
+	scores := make(map[string]float64)
+	order := make([]string, 0, 64)
+	add := func(list []map[string]any, weight float64) {
+		for rank, c := range list {
+			id := runtime.ChunkIDOf(c)
+			if id == "" {
+				continue
+			}
+			if _, seen := scores[id]; !seen {
+				order = append(order, id)
+			}
+			scores[id] += weight / (openingRrfK + float64(rank+1))
+		}
+	}
+	for _, batch := range claims {
+		add(batch, claimChannelWeight)
+	}
+	for _, p := range pairs {
+		add(p.exact, exactChannelWeight)
+	}
+	for _, p := range pairs {
+		add(p.semantic, semanticChannelWeight)
+	}
+	// Channel C rides the same fusion: it is a scoped retrieval (metadata filters), so its head is
+	// precision rather than recall and it must not outrank the deliberate exact probe.
+	for _, p := range pairs {
+		add(p.metadata, metadataChannelWeight)
+	}
+	// Stable sort by fused score, ties keeping first-seen order (clue order, then channel, then the
+	// leg's own ranking) so the delivery is reproducible.
+	sort.SliceStable(order, func(i, j int) bool { return scores[order[i]] > scores[order[j]] })
+	return order
+}
+
+// The fusion weights: the keyword channel is the deliberate probe and outranks the semantic
+// complement; a claim row is a verbatim, compact statement of the same text and leads both.
+const (
+	claimChannelWeight    = 3.0
+	exactChannelWeight    = 2.0
+	semanticChannelWeight = 1.0
+	metadataChannelWeight = 1.0
+)
+
+// fanoutSearchQuery runs one fan-out's two channels. It only retrieves; the
+// caller admits the results.
 func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, capPerQuery int, filters []map[string]any) (exact, semantic, metadata []map[string]any) {
 	terms := runtime.QueryToTerms(fq)
 	keyed := runtime.FanoutKeyedTerms(terms)
@@ -682,9 +650,10 @@ func fanoutSearchQuery(ctx context.Context, sd runtime.SearchDeps, fq string, ca
 			runtime.NarrowContext{Before: 0, After: 1},
 			fanoutNarrowMaxOutPerChunk, fanoutNarrowMaxOutTotal)
 		exact = res.Kept
-		if len(exact) > capPerQuery {
-			exact = exact[:capPerQuery]
-		}
+		// NO per-query cut here any more. `exact[:capPerQuery]` was the opening's own ceiling: the
+		// legs RECALLED wide and the caller then kept the first eight passages of each clue, so the
+		// union that got ranked was three clues wide and eight deep — measured 2026-09-20 (三国),
+		// the candidates the session could ever reach, before it searched for anything.
 	}
 
 	// Channel B — semantic bypass: HybridSearch gives the vector leg weight 0.3 whenever an

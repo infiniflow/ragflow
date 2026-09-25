@@ -37,10 +37,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -66,11 +69,9 @@ import (
 //	keyword extraction  → ExtractWeightedKeywords  (runtime/keywords.go)
 //	keyword compaction  → CompactKeywords          (runtime/tool_text_processing.go)
 //	web retrieval       → searchExecutor.webSearch (runtime/tool_executor.go)
-//	answer composition  → ComposeAnswer            (agentic_rag_graph.go)
+//	answer composition  → ComposeAnswerWith (graph_compose.go)
 //	naive answer        → ComposeNaiveAnswer       (agentic_rag_graph.go)
 //	evidence fitting    → FitEvidence              (below)
-//	sufficiency review  → SCA review               (runtime/orchestrator/sufficient_context.go)
-//	gap rewrite         → SCA gap rewrite          (runtime/orchestrator/sufficient_context.go)
 //	entry point         → Rag                      (below)
 //
 //	document scope      → toolDocScope          (runtime/tool_executor.go)
@@ -110,9 +111,7 @@ type RAGTools struct {
 	// Model drives the LLM turns. Required for agentic modes; low/naive never
 	// call it.
 	Model runtime.SessionModel
-	// ModelName is the RESOLVED chat model identity (e.g. "gpt-4o"), one component of the
-	// gen_json reply-cache key. Empty disables that cache: keying on an empty name would
-	// collapse every model onto one bucket and serve a reply produced by another model.
+	// ModelName is the RESOLVED chat model identity (e.g. "gpt-4o").
 	ModelName string
 	// Embedder is the external embedding handle used by graph/structure seed encoding.
 	// Nil falls back to this package's internal tenant-default resolver, which additionally
@@ -120,14 +119,10 @@ type RAGTools struct {
 	Embedder nlp.NavEmbedder
 	// Keywords extracts the entity-weighted retrieval query. Optional.
 	Keywords KeywordExtractorFn
-	// Prompts are the report/SCA/rewrite prompt templates (user_defined_prompts).
+	// Prompts are the report/rewrite prompt templates (user_defined_prompts).
 	Prompts runtime.PromptLoader
 	// Expand runs compiled-structure expansion. Optional.
 	Expand runtime.CompiledExpander
-	// SCAPrompts overrides Prompts for the sufficient-context review.
-	SCAPrompts runtime.PromptLoader
-	// RewritePrompts overrides Prompts for the gap→query rewrite call.
-	RewritePrompts runtime.PromptLoader
 	// KB is the in-flight retrieval accumulation.
 	KB *runtime.Kbinfos
 	// Logger is optional; nil uses the default logger.
@@ -346,7 +341,8 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// self-contained question risks silently changing its meaning), and extract only the
 	// search keywords.
 	if !isMultiTurn(messages) {
-		_LOG.Printf("[Formalize] Single-turn self-contained question — kept verbatim (no rewrite): %s", trunc(lastUser, 120))
+		common.Info("formalize: single-turn self-contained question kept verbatim (no rewrite)",
+			zap.String("question", runtime.TruncateRunes(lastUser, 120)))
 		_, kw := runtime.ExtractWeightedKeywords(ctx, deps.Model, lastUser)
 		return lastUser, kw
 	}
@@ -356,7 +352,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// derived from it so the call is both attributed and bounded.
 	defer done()
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(formalizeTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(formalizeTimeoutS))
 	defer cancel()
 
 	// Fit the prompt to the model's context window.
@@ -364,7 +360,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 		*schema.UserMessage("Conversation:\n" + transcript + "\n\nOutput JSON:"),
 	}, maxLength)
 	if fitErr != "" {
-		_LOG.Printf("[Formalize] prompt fitting failed: %s", fitErr)
+		common.Warn("formalize: prompt fitting failed", zap.Any("error", fitErr))
 		return lastUser, ""
 	}
 	system := formalizePrompt
@@ -380,7 +376,7 @@ func Formalize(ctx context.Context, deps runtime.SessionDeps, messages []schema.
 	// async_chat(system, history, {"temperature": 0.1}).
 	reply, err := modelWithTemperature(deps.Model, formalizeTemperature).Complete(callCtx, msgs, nil)
 	if err != nil {
-		_LOG.Printf("[Formalize] failed; keeping the raw question: %v", err)
+		common.Warn("formalize: failed, keeping the raw question", zap.Error(err))
 		return lastUser, ""
 	}
 
@@ -471,7 +467,7 @@ var reFenceDelimiters = regexp.MustCompile("```(?:json)?\\s*|\\s*```")
 //
 // SCOPE NOTE — read before relying on this for agentic modes: the outer
 // orchestration that agentic_rag_graph.py owns — planner decomposition, prefetch
-// fan-out, and the SCA↔rewriter iteration loop that drives medium/high/ultra — is
+// fan-out, and the research-round loop that drives medium/high/ultra — is
 // the agentic_rag package's agentic planner (Rag's agentic-loop registration).
 // So:
 //
@@ -507,21 +503,31 @@ type RunResponse struct {
 	// Partial is true when research ended without a satisfying verdict, so the
 	// caller surfaces the residual findings honestly instead of refusing.
 	Partial bool
-	// SearchRounds is the number of completed SCA→rewrite iterations (0 for the
+	// SearchRounds is the number of completed research rounds (0 for the
 	// non-agentic paths).
 	SearchRounds int
 	// GraphFailed is true when the research graph itself errored. It is paired with
 	// "produced nothing" before falling back to an internal-error message; an empty result
 	// on its own is not a failure.
 	GraphFailed bool
-	// Verdict is the final sufficiency verdict ("SUFFICIENT"/"INSUFFICIENT").
-	Verdict string
-	// SCAFeedback is the body of the SCA feedback note — the sufficiency status hint alone
-	// (the verdict dict carries only "status"; see scaFeedback). Rag() appends it as the
-	// "[Research status]" note for every INSUFFICIENT verdict, adding the trailing "STOP"
-	// vs "call rag again" sentence based on the consecutive-unanswerable count.
-	SCAFeedback string
-	// CollectedAnswer is the research draft (SCA-reviewed) produced by the
+	// RoundRecord is the body of the "[Research status]" note: the round's OWN record when it
+	// could not answer (see researchStatusNote) — how many passages it read, and what the plan
+	// still lists as unresolved. It used to be the reviewer's verdict text; with no reviewer it
+	// is a report of what happened rather than a judgement. Rag() appends the trailing "STOP" vs
+	// "call rag again" sentence based on the consecutive-unanswerable count.
+	RoundRecord string
+	// ResearchStatus is that note, ready to print: RoundRecord plus the trailing "STOP" vs "call
+	// rag again" sentence. It is MODEL-FACING — it belongs in the `rag` tool's RESULT, so an outer
+	// loop can decide whether to re-ask — and it is NOT part of the answer.
+	//
+	// It used to be concatenated onto Answer, which meant a run whose tool result IS the final
+	// answer handed the note to the user verbatim, and the answer cache stored it too (measured
+	// 2026-09-20: an answer ending with "[Research status] this round did not settle the question
+	// (66 passages read). If these gaps are material, call rag again with a question focused on
+	// them." — a self-contradicting answer, judged as such). Nothing the user sees reads this
+	// field; only the tool-result builder does (see outerReactSession.ToolCall).
+	ResearchStatus string
+	// CollectedAnswer is the research draft produced by the
 	// agentic loop. It feeds the final composition; prefer Answer for display.
 	CollectedAnswer string
 	// Kbinfos carries the full accumulated state (including the lossless
@@ -812,9 +818,13 @@ func resolveEffectiveQuestion(question, originalUserQuestion string) string {
 // tool_call case) injects the same *RAGCache via RAGTools.Cache instead of relying on the
 // auto-built one.
 type RAGCache struct {
-	mu          sync.Mutex
-	entries     map[string]ragCacheEntry
-	lastVerdict string
+	mu      sync.Mutex
+	entries map[string]ragCacheEntry
+	// lastAnswered / lastRated: whether the LAST research round wrote an answer (see
+	// noteAnswered). They replace the recorded sufficiency verdict; lastRated keeps "it did not
+	// answer" distinguishable from "no round has been rated yet".
+	lastAnswered bool
+	lastRated    bool
 	// consecutiveUnanswerable
 	// how many consecutive rag calls ended without a
 	// satisfying verdict. After two in a row, RAGTools.rag appends a
@@ -829,14 +839,18 @@ type RAGCache struct {
 	consecutiveUnanswerable int
 }
 
-// NoteUnanswerable records one research round's verdict on the shared cache.
-func (c *RAGCache) NoteUnanswerable(verdict string) {
+// NoteUnanswerable records whether one research round ANSWERED, on the shared cache.
+//
+// The counter used to be driven by the reviewer's verdict (SUFFICIENT reset it, anything else
+// bumped it). With no reviewer the fact it tracks is the one the loop actually has: the round
+// either wrote an answer or it did not.
+func (c *RAGCache) NoteUnanswerable(answered bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if verdict == VerdictSufficient {
+	if answered {
 		c.consecutiveUnanswerable = 0
 	} else {
 		c.consecutiveUnanswerable++
@@ -898,24 +912,28 @@ func (c *RAGCache) Store(question, answer string) {
 	c.entries[question] = ragCacheEntry{answer: answer, gram: gram}
 }
 
-// noteVerdict records the verdict of the last research round.
-func (c *RAGCache) noteVerdict(verdict string) {
+// noteAnswered records whether the last research round ANSWERED (see NoteUnanswerable).
+//
+// It replaces the recorded verdict. The cache must not serve a following re-ask out of an answer
+// of its own that a previous round had already failed to ground, and with no reviewer the fact
+// the round leaves behind is simply whether it wrote an answer at all.
+func (c *RAGCache) noteAnswered(answered bool) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.lastVerdict = verdict
+	c.lastAnswered, c.lastRated = answered, true
 }
 
-// researchStatusTrailer: for every non-SUFFICIENT verdict it returns the trailing sentence
-// folded into the "[Research status]" note. After two consecutive unsatisfying rag() calls
+// researchStatusTrailer: for a round that did NOT answer it returns the trailing sentence folded
+// into the "[Research status]" note. After two consecutive unanswered rag() calls
 // (ConsecutiveUnanswerable >= 2 on the shared *RAGCache) it tells the outer
 // agent to STOP calling rag again; otherwise it invites a focused re-ask. It
-// returns "" when there is nothing to annotate — a SUFFICIENT verdict, an empty
-// answer, or no SCA feedback.
+// returns "" when there is nothing to annotate: the round answered, there is no
+// status note, or there is no answer to annotate.
 func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
-	if resp.Verdict != VerdictInsufficient || resp.SCAFeedback == "" || resp.Answer == "" {
+	if resp.RoundRecord == "" || resp.Answer == "" {
 		return ""
 	}
 	if cache != nil && cache.ConsecutiveUnanswerable() >= 2 {
@@ -925,13 +943,17 @@ func researchStatusTrailer(cache *RAGCache, resp *RunResponse) string {
 }
 
 // reuseAllowed reports whether a cached answer may be reused for the next question.
+//
+// lastRated keeps "the last round did not answer" distinguishable from "no round has been rated
+// yet": the old check allowed reuse when no verdict had been recorded at all, and an unheard-of
+// round is not a failure.
 func (c *RAGCache) reuseAllowed() bool {
 	if c == nil {
 		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.lastVerdict == "" || c.lastVerdict == "SUFFICIENT"
+	return !c.lastRated || c.lastAnswered
 }
 
 // wrapModelForStats wraps the model's invoker so calls made through it are
@@ -1246,7 +1268,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	cacheable := deps.TextAttachments == ""
 	if cacheable && cache != nil {
 		if cached, hit := cache.Lookup(req.Question); hit {
-			step(ctx, logger, "Agentic RAG", "Cache hit: reused the answer for the near-identical question %q and skipped research.", trunc(req.Question, 80))
+			step(ctx, logger, "Agentic RAG", "Cache hit: reused the answer for the near-identical question %q and skipped research.", runtime.TruncateRunes(req.Question, 80))
 			return &RunResponse{Answer: cached, Mode: spec}
 		}
 	}
@@ -1257,7 +1279,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	if deps.OriginalQuestion != "" {
 		if effective := resolveEffectiveQuestion(req.Question, deps.OriginalQuestion); effective != req.Question {
 			logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
-				trunc(deps.OriginalQuestion, 80), trunc(req.Question, 80))
+				runtime.TruncateRunes(deps.OriginalQuestion, 80), runtime.TruncateRunes(req.Question, 80))
 			req.Question = effective
 		}
 	}
@@ -1334,16 +1356,16 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 		compose(ctx, false, false, "")
 	}
 
-	// A "[Research status]" note is appended for EVERY non-SUFFICIENT verdict. When
-	// research has stayed unsatisfying for two
-	// consecutive turns it tells the outer agent to STOP calling rag again;
-	// otherwise it invites a focused re-ask. The counter lives on the
-	// conversation-scoped cache; it was incremented back in NewAgenticLoop once
-	// the SCA verdict was known. Skip the naive/sufficient paths: an empty
-	// answer or a SUFFICIENT verdict has nothing to annotate.
+	// A "[Research status]" note is produced for every round that did NOT settle the question:
+	// it tells the outer agent to STOP calling rag again after two consecutive unanswered
+	// rounds, and otherwise invites a focused re-ask.
+	//
+	// It goes to resp.ResearchStatus, NOT to resp.Answer. Appending it to the answer put the
+	// runtime's bookkeeping in the user's text (and in the answer cache this block writes
+	// below, so the note then travelled into a later question's answer).
 	if t := researchStatusTrailer(deps.Cache, resp); t != "" {
 		// The period closes the hint clause before the trailer sentence.
-		resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
+		resp.ResearchStatus = "\n\n[Research status] " + resp.RoundRecord + "." + t
 	}
 
 	// Cache the freshly produced answer for later near-identical questions, and
@@ -1351,7 +1373,7 @@ func Rag(ctx context.Context, deps RAGTools, req runtime.RunRequest) *RunRespons
 	// admittedly incomplete one.
 	if cacheable && cache != nil {
 		cache.Store(req.Question, resp.Answer)
-		cache.noteVerdict(resp.Verdict)
+		cache.noteAnswered(strings.TrimSpace(resp.CollectedAnswer) != "")
 	}
 	return resp
 }
@@ -1419,6 +1441,51 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 		// in the rag terminal tool (the inner compose is text-only).
 		UserImages: req.Images,
 	}
+	// The session that read the evidence writes the answer (see the design's R2), and its text is
+	// the answer — so it is taken HERE, before the streaming/one-shot fork, because this funnel is
+	// the only code both paths share.
+	//
+	// The check used to live inside ComposeAnswerWith alone, which production never reaches: with
+	// an AnswerSink the run streams (ComposeAnswerStream) and returns. Measured 2026-09-20: 15 of
+	// 18 answered requests had a session answer, and every one of them was replaced by a compose
+	// call that had not read the passages — the answers then cited the six blocks that call
+	// renders while the pool held up to 213 passages, and 6 questions came back "the evidence does
+	// not contain it".
+	if ans, ok := sessionAnswer(kb, false); ok {
+		useSessionAnswer(kb, resp, ans)
+		if partialAnswer {
+			resp.Partial = true
+		}
+		// Deliver it through the sink so a streaming client still receives the answer the same
+		// way it receives a composed one (in one piece: the session's text is already complete).
+		//
+		// What is delivered is resp.Answer — the text useSessionAnswer just built, prose plus the
+		// numbered evidence the run rendered — not the raw session text. Delivering the raw text
+		// showed the reader the session's own numbers, which the delivered answer had already
+		// dropped (measured 2026-09-21, 三国/关羽: the streamed draft carried [ID:93] beside a
+		// sentence that is not there, while the answer the client ended up with carried none of it).
+		if deps.AnswerSink != nil {
+			deps.AnswerSink.reset()
+			deps.AnswerSink.deliver(resp.Answer, false)
+		}
+		log := logger
+		if log == nil {
+			log = _LOG
+		}
+		common.Info("agentic rag: using the answer the research session wrote",
+			zap.Int("chars", utf8.RuneCountInString(resp.Answer)), zap.Int("passages", len(kb.CiteChunkIDs)))
+		return
+	}
+	if why := sessionAnswerBlocked(kb, false); why != "" {
+		// A written answer that is not used must say so, and say why: this silence is what hid the
+		// fact that 20 of 20 rounds had an answer while the compose still ran every time.
+		log := logger
+		if log == nil {
+			log = _LOG
+		}
+		common.Info("agentic rag: the session's answer will not stand, composing instead", zap.String("why", why))
+	}
+
 	// Stream the answer when the model and the caller both support it, so the
 	// user sees text while it is produced instead of only at the end.
 	if deps.AnswerSink != nil {
@@ -1440,7 +1507,7 @@ func composeFinalAnswer(ctx context.Context, deps RAGTools, req runtime.RunReque
 			// think block reports the provider's own error (bounded): on a dead
 			// provider this is the first failure a user would otherwise never
 			// see, and the one-shot retry below fails the same way.
-			runtime.StepsFrom(ctx).StageLineDetail(logger, "Agentic RAG",
+			runtime.StepsFrom(ctx).StageLineDetail("Agentic RAG",
 				"Streaming generation failed; falling back to a single call: "+providerErrorSummary(err),
 				fmt.Sprintf("streaming compose failed (%v); falling back to a single call", err))
 			deps.AnswerSink.reset()
@@ -1508,21 +1575,26 @@ func multimodalUserMessage(question, textAttachments string, imageFiles []string
 		}
 		return []schema.Message{{Role: schema.User, Content: text}}
 	}
-	parts := make([]schema.MessageInputPart, 0, 1+len(imageFiles))
+	return []schema.Message{{Role: schema.User, UserInputMultiContent: imageMessageParts(text, imageFiles)}}
+}
+
+// imageMessageParts is the multimodal part list the two user-message builders share: the text
+// block (when non-empty) followed by one image block per vision-gated data URI. A text-only
+// message does NOT go through here — text-only providers silently drop a content-block array
+// (see multimodalUserMessage), so that path stays a plain Content string.
+func imageMessageParts(text string, images []string) []schema.MessageInputPart {
+	parts := make([]schema.MessageInputPart, 0, 1+len(images))
 	if text != "" {
 		parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: text})
 	}
-	for i := range imageFiles {
-		uri := imageFiles[i]
+	for i := range images {
+		uri := images[i]
 		parts = append(parts, schema.MessageInputPart{
 			Type:  schema.ChatMessagePartTypeImageURL,
 			Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &uri}},
 		})
 	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return []schema.Message{{Role: schema.User, UserInputMultiContent: parts}}
+	return parts
 }
 
 // multimodalContentBlocks converts schema.MessageInputPart multimodal content
@@ -1769,11 +1841,11 @@ func runOuterReact(ctx context.Context, deps RAGTools, req runtime.RunRequest, l
 	// research came from the direct graph: the trace described a loop that had
 	// not happened.
 	loop := runtime.StepsFrom(ctx)
-	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+	loop.Stage("Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
 
 	answer, _, err := outer.ChatWithTools(ctx, p.system, p.history, &models.ChatConfig{})
 	if err != nil {
-		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
+		loop.StageLine("Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react failed: %v; falling back to direct graph", err)
 		// Fall back to the inner graph directly so the user still gets an
 		// answer. The graph composes inside its last node with the FORMALIZED question
@@ -1805,7 +1877,7 @@ func runOuterReact(ctx context.Context, deps RAGTools, req runtime.RunRequest, l
 	// instead — the citation then opens whatever passage happens to sit at that position.
 	p.resp.CiteChunkIDs = append([]string(nil), p.kb.CiteChunkIDs...)
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
-	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
+	loop.StageLine("Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
 }
 
@@ -1848,12 +1920,12 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req runtime.RunRequ
 
 	// Same opening step as runOuterReact, reported where the loop is.
 	loop := runtime.StepsFrom(ctx)
-	loop.Stage(logger, "Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
+	loop.Stage("Tool loop", "Deciding what to do next (step 1); available tools: %s", outerToolNames(p.tools))
 
 	stream := true
 	_, err := outer.ChatStreamlyWithTools(ctx, p.system, p.history, &models.ChatConfig{Stream: &stream}, mux.sender)
 	if err != nil {
-		loop.StageLine(logger, "Tool loop", "The outer model call failed; running the research graph directly.")
+		loop.StageLine("Tool loop", "The outer model call failed; running the research graph directly.")
 		logger.Printf("[Agentic RAG] outer react stream failed: %v; falling back to direct graph", err)
 		// Fall back with the caller's own sink so the answer still streams out.
 		// Same guarded compose as runOuterReact: the graph composes inside its
@@ -1893,7 +1965,7 @@ func runOuterReactStream(ctx context.Context, deps RAGTools, req runtime.RunRequ
 	p.resp.Chunks = p.kb.Chunks
 	p.resp.DocAggs = p.kb.DocAggs
 	p.resp.EmptyResult = len(p.kb.Chunks) == 0
-	loop.StageLine(logger, "Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
+	loop.StageLine("Tool loop", outerLoopEndLine(session.ragCalls(), strings.TrimSpace(p.resp.Answer) != ""))
 	return p.resp
 }
 
@@ -1966,7 +2038,7 @@ type outerReactSession struct {
 // graph runs started at the same millisecond, three planner runs for one question). The
 // tool layer (models.appendToolResults) executes them all concurrently while the terminal
 // fold keeps only the FIRST result. The duplicates each burn a full graph run
-// (double provider load → the SCA deadline overruns in the same log) and
+// (double provider load → the round deadline overruns in the same log) and
 // their — sometimes better — answers are discarded. The first caller executes
 // and publishes; the rest block on done and return the same answer.
 type ragFlight struct {
@@ -2048,7 +2120,7 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		// itself, i.e. per outer tool call.
 		if effective := resolveEffectiveQuestion(req.Question, s.deps.OriginalQuestion); effective != req.Question {
 			s.logger.Printf("[Agentic RAG] using original user question over outer rewrite (original=%q → rewrite=%q)",
-				trunc(s.deps.OriginalQuestion, 80), trunc(req.Question, 80))
+				runtime.TruncateRunes(s.deps.OriginalQuestion, 80), runtime.TruncateRunes(req.Question, 80))
 			req.Question = effective
 		}
 		// The inner compose is text-only: the outer model already saw the images via
@@ -2117,15 +2189,20 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		if !composed {
 			composeFinalAnswer(s.ctx, inner, req, kb, resp, s.logger, resp.Partial, true, "")
 		}
-		// A "[Research status]" note is appended to the TOOL RESULT for every
-		// non-SUFFICIENT verdict, so the outer model can decide whether to re-run `rag` from
-		// the reported gaps. It does NOT change the streamed answer (the compose already
-		// streamed); after two consecutive unsatisfying rounds it tells the outer agent to
-		// STOP.
+		// The "[Research status]" note rides on the TOOL RESULT (below), so the outer model can
+		// decide whether to re-run `rag` from the reported gaps — and after two consecutive
+		// unsatisfying rounds it tells that model to STOP.
+		//
+		// It is deliberately NOT part of resp.Answer. This branch used to append it there, and
+		// this branch is the harness path: when the `rag` call is what ends the loop, the tool
+		// result IS the final answer, so the runtime's bookkeeping reached the user verbatim
+		// (measured 2026-09-20: "[Research status] this round did not settle the question (66
+		// passages read). If these gaps are material, call rag again with a question focused on
+		// them." inside an answer the reviewer then called self-contradicting).
 		if t := researchStatusTrailer(s.deps.Cache, resp); t != "" {
 			// Same fold as Rag's direct path: the period closes the hint
 			// clause before the trailer sentence.
-			resp.Answer += "\n\n[Research status] " + resp.SCAFeedback + "." + t
+			resp.ResearchStatus = "\n\n[Research status] " + resp.RoundRecord + "." + t
 		}
 		s.publish(resp, kb)
 		// Close the "[Function tool] Running the rag tool with: …" line. The
@@ -2150,8 +2227,12 @@ func (s *outerReactSession) ToolCall(name string, arguments map[string]interface
 		// Waiters replay this exact answer; publish already ran once above, so
 		// the evidence pool is not unioned twice and selectEvidence keeps a
 		// single unambiguous call record.
-		flight.answer = resp.Answer
-		return resp.Answer, nil
+		//
+		// The status note rides the TOOL RESULT and not the answer (see above): it is the outer
+		// model that has to act on it, while `publish` already handed the answer on.
+		toolResult := resp.Answer + resp.ResearchStatus
+		flight.answer = toolResult
+		return toolResult, nil
 	case "summarize_document":
 		docID, _ := arguments["doc_id"].(string)
 		if docID == "" {
@@ -2266,14 +2347,18 @@ func (s *outerReactSession) publish(call *RunResponse, kb *runtime.Kbinfos) {
 	// Remember this call's own answer + evidence so selectEvidence can restore
 	// the pool the winning answer was composed from.
 	s.calls = append(s.calls, ragCallResult{answer: call.Answer, kb: kb})
-	if s.resp.Answer == "" {
+	// The LAST non-empty answer wins, not the first: a rag call that did not end the loop was
+	// superseded by the one that did, and the terminal call's text is the answer the client
+	// already received. Measured 2026-09-22 (paper-test, two rag calls in one loop): keeping the
+	// FIRST left the outer response holding a 3317-character text with no [ID:n] markers while the
+	// run's own final answer — 1361 characters, whose ids the fallback had just resolved — was
+	// dropped, so the citation step saw zero markers and the user got a cited answer with no
+	// reference list. An empty answer never overwrites a non-empty one.
+	if call.Answer != "" {
 		s.resp.Answer = call.Answer
 	}
-	if s.resp.Verdict == "" {
-		s.resp.Verdict = call.Verdict
-	}
-	if s.resp.SCAFeedback == "" {
-		s.resp.SCAFeedback = call.SCAFeedback
+	if s.resp.RoundRecord == "" {
+		s.resp.RoundRecord = call.RoundRecord
 	}
 	if s.resp.CollectedAnswer == "" {
 		s.resp.CollectedAnswer = call.CollectedAnswer
@@ -2335,10 +2420,9 @@ func (s *outerReactSession) selectEvidence(answer string) {
 
 // runDirect is the low/naive path: one hybrid search, no tool loop.
 //
-// It is the ONE implementation of the direct search (called from the low graph node) —
-// there is deliberately no runtime-level duplicate in runtime/orchestrator. It lives here
-// rather than there because the step reads the full RAGTools config; the graph node that
-// calls it forces UseCompiled=true.
+// It is the ONE implementation of the direct search (called from the low graph node). It lives
+// here rather than in the runtime package because the step reads the full RAGTools config; the
+// graph node that calls it forces UseCompiled=true.
 func runDirect(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd runtime.SearchDeps, kb *runtime.Kbinfos, resp *RunResponse, logger *log.Logger) {
 	ctx, done := runtime.Phase(ctx, runtime.PhaseDirect)
 	retrievalQuery := ""
@@ -2375,8 +2459,8 @@ func runDirect(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd ru
 	}
 }
 
-// AgenticLoop runs the full agentic search loop (planner / prefetch / SCA↔
-// rewriter iteration) for an agentic mode.
+// AgenticLoop runs the full agentic search loop (planner / prefetch / research-round
+// iteration) for an agentic mode.
 //
 // It is registered by the agentic_rag package's init rather than called directly: the
 // agentic_rag package owns RAGTools, so the runtime cannot import it back. The
@@ -2396,11 +2480,11 @@ func SetAgenticLoop(fn AgenticLoop) { agenticLoop = fn }
 //
 // When an agentic loop is registered (see SetAgenticLoop) it runs the full
 // five-phase pipeline: planner fan-out → slot table → slot research rounds →
-// SCA review → gap rewrite → repeat until sufficient or the budget runs out.
+// gap rewrite → repeat until the budget runs out.
 //
 // Fallback (no loop registered): ONE action session via RunActionSession. This
 // keeps `Run` usable without the planner, at the cost of the
-// planner/fan-out/SCA iteration.
+// planner/fan-out/research-round iteration.
 func runAgentic(ctx context.Context, deps RAGTools, req runtime.RunRequest, sd runtime.SearchDeps, kb *runtime.Kbinfos, resp *RunResponse, logger *log.Logger) {
 	// Formalization happens inside the graph: it is the graph's entry node
 	// (START → formalize_question).

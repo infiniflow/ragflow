@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -25,7 +24,28 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
+
+// stageLogText renders the developer-log half of the captured stage lines in the shape the old
+// *log.Logger wrote them ("[stage] detail"), so a test that read that buffer can keep asserting on
+// text.
+func stageLogText(logs *observer.ObservedLogs) string {
+	var b strings.Builder
+	for _, e := range logs.All() {
+		cm := e.ContextMap()
+		detail, _ := cm["detail"].(string)
+		if stage, ok := cm["stage"].(string); ok {
+			b.WriteString("[" + stage + "] " + detail)
+		} else {
+			b.WriteString(e.Message)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
 
 // Test doubles
 
@@ -156,203 +176,186 @@ func (r *countingRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequ
 	return []map[string]any{{"doc_id": "d1", "docnm_kwd": "doc1", "content": "Saint Lawrence River; 14 April 1865; 9 December 2019."}}, nil
 }
 
-// Unit tests for the routing / helpers (no init() required).
+// routeResearch unit tests. This router is the loop's ONLY decision (see its doc comment), and
+// every fact it reads is a record the round itself produced: the session's answer, the part the
+// session said it could not establish, and whether the pool grew.
 
-func TestRouteSCAAlwaysCloseoutOnNoProgress(t *testing.T) {
-	// NoProgress is the hard stop: regardless of SCA enablement or verdict, the
-	// loop must close out rather than spin another round.
-	st := &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3, NoProgress: true}
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("SCA on: expected formalize on no-progress, got %v", n)
-	}
-	if n := routeSCA(st, false, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("SCA off: expected formalize on no-progress, got %v", n)
-	}
-}
+// TestRouteResearchClosesOutWhenTheSessionAnswered pins the paper's stop condition: the loop ends
+// because the AGENT ANSWERED and named nothing open — even with fresh evidence in the pool, which
+// is the fact that would otherwise ask for another round.
+func TestRouteResearchClosesOutWhenTheSessionAnswered(t *testing.T) {
+	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
+	st.LastRoundNew = 40
+	st.Deadline = time.Now().Add(120 * time.Second)
 
-func TestRouteSCADisabledSCAClosesOut(t *testing.T) {
-	// With SCA disabled the single research pass' verdict is informational; we
-	// never start a rewrite round.
-	st := &AgenticState{Verdict: VerdictInsufficient, MaxLoops: 3}
-	if n := routeSCA(st, false, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("expected formalize when SCA disabled, got %v", n)
+	st.CollectedAnswer = "关羽杀了十二人：华雄、颜良、文丑…"
+	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
+		t.Fatalf("answered: route = %v, want formalize_answer", n)
 	}
 }
 
-// TestRouteSCAPoolSizeIsNotTheStop pins the DECOUPLED stop: the pool's size is
-// not what ends the research loop — whether the SCA can READ anything new is, and
-// that fact is the view identity (scaNode sets NoProgress when the view matches
-// the previous review's, and routeSCA honours it on its first check).
+// TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart pins the L2 rule: an answer that NAMES a
+// part it could not establish is not a finished round.
 //
-// The old guard finalized as soon as the pool reached SCAViewCap on a
-// second-or-later review, which is a different claim: a pool past the view cap
-// whose view CHANGED has new evidence the reviewer can read, and it was being
-// thrown away (measured: a name-probe round ended at 117 chunks with members
-// still arriving).
-func TestRouteSCAPoolSizeIsNotTheStop(t *testing.T) {
-	full := func() *AgenticState {
-		st := &AgenticState{
-			Verdict:      VerdictInsufficient,
-			MaxLoops:     3,
-			SearchRounds: 1,
-			// Work left in the table AND evidence still arriving last round —
-			// the two facts the loop is driven by (see routeSCA).
-			LastRoundNew:    12,
-			UnresolvedSlots: []map[string]any{{"question_clues": []string{"who else"}}},
-			KB:              &runtime.Kbinfos{Chunks: make([]map[string]any, SCAViewCap)},
-		}
+// "The session answered ⇒ stop" holds when the agent answers only what it can support. A multi-hop
+// question's first answer is very often "I read X, and X does not carry Y" — an answer AND a
+// statement of work remaining — and treating it as final is how four questions stayed at zero while
+// their sessions each held the bridge and said so, with ~150s of the round's 180s unspent
+// (measured 2026-09-20, FRAMES: Quincy's mayors, Gifu's population, AP's law, Lahore in 1858).
+func TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart(t *testing.T) {
+	newState := func() *AgenticState {
+		st := NewAgenticState("What is the population of the birthplace of the writer of Culdcept Saga?", "", 3, nil)
+		st.LastRoundNew = 25
 		st.Deadline = time.Now().Add(120 * time.Second)
+		st.CollectedAnswer = "The writer is Tow Ubukata, born in Gifu Prefecture [ID:0]…"
+		st.SessionUnresolved = "the population figure for Gifu Prefecture"
 		return st
 	}
 
-	// Full pool, view changed (scaNode did NOT set NoProgress) => research on.
-	if n := routeSCA(full(), true, 3); n != nodeQueryRewrite {
-		t.Fatalf("full pool with a changed view: expected rewrite, got %v", n)
+	if n := routeResearch(newState(), 3); n != nodeRagAgentLoop {
+		t.Fatalf("answer with an open part: route = %v, want another round", n)
 	}
 
-	// Full pool, view UNCHANGED: scaNode's detector owns this case, and routeSCA
-	// honours it before anything else.
-	stale := full()
-	stale.NoProgress = true
-	if n := routeSCA(stale, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("full pool with an unchanged view: expected formalize, got %v", n)
+	// The same answer with nothing left open is final — the paper's rule, unchanged.
+	answered := newState()
+	answered.SessionUnresolved = ""
+	if n := routeResearch(answered, 3); n != nodeFormalizeAnswer {
+		t.Errorf("answer with nothing open: route = %v, want formalize_answer", n)
 	}
 
-	// The loop is still bounded by the round count...
-	atMax := full()
+	// Nor does an open part reopen a round whose rounds are spent.
+	spent := newState()
+	spent.SearchRounds = 3
+	if n := routeResearch(spent, 3); n != nodeFormalizeAnswer {
+		t.Errorf("open part but rounds spent: route = %v, want formalize_answer", n)
+	}
+
+	// Nor one whose clock cannot fit another round AND the finale it has to hand the question to.
+	late := newState()
+	late.Deadline = time.Now().Add(time.Duration(finaleShareS(70)+MinRoundS-1) * time.Second)
+	if n := routeResearch(late, 3); n != nodeFormalizeAnswer {
+		t.Errorf("open part but no room for the round and the finale: route = %v, want formalize_answer", n)
+	}
+}
+
+// TestRouteResearchGivesANamedOpenPartOneZeroGrowthRound pins the single free hop: a round that
+// added NO passage may still be followed by one more attempt when the session named a part — that
+// is the bridge hop a multi-hop question is made of ("I read X, X does not carry Y") — and a SECOND
+// such round is refused, so a stall cannot spend the question.
+//
+// This is what replaced the slot table as the continuation fact: the slot table is the session's
+// scratchpad, and a round that read forty passages already in the pool used to look like one that
+// had learned nothing (measured 2026-09-20: three of four zero-scoring questions ended on
+// `no round is asked for (… +0 chunks this round)`).
+func TestRouteResearchGivesANamedOpenPartOneZeroGrowthRound(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.CollectedAnswer = "It was built at Geneva."
+	st.SessionUnresolved = "the year it was built"
+	st.LastRoundNew = 0
+	st.Deadline = time.Now().Add(150 * time.Second)
+
+	if n := routeResearch(st, 3); n != nodeRagAgentLoop {
+		t.Fatalf("first zero-growth round with a named part: route = %v, want another round", n)
+	}
+	// The next round learned nothing either: the hop is refused.
+	st.LastRoundNew = 0
+	if n := routeResearch(st, 3); n != nodeFormalizeAnswer {
+		t.Errorf("second zero-growth round: route = %v, want formalize_answer", n)
+	}
+}
+
+// TestRouteResearchTheSlotTableDoesNotDecide pins the 2026-09-20 decision that took the plan out of
+// the routing: two states that differ ONLY in their unresolved slots must route the same way.
+//
+// The slot table is the session's scratchpad (the model fills it to remember what it found), so a
+// table full of unresolved slots is not a statement that work remains — and a table empty of them
+// is not a statement that the question is answered. What decides is the session's own <unresolved>
+// statement and whether the round brought evidence in.
+func TestRouteResearchTheSlotTableDoesNotDecide(t *testing.T) {
+	withSlots := NewAgenticState("When and where was it built?", "", 3, nil)
+	withSlots.UnresolvedSlots = []map[string]any{{"question_clues": []string{"when built", "where built"}}}
+	withSlots.CollectedAnswer = "It was built in Geneva."
+	withSlots.LastRoundNew = 40
+	withSlots.Deadline = time.Now().Add(150 * time.Second)
+
+	without := NewAgenticState("When and where was it built?", "", 3, nil)
+	without.CollectedAnswer = "It was built in Geneva."
+	without.LastRoundNew = 40
+	without.Deadline = time.Now().Add(150 * time.Second)
+
+	if a, b := routeResearch(withSlots, 3), routeResearch(without, 3); a != b {
+		t.Errorf("unresolved slots changed the route: with=%v without=%v; the slot table must not decide", a, b)
+	}
+	if got := routeResearch(withSlots, 3); got != nodeFormalizeAnswer {
+		t.Errorf("route = %v, want formalize_answer (an answer that names nothing open is final)", got)
+	}
+}
+
+// TestRouteResearchRetriesARoundThatProducedNothingWhileEvidenceArrives pins the one continuation
+// that needs neither an answer nor a named part: the round FAILED (it wrote no answer) while its own
+// retrieval was still feeding the pool. A retry is the only way such a round can end in an answer,
+// and a round that added nothing is not retried.
+func TestRouteResearchRetriesARoundThatProducedNothingWhileEvidenceArrives(t *testing.T) {
+	st := NewAgenticState("When and where was it built?", "", 3, nil)
+	st.LastRoundNew = 40
+	st.Deadline = time.Now().Add(150 * time.Second)
+	if n := routeResearch(st, 3); n != nodeRagAgentLoop {
+		t.Fatalf("no answer, nothing open, but evidence arrived: route = %v, want another round", n)
+	}
+
+	stalled := NewAgenticState("When and where was it built?", "", 3, nil)
+	stalled.LastRoundNew = 0
+	stalled.Deadline = time.Now().Add(150 * time.Second)
+	if n := routeResearch(stalled, 3); n != nodeFormalizeAnswer {
+		t.Errorf("no answer and nothing arrived: route = %v, want formalize_answer", n)
+	}
+}
+
+// TestRouteResearchHonoursTheRoundBudgetAndTheClock pins the two bounds that are neither the
+// answer nor the record: the mode's round count, and the room a round needs — the round itself PLUS
+// the finale it hands the question over to (see canOpenRound).
+func TestRouteResearchHonoursTheRoundBudgetAndTheClock(t *testing.T) {
+	atMax := NewAgenticState("When and where was it built?", "", 3, nil)
+	atMax.CollectedAnswer = "It was built in Geneva."
+	atMax.SessionUnresolved = "the year"
+	atMax.LastRoundNew = 40
 	atMax.SearchRounds = 3
-	if n := routeSCA(atMax, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("at max rounds with a full pool: expected formalize, got %v", n)
+	atMax.Deadline = time.Now().Add(150 * time.Second)
+	if n := routeResearch(atMax, 3); n != nodeFormalizeAnswer {
+		t.Errorf("round budget spent: route = %v, want formalize_answer", n)
 	}
-	// ...and by the round-headroom guard.
-	tight := full()
-	tight.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
-	if n := routeSCA(tight, true, 3); n != nodeFormalizeAnswer {
-		t.Fatalf("no headroom with a full pool: expected formalize, got %v", n)
+
+	tight := NewAgenticState("When and where was it built?", "", 3, nil)
+	tight.CollectedAnswer = "It was built in Geneva."
+	tight.SessionUnresolved = "the year"
+	tight.LastRoundNew = 40
+	tight.Deadline = time.Now().Add(70 * time.Second)
+	if n := routeResearch(tight, 3); n != nodeFormalizeAnswer {
+		t.Errorf("no room for a round and the finale: route = %v, want formalize_answer", n)
 	}
 }
 
-// TestRouteSCARoundRecordDrivesTheLoop pins the DECOUPLED stop/continue rule: the
-// loop's own record (work left in the table + evidence still arriving) decides,
-// and the reviewer's verdict is one of its inputs rather than the switch.
-//
-// The distinction it encodes: a SUFFICIENT verdict is a judgement about the
-// PASSAGES the reviewer read. It is not a statement that the question is done —
-// measured 2026-09-15, a run ended with unresolved=0 while the answer was six
-// members short — so a table that still lists unresolved slots while the round is
-// still adding evidence keeps its next round, and a settled table closes out
-// however much evidence arrived.
-func TestRouteSCARoundRecordDrivesTheLoop(t *testing.T) {
-	base := func() *AgenticState {
-		st := &AgenticState{MaxLoops: 3, SearchRounds: 1}
-		st.Deadline = time.Now().Add(120 * time.Second)
-		return st
-	}
-	work := []map[string]any{{"question_clues": []string{"who else"}}}
-
-	// Work left + still learning + a SATISFIED reviewer: another round. The
-	// reviewer's view of the passages does not settle the table's own gaps.
-	st := base()
-	st.Verdict = VerdictSufficient
-	st.LastRoundNew = 9
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("SUFFICIENT with work left and evidence still arriving: expected rewrite, got %v", n)
+// TestResearchStatusNoteReportsTheRecordNotAVerdict pins what the "[Research status]" note says
+// now: a round that ANSWERED has nothing to annotate, and one that did not states what it read and
+// what the plan still lists as unresolved.
+func TestResearchStatusNoteReportsTheRecordNotAVerdict(t *testing.T) {
+	answered := NewAgenticState("q", "", 3, nil)
+	answered.CollectedAnswer = "the answer"
+	if got := researchStatusNote(answered); got != "" {
+		t.Errorf("answered round note = %q, want empty", got)
 	}
 
-	// Nothing left in the table: growth alone is not a reason to keep going.
-	st = base()
-	st.Verdict = VerdictSufficient
-	st.LastRoundNew = 9
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("settled table with nothing against it: expected formalize, got %v", n)
+	st := NewAgenticState("q", "", 3, nil)
+	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1"}, {"chunk_id": "c2"}}}
+	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"a"}}}
+	got := researchStatusNote(st)
+	if !strings.Contains(got, "2 passages read") || !strings.Contains(got, "1 plan slot(s) still unresolved") {
+		t.Errorf("note = %q, want the round's own record", got)
 	}
 
-	// Work left, stalled round, reviewer names a gap: another round.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("INSUFFICIENT with a concrete gap: expected rewrite, got %v", n)
-	}
-
-	// Work can ALSO come from the review's own gaps, with an empty unresolved
-	// table — the two records are independent. Ignoring the reviewer's gaps is
-	// what made a run close out with INSUFFICIENT (confidence 1.00) and four
-	// derived gaps while 60s and two rounds went unspent (2026-09-15).
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.SCA = map[string]any{"claims": map[string]any{
-		"c1": map[string]any{"missing_information": []any{
-			map[string]any{"what": "还有谁", "search_hint": "关羽 斩将 名单"},
-		}},
-	}}
-	if n := routeSCA(st, true, 3); n != nodeQueryRewrite {
-		t.Errorf("INSUFFICIENT with the review's own gaps and no unresolved slots: expected rewrite, got %v", n)
-	}
-
-	// Work left, stalled round, NO judgement (the review could not run): nothing
-	// names a direction and the round learned nothing — close out. This is the
-	// case a fallback INSUFFICIENT used to promise a round to.
-	st = base()
-	st.Verdict = VerdictUnknown
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("UNKNOWN with a stalled round: expected formalize, got %v", n)
-	}
-
-	// Work left, stalled round, satisfied reviewer: close out.
-	st = base()
-	st.Verdict = VerdictSufficient
-	st.UnresolvedSlots = work
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("SUFFICIENT with a stalled round: expected formalize, got %v", n)
-	}
-
-	// At max rounds => formalize, whatever the record says.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.LastRoundNew = 3
-	st.UnresolvedSlots = work
-	st.SearchRounds = 3
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("at max rounds: expected formalize, got %v", n)
-	}
-	// No headroom => formalize.
-	st = base()
-	st.Verdict = VerdictInsufficient
-	st.LastRoundNew = 3
-	st.UnresolvedSlots = work
-	st.Deadline = time.Now().Add(MinRoundHeadroomS / 2 * time.Second)
-	if n := routeSCA(st, true, 3); n != nodeFormalizeAnswer {
-		t.Errorf("no headroom: expected formalize, got %v", n)
-	}
-}
-
-func TestSelectSCAViewIdentity(t *testing.T) {
-	chunks := make([]map[string]any, 0, 80)
-	for i := 0; i < 80; i++ {
-		chunks = append(chunks, map[string]any{
-			"chunk_id":   fmt.Sprintf("c%d", i),
-			"content":    fmt.Sprintf("the quick brown fox %d", i),
-			"similarity": 1.0 - float64(i)/100.0,
-		})
-	}
-	v1, id1 := SelectSCAView(chunks, []string{"quick", "brown"})
-	if len(v1) != SCAViewCap {
-		t.Fatalf("expected view cap %d, got %d", SCAViewCap, len(v1))
-	}
-	// Same inputs => same identity (no Process-randomised hash).
-	_, id2 := SelectSCAView(chunks, []string{"quick", "brown"})
-	if id1 != id2 {
-		t.Fatalf("view identity should be deterministic, got %q vs %q", id1, id2)
-	}
-	// An enlarged pool with the SAME selected ids keeps the same identity — this
-	// is exactly the "review view unchanged" early-exit signal.
-	more := append(chunks, map[string]any{"chunk_id": "extra", "content": "unrelated tail", "similarity": 0.0})
-	_, id3 := SelectSCAView(more, []string{"quick", "brown"})
-	if id1 != id3 {
-		t.Fatalf("adding non-selected chunks should NOT change the view identity, got %q vs %q", id1, id3)
+	// Nothing read and nothing open: no note at all, because there is nothing to report.
+	if got := researchStatusNote(NewAgenticState("q", "", 3, nil)); got != "" {
+		t.Errorf("empty record note = %q, want empty", got)
 	}
 }
 
@@ -403,179 +406,6 @@ func TestMergeSlotPatchNoChangeReturnsNil(t *testing.T) {
 	}, 1, nil)
 	if m := MergeSlotPatch(base, branch); m != nil {
 		t.Fatalf("identical patch should return nil, got %+v", m)
-	}
-}
-
-func TestExpandFanoutsParsesJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["who discovered it", "when was it discovered"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "What was discovered and by whom?")
-	if len(got) != 2 {
-		t.Fatalf("expected 2 fan-outs, got %v", got)
-	}
-	if got[0] != "who discovered it" || got[1] != "when was it discovered" {
-		t.Fatalf("unexpected fan-outs: %v", got)
-	}
-}
-
-func TestExpandFanoutsFallbackOnBadJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("I cannot break this down.")
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "single question")
-	// Bad JSON: the model answered in prose, so the loop line-splits the reply (yielding
-	// the reply itself, not the raw question). The loose path strips the
-	// "-•0123456789. " cutset from both ends, so the trailing period is dropped.
-	if len(got) != 1 || got[0] != "I cannot break this down" {
-		t.Fatalf("expected line-split fallback without the trailing period, got %v", got)
-	}
-}
-
-func TestExpandFanoutsNilModelReturnsQuestion(t *testing.T) {
-	got := ExpandFanouts(context.Background(), RAGTools{}, "single question")
-	if len(got) != 1 || got[0] != "single question" {
-		t.Fatalf("expected raw question when no model, got %v", got)
-	}
-}
-
-// TestExpandFanoutsRetriesWithStrictJSON covers the retry: a prose answer must not be
-// line-split into fan-outs (it poisons the slot table), so the prompt is re-sent with the
-// strict JSON instruction instead.
-func TestExpandFanoutsRetriesWithStrictJSON(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("The woman was **Rocio Restrepo**.\nSupporting sources: https://example.com")
-	mdl.push(`{"fanouts": ["who was she", "when did it happen"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "Who was she?")
-	if len(got) != 2 || got[0] != "who was she" || got[1] != "when did it happen" {
-		t.Fatalf("expected the strict-retry fan-outs, got %v", got)
-	}
-	if len(mdl.seen) != 2 {
-		t.Fatalf("model calls = %d, want 2 (original + one strict retry)", len(mdl.seen))
-	}
-}
-
-// TestExpandFanoutsDropsAnswerLikeEntries covers _fanout_looks_like_query: a
-// fan-out is used verbatim as a retrieval query and as the slot hint, so an
-// answered fact must never survive into either.
-func TestExpandFanoutsDropsAnswerLikeEntries(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["who won the medal", "The winner was **Ann** according to the citation", "when was the race"]}`)
-	got := ExpandFanouts(context.Background(), RAGTools{Model: mdl}, "Who won the medal and when?")
-	if len(got) != 2 || got[0] != "who won the medal" || got[1] != "when was the race" {
-		t.Fatalf("expected the answer-like entry to be dropped, got %v", got)
-	}
-}
-
-func TestFanoutLooksLikeQueryBounds(t *testing.T) {
-	// The loose (non-JSON) path holds a tighter bound than the JSON path.
-	long := "who opened the new library downtown last spring and who paid for the building"
-	if !fanoutLooksLikeQuery(long, false) {
-		t.Errorf("JSON-path fan-out %q should pass the %d-word bound", long, fanoutMaxWords)
-	}
-	if fanoutLooksLikeQuery(long, true) {
-		t.Errorf("loose fan-out %q should exceed the %d-word bound", long, fanoutLooseMaxWords)
-	}
-	// A question keeps its full length even on the loose path.
-	if !fanoutLooksLikeQuery(long+"?", true) {
-		t.Error("a question-shaped line should survive the loose bound")
-	}
-	if fanoutLooksLikeQuery(strings.Repeat("word ", fanoutMaxWords+2), false) {
-		t.Errorf("fan-outs over %d words must be rejected", fanoutMaxWords)
-	}
-	if fanoutLooksLikeQuery(strings.Repeat("a", fanoutMaxChars+1), false) {
-		t.Errorf("fan-outs over %d chars must be rejected", fanoutMaxChars)
-	}
-}
-
-// TestFanoutLooksLikeQueryCountsRunes: the 160-char cap counts code points, so a CJK
-// fan-out at the limit must survive even though it exceeds 160 BYTES, and one over the
-// limit must still be rejected.
-func TestFanoutLooksLikeQueryCountsRunes(t *testing.T) {
-	atLimit := strings.Repeat("中", fanoutMaxChars) // 160 chars / 480 bytes
-	if !fanoutLooksLikeQuery(atLimit, false) {
-		t.Errorf("a %d-character fan-out must pass: the cap counts characters, not bytes", fanoutMaxChars)
-	}
-	if fanoutLooksLikeQuery(atLimit+"中", false) {
-		t.Errorf("a %d-character fan-out must be rejected", fanoutMaxChars+1)
-	}
-}
-
-// TestParseFanoutsLooseStripsBothEnds: the bullet/numbering cutset is stripped from BOTH
-// ends, so a trailing period is not carried into the retrieval query (the leading "1."
-// already was not).
-func TestParseFanoutsLooseStripsBothEnds(t *testing.T) {
-	got := parseFanouts("1. who opened the library.\n- when did it open?")
-	want := []string{"who opened the library", "when did it open?"}
-	if len(got) != len(want) {
-		t.Fatalf("parseFanouts = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-// TestParseFanoutsSplitsOnAllLineBreaks: a carriage-return separated reply yields one
-// fan-out per line, not a single fused blob (splitting on "\n" alone would keep the lone
-// "\r" inline).
-func TestParseFanoutsSplitsOnAllLineBreaks(t *testing.T) {
-	got := parseFanouts("who opened it\rwhen did it open?")
-	want := []string{"who opened it", "when did it open?"}
-	if len(got) != len(want) {
-		t.Fatalf("parseFanouts = %q, want %q", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("parseFanouts[%d] = %q, want %q", i, got[i], want[i])
-		}
-	}
-}
-
-// TestRenderSlotDraftFormat pins the draft format exactly: the collected answer leads
-// with its evidence metadata, a resolved slot carries strength + terminal + evidence ids +
-// its discovered-clue tail, and an unresolved slot is rendered as
-// "NOT RESOLVED (<question clues>)". This text is the SCA's claim context, so a different
-// shape changes what the reviewer sees.
-func TestRenderSlotDraftFormat(t *testing.T) {
-	strong := 0.9
-	st := runtime.NewState([]runtime.Variable{
-		{
-			ID:                0,
-			Type:              "aspect",
-			Candidate:         strPtr("answer A"),
-			CandidateStrength: &strong,
-			DiscoveredClues:   []string{"clue one", "clue two"},
-		},
-		{ID: 1, Type: "aspect", QuestionClues: []string{"who opened it?"}},
-	}, 0, nil)
-	evidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"c1", "c2"}, TerminalType: "state"},
-	}
-
-	draft := RenderSlotDraft(st, "the collected answer", evidence)
-	want := "Candidate answer: the collected answer\n" +
-		"\n" +
-		"- slot 0 [aspect]: answer A (strength=0.90) [terminal=state, evidence_ids=['c1', 'c2']] — clue one; clue two\n" +
-		"- slot 1 [aspect]: NOT RESOLVED (who opened it?)"
-	if draft != want {
-		t.Fatalf("draft = %q\nwant   %q", draft, want)
-	}
-}
-
-// TestSelectSCAViewPrefersScoreWhenSimilarityIsZero: a similarity of 0.0 is FALSY, so the
-// score must be used instead. The presence-based read ranked such a chunk last instead of
-// first.
-func TestSelectSCAViewPrefersScoreWhenSimilarityIsZero(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "zero-sim", "content": "irrelevant", "similarity": 0.0, "score": 0.9},
-		{"chunk_id": "half", "content": "irrelevant", "similarity": 0.5},
-	}
-	view, _ := SelectSCAView(chunks, nil)
-	if len(view) != 2 {
-		t.Fatalf("view size = %d, want 2", len(view))
-	}
-	if got := runtime.ChunkIDOf(view[0]); got != "zero-sim" {
-		t.Errorf("first chunk = %q, want zero-sim (score 0.9 must beat similarity 0.5)", got)
 	}
 }
 
@@ -722,10 +552,10 @@ func TestRunSlotResearchPassLedgerRecordsSessionHint(t *testing.T) {
 // reports how many passages each slot's session bound, so a slot whose session
 // retrieved nothing is visible in the run log.
 func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
-	var buf bytes.Buffer
-	orig := _LOG
-	_LOG = log.New(&buf, "", 0)
-	defer func() { _LOG = orig }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	orig := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = orig })
 
 	st := &AgenticState{
 		Question: "who opened it?",
@@ -746,8 +576,8 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 	if res := RunSlotResearchPass(context.Background(), context.Background(), deps, "who opened it?", st, 60); res == nil {
 		t.Fatal("RunSlotResearchPass returned nil")
 	}
-	if !strings.Contains(buf.String(), "slot evidence bound") {
-		t.Errorf("missing the per-slot evidence report; log:\n%s", buf.String())
+	if logs.FilterMessage("slot research: slot evidence bound").Len() == 0 {
+		t.Errorf("missing the per-slot evidence report; log: %v", logs.All())
 	}
 }
 
@@ -755,9 +585,10 @@ func TestRunSlotResearchPassLogsSlotEvidenceBound(t *testing.T) {
 // leg is keyword-only (weight 0, top_n=60, query terms folded into the query),
 // the semantic-bypass leg has the vector weight on (top_n=30, plain query).
 type channelRetriever struct {
-	keywordsWeights []float64
-	topN            []int
-	queries         []string
+	mu      sync.Mutex
+	weights []float64
+	topN    []int
+	queries []string
 }
 
 func (r *channelRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
@@ -767,9 +598,13 @@ func (r *channelRetriever) Retrieve(_ context.Context, req runtime.RetrieveReque
 	if req.KeywordsSimilarityWeight != nil {
 		weight = *req.KeywordsSimilarityWeight
 	}
-	r.keywordsWeights = append(r.keywordsWeights, weight)
+	// The fan-out runs its legs concurrently (see FanoutSearch): a fixture that appends to
+	// its own fields without a lock is a race, not a stricter test.
+	r.mu.Lock()
+	r.weights = append(r.weights, weight)
 	r.topN = append(r.topN, req.TopN)
 	r.queries = append(r.queries, req.Query)
+	r.mu.Unlock()
 	return nil, nil
 }
 
@@ -784,54 +619,74 @@ func TestFanoutSearchIsDualChannel(t *testing.T) {
 	r := &channelRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, 60, false)
+	FanoutSearch(ctx, deps, st, []string{"when was it built", "where located"}, 8, false)
 
-	// Two fan-outs x two channels.
-	if len(r.keywordsWeights) != 4 {
-		t.Fatalf("expected 4 retrieve calls (2 fan-outs x 2 channels), got %d", len(r.keywordsWeights))
+	// Two fan-outs x two channels. The legs run CONCURRENTLY (see FanoutSearch), so what is
+	// recorded first is the schedule's choice, not the query order: the assertion is on the
+	// SHAPE of the four calls — two keyword legs and two semantic ones — not on their arrival.
+	// The order that IS a contract (exact admitted before semantic) is pinned separately, by
+	// the admission order in TestFanoutSearchPrefersExactOverSemantic.
+	if len(r.weights) != 4 {
+		t.Fatalf("expected 4 retrieve calls (2 fan-outs x 2 channels), got %d", len(r.weights))
 	}
-	for i := 0; i < 4; i += 2 {
-		// Channel A: keyword-only weight, wide pool, query terms folded in.
-		if r.keywordsWeights[i] != 1 {
-			t.Errorf("fan-out %d channel A: keyword weight = %v, want 1 (BM25 keyword leg)", i/2, r.keywordsWeights[i])
+	keywordLegs, semanticLegs := 0, 0
+	for i := range r.weights {
+		if r.weights[i] >= 1 {
+			// Channel A: keyword-only weight (KeywordsSimilarityWeight 1 = no dense leg), wide pool,
+			// query terms folded in.
+			keywordLegs++
+			if r.topN[i] != fanoutBM25TopN {
+				t.Errorf("keyword leg %d: TopN = %d, want %d", i, r.topN[i], fanoutBM25TopN)
+			}
+			if !strings.Contains(r.queries[i], "built") && !strings.Contains(r.queries[i], "located") {
+				t.Errorf("keyword leg %d: query = %q, want the fan-out query (terms folded in)", i, r.queries[i])
+			}
+			continue
 		}
-		if r.topN[i] != fanoutBM25TopN {
-			t.Errorf("fan-out %d channel A: TopN = %d, want %d", i/2, r.topN[i], fanoutBM25TopN)
+		// Channel B: dense leg on, so the keyword weight is below 1, top_n=30 (narrowing bypassed).
+		semanticLegs++
+		if r.topN[i] != fanoutHybridTopN {
+			t.Errorf("semantic leg %d: TopN = %d, want %d", i, r.topN[i], fanoutHybridTopN)
 		}
-		if !strings.Contains(r.queries[i], "built") && !strings.Contains(r.queries[i], "located") {
-			t.Errorf("fan-out %d channel A: query = %q, want the fan-out query (terms folded in)", i/2, r.queries[i])
-		}
-		// Channel B: vector weight on, top_n=30 (narrowing bypassed).
-		if r.keywordsWeights[i+1] >= 1 {
-			t.Errorf("fan-out %d channel B: keyword weight = %v, want < 1 (semantic bypass leg)", i/2, r.keywordsWeights[i+1])
-		}
-		if r.topN[i+1] != fanoutHybridTopN {
-			t.Errorf("fan-out %d channel B: TopN = %d, want %d", i/2, r.topN[i+1], fanoutHybridTopN)
-		}
+	}
+	if keywordLegs != 2 || semanticLegs != 2 {
+		t.Errorf("legs = %d keyword, %d semantic; want two of each (one per fan-out)", keywordLegs, semanticLegs)
 	}
 }
 
 // TestFanoutSearchPrefersExactOverSemantic pins the admission order across
 // FAN-OUTS: every fan-out's exact channel is admitted before any fan-out's
-// semantic channel. With room for only two snippets and two fan-outs each
-// offering one exact and one semantic hit, the two exact hits must win — a
-// single merged channel could not express this preference at all.
+// semantic channel. Two fan-outs each offer one exact and one semantic hit, and
+// the two exact hits must lead — a single merged channel could not express this
+// preference at all.
+//
+// The order used to be observable only through a pool ceiling of two (the exact
+// hits took the two free seats, the semantic ones were refused). The pool has no
+// ceiling now, so every hit lands and the ORDER is what the test reads.
 func TestFanoutSearchPrefersExactOverSemantic(t *testing.T) {
 	ctx := context.Background()
 	r := &fanoutHitRetriever{}
 	deps := RAGTools{Search: runtime.SearchDeps{Backend: r, KbIDs: []string{"kb1"}, HasEmbedder: true}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8, 2, false)
+	added, _ := FanoutSearch(ctx, deps, st, []string{"alpha", "beta"}, 8, false)
 
-	if added != 2 {
-		t.Fatalf("added = %d, want 2 (the pool's remaining room)", added)
+	if added != 4 {
+		t.Fatalf("added = %d, want 4 (no ceiling: every hit a retrieval found is admitted)", added)
 	}
 	ids := make([]string, 0, len(st.KB.Chunks))
 	for _, c := range st.KB.Chunks {
 		ids = append(ids, runtime.ChunkIDOf(c))
 	}
-	if len(ids) != 2 || ids[0] != "ex-alpha" || ids[1] != "ex-beta" {
-		t.Errorf("admitted %v, want the two exact-leg hits [ex-alpha ex-beta]", ids)
+	if len(ids) != 4 {
+		t.Fatalf("admitted %v, want all four hits", ids)
+	}
+	if ids[0] != "ex-alpha" || ids[1] != "ex-beta" {
+		t.Errorf("first two admitted = %v, want the exact-leg hits [ex-alpha ex-beta]", ids[:2])
+	}
+	for i, id := range ids[2:] {
+		if !strings.HasPrefix(id, "sem-") {
+			t.Errorf("admitted[%d] = %q, want the semantic-leg hits after the exact ones", i+2, id)
+		}
 	}
 }
 
@@ -909,7 +764,7 @@ func TestFanoutSearchEvidenceTopUp(t *testing.T) {
 		KbIDs:     []string{"kb-1"},
 	}}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
-	added := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, 60, false)
+	added, _ := FanoutSearch(context.Background(), deps, st, []string{"tower height topup"}, 8, false)
 	if added != 2 {
 		t.Fatalf("added = %d, want 2 (the claim row + its source chunk)", added)
 	}
@@ -1089,35 +944,6 @@ func (m *countingModel) Complete(ctx context.Context, msgs []schema.Message, _ [
 	return &runtime.ModelReply{Content: "ok"}, nil
 }
 
-// TestSCAFeedbackIsStatusOnly: the "[Research status]" note is the status hint ALONE.
-// The verdict dict carries only a "status" key, so its missing_claims / hard_violations /
-// agent_confidence / feedback segments are always empty — rendering them (from the
-// separate SCA payload) would invent a "0.00" confidence fallback that is never
-// emitted.
-func TestSCAFeedbackIsStatusOnly(t *testing.T) {
-	rich := map[string]any{
-		"contradictions": []any{"A says 1874, B says 1881"},
-		"confidence":     0.42,
-		"claims": map[string]any{
-			"c1": map[string]any{"grounded": false, "missing_information": []any{
-				map[string]any{"what": "the architect"},
-			}},
-		},
-	}
-	got := scaFeedback(rich, VerdictInsufficient)
-	if got != "evidence is not yet sufficient" {
-		t.Errorf("scaFeedback = %q, want the status hint alone", got)
-	}
-	// Empty (and thus un-appended) for a SUFFICIENT verdict, per :910.
-	if got := scaFeedback(rich, VerdictSufficient); got != "" {
-		t.Errorf("scaFeedback(SUFFICIENT) = %q, want empty", got)
-	}
-	// The unused-status fallback mirrors :915.
-	if got := scaFeedback(rich, "WEIRD"); got != "sufficiency status: WEIRD" {
-		t.Errorf("scaFeedback(WEIRD) = %q, want the :915 fallback", got)
-	}
-}
-
 // TestComposeFallbackDraftMirrorsLanguage pins: a non-English
 // question gets an explicit same-language instruction.
 func TestComposeFallbackDraftMirrorsLanguage(t *testing.T) {
@@ -1133,46 +959,9 @@ func TestComposeFallbackDraftMirrorsLanguage(t *testing.T) {
 	}
 }
 
-func TestSCAGapsToRewriteFromSubQueries(t *testing.T) {
-	sca := map[string]any{
-		"sub_queries": []any{
-			map[string]any{"sub_query": "q1", "satisfied": true, "missing_fact": "", "search_hint": ""},
-			map[string]any{"sub_query": "q2", "satisfied": false, "missing_fact": "the year", "search_hint": "search for dates"},
-		},
-	}
-	gaps := SCAGapsToRewrite(sca)
-	if len(gaps) != 1 {
-		t.Fatalf("expected 1 gap, got %d: %+v", len(gaps), gaps)
-	}
-	if gaps[0].What != "the year" || gaps[0].SearchHint != "search for dates" {
-		t.Fatalf("unexpected gap: %+v", gaps[0])
-	}
-}
-
-func TestSCAGapsToRewriteFallbackToClaims(t *testing.T) {
-	sca := map[string]any{
-		"claims": map[string]any{
-			"c1": map[string]any{
-				"verdict": "unverified",
-				"missing_information": []any{
-					map[string]any{"what": "population", "search_hint": "demographics"},
-				},
-			},
-		},
-	}
-	gaps := SCAGapsToRewrite(sca)
-	if len(gaps) != 1 {
-		t.Fatalf("expected 1 gap from claims fallback, got %d: %+v", len(gaps), gaps)
-	}
-	if gaps[0].What != "population" {
-		t.Fatalf("unexpected gap: %+v", gaps[0])
-	}
-}
-
 func TestRunReturnsNonNilState(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when built", "where located"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when built","clues":["1865"]},{"id":1,"type":"aspect","question":"where located","clues":["geneva"]}], "first_queries":["when built","where located"]}`)
 	mdl.push("Built in 1865.")
 	mdl.push("In Geneva.")
@@ -1196,12 +985,19 @@ func TestRunReturnsNonNilState(t *testing.T) {
 	if st == nil {
 		t.Fatal("expected a non-nil AgenticState")
 	}
-	if strings.TrimSpace(st.Draft) == "" {
-		t.Fatal("expected a non-empty research draft")
+	// The round's deliverable is what it READ, not a rendered draft: the run has to have put
+	// evidence in the pool (the retrieval legs ran) and its record has to name the slots it is
+	// working on. `RagAnswer` used to be asserted here; it held the SCA-facing draft, which is gone
+	// (see the note where RenderSlotDraft lived).
+	if len(st.KB.Chunks) == 0 {
+		t.Fatal("expected the round to gather evidence into the pool")
 	}
-	if st.NoProgress {
-		t.Fatal("a completed run should not report NoProgress")
+	if len(st.SlotTable.State) == 0 {
+		t.Fatal("expected the plan's slot table to travel with the round")
 	}
+	// What a completed run reports is its own record — the answer its session wrote and the part
+	// it named as open (see routeResearch); the NoProgress flag the router used to carry is gone
+	// with the query-rewrite node that was its only writer.
 }
 
 // TestAgenticGraphPushesPhaseProgress asserts that the agentic loop forwards tagged
@@ -1210,7 +1006,6 @@ func TestRunReturnsNonNilState(t *testing.T) {
 func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when built", "where located"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when built","clues":["1865"]},{"id":1,"type":"aspect","question":"where located","clues":["geneva"]}], "first_queries":["when built","where located"]}`)
 	mdl.push("Built in 1865.")
 	mdl.push("In Geneva.")
@@ -1219,11 +1014,19 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	exec := newStubExecutor()
 	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"Built 1865, Geneva."}],"doc_aggs":[]}`, runtime.StatusOK)
 
+	var linesMu sync.Mutex
 	var lines []string
 	// Mirror production: the run's step reporter carries the think-block text.
 	// Each stage declares its own step, so everything asserted here is a step a
 	// node reported — never a log line that happened to match a pattern.
-	sink := func(line string) { lines = append(lines, line) }
+	//
+	// Locked: a research round's retrieval legs run concurrently (see FanoutSearch), so a
+	// step can arrive from more than one goroutine at the same time.
+	sink := func(line string) {
+		linesMu.Lock()
+		lines = append(lines, line)
+		linesMu.Unlock()
+	}
 	ctx = runtime.WithSteps(ctx, runtime.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
 		Model:  mdl,
@@ -1249,8 +1052,6 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 		"up front.",
 		"[Prefetch] Added",
 		"[RAGAgent] Round 1 begins",
-		"[Draft] Drafted an intermediate answer",
-		"[SCA] Evidence check:",
 		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
@@ -1268,11 +1069,11 @@ func TestAgenticGraphPushesPhaseProgress(t *testing.T) {
 	}
 }
 
-// TestAgenticGraphCyclesBackThroughQueryRewrite drives the research loop: the
-// SCA returns insufficient once, so the graph must run query_rewrite and re-enter
-// rag_agent. The loop is the only cycle in the graph — it is why the graph is
-// compiled in Pregel mode (DAG mode rejects cycles).
-func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
+// TestAgenticGraphTakesOneRoundWhenTheSessionNamesNothing drives the research loop end to end:
+// the session writes no <unresolved>, so ONE round is taken and the run closes out. The loop is the
+// only cycle in the graph — it is why the graph is compiled in Pregel mode (DAG mode rejects
+// cycles) — and it is entered by the session's own statement about what is still open.
+func TestAgenticGraphTakesOneRoundWhenTheSessionNamesNothing(t *testing.T) {
 	ctx := context.Background()
 	mdl := &promptRoutedModel{}
 
@@ -1280,8 +1081,14 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"Built 1865, Geneva."}],"doc_aggs":[]}`, runtime.StatusOK)
 
 	var buf bytes.Buffer
+	var linesMu sync.Mutex
 	var lines []string
-	sink := func(line string) { lines = append(lines, line) }
+	// Locked: the fan-out legs report their steps concurrently.
+	sink := func(line string) {
+		linesMu.Lock()
+		lines = append(lines, line)
+		linesMu.Unlock()
+	}
 	ctx = runtime.WithSteps(ctx, runtime.StepReporter{Text: sink})
 	st, err := BuildAgenticGraph(ctx, RAGTools{
 		Model:  mdl,
@@ -1298,25 +1105,26 @@ func TestAgenticGraphCyclesBackThroughQueryRewrite(t *testing.T) {
 	}
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
-		"[QueryRewriter]",
-		"[RAGAgent] Round 2 begins",
+		"[RAGAgent] Round 1 begins",
 		"[Finalize] Finalizing",
 	} {
 		if !strings.Contains(joined, want) {
-			t.Errorf("cycle not driven: missing %q; got:\n%s", want, joined)
+			t.Errorf("graph did not run: missing %q; got:\n%s", want, joined)
 		}
 	}
-	// The second research round must actually run: the SCA is only reached again
-	// through query_rewrite → rag_agent, i.e. the graph's only cycle.
-	if !strings.Contains(joined, "[SCA] Evidence check: INSUFFICIENT") {
-		t.Errorf("expected the first SCA to be insufficient:\n%s", joined)
+	// This run takes ONE round and closes out, which is the correct outcome: the scripted session
+	// wrote no answer and named no open part, so there is nothing for another round to aim at. What
+	// the slot table holds does not enter that decision (see routeResearch), and the router's own
+	// tests cover both answers: TestRouteResearchReopensOnAnAnswerThatNamesAnOpenPart and
+	// TestRouteResearchTheSlotTableDoesNotDecide.
+	if strings.Contains(joined, "[RAGAgent] Round 2 begins") {
+		t.Errorf("a round was taken with no record asking for one:\n%s", joined)
 	}
 }
 
-// TestBuildLowGraphRunsFormalizeThenDirectSearch covers the low-mode graph
-// . It has no planner and no SCA loop, so the only
-// observable contract is: formalize rewrites the question, then direct_search
-// merges retrieved evidence into the kbinfos.
+// TestBuildLowGraphRunsFormalizeThenDirectSearch covers the low-mode graph. It has no planner
+// and no research-round loop, so the only observable contract is: formalize rewrites the
+// question, then direct_search merges retrieved evidence into the kbinfos.
 func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	ctx := context.Background()
 	mdl := &scriptedModel{}
@@ -1331,6 +1139,11 @@ func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 	req := runtime.RunRequest{Question: "when was it made?", TopN: 8}
 
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	BuildLowGraph(ctx, RAGTools{
 		Model: mdl,
 		Messages: []schema.Message{
@@ -1343,13 +1156,13 @@ func TestBuildLowGraphRunsFormalizeThenDirectSearch(t *testing.T) {
 
 	// direct_search ran and merged evidence into the shared kbinfos.
 	if !kb.HasChunks() {
-		t.Fatalf("direct_search did not deposit any chunk; log:\n%s", buf.String())
+		t.Fatalf("direct_search did not deposit any chunk; log:\n%s", logged())
 	}
 	// formalize ran and rewrote the follow-up (the graph's first node), reported
 	// under its own [Formalize] stage with BOTH the question asked and the one
 	// actually searched.
-	if want := `[Formalize] Rewrote the follow-up into a standalone question: "when was it made?" → "When was Culdcept released?"`; !strings.Contains(buf.String(), want) {
-		t.Errorf("formalize_question node did not narrate its rewrite; log:\n%s", buf.String())
+	if want := `[Formalize] Rewrote the follow-up into a standalone question: "when was it made?" → "When was Culdcept released?"`; !strings.Contains(logged(), want) {
+		t.Errorf("formalize_question node did not narrate its rewrite; log:\n%s", logged())
 	}
 }
 
@@ -1392,6 +1205,11 @@ func TestBuildLowGraphNarratesAnUnchangedQuestion(t *testing.T) {
 	req := runtime.RunRequest{Question: "when was Culdcept made?", TopN: 8}
 
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	BuildLowGraph(ctx, RAGTools{
 		Model: mdl,
 		Messages: []schema.Message{
@@ -1401,11 +1219,11 @@ func TestBuildLowGraphNarratesAnUnchangedQuestion(t *testing.T) {
 		Logger: log.New(&buf, "", 0),
 	}, req, sd, kb, resp, log.New(&buf, "", 0))
 
-	if want := `[Formalize] Kept the question as asked: "when was Culdcept made?"`; !strings.Contains(buf.String(), want) {
-		t.Errorf("formalize did not name the unchanged question; log:\n%s", buf.String())
+	if want := `[Formalize] Kept the question as asked: "when was Culdcept made?"`; !strings.Contains(logged(), want) {
+		t.Errorf("formalize did not name the unchanged question; log:\n%s", logged())
 	}
-	if strings.Contains(buf.String(), "Rewrote") {
-		t.Errorf("no rewrite happened, the step must not say so; log:\n%s", buf.String())
+	if strings.Contains(logged(), "Rewrote") {
+		t.Errorf("no rewrite happened, the step must not say so; log:\n%s", logged())
 	}
 }
 
@@ -1499,36 +1317,9 @@ func TestPrefetchSummary(t *testing.T) {
 	}
 }
 
-// TestSlotPrefillSummary pins what the evidence prefill leaves to research. The
-// zero case matters most: it is the one that explains a round re-searching queries
-// the upfront prefetch already ran.
-//
-// The count in the sentence is the number of sessions that will RUN
-// (slotSessionsPerRound), not the number of open slots: the round opens a bounded
-// number of them and re-answers the rest from the pooled evidence, so promising the
-// open count sent a reader looking for searches that were never going to happen.
-func TestSlotPrefillSummary(t *testing.T) {
-	cases := []struct {
-		name                        string
-		prefilled, total, remaining int
-		want                        string
-	}{
-		{"nothing-prefilled", 0, 5, 5,
-			"The pooled evidence answers none of the 5 slots; opening 3 research sessions this round."},
-		{"some-prefilled", 1, 5, 4,
-			"The pooled evidence already answers 1 of the 5 slots; opening 3 research sessions for the rest."},
-		// Fewer open slots than the per-round cap: 1 is what runs, not 1 capped.
-		{"one-open", 4, 5, 1,
-			"The pooled evidence already answers 4 of the 5 slots; opening 1 research session for the rest."},
-		{"all-prefilled", 5, 5, 0,
-			"The pooled evidence already answers all 5 slots; no session to run."},
-	}
-	for _, tc := range cases {
-		if got := slotPrefillSummary(tc.prefilled, tc.total, tc.remaining); got != tc.want {
-			t.Errorf("%s: slotPrefillSummary = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
+// The evidence-prefill summary and its test are gone with the session fan-out: a round opens
+// ONE session, so "opening N research sessions" no longer names anything, and the slot table
+// that could count "answered slots" is gone too (see RunSlotResearchPass).
 
 // TestRagRoundEndLine pins the round's closing sentence, including the zero case:
 // "0 slots still unresolved" read as a double negative.
@@ -1670,170 +1461,6 @@ func TestFinalizeRunsOnceFromInsideTheGraph(t *testing.T) {
 	}
 }
 
-// TestSCAUnavailableMarksInsufficient pins: when the SCA
-// produces no usable result (timeout, unparsable reply, no model) the verdict is
-// INSUFFICIENT so unresolved slots can drive another research round — NOT
-// SUFFICIENT, which would ship the unverified draft as if it had passed review.
-func TestSCAUnavailableIsNotAVerdict(t *testing.T) {
-	st := NewAgenticState("When was it built?", "", 3, nil)
-	st.Draft = "Built in 1865."
-	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865, Geneva."},
-	}}
-	// A model that never returns JSON: GenJSON fails, so the SCA has no result.
-	mdl := &scriptedModel{}
-	mdl.push("this is not json at all")
-
-	scaNode(context.Background(), RAGTools{Model: mdl}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.Verdict != VerdictUnknown {
-		t.Errorf("Verdict = %q, want UNKNOWN: a review that could not run is the ABSENCE of a verdict, not a judgement of insufficiency", st.Verdict)
-	}
-	if st.Verdict == VerdictInsufficient {
-		t.Error("an unavailable review must not read as INSUFFICIENT: that is what marked the answer partial on no evidence and promised a research round the budget could not pay for")
-	}
-	if st.SCA == nil {
-		t.Error("SCA payload must stay an (empty) map")
-	}
-	// An un-run review must not make the answer PARTIAL either: with nothing
-	// unresolved and no stalled round, the deliverable is not dressed up as
-	// unverified.
-	st.Deadline = time.Now().Add(60 * time.Second)
-	formalizeAnswerNode(context.Background(), RAGTools{}, st, log.New(&bytes.Buffer{}, "", 0))
-	if st.PartialAnswer {
-		t.Error("PartialAnswer = true on an UNKNOWN verdict with no unresolved slots; partial is a statement about the evidence")
-	}
-	// The FACT still has to reach the answer: nobody checked whether the record is complete.
-	if !st.KB.SufficiencyUnchecked() {
-		t.Error("an un-run review must be recorded on the run (see NoteSufficiencyUnchecked): the record has to say nobody checked, or the count reads as a checked total")
-	}
-	if rec := composedRecord(st.KB); !strings.Contains(rec, "nobody checked whether the members above are complete") {
-		t.Errorf("record = %q, want the unchecked review stated where the answer reads it", rec)
-	}
-}
-
-// TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames pins what the probed list may be READ as: names.
-//
-// Measured (2026-09-17, 三国/关羽) the list handed the answer `杀 斩 武将 名单 亲斩 关羽 太史慈 …
-// 赚城斩车胄 令左右推出斩之 庞德`, under the instruction "any name here that the record above does
-// not mention is a finding nobody recorded" — an invitation to count the actor among the people he
-// killed, and the deed's own verbs among its objects. The act words and query-shaped terms come
-// from the run's own probes and are still shown (the ledger's job is to make the probing visible),
-// but they are shown as what they are.
-func TestProbeLedgerKeepsTheDeedsWordsOutOfTheNames(t *testing.T) {
-	kb := &runtime.Kbinfos{}
-	kb.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "c1", "content": "关公马快，赶上文丑，脑后一刀，将文丑斩下马来。"})
-	})
-	// The direction's own declaration: what the run is searching WITH (actor forms + act words).
-	kb.MarkCoverage(runtime.Coverage{Acts: []string{"斩", "杀"}, Actor: "关羽|云长"})
-	for _, term := range []string{
-		"文丑", "太史慈", "关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德",
-	} {
-		kb.RecordReachedTerm(term, "c1")
-	}
-
-	ledger := probeLedger(kb)
-	names, others, split := strings.Cut(ledger, "Probed, NOT names")
-	if !split {
-		t.Fatalf("ledger = %q, want the non-names said apart from the names", ledger)
-	}
-	if !strings.Contains(names, "文丑") || !strings.Contains(names, "太史慈") {
-		t.Errorf("names = %q, want the name-shaped terms kept whatever they name (文丑 is a kill, 太史慈 a judgement the answer makes)", names)
-	}
-	for _, banned := range []string{"关羽", "斩孔秀", "亲斩", "关羽斩华雄|温酒斩华雄", "令左右推出斩之 庞德"} {
-		if strings.Contains(names, banned) {
-			t.Errorf("names = %q, must not offer %q as a name", names, banned)
-		}
-		if !strings.Contains(others, banned) {
-			t.Errorf("non-names = %q, want %q shown as probed-but-not-a-name", others, banned)
-		}
-	}
-}
-
-// TestComposedRecordSaysWhenNobodyCheckedCompleteness pins the note's default and its wording: a
-// run whose review ran says nothing extra, and one whose review never ran says the one thing the
-// answer needs — nobody checked.
-func TestComposedRecordSaysWhenNobodyCheckedCompleteness(t *testing.T) {
-	kb := &runtime.Kbinfos{Record: "- slot 0 [count]: 18"}
-	if rec := composedRecord(kb); strings.Contains(rec, "nobody checked") {
-		t.Fatalf("record = %q, want no note while the review ran", rec)
-	}
-	kb.NoteSufficiencyUnchecked()
-	rec := composedRecord(kb)
-	if !strings.Contains(rec, "- slot 0 [count]: 18") {
-		t.Fatalf("record = %q, want the slots kept", rec)
-	}
-	if !strings.Contains(rec, "nobody checked whether the members above are complete") ||
-		!strings.Contains(rec, "do not present it as exhaustive") {
-		t.Fatalf("record = %q, want the unchecked review stated", rec)
-	}
-}
-
-// TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines pins the asymmetry that used to end the
-// loop: the routing had already judged another round worth its budget (gaps exist, the review view
-// changed) and one empty reply from the rewriter cancelled that judgement — while the other
-// fallback, the unresolved slots' clues, is empty on a set question whose unknowns are names nobody
-// has proposed yet. Measured (2026-09-17, 三国/关羽): INSUFFICIENT, 3 gaps, +182 chunks, 130s left,
-// and no round.
-func TestQueryRewriteKeepsTheRoundAliveWhenTheRewriterDeclines(t *testing.T) {
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.SCA = map[string]any{"claims": map[string]any{
-		"c1": map[string]any{"verdict": "unverified", "missing_information": []any{
-			map[string]any{"what": "the count", "search_hint": "count the passages"},
-		}},
-	}}
-	st.KB = &runtime.Kbinfos{}
-	st.KB.RecordProbedAbsent("斩孟坦")
-	st.SlotTable = runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩"}, Subject: "关羽|云长"},
-	}, 0, nil)
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": []}`)
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true: the rewriter declined, and the round had already been judged worth its budget")
-	}
-	joined := strings.Join(st.CurrentQueries, "|")
-	if !strings.Contains(joined, "斩孟坦") || !strings.Contains(joined, "关羽") {
-		t.Fatalf("CurrentQueries = %v, want the run's own open terms", st.CurrentQueries)
-	}
-}
-
-// TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps pins: with
-// no structured SCA gaps, the unresolved slots' question_clues become the gaps,
-// so the loop keeps going instead of accepting an unresolved draft.
-func TestQueryRewriteFoldsUnresolvedCluesWhenNoGaps(t *testing.T) {
-	st := NewAgenticState("When and where was it built?", "", 3, nil)
-	st.SCA = map[string]any{} // no sub_queries, no claims -> no gaps
-	st.UnresolvedSlots = []map[string]any{
-		{"question_clues": []string{"when opened", "where located", "ignored third clue"}},
-	}
-	st.Deadline = time.Now().Add(60 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": [{"query": "when was it opened"}]}`)
-
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true; unresolved slot clues must be folded into the gaps and researched")
-	}
-	joined := strings.Join(st.CurrentQueries, "|")
-	if !strings.Contains(joined, "when opened") {
-		t.Errorf("CurrentQueries = %v, want the unresolved slot clue to be pursued", st.CurrentQueries)
-	}
-}
-
 // TestUnresolvedClueGapsCapsAtTwoClues pins the [:2] per-slot cap.
 func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	st := &AgenticState{UnresolvedSlots: []map[string]any{
@@ -1852,79 +1479,8 @@ func TestUnresolvedClueGapsCapsAtTwoClues(t *testing.T) {
 	}
 }
 
-// TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim pins: with no
-// draft and no slot evidence, the SCA still gets one claim carrying EVERY chunk
-// in the view, so it can judge the evidence instead of the node short-circuiting.
-func TestBuildSCAClaimsFallsBackToEvidenceOnlyClaim(t *testing.T) {
-	view := []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865."},
-		{"chunk_id": "c2", "content": "In Geneva."},
-	}
-	claims, _ := buildSCAClaims("", view, view, nil)
-	if len(claims) != 1 {
-		t.Fatalf("claims = %d, want 1", len(claims))
-	}
-	if claims[0].Draft != "(no draft)" {
-		t.Errorf("draft = %q, want %q", claims[0].Draft, "(no draft)")
-	}
-	// Evidence is addressed by POSITION (renderClaimContext keys by index), so
-	// the fallback claim must carry 0..len(view)-1.
-	if len(claims[0].EvidenceIDs) != 2 || claims[0].EvidenceIDs[0] != "0" || claims[0].EvidenceIDs[1] != "1" {
-		t.Errorf("EvidenceIDs = %v, want [0 1]", claims[0].EvidenceIDs)
-	}
-}
-
-// TestBuildSCAClaimsAppendsMissingSlotEvidence pins: a slot
-// whose evidence chunk is NOT in the view has that chunk appended, and the claim
-// carries its new POSITION. It is appended to the same list and reviewed against, so
-// buildSCAClaims returns the grown view.
-func TestBuildSCAClaimsAppendsMissingSlotEvidence(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "c1", "content": "Built 1865."},
-		{"chunk_id": "c2", "content": "In Geneva."},
-		{"chunk_id": "c3", "content": "Designed by OmiyaSoft."},
-	}
-	view := []map[string]any{chunks[0]}
-	slotEvidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"2"}, Candidate: "designer"}, // pool position 2
-	}
-
-	claims, grown := buildSCAClaims("", view, chunks, slotEvidence)
-	if len(claims) != 1 {
-		t.Fatalf("claims = %d, want 1", len(claims))
-	}
-	if len(grown) != 2 {
-		t.Fatalf("grown view = %d, want 2 (the missing chunk must be appended)", len(grown))
-	}
-	if got := claims[0].EvidenceIDs; len(got) != 1 || got[0] != "1" {
-		t.Errorf("EvidenceIDs = %v, want [1] (its position in the grown view)", got)
-	}
-}
-
-// TestResolveEvidenceChunkAcceptsBothIdSpaces covers the heterogeneous ids:
-// retrieval tools emit pool positions, navigation tools emit doc ids.
-func TestResolveEvidenceChunkAcceptsBothIdSpaces(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "c1", "doc_id": "d1", "content": "a"},
-		{"chunk_id": "c2", "doc_id": "d2", "content": "b"},
-	}
-	if got := resolveEvidenceChunk("1", chunks); got["chunk_id"] != "c2" {
-		t.Errorf("position id \"1\" resolved to %v, want chunk c2", got)
-	}
-	if got := resolveEvidenceChunk("c1", chunks); got["chunk_id"] != "c1" {
-		t.Errorf("chunk id \"c1\" resolved to %v, want chunk c1", got)
-	}
-	if got := resolveEvidenceChunk("d2", chunks); got["chunk_id"] != "c2" {
-		t.Errorf("doc id \"d2\" resolved to %v, want chunk c2", got)
-	}
-	if got := resolveEvidenceChunk("nope", chunks); got != nil {
-		t.Errorf("unknown id resolved to %v, want nil", got)
-	}
-}
-
 func TestAgenticNodeNameMapsRoutingToGraphKeys(t *testing.T) {
 	cases := map[agenticNode]string{
-		nodeQueryRewrite:    "query_rewrite",
 		nodeRagAgentLoop:    "rag_agent",
 		nodeFormalizeAnswer: "formalize_answer",
 	}
@@ -1957,7 +1513,6 @@ func TestNewAgenticLoopDrivesHarnessRun(t *testing.T) {
 	}
 
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["when was it opened", "what river"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when opened","clues":["1865"]},{"id":1,"type":"aspect","question":"which river","clues":["river"]}], "first_queries":["when opened","which river"]}`)
 	mdl.push("It opened on 14 April 1865.")
 	mdl.push("The Saint Lawrence River.")
@@ -1985,15 +1540,19 @@ func TestNewAgenticLoopDrivesHarnessRun(t *testing.T) {
 
 // rfRetriever records the rank feature every retrieve call carried.
 type rfRetriever struct {
+	mu        sync.Mutex
 	features  []map[string]float64
 	queries   []string
 	docScopes [][]string
 }
 
 func (r *rfRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
+	// Locked for the same reason channelRetriever is: the fan-out legs run concurrently.
+	r.mu.Lock()
 	r.features = append(r.features, req.RankFeature)
 	r.queries = append(r.queries, req.Query)
 	r.docScopes = append(r.docScopes, req.DocScope)
+	r.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id": "c1",
 		"content":  "The bridge opened in 1865.",
@@ -2021,7 +1580,6 @@ func TestAgenticLoopRankFeaturePolicy(t *testing.T) {
 	// Call order: formalize (single-turn keyword extraction) → planner fan-out → slot
 	// table → draft → SCA.
 	mdl.push(`{"entity": ["it"], "aliases": [], "fact_type": [], "qualifiers": []}`)
-	mdl.push(`{"fanouts": ["when was it opened"]}`)
 	mdl.push(`{"slots":[{"id":0,"type":"aspect","question":"when opened","clues":["1865"]}], "first_queries":["when opened"]}`)
 	mdl.push("It opened in 1865.")
 	mdl.push(`{"is_sufficient": true, "score": 0.9, "contradictions": [], "reasoning": "ok", "claims": {}}`)
@@ -2089,7 +1647,6 @@ func TestNewAgenticLoopRoundsToggleDeactivates(t *testing.T) {
 	SetAgenticLoop(nil)
 
 	mdl := &scriptedModel{}
-	mdl.push(`{"fanouts": ["x", "y"]}`) // would only be produced by the loop's planner
 	deps := RAGTools{
 		Retriever: &countingRetriever{},
 		Model:     mdl,
@@ -2134,6 +1691,103 @@ func (f *fakePrompts) Load(name string) (string, error) { return "", nil }
 // the tests can call Run/ComposeAnswer (which live here) without importing agent
 // from the runtime test package (that would be an import cycle).
 
+// TestComposeFinalAnswerUsesTheSessionAnswerOnTheStreamingPath pins the fix for the funnel every
+// production answer goes through.
+//
+// The session-answer check used to live inside ComposeAnswerWith, which production never reaches:
+// with an AnswerSink the run streams (ComposeAnswerStream) and returns from that branch. So 15 of
+// 18 answered requests had a session answer that was silently replaced by a compose call which had
+// not read the passages — the answers then cited the six blocks that call renders (rendered_blocks
+// = 6) while the pool held up to 213 passages, and six questions came back "the evidence does not
+// contain it" (measured 2026-09-20).
+//
+// The funnel must therefore take the session's answer BEFORE it chooses a path, publish the
+// session's own registry as the citation list (its [ID:n] markers index into those numbers), and
+// hand the text to the sink so a streaming client still receives it.
+func TestComposeFinalAnswerUsesTheSessionAnswerOnTheStreamingPath(t *testing.T) {
+	// The session writes prose; its numbers are dropped and the run's evidence list is what carries them
+	// (see useSessionAnswer).
+	// The handle is the model's own citation of the passage it read; it is renumbered (here it is already
+	// the first cited passage), never dropped — dropping what the model cited is how an answer ends up
+	// with no citations at all (see useSessionAnswer).
+	const sessionAnswer = "关羽 did the deed [ID:0]"
+	const deliveredAnswer = "关羽 did the deed [ID:0]"
+	kb := &runtime.Kbinfos{
+		Chunks:              []map[string]any{{"chunk_id": "c-hua", "content": "云长提华雄之头"}},
+		SessionAnswer:       sessionAnswer,
+		SessionEvidenceRefs: []string{"c-hua"},
+	}
+	var delivered []string
+	sink := &AnswerSink{OnDelta: func(delta string, isThink bool) { delivered = append(delivered, delta) }}
+	model := &fakeModel{}
+	deps := RAGTools{Model: model, AnswerSink: sink}
+	resp := &RunResponse{}
+
+	composeFinalAnswer(context.Background(), deps, runtime.RunRequest{Question: "谁斩了华雄"},
+		kb, resp, nil, true, false, "谁斩了华雄")
+
+	if resp.Answer != deliveredAnswer {
+		t.Errorf("Answer = %q, want the session's own prose with the handle it cited renumbered", resp.Answer)
+	}
+	if len(resp.CiteChunkIDs) != 1 || resp.CiteChunkIDs[0] != "c-hua" {
+		t.Errorf("CiteChunkIDs = %v, want the session's registry", resp.CiteChunkIDs)
+	}
+	if !resp.Partial {
+		t.Error("Partial = false; the graph's partial flag must be reflected back")
+	}
+	if len(delivered) != 1 || delivered[0] != deliveredAnswer {
+		t.Errorf("sink received %v, want the answer delivered in one piece", delivered)
+	}
+	if model.messages != nil {
+		t.Error("the model was called: an answer the session already wrote must not be re-composed")
+	}
+}
+
+// TestSessionAnswerIsRefusedOnlyForAbstentionOrAnEmptyPool is the negative half: the shortcut is
+// not a way to skip composition when there is no evidence, or when the run abstained.
+//
+// It is gated on the POOL and not on the caller's empty_result flag: that flag is the compose
+// prompt's no-evidence hedge, and the graph passes it TRUE by construction on every round, so
+// gating on it suppressed this answer in every run (measured 2026-09-20, 19:07: 20 of 20 rounds
+// wrote an answer and "Using the answer the research session wrote" was still 0).
+func TestSessionAnswerIsRefusedOnlyForAbstentionOrAnEmptyPool(t *testing.T) {
+	kb := &runtime.Kbinfos{
+		Chunks:        []map[string]any{{"chunk_id": "c1", "content": "x"}},
+		SessionAnswer: "an answer",
+	}
+	if _, ok := sessionAnswer(kb, true); ok {
+		t.Error("abstain: the session answer must not be used")
+	}
+	emptyPool := &runtime.Kbinfos{SessionAnswer: "an answer"}
+	if _, ok := sessionAnswer(emptyPool, false); ok {
+		t.Error("no evidence: the session answer must not be used")
+	}
+	blank := &runtime.Kbinfos{
+		Chunks:        []map[string]any{{"chunk_id": "c1"}},
+		SessionAnswer: "   \n ",
+	}
+	if _, ok := sessionAnswer(blank, false); ok {
+		t.Error("whitespace answer: nothing to use")
+	}
+	if _, ok := sessionAnswer(nil, false); ok {
+		t.Error("nil pool: nothing to use")
+	}
+	if ans, ok := sessionAnswer(kb, false); !ok || ans != "an answer" {
+		t.Errorf("usable pool: (%q, %v), want the answer", ans, ok)
+	}
+
+	// The reason a written answer was skipped is reported, so a run can say why.
+	if why := sessionAnswerBlocked(emptyPool, false); why != "the evidence pool is empty" {
+		t.Errorf("blocked reason = %q, want the empty-pool reason", why)
+	}
+	if why := sessionAnswerBlocked(kb, true); why != "the run abstained" {
+		t.Errorf("blocked reason = %q, want the abstention reason", why)
+	}
+	if why := sessionAnswerBlocked(kb, false); why != "" {
+		t.Errorf("blocked reason = %q, want none for a usable answer", why)
+	}
+}
+
 // fakeModel replays a scripted sequence of replies, so the session's control
 // flow can be driven without a provider.
 type fakeModel struct {
@@ -2171,10 +1825,16 @@ func (f *fakeModel) lastUserPrompt() string {
 }
 
 // corpusRetriever answers every query from a fixed corpus.
-type corpusRetriever struct{ calls []string }
+type corpusRetriever struct {
+	mu    sync.Mutex
+	calls []string
+}
 
 func (c *corpusRetriever) Retrieve(_ context.Context, req runtime.RetrieveRequest) ([]map[string]any, error) {
+	// Locked: a fan-out's legs (and the search executor's own legs) run concurrently.
+	c.mu.Lock()
 	c.calls = append(c.calls, req.Query)
+	c.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id":   "c1",
 		"content":    "Culdcept was created by OmiyaSoft and released in 1999.",
@@ -2291,6 +1951,72 @@ func TestRunAgenticDegradesToDirectWithoutModel(t *testing.T) {
 	}
 }
 
+// TestRouteResearchOutputIsInEveryBranchsDeclaredEnds pins the invariant Eino enforces and the
+// invariant a merged router broke: Eino ABORTS the whole run when a branch returns a node that
+// branch does not declare ("unintended end node"), and the question is then answered by a fallback
+// composition that never saw the research. With the rewrite branch gone there is one router and one
+// branch, and the ends it may name are that branch's own.
+//
+// The set is a literal here on purpose: this test exists to fail when the graph's declaration
+// changes and the router's outputs stop fitting inside it.
+func TestRouteResearchOutputIsInEveryBranchsDeclaredEnds(t *testing.T) {
+	ragAgentEnds := map[string]bool{"stop": true, "rag_agent": true, "formalize_answer": true}
+
+	for _, tc := range []struct {
+		name  string
+		state func() *AgenticState
+	}{
+		{"another round", func() *AgenticState {
+			st := NewAgenticState("When and where was it built?", "", 3, nil)
+			st.SessionUnresolved = "the year it was built"
+			st.LastRoundNew = 40
+			st.Deadline = time.Now().Add(150 * time.Second)
+			return st
+		}},
+		{"closing out", func() *AgenticState {
+			st := NewAgenticState("When and where was it built?", "", 3, nil)
+			st.CollectedAnswer = "It was built in Geneva."
+			st.LastRoundNew = 40
+			st.Deadline = time.Now().Add(150 * time.Second)
+			return st
+		}},
+	} {
+		got := agenticNodeName(routeResearch(tc.state(), 3))
+		if !ragAgentEnds[got] {
+			t.Errorf("%s: routeResearch returned %q, which rag_agent does not declare", tc.name, got)
+		}
+	}
+}
+
+// growingRetriever returns a NEW chunk on every call.
+//
+// A fixed stub can never drive a second round: routeResearch reads LastRoundNew (the passages the
+// round ADDED), so a retriever that keeps returning the same chunk makes every round look stalled
+// and the loop closes out after one. Tests that need the cycle have to make the evidence grow.
+type growingRetriever struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (g *growingRetriever) Retrieve(_ context.Context, _ runtime.RetrieveRequest) ([]map[string]any, error) {
+	g.mu.Lock()
+	g.n++
+	n := g.n
+	g.mu.Unlock()
+	return []map[string]any{{
+		"doc_id":    fmt.Sprintf("d%d", n),
+		"docnm_kwd": fmt.Sprintf("doc%d", n),
+		"chunk_id":  fmt.Sprintf("c%d", n),
+		"content":   "关羽斩华雄于汜水关；又斩颜良、文丑。[doc " + fmt.Sprintf("%d", n) + "]",
+	}}, nil
+}
+
+// NOTE: an END-TO-END two-round test would need a session whose retrieval actually lands in the pool
+// (a stubbed toolset returns a payload that never reaches it, so every round looks stalled and the loop
+// closes out after one). It is not written here; the router fix is pinned by
+// TestRouteResearchContinueTargetIsTheBranchesOwn and
+// TestRouteResearchOutputIsInEveryBranchsDeclaredEnds, and the real proof is the next benchmark run.
+
 func TestRunAgenticSeedsSlotsAndRunsSession(t *testing.T) {
 	r := &corpusRetriever{}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{
@@ -2386,6 +2112,11 @@ func TestRunUnknownModeReturnsComposedAnswer(t *testing.T) {
 func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	mdl := &fakeModel{}
 	var buf bytes.Buffer
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
+	logged := func() string { return stageLogText(logs) + buf.String() }
 	resp := Rag(context.Background(), RAGTools{
 		Retriever:     &emptyRetriever{},
 		Model:         mdl,
@@ -2409,14 +2140,14 @@ func TestRunEmptyResponseShortCircuits(t *testing.T) {
 	// no model was called — the two facts a reader needs to know why there is no
 	// composed answer.
 	want := "[Composing the answer] No supporting evidence was found, so the configured empty response is returned without calling the model."
-	if !strings.Contains(buf.String(), want) {
-		t.Errorf("think line missing %q; log:\n%s", want, buf.String())
+	if !strings.Contains(logged(), want) {
+		t.Errorf("think line missing %q; log:\n%s", want, logged())
 	}
 	// This is the LOW graph, whose last node has no [Finalize] step of its own, so
 	// the compose kickoff is the only line saying an answer is being written — it
 	// must stay. The question used to be quoted here too, which in this branch (no
 	// question threaded through) rendered as an empty "".
-	if got := buf.String(); !strings.Contains(got, "[Composing the answer] Composing the answer from 0 gathered passages.") {
+	if got := logged(); !strings.Contains(got, "[Composing the answer] Composing the answer from 0 gathered passages.") {
 		t.Errorf("compose kickoff line missing; log:\n%s", got)
 	}
 }
@@ -2456,9 +2187,14 @@ func TestComposeKickoffFollowsTheAnnouncement(t *testing.T) {
 		{"without-finalize", false, true},
 	}
 	for _, tc := range cases {
+		var linesMu sync.Mutex
 		var lines []string
 		ctx := runtime.WithSteps(context.Background(),
-			runtime.StepReporter{Text: func(line string) { lines = append(lines, line) }})
+			runtime.StepReporter{Text: func(line string) {
+				linesMu.Lock()
+				lines = append(lines, line)
+				linesMu.Unlock()
+			}})
 		if tc.mark {
 			ctx = markFinalizeAnnounced(ctx)
 		}
@@ -2556,7 +2292,7 @@ func TestRunAgenticComposesFromResearchFindings(t *testing.T) {
 		PreSummary: "Culdcept was created by OmiyaSoft and released in 1999.",
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "Culdcept was created by OmiyaSoft and released in 1999 [1]."}}}
-	res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "Who created Culdcept?", false, false)
+	res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "Who created Culdcept?", false, false, false)
 	if res.Failed {
 		t.Fatal("composition must succeed")
 	}
@@ -2698,7 +2434,7 @@ func TestComposePublishesCiteChunkIDs(t *testing.T) {
 		},
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "it is grey [ID:0]."}}}
-	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false); res.Failed {
+	if res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "what colour is it?", false, false, false); res.Failed {
 		t.Fatal("composition must succeed")
 	}
 	got := mdl.lastUserPrompt()
@@ -2745,8 +2481,8 @@ func TestAnswerPromptCarriesTargetContract(t *testing.T) {
 		Chunks: []map[string]any{{"chunk_id": "c1", "content": "river A is 300km; river B is 900km"}},
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "river B [1]."}}}
-	if res := ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb,
-		"Which river is the longest?", false, false); res.Failed {
+	if res := ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb,
+		"Which river is the longest?", false, false, false); res.Failed {
 		t.Fatal("composition must succeed")
 	}
 	got := mdl.lastUserPrompt()
@@ -2765,7 +2501,7 @@ func TestAnswerPromptCarriesTargetContract(t *testing.T) {
 func TestAnswerPromptNoEvidenceInstructions(t *testing.T) {
 	// No chunks, no summary -> insufficiency statement.
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "unknown [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, &runtime.Kbinfos{}, "q?", false, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, &runtime.Kbinfos{}, "q?", false, false, false)
 	if got := mdl.lastUserPrompt(); !strings.Contains(got, "No supporting evidence was retrieved") {
 		t.Errorf("prompt missing the no-evidence instruction:\n%s", got)
 	}
@@ -2773,7 +2509,7 @@ func TestAnswerPromptNoEvidenceInstructions(t *testing.T) {
 	// No chunks but a draft exists -> answer from the summary, do not refuse.
 	kb := &runtime.Kbinfos{PreSummary: "partial findings"}
 	mdl2 := &fakeModel{replies: []*runtime.ModelReply{{Content: "x [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl2}, kb, "q?", false, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl2}, kb, "q?", false, false, false)
 	if got := mdl2.lastUserPrompt(); !strings.Contains(got, "The retrieved passages are limited") {
 		t.Errorf("prompt missing the limited-evidence instruction:\n%s", got)
 	}
@@ -2788,7 +2524,7 @@ func TestAnswerPromptOrdersPartialPreamble(t *testing.T) {
 		PreSummary: "the draft",
 	}
 	mdl := &fakeModel{replies: []*runtime.ModelReply{{Content: "x [1]."}}}
-	ComposeAnswer(context.Background(), AnswerDeps{Model: mdl}, kb, "q?", true, false)
+	ComposeAnswerWith(context.Background(), AnswerDeps{Model: mdl}, kb, "q?", true, false, false)
 
 	got := mdl.lastUserPrompt()
 	iQ := strings.Index(got, "Question:")
@@ -2867,178 +2603,6 @@ func TestComposeAnswerWithNoImagesStaysTextOnly(t *testing.T) {
 	user := mdl.messages[len(mdl.messages)-1]
 	if len(user.UserInputMultiContent) != 0 {
 		t.Errorf("expected no multimodal blocks when there are no images; got %+v", user.UserInputMultiContent)
-	}
-}
-
-// userTurnAt returns the Content of the last message of the idx-th Complete
-// call (0-based), i.e. the user turn of that attempt.
-func userTurnAt(m *scriptedModel, idx int) string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if idx >= len(m.seen) || len(m.seen[idx]) == 0 {
-		return ""
-	}
-	return m.seen[idx][len(m.seen[idx])-1].Content
-}
-
-// TestGenJSONUsesOutputNewlineUserTurn locks the contract that every JSONModel
-// round: "Output:\n" user turn. It was previously an
-// invisible convention buried inside jsonModelAdapter.GenJSON — a second JSONModel
-// implementation could silently drop it without any test catching it. See the
-// query_rewriter.go note (diff ②).
-func TestGenJSONUsesOutputNewlineUserTurn(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("{\"ok\": true}")
-
-	if _, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Render JSON."); err != nil {
-		t.Fatalf("GenJSON failed: %v", err)
-	}
-	if got := userTurnAt(mdl, 0); got != "Output:\n" {
-		t.Errorf("first-round user turn = %q, want exactly %q (the gen_json separator)", got, "Output:\n")
-	}
-}
-
-func TestGenJSONRetriesMalformedReplyWithCorrection(t *testing.T) {
-	mdl := &scriptedModel{}
-	// First round: fenced but unparseable JSON. Second round: well-formed.
-	mdl.push("```json\n{\"queries\": [broken")
-	mdl.push("{\"queries\": [{\"query\": \"q1\"}]}")
-
-	got, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Rewrite the query.")
-	if err != nil {
-		t.Fatalf("GenJSON failed after corrective retry: %v", err)
-	}
-	m, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("GenJSON returned %T, want map[string]any", got)
-	}
-	queries, ok := m["queries"].([]any)
-	if !ok || len(queries) != 1 {
-		t.Fatalf("queries = %#v, want a 1-element list", m["queries"])
-	}
-
-	// The retry must feed the previous answer and the parse error back to the
-	// model, mirroring gen_json's corrective prompt.
-	turn := userTurnAt(mdl, 1)
-	for _, want := range []string{"Generated JSON is as following:", "broken", "But exception while loading:", "Please reconsider and correct it."} {
-		if !strings.Contains(turn, want) {
-			t.Errorf("retry user turn missing %q; got: %s", want, turn)
-		}
-	}
-}
-
-func TestGenJSONStripsThinkAndFenceOnFirstTry(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("Sure.\n<thinking>drafting...</thinking>\n```json\n{\"ok\": true}\n```\n")
-
-	got, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Render JSON.")
-	if err != nil {
-		t.Fatalf("GenJSON failed on a wrapper-padded reply: %v", err)
-	}
-	m, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("GenJSON returned %T, want map[string]any", got)
-	}
-	if m["ok"] != true {
-		t.Errorf(`m["ok"] = %#v, want true`, m["ok"])
-	}
-	if len(mdl.seen) != 1 {
-		t.Errorf("expected a single attempt, got %d", len(mdl.seen))
-	}
-}
-
-// TestGenJSONFitsPromptToContextWindow: the fitted prompt is bounded by the model's
-// context window, so an oversized system prompt must be trimmed BEFORE the first call
-// instead of being sent verbatim (the provider would reject it).
-func TestGenJSONFitsPromptToContextWindow(t *testing.T) {
-	huge := strings.Repeat("token ", 40000) // far past any window
-	mdl := &scriptedModel{}
-	mdl.push(`{"ok": true}`)
-
-	if _, err := (&jsonModelAdapter{inner: mdl, maxLength: 4096}).GenJSON(context.Background(), huge); err != nil {
-		t.Fatalf("GenJSON failed: %v", err)
-	}
-	if len(mdl.seen) != 1 || len(mdl.seen[0]) == 0 {
-		t.Fatalf("expected one call with messages, got %#v", mdl.seen)
-	}
-	sent := mdl.seen[0][0]
-	if sent.Role != schema.System {
-		t.Fatalf("first message role = %v, want system", sent.Role)
-	}
-	if len(sent.Content) >= len(huge) {
-		t.Errorf("system prompt not fitted: %d bytes sent of %d", len(sent.Content), len(huge))
-	}
-}
-
-// TestGenJSONAcceptsTopLevelArrayAndScalar pins json_repair parity: gen_json
-// parses ANY top-level JSON value, so an array or scalar reply must come back
-// as-is instead of being treated as a parse failure (which a map-only unmarshal
-// did before).
-func TestGenJSONAcceptsTopLevelArrayAndScalar(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push(`[{"query": "q1"}]`)
-	got, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Render JSON.")
-	if err != nil {
-		t.Fatalf("array reply: %v", err)
-	}
-	arr, ok := got.([]any)
-	if !ok || len(arr) != 1 {
-		t.Fatalf("array reply = %#v, want a 1-element list", got)
-	}
-	if len(mdl.seen) != 1 {
-		t.Errorf("array reply made %d attempt(s), want 1", len(mdl.seen))
-	}
-
-	mdl = &scriptedModel{}
-	mdl.push(`42`)
-	got, err = (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Render JSON.")
-	if err != nil {
-		t.Fatalf("scalar reply: %v", err)
-	}
-	if n, ok := got.(float64); !ok || n != 42 {
-		t.Fatalf("scalar reply = %#v, want 42", got)
-	}
-}
-
-func TestGenJSONGivesUpAfterMaxRetries(t *testing.T) {
-	mdl := &scriptedModel{}
-	mdl.push("I cannot produce JSON today.")
-	mdl.push("Still not JSON.")
-
-	_, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Rewrite the query.")
-	if err == nil {
-		t.Fatal("GenJSON succeeded, want error after exhausting retries")
-	}
-	if len(mdl.seen) != 2 {
-		t.Errorf("expected 2 attempts (genJSONMaxRetry), got %d", len(mdl.seen))
-	}
-}
-
-// errOnceModel fails the underlying chat call and counts invocations, proving
-// chat/transport errors are NOT retried (gen_json propagates them immediately).
-type errOnceModel struct {
-	n int
-}
-
-func (m *errOnceModel) Complete(_ context.Context, _ []schema.Message, _ []runtime.ToolSpec) (*runtime.ModelReply, error) {
-	m.n++
-	return nil, errors.New("provider down")
-}
-
-func TestGenJSONPropagatesChatErrorWithoutRetry(t *testing.T) {
-	mdl := &errOnceModel{}
-	_, err := (&jsonModelAdapter{inner: mdl}).GenJSON(context.Background(), "Rewrite the query.")
-	if err == nil {
-		t.Fatal("GenJSON succeeded, want the chat error")
-	}
-	if mdl.n != 1 {
-		t.Errorf("chat invoked %d times, want exactly 1 (no retry on transport error)", mdl.n)
-	}
-}
-
-func TestGenJSONNilModel(t *testing.T) {
-	if _, err := (&jsonModelAdapter{inner: nil}).GenJSON(context.Background(), "x"); err == nil {
-		t.Fatal("GenJSON with a nil inner model succeeded, want error")
 	}
 }
 
@@ -3151,7 +2715,7 @@ func BenchmarkCompileActionSessionShape(b *testing.B) {
 	})
 }
 
-// agentic graph shape: 7 nodes, 4 edges, 5 branches.
+// agentic graph shape: 6 nodes, 4 edges, 4 branches.
 func BenchmarkCompileAgenticShape(b *testing.B) {
 	ctx := context.Background()
 	benchCompile(b, func() error {
@@ -3159,7 +2723,7 @@ func BenchmarkCompileAgenticShape(b *testing.B) {
 		node := func(c context.Context, s *AgenticState) (*AgenticState, error) { return s, nil }
 		for _, n := range []string{
 			"formalize_question", "planner", "prefetch", "rag_agent",
-			"query_rewrite", "formalize_answer", "stop",
+			"formalize_answer", "stop",
 		} {
 			if err := g.AddLambdaNode(n, compose.InvokableLambda(node)); err != nil {
 				return err
@@ -3179,8 +2743,7 @@ func BenchmarkCompileAgenticShape(b *testing.B) {
 			"formalize_question": {"stop": true, "planner": true, "rag_agent": true},
 			"planner":            {"stop": true, "prefetch": true, "rag_agent": true},
 			"prefetch":           {"stop": true, "rag_agent": true},
-			"rag_agent":          {"stop": true, "query_rewrite": true, "formalize_answer": true},
-			"query_rewrite":      {"stop": true, "rag_agent": true, "formalize_answer": true},
+			"rag_agent":          {"stop": true, "rag_agent": true, "formalize_answer": true},
 		}
 		for from, ends := range branches {
 			if err := g.AddBranch(from, compose.NewGraphBranch(func(context.Context, *AgenticState) (string, error) {
@@ -3207,11 +2770,11 @@ func TestGraphRecursionLimitBounds(t *testing.T) {
 	}
 }
 
-func TestAgenticResearchRoundCostsThreeVisits(t *testing.T) {
-	// One research round is rag_agent → draft → sca. If the loop counted iterations
-	// instead of node visits, 20 rounds would cost 20 instead of 60 and the guard would
-	// trip ~3x later.
-	if got, want := agenticRoundVisits, 3; got != want {
+func TestAgenticResearchRoundCostsOneVisit(t *testing.T) {
+	// One research round is ONE node (rag_agent). It used to be three (rag_agent → draft → sca),
+	// so a round now costs a third of what it did — and the guard bounds WORK, so the constant
+	// has to follow the node count or the loop would be allowed 3x the rounds it should have.
+	if got, want := agenticRoundVisits, 1; got != want {
 		t.Fatalf("round cost = %d, want %d", got, want)
 	}
 }
@@ -3255,7 +2818,7 @@ func (m delayedFormalizeModel) Complete(_ context.Context, _ []schema.Message, _
 // (agentic_rag_graph.py:1061) — after the formalization call — so that call is
 // not charged to the research budget. Arming on entry shortened every downstream
 // timeout by one LLM call, which is exactly enough to flip the
-// MinRoundHeadroomS guard near the boundary and skip a round Python would run.
+// canOpenRound guard near the boundary and skip a round Python would run.
 func TestFormalizeQuestionNodeDoesNotChargeTheBudget(t *testing.T) {
 	const delay = 300 * time.Millisecond
 	st := NewAgenticState("曹操是谁？", "", 3, []schema.Message{*schema.UserMessage("曹操是谁？")})
@@ -3288,7 +2851,7 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	cache := NewRAGCache()
 
 	// First outer rag() call — unsatisfying verdict bumps the counter to 1.
-	cache.NoteUnanswerable(VerdictInsufficient)
+	cache.NoteUnanswerable(false)
 	if cache.ConsecutiveUnanswerable() != 1 {
 		t.Fatalf("after 1st outer rag() call: ConsecutiveUnanswerable = %d, want 1",
 			cache.ConsecutiveUnanswerable())
@@ -3297,14 +2860,14 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 	// Second outer rag() call — still unsatisfying: counter must reach 2 so the
 	// STOP guard can fire (the state the pre-fix code could never reach on the
 	// outer path, because deps.Cache was nil and the increment was skipped).
-	cache.NoteUnanswerable(VerdictInsufficient)
+	cache.NoteUnanswerable(false)
 	if cache.ConsecutiveUnanswerable() != 2 {
 		t.Fatalf("after 2nd outer rag() call: ConsecutiveUnanswerable = %d, want 2",
 			cache.ConsecutiveUnanswerable())
 	}
 
 	// A satisfying verdict resets the streak.
-	cache.NoteUnanswerable(VerdictSufficient)
+	cache.NoteUnanswerable(true)
 	if cache.ConsecutiveUnanswerable() != 0 {
 		t.Fatalf("after a SUFFICIENT verdict: ConsecutiveUnanswerable = %d, want 0",
 			cache.ConsecutiveUnanswerable())
@@ -3317,118 +2880,36 @@ func TestRecordConsecutiveUnanswerableAcrossOuterRagCalls(t *testing.T) {
 // why Rag() now auto-builds a cache before branching into the outer react loop.
 func TestRecordConsecutiveUnanswerableNoCacheIsNoOp(t *testing.T) {
 	// Must not panic with a nil cache.
-	(*RAGCache)(nil).NoteUnanswerable(VerdictInsufficient)
-	(*RAGCache)(nil).NoteUnanswerable(VerdictSufficient)
+	(*RAGCache)(nil).NoteUnanswerable(false)
+	(*RAGCache)(nil).NoteUnanswerable(true)
 }
 
-// TestRewriteContextShowsThePassageBehindAConfirmedMember pins the input side of
-// the rewrite round: what the rewriter is shown is the PASSAGE that carries each
-// confirmed name, not the first line of a stored chunk.
-//
-// The difference is the whole point of that round. The wording a text uses for the
-// relation (and the other names it mentions) lives in the middle of a passage, so
-// a first-line digest cannot carry it — and a rewrite that cannot see it can only
-// re-ask what was already asked.
-func TestRewriteContextShowsThePassageBehindAConfirmedMember(t *testing.T) {
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "w1", "content": "荀正 引军来战，被关公一刀斩于马下。"},
-		{"chunk_id": "big", "content": "第一行与本题无关\n第二行才提到关公"},
-	}}
-	st.KB.RecordReachedTerm("荀正", "w1")
+// TestRewriteContextShowsThePassageBehindAConfirmedMember and
+// TestRewriteRoundCanStillAdmitOnARichPool used to live here: they pinned the input side of the
+// gap→query rewrite round (what the rewriter was shown, and that a rich pool did not stop it from
+// admitting its own retrieval). Both went with the node — with no machine writing the next round's
+// queries, there is no context to render and no rewrite round to admit anything.
 
-	ctx := renderResearchContext(st)
-	if !strings.Contains(ctx, "荀正") || !strings.Contains(ctx, "斩于马下") {
-		t.Errorf("rewrite context does not carry the passage behind the confirmed member:\n%s", ctx)
-	}
-	if strings.Contains(ctx, "第一行与本题无关") {
-		t.Errorf("rewrite context fell back to first-line digests although a confirmed member's passage was available:\n%s", ctx)
-	}
-	if !strings.Contains(ctx, "ALREADY confirmed") {
-		t.Errorf("the member section is not labelled:\n%s", ctx)
-	}
-}
-
-// TestRewriteRoundCanStillAdmitOnARichPool pins the room a rewrite round is given:
-// it is measured against the EVIDENCE POOL's ceiling, the same number the admitter
-// enforces.
-//
-// Sized against the smaller snippet-pool constant, a pool past 60 chunks left the
-// round with room <= 0: it admitted nothing, declared "retrieval saturated" and
-// discarded the queries it had just built — on exactly the rich rounds where more
-// evidence was still arriving.
-func TestRewriteRoundCanStillAdmitOnARichPool(t *testing.T) {
-	pool := make([]map[string]any, 0, runtime.EvidencePoolCap())
-	for i := 0; i < 71; i++ {
-		pool = append(pool, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled"})
-	}
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{Chunks: pool}
-	st.UnresolvedSlots = []map[string]any{{"question_clues": []string{"还有谁被关羽所杀"}}}
-	st.Deadline = time.Now().Add(60 * time.Second)
-
-	mdl := &scriptedModel{}
-	mdl.push(`{"queries": [{"query": "关羽 斩 名单 其余"}]}`)
-
-	queryRewriteNode(context.Background(), RAGTools{
-		Model:  mdl,
-		Search: runtime.SearchDeps{Backend: &corpusRetriever{}, KbIDs: []string{"kb1"}, HasEmbedder: true},
-	}, st, log.New(&bytes.Buffer{}, "", 0))
-
-	if st.NoProgress {
-		t.Fatal("NoProgress = true on a pool of 71 with room left: the round's room must be measured against the evidence pool's ceiling")
-	}
-	if len(st.KB.Chunks) <= 71 {
-		t.Errorf("pool = %d, want the rewrite's own query admitted (cap %d, pool was 71)", len(st.KB.Chunks), runtime.EvidencePoolCap())
-	}
-}
-
-// TestRenderSlotRecordCarriesNoMachineFields pins the split between the record the
-// ANSWER is composed from and the draft the SCA reviews.
-//
-// The draft deliberately carries the machine fields that make verification
-// possible (strength, terminal type, evidence ids). Handing those to the answer
-// model as a "summary" is a different act with a different failure mode, and it
-// was measured: the composed answer quoted the bookkeeping verbatim
-// ("slot 1 [entity] … (strength=0.90) [terminal=state, evidence_ids=[…]]").
+// TestRenderSlotRecordCarriesNoMachineFields pins the contract that survived every redesign here: the
+// record is the FACTS the research settled, with no strength, no evidence ids and no clue tails — the
+// answer quotes the bookkeeping verbatim when it is handed one (see answerPromptWithEvidence).
 func TestRenderSlotRecordCarriesNoMachineFields(t *testing.T) {
-	strong := 0.9
-	st := runtime.NewState([]runtime.Variable{
-		{
-			ID:                0,
-			Type:              "aspect",
-			Candidate:         strPtr("answer A"),
-			CandidateStrength: &strong,
-			DiscoveredClues:   []string{"clue one", "clue two"},
-		},
-		{ID: 1, Type: "aspect", QuestionClues: []string{"who opened it?"}},
-	}, 0, nil)
-	evidence := map[string]SlotEvidence{
-		"0": {EvidenceIDs: []string{"c1", "c2"}, TerminalType: "state"},
-	}
-
-	record := RenderSlotRecord(st, "the collected answer")
-	// A table that asks for no SET leads with the session's own answer, exactly as
-	// it did before the answer-layer demotion existed — see
-	// TestSlotRecordLeadsWithFactsNotWithASessionsProse for the SET case, and
-	// TestValueRecordCarriesNoEnumeratedMembers for why the two differ.
-	if !strings.HasPrefix(record, "Candidate answer: the collected answer\n\n- slot 0 [aspect]: answer A\n- slot 1 [aspect]: NOT RESOLVED") {
-		t.Fatalf("record = %q, want the session's answer first on a value table", record)
-	}
-	if strings.Contains(record, "enumerated members") {
-		t.Fatalf("record = %q, want no enumerated line on a value table", record)
-	}
-	for _, banned := range []string{"strength=", "terminal=", "evidence_ids", "c1"} {
-		if strings.Contains(record, banned) {
-			t.Errorf("record %q must not carry the machine field %q", record, banned)
+	strength := 0.9
+	tbl := runtime.State{State: []runtime.Variable{
+		{ID: 0, Type: "aspect", Candidate: strPtr("answer A"), CandidateStrength: &strength},
+		{ID: 1, Type: "aspect"},
+	}}
+	rec := RenderSlotRecord(tbl, "the collected answer")
+	for _, banned := range []string{"strength=", "evidence_ids", "terminal=", "discovered_clues"} {
+		if strings.Contains(rec, banned) {
+			t.Errorf("record %q carries the machine field %q", rec, banned)
 		}
 	}
-	// The SCA's draft keeps them: the split must not disarm verification.
-	draft := RenderSlotDraft(st, "the collected answer", evidence)
-	for _, want := range []string{"strength=0.90", "terminal=state", "evidence_ids=['c1', 'c2']"} {
-		if !strings.Contains(draft, want) {
-			t.Errorf("draft %q must keep %q for the SCA", draft, want)
-		}
+	if !strings.Contains(rec, "answer A") || !strings.Contains(rec, "NOT RESOLVED") {
+		t.Errorf("record %q, want the slots' own values", rec)
+	}
+	if !strings.Contains(rec, "the collected answer") {
+		t.Errorf("record %q, want the session's own draft carried", rec)
 	}
 }
 
@@ -3467,42 +2948,6 @@ func TestAnswerPromptLabelsTheRecordAndForbidsQuoting(t *testing.T) {
 	}
 }
 
-// TestAnswerRecordCarriesTheProbeLedger pins the block that closes the measured
-// write-back gap: the slots are the model's own bookkeeping, so a run can probe
-// twenty-four terms, get a passage for every one, and record eleven — and the
-// answer then sees only the eleven while the rest exist merely inside the pool.
-//
-// The two lists stay apart on purpose: "reached" is a fact about the corpus,
-// "nothing back" is a fact about the QUERY (not an absence).
-func TestAnswerRecordCarriesTheProbeLedger(t *testing.T) {
-	kb := &runtime.Kbinfos{Record: "- slot 0 [count]: 11"}
-	kb.RecordReachedTerm("车胄", "c1")
-	kb.RecordReachedTerm("管亥", "c2")
-	kb.RecordProbedAbsent("温酒")
-
-	prompt := AnswerDeps{}.answerPromptWithEvidence(kb, "q", false, false)
-	for _, want := range []string{
-		"- slot 0 [count]: 11", // the slots come first
-		"Probed and answered",
-		"车胄", "管亥",
-		"Probed with NOTHING back",
-		"温酒",
-	} {
-		if !strings.Contains(prompt.user, want) {
-			t.Errorf("answer prompt missing %q", want)
-		}
-	}
-	// "Nothing back" may not be described as absence: that reading is what stops
-	// an enumeration short.
-	if strings.Contains(prompt.user, "absent from the corpus") && !strings.Contains(prompt.user, "this is not \"absent\"") {
-		t.Error("the not-reached list must refuse the absence reading")
-	}
-	// The ledger belongs to the answer prompt, not to the SCA-facing draft.
-	if strings.Contains(kb.PreSummary, "Probed and answered") {
-		t.Error("the probe ledger must not leak into the SCA draft")
-	}
-}
-
 // TestSessionPatchLogNamesBothSidesOfTheTournament pins P13 for the one place a
 // list can vanish without a trace: MergeSlotPatch keeps ONE candidate per slot,
 // chosen by the strength the model reported, and the losing candidate is then in
@@ -3511,10 +2956,10 @@ func TestAnswerRecordCarriesTheProbeLedger(t *testing.T) {
 // The log line is the only place that fact can exist, so it has to name both the
 // claim and the base it lost to.
 func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
-	var buf bytes.Buffer
-	orig := _LOG
-	_LOG = log.New(&buf, "", 0)
-	defer func() { _LOG = orig }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	orig := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = orig })
 
 	strong, weak := 0.97, 0.85
 	base := runtime.NewState([]runtime.Variable{
@@ -3526,21 +2971,27 @@ func TestSessionPatchLogNamesBothSidesOfTheTournament(t *testing.T) {
 
 	// The weaker claim loses: the slot still holds the base afterwards.
 	logSessionPatch(2, base, base, patch)
-	got := buf.String()
-	for _, want := range []string{"华雄、颜良、庞德", "0.85", "孔秀、孟坦", "0.97", "NOT ADOPTED"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("log %q missing %q", got, want)
-		}
+	entries := logs.FilterMessage("slot research: patch").All()
+	if len(entries) != 1 {
+		t.Fatalf("patch log entries = %d, want 1", len(entries))
+	}
+	got := entries[0].ContextMap()
+	if got["candidate"] != "华雄、颜良、庞德" || got["strength"] != 0.85 ||
+		!strings.Contains(got["base"].(string), "孔秀、孟坦") || !strings.Contains(got["base"].(string), "0.97") ||
+		got["result"] != "NOT ADOPTED (the base stands)" {
+		t.Errorf("patch log = %v, want the weaker claim named against the base it lost to", got)
 	}
 
 	// Adopted: the slot holds the patch's candidate afterwards.
-	buf.Reset()
+	core2, logs2 := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core2)
 	merged := runtime.NewState([]runtime.Variable{
 		{ID: 1, Type: "entity", Candidate: strPtr("华雄、颜良、庞德"), CandidateStrength: &weak},
 	}, 1, nil)
 	logSessionPatch(2, base, merged, patch)
-	if got := buf.String(); !strings.Contains(got, "adopted") || strings.Contains(got, "NOT ADOPTED") {
-		t.Errorf("log %q, want the adopted verdict", got)
+	adopted := logs2.FilterMessage("slot research: patch").All()
+	if len(adopted) != 1 || adopted[0].ContextMap()["result"] != "adopted" {
+		t.Errorf("patch log = %v, want the adopted verdict", adopted)
 	}
 }
 
@@ -3639,157 +3090,17 @@ func TestMergeSlotPatchMergesSetCandidates(t *testing.T) {
 	}
 }
 
-// TestSyncCountSlotsTakesTheEnumeratedSize pins the other half of the same
-// loss: the count slot and the list slots are written by different sessions and
-// nothing kept them in step. The slot takes the DERIVED number, because a count is a
-// claim the table can check.
-//
-// The direction that matters is the one an answer repeats: measured (2026-09-16) a
-// count slot left holding a session's 28 against thirteen enumerated members
-// produced "killed 28 named people" over a list of a handful. An over-claim is kept
-// as an alternate clue, so the record still shows what was claimed.
-//
-// A slot that does not CLAIM a number is left alone — a date, a phrase or a sentence
-// is nobody's count, and reading the slot's declared TYPE to guess otherwise was the
-// rule this replaces (see slots.Value.Number).
-func TestSyncCountSlotsTakesTheEnumeratedSize(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 10, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、管亥"),
-	}, 0, nil)
-	raised := syncCountSlots(&table)
-	if len(raised) != 1 || raised[0] != 0 {
-		t.Fatalf("raised = %v, want the count slot reconciled", raised)
-	}
-	if got := *table.ByID(0).Candidate; got != "12" {
-		t.Fatalf("count slot = %q, want 12 (the list's size)", got)
-	}
-
-	// An over-claim does not stand: the members are what the table can check, and
-	// the claim is kept beside them as an alternate.
-	bigger := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 16, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&bigger); len(changed) != 1 {
-		t.Fatalf("changed = %v, want the over-claim reconciled to the members", changed)
-	}
-	if got := *bigger.ByID(0).Candidate; got != "6" {
-		t.Fatalf("count slot = %q, want 6 (the members' size)", got)
-	}
-	alts := alternateCandidatesOf(*bigger.ByID(0))
-	if len(alts) != 1 || alts[0] != "16" {
-		t.Fatalf("alternates = %v, want the over-claim kept as the record's alternate", alts)
-	}
-
-	// A count that already agrees is left alone.
-	agreed := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 6, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&agreed); len(changed) != 0 {
-		t.Fatalf("changed = %v, want an agreeing count untouched", changed)
-	}
-
-	// A count slot whose text is NOT a number is left alone: the slot made no checkable
-	// claim, so there is nothing here to correct — and the answer's count comes from the
-	// members either way (measured 2026-09-16, 三国/关羽: a session wrote "约 17-19 人"
-	// into the count slot, and the members beside it are what the answer must repeat).
-	unreadable := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福"),
-	}, 0, nil)
-	if changed := syncCountSlots(&unreadable); len(changed) != 0 {
-		t.Fatalf("changed = %v, want an unreadable claim left alone", changed)
-	}
-
-	// The count of a table whose member slot is TEXT is left alone: prose claims no
-	// number and no members, and nothing here guesses at either.
-	textOnly := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")},
-		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良、文丑")},
-	}, 0, nil)
-	if changed := syncCountSlots(&textOnly); len(changed) != 0 {
-		t.Fatalf("changed = %v, want nothing derived from text", changed)
-	}
-}
-
-// TestMemberCountIgnoresProseFragments pins the count's unit: a member is a NAME,
-// not a fragment of the sentence around it.
-//
-// The fixture is a measured record shape — the slots held the right names wrapped
-// in chapter prose, SplitCandidateNames cut that prose at its separators, and the
-// enumerated size came out 28 against thirteen real names. That number was then
-// raised into the count slot and reported by the answer as its own.
-func TestMemberCountIgnoresProseFragments(t *testing.T) {
-	// The prose is Text and the names are declared members. The fixture that used to
-	// prove this (names wrapped in chapter prose, with the parser cutting the prose
-	// into "members") cannot be written any more: an undeclared slot contributes
-	// nothing, so the count is the members or it is nothing.
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 28, 0),
-		typedAnchoredMembersVar(1, "web", "孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳"),
-		{ID: 2, Type: "web", Candidate: strPtr("第五回（发矫诏诸镇应曹公、破关兵三英战吕布）、第二十五回（屯土山关公约三事、救白马曹操解重围）")},
-		typedAnchoredMembersVar(3, "web", "华雄、颜良、文丑、庞德"),
-	}, 0, nil)
-
-	// Eleven distinct real names: the prose pieces around them are not members.
-	if got := enumeratedSize(table); got != 11 {
-		t.Fatalf("enumerated size = %d, want 11 (the declared names, not the chapter prose)", got)
-	}
-	// And the count slot takes that number rather than the session's claim.
-	syncCountSlots(&table)
-	if got := *table.ByID(0).Candidate; got != "11" {
-		t.Fatalf("count slot = %q, want 11 (the enumerated members)", got)
-	}
-}
-
-// TestSyncCountSlotsCountsOnlyMembersWithAPassage pins the count's unit one level further down:
-// a member counts when it carries the passage that states it.
-//
-// The fixture is the measured case (2026-09-17, 三国/关羽): a session's member list merged with the
-// resolve's, and among the names two that no passage in hand quotes — 于禁 (taken at 水淹七军 and
-// released, never killed) and 刘延 (who outlives the actor). The union was 18, the answer stated
-// 18, and sixteen of those names had a passage behind them. A claim is not a member: the number
-// is what the table can point at, and the claim stays visible as the slot's alternate.
-func TestSyncCountSlotsCountsOnlyMembersWithAPassage(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 18, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
-		typedMembersVar(2, "person", "于禁、刘延"),
-	}, 0, nil)
-	raised := syncCountSlots(&table)
-	if len(raised) != 1 || raised[0] != 0 {
-		t.Fatalf("raised = %v, want the count slot reconciled to the members with a passage", raised)
-	}
-	if got := *table.ByID(0).Candidate; got != "2" {
-		t.Fatalf("count slot = %q, want 2 (the members the table can quote)", got)
-	}
-	if alts := alternateCandidatesOf(*table.ByID(0)); len(alts) != 1 || alts[0] != "18" {
-		t.Fatalf("alternates = %v, want the 18 kept as the record's alternate", alts)
-	}
-}
-
-// TestValueQuestionRecordKeepsItsOwnDraft pins the FRAMES regression of 2026-09-17 (q759): a table
-// whose slots hold one person each is NOT an enumeration, and the record is the only place the run's
-// own draft answer reaches the answer model.
-//
-// Rendered as a set, the record dropped "Candidate answer:" — the one line carrying the run's own
-// finding — and asked the answer to state a count of members instead. That is the failure the
-// record's gate was written against ("the session's own draft answer is then demoted below a line
-// that does not apply to it"), and it is why Set stays the planner's declaration.
+// TestValueQuestionRecordKeepsItsOwnDraft pins that the record carries the session's draft with NO
+// shape gate: it used to lead with the draft only off a "value table" (a member count computed from
+// the table's text), which is the runtime deciding what the table means (see RenderSlotRecord).
 func TestValueQuestionRecordKeepsItsOwnDraft(t *testing.T) {
-	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c1", Quote: "Mistral (sailboard) | Lanee Butler United States"})
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "person", Value: &items},
-		{ID: 1, Type: "person"},
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "The person is Richard Coxon, crewed with Colin Beashel in the Soling class.")
-	if !strings.Contains(rec, "Candidate answer: The person is Richard Coxon") {
-		t.Fatalf("record = %q, want the run's own draft kept for a question whose answer is one value", rec)
+	tbl := runtime.State{State: []runtime.Variable{{ID: 0, Type: "person"}, {ID: 1, Type: "person"}}}
+	rec := RenderSlotRecord(tbl, "The person is Richard Coxon, crewed with Colin Beashel in the Soling class.")
+	if !strings.Contains(rec, "Richard Coxon") {
+		t.Fatalf("record %q, want the run's own draft kept", rec)
 	}
-	if strings.Contains(rec, "enumerated members across the slots above") {
-		t.Fatalf("record = %q, want no set block on a value question", rec)
+	if !strings.Contains(rec, "UNVERIFIED") {
+		t.Errorf("record %q, want the draft labelled for what it is (one session, before the merge)", rec)
 	}
 }
 
@@ -3821,313 +3132,15 @@ func TestMemberLineCarriesTheItemsOwnWords(t *testing.T) {
 // The VALUE is the fact, so the resolve — the last node that can complete the set — runs the
 // direction's enumeration itself instead of judging only what a session happened to write down.
 // Ten names were the whole answer that day; the corpus stated more.
-func TestRunCoverageResolveEnrollsTheEnumerationThePlannerSkipped(t *testing.T) {
-	items := slots.Items(
-		slots.Item{Value: "华雄", ChunkID: "c-华雄"},
-		slots.Item{Value: "颜良", ChunkID: "c-颜良"},
-	)
-	rendered := slots.Render(items)
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩"}, Candidate: &rendered, Value: &items},
-	}, 0, nil)
-
-	exec := &coverageStubExec{}
-	st := NewAgenticState("关羽杀了多少有姓名的人物？", "", 3, nil)
-	st.KB = &runtime.Kbinfos{}
-	// The direction's words must already have MET in what the run holds, or the enrollment is spent
-	// on a recall whose windows the enumeration's own filter would drop (see
-	// CoverageActsMeetActor). Here 斩 is held; the stub's window then survives.
-	st.KB.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "held", "content_with_weight": "云长提刀直取，斩之"})
-	})
-	st.SlotTable = table
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	model := &scriptedModel{}
-	model.push(`{"members": [{"i": 0, "name": "孔秀"}], "not_members": []}`)
-	RunCoverageResolve(context.Background(), RAGTools{
-		Model: model,
-		Tools: &runtime.Toolset{Exec: exec},
-	}, st, nil)
-
-	if exec.ran() != 1 {
-		t.Fatalf("enumeration ran %d time(s), want the resolve to enroll it when no type word asked for it", exec.ran())
-	}
-	names := strings.Join(runtime.ItemValues(&st.SlotTable), "、")
-	if !strings.Contains(names, "孔秀") {
-		t.Fatalf("items = %q, want the window the enrolled enumeration admitted judged into the table", names)
-	}
-}
-
-// TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet pins the guard the measured waste
-// bought: on 2026-09-17 (FRAMES, resolve node) the enrollment asked 13 operands, recalled 724
-// passages and produced ZERO windows, because every window the enumeration builds must carry an act
-// word AND the actor, and this direction's two words had never met in anything the run held.
+// The two resolve-node tests that lived here are gone with the node itself. They pinned when the
+// runtime decided to run an enumeration at the answer node — enrolled because the planner had
+// skipped it, or skipped because the direction's two words had never met in one passage — and both
+// halves of that decision belonged to the coverage engine.
 //
-// The enrollment spends the ANSWER's clock, so the same conjunction is now probed against the
-// passages in hand first: a recall that cannot survive the filter is not made.
-func TestRunCoverageResolveSkipsTheEnumerationWhenTheWordsNeverMet(t *testing.T) {
-	items := slots.Items(slots.Item{Value: "Lanee Butler", ChunkID: "c-Lanee"})
-	rendered := slots.Render(items)
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "person", Terms: []string{"partner"}, Subject: "Colin Beashel", Candidate: &rendered, Value: &items},
-	}, 0, nil)
-
-	exec := &coverageStubExec{}
-	st := NewAgenticState("who is the partner of the 1984 keelboat sailor?", "", 3, nil)
-	st.KB = &runtime.Kbinfos{}
-	// Held passages mention the actor, and passages carry the act word — never both in one.
-	st.KB.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "held-actor", "content_with_weight": "Colin Beashel sailed the Soling class."})
-		p.Add(map[string]any{"chunk_id": "held-act", "content_with_weight": "Their partner was crewing that year."})
-	})
-	st.SlotTable = table
-	st.Deadline = time.Now().Add(120 * time.Second)
-
-	RunCoverageResolve(context.Background(), RAGTools{
-		Model: &scriptedModel{},
-		Tools: &runtime.Toolset{Exec: exec},
-	}, st, nil)
-
-	if exec.ran() != 0 {
-		t.Fatalf("enumeration ran %d time(s), want no recall for a direction whose words have never met in one passage", exec.ran())
-	}
-}
-
-// TestCiteChunksPutTheItemsPassagesFirst pins the citation set of an enumerated answer.
-//
-// The answer has to cite one passage per element, and those passages are in the pool but not
-// necessarily among the few that score highest: a sixteen-member table whose answer named only
-// three of them was reading the same handful of blocks as any other question. Members first also
-// means a token budget that truncates drops scored extras, never an element's own passage.
-func TestCiteChunksPutTheItemsPassagesFirst(t *testing.T) {
-	chunks := []map[string]any{
-		{"chunk_id": "w1", "content": "低分段落", "similarity": 0.1},
-		{"chunk_id": "w2", "content": "高分段落", "similarity": 0.9},
-		{"chunk_id": "w3", "content": "成员自己的段落", "similarity": 0.2},
-	}
-	kb := &runtime.Kbinfos{Chunks: chunks}
-	kb.NoteCitedChunks([]string{"w3"})
-
-	got := withCitedChunks(rankByScore(chunks), kb, citeChunkCap)
-	if len(got) != 3 || runtime.ChunkIDOf(got[0]) != "w3" {
-		t.Fatalf("citeChunks = %v, want the items' own passage first and the rest after it", got)
-	}
-	if runtime.ChunkIDOf(got[1]) != "w2" {
-		t.Fatalf("citeChunks = %v, want the scored chunks after the items' passages", got)
-	}
-
-	// Without items the selection is unchanged: the top-scoring chunk, capped.
-	plain := withCitedChunks(rankByScore(chunks), &runtime.Kbinfos{Chunks: chunks}, 1)
-	if len(plain) != 1 || runtime.ChunkIDOf(plain[0]) != "w2" {
-		t.Fatalf("citeChunks = %v, want the plain top-N selection when no items carry passages", plain)
-	}
-}
-
-// TestPublishAnchoredMembersResolvesDocIDs pins the metadata case. A session that selected documents
-// by metadata records DOC ids as its members' anchors — metadata_search returns doc ids and admits no
-// passage, so not one of them resolves in the pool — and publishing has to resolve them to that
-// document's own passage. Without resolution the members the record lists reach the answer as no
-// evidence at all: measured (2026-09-21) the answer stated 6 documents, the evidence it read carried
-// six blocks about OTHER documents, and zero markers resolved.
-func TestPublishAnchoredMembersResolvesDocIDs(t *testing.T) {
-	kb := &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "docA-1", "doc_id": "docA", "content": "无关段落", "similarity": 0.3},
-		{"chunk_id": "docA-2", "doc_id": "docA", "content": "勒索病毒事件按 P1/P2/P3 分级", "similarity": 0.9},
-		{"chunk_id": "docB-1", "doc_id": "docB", "content": "端点隔离时限 10 分钟", "similarity": 0.4},
-		{"chunk_id": "other", "doc_id": "docC", "content": "别的文档", "similarity": 0.99},
-	}}
-	table := runtime.NewState([]runtime.Variable{
-		anchoredItemsVar(0, "list",
-			slots.Item{Value: "勒索病毒事件上报与分级管理规范", ChunkID: "docA",
-				Quote: "file_name: a.docx; update_time: 2026-09-21 13:35:42"},
-			slots.Item{Value: "端点隔离标准", ChunkID: "docB", Quote: "端点隔离时限 10 分钟"},
-		),
-	}, 0, nil)
-
-	derived, resolved := publishAnchoredMembers(kb, &table)
-	if derived != 2 || resolved != 2 {
-		t.Fatalf("derived/resolved = %d/%d, want 2/2", derived, resolved)
-	}
-	if got := kb.CitedChunks(); len(got) != 2 || got[0] != "docA-2" || got[1] != "docB-1" {
-		t.Fatalf("CitedChunks = %v, want each member on its own document's passage", got)
-	}
-	refs := kb.AnchoredRefs()
-	if len(refs) != 2 || refs[0].ChunkID != "docA-2" || refs[1].ChunkID != "docB-1" {
-		t.Fatalf("AnchoredRefs = %+v, want the anchors resolved to pool chunk ids", refs)
-	}
-	// The first member's quote is the METADATA line the session was shown, which its passage does
-	// not contain. Kept, compactAnchored would render that block FROM the metadata line instead of
-	// the passage — the block would show what the tool printed, not the document.
-	if refs[0].Quote != "" {
-		t.Errorf("ref[0].Quote = %q, want it DROPPED (its passage does not carry it)", refs[0].Quote)
-	}
-	// The second member's quote is in its passage: it stands, and the block renders from it.
-	if refs[1].Quote != "端点隔离时限 10 分钟" {
-		t.Errorf("ref[1].Quote = %q, want it kept", refs[1].Quote)
-	}
-}
-
-// TestPublishAnchoredMembersUnionsAndSkipsUnresolvable pins the two guards around the ledger. Its
-// writer REPLACES (NoteCitedChunks), so publishing must union: the enumeration's passages are already
-// recorded, and a member that no longer resolves must not cost the answer a passage that still does.
-// An anchor the pool cannot point at publishes nothing — the member stays a name in the record
-// rather than becoming a block that opens somebody else's passage.
-func TestPublishAnchoredMembersUnionsAndSkipsUnresolvable(t *testing.T) {
-	kb := &runtime.Kbinfos{Chunks: []map[string]any{
-		{"chunk_id": "enumerated", "doc_id": "docD", "content": "枚举来的段落", "similarity": 0.5},
-		{"chunk_id": "docE-1", "doc_id": "docE", "content": "元数据选出的段落", "similarity": 0.2},
-	}}
-	kb.NoteCitedChunks([]string{"enumerated"})
-	kb.NoteAnchoredRefs([]runtime.AnchoredRef{{Name: "枚举成员", ChunkID: "enumerated", Quote: "枚举来的"}})
-
-	table := runtime.NewState([]runtime.Variable{
-		anchoredItemsVar(0, "list",
-			slots.Item{Value: "元数据成员", ChunkID: "docE"},
-			slots.Item{Value: "无迹可循的成员", ChunkID: "docZ"},
-		),
-	}, 0, nil)
-
-	derived, resolved := publishAnchoredMembers(kb, &table)
-	if derived != 2 || resolved != 1 {
-		t.Fatalf("derived/resolved = %d/%d, want 2/1 (one anchor is in no document the pool holds)", derived, resolved)
-	}
-	if got := kb.CitedChunks(); len(got) != 2 || got[0] != "enumerated" || got[1] != "docE-1" {
-		t.Fatalf("CitedChunks = %v, want the enumeration's passage KEPT and the resolved one added", got)
-	}
-	if refs := kb.AnchoredRefs(); len(refs) != 2 || refs[0].Name != "枚举成员" || refs[1].Name != "元数据成员" {
-		t.Fatalf("AnchoredRefs = %+v, want the enumerated ref kept and the resolved one added", refs)
-	}
-}
-
-// TestPublishAnchoredMembersIsANoOpWithoutAnchors pins the regression guard: a table holding no
-// ANCHORED member publishes nothing, so an ordinary question's evidence selection stays exactly what
-// it is today — min(citeChunkCap, pool size).
-func TestPublishAnchoredMembersIsANoOpWithoutAnchors(t *testing.T) {
-	kb := &runtime.Kbinfos{Chunks: []map[string]any{{"chunk_id": "c1", "content": "x"}}}
-	table := runtime.NewState([]runtime.Variable{
-		typedMembersVar(0, "list", "于禁"),
-	}, 0, nil)
-
-	if derived, resolved := publishAnchoredMembers(kb, &table); derived != 0 || resolved != 0 {
-		t.Fatalf("derived/resolved = %d/%d, want 0/0 for a table whose members carry no passage", derived, resolved)
-	}
-	if got := kb.CitedChunks(); len(got) != 0 {
-		t.Fatalf("CitedChunks = %v, want nothing published", got)
-	}
-}
-
-// TestSlotRecordShowsEachItemWithItsPassage pins the citation half of the record: an item's chunk id
-// is in the value, and the record used to print names only — so the instruction to cite each member
-// ("every member you list carries the words behind it") had nothing to cite.
-func TestSlotRecordShowsEachItemWithItsPassage(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
-		typedMembersVar(2, "person", "于禁"),
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "")
-	for _, want := range []string{"华雄 ←c-华雄", "荀正 ←c-荀正", "于禁 ←(no passage)"} {
-		if !strings.Contains(rec, want) {
-			t.Fatalf("record = %q, want %q", rec, want)
-		}
-	}
-}
-
-// TestSlotRecordStatesACountSlotThatHoldsWords pins the silent half of the count disagreement.
-//
-// A count slot whose value is TEXT passes in silence: it claims no number, so nothing is derived
-// from it (by contract), and the record used to say nothing either — its words sat beside the
-// enumerated size and the answer took whichever it liked. Measured (2026-09-17, 三国/关羽): a
-// session's "14" answered a table that enumerated 16. The words are not parsed here either; the
-// disagreement is stated.
-func TestSlotRecordStatesACountSlotThatHoldsWords(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("14")},
-		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "")
-	if !strings.Contains(rec, "enumerated members across the slots above: 3") {
-		t.Fatalf("record = %q, want the enumerated size stated", rec)
-	}
-	if !strings.Contains(rec, `holds "14" as text, not a number`) {
-		t.Fatalf("record = %q, want a count slot holding words stated as a disagreement", rec)
-	}
-
-	// The declared-number branch keeps its own wording.
-	numbered := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 14, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
-	}, 0, nil)
-	if rec := RenderSlotRecord(numbered, ""); !strings.Contains(rec, "says 14 while the slots above enumerate 3") {
-		t.Fatalf("record = %q, want a declared number's disagreement stated as before", rec)
-	}
-}
-
-// TestSyncCountSlotsReadsTheWholeTable pins the ONE assumption the derivation carries: the size is
-// read ACROSS the table, so a question that enumerates two sets gets one number for both count
-// slots (`斩杀` and `生擒` both read 4 here).
-//
-// It is pinned rather than fixed because the fix is a DECLARATION — the planner saying which count
-// counts which set — and an inference (adjacency, wording) would guess exactly where the record has
-// to be exact. Until that declaration exists, the record's own line is the honest reading: it says
-// "across the slots above", not per slot.
-func TestSyncCountSlotsReadsTheWholeTable(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 9, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、荀正"),
-		typedCountVar(2, "count", 4, 0),
-		typedAnchoredMembersVar(3, "person", "于禁、庞德"),
-	}, 0, nil)
-	syncCountSlots(&table)
-	for _, id := range []int{0, 2} {
-		if got := *table.ByID(id).Candidate; got != "4" {
-			t.Fatalf("slot %d = %q, want the table-wide size: two sets per table are a declaration the planner does not make yet", id, got)
-		}
-	}
-}
-
-// TestSyncCountSlotsLeavesWhatClaimsNoNumber pins the kind-keyed half: the derivation touches the
-// slots that CLAIM a number and nothing else — a text claim is not a number anybody can check, and
-// the floor keeps a barely-filled table from collapsing a claim to one.
-func TestSyncCountSlotsLeavesWhatClaimsNoNumber(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Candidate: strPtr("约 17-19 人")}, // prose: claims no number
-		typedAnchoredMembersVar(1, "person", "华雄、荀正、杨龄"),
-	}, 0, nil)
-	if changed := syncCountSlots(&table); len(changed) != 0 {
-		t.Fatalf("changed = %v, want a claim that is not a number left alone", changed)
-	}
-	// One quotable element is below the floor: nothing to derive from, so the claim stands.
-	thin := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 9, 0),
-		typedAnchoredMembersVar(1, "person", "华雄"),
-	}, 0, nil)
-	if changed := syncCountSlots(&thin); len(changed) != 0 {
-		t.Fatalf("changed = %v, want the floor respected (one element is not an enumeration)", changed)
-	}
-	if got := *thin.ByID(0).Candidate; got != "9" {
-		t.Fatalf("count slot = %q, want the claim standing below the floor", got)
-	}
-}
-
-// TestSlotRecordNamesTheClaimsWithoutAPassage pins the other half of that rule: leaving a claim
-// out of the number must not hide it. An answer told only "the members are two" cannot tell that
-// two more names were claimed — nor that its number may therefore be short.
-func TestSlotRecordNamesTheClaimsWithoutAPassage(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 4, 0),
-		typedAnchoredMembersVar(1, "person", "荀正、杨龄"),
-		typedMembersVar(2, "person", "于禁、刘延"),
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "")
-	if !strings.Contains(rec, "enumerated members across the slots above: 2") {
-		t.Fatalf("record = %q, want the size stated over the members with a passage", rec)
-	}
-	if !strings.Contains(rec, "claimed WITHOUT a passage in hand") ||
-		!strings.Contains(rec, "于禁") || !strings.Contains(rec, "刘延") {
-		t.Fatalf("record = %q, want the claims named beside the number", rec)
-	}
-}
+// What replaces the whole mechanism: the session searches (its tool descriptions already carry the
+// probe shape), every tool result says how much of each document it has read, and list_chunks pages a
+// document to its end. The completeness of an enumeration is then a fact about what the model read,
+// not a window count the runtime computed.
 
 // TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate pins the bookkeeping that
 // survives every rule in MergeSlotPatch: one slot holds one candidate, so the
@@ -4179,89 +3192,46 @@ func TestMergeSlotPatchKeepsTheLosingClaimAsAnAlternate(t *testing.T) {
 	}
 }
 
-// TestSlotRecordLeadsWithFactsNotWithASessionsProse pins the answer-layer fix.
-//
-// The record used to LEAD with one session's prose draft answer, and the answer
-// copied it: measured twice (2026-09-15, 三国演义/关羽) — a record whose slots
-// enumerated seventeen members produced a fifteen-member answer, and a record
-// enumerating fourteen produced a ten-member answer, in both cases exactly the
-// number written in that prose. The prose is one session's recollection, written
-// before the other sessions were merged; it is a claim to reconcile with the
-// members, not the record.
-func TestSlotRecordLeadsWithFactsNotWithASessionsProse(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedCountVar(0, "count", 10, 0),
-		typedAnchoredMembersVar(1, "person", "华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、车胄、程远志、夏侯存、庞德"),
-		// A second slot of the same table holds REFERENCES, not members — and it is
-		// TEXT, so it contributes none: counting them is how this record once
-		// answered its own count with a nineteen on a twelve-member list.
-		{ID: 2, Type: "dataset", Candidate: strPtr("第5回(华雄)、第21回(车胄)、第25回(颜良)、第27回(五关六将)、第74回(庞德)")},
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "关羽在《三国演义》中斩杀的有姓名人物共10人，名单如下：……")
-
-	if !strings.Contains(rec, "enumerated members across the slots above: 14") {
-		t.Fatalf("record = %q, want the enumerated size stated as a fact", rec)
+// TestTheRecordStatesNoSizeAndReconcilesNothing pins what the record does NOT do: no
+// "enumerated members across the slots above: N" computed from the table, no count-vs-list warning, no
+// "claimed WITHOUT a passage" list. Those lines were the runtime reading the table's own text to decide
+// what counted as a member (see RenderSlotRecord) — the answer reconciles the values against the
+// passages it was shown, and the record hands it both, verbatim.
+func TestTheRecordStatesNoSizeAndReconcilesNothing(t *testing.T) {
+	tbl := runtime.State{State: []runtime.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("10")},
+		{ID: 1, Type: "person", Candidate: strPtr("华雄、颜良")},
+	}}
+	rec := RenderSlotRecord(tbl, "关羽共杀了10人。")
+	for _, banned := range []string{"enumerated members", "claimed WITHOUT a passage", "NOTE:",
+		"State the count and the members TOGETHER"} {
+		if strings.Contains(rec, banned) {
+			t.Errorf("record %q carries the removed derivation (%q)", rec, banned)
+		}
 	}
-	// A count that disagrees with the members has to be SAID: this record once
-	// produced a nineteen-person answer out of a count slot reading 19, which the
-	// answer explained as seven more people "the material does not list".
-	if !strings.Contains(rec, "slot 0 [count] says 10 while the slots above enumerate 14") {
-		t.Fatalf("record = %q, want the disagreement stated", rec)
-	}
-	// Stated, not ordered: an order was tried and reverted — measured (2026-09-16,
-	// 三国/关羽) a record that said "take the number from the enumerated members" got
-	// exactly that number taken (nine), when its slots enumerated the wrong things and
-	// its sessions had found fourteen. Either number can be the wrong one, and only the
-	// passages decide, so the note must state the disagreement and leave the judgement
-	// to the stage that reads them.
-	if strings.Contains(rec, "take the number from") {
-		t.Fatalf("record = %q, must not order the answer to take either number", rec)
-	}
-	if !strings.Contains(rec, "disagree") {
-		t.Fatalf("record = %q, want the disagreement stated as a disagreement", rec)
-	}
-	facts := strings.Index(rec, "slot 1 [person]")
-	draft := strings.Index(rec, "One session's own draft answer")
-	if facts < 0 || draft < 0 || facts > draft {
-		t.Fatalf("record = %q, want the slots BEFORE the session's own draft", rec)
-	}
-	if !strings.Contains(rec, "UNVERIFIED") {
-		t.Fatalf("record = %q, want the draft labelled as a claim", rec)
+	for _, want := range []string{"10", "华雄、颜良", "关羽共杀了10人。"} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("record %q is missing %q", rec, want)
+		}
 	}
 }
 
-// TestValueRecordCarriesNoEnumeratedMembers pins the other half of the gate: the
-// enumerated size, the count-vs-members warning and the demotion of the session's
-// prose are SET-question machinery, and a record whose answer is one date or one
-// number must render exactly as it did before any of it existed.
-//
-// The table is the measured case. A "how much shorter is A than B" question's
-// record carried `- slot 1 [number]: 133 feet` beside `- enumerated members across
-// the slots above: 16`, where the 16 was `Grace's、High、Falls、Colonial、Creek` —
-// one waterfall's name cut at its separators by whoever wrote it into the slot —
-// and the session's draft answer was labelled UNVERIFIED below it. Rendered
-// ungated, those two lines appeared in 21 of a 20-question FRAMES run's records.
-func TestValueRecordCarriesNoEnumeratedMembers(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
+// TestAValueTableHasNoSizeLineEither pins the other side of the same fact: nothing in the record is
+// computed from a value's shape, so a value table is not "spared" a size line — no table has one
+// (see RenderSlotRecord).
+func TestAValueTableHasNoSizeLineEither(t *testing.T) {
+	tbl := runtime.State{State: []runtime.Variable{
+		// One value with separators inside it, under a non-member type: the permissive reading of this
+		// once produced "enumerated members: 16" for ONE waterfall.
 		{ID: 0, Type: "dataset", Candidate: strPtr("Grace's、High、Falls、Colonial、Creek")},
 		{ID: 1, Type: "number", Candidate: strPtr("133 feet")},
-		{ID: 2, Type: "web", Candidate: strPtr("Colonial Creek Falls, Washington — 788 m (2,585 ft)")},
-	}, 0, nil)
-	rec := RenderSlotRecord(table, "Alabama's tallest waterfall is 133 feet tall.")
-
+	}}
+	rec := RenderSlotRecord(tbl, "Alabama's tallest waterfall is 133 feet tall.")
 	if strings.Contains(rec, "enumerated members") {
-		t.Fatalf("record = %q, want no enumerated line on a value table", rec)
+		t.Errorf("record %q states a size of its own", rec)
 	}
-	if strings.Contains(rec, "UNVERIFIED") {
-		t.Fatalf("record = %q, want the session's answer NOT demoted on a value table", rec)
-	}
-	if !strings.HasPrefix(rec, "Candidate answer: Alabama's tallest waterfall is 133 feet tall.") {
-		t.Fatalf("record = %q, want the session's answer first on a value table", rec)
-	}
-	for _, want := range []string{"- slot 0 [dataset]:", "- slot 1 [number]: 133 feet", "788 m (2,585 ft)"} {
-		if !strings.Contains(rec, want) {
-			t.Errorf("record %q missing the slot fact %q", rec, want)
-		}
+	if !strings.Contains(rec, "Grace's、High、Falls、Colonial、Creek") {
+		t.Errorf("record %q, want the value verbatim (never split)", rec)
 	}
 }
 
@@ -4346,109 +3316,6 @@ func typedCountVar(id int, typ string, n int, strength float64) runtime.Variable
 	return out
 }
 
-func TestUnionIsOrderIndependent(t *testing.T) {
-	eleven := typedMembersValue("华雄、管亥、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳")
-	thirteen := typedMembersValue("华雄、颜良、文丑、孔秀、孟坦、韩福、卞喜、王植、秦琪、蔡阳、庞德、成何、管亥")
-	names := func(v slots.Value) string {
-		out := v.ItemValues()
-		sort.Strings(out)
-		return strings.Join(out, "、")
-	}
-	want := names(thirteen)
-
-	up, _, ok := slots.Union(eleven, thirteen)
-	if !ok || names(up) != want {
-		t.Fatalf("small→big: union = %q ok = %v, want the thirteen-name superset", slots.Render(up), ok)
-	}
-	down, _, ok := slots.Union(thirteen, eleven)
-	if !ok {
-		t.Fatal("big→small must resolve too: a subset is a resolution, not a tiebreaker for strength")
-	}
-	if names(down) != want {
-		t.Fatalf("big→small: union = %q, want the base kept whole (a subset adds nothing)", slots.Render(down))
-	}
-
-	// Two numbers keep the larger one, in both orders.
-	if got, _, ok := slots.Union(slots.Number(13), slots.Number(11)); !ok || got.Count != 13 {
-		t.Fatalf("13→11 = %v ok=%v, want the larger count", got, ok)
-	}
-	if got, _, ok := slots.Union(slots.Number(11), slots.Number(13)); !ok || got.Count != 13 {
-		t.Fatalf("11→13 = %v ok=%v, want the larger count", got, ok)
-	}
-
-	// A number never outvotes the members it counts: the number is the claim that
-	// loses, kept as the dropped value.
-	union, dropped, ok := slots.Union(thirteen, slots.Number(11))
-	if !ok || union.Kind != slots.KindItems {
-		t.Fatalf("members vs count = %v ok=%v, want the members", union, ok)
-	}
-	if dropped.Count != 11 {
-		t.Fatalf("dropped = %v, want the losing count", dropped)
-	}
-
-	// Text is not the union's business: a value question merges by strength, exactly
-	// as it did before values were typed.
-	if _, _, ok := slots.Union(slots.Text("1858"), slots.Text("1849")); ok {
-		t.Error("text must not merge by union — that is what keeps a value question on its strength rule")
-	}
-}
-
-// TestMemberUnionDropsPlaceAndEventPhrases pins the last way a count inflates: a
-// piece that CONTAINS a member is not a second member.
-//
-// A session writing a place beside its owner (`洛阳关孟坦`) or an event beside its
-// object (`温酒斩华雄`) writes a token that is short, digit-free and unpunctuated —
-// it passes every shape test a name passes — while the member it names is already
-// in the table. Measured (2026-09-16): a record enumerating 21 names counted 25,
-// the four extra being place-qualified copies of names already listed.
-func TestMemberUnionDropsPlaceAndEventPhrases(t *testing.T) {
-	table := runtime.NewState([]runtime.Variable{
-		typedAnchoredMembersVar(1, "person", "程远志、华雄、管亥、颜良、文丑、杨龄、孔秀、孟坦、韩福、卞喜、王植、秦琪、车胄、成何、蔡阳、吕旷、吕翔、荀正、纪灵、夏侯存、庞德"),
-		typedAnchoredMembersVar(2, "person", "孟坦、韩福、卞喜、王植、秦琪、洛阳关孟坦、汜水关卞喜、荥阳王植、黄河渡口秦琪"),
-	}, 0, nil)
-
-	union := runtime.ItemValues(&table)
-	if len(union) != 21 {
-		t.Fatalf("member count = %d, want the 21 names (place-qualified copies are not members): %v", len(union), union)
-	}
-	for _, extra := range []string{"洛阳关孟坦", "汜水关卞喜", "荥阳王植", "黄河渡口秦琪"} {
-		for _, item := range union {
-			if item == extra {
-				t.Errorf("member union kept %q, a name with its place attached", extra)
-			}
-		}
-	}
-	if got := enumeratedSize(table); got != 21 {
-		t.Fatalf("enumerated size = %d, want 21", got)
-	}
-}
-
-// TestLedgerQuoteCarriesTheWordsBehindAMember pins per-member evidence in the
-// answer-facing ledger: a name without the words behind it is a member nobody can
-// point at, and an answer handed names only cannot cite one passage per member.
-func TestLedgerQuoteCarriesTheWordsBehindAMember(t *testing.T) {
-	kb := &runtime.Kbinfos{}
-	kb.Admit(func(p *runtime.PoolAdmitter) {
-		p.Add(map[string]any{"chunk_id": "c1", "content": "关公马快，赶上文丑，脑后一刀，将文丑斩下马来。"})
-	})
-	kb.RecordReachedTerm("文丑", "c1")
-
-	// The names are in the ledger either way; the words ride the set gate, so a
-	// value direction does not pay for them.
-	if ledger := probeLedger(kb); strings.Contains(ledger, "斩下马来") {
-		t.Fatalf("ledger = %q, want no per-member quotes before a set direction declares itself", ledger)
-	}
-
-	kb.MarkSetDirection()
-	ledger := probeLedger(kb)
-	if !strings.Contains(ledger, "文丑 — “") {
-		t.Fatalf("ledger = %q, want the member followed by the words that carry it", ledger)
-	}
-	if !strings.Contains(ledger, "斩下马来") {
-		t.Fatalf("ledger = %q, want the quoted passage itself", ledger)
-	}
-}
-
 // TestRecordContractStatesTheSettledValueIsTheAnswer pins the half of the record
 // contract that the measured "not found" answer needed: a record that is only a
 // check is droppable when the passages do not repeat its value.
@@ -4473,31 +3340,11 @@ func TestRecordContractStatesTheSettledValueIsTheAnswer(t *testing.T) {
 	}
 }
 
-// TestBudgetExtensionIsBoughtOncePerQuestion pins the one-shot budget extension a
-// set-shaped pass buys.
-//
-// The budget fits ONE pass, and an enumeration needs a second one to pick up the
-// members a cut first pass never patched (measured 2026-09-16, 三国/关羽: the run
-// ended at `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone).
-// One extension, not a per-round top-up: the point is a second look, not an
-// unbounded run for any table that keeps declaring a set.
-func TestBudgetExtensionIsBoughtOncePerQuestion(t *testing.T) {
-	st := &AgenticState{Deadline: time.Now().Add(30 * time.Second)}
-	before := st.RemainingS()
-	if !st.ExtendDeadline(SetBudgetExtensionS) {
-		t.Fatal("the first extension must apply")
-	}
-	after := st.RemainingS()
-	if after < before+SetBudgetExtensionS-1 {
-		t.Errorf("remaining %.0fs after the extension, want ~%.0fs", after, before+SetBudgetExtensionS)
-	}
-	if st.ExtendDeadline(SetBudgetExtensionS) {
-		t.Error("a second extension must be refused: the budget is bought once per question")
-	}
-	if got := st.RemainingS(); got > after+1 {
-		t.Errorf("remaining %.0fs after the refused extension, want ~%.0f", got, after)
-	}
-}
+// The one-shot budget extension and its test are gone. It gave a set-shaped pass a second
+// slice of the question's clock (measured 2026-09-16, 三国/关羽: the run ended at
+// `ROUND 1 end (unresolved=0)` with the reached-but-unpatched 管亥 gone), which meant the
+// clock one question had was decided by the shape of its plan rather than by the caller.
+// There is one clock per question and nothing inside a run widens it.
 
 // TestMergeSlotPatchKeepsTheDeclaration pins what the fold must NOT drop.
 //
@@ -4510,7 +3357,7 @@ func TestBudgetExtensionIsBoughtOncePerQuestion(t *testing.T) {
 // enumeration machinery switched off.
 func TestMergeSlotPatchKeepsTheDeclaration(t *testing.T) {
 	base := runtime.NewState([]runtime.Variable{
-		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+		{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subjects: []string{"关羽", "云长"}},
 		{ID: 1, Type: "dataset"},
 	}, 0, nil)
 	strong := 0.9
@@ -4525,102 +3372,416 @@ func TestMergeSlotPatchKeepsTheDeclaration(t *testing.T) {
 	if got := merged.State[0].Terms; len(got) != 2 || got[0] != "斩" || got[1] != "杀" {
 		t.Errorf("merged Terms = %v, want the declaration to travel with the slot", got)
 	}
-	if got := merged.State[0].Subject; got != "关羽|云长" {
+	if got := strings.Join(merged.State[0].Subjects, "|"); got != "关羽|云长" {
 		t.Errorf("merged Subject = %q, want the declared actor", got)
 	}
-	// The declaration is what the enumeration is built from: a fold that drops it leaves the
-	// next round with nothing to enumerate, which is the measured failure above.
-	if !runtime.CoverageOf(*merged).Ok() {
-		t.Error("the merged table is no longer an enumeration: the declaration was lost in the fold")
-	}
+	// The declaration must SURVIVE the fold: it is the only place the deed's words live, and a fold
+	// that drops them leaves the next turn with nothing to search by. The assertions above are the
+	// test — the old gate that read the fold's result as "is this still an enumeration" is gone with
+	// the coverage engine.
 }
 
-// coverageStubExec answers tool calls like sessionStubExec and is ALSO a
-// runtime.CoverageRunner, so a round's enumeration runs without a retriever.
-type coverageStubExec struct {
-	mu    sync.Mutex
-	calls []runtime.Coverage
-}
-
-func (e *coverageStubExec) Execute(_ context.Context, name string, _ map[string]any) (runtime.ToolOutcome, error) {
-	return runtime.ToolOutcome{
-		Status:      runtime.StatusOK,
-		Payload:     []any{map[string]any{"kind": name, "content": "hit"}},
-		EvidenceIDs: []string{"c-" + name},
-	}, nil
-}
-
-// EnumerateCoverage stands in for the corpus: one window stating the deed.
-func (e *coverageStubExec) EnumerateCoverage(_ context.Context, cov runtime.Coverage, kb *runtime.Kbinfos) runtime.CoverageSet {
-	e.mu.Lock()
-	e.calls = append(e.calls, cov)
-	e.mu.Unlock()
-	quote := "云长手起刀落，斩孔秀于马下"
-	if kb != nil {
-		kb.Admit(func(p *runtime.PoolAdmitter) {
-			p.Add(map[string]any{"chunk_id": "w1", "content_with_weight": quote})
-		})
-	}
-	return runtime.CoverageSet{
-		Operands: cov.Operands(),
-		Recalled: 1,
-		Windows:  []runtime.CoverageWindow{{ChunkID: "w1", Quote: quote, Act: "斩"}},
-	}
-}
-
-func (e *coverageStubExec) ran() int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return len(e.calls)
-}
-
-// TestRunSlotResearchPassEnumeratesOnce pins the wiring, and the run-once rule.
+// TestRunSlotResearchPassRunsOneSession pins the round's shape: ONE session, seeded with the
+// question and the plan's clues, and NOTHING enumerated by the runtime in code.
 //
-// The act words used to be seeded as a list of queries TO MAKE, and a whole round ran
-// without a single one of them being made: measured (2026-09-16, 三国/关羽) 2175 characters
-// of patterns in every session's seed and zero `.*` queries in the run's log, with the
-// sessions re-probing names by hand in the next round. Now the round asks the corpus
-// itself — one call, one recall per operand — admits what comes back, and seeds it.
-func TestRunSlotResearchPassEnumeratesOnce(t *testing.T) {
+// The act words used to be turned into windows by the runtime before any session started
+// (runtime.EnumerateCoverage), on the argument that "a list of queries in a prompt is advice,
+// and advice may simply not be taken". What that cost was the whole coverage engine: a shape
+// gate, a window judge, a member write-back, a per-shape budget extension and a second
+// enrolment path at the answer node — all of them reading a slot table to decide what to run.
+//
+// The same evidence is reached the other way round now: the session searches with the corpus's
+// own wording (retrieve's description already teaches the probe shape), every tool result says
+// how much of each document has been read, and list_chunks pages a document to its end. The
+// enumeration is the model reading, not the runtime asking.
+func TestRunSlotResearchPassRunsOneSession(t *testing.T) {
 	table := func() runtime.State {
 		return runtime.NewState([]runtime.Variable{
-			{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subject: "关羽|云长"},
+			{ID: 0, Type: "count", Terms: []string{"斩", "杀"}, Subjects: []string{"关羽", "云长"}},
 			{ID: 1, Type: "dataset", QuestionClues: []string{"who did he kill?"}},
 		}, 0, nil)
 	}
-	exec := &coverageStubExec{}
+	exec := newStubExecutor()
+	exec.add("search_chunks", `{"hit":[{"doc_id":"d1","docnm_kwd":"doc1","content":"云长手起刀落，斩孔秀于马下。"}],"doc_aggs":[]}`, runtime.StatusOK)
 	kb := &runtime.Kbinfos{}
-	st := &AgenticState{Question: "关羽杀了多少有姓名的人物？", KB: kb, SlotTable: table()}
+	st := &AgenticState{
+		Question:  "关羽杀了多少有姓名的人物？",
+		KB:        kb,
+		SlotTable: table(),
+		Plan:      []string{"关羽 斩 名单", "关羽 杀 武将"},
+	}
+	mdl := &scriptedModel{replies: []string{"I could not find any evidence about that."}}
 	deps := runtime.SessionDeps{
-		Model: &scriptedModel{replies: []string{"I could not find any evidence about that."}},
-		Tools: &runtime.Toolset{Exec: exec},
+		Model: mdl,
+		Tools: newToolset(exec),
 		KB:    kb,
 	}
-	RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
+	res := RunSlotResearchPass(context.Background(), context.Background(), deps, st.Question, st, 60)
+	if res == nil {
+		t.Fatal("expected a result")
+	}
+	// The session ran. It is the round's research AND its answer, so a round always runs one.
+	if got := len(mdl.seen); got == 0 {
+		t.Fatal("model calls = 0, want the one session this round seeds")
+	}
+	// ONE round is ONE session: the ledger has a single row, and the rows are the round's own
+	// record of what each session was asked (see RunSlotResearchPass).
+	if got := len(res.Attempted); got != 1 {
+		t.Fatalf("ledger rows = %d, want exactly one (one session per round)", got)
+	}
+}
 
-	if got := exec.ran(); got != 1 {
-		t.Fatalf("ran %d enumeration(s), want exactly one per question", got)
+// The question's clock is DIVIDED, and these pin the division (see policy.go). The phases used to
+// carry a cap each — planner 45, prefetch 90, round 120, finale 60 — whose sum was 315s against a
+// 180s question, so whichever phase ran last was cut off by the wall: measured 2026-09-20, 5
+// sessions died at exactly 110s and 4 openings spent 90s with zero model calls, leaving the
+// research 30-90s of a 180s question.
+
+// TestTheOpeningShareIsBoundedAndInsideTheQuestion pins the opening's share: it has a ceiling (the
+// whole point), a floor (a question that is almost out of time still gets one decomposition), and
+// it is always smaller than the question.
+func TestTheOpeningShareIsBoundedAndInsideTheQuestion(t *testing.T) {
+	if got := openingShareS(TotalBudgetS); got != OpeningMaxS {
+		t.Errorf("openingShareS(%v) = %v, want the ceiling %v", TotalBudgetS, got, OpeningMaxS)
 	}
-	if got := exec.calls[0].Operands(); len(got) != 4 {
-		t.Errorf("operands = %v, want one entry per actor form and act word", got)
+	if got := openingShareS(2 * OpeningMinS); got != OpeningMinS {
+		t.Errorf("openingShareS(%v) = %v, want the floor %v", 2*OpeningMinS, got, OpeningMinS)
 	}
-	set, done := kb.CoverageSet()
-	if !done || len(set.Windows) != 1 || set.Windows[0].ChunkID != "w1" {
-		t.Fatalf("stored set = %+v (done=%v), want the window the enumeration found", set, done)
+	for _, remaining := range []float64{30, 60, 90, 120, 180} {
+		if got := openingShareS(remaining); got > remaining {
+			t.Errorf("openingShareS(%v) = %v, which is more than the question has left", remaining, got)
+		}
 	}
-	if !strings.Contains(set.Render(), "斩孔秀于马下") {
-		t.Errorf("seed = %q, want the window with the chunk id a member is cited by", set.Render())
+}
+
+// TestTheFinaleKeepsItsShareAndTheResearchGetsWhatIsLeft pins the two shares that are always in
+// tension: the answer turn's floor (one slow call may not be raced by the wall) and the research
+// room the round is allowed to spend.
+func TestTheFinaleKeepsItsShareAndTheResearchGetsWhatIsLeft(t *testing.T) {
+	if want := min(FinaleMaxS, 0.25*TotalBudgetS); finaleShareS(TotalBudgetS) != want {
+		t.Errorf("finaleShareS(%v) = %v, want %v", TotalBudgetS, finaleShareS(TotalBudgetS), want)
 	}
-	if kb.PoolSize() == 0 {
-		t.Error("the enumeration's window never reached the pool: the win cannot be cited")
+	if got := finaleShareS(40); got != FinaleMinS {
+		t.Errorf("finaleShareS(40) = %v, want the floor %v (the answer call's own tail)", got, FinaleMinS)
+	}
+	// The research room is exactly the clock minus that share — no second reserve anywhere.
+	for _, remaining := range []float64{80, 120, 180} {
+		if got, want := researchRoomS(remaining), remaining-finaleShareS(remaining); got != want {
+			t.Errorf("researchRoomS(%v) = %v, want %v", remaining, got, want)
+		}
+	}
+}
+
+// TestARoundNeedsRoomForItselfAndTheFinale pins the ONE gate the router uses for time: a round is
+// opened only when the question can pay for the round AND for the answer that follows it.
+//
+// It replaced a bare headroom check that asked only whether a round could START — which is how a
+// second round was opened with less time left than the answer turn needs.
+func TestARoundNeedsRoomForItselfAndTheFinale(t *testing.T) {
+	if !canOpenRound(150) {
+		t.Error("canOpenRound(150) = false, want a round when a quarter of the question is left")
+	}
+	if canOpenRound(finaleShareS(80) + MinRoundS - 1) {
+		t.Error("canOpenRound opened a round that leaves the finale short of its share")
+	}
+	// A question that is nearly out of time has room for the answer and nothing else.
+	if canOpenRound(45) {
+		t.Error("canOpenRound(45) = true, want the answer's clock kept when that is all that is left")
+	}
+}
+
+// TestTheSharesFitInsideTheQuestionTogether pins the invariant the old per-node caps broke: opening
+// + finale, the two things every question pays, must fit inside the question with room for the
+// research between them.
+func TestTheSharesFitInsideTheQuestionTogether(t *testing.T) {
+	for _, remaining := range []float64{90, 120, 150, 180} {
+		opening, finale := openingShareS(remaining), finaleShareS(remaining)
+		if opening+finale >= remaining {
+			t.Errorf("at %vs left: opening %.0fs + finale %.0fs leaves no research room", remaining, opening, finale)
+		}
+		if researchRoomS(remaining) < MinRoundS {
+			t.Errorf("at %vs left: research room %.0fs is below the round minimum %.0fs", remaining, researchRoomS(remaining), MinRoundS)
+		}
+	}
+}
+
+// TestPrefetchSpendsWhatThePlannerLeftOfTheOpening pins the opening as ONE deadline rather than two
+// caps: the planner arms it, and the fan-out gets whatever the decomposition left of it.
+//
+// When the decomposition used ALL of it the fan-out still runs, on its own floor: upstream's fix
+// (47a444039) removed nodeClock's "room gone -> zero" branch, because returning zero built a
+// context.WithTimeout(ctx, 0), whose first ctx.Done() check admitted nothing — the run then reached
+// the answer with an empty pool. See TestNodeClockKeepsItsFloorOnASpentBudget for the property.
+func TestPrefetchSpendsWhatThePlannerLeftOfTheOpening(t *testing.T) {
+	st := NewAgenticState("q", "", 3, nil)
+	st.Deadline = time.Now().Add(TotalBudgetS * time.Second)
+
+	if got := st.openingLeftS(); got < OpeningMaxS-0.01 || got > OpeningMaxS {
+		t.Errorf("without a planner-set deadline the opening reports %v, want its own share %v", got, OpeningMaxS)
+	}
+	st.OpeningStarted = time.Now()
+	st.OpeningDeadline = st.OpeningStarted.Add(7 * time.Second)
+	if got := st.openingLeftS(); got < 6 || got > 7.5 {
+		t.Errorf("openingLeftS() = %v, want the ~7s left of the opening", got)
+	}
+	st.OpeningDeadline = st.OpeningStarted.Add(-time.Second)
+	if got := nodeClock(PrefetchTimeoutS, OpeningMinS, st.openingLeftS()); got != OpeningMinS {
+		t.Errorf("prefetch clock = %v after the opening was spent, want its floor %v (the floor wins)",
+			got, OpeningMinS)
+	}
+}
+
+// TestTheSessionRegistryIsRecordedWithoutAnAnswer pins the difference between the answer and the
+// REGISTRY: SessionEvidenceRefs is the runtime's list of what the session was SHOWN as [ID:n], and
+// the answer stage resolves its markers against it.
+//
+// It used to be assigned only when the session answered, so a round that read forty passages and
+// wrote no answer left the pool with no registry at all. Measured 2026-09-20 (三国/关羽): 44
+// passages read, 0 patches, no answer — and the composed answer carried no citation for any member.
+//
+// The last two assertions are the ones that keep it honest in both directions: an empty list must
+// not CLEAR a registry an earlier round wrote, and a nil pool must not panic.
+func TestTheSessionRegistryIsRecordedWithoutAnAnswer(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	recordSessionEvidence(kb, []string{"c-hua", "c-yan"})
+	if got := strings.Join(kb.SessionEvidenceRefs, ","); got != "c-hua,c-yan" {
+		t.Fatalf("SessionEvidenceRefs = %v, want the passages the session was shown", kb.SessionEvidenceRefs)
 	}
 
-	// A second round REUSES the set: the windows are in the pool under the same ids, so
-	// asking the corpus the same operand queries again spends the store legs for nothing.
-	second := &AgenticState{Question: st.Question, KB: kb, SlotTable: table()}
-	RunSlotResearchPass(context.Background(), context.Background(), deps, second.Question, second, 60)
-	if got := exec.ran(); got != 1 {
-		t.Errorf("second round ran the enumeration again (%d), want the stored set reused", got)
+	recordSessionEvidence(kb, nil)
+	if len(kb.SessionEvidenceRefs) != 2 {
+		t.Errorf("an empty registry cleared the run's record: %v", kb.SessionEvidenceRefs)
+	}
+	recordSessionEvidence(nil, []string{"c-hua"})
+}
+
+// TestTheOpeningRankingFusesTheChannelsByReciprocalRank pins the fusion that turns the opening's
+// parallel legs into ONE order.
+//
+// The legs' scores are not comparable (a BM25 score, a vector similarity and a claim's fused rank
+// live on different scales), so the fusion is reciprocal rank — the idiom the claim rows already
+// use. Two facts are pinned here: the keyword channel outranks the semantic one at equal rank (it
+// is the deliberate surface probe, and its hits carry the corpus's own wording), and a passage
+// several clues reached outranks one a single clue reached.
+func TestTheOpeningRankingFusesTheChannelsByReciprocalRank(t *testing.T) {
+	one := []fanoutPair{{
+		exact:    []map[string]any{{"chunk_id": "c-keyword"}},
+		semantic: []map[string]any{{"chunk_id": "c-semantic"}},
+	}}
+	got := rankOpening([]string{"关羽 斩"}, one, nil)
+	if len(got) != 2 || got[0] != "c-keyword" {
+		t.Errorf("ranking = %v, want the keyword hit first", got)
+	}
+
+	// Reached by TWO clues vs once: the fusion sums over (clue × channel).
+	two := []fanoutPair{
+		{exact: []map[string]any{{"chunk_id": "c-both"}}},
+		{exact: []map[string]any{{"chunk_id": "c-both"}}, semantic: []map[string]any{{"chunk_id": "c-once"}}},
+	}
+	got = rankOpening([]string{"q1", "q2"}, two, nil)
+	if len(got) != 2 || got[0] != "c-both" {
+		t.Errorf("ranking = %v, want the passage two clues reached first", got)
+	}
+
+	// A claim row leads both channels: it is the same text, verbatim and compact.
+	withClaim := rankOpening([]string{"q"}, []fanoutPair{{
+		exact: []map[string]any{{"chunk_id": "c-keyword"}},
+	}}, [][]map[string]any{{{"chunk_id": "claim_1"}}})
+	if len(withClaim) != 2 || withClaim[0] != "claim_1" {
+		t.Errorf("ranking = %v, want the claim row first", withClaim)
+	}
+
+	// Every id appears once, whatever the legs did, and an empty opening is empty.
+	dup := rankOpening([]string{"q"}, []fanoutPair{{
+		exact:    []map[string]any{{"chunk_id": "c-1"}, {"chunk_id": "c-1"}},
+		semantic: []map[string]any{{"chunk_id": "c-1"}},
+	}}, nil)
+	if len(dup) != 1 {
+		t.Errorf("ranking = %v, want one entry for a passage three legs returned", dup)
+	}
+	if len(rankOpening(nil, nil, nil)) != 0 {
+		t.Error("an empty opening produced a ranking")
+	}
+}
+
+// TestTheOpeningDepthMatchesTheQueryCountItAsksFor pins the ONE coupling that two A/Bs failed on.
+//
+// The opening's depth and the number of queries the planner writes are one decision. Measured over the
+// FRAMES set on this machine:
+//
+//	                              queries  bm25/hybrid/quota/budget   accuracy
+//	a2110c7af (opening spec)      1-4      60 / 30 /  4 /  30          0.900
+//	4dac9a06a → 2026-09-21 14:17  8-12     200 / 60 /  8 / 400         0.850
+//	revert WIDTHS ONLY            8-12     60 / 30 /  4 /  30          0.700
+//	revert WIDTHS + QUERIES       1-4      60 / 30 /  4 /  30          0.684
+//
+// The third row is the trap: 8-12 queries against a 30-passage admission is ~3 passages per query, so a
+// question whose evidence is one table (758's mayor list, 25's tale-of-the-tape, 692's second waterfall)
+// loses it while the plan still looks complete. Pinned EQUAL, both sides, so a later edit that changes
+// one without the other fails here instead of in a benchmark.
+func TestTheOpeningDepthMatchesTheQueryCountItAsksFor(t *testing.T) {
+	if fanoutBM25TopN != 200 || fanoutHybridTopN != 60 || fanoutSemanticQuota != 8 || rawSnippetQuota != 400 {
+		t.Errorf("opening depth = bm25 %d / hybrid %d / semantic-only %d / raw budget %d, want 200/60/8/400 "+
+			"(the 8-12 first_queries the planner asks for — see action_initialize_state.md)",
+			fanoutBM25TopN, fanoutHybridTopN, fanoutSemanticQuota, rawSnippetQuota)
+	}
+}
+
+// TestThePlanCarriesTheProbesTheTableDeclared pins the one place the planner's act words are USED.
+//
+// A member-set slot declares the actor and the words the SOURCE uses for the deed (Variable.Terms /
+// Subject). Nothing read those fields after the coverage engine was removed, so the plan was whatever
+// queries the model happened to write — measured 2026-09-20 (三国/关羽): three queries, none of them the
+// act-word probes the table had already declared, while a passage phrased "砍为两段" is reached by the
+// probe 关羽 砍 and by nothing else.
+//
+// The combination is mechanical: the words are the planner's own, and the values stay opaque (no
+// splitting, counting or comparison of a slot's text).
+func TestThePlanCarriesTheProbesTheTableDeclared(t *testing.T) {
+	table := runtime.State{State: []runtime.Variable{
+		{ID: 0, Type: "count", Candidate: strPtr("16")},
+		{ID: 1, Type: "entity", Terms: []string{"斩", "砍"}, Subjects: []string{"关羽", "云长"}},
+		{ID: 2, Type: "date", Candidate: strPtr("1858")},
+	}}
+	got := runtime.DeclaredProbes(table)
+	// The ENTITY's spellings, and nothing else. The act words are gone: which verb a source uses for a
+	// deed is a fact about the source ("挥为两段", "劈管亥于马下", "手起一刀，刺于马下", "关公刀起处"), and a
+	// probe built from a guessed verb reaches the passages phrased the way the guess predicted and misses
+	// the rest. Measured 2026-09-21 (三国演义.txt, 1718 chunks): the verb-guessed probes reached 162 of the
+	// 266 chunks naming the actor, and the same question answered eleven, fourteen, seventeen or four
+	// members on consecutive runs of the SAME probe set.
+	want := []string{"关羽", "云长"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("declaredProbes = %v, want %v (the entity's spellings, as declared)", got, want)
+	}
+
+	// No entity declared: nothing is asked. The act words are not a substitute — they ARE the guess this
+	// function no longer makes.
+	bare := runtime.State{State: []runtime.Variable{{ID: 0, Type: "entity", Terms: []string{"斩", "砍"}}}}
+	if got := runtime.DeclaredProbes(bare); len(got) != 0 {
+		t.Errorf("declaredProbes = %v from a table that declares no entity, want none", got)
+	}
+
+	// Every spelling the plan declares is asked: the plan writes the spellings the QUESTION uses, so there
+	// is nothing here to select, rank or drop.
+	wide := runtime.State{State: []runtime.Variable{{ID: 0, Type: "entity", Subjects: []string{"关羽", "关公", "云长", "关云长"}}}}
+	if got, want := runtime.DeclaredProbes(wide), []string{"关羽", "关公", "云长", "关云长"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("declaredProbes = %v, want %v (as declared)", got, want)
+	}
+
+	// A table that declares nothing contributes nothing — never a guess.
+	if got := runtime.DeclaredProbes(runtime.State{State: []runtime.Variable{{ID: 0, Type: "date", Candidate: strPtr("1858")}}}); len(got) != 0 {
+		t.Errorf("declaredProbes = %v from a table that declares no act words, want none", got)
+	}
+
+	// The legs are bounded: each probe is a retrieval leg, and the opening has one clock.
+	var many []runtime.Variable
+	for i := 0; i < 12; i++ {
+		many = append(many, runtime.Variable{ID: i, Type: "entity", Terms: []string{"斩", "砍"}, Subjects: []string{"关羽", "云长"}})
+	}
+	if got := runtime.DeclaredProbes(runtime.State{State: many}); len(got) > runtime.DeclaredProbesMax {
+		t.Errorf("declaredProbes = %d probe(s), want at most %d", len(got), runtime.DeclaredProbesMax)
+	}
+}
+
+// TestTheAnswerCitesWithTheHandlesTheModelWroteRenumberedCompactly pins the citation step.
+//
+// The model cites with the handles the run printed beside its evidence, and those numbers are the
+// RETRIEVAL's, not the answer's: the seed numbers every window the scan delivered (up to 265 in one
+// 三国/关羽 run), so an answer resting on sixteen passages came back carrying [ID:265] — a number that
+// resolves, and still reads as nonsense. The code does one mechanical thing: the first passage the ANSWER
+// cites becomes [ID:0], the next passage it has not cited yet [ID:1], and so on, and the client resolves
+// those numbers against exactly that list.
+//
+// Nothing is matched or inferred: the handle the model wrote IS the claim about which passage it rests
+// on. Only what cannot resolve is dropped — a marker that is not a handle at all (a chunk id copied out
+// of a tool result) and a number that names no passage this run published.
+func TestTheAnswerCitesWithTheHandlesTheModelWroteRenumberedCompactly(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	kb.Chunks = []map[string]any{
+		{"chunk_id": "c-a", "doc_id": "d1", "content": "云长提华雄之头，掷于地上。"},
+		{"chunk_id": "c-b", "doc_id": "d1", "content": "颜良措手不及，被云长手起一刀，刺于马下。"},
+		{"chunk_id": "c-c", "doc_id": "d1", "content": "云长舞动大刀，纵马飞迎。"},
+	}
+	kb.SessionEvidenceRefs = []string{"c-a", "c-b", "c-c"}
+
+	ans := "1. 丙——飞迎 [ID:2]" + "\n" +
+		"2. 甲——掷于地上 [ID:0]" + "\n" +
+		"3. 丙再说一次 [ID:2]" + "\n" +
+		"4. 某——[ID:ffd9977ab2ef7071]" + "\n" +
+		"5. 无此人——[ID:99]"
+	resp := &RunResponse{}
+	useSessionAnswer(kb, resp, ans)
+
+	if strings.Contains(resp.Answer, "265") || strings.Contains(resp.Answer, "ffd9977ab2ef7071") {
+		t.Errorf("answer = %q, want no handle the run did not publish", resp.Answer)
+	}
+	lines := strings.Split(resp.Answer, "\n")
+	if !strings.HasSuffix(strings.TrimSpace(lines[0]), "[ID:0]") ||
+		!strings.HasSuffix(strings.TrimSpace(lines[1]), "[ID:1]") {
+		t.Errorf("answer = %q, want the cited passages numbered in the order the answer cites them", resp.Answer)
+	}
+	// The same passage cited twice keeps the same number, and the two unresolvable markers are gone.
+	if !strings.HasSuffix(strings.TrimSpace(lines[2]), "[ID:0]") {
+		t.Errorf("answer = %q, want a repeated passage to keep its number", resp.Answer)
+	}
+	if strings.Contains(lines[3], "[ID:") || strings.Contains(lines[4], "[ID:") {
+		t.Errorf("answer = %q, want the unresolvable markers dropped", resp.Answer)
+	}
+	if want := []string{"c-c", "c-a"}; !reflect.DeepEqual(kb.CiteChunkIDs, want) {
+		t.Errorf("CiteChunkIDs = %v, want %v (the passages the answer cites, in answer order)", kb.CiteChunkIDs, want)
+	}
+
+	// An answer that cites nothing is left exactly as written, and the registry stays the citation list.
+	bare := &RunResponse{}
+	useSessionAnswer(kb, bare, "关羽斩将甚多。")
+	if bare.Answer != "关羽斩将甚多。" {
+		t.Errorf("answer = %q, want it unchanged when nothing is cited", bare.Answer)
+	}
+}
+
+// TestAnAnswerThatNamesPassagesByIdsStillGetsCitations pins the fallback (see resolveLooseHandles).
+//
+// A DOCUMENT-LEVEL answer has no passage handle to write — metadata_search returns doc_ids and no
+// passages — so the model writes the id it was given. Measured 2026-09-22, two runs in a row came back
+// with zero citations (raw_markers=[], resolved_blocks=0) while every source the answer named was in
+// the pool: one answer wrote chunk ids out of a tool result, the other wrote `doc <id>`. The fallback
+// resolves both against the pool, and leaves an id the run never published exactly as written.
+func TestAnAnswerThatNamesPassagesByIdsStillGetsCitations(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	kb.Chunks = []map[string]any{
+		{"chunk_id": "6e9e890eb6d944fda75d71ed5e6f8802", "doc_id": "0ee41271ba9b42e9b73618054fc351c7", "content": "05_网络安全日志审计与电子证据保留规范"},
+		{"chunk_id": "28569a3e11e2490eb16c5bf415391f89", "doc_id": "057f5d7af5d743418e055ddef7b1e867", "content": "06_事件复盘与升级规则"},
+	}
+	kb.SessionEvidenceRefs = []string{"6e9e890eb6d944fda75d71ed5e6f8802", "28569a3e11e2490eb16c5bf415391f89"}
+
+	ans := "1. 日志审计规范（doc 0ee41271ba9b42e9b73618054fc351c7）\n" +
+		"2. 事件升级流程 `28569a3e11e2490eb16c5bf415391f89`\n" +
+		"3. 某篇未发布文档（doc deadbeefdeadbeefdeadbeefdeadbeef）"
+	resp := &RunResponse{}
+	useSessionAnswer(kb, resp, ans)
+
+	lines := strings.Split(resp.Answer, "\n")
+	// The replacement is a BARE [ID:n]: the model's own "doc" wording and its backticks go WITH the
+	// id, because the citation contract has no such form (citation_prompt.md: [ID:i], nothing else).
+	if got := strings.TrimSpace(lines[0]); got != "1. 日志审计规范（[ID:0]）" {
+		t.Errorf("line 1 = %q, want the doc id replaced by a bare citation number", got)
+	}
+	if got := strings.TrimSpace(lines[1]); got != "2. 事件升级流程 [ID:1]" {
+		t.Errorf("line 2 = %q, want the backticked chunk id replaced by a bare citation number", got)
+	}
+	if strings.Contains(resp.Answer, "0ee41271ba9b42e9b73618054fc351c7") ||
+		strings.Contains(resp.Answer, "28569a3e11e2490eb16c5bf415391f89") {
+		t.Errorf("answer = %q, want the resolved ids replaced by numbers, not echoed", resp.Answer)
+	}
+	// An id this run never published is left exactly as the model wrote it — prefix and all.
+	if !strings.Contains(lines[2], "doc deadbeefdeadbeefdeadbeefdeadbeef") {
+		t.Errorf("answer = %q, want an unpublished id left as written", resp.Answer)
+	}
+	// The doc id resolves to the first chunk of that document: the unit the client can open.
+	want := []string{"6e9e890eb6d944fda75d71ed5e6f8802", "28569a3e11e2490eb16c5bf415391f89"}
+	if !reflect.DeepEqual(kb.CiteChunkIDs, want) {
+		t.Errorf("CiteChunkIDs = %v, want %v (the passages the answer names, in answer order)", kb.CiteChunkIDs, want)
 	}
 }
 
@@ -4693,7 +3854,7 @@ func TestFanoutSearchMetadataChannelUsesCatalogFields(t *testing.T) {
 	}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
 
-	added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, true)
+	added, _ := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, true)
 
 	if added != 1 || len(st.KB.Chunks) != 1 {
 		t.Fatalf("added = %d, pool = %d; want the metadata channel's one hit", added, len(st.KB.Chunks))
@@ -4736,7 +3897,7 @@ func TestFanoutSearchSkipsMetadataChannelUnlessAsked(t *testing.T) {
 	}
 	st := &AgenticState{KB: &runtime.Kbinfos{}}
 
-	if added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, false); added != 0 {
+	if added, _ := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, false); added != 0 {
 		t.Errorf("added = %d, want 0 without the metadata channel", added)
 	}
 	if len(mdl.seen) != 0 {
@@ -4806,7 +3967,7 @@ func TestFanoutSearchGatesMetadataChannelOnFilterableFields(t *testing.T) {
 		}
 		st := &AgenticState{KB: &runtime.Kbinfos{}}
 
-		added := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, 60, true)
+		added, _ := FanoutSearch(ctx, deps, st, []string{"what is the Culdcept tower height"}, 8, true)
 		if added != c.want {
 			t.Errorf("%s: added = %d, want %d", c.name, added, c.want)
 		}
@@ -5020,10 +4181,76 @@ func TestSlotResearchSessionSurvivesMetadataSearchWithoutMetadata(t *testing.T) 
 	if len(retriever.calls) == 0 {
 		t.Fatalf("retriever calls = 0; a metadata-free dataset aborted the session instead of degrading to retrieval")
 	}
-	if mdl.calls < 3 {
-		t.Errorf("model calls = %d, want the session to have kept running to its own empty patch", mdl.calls)
+	// The call COUNT is this branch's own clock model, not upstream's: the session computes how many
+	// search turns the round's clock affords (pace measured, the answer's reserve subtracted), and with
+	// the 60s this fixture passes it affords ONE — so the turn that the metadata miss did not derail is
+	// spent on retrieval instead of on a third model call. What the fix owns is asserted above: the miss
+	// is a query-level miss, the session degrades to retrieval, and it never aborts.
+	if mdl.calls < 2 {
+		t.Errorf("model calls = %d, want the session to have continued past the metadata miss", mdl.calls)
 	}
 	if resolver.calls != 0 {
 		t.Errorf("push-down calls = %d, want none: an unknown key is rejected before the index is touched", resolver.calls)
+	}
+}
+
+// TestTheAnswerEvidenceIsWhatTheSessionWasShown pins the answer stage's evidence rule: the passages the run
+// SHOWED come first (the scan's delivered windows are material whether or not a tool call was spent on
+// them), the list has a CONSTANT size, and two passages that say the same thing take one slot.
+//
+// Measured 2026-09-21 (三国/关羽, one build, three runs): the answer enumerated members from the scan's
+// windows while its own evidence carried 10 / 176 / 299 blocks and cited 8 / 0 / 5 markers — the members'
+// windows were not in the list at all, so a member had no block behind it to cite.
+func TestTheAnswerEvidenceIsWhatTheSessionWasShown(t *testing.T) {
+	kb := &runtime.Kbinfos{}
+	var chunks []map[string]any
+	for i := 0; i <= answerEvidenceBlocks+10; i++ {
+		chunks = append(chunks, map[string]any{
+			"chunk_id": fmt.Sprintf("c%02d", i),
+			"doc_id":   "d1",
+			"content":  fmt.Sprintf("第%d段：手起一刀，斩将于马下。", i),
+		})
+	}
+	kb.Admit(func(p *runtime.PoolAdmitter) {
+		for _, c := range chunks {
+			p.Add(c)
+		}
+	})
+	// The scan's delivered windows: two passages of the pool, SHOWN to the session as numbered material.
+	kb.NoteScanWindows([]runtime.ScanWindow{{ChunkID: "c40"}, {ChunkID: "c39"}})
+	// The ranked order is the pool's own, so only the "shown" rule can put c40 first.
+	ranked := append([]map[string]any(nil), chunks...)
+
+	got := evidenceOrder(ranked, kb, answerEvidenceBlocks)
+	if len(got) != answerEvidenceBlocks {
+		t.Fatalf("evidence blocks = %d, want the constant %d", len(got), answerEvidenceBlocks)
+	}
+	if id := runtime.ChunkIDOf(got[0]); id != "c40" {
+		t.Errorf("first evidence block = %q, want the window the session was SHOWN (c40)", id)
+	}
+	if id := runtime.ChunkIDOf(got[1]); id != "c39" {
+		t.Errorf("second evidence block = %q, want the second shown window (c39)", id)
+	}
+	if blocks, _, candidates := kb.EvidenceSelection(); blocks != len(got) || candidates == 0 {
+		t.Errorf("recorded selection = %d block(s) of %d candidate(s), want the returned list",
+			blocks, candidates)
+	}
+
+	// The same passage twice is one slot; a passage that differs by a NAME is another member.
+	const same = "云长手起刀落，斩颜良于马下，众皆骇然。"
+	const other = "云长手起刀落，斩文丑于马下，众皆骇然。"
+	dup := &runtime.Kbinfos{}
+	dup.Admit(func(p *runtime.PoolAdmitter) {
+		p.Add(map[string]any{"chunk_id": "a", "content": same})
+		p.Add(map[string]any{"chunk_id": "b", "content": same})
+		p.Add(map[string]any{"chunk_id": "c", "content": other})
+	})
+	kept := evidenceOrder([]map[string]any{
+		{"chunk_id": "a", "content": same},
+		{"chunk_id": "b", "content": same},
+		{"chunk_id": "c", "content": other},
+	}, dup, answerEvidenceBlocks)
+	if len(kept) != 2 {
+		t.Errorf("kept = %d passage(s), want 2 (the repeat collapsed, the other member kept)", len(kept))
 	}
 }

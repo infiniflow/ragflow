@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 )
 
 // TestMergeSkipsAllWhenNoChunks: early return:
@@ -58,7 +57,7 @@ func TestMergeDedupsSameDocID(t *testing.T) {
 // TestChunkKeyUsesTextFallback pins that the dedup key reads the SAME alias chain
 // as chunkText (content_with_weight -> content -> text). Reading only the first
 // two made two id-less, text-only chunks from one document share the doc-level
-// fallback key, so Merge/MemoryAdd discarded distinct evidence.
+// fallback key, so Merge/memoryAdd discarded distinct evidence.
 func TestChunkKeyUsesTextFallback(t *testing.T) {
 	a := map[string]any{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}
 	b := map[string]any{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"}
@@ -100,14 +99,14 @@ func TestMergeKeepsDistinctTextOnlyChunks(t *testing.T) {
 // lossless memory store.
 func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
 	kb := &Kbinfos{}
-	MemoryAdd(kb, []map[string]any{
+	memoryAdd(kb, []map[string]any{
 		{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"},
 		{"text": "beta", "doc_id": "d1", "docnm_kwd": "doc"},
 	})
 	if len(kb.Memory) != 2 {
 		t.Fatalf("memory = %d, want 2 (distinct text-only evidence must not collapse)", len(kb.Memory))
 	}
-	MemoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
+	memoryAdd(kb, []map[string]any{{"text": "alpha", "doc_id": "d1", "docnm_kwd": "doc"}})
 	if len(kb.Memory) != 2 {
 		t.Fatalf("identical text must still dedup, memory = %d", len(kb.Memory))
 	}
@@ -120,20 +119,21 @@ func TestMemoryAddKeepsDistinctTextOnlyChunks(t *testing.T) {
 // Both invariants used to come for free from cooperative scheduling — an await-free admit
 // stretch cannot be preempted — so the same stretch has to be locked here.
 //
-// The pool starts one chunk short of the cap, and both sessions offer the SAME
-// first chunk. Whichever batch wins the lock pools it — once — and the cap then
-// stops every further chunk, so the assertions hold whatever the schedule does:
-// they fail only when the batches interleave (which is what an unlocked
-// check-then-append does: both sessions read 59 and both append).
+// Two sessions offer the SAME first chunk and then one chunk of their own. The shared chunk
+// must land exactly once — the dedup reads the LIVE pool, which is precisely what an
+// unlocked check-then-append gets wrong (both sessions would find it absent and both append)
+// — and BOTH private chunks must land: there is no ceiling to refuse them (see the note on
+// Kbinfos), so identity is the only thing the serialization has to protect.
 func TestKbinfosAdmitIsAtomic(t *testing.T) {
 	pool := &Kbinfos{}
-	for i := 0; i < evidencePoolCap-1; i++ {
+	const preload = 8
+	for i := 0; i < preload; i++ {
 		pool.Admit(func(p *PoolAdmitter) {
 			p.Add(map[string]any{"chunk_id": fmt.Sprintf("p%d", i)})
 		})
 	}
-	if len(pool.Chunks) != evidencePoolCap-1 {
-		t.Fatalf("fixture pool = %d chunks, want %d", len(pool.Chunks), evidencePoolCap-1)
+	if len(pool.Chunks) != preload {
+		t.Fatalf("fixture pool = %d chunks, want %d", len(pool.Chunks), preload)
 	}
 
 	var wg sync.WaitGroup
@@ -146,9 +146,6 @@ func TestKbinfosAdmitIsAtomic(t *testing.T) {
 					{"chunk_id": "shared"},
 					{"chunk_id": tag},
 				} {
-					if p.Full() {
-						continue
-					}
 					p.Add(c)
 				}
 			})
@@ -156,9 +153,9 @@ func TestKbinfosAdmitIsAtomic(t *testing.T) {
 	}
 	wg.Wait()
 
-	if len(pool.Chunks) != evidencePoolCap {
-		t.Errorf("pool = %d chunks, want exactly the cap %d: a serialized batch stops at the cap, an interleaved one overshoots",
-			len(pool.Chunks), evidencePoolCap)
+	if len(pool.Chunks) != preload+3 {
+		t.Errorf("pool = %d chunks, want %d: the shared chunk once and both private ones — nothing is refused for want of room",
+			len(pool.Chunks), preload+3)
 	}
 	counts := map[string]int{}
 	for _, c := range pool.Chunks {
@@ -168,8 +165,8 @@ func TestKbinfosAdmitIsAtomic(t *testing.T) {
 	if counts["shared"] != 1 {
 		t.Errorf("chunk %q pooled %d time(s), want exactly 1: the pool must be deduped against its LIVE contents", "shared", counts["shared"])
 	}
-	if counts["a"]+counts["b"] != 0 {
-		t.Errorf("session-private chunks were pooled (%d a, %d b) although only one slot was free", counts["a"], counts["b"])
+	if counts["a"] != 1 || counts["b"] != 1 {
+		t.Errorf("session-private chunks = (%d a, %d b), want (1, 1)", counts["a"], counts["b"])
 	}
 }
 
@@ -199,186 +196,4 @@ func TestToolCacheIsConcurrencySafe(t *testing.T) {
 			t.Errorf("cache[%q] = (%+v, %v), want the stored outcome", key, oc, ok)
 		}
 	}
-}
-
-// TestPoolNoveltyExemptsOnlyTheUnansweredProbeTerms pins the cap EXEMPTION: a
-// FULL pool still takes the passage that answers a probe term nothing in the pool
-// has reached yet — one seat per term — and refuses everything else exactly as the
-// cap always did.
-//
-// The reason the exemption exists is that a probe's per-name window is the batch's
-// RESULT rather than one more passage: drop it and "this name was found here"
-// degrades into "nothing new", which the model reads as "not a member".
-func TestPoolNoveltyExemptsOnlyTheUnansweredProbeTerms(t *testing.T) {
-	newFullPool := func() *Kbinfos {
-		pool := &Kbinfos{}
-		for i := 0; i < evidencePoolCap; i++ {
-			pool.Admit(func(p *PoolAdmitter) {
-				p.Add(map[string]any{"chunk_id": fmt.Sprintf("p%d", i), "content": "already pooled prose"})
-			})
-		}
-		return pool
-	}
-	admit := func(pool *Kbinfos, q string, chunks ...map[string]any) (admitted int) {
-		pool.Admit(func(p *PoolAdmitter) {
-			novel := p.Novelty(probeTerms(q))
-			for _, c := range chunks {
-				if p.Full() && !novel.Admits(c) {
-					continue
-				}
-				if p.Add(c) {
-					admitted++
-				}
-			}
-		})
-		return admitted
-	}
-
-	// A probe whose name the pool cannot answer: the window is admitted.
-	pool := newFullPool()
-	window := map[string]any{"chunk_id": "w1", "content": "荀正 被关公一刀斩于马下"}
-	if got := admit(pool, "车胄|荀正|管亥", window); got != 1 {
-		t.Fatalf("admitted = %d, want 1 (the pool cannot answer 荀正)", got)
-	}
-	if len(pool.Chunks) != evidencePoolCap+1 {
-		t.Fatalf("pool = %d, want %d (one seat for one unanswered term)", len(pool.Chunks), evidencePoolCap+1)
-	}
-	// The same term is answered now: a second window carrying only it is refused,
-	// so one term buys one seat and not a batch of them.
-	if got := admit(pool, "车胄|荀正|管亥", map[string]any{"chunk_id": "w2", "content": "荀正 又出现了一次"}); got != 0 {
-		t.Fatalf("admitted = %d, want 0: 荀正 is answered now", got)
-	}
-	// A query that is not a PROBE states no list of individuals, so it gets no
-	// exemption at all — the plain cap behaviour.
-	if got := admit(pool, "车胄", map[string]any{"chunk_id": "w3", "content": "车胄 守徐州"}); got != 0 {
-		t.Fatalf("admitted = %d, want 0: a non-probe query gets no exemption", got)
-	}
-	if got := admit(pool, "车胄|管亥", map[string]any{"chunk_id": "w4", "content": "管亥 围北海"}); got != 1 {
-		t.Fatalf("admitted = %d, want 1 (管亥 is still unanswered)", got)
-	}
-	// A pool that already carries the term leaves the cap in charge.
-	carried := newFullPool()
-	carried.Admit(func(p *PoolAdmitter) { p.Add(map[string]any{"chunk_id": "seed", "content": "管亥 围北海"}) })
-	if got := admit(carried, "管亥", map[string]any{"chunk_id": "w5", "content": "管亥 围北海 续"}); got != 0 {
-		t.Fatalf("admitted = %d, want 0: the pool already carries 管亥", got)
-	}
-	_ = carried
-
-	// The exemption is BOUNDED: past cap+slack even an unanswered term is refused.
-	bounded := newFullPool()
-	bounded.novelAdmitted = evidencePoolNoveltySlack
-	bounded.Chunks = append(bounded.Chunks, make([]map[string]any, evidencePoolNoveltySlack)...)
-	if got := admit(bounded, "杨龄", map[string]any{"chunk_id": "w6", "content": "杨龄 出战"}); got != 0 {
-		t.Fatalf("admitted = %d, want 0: the novelty slack is exhausted", got)
-	}
-}
-
-// TestReachedTermsLedgerHoldsTheMembersWithTheirEvidence pins the confirmed-member
-// ledger: it is what the rewrite context renders (the passage behind each name) and
-// what lets the loop ask whether the LIST is growing rather than whether the pool
-// got bigger.
-func TestReachedTermsLedgerHoldsTheMembersWithTheirEvidence(t *testing.T) {
-	pool := &Kbinfos{}
-	pool.RecordReachedTerm("荀正", "w1")
-	pool.RecordReachedTerm("杨龄", "w2")
-	pool.RecordReachedTerm("荀正", "w3") // same name, later passage: must not duplicate
-
-	got := pool.ReachedTerms()
-	if len(got) != 2 {
-		t.Fatalf("ReachedTerms = %v, want one entry per name", got)
-	}
-	if got[0].Term != "荀正" || got[0].ChunkID != "w1" {
-		t.Errorf("first entry = %+v, want the name with the passage that proved it", got[0])
-	}
-	if got[1].Term != "杨龄" || got[1].ChunkID != "w2" {
-		t.Errorf("second entry = %+v", got[1])
-	}
-	// Blank input records nothing (a seat without an id is not evidence).
-	pool.RecordReachedTerm("", "w4")
-	pool.RecordReachedTerm("管亥", "")
-	if n := len(pool.ReachedTerms()); n != 2 {
-		t.Errorf("entries = %d, want 2: an entry needs both a name and its passage", n)
-	}
-	// The ledger is bounded, and a nil pool is safe (the graph may run without one).
-	for i := 0; i < reachedTermsMax+5; i++ {
-		pool.RecordReachedTerm(fmt.Sprintf("n%d", i), fmt.Sprintf("c%d", i))
-	}
-	if n := len(pool.ReachedTerms()); n != reachedTermsMax {
-		t.Errorf("entries = %d, want the cap %d", n, reachedTermsMax)
-	}
-	var nilPool *Kbinfos
-	nilPool.RecordReachedTerm("x", "y")
-	if len(nilPool.ReachedTerms()) != 0 {
-		t.Error("a nil pool must record nothing")
-	}
-}
-
-// TestRecordingInsideTheAdmitBatchDoesNotDeadlock pins the hardened ledger: the
-// search record lives behind its OWN mutex, so a batch that answered a probe can
-// write the answer down while the pool lock is held.
-//
-// This is the exact shape that hung a run (fixrecall2, 2026-09-15): the recorder
-// used to take the same mutex Admit holds, and because Go mutexes are not
-// reentrant the goroutine parked on a lock it already held — no I/O, no CPU, no
-// log line, and a mutex wait ignores context cancellation, so the run never
-// returned. The timeout here turns that hang into a failure message.
-func TestRecordingInsideTheAdmitBatchDoesNotDeadlock(t *testing.T) {
-	k := &Kbinfos{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		k.Admit(func(p *PoolAdmitter) {
-			p.Add(map[string]any{"chunk_id": "w1", "content": "荀正 被关公一刀斩于马下"})
-			// Both recorders run under the pool lock on purpose.
-			k.RecordReachedTerm("荀正", "w1")
-			k.RecordProbedAbsent("管亥")
-		})
-	}()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("recording from inside the admit batch deadlocked: the ledger must not share the pool's mutex")
-	}
-
-	if got := k.ReachedTerms(); len(got) != 1 || got[0].Term != "荀正" || got[0].ChunkID != "w1" {
-		t.Errorf("ReachedTerms = %+v, want the member recorded with its passage", got)
-	}
-	if absent := k.ProbedAbsentTerms(); len(absent) != 1 || absent[0] != "管亥" {
-		t.Errorf("ProbedAbsent = %v, want 管亥", absent)
-	}
-	// The pool itself is unaffected by the ledger's separate lock.
-	if len(k.Chunks) != 1 {
-		t.Errorf("pool = %d chunk(s), want the admitted passage", len(k.Chunks))
-	}
-}
-
-// TestLedgerAccessorsAreIndependentOfThePoolLock pins the other direction: a
-// reader of the record never waits for a batch that is in flight, which is what
-// lets the rewrite context be rendered while sessions are still admitting.
-func TestLedgerAccessorsAreIndependentOfThePoolLock(t *testing.T) {
-	k := &Kbinfos{}
-	k.RecordReachedTerm("华雄", "w1")
-
-	released := make(chan struct{})
-	go func() {
-		k.Admit(func(p *PoolAdmitter) {
-			<-released // hold the pool lock until the reads below are done
-		})
-	}()
-	// Give the batch a moment to take the pool lock.
-	time.Sleep(50 * time.Millisecond)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = k.ReachedTerms()
-		_ = k.ProbedAbsentTerms()
-	}()
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		close(released)
-		t.Fatal("reading the record blocked on the pool lock: the accessors must not need it")
-	}
-	close(released)
 }

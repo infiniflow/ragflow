@@ -21,12 +21,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/tokenizer"
@@ -72,7 +76,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 		if i > 0 {
 			ev.WriteString("\n")
 		}
-		fmt.Fprintf(&ev, "[%d] %s", i+1, truncateRunes(runtime.ChunkTextOf(chunks[i]), draftChunkChars))
+		fmt.Fprintf(&ev, "[%d] %s", i+1, runtime.TruncateRunes(runtime.ChunkTextOf(chunks[i]), draftChunkChars))
 	}
 	evidence := ev.String()
 	if evidence == "" {
@@ -82,7 +86,7 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	// no model -> the raw evidence, capped at 4000.
 	mdl := deps.Model // the innermost chat model.
 	if mdl == nil {
-		return truncateRunes(evidence, draftFallbackChars)
+		return runtime.TruncateRunes(evidence, draftFallbackChars)
 	}
 
 	// The design injects the latest research_feedback as a "focus", but that state field is
@@ -114,8 +118,8 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	if err != nil {
 		// a failed composition degrades to the raw evidence
 		// (capped at 4000, unlike the composed draft's 6000).
-		_LOG.Printf("[Draft] fallback composition failed; using snippet text: %v", err)
-		return truncateRunes(evidence, draftFallbackChars)
+		common.Warn("draft: fallback composition failed, using snippet text", zap.Error(err))
+		return runtime.TruncateRunes(evidence, draftFallbackChars)
 	}
 	answer := ""
 	if reply != nil {
@@ -124,8 +128,9 @@ func ComposeFallbackDraft(ctx context.Context, deps RAGTools, st *AgenticState) 
 	if answer == "" {
 		answer = evidence
 	}
-	// (ans or evidence)[:6000].
-	return truncateRunes(answer, draftMaxChars)
+	// (ans or evidence)[:6000] — the draft's block bound comes from the delivery table (see
+	// runtime.StageDraft), so it is the same number the rest of the run reads.
+	return runtime.TruncateRunes(answer, runtime.StageChars(runtime.StageDraft))
 }
 
 // NaiveRAG: answer with one retrieve pass
@@ -210,20 +215,59 @@ func runDirectFallback(ctx context.Context, deps RAGTools, req runtime.RunReques
 // (kb_prompt / citation_prompt) live in internal/rag/prompts; the system-prompt texts live
 // in the runtime package (report_prompt.go).
 
+// THE EVIDENCE NUMBERS ARE ONE SET, and they are constants the way a fixed pipeline's are.
+//
+//	opening width     fanoutBM25TopN 200 / fanoutHybridTopN 60 / fanoutSemanticQuota 8 / rawSnippetQuota 400
+//	planner queries   8-12 first_queries (action_initialize_state.md)      ← coupled to the opening width
+//	scan delivery     scanOutTotalChars 40000 (runtime/scan_match_any.go)  ← the session's page
+//	answer evidence   answerEvidenceBlocks 30 × answerEvidenceChunkRunes 600, inside evidenceBudgetTokens
+//
+// Why the answer's evidence is a COUNT and not a budget: measured 2026-09-21 (三国/关羽, same question, three
+// runs of one build) rendered_blocks went 10 → 176 → 299 and the answer's citation markers went 8 → 0 → 5
+// with it — the model's citation discipline is a function of how much evidence it is handed, and the pool's
+// size decided that. Same measurement, same day: the enumerated members had no block to cite at all in two
+// of the three runs (the material the session was SHOWN — the scan's delivered windows — was not part of
+// the answer's evidence; see evidenceOrder).
 const (
-	// evidenceBudgetTokens is the token ceiling of the evidence block.
-	// The compose path still fits the whole prompt to the model window
-	// (AnswerDeps.MaxLength / chat.FitMessages), so this is an upper bound.
-	evidenceBudgetTokens = 80000
+	// evidenceBudgetTokens is the token ceiling of the evidence block, sized so the answerEvidenceBlocks
+	// below RENDER WHOLE (30 × 600 CJK runes ≈ 18k tokens plus block headers). The compose path still fits
+	// the whole prompt to the model window (AnswerDeps.MaxLength / chat.FitMessages), so this is an upper
+	// bound — but it is now a bound the SELECTION respects, not one the pool decides.
+	//
+	// It is deliberately NOT 80000: at that ceiling the evidence block carried the whole pool (176-299
+	// blocks) and citation compliance collapsed (see above). The evidence is a hand-picked, deduped list
+	// now, so a generous ceiling only re-opens the hole it was raised for.
+	evidenceBudgetTokens = 24000
+	// answerEvidenceBlocks is how many passages the answer's evidence carries. It is a CONSTANT count: the
+	// answer prompt must not grow with the pool, because everything downstream (prompt fit, marker
+	// resolution, the reader's reference list) is sized from it.
+	answerEvidenceBlocks = 30
+	// answerEvidenceChunkRunes caps ONE evidence block. 600 rather than a 240-rune snapshot, because the
+	// complaint a fragment earns is real: measured 2026-09-21, the answer read "the materials are only
+	// scattered fragments" while 166 windows were in hand — the windows were 240-rune cuts. 600 is the
+	// size band a same-kind pipeline merges its contexts to (350-850).
+	answerEvidenceChunkRunes = 600
 	// evidencePoolQuota: claim pseudo-chunk
 	// cap across the whole first prefetch.
 	evidencePoolQuota = 24
-	// rawSnippetQuota: the raw-chunk
-	// admission budget inside the fan-out, so chunk channels cannot crowd out
-	// the denser evidence rows.
-	rawSnippetQuota = 30
-	// citeChunkCap caps chunks rendered as citation reference.
-	citeChunkCap = 6
+	// rawSnippetQuota: the raw-chunk admission budget inside the fan-out, so chunk channels
+	// cannot crowd out the denser evidence rows.
+	//
+	// The pool has NO ceiling (see runtime/kbinfos.go) and nothing renders it whole (the session's seed
+	// and the closing composition are both capped), so this number never bought prompt budget — it only
+	// decided how much of the opening's recall reached the pool, and the pool is what the session can
+	// still reach once its own calls are spent.
+	//
+	// 400, and it is coupled to the query count: the planner is asked for 8-12 first_queries (see
+	// action_initialize_state.md), so a 30-passage budget is ~3 passages per query and a question whose
+	// evidence is one table loses it. Measured 2026-09-21 on FRAMES: 8-12 queries with a 30-passage
+	// budget scored 0.700, the same queries with 400 scored 0.850 (and 1-4 queries with 30 — the
+	// a2110c7af spec — 0.900). The budget is the ceiling on how DEEP one query's recall can reach;
+	// changing the query count without it starves every query in the plan.
+	rawSnippetQuota = 400
+	// citeChunkCap used to cap the chunks rendered as the citation reference; the answer's evidence is now
+	// one selectable list with one bound (answerEvidenceBlocks), so the reference and the blocks cannot
+	// disagree about which passages exist (see evidenceOrder).
 	// answerTimeoutS bounds the answer-composition call.
 	answerTimeoutS = 150.0
 	// naiveEvidenceChunkCap caps evidence chunks in the naive path.
@@ -244,9 +288,11 @@ const (
 	// graph: the maximum number of node visits before the graph aborts. Go has
 	// no graph runtime, so the loop counts its own node visits against it.
 	AgenticRecursionLimit = 60
-	// agenticRoundVisits is the number of node visits one research round costs:
-	// rag_agent → draft → sca.
-	agenticRoundVisits = 3
+	// agenticRoundVisits is the number of node visits one research round costs: ONE. A round
+	// used to cost three visits (rag_agent → draft → sca), so counting one would have let the
+	// run do roughly 3x the work before the guard tripped — and the guard exists to bound WORK,
+	// which is now a single node.
+	agenticRoundVisits = 1
 	// lowRecursionLimitBase is the floor of `max(25, max_loops * 8)` for the non-agentic
 	// graph.
 	lowRecursionLimitBase = 25
@@ -256,7 +302,7 @@ const (
 // (runtime/report_prompt.go) and re-used here via the runtime import rather than
 // duplicated.
 
-// AnswerDeps are the dependencies of ComposeAnswer.
+// AnswerDeps are the dependencies of ComposeAnswerWith.
 type AnswerDeps struct {
 	// Model drives the composition call.
 	Model runtime.SessionModel
@@ -283,11 +329,6 @@ type AnswerDeps struct {
 	UserImages []string
 }
 
-// ComposeAnswerWith is ComposeAnswer with the third no-evidence term: `no_evidence =
-// abstain or empty_result or not chunks`, used both for the empty_response short circuit
-// and for the degradation instructions in the prompt. The extra `emptyResult` term is the
-// agentic loop's own "nothing was found" signal, distinct from "we abstained" and from
-// "the pool happens to be empty".
 type finalizeAnnouncedKey struct{}
 
 // markFinalizeAnnounced records that [Finalize] has been reported for this run's
@@ -302,6 +343,221 @@ func finalizeAnnounced(ctx context.Context) bool {
 	return v
 }
 
+// sessionAnswer returns the answer the RESEARCH SESSION wrote, when it is usable: the session
+// that read the passages is the answerer (see the design's R2), so its text IS the answer.
+//
+// It exists as its own function because there are TWO composition entry points — the streaming
+// one (ComposeAnswerStream) and the one-shot one (ComposeAnswerWith) — and the check used to
+// live in only one of them. That is how 15 of 18 answered requests had their session answer
+// thrown away: production takes the streaming path (deps.AnswerSink != nil), which had no such
+// branch, so the run's real answer — written against passages the model had read — was replaced
+// by a composition call that had read none of them, and every citation was then decided by the
+// handful of blocks that call happens to render (measured 2026-09-20: rendered_blocks=6 while
+// the pool held up to 213 passages). This helper is consulted by the CALLER, before it picks a
+// path, so both paths get it.
+//
+// The gate is the POOL, not the caller's empty_result flag: that flag is the compose prompt's
+// no-evidence HEDGE, and the graph sets it TRUE by construction on every round (see the note at
+// the formalize_answer node), so gating on it suppressed this answer everywhere — the fix above
+// still logged nothing while 20 of 20 rounds wrote an answer (measured 2026-09-20, 19:07 run:
+// "Using the answer the research session wrote" 0, compose ran 22 times). A session answer
+// cannot exist without evidence anyway: the registry it cites is built from the passages it was
+// shown, so `len(kb.Chunks) == 0` is exactly the case where it must not stand.
+//
+// Returning the text is not enough: the caller must also publish the session's own registry as
+// the citation list (see useSessionAnswer), because the [ID:n] markers the session wrote index
+// into the numbers it was shown.
+func sessionAnswer(kb *runtime.Kbinfos, abstain bool) (string, bool) {
+	if kb == nil || abstain || len(kb.Chunks) == 0 {
+		return "", false
+	}
+	ans := strings.TrimSpace(kb.SessionAnswer)
+	if ans == "" {
+		return "", false
+	}
+	return ans, true
+}
+
+// sessionAnswerBlocked says WHY a written session answer is not being used, for the log. Empty
+// means "there was no session answer to use".
+func sessionAnswerBlocked(kb *runtime.Kbinfos, abstain bool) string {
+	if kb == nil || strings.TrimSpace(kb.SessionAnswer) == "" {
+		return ""
+	}
+	switch {
+	case abstain:
+		return "the run abstained"
+	case len(kb.Chunks) == 0:
+		return "the evidence pool is empty"
+	}
+	return ""
+}
+
+// citationIndexRE matches a citation marker the model wrote, capturing whatever it put inside.
+var citationIndexRE = regexp.MustCompile(`(\s*)\[ID[:：]\s*([^\]]*?)\s*\]`)
+
+// looseHandleRE matches a source reference the model may write where a [ID:n] handle belongs: a
+// chunk id (16 hex) or a document id (32 hex) — bare, in backticks, or introduced by "doc" /
+// "document" — which is how a tool result and metadata_search print them (measured 2026-09-22:
+// “ `6e9e890eb6d944fda75d71ed5e6f8802` “ and `doc 0ee41271ba9b42e9b73618054fc351c7`).
+//
+// The optional prefix and the backticks are INSIDE the match on purpose: the replacement has to be a
+// bare [ID:n]. Matching only the id left the model's own wording in place ("（doc [ID:0]）"), and the
+// delivery contract has no such thing as a "doc" citation — only [ID:i] (see citation_prompt.md).
+//
+// The 32-hex alternative comes first so a document id is not read as its own first half, and the
+// boundaries keep a longer hex run from being cut into pieces.
+var looseHandleRE = regexp.MustCompile("(?i)`?\\b(?:documents?|docs?)?\\s*[:：]?\\s*([0-9a-f]{32}|[0-9a-f]{16})\\b`?")
+
+// resolveLooseHandles is the fallback for an answer that cites NOTHING the registry can resolve.
+//
+// Why it exists (measured 2026-09-22, two runs in a row on the same assistant): the contract asks the
+// model to put "the handle of the passage behind a fact" — the [ID:n] a seed block prints, or the ref
+// number a tool result prints — and the model wrote something else instead. The first run answered a
+// comparison question and wrote the raw chunk id out of a tool result (`6e9e890eb6d944fda75d71ed5e6f8802`);
+// the second answered a DOCUMENT-LEVEL question ("which documents were indexed on 2026-09-20") and wrote
+// `doc 0ee41271ba9b42e9b73618054fc351c7` beside a `[来源：metadata_search 结果]` tag. Both are honest
+// source references and both resolved to nothing: the seed's handles cover PASSAGES, while metadata_search
+// returns doc_ids and no passages at all — so a document-level answer has no handle to write, and the user
+// was shown an answer with zero citations (citation markers: {"raw_markers": [], "resolved_blocks": 0}).
+//
+// The ids are therefore matched back against the POOL: a chunk id resolves to itself, a doc id to the
+// first chunk of that document (the unit the client can open). ONLY ids the pool actually holds are
+// accepted — the same rule the [ID:n] path applies, where a marker naming no published passage is
+// dropped — and the id in the text is rewritten to the compact number the client indexes, so the
+// reader gets a citation it can click rather than a uuid it cannot.
+//
+// It runs only when nothing resolved the proper way (see useSessionAnswer): an answer that cites by
+// handle is never touched by it.
+func resolveLooseHandles(kb *runtime.Kbinfos, ans string) (string, []string) {
+	if kb == nil || ans == "" {
+		return ans, nil
+	}
+	chunks := kb.Chunks
+	if len(chunks) == 0 {
+		return ans, nil
+	}
+	byChunkID := make(map[string]map[string]any, len(chunks))
+	byDocID := make(map[string]map[string]any, len(chunks))
+	for _, c := range chunks {
+		if id := runtime.ChunkIDOf(c); id != "" {
+			if _, seen := byChunkID[id]; !seen {
+				byChunkID[id] = c
+			}
+		}
+		if d := runtime.DocIDOf(c); d != "" {
+			if _, seen := byDocID[d]; !seen {
+				byDocID[d] = c
+			}
+		}
+	}
+	cited := make([]string, 0, 4)
+	order := make(map[string]int, 4)
+	out := looseHandleRE.ReplaceAllStringFunc(ans, func(m string) string {
+		sub := looseHandleRE.FindStringSubmatch(m)
+		if len(sub) < 2 {
+			return m
+		}
+		id := strings.ToLower(strings.TrimSpace(sub[1]))
+		c, ok := byChunkID[id]
+		if !ok {
+			c, ok = byDocID[id]
+		}
+		if !ok {
+			// An id this run never published: leave it as the model wrote it. Nothing is dropped
+			// here — this fallback adds citations, it does not remove text.
+			return m
+		}
+		cid := runtime.ChunkIDOf(c)
+		if cid == "" {
+			return m
+		}
+		k, seen := order[cid]
+		if !seen {
+			k = len(cited)
+			order[cid] = k
+			cited = append(cited, cid)
+		}
+		return fmt.Sprintf("[ID:%d]", k)
+	})
+	return out, cited
+}
+
+// useSessionAnswer installs the session's answer with the handles the model cited, RENUMBERED COMPACTLY.
+//
+// The model cites with the handles the run printed beside its evidence ([ID:k] — the seed's numbering,
+// which runs over everything the scan retrieved, 265 of them in one 三国/关羽 run). Those numbers belong
+// to the RETRIEVAL, not to the answer: an answer that rests on sixteen passages should not carry
+// [ID:265] in its prose. So the code does one mechanical thing — the first passage the ANSWER cites
+// becomes [ID:0], the next passage it has not cited yet [ID:1], and so on — and kb.CiteChunkIDs is that
+// list, in that order, which is the list the client resolves the markers against.
+//
+// The handle is not inferred from the prose: the model says which passage each claim rests on (that is
+// what the handle it wrote IS), and a marker naming no passage this run published is dropped. ONE
+// fallback runs before an answer is written off — resolveLooseHandles, for the case where the only
+// source references the model could write are chunk ids or doc ids (a document-level question has no
+// passage handle to write). An answer whose references resolve neither way still gets the registry.
+func useSessionAnswer(kb *runtime.Kbinfos, resp *RunResponse, ans string) {
+	if kb != nil {
+		refs := kb.SessionEvidenceRefs
+		var cited []string
+		compact := map[string]int{}
+		ans = citationIndexRE.ReplaceAllStringFunc(ans, func(m string) string {
+			sub := citationIndexRE.FindStringSubmatch(m)
+			if len(sub) < 3 {
+				return ""
+			}
+			space := sub[1]
+			n, err := strconv.Atoi(strings.TrimSpace(sub[2]))
+			if err != nil || n < 0 || n >= len(refs) {
+				// Not a handle this run published: a chunk id, a figure, a number that names nothing.
+				return ""
+			}
+			id := refs[n]
+			k, seen := compact[id]
+			if !seen {
+				k = len(cited)
+				compact[id] = k
+				cited = append(cited, id)
+			}
+			return space + fmt.Sprintf("[ID:%d]", k)
+		})
+		if len(cited) > 0 {
+			kb.CiteChunkIDs = cited
+		} else if looseAns, loose := resolveLooseHandles(kb, ans); len(loose) > 0 {
+			// Nothing resolved as a handle, but the answer names passages or documents by their own
+			// ids — the shape a document-level question produces (see resolveLooseHandles). Take
+			// them, rather than publish a citation list that no marker in the text points at.
+			//
+			// Said out loud, because this path is otherwise INVISIBLE: the chat pipeline's citation
+			// line reports the markers the model wrote, and on this path it wrote none — so without
+			// this line the run looks like (and used to be) an answer with zero citations.
+			common.Info("citations: no [ID:n] handle resolved, resolving named ids against the pool instead",
+				zap.Int("ids", len(loose)))
+			ans = looseAns
+			kb.CiteChunkIDs = loose
+		} else {
+			kb.CiteChunkIDs = append([]string(nil), refs...)
+		}
+	}
+	if resp != nil {
+		resp.Answer = ans
+	}
+}
+
+// ComposeAnswerWith turns the gathered evidence into a grounded, cited answer.
+//
+// Behaviour, in order:
+//  1. no evidence + configured empty_response → return it WITHOUT calling the LLM;
+//  2. rank chunks by similarity, keep the top citeChunkCap as citation reference;
+//  3. render the evidence block under the token budget (kb_prompt);
+//  4. prepend the fact-preserving pre_summary (the SCA-reviewed draft) when set;
+//  5. call the model with FINAL_ANSWER_SYSTEM + the composed user content.
+//
+// "No evidence" is three distinct terms, not one: `abstain` is the run's own decision,
+// `emptyResult` is the agentic loop's "nothing was found" signal, and an empty pool is the
+// dataset happening to return nothing. All three steer the prompt's degradation
+// instructions; only the first two are the run's own verdicts.
 func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos, question string, partial, abstain, emptyResult bool) AnswerResult {
 	logger := deps.Logger
 	if logger == nil {
@@ -311,6 +567,25 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	if kb != nil {
 		chunks = kb.Chunks
 	}
+
+	// The session that read the evidence writes the answer (see the design's R2). When it did,
+	// that text IS the answer: composing again would hand the question to a model that never saw
+	// the passages, and it would have to re-derive — by similarity, after the fact — the [ID:n]
+	// markers the session wrote against the ref numbers it was actually shown. The registry the
+	// session built is handed over instead, so its own citations resolve verbatim.
+	if ans, ok := sessionAnswer(kb, abstain); ok {
+		useSessionAnswer(kb, nil, ans)
+		step(ctx, logger, "Composing the answer",
+			"Using the answer the research session wrote (%d character(s)); %s in the citation registry.",
+			utf8.RuneCountInString(ans), runtime.CountOf(len(kb.CiteChunkIDs), "passage"))
+		return AnswerResult{Answer: ans}
+	}
+	if why := sessionAnswerBlocked(kb, abstain); why != "" {
+		// Silence here is what hid the two bugs above: a written answer that is not used must say
+		// so, and say why, on the one line a reader has.
+		logger.Printf("[Composing the answer] the session's answer will not stand (%s); composing instead.", why)
+	}
+
 	started := time.Now()
 	// The kickoff step is suppressed when the graph already reported [Finalize]
 	// (finalizeAnnounced): the verdict and the evidence have been said, and a line
@@ -347,15 +622,15 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 	prompt := deps.answerPromptWithEvidence(kb, question, partial, noEvidence)
 
 	// 3. Call the model.
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
-		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
-		truncateRunes(record, 3000))
+		runtime.TruncateRunes(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		runtime.TruncateRunes(record, 3000))
 
 	logger.Printf("[Formalize][pre_summary] question=%q pre_summary_len=%d evidence_len=%d\npre_summary=%q",
-		trunc(question, 160), len(preSummary), len(prompt.user), truncateRunes(preSummary, 3000))
+		runtime.TruncateRunes(question, 160), len(preSummary), len(prompt.user), runtime.TruncateRunes(preSummary, 3000))
 
 	// The composed prompt is fitted ONCE before the call, bounded by the smaller of the
 	// model's window and the evidence budget: msg[0] is the system turn, msg[-1] the user
@@ -384,12 +659,12 @@ func ComposeAnswerWith(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos
 		// developer log line stays byte-for-byte what it was (the detail half of
 		// StageLineDetail).
 		summary := providerErrorSummary(err)
-		runtime.StepsFrom(ctx).StageLineDetail(logger, composeStage,
+		runtime.StepsFrom(ctx).StageLineDetail(composeStage,
 			"Composing the answer failed: "+summary,
 			fmt.Sprintf("composition failed: %v", err))
 		return AnswerResult{Answer: errorAnswerText(err), Failed: true}
 	}
-	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
+	answer := cleanAnswer(reply.Content)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}
 }
@@ -458,7 +733,7 @@ const (
 		"sources are insufficient, and do not answer from general knowledge.\n"
 )
 
-// ComposeAnswerStream is ComposeAnswer for models that can emit incrementally:
+// ComposeAnswerStream is ComposeAnswerWith for models that can emit incrementally:
 // it renders the same prompt, forwards each piece as it arrives, and returns the
 // assembled answer. A streaming failure is returned so the caller can fall back
 // to the one-shot call.
@@ -503,10 +778,10 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	// reports the record block the answer actually carried.
 	record := composedRecord(kb)
 	logger.Printf("[Formalize][record] question=%q record_len=%d draft_summary_len=%d evidence_len=%d using=%s\nrecord=%q",
-		trunc(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
-		truncateRunes(record, 3000))
+		runtime.TruncateRunes(question, 160), len(record), len(preSummary), len(prompt.user), recordSource(record),
+		runtime.TruncateRunes(record, 3000))
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	// Same prompt fit as the one-shot path: composition runs once and streams from the
@@ -539,51 +814,9 @@ func ComposeAnswerStream(ctx context.Context, deps AnswerDeps, model runtime.Str
 	if reply == nil {
 		return AnswerResult{Answer: "", Failed: true}, errors.New("streaming composition returned no reply")
 	}
-	answer := citeAnchoredMembers(cleanAnswer(reply.Content), kb)
+	answer := cleanAnswer(reply.Content)
 	logComposeDone(logger, started, answer, len(chunks))
 	return AnswerResult{Answer: answer, Partial: partial}, nil
-}
-
-// citeAnchoredMembers attaches the citation of every enumerated member the answer states without
-// one (see runtime.CiteAnchoredMembers). Nil-safe: a run that enumerated nothing, or whose members
-// never reached the published evidence list, comes back unchanged.
-func citeAnchoredMembers(answer string, kb *runtime.Kbinfos) string {
-	if kb == nil {
-		return answer
-	}
-	refs := kb.AnchoredRefs()
-	// textOf lets the step verify a citation against the passage it would open: a marker is
-	// written only for a passage that actually contains the words the answer quotes.
-	textOf := func(id string) string {
-		if c := kb.ChunkByID(id); c != nil {
-			return runtime.ChunkTextOf(c)
-		}
-		return ""
-	}
-	out, overridden := runtime.CitedAnchoredMembers(answer, refs, kb.CiteChunkIDs, textOf)
-	if len(refs) > 0 {
-		// One line per run that says which member was given which marker, and which passage that
-		// marker holds: "the citation opens a passage that does not state this member" is only
-		// answerable from this pairing, and without it a marker and its passage look the same
-		// whether or not they belong together.
-		pos := map[string]int{}
-		for i, id := range kb.CiteChunkIDs {
-			if _, dup := pos[id]; !dup {
-				pos[id] = i
-			}
-		}
-		pairs := make([]string, 0, len(refs))
-		for _, r := range refs {
-			if i, ok := pos[strings.TrimSpace(r.ChunkID)]; ok {
-				pairs = append(pairs, fmt.Sprintf("%s->%d(%s)", r.Name, i, r.ChunkID))
-				continue
-			}
-			pairs = append(pairs, fmt.Sprintf("%s->(not-published)", r.Name))
-		}
-		_LOG.Printf("[Citation] anchored %d member(s), rewrote %d line(s); %s",
-			len(refs), overridden, strings.Join(pairs, " "))
-	}
-	return out
 }
 
 // composeSystem builds the system prompt, applying the precedence rules.
@@ -666,7 +899,7 @@ func cleanAnswer(s string) string {
 // (lines 1555-1568): one retrieve pass, then a single composed answer over the
 // top chunks.
 //
-// Unlike ComposeAnswer this does NOT use kb_prompt and does NOT use
+// Unlike ComposeAnswerWith this does NOT use kb_prompt and does NOT use
 // FinalAnswerSystem — the naive path renders a flat "[i] content" list truncated to the
 // first 1500 chars of each chunk, capped at 8 chunks, and sends it under a short fixed
 // system prompt.
@@ -710,7 +943,7 @@ func ComposeNaiveAnswer(ctx context.Context, deps AnswerDeps, chunks []map[strin
 		return AnswerResult{Answer: fallback, Failed: true}
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, deadlineToDuration(answerTimeoutS))
+	callCtx, cancel := context.WithTimeout(ctx, runtime.DeadlineToDuration(answerTimeoutS))
 	defer cancel()
 
 	// message_fit_in(form_message(system, user), max_length).

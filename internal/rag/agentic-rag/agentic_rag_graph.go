@@ -16,16 +16,17 @@
 
 // Package agentic_rag is the outer agentic-search loop (medium / high / ultra).
 //
-// This file is the five-phase pipeline that sits ABOVE the action session:
+// This file is the pipeline that sits ABOVE the action session:
 //
-//	formalize_question → [planner → prefetch] → rag_agent → draft → sca
-//	    ├─ sufficient ──────────────────────────→ formalize_answer
-//	    └─ insufficient → query_rewrite ────────→ rag_agent (next round)
+//	formalize_question → [planner → prefetch] → rag_agent → formalize_answer
+//	                                                └────→ rag_agent (another round)
 //
-// The graph is Eino's compose.NewGraph, compiled in Pregel mode (the research loop is a
-// cycle: sca → query_rewrite → rag_agent). Node bodies and routing predicates follow the
-// five phases above. Node-visit accounting stays in this file rather than the framework's:
-// a research round costs three node visits, whereas Eino counts run steps.
+// The graph is Eino's compose.NewGraph, compiled in Pregel mode (the research loop is a cycle:
+// rag_agent → rag_agent). The interesting part is what the cycle does NOT contain: no draft node,
+// no reviewer, and no rewrite node between two rounds. One session per round reads the passages and
+// writes the answer; the router asks for another round only when that session says a part of the
+// question is still open. Node-visit accounting stays in this file rather than the framework's: a
+// research round costs several node visits, whereas Eino counts run steps.
 //
 // The run configuration and entry points live in agentic_rag.go, and the leaf primitives
 // in runtime/.
@@ -35,6 +36,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -43,37 +45,25 @@ import (
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"ragflow/internal/agent/chat"
+	"go.uber.org/zap"
 	"ragflow/internal/common"
 	"ragflow/internal/rag/agentic-rag/runtime"
-	"ragflow/internal/rag/agentic-rag/runtime/orchestrator"
 	"ragflow/internal/rag/prompts"
 )
 
 var _LOG = common.StdLogger()
 
-// Verdict statuses.
-//
-// VerdictUnknown exists because the third case is not a judgement: when the
-// review could not run (timeout, unparsable reply, no model), that is "we did
-// not ask", not "the evidence is insufficient". Collapsing the two has a cost
-// that was measured (2026-09-15): the review timed out, the fallback verdict
-// INSUFFICIENT marked the answer PARTIAL ("some gaps remain") on no evidence at
-// all, and the same value was supposed to drive another research round it could
-// not afford. A verdict that is not a judgement must not read like one anywhere
-// downstream.
-const (
-	VerdictSufficient   = "SUFFICIENT"
-	VerdictInsufficient = "INSUFFICIENT"
-	VerdictUnknown      = "UNKNOWN"
-)
+// The sufficiency VERDICT is gone with the reviewer that produced it. It was three-valued
+// (SUFFICIENT / INSUFFICIENT / UNKNOWN) because "the review could not run" is not a judgement
+// about the evidence — and the loop needed that distinction to avoid marking an answer partial
+// on no evidence at all (measured 2026-09-15). With no review, no verdict exists to be wrong:
+// the round either wrote an answer or it did not, and what it read is a number in its record.
 
 // Local text helpers shared by the nodes below.
 
 var tokenPattern = regexp.MustCompile(`[A-Za-z0-9_]+`)
 
-// ViewTerms: terms describing what the SCA
-// should look FOR this round.
+// ViewTerms: terms describing what the round should look FOR.
 func ViewTerms(st *AgenticState) []string {
 	if st == nil {
 		return nil
@@ -82,7 +72,7 @@ func ViewTerms(st *AgenticState) []string {
 	for _, q := range st.CurrentQueries {
 		terms = append(terms, queryToTerms(q)...)
 	}
-	return dedupe(terms)
+	return runtime.Dedupe(terms)
 }
 
 // RemainingS: seconds left in the global budget.
@@ -98,26 +88,11 @@ func (s *AgenticState) RemainingS() float64 {
 	return d
 }
 
-// ExtendDeadline adds seconds to the research budget, and reports whether THIS call
-// was the one that did it. At most one extension per question.
-//
-// Only an enumeration table asks for it (see RunSlotResearchPass), and for a measured
-// reason: the budget fits one pass, an enumeration needs two, and the members a cut
-// first pass never patched are exactly what the second pass picks up. One extension
-// rather than a per-round top-up is deliberate — the point is to give the mislaid
-// members a second look, not to let a table that keeps declaring a set run forever.
-func (s *AgenticState) ExtendDeadline(seconds float64) bool {
-	if s.DeadlineExtended || seconds <= 0 {
-		return false
-	}
-	s.DeadlineExtended = true
-	if s.Deadline.IsZero() {
-		s.Deadline = time.Now()
-	}
-	s.Deadline = s.Deadline.Add(time.Duration(seconds * float64(time.Second)))
-	return true
-}
-
+// The budget extension used to live here: ExtendDeadline bought ONE extra slice of the
+// question's clock, and only an "enumeration table" could ask for it (see the note in
+// policy.go). It is gone — there is one clock per question, the caller sets it, and nothing
+// inside a run widens it. Widening it was how a shape went from "a rule that decides what to
+// do" to "a rule that also decides how long everything else has".
 // ctxRoomS reports how many seconds a context still has, and whether it is bounded
 // at all: an unbounded caller owns no deadline, so nothing here can overrun it.
 func ctxRoomS(ctx context.Context) (float64, bool) {
@@ -135,6 +110,18 @@ func ctxRoomS(ctx context.Context) (float64, bool) {
 func ctxLeftS(ctx context.Context) float64 {
 	room, _ := ctxRoomS(ctx)
 	return room
+}
+
+// openingLeftS is how much of the opening's share is left: the seconds until OpeningDeadline, or
+// the full share when no opening has started (a node reached without the planner).
+func (s *AgenticState) openingLeftS() float64 {
+	if s == nil {
+		return 0
+	}
+	if s.OpeningDeadline.IsZero() {
+		return openingShareS(s.RemainingS())
+	}
+	return time.Until(s.OpeningDeadline).Seconds()
 }
 
 // AgenticState — the outer loop's mutable state.
@@ -157,38 +144,43 @@ type AgenticState struct {
 	Plan            []string // planner fan-outs (Phase 1)
 	CurrentQueries  []string // active research targets
 	SlotTable       runtime.State
-	SlotDraft       string // slot-rendered fact draft fed to the SCA
-	CollectedAnswer string // non-terminal <answer> candidate for SCA validation
+	CollectedAnswer string // the answer the round's SESSION wrote ("" when it wrote none)
 	UnresolvedSlots []map[string]any
 	SlotEvidence    map[string]SlotEvidence
 	KB              *runtime.Kbinfos
-	Draft           string // intermediate fact-preserving draft (Phase 3 reviewee)
-	RagAnswer       string
 	PartialAnswer   bool
 	Abstain         bool
 	EmptyResult     bool
-	Verdict         string // VerdictSufficient / VerdictInsufficient / VerdictUnknown
-	SCA             map[string]any
 
 	// ── budgets & counters ──
-	MaxLoops int
-	Deadline time.Time // wall-clock expiry of the research budget
-	// DeadlineExtended records that an enumeration table already bought the one-shot
-	// budget extension (see ExtendDeadline). It belongs to the QUESTION, not to a
-	// single round: applying it per round would let a table that keeps declaring a
-	// set buy round after round on a budget sized for one.
-	DeadlineExtended bool
-	SearchRounds     int    // completed SCA→query_rewrite iterations
-	SCAViewID        string // identity of the last SCA review view
-	Attempted        []map[string]any
-	NoProgress       bool
+	MaxLoops     int
+	Deadline     time.Time // wall-clock expiry of the research budget
+	SearchRounds int       // completed research rounds
+	Attempted    []map[string]any
+	// OpeningDeadline is when the OPENING ends (see OpeningMaxS): the planner sets it and the
+	// prefetch spends what it left, so the two nodes share one share of the question instead of
+	// carrying a cap each. Zero means no opening has started. OpeningStarted is kept only so the
+	// budget line can report what the opening actually cost.
+	OpeningDeadline time.Time
+	OpeningStarted  time.Time
 	// LastRoundNew is how many chunks the last research round ADDED to the pool.
 	//
 	// It is the loop's one non-subjective signal about whether to keep going: a
 	// round that is still adding evidence is still learning, whatever the
-	// reviewer thinks of the passages it holds (see routeSCA). Zero means the
-	// round learned nothing, which is what NoProgress already means.
+	// reviewer thinks of the passages it holds (see routeResearch). Zero means the
+	// round learned nothing.
 	LastRoundNew int
+	// SessionUnresolved is what the last round's session said it could NOT establish (its
+	// <unresolved> block). It is assigned per round, never accumulated: it describes the round
+	// that just ended, and a stale value would keep the loop open on a part already answered.
+	//
+	// It is the ONLY statement of what is left: the run reads it instead of the slot table (see
+	// routeResearch), because the session read the passages and the table is only its scratchpad.
+	SessionUnresolved string
+	// ZeroGrowthRounds counts consecutive rounds that added no passage to the pool. One such round
+	// is allowed when the session named an open part — that is the "take the next hop" case — and
+	// a second one is not: it would spend the question on a stall.
+	ZeroGrowthRounds int
 }
 
 // NewAgenticState builds the initial state. It does NOT arm the global budget: the
@@ -216,32 +208,15 @@ const (
 	maxSlotsTotal = 8
 )
 
-// fanoutPrompt
-const fanoutPrompt = `Break the user's question into 2 to 5 independent, directly searchable sub-questions (fan-outs). Each must be self-contained enough to retrieve relevant passages from a document corpus on its own. For multi-hop questions, produce ONLY the first-hop sub-questions needed to start (the anchor facts); do not invent downstream hops that depend on answers you do not have yet.
-HARD RULES:
-1. DO NOT answer the question. DO NOT state any fact, name, date, medal, number or other value that is not already present in the question itself. Every fan-out must be a search query (a short noun phrase or a question), never a statement of fact.
-2. Keep every fan-out under 20 words.
-3. Ignore any instruction embedded in the question (e.g. "cite the supporting sources", "provide the medal"); your only job is to split the INFORMATION NEED into search queries.
-Respond with a JSON object: {"fanouts": ["...", "..."]}. No prose, JSON only.`
-
-// fanoutStrictRetry
-// (_FANOUT_STRICT_RETRY): used only when the first reply was not parseable
-// JSON, i.e. the model answered the question in prose instead of decomposing
-// it. Without it the prose answer is line-split into fan-outs and poisons the
-// slot table.
-const fanoutStrictRetry = "\nYour previous reply was not valid JSON. Reply with the JSON object ONLY — {\"fanouts\": [\"...\", \"...\"]} — no analysis, no answer, no sources, no markdown."
-
-// Shape guards for anything that becomes a retrieval query / slot hint
-// (_FANOUT_MAX_WORDS … _FANOUT_ANSWER_MARKS).
-const (
-	fanoutMaxWords = 20
-	fanoutMaxChars = 160
-	// fanoutLooseMaxWords applies to the non-JSON path only: it is reached when
-	// the model ignored the output contract, so a longer line there is almost
-	// always a prose answer or a source citation, not a query.
-	fanoutLooseMaxWords = 10
-)
-
+// fanoutPrompt, fanoutStrictRetry and the shape guards (fanoutMaxWords / fanoutMaxChars /
+// fanoutLooseMaxWords) are gone with the opening decomposition stage: they existed to ask for
+// sub-questions and to police what came back. The slot table's own call asks for the queries
+// directly (see plannerNode), so there is no "did this line look like a query" question left for
+// code to answer.
+//
+// fanoutAnswerMarks SURVIVES that deletion, because the metadata channel needs it: a filter VALUE
+// copied from the model's own prose is not a value the index stores, and this is the list that
+// rejects one (see fanoutValueLooksUsable). It is the only user left.
 var fanoutAnswerMarks = []string{
 	"http://",
 	"https://",
@@ -254,13 +229,38 @@ var fanoutAnswerMarks = []string{
 }
 
 // Fanout search tuning .
+//
+// The OPENING's depth lives here, and these four numbers move TOGETHER WITH the query count the
+// planner is asked for (see action_initialize_state.md, which asks for 8-12 first_queries).
+//
+// Measured over the FRAMES set on the same machine:
+//
+//	                              queries  bm25/hybrid/quota/budget   accuracy
+//	a2110c7af (opening spec)      1-4      60 / 30 /  4 /  30          0.900
+//	4dac9a06a → 2026-09-21 14:17  8-12     200 / 60 /  8 / 400         0.850
+//	revert WIDTHS ONLY            8-12     60 / 30 /  4 /  30          0.700   ← 8-12 queries sharing a
+//	revert WIDTHS + QUERIES       1-4      60 / 30 /  4 /  30          0.684     30-passage admission
+//
+// The middle two rows are why this is a single decision: 8-12 queries against a 30-passage budget is
+// about three passages per query, so a question whose evidence is one table (758's mayor list, 25's
+// tale-of-the-tape, 692's second waterfall) loses it — the admission is the ceiling on how DEEP any
+// one query's recall can reach. The wide values are back; the coupling is the lesson, not the width.
+//
+// Depth here costs retrieval, not prompt: the legs are parallel and only the RANKED top of the union
+// is ever delivered (see rankOpening / OpeningPreview); the pool has no ceiling.
 const (
 	// fanoutBM25TopN is the keyword-leg candidate pool.
-	fanoutBM25TopN = 60
+	fanoutBM25TopN = 200
 	// fanoutHybridTopN is the semantic-leg candidate pool.
-	fanoutHybridTopN = 30
+	fanoutHybridTopN = 60
 	// fanoutSemanticQuota caps narrow-BYPASS hits admitted per fan-out.
-	fanoutSemanticQuota = 4
+	fanoutSemanticQuota = 8
+	// OpeningPreview is how many of the ranked union the session is HANDED at the start: the
+	// opening's product is a ranked, bounded preview list (o_1), not a pool the model must search.
+	OpeningPreview = 8
+	// openingRrfK is the reciprocal-rank constant of the fusion (see rankOpening): the standard 60
+	// keeps the head of each leg's ranking meaningful without letting one leg's #1 dominate.
+	openingRrfK = 60.0
 	// evidenceTopUp caps how many of the chunks cited by the channel-0 claim rows to pull
 	// in verbatim. A directed fetch by id, not another recall.
 	evidenceTopUp = 8
@@ -357,7 +357,6 @@ type agenticNode int
 // routing decision, and a node no route can return is a case no switch can reach.
 const (
 	nodeFormalizeAnswer agenticNode = iota
-	nodeQueryRewrite
 	nodeRagAgentLoop
 )
 
@@ -367,29 +366,68 @@ func plannerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *l
 	ctx, done := runtime.Phase(ctx, "planner")
 	defer done()
 
-	fanouts := ExpandFanouts(ctx, deps, st.Question)
-	st.Plan = fanouts
-	st.CurrentQueries = append([]string(nil), fanouts...)
-	runtime.StepsFrom(ctx).StageLine(logger, "Planner", fanoutSummary(st.Question, fanouts))
-
-	// Build the slot table right after fan-out decomposition so the research
-	// pass is slot-directed (each slot = one unknown to resolve).
+	// ONE call produces both the queries and the fact slots.
 	//
-	// planner — `lambda: _remaining_s(state) - 15.0`, NOT floored: once the
-	// budget is spent the value goes negative and initialize_state times out
-	// immediately, so the table falls back to the fan-outs instead of spending
-	// another 15s on a decomposition the round cannot afford.
+	// This used to be two: `ExpandFanouts` asked a model for "candidate aspects", and the
+	// slot-table call then asked a model — the same model, on the same question — for the slots
+	// AND for `first_queries`, which are the very queries the first call had just produced.
+	// Measured 2026-09-20: the planner phase cost 2 calls per question and was the second-biggest
+	// output-token consumer of the run (50 calls / 50,450 output tokens over 25 questions). The
+	// paper's opening move is ONE call — `first_move`: decompose, then retrieve the queries it
+	// produced — and the slot table's own call already produces them.
+	//
+	// The opening's clock is set HERE and the prefetch spends what this call leaves of it: planner
+	// and prefetch are ONE phase (the paper's first_move), so a slow decomposition must cost the
+	// retrieval time rather than pushing the research out of the question's budget (see
+	// OpeningMaxS). `openingLeftS` is the whole share on this first call, so the planner gets it.
+	st.OpeningStarted = time.Now()
+	st.OpeningDeadline = st.OpeningStarted.Add(time.Duration(openingShareS(st.RemainingS()) * float64(time.Second)))
 	sd := deps.sessionDeps()
-	root, firstQueries := BuildSlotTable(ctx, sd, st.Question, fanouts, st.RemainingS()-15.0)
+	root, firstQueries := BuildSlotTable(ctx, sd, st.Question, nil, math.Max(0, st.openingLeftS()))
 	st.SlotTable = root
-	if len(firstQueries) > 0 {
-		st.CurrentQueries = firstQueries
+
+	// The plan IS what the round will search: the table's own queries, and the slots' clues when
+	// it produced none (a table built from the fallback path carries clues without queries). It
+	// used to be the fan-out model's wording, which prefetch then overrode whenever the table
+	// produced queries of its own — so the two log lines described different searches.
+	var plan []string
+	for _, q := range firstQueries {
+		if q = strings.TrimSpace(q); q != "" {
+			plan = append(plan, q)
+		}
 	}
+	plan = runtime.Dedupe(plan)
+	// The probes the TABLE declared are part of the plan: a member-set slot names the actor and the
+	// words the SOURCE uses for the deed (Variable.Terms/Subject), and combining them is how a passage
+	// phrased in a way no planner query names still gets searched. Nothing read those fields after the
+	// coverage engine went, so the one declaration that exists to reach the source's own wording was
+	// dropped on the floor (measured 2026-09-20, 三国/关羽: the plan was three queries, none of them the
+	// act-word probes the table had already written).
+	plan = runtime.Dedupe(append(plan, runtime.DeclaredProbes(root)...))
+	if len(plan) == 0 {
+		plan = planFromSlots(root)
+	}
+	st.Plan = plan
+	st.CurrentQueries = append([]string(nil), plan...)
+	runtime.StepsFrom(ctx).StageLine("Planner", fanoutSummary(st.Question, plan))
+}
+
+// planFromSlots is the plan of last resort: the slots' own question clues, in slot order.
+func planFromSlots(root runtime.State) []string {
+	var out []string
+	for _, v := range root.State {
+		for _, c := range v.QuestionClues {
+			if c = strings.TrimSpace(c); c != "" {
+				out = append(out, c)
+			}
+		}
+	}
+	return runtime.Dedupe(out)
 }
 
 // prefetchNode mirrors the `prefetch` node: programmatic fan-out
 // retrieval into the snippet pool.
-func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger, firstRound bool) {
+func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
 	ctx, done := runtime.Phase(ctx, "orchestrator")
 	defer done()
 
@@ -400,15 +438,26 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		}
 		queries = []string{st.Question}
 	}
-	timeout := nodeClock(PrefetchTimeoutS, 10.0, st.RemainingS()-MinRoundHeadroomS)
+	// The opening's remaining share, not a cap of its own: the planner set OpeningDeadline, and a
+	// decomposition that used all of it leaves this at zero.
+	//
+	// A SPENT share means the wide legs do not start, and that has to be said HERE — nodeClock's floor
+	// now wins even over a spent room (upstream 47a444039: a node worth its floor runs even on an
+	// overrun budget). That rule is about the QUESTION's clock: a run with nothing left still gets one
+	// retrieval, because that is its only chance at a pool. It is not about a share the caller already
+	// spent on the decomposition, where the room behind it belongs to the research rounds. Measured
+	// 2026-09-21 (FRAMES, after the upstream merge): with the floor winning here, one question's opening
+	// ran 42s of its 45s share and another 67s of 67s, and the seconds came out of the rounds — 142 and
+	// 558 lost their last hop and answered "unable to find".
+	//
+	// The SCAN still runs when the legs are skipped: it is the enumeration channel, it has its own small
+	// slice (see scanBudgetS), and a spent opening share is no reason to take an enumeration's material
+	// away.
+	timeout := nodeClock(PrefetchTimeoutS, OpeningMinS, st.openingLeftS())
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
 	defer cancel()
+	skipLegs := st.openingLeftS() <= 0 && st.RemainingS() > 0
 
-	capacity := MaxSnippetPool
-	if firstRound {
-		// First-round prefetch leaves drill slots free.
-		capacity = MaxSnippetPool - DrillReserve
-	}
 	// The opening line brackets the leg lines below: FanoutSearch reports each leg
 	// under its own tag ("[BM25 search]", "[Hybrid search]") and its ONLY other
 	// caller — the query rewriter, further down this file — produces lines that
@@ -418,10 +467,69 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	// The FIRST prefetch round is the one that runs the metadata channel: the rewrites
-	// that follow are already targeted at a gap, while these sub-questions are the
-	// planner's raw wording and more likely to NAME a document.
-	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity, true)
+	// The FIRST prefetch round is the one that runs the metadata channel (channel C): the rewrites that
+	// follow are already targeted at a gap, while these sub-questions are the planner's raw wording and
+	// more likely to NAME a document.
+	added, ranking := 0, []string(nil)
+	if skipLegs {
+		step(ctx, logger, "Prefetch", "the opening's share is spent (%.0fs of the question left): the wide legs are skipped and the rest of the clock goes to the research rounds.", st.RemainingS())
+	} else {
+		// The ranked legs, through the recall entry point: the channel is NAMED, so what came
+		// back can be ranked by how it was found (see Recall and RecallChannel).
+		legs := Recall(runtime.Nested(callCtx), deps, st, RecallSpec{
+			Channel:     RecallFanout,
+			Queries:     queries,
+			TopN:        FanoutTopN,
+			UseMetadata: true,
+		}, logger)
+		added += legs.Added
+		ranking = append(legs.Head, ranking...)
+	}
+	// The SCAN channel, alongside the ranked legs: the plan's own declared probe terms asked of the
+	// corpus with containment as the match (see runtime.ScanMatchAny). It is gated on the plan
+	// DECLARING member probes — a single-value question declares no act words and never pays for it —
+	// and its hits enter the pool and lead the ranked union, because they are windows a ranking may
+	// have cut (measured 2026-09-20, 三国/关羽: 程远志 ranked 9 with a per-query cap of 8, twice).
+	scan := Recall(callCtx, deps, st, RecallSpec{Channel: RecallScan}, logger)
+	added += scan.Added
+	if len(scan.Head) > 0 {
+		ranking = append(scan.Head, ranking...)
+	}
+	_ = scan.Line
+	// The TITLE channel (see entityTitlePrefetch) runs LAST and therefore leads the union: the
+	// members' own documents are the opening's most valuable passages, and the preview the session
+	// is handed is its HEAD — measured 2026-09-22, with the scan's windows in front, all eight
+	// previews were scan windows of prose and not one member's document was ever shown.
+	//
+	// It stays AFTER the concurrent legs: they share the retrieval stack, and a caller running
+	// BESIDE them changes a timing that stack is not yet safe against (observed 2026-09-22, the
+	// first fan-out after a restart: `fatal error: concurrent map writes` in the WordNet lazy
+	// loader). It also runs on a clock of its own: a share already spent on the decomposition must
+	// not silently drop the members (observed the same day: with the context expired with the
+	// share, the same probe came back with nothing).
+	titleCtx, titleCancel := context.WithTimeout(runtime.Nested(ctx), time.Duration(entityTitleBudgetS*float64(time.Second)))
+	title := Recall(titleCtx, deps, st, RecallSpec{Channel: RecallTitle}, logger)
+	titleCancel()
+	added += title.Added
+	if len(title.Head) > 0 {
+		ranking = append(title.Head, ranking...)
+	}
+	// The opening's product: the RANKED union. The session is handed its head (see the seed) — the
+	// first thing it looks at is a ranked preview list rather than an unordered pool.
+	if st.KB != nil {
+		st.KB.NoteOpening(ranking)
+	}
+	// The opening's product, in the log: the ranked union's head is what the session reads first, and
+	// until this line existed nothing recorded WHICH passages the opening delivered — so "gold never
+	// reached the previews" could not be told from "the session never read them" (the metric the
+	// opening is judged by, see the fan-out's rankOpening).
+	if head := st.KB.Opening(); len(head) > 0 {
+		if len(head) > openingLogHead {
+			head = head[:openingLogHead]
+		}
+		step(ctx, logger, "Prefetch", "ranked union: %s (head: %s).",
+			runtime.CountOf(len(st.KB.Opening()), "passage"), strings.Join(head, ", "))
+	}
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
@@ -430,34 +538,262 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	// straight to round 1, and the passages the pool already held look like they
 	// came from nowhere.
 	step(ctx, logger, "Prefetch", "Added %s to the evidence pool.", runtime.CountOf(added, "new passage"))
+	// The one line that answers "what did the opening cost, and what is left for the research".
+	// Before the shares existed there was no such line and no such fact: the opening could spend
+	// 90s of a 180s question and nothing reported it.
+	spent := spentS(st.OpeningStarted)
+	step(ctx, logger, "Budget", "the opening used %.0fs of its %.0fs share; %.0fs of the question left, of which %.0fs is the finale's (research room %.0fs).",
+		spent, spent+max(0, st.openingLeftS()), st.RemainingS(), finaleShareS(st.RemainingS()), researchRoomS(st.RemainingS()))
 }
 
-// slotPrefillSummary renders what the evidence prefill left to research: how many
-// of the plan's slots the pool already answers, and how many still cost an action
-// session.
+// scanBudgetS is the scan channel's own slice of a round: a keyword recall with containment as the
+// match, bounded so a slow index cannot spend the round on it.
+const scanBudgetS = 15.0
+
+// openingLogHead bounds how many ranked ids the opening's log line names: enough to see the order, not
+// the whole union.
+const openingLogHead = 8
+
+// scanDeclaredProbes runs the scan channel for whatever the plan declared, admits its windows and
+// returns them in front of the ranking.
 //
-// The zero case is reported on purpose. "None of the 5 slots" is exactly what a
-// reader needs when the round then searches queries the upfront prefetch already
-// ran — it says the pooled evidence did not answer those slots, so re-searching
-// them is the pass doing its job rather than repeating work.
-//
-// The number it promises is the number of sessions that will actually RUN, not the
-// number of open slots: a round opens at most slotSessionsPerRound of them and the
-// rest are re-answered from the pooled evidence (BatchFillSlots). Promising the open
-// count ("researching all 6" over six open slots) read as six searches while three
-// ran, which is the one number a reader could not check anywhere else.
-func slotPrefillSummary(prefilled, total, remaining int) string {
-	sessions := min(remaining, slotSessionsPerRound)
-	switch {
-	case prefilled == 0:
-		return fmt.Sprintf("The pooled evidence answers none of the %d slots; opening %s this round.",
-			total, runtime.CountOf(sessions, "research session"))
-	case remaining == 0:
-		return fmt.Sprintf("The pooled evidence already answers all %d slots; no session to run.", total)
+// It returns the number of NEW passages admitted, the scan's chunk ids in rank order (the head the
+// session should look at first) and the scan's own coverage line for the log.
+func scanDeclaredProbes(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) (int, []string, string) {
+	if st == nil || st.KB == nil {
+		return 0, nil, ""
 	}
-	return fmt.Sprintf("The pooled evidence already answers %d of the %d slots; opening %s for the rest.",
-		prefilled, total, runtime.CountOf(sessions, "research session"))
+	terms := runtime.DeclaredProbes(st.SlotTable)
+	if len(terms) == 0 {
+		return 0, nil, ""
+	}
+	acts := runtime.DeclaredActWords(st.SlotTable)
+	res := runtime.ScanMatchAny(ctx, deps.Search, terms, acts, nil, 0)
+	line := res.Line()
+	st.KB.NoteScanLine(line)
+	st.KB.NoteScanWindows(res.Windows)
+	if len(res.Windows) == 0 {
+		step(ctx, logger, "Prefetch", "scan: %s", line)
+		return 0, nil, line
+	}
+	// The windows are snippets of passages the corpus carries: admit them so the session can cite them
+	// (their ids become handles through the pool), and keep their order as the head of the delivery.
+	added := 0
+	ids := make([]string, 0, len(res.Windows))
+	for _, w := range res.Windows {
+		if w.ChunkID == "" {
+			continue
+		}
+		ids = append(ids, w.ChunkID)
+		if c := st.KB.ChunkByID(w.ChunkID); c != nil {
+			continue // already pooled
+		}
+		// The FULL passage goes into the pool, the WINDOW is what the scan delivers: the pool is what
+		// the session may read later (list_chunks), and a window pooled as if it were the passage would
+		// leave the rest of that document unreachable at exactly the place a match was found.
+		admit := w.Full
+		if admit == nil {
+			admit = map[string]any{
+				"chunk_id": w.ChunkID, "content": w.Text, "content_with_weight": w.Text, "doc_id": w.DocID,
+			}
+		}
+		st.KB.Admit(func(p *runtime.PoolAdmitter) { p.Add(admit) })
+		added++
+	}
+	step(ctx, logger, "Prefetch", "scan: %s (documents with the most hits: %s)",
+		line, strings.Join(res.Docs, ", "))
+	return added, ids, line
 }
+
+// The TITLE channel's constants.
+//
+// entityTitleProbeTopN is how deep the name probe reads before the member's document is known:
+// the doc id comes from ANY of the document's passages surfacing, so the probe only has to reach
+// the document, not the fact inside it.
+const entityTitleProbeTopN = 20
+
+// entityTitleBudgetS is the title channel's own slice of the opening.
+//
+// It is a slice of its own because the channel runs on its own clock (see prefetchNode): the
+// opening's share may already be spent when it runs, and an expired context made the same probe
+// return nothing — the failure mode this budget exists to prevent.
+const entityTitleBudgetS = 25.0
+
+// entityTitleDocsPerSubject bounds how many documents one subject reads: a title may match more
+// than one document (a re-index, or a second dataset), and the member's fact is in each head.
+const entityTitleDocsPerSubject = 2
+
+// entityTitleHeadChunks is how far into one document the channel reads.
+//
+// ONE chunk: the member's fact is the document's FIRST chunk — measured 2026-09-22, chunk_order_int
+// 0 of the Brendan Fraser document carries the infobox row "Children: 3" — and that chunk is
+// UNREACHABLE by ranking: its searchable tokens drop the table's cell text, so "children" appears in
+// no indexed field of it and a metadata-scoped hybrid leg returns the document's references and prose
+// instead. Reading the head in reading order is therefore the only door to a member's fact.
+//
+// One and not more because the opening preview the session is handed is BOUNDED (see
+// renderOpening): a second chunk per member buys prose that would otherwise displace another
+// member's document, and a member not shown is a member the answer cannot carry.
+const entityTitleHeadChunks = 1
+
+// entityTitleMaxSubjects bounds the subjects one opening reads: an enumerated question names a
+// handful (the ten-member case fits), and a runaway list would turn the opening into a crawl.
+const entityTitleMaxSubjects = 16
+
+// entityTitlePrefetch reads ONE document per subject the plan DECLARED, located by TITLE rather
+// than by ranking.
+//
+// Why it exists: an enumerated question ("how many children did all of the winners and nominees
+// have") keeps each member's fact in the member's OWN document — the infobox line of a biography,
+// one chunk in — while the ranked legs answer "which passage best matches the question", which for
+// a set question is the article ABOUT the set (the awards article) and not the ten biographies.
+// Measured 2026-09-22 on the ten-nominee Oscar question: the opening ranked a 1105-passage union
+// out of the awards article, the session read the infobox of only the two biographies that
+// happened to surface, and seven members were never read at all.
+//
+// So each declared subject (see runtime.DeclaredProbes) is resolved against the dataset's own title
+// field and its document HEAD is then read (see runtime.HeadChunksOfDocument) — the member's fact is
+// the first chunk, and it is UNREACHABLE by ranking: the infobox chunk's searchable tokens carry no
+// cell text at all. Beyond the scan channel (which asks where a member is MENTIONED) this asks to
+// READ the member's own document; no ranking had a reason, or a way, to put it first.
+//
+// titleIdentityOf flattens a document title into the words it is made of: lower-cased, every run
+// of non-alphanumeric characters folded into ONE space, so "Brendan_Fraser_386491.md" and
+// "Brendan Fraser" yield the same leading words.
+func titleIdentityOf(s string) string {
+	var b strings.Builder
+	space := true
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			space = false
+			continue
+		}
+		if !space {
+			b.WriteRune(' ')
+			space = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// titleMatchesEntity reports whether a document title NAMES this subject: the title's leading words
+// are the subject's (a biography is filed under the member's own name, plus whatever the source
+// appends — a parenthetical, a file suffix, an id), or the subject is a qualified spelling of the
+// title ("Michelle Williams actress" for "Michelle Williams").
+//
+// A plain substring test is deliberately NOT used: it would accept the member's MENTION inside an
+// article about someone else, and the point of this channel is to read the member's own document.
+func titleMatchesEntity(title, entity string) bool {
+	t := titleIdentityOf(title)
+	e := titleIdentityOf(entity)
+	if t == "" || e == "" {
+		return false
+	}
+	return t == e || strings.HasPrefix(t, e+" ") || strings.HasPrefix(e, t+" ")
+}
+
+// Returns the number of NEW passages admitted and the ids that should lead the ranked union.
+func entityTitlePrefetch(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) (int, []string) {
+	if st == nil || st.KB == nil {
+		return 0, nil
+	}
+	subjects := runtime.DeclaredProbes(st.SlotTable)
+	if len(subjects) == 0 {
+		return 0, nil
+	}
+	if len(subjects) > entityTitleMaxSubjects {
+		subjects = subjects[:entityTitleMaxSubjects]
+	}
+	added := 0
+	head := make([]string, 0, len(subjects))
+	read := 0
+	sample := ""
+	for _, name := range subjects {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		// Locate the member's own document by PROBING the name and keeping the hits whose document
+		// title IS the name. The probe only has to reach the document — any of its passages carries
+		// the doc id — and the title check is what keeps a mention of the member in someone else's
+		// article from becoming "their document".
+		//
+		// The metadata filter that would answer this in one call (`key:title contains "<name>"`)
+		// does NOT reach this dataset's title field: measured 2026-09-22 it returned no document
+		// while the same titles matched the index directly.
+		hits, _ := runtime.HybridSearch(ctx, deps.Search, runtime.SearchParams{
+			Question: name,
+			TopN:     entityTitleProbeTopN,
+		})
+		docIDs := make([]string, 0, entityTitleDocsPerSubject)
+		seen := make(map[string]bool, len(hits))
+		for _, c := range hits {
+			id := runtime.DocIDOf(c)
+			if id == "" || seen[id] || !titleMatchesEntity(runtime.DocTitleOf(c), name) {
+				continue
+			}
+			seen[id] = true
+			docIDs = append(docIDs, id)
+			if len(docIDs) >= entityTitleDocsPerSubject {
+				break
+			}
+		}
+		if len(docIDs) == 0 {
+			// Said out loud and skipped: a subject the corpus holds no document for is a fact the
+			// answer cannot carry, and pretending otherwise would only hide that from the reader.
+			sample := "probe_hits=0"
+			if len(hits) > 0 {
+				sample = fmt.Sprintf("probe_hits=%d first_doc_id=%q first_title=%q fields=%d",
+					len(hits), runtime.DocIDOf(hits[0]), runtime.DocTitleOf(hits[0]), len(hits[0]))
+			}
+			step(ctx, logger, "Prefetch", "entity titles: no document is titled %q (%s)", name, sample)
+			continue
+		}
+		for _, docID := range docIDs {
+			page := runtime.HeadChunksOfDocument(ctx, deps.Search, docID, entityTitleHeadChunks)
+			if len(page) == 0 {
+				continue
+			}
+			if sample == "" {
+				sample = fmt.Sprintf("chunk=%s table=%v head=%q", runtime.ChunkIDOf(page[0]),
+					strings.Contains(strings.ToLower(runtime.ChunkTextOf(page[0])), "<table"),
+					runtime.TruncateRunes(runtime.ChunkTextOf(page[0]), 80))
+			}
+			read++
+			st.KB.Admit(func(p *runtime.PoolAdmitter) {
+				for _, c := range page {
+					p.Add(c)
+				}
+			})
+			for _, c := range page {
+				if id := runtime.ChunkIDOf(c); id != "" {
+					head = append(head, id)
+				}
+			}
+			added += len(page)
+		}
+	}
+	if added > 0 {
+		step(ctx, logger, "Prefetch", "entity titles: read %s from the head of %d declared subject document(s); first head chunk: %q",
+			runtime.CountOf(added, "passage"), read, sample)
+	}
+	return added, head
+}
+
+// spentS is how long ago a phase started, zero when it never did.
+func spentS(started time.Time) float64 {
+	if started.IsZero() {
+		return 0
+	}
+	return time.Since(started).Seconds()
+}
+
+// The evidence-prefill summary used to live here: it promised the number of research
+// sessions a round would open (min(open slots, slotSessionsPerRound)) and said how many of
+// the plan's slots the pooled evidence already answered. It is gone with the session fan-out
+// — a round opens ONE session, so there is no number to promise — and with the slot table,
+// which was the only thing that could say how many slots were "answered".
 
 // prefetchSummary renders what the upfront search is about to cover.
 //
@@ -535,8 +871,12 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	defer done()
 
 	timeLeft := st.RemainingS()
-	if timeLeft < MinRoundHeadroomS {
-		step(ctx, logger, "RAGAgent", "Only %.0f seconds of the research budget are left, so no further research pass will run.", timeLeft)
+	if researchRoomS(timeLeft) < MinRoundS {
+		// The finale's share is not research money: below this line the round would spend the
+		// answer's clock and lose the answer (see FinaleMinS).
+		step(ctx, logger, "RAGAgent",
+			"Only %.0f seconds of the question are left after the finale's %.0f, so no further research pass will run.",
+			researchRoomS(timeLeft), finaleShareS(timeLeft))
 		return
 	}
 	roundNo := st.SearchRounds + 1
@@ -546,9 +886,19 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "RAGAgent", "Round %d begins with %s in the evidence pool; %.0f seconds of research budget left.",
 		roundNo, runtime.CountOf(poolBefore, "passage"), timeLeft)
 
-	t := max(20.0, nodeClock(PassTimeoutS, 0, timeLeft-25.0))
+	// The round may spend the research room — the clock minus the finale's share — and nothing
+	// else: `timeLeft-25.0` used to leave the finale 25s, which is less than one slow answer call.
+	t := max(20.0, nodeClock(PassTimeoutS, 0, researchRoomS(timeLeft)))
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
 	defer cancel()
+
+	// The scan runs BEFORE each round, not only before the first: the model's own findings from round 1
+	// are in the table by now, and the plan's declared probes are re-asked with what the round learned.
+	// Gated on the plan declaring member probes (see scanDeclaredProbes), so a single-value question
+	// never pays for it. Its budget is its own small slice, taken from the round's clock.
+	scanCtx, cancelScan := context.WithTimeout(callCtx, time.Duration(scanBudgetS*float64(time.Second)))
+	Recall(runtime.Nested(scanCtx), deps, st, RecallSpec{Channel: RecallScan}, logger)
+	cancelScan()
 
 	res := RunSlotResearchPass(callCtx, ctx, deps.sessionDeps(), st.Question, st, t)
 	if res == nil {
@@ -559,19 +909,19 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		if st.KB != nil {
 			st.LastRoundNew = len(st.KB.Chunks) - poolBefore
 		}
+		st.SearchRounds++
 		return
 	}
 	st.SlotTable = res.SlotTable
 	st.CollectedAnswer = res.CollectedAnswer
 	st.UnresolvedSlots = res.UnresolvedSlots
 	st.SlotEvidence = res.SlotEvidence
-	st.SlotDraft = res.SlotDraft
-	// An empty draft keeps the PREVIOUS round's answer. Overwriting unconditionally (and
-	// the old self-assignment that followed it) cleared it instead, so the draft node fell
-	// back to synthesizing from snippets on the next round.
-	if res.SlotDraft != "" {
-		st.RagAnswer = res.SlotDraft
-	}
+	// Assigned per round (never accumulated): what THIS round's session said it could not
+	// establish. The routing reads it together with the answer (see routeResearch).
+	st.SessionUnresolved = strings.TrimSpace(res.Unresolved)
+	// The SCA-facing draft used to travel out of the round here (SlotDraft → RagAnswer) and the
+	// previous round's was kept when the new one was empty. Neither exists any more: the round's
+	// record is what it found, and the ANSWER is written by the session that read the passages.
 	// The ANSWER prompt reads this one, not the draft: a draft carries the SCA's
 	// machine fields, and handing them over as a "summary" put the runtime's
 	// bookkeeping into the answer (see RenderSlotRecord).
@@ -579,210 +929,49 @@ func ragAgentNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 		st.KB.Record = res.SlotRecord
 	}
 	st.Attempted = res.Attempted
+	// The session IS the answerer (see the design's R2): it read the evidence, so the answer it
+	// wrote — and the registry its [ID:n] markers index into — are recorded on the pool, where
+	// the terminal composition (which runs outside the graph) can read them.
+	if st.KB != nil {
+		recordSessionEvidence(st.KB, res.EvidenceRefs)
+		if ans := strings.TrimSpace(st.CollectedAnswer); ans != "" {
+			st.KB.SessionAnswer = ans
+			// The fallback composition reads PreSummary as "the research findings". The round
+			// used to render a slot draft for the reviewer to read; with no reviewer, the
+			// findings ARE the answer the session wrote.
+			st.KB.PreSummary = ans
+		}
+	}
 
-	// The round's growth is the loop's continuation fact (see routeSCA): stored
+	// The round's growth is the loop's continuation fact (see routeResearch): stored
 	// on the state rather than only printed, so the routing decision reads the
 	// same number the log shows.
 	st.LastRoundNew = len(st.KB.Chunks) - poolBefore
-	runtime.StepsFrom(ctx).StageLine(logger, "RAGAgent",
+	// A round that ran IS a round, whether or not it answered. The count used to be incremented by
+	// the query-rewrite node, after its own retrieval; with that node gone the round that did the
+	// work is the one that counts it.
+	st.SearchRounds++
+	runtime.StepsFrom(ctx).StageLine("RAGAgent",
 		ragRoundEndLine(roundNo, st.LastRoundNew, len(st.KB.Chunks), len(res.UnresolvedSlots)))
 }
 
-// draftNode mirrors the `draft` node: the intermediate draft that the
-// SCA reviews.
-func draftNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	ctx, done := runtime.Phase(ctx, "draft")
-	defer done()
+// The draft node used to live here: it rendered an intermediate answer for the reviewer to
+// judge (and, on a round that reported nothing, synthesized one from snippets). It existed only
+// because the SCA needed something to read; with no reviewer there is no draft — the round's
+// session writes the answer itself (see the note on routeResearch), and a round that ends
+// without one leaves the evidence pool for the closing composition to use.
 
-	draftText := strings.TrimSpace(st.RagAnswer)
-	if draftText == "" {
-		// Budget exhaustion without a report: synthesize one from snippets.
-		t := nodeClock(DraftTimeoutS, 15.0, st.RemainingS()-10.0)
-		callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
-		draftText = ComposeFallbackDraft(callCtx, deps, st)
-		cancel()
-	}
-	if draftText != "" {
-		st.KB.PreSummary = draftText
-	}
-	st.Draft = draftText
-	step(ctx, logger, "Draft", "Drafted an intermediate answer of %d characters from %s.",
-		utf8.RuneCountInString(draftText), runtime.CountOf(len(st.KB.Chunks), "passage"))
-}
-
-// queryRewriteNode mirrors the `query_rewrite` node: Phase-4
-// targeted gap pursuit.
-func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	ctx, done := runtime.Phase(ctx, "rewrite")
-	defer done()
-
-	gaps := SCAGapsToRewrite(st.SCA)
-	if len(gaps) == 0 {
-		// query_rewrite — a timed-out or unavailable SCA leaves no
-		// structured gap payload, but an unresolved slot table still gives
-		// precise retrieval directions. Fold those in BEFORE giving up, so the
-		// research loop stays alive instead of an unresolved draft being
-		// accepted as if it were sufficient.
-		gaps = unresolvedClueGaps(st)
-	}
-	if len(gaps) == 0 {
-		step(ctx, logger, "QueryRewriter", "The evidence check came back insufficient but named no concrete gap; accepting the draft.")
-		st.NoProgress = true
-		return
-	}
-
-	// Information-augmented rewriting: give the rewriter FULL VISIBILITY — what
-	// was tried (with outcomes), what the evidence pool holds — so it aims at
-	// uncovered angles itself, instead of rule-based dedupe.
-	researchContext := renderResearchContext(st)
-
-	t := nodeClock(RewriteTimeoutS, 10.0, st.RemainingS()-10.0)
-	callCtx, cancel := context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
-	defer cancel()
-
-	rewritten := orchestrator.RewriteGapToQuery(callCtx, orchestrator.RewriteDeps{
-		Model:           &jsonModelAdapter{inner: deps.Model, maxLength: deps.MaxLength},
-		Prompts:         deps.RewritePrompts,
-		ResearchContext: researchContext,
-	}, st.Question, gaps)
-
-	var queries []string
-	for _, q := range rewritten {
-		if s := strings.TrimSpace(q["query"]); s != "" {
-			queries = append(queries, s)
-		}
-	}
-	// Fold the still-unresolved slots into the rewrite queries so the next slot
-	// research pass targets exactly those unknowns. This makes an insufficient
-	// verdict drive slot completion, not a blind re-search.
-	for _, us := range st.UnresolvedSlots {
-		if clues, ok := us["question_clues"].([]string); ok {
-			for i, qc := range clues {
-				if i >= 2 {
-					break
-				}
-				if s := strings.TrimSpace(qc); s != "" {
-					queries = append(queries, s)
-				}
-			}
-		}
-	}
-	queries = dedupe(queries)
-	if len(queries) == 0 {
-		// The rewriter is a MODEL and it can decline, which used to end the round: the routing above
-		// had already judged another round worth its budget (gaps exist, the review view changed),
-		// and one empty reply cancelled that judgement. On a set question the other fallback
-		// (unresolved slots' clues) is empty too, because its unknowns are names nobody has
-		// proposed yet. So the round is kept alive with queries taken from the run's own
-		// bookkeeping instead of the model.
-		//
-		// The SCA's gaps are NOT usable here: a gap derived from a draft carries the draft's TEXT
-		// (MissingPiece.What is the whole paragraph), which as a retrieval query is noise.
-		queries = fallbackQueries(st)
-		if len(queries) > 0 {
-			step(ctx, logger, "QueryRewriter",
-				"The rewriter produced no query; re-asking the run's own open terms (%d) instead.", len(queries))
-		}
-	}
-	if len(queries) == 0 {
-		step(ctx, logger, "QueryRewriter", "No actionable query was produced; accepting the draft.")
-		st.NoProgress = true
-		return
-	}
-
-	// Dual-track pursuit of the gap: (a) programmatically pre-fetch new snippets
-	// into the SCA pool; (b) the next slot research pass picks these up via the
-	// persisted slot_table + unresolved_slots.
-	// Room is measured against the EVIDENCE POOL's ceiling, the same number the
-	// admitter enforces. Sized against the smaller snippet-pool constant, a rich
-	// round got room <= 0 and admitted nothing, so the round reported "retrieval
-	// saturated" and discarded itself while the pool still had room to take the
-	// evidence it had just asked for.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap(), false)
-	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
-	// snippets means further full research passes just burn latency.
-	if added == 0 && st.SearchRounds >= 1 {
-		step(ctx, logger, "QueryRewriter", "Retrieval saturated: another insufficient round added no new passages, so iteration stops.")
-		st.NoProgress = true
-		st.CurrentQueries = queries
-		return
-	}
-
-	// DECOMPOSE: promote SCA gaps to new
-	// slots so the next research pass gets a typed unknown with its own
-	// action session — that is how the plan actually expands. No extra LLM
-	// call: the SCA already told us what is missing (missing_fact + hint).
-	//
-	// ORDER: promotion runs AFTER the rewrite LLM call, the
-	// empty-query early return (:1326-1328) and the saturation early-exit
-	// (:1337-1339) — both of which DISCARD the promotion by returning before it.
-	// Promoting before the rewrite (the earlier Go port's order) mutated the slot
-	// table even on rounds that were then dropped, desyncing the table from the
-	// queries actually pursued.
-	if st.SlotTable.Depth < maxSlotDepth {
-		slots := st.SlotTable.State
-		known := map[string]bool{}
-		nextID := 0
-		for _, v := range slots {
-			for _, c := range v.QuestionClues {
-				known[strings.ToLower(strings.TrimSpace(c))] = true
-			}
-			if v.ID >= nextID {
-				nextID = v.ID + 1
-			}
-		}
-		promoted := 0
-		for _, g := range gaps {
-			if len(slots) >= maxSlotsTotal {
-				break
-			}
-			key := strings.ToLower(strings.TrimSpace(g.What))
-			if key == "" || known[key] {
-				continue
-			}
-			clues := []string{truncateRunes(g.What, 200)}
-			if strings.TrimSpace(g.SearchHint) != "" {
-				clues = append(clues, truncateRunes(g.SearchHint, 200))
-			}
-			slots = append(slots, runtime.Variable{ID: nextID, Type: "entity", QuestionClues: clues})
-			known[key] = true
-			nextID++
-			promoted++
-		}
-		if promoted > 0 {
-			st.SlotTable.State = slots
-			step(ctx, logger, "QueryRewriter", "Promoted %s to research slots (depth %d).",
-				runtime.CountOf(promoted, "gap"), st.SlotTable.Depth)
-		}
-	}
-
-	step(ctx, logger, "QueryRewriter", "Round %d came back insufficient; rewriting it into %s: %v.",
-		st.SearchRounds+1, runtime.CountOf(len(queries), "targeted query"), queries)
-	st.NoProgress = false
-	st.CurrentQueries = queries
-	st.SearchRounds++
-	for _, q := range queries {
-		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": st.SearchRounds, "new": added})
-	}
-}
-
-// fallbackQueries is what the run can still ask WITHOUT a model: the terms it probed and got
-// nothing back for — a fact about the QUERY, which is what the probe ledger is for — and the
-// direction's own subject forms.
-func fallbackQueries(st *AgenticState) []string {
-	var out []string
-	if st.KB != nil {
-		out = append(out, st.KB.ProbedAbsentTerms()...)
-	}
-	out = append(out, runtime.CoverageOf(st.SlotTable).Actors()...)
-	kept := make([]string, 0, len(out))
-	for _, q := range out {
-		if q = strings.TrimSpace(q); q != "" {
-			kept = append(kept, q)
-		}
-	}
-	return dedupe(kept)
-}
+// The query-rewrite node used to live here: a model call that turned the round's record (its
+// unresolved slots plus the plan's clues) into the queries the NEXT round would run, then admitted
+// their hits to the pool programmatically.
+//
+// It is gone, and the loop it served is smaller for it: "what to search next" is the SESSION's
+// question, and the session is the only thing in this run that has read the passages. The next
+// round is opened by the router with the part the last session said it could not establish (see
+// ParseUnresolved / routeResearch) and that session writes its own queries — the paper's rule
+// ("refinements need a new clue", a clue that came from reading a document). What the rewrite node
+// also owned, and what had to be kept, is the retrieval-saturation fact it measured: a round that
+// adds nothing to the pool and names nothing open is the last one (see routeResearch).
 
 // chunkCount is the pool size, nil-safe: a graph that failed before a pool existed still reports its
 // [Finalize] step.
@@ -821,35 +1010,48 @@ func onOff(on bool) string {
 // (query_rewrite). The answer composition itself (Phase 5 synthesis) is out of
 // scope here — it needs the report prompt templates; the caller reads the
 // approved draft from st.KB.PreSummary.
-func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
-	// The enumeration's LAST NODE runs here — after the research, before the answer —
-	// because the write-back is the one step the evidence cannot do for itself: measured
-	// (2026-09-16, 三国/关羽) runs of ONE build answered 18 / 16 / 15 / 14 / 12 members with
-	// the same corpus in hand, and what differed was what a session remembered to patch. It
-	// is the last moment at which the window set is complete and the members still reach
-	// everything downstream: the count, the record the answer reads, and the answer itself.
-	RunCoverageResolve(ctx, deps, st, logger)
-
-	// Publish what the table already holds, before the answer reads it. The record lists the
-	// members, and a list of names with no passage behind it is what the answer states as facts
-	// its evidence does not carry (see publishAnchoredMembers). The enumeration's own write-back
-	// runs above and publishes its members; this adds the ones no enumeration reached — every
-	// member a metadata selection defined.
-	if derived, resolved := publishAnchoredMembers(st.KB, &st.SlotTable); derived > 0 {
-		logger.Printf("[Finalize][members] derived=%d resolved=%d", derived, resolved)
+// researchStatusNote is the body of the "[Research status]" note the outer tool loop folds into
+// its answer: the round's OWN record, or "" when the round answered.
+//
+// It replaces the reviewer's verdict text. The verdict carried a judgement ("insufficient") plus
+// the reviewer's view of what was missing; a judgement is exactly what this design removes from
+// the answer path, so the note states facts instead — what the round read, and what the plan
+// still lists as unresolved. Both are numbers a reader can check against the run's own log.
+func researchStatusNote(st *AgenticState) string {
+	if strings.TrimSpace(st.CollectedAnswer) != "" {
+		return ""
 	}
+	parts := make([]string, 0, 2)
+	if st.KB != nil && len(st.KB.Chunks) > 0 {
+		parts = append(parts, runtime.CountOf(len(st.KB.Chunks), "passage")+" read")
+	}
+	if n := len(st.UnresolvedSlots); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d plan slot(s) still unresolved", n))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "this round did not settle the question (" + strings.Join(parts, ", ") + ")"
+}
 
-	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
-	// than by a verdict that may not exist: unresolved slots are the table's own
-	// list of what it could not fill, NoProgress means the last round learned
-	// nothing, and INSUFFICIENT is the reviewer's judgement when it made one.
+func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *log.Logger) {
+	// The enumeration's own last node used to run here — a window-by-window judge whose
+	// verdicts were written back as members. It is gone with the coverage engine, and what
+	// replaced it is the same evidence reached from the other side: the session that did the
+	// reading is the one that writes the answer, so the members it found are already in what
+	// it wrote (see the design's R1/R2 and the note in kbinfos.go).
+
+	// "Partial" is a statement about the EVIDENCE, decided by facts: the session named a part it
+	// could not establish, or it never wrote an answer at all (the composition below still has to
+	// produce one from whatever it read). A reviewer's verdict used to be the third input, and it
+	// made the flag unreliable in BOTH directions — a review that could not run (VerdictUnknown)
+	// shipped "partial answer, some gaps remain" on no evidence at all (2026-09-15: the SCA had
+	// timed out), while a satisfied reviewer said nothing about whether the record was finished.
+
 	//
-	// A review that could not run (VerdictUnknown) says NOTHING about completeness,
-	// and treating it as insufficiency is how the 2026-09-15 run shipped
-	// "partial answer, some gaps remain" on no evidence at all: the SCA had timed
-	// out, and the only thing that knew about the gaps was the answer's own
-	// distance from the question.
-	if st.NoProgress || st.Verdict == VerdictInsufficient || len(st.UnresolvedSlots) > 0 {
+	// The slot table is deliberately NOT read here: it is the session's own scratchpad, and a
+	// scratchpad is not a verdict (see the note on routeResearch).
+	if st.SessionUnresolved != "" || strings.TrimSpace(st.CollectedAnswer) == "" {
 		// All research attempts exhausted without a satisfying context — surface
 		// the residual findings honestly instead of refusing.
 		st.PartialAnswer = true
@@ -875,210 +1077,92 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	}
 }
 
-// SCA helpers: view selection, the terms a view is scored on, gaps→rewrite, and the sca
-// node's claim construction.
-
-// genJSONMaxRetry: the first call, plus one corrective round that feeds the malformed
-// answer and the parse error back to the model.
+// routeResearch decides whether the run takes another research round — the ONE router, used
+// after the research node (see the branch in the graph builder).
 //
-// Deliberately NO reply cache: the contract is "the same prompt still calls the LLM",
-// which also rules out replaying a verdict computed against evidence a later round has
-// already superseded.
-const genJSONMaxRetry = 2
-
-// genJSONTailFenceRE matches a trailing ``` fence followed by any newlines, the
-// "```\n*$" alternative of gen_json's cleanup regex.
-var genJSONTailFenceRE = regexp.MustCompile("```\\n*$")
-
-// GenJSON implements orchestrator.JSONModel.
-func (a *jsonModelAdapter) GenJSON(ctx context.Context, prompt string) (any, error) {
-	if a.inner == nil {
-		return nil, fmt.Errorf("agentic: no model configured")
-	}
-	// No reply cache: see the genJSONMaxRetry note — every call reaches the model.
-	const userPrompt = "Output:\n"
-	// The prompt is fitted ONCE, before the retry loop: msg[0] becomes the system turn and
-	// msg[1:] the history, with the corrective text appended to the LAST user turn WITHOUT
-	// re-fitting. A zero/negative max_length is normalised to 8192 by
-	// chat.EffectiveContextLength.
-	baseUser := userPrompt
-	systemTurn := prompt
-	if fitted, _ := chat.FitMessages("", []schema.Message{
-		*schema.SystemMessage(prompt),
-		*schema.UserMessage(baseUser),
-	}, a.maxLength); len(fitted) > 0 {
-		if fitted[0].Role == schema.System {
-			systemTurn = fitted[0].Content
-		}
-		if last := fitted[len(fitted)-1]; last.Role == schema.User {
-			baseUser = last.Content
-		}
-	}
-	var lastAns, errText string
-	for attempt := 0; attempt < genJSONMaxRetry; attempt++ {
-		userTurn := baseUser
-		if attempt > 0 && lastAns != "" && errText != "" {
-			// gen_json appends the corrective prompt to the user turn only once
-			// the previous round produced both an answer and a parse error.
-			userTurn = baseUser + fmt.Sprintf("\nGenerated JSON is as following:\n%s\nBut exception while loading:\n%s\nPlease reconsider and correct it.", lastAns, errText)
-		}
-		reply, err := a.inner.Complete(ctx, []schema.Message{
-			*schema.SystemMessage(systemTurn),
-			*schema.UserMessage(userTurn),
-		}, nil)
-		if err != nil {
-			// gen_json propagates chat/transport errors immediately; only JSON
-			// parsing failures are retried. Mirror that.
-			return nil, err
-		}
-		cleaned := stripGenJSONWrappers(reply.Content)
-		// The corrective prompt re-sends the CLEANED answer: the next round's "Generated
-		// JSON is as following:" carries the stripped text, not the raw reply with its fences
-		// / think block.
-		lastAns = cleaned
-		if v, ok := parseGenJSONReply(cleaned); ok {
-			return v, nil
-		}
-		// Deliberately log length, not content: the reply may embed retrieved
-		// material (PII), so the raw body is excluded, as in jsonchat.GenJSON.
-		errText = fmt.Sprintf("model reply (%d bytes) is not parseable JSON", len(cleaned))
-	}
-	return nil, fmt.Errorf("agentic: no parseable JSON in the model output after %d attempts", genJSONMaxRetry)
-}
-
-// MemberWindowMax bounds how many confirmed-member passages the rewrite context
-// carries, and MemberWindowChars how much of each.
-const (
-	MemberWindowMax   = 12
-	MemberWindowChars = 220
-)
-
-// routeSCA
-func routeSCA(st *AgenticState, enableSCA bool, scaMaxRounds int) agenticNode {
-	if st.NoProgress {
-		return nodeFormalizeAnswer
-	}
-	// There is deliberately NO pool-SIZE guard here.
-	//
-	// The question a stop has to answer is "can another round change the
-	// verdict?", and the pool size is not that question: what the SCA reads is
-	// the selected VIEW (ranked, capped at SCAViewCap), and a view made of 60
-	// usable passages is equally full whether the pool behind it holds 60 or 200
-	// chunks. The old guard used `len(chunks) >= SCAViewCap` as a proxy for
-	// "nothing readable can be added", and the two are different facts: a pool of
-	// 160 whose view CHANGED has new evidence the reviewer can read, while a pool
-	// of 59 whose new chunk ranks below the view has none.
-	//
-	// The real question is answered exactly, one node earlier: scaNode hashes the
-	// selected view and compares it with the previous review's, then sets
-	// NoProgress on a match ("same view twice despite new storage — further
-	// rounds cannot change the verdict"), which this function's first check
-	// honours. Measured (fixrecall, 2026-09-14): a round of batch name probing
-	// ended at 117 chunks — three short of the pool CAP — with the question's
-	// members still arriving, and the size guard finalized the run instead of
-	// letting the next round verify them.
-	//
-	// What still bounds the loop is unchanged: an INSUFFICIENT verdict, the
-	// round count, the round-headroom guard below, and NoProgress (which covers
-	// an unchanged view, no concrete gap, no actionable query, and a rewrite that
-	// retrieved nothing new).
-	if !enableSCA {
-		// medium: single research pass — the SCA verdict is informational only.
-		return nodeFormalizeAnswer
-	}
-	// Whether to spend another round is decided by the ROUND'S OWN RECORD, and the
-	// reviewer's verdict is only one of its inputs:
-	//
-	//   work left      — the slot table still lists unresolved slots. This is the
-	//                    framework's own statement that something is missing, and
-	//                    it is what keeps an ANCHORED rewrite possible at all.
-	//   still learning — the round added evidence (+N chunks). An empty
-	//                    unresolved list is NOT proof of completeness (the
-	//                    2026-09-15 run ended with unresolved=0 while the answer
-	//                    was six members short), and a satisfied reviewer is a
-	//                    judgement about the PASSAGES it read, not about whether
-	//                    the record is finished.
-	//
-	// The two combine into the rule this function applies:
-	//
-	//   work left AND still learning  → another round, even if the reviewer said
-	//                                   SUFFICIENT: it judged the passages, and
-	//                                   the table says the question is not done.
-	//   work left AND stalled         → the reviewer decides: an INSUFFICIENT
-	//                                   verdict with a concrete gap is a reason to
-	//                                   go round again; anything else closes out.
-	//   nothing left                  → close out (a settled table with no
-	//                                   verdict against it).
-	//   UNKNOWN                       → not a judgement either way: only the
-	//                                   record above can ask for another round.
-	//
-	// Every branch logs which fact decided, because "the loop ended" is otherwise
-	// indistinguishable from "the loop could not afford to continue" — and that
-	// silence already cost a run (2026-09-15: the reviewer returned INSUFFICIENT at
-	// confidence 1.00 with four concrete gaps, the run closed out with 60s and two
-	// rounds unspent, and nothing in the log said why).
-	//
-	// "Work" is the union of the TWO records that can name a direction: the slot
-	// table's unresolved slots, and the gaps the REVIEW extracted (SCAGapsToRewrite
-	// over its own sub_queries). Dropping the second one is what made an
-	// INSUFFICIENT verdict with concrete gaps unable to ask for the round it was
-	// pointing at.
-	gapList := SCAGapsToRewrite(st.SCA)
-	if len(gapList) == 0 {
-		gapList = unresolvedClueGaps(st)
-	}
-	gaps := len(gapList)
-	// COVERAGE is not a record here any more: a direction that DECLARED act words has had the
-	// corpus asked on its behalf (runtime.EnumerateCoverage) and the windows are in the pool,
-	// so "how much of the corpus has been read" is not a state the loop has to hold — and
-	// holding it was what kept a round alive after the reading was done (measured 2026-09-16,
-	// 三国/关羽: rounds whose whole work was re-reading the same list).
-	work := gaps > 0 || len(st.UnresolvedSlots) > 0
+// It replaces the SCA verdict as the thing that decides, and it reads only what the round itself
+// produced. There is no third source any more: the query rewrite that used to sit between two
+// rounds is gone (see the note where it lived), and with it the last place where CODE turned the
+// run's bookkeeping into the next thing to search. What is left is the paper's shape — the agent
+// says what it could not establish, and that statement is the next round's direction.
+//
+// The facts it reads are the round's own records, not judgements:
+//
+//	answered       — the session wrote an <answer>.
+//	open part      — the session wrote <unresolved>: the specific fact it could not establish.
+//	                 An ANSWER plus an open part is not a finished round: a multi-hop question's
+//	                 first answer is very often "I read X, and X does not carry Y", and treating it
+//	                 as final is how four questions stayed at zero while their sessions each held
+//	                 the bridge and said so (measured 2026-09-20, FRAMES: Quincy's mayors, Gifu's
+//	                 population, AP's law, Lahore in 1858 — see runtime.ParseUnresolved).
+//	still learning — the round added evidence (+N chunks). The pool is the only growth signal
+//	                 that needs no interpretation: passages are either new to it or they are not.
+//
+// Three cases, in the order they are checked:
+//
+//	an answer that names nothing open  ⇒ stop. The paper's rule, and the only one that ends a run
+//	                                     with an answer in hand.
+//	no answer, nothing open            ⇒ another round ONLY while the pool is still growing: the
+//	                                     round failed, and a retry is worth it only if the evidence
+//	                                     it read went somewhere.
+//	an open part                       ⇒ another round while the rounds and the clock allow it,
+//	                                     including ONE round that adds nothing: that is the
+//	                                     "take the next hop" case the slot table used to be asked
+//	                                     about. ZeroGrowthRounds bounds it so a stall cannot spend
+//	                                     the question.
+//
+// The slot table is not read here at all: it is the session's scratchpad, and a scratchpad is not
+// a statement about what is left (see the note where the rewrite node lived). What the run keeps
+// from the plan is the DIRECTION, which lists the plan's clues for the session to work through.
+//
+// The clock gate is canOpenRound, not "is there room to start": a round it opens has to leave the
+// finale its share, or the second round is paid for with the answer (see FinaleMinS).
+//
+// Measured 2026-09-20, before the rewrite node was removed: it returned one fixed node name to two
+// different callers, and on the rewrite branch that name was the branch's OWN node — which is not in
+// its declared ends, so Eino aborted the whole run ("unintended end node: query_rewrite") and the
+// question was answered by a fallback composition with no research in it. 4 of 23 requests hit it.
+// With one caller there is no second name to get wrong.
+func routeResearch(st *AgenticState, maxRounds int) agenticNode {
+	ans := strings.TrimSpace(st.CollectedAnswer)
+	open := strings.TrimSpace(st.SessionUnresolved)
 	grew := st.LastRoundNew > 0
-	verdictAsks := st.Verdict == VerdictInsufficient && work
-	wants := work && (grew || verdictAsks)
-	if !wants {
-		_LOG.Printf("[Routing] closing out: no round is asked for (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s).",
-			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict)
-		return nodeFormalizeAnswer
+	if grew {
+		st.ZeroGrowthRounds = 0
+	} else {
+		st.ZeroGrowthRounds++
 	}
-	if st.SearchRounds >= scaMaxRounds {
-		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s) but the round budget is spent (%d/%d); closing out.",
-			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds)
-		return nodeFormalizeAnswer
-	}
-	if st.RemainingS() <= MinRoundHeadroomS {
-		_LOG.Printf("[Routing] work remains (unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s) but only %.0fs left (need %.0fs); closing out.",
-			len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.RemainingS(), MinRoundHeadroomS)
-		return nodeFormalizeAnswer
-	}
-	if st.KB != nil && len(st.KB.Chunks) >= SCAViewCap {
-		// The case the pool-size guard used to end silently: the pool is past what
-		// the view can hold, yet this round's view CHANGED (scaNode did not set
-		// NoProgress), so the new evidence is readable and a further round can act
-		// on it.
-		_LOG.Printf("[SCA] pool holds %d chunk(s) (>= view cap %d) but this round's review view CHANGED; the new evidence is readable, so another round is worth its budget.",
-			len(st.KB.Chunks), SCAViewCap)
-	}
-	_LOG.Printf("[Routing] another round: unresolved=%d, gaps=%d, +%d chunks this round, verdict=%s, rounds=%d/%d, %.0fs left.",
-		len(st.UnresolvedSlots), gaps, st.LastRoundNew, st.Verdict, st.SearchRounds, scaMaxRounds, st.RemainingS())
-	return nodeQueryRewrite
-}
 
-// routeRewrite
-func routeRewrite(st *AgenticState, scaMaxRounds int, logger *log.Logger) agenticNode {
-	if st.NoProgress {
+	if ans != "" && open == "" {
+		common.Info("routing: closing out, the session wrote an answer and named no open part",
+			zap.Int("runes", utf8.RuneCountInString(ans)))
 		return nodeFormalizeAnswer
 	}
-	if st.SearchRounds >= scaMaxRounds {
+	if ans == "" && open == "" && !grew {
+		common.Info("routing: closing out, the round wrote no answer, named no open part and added no passage",
+			zap.Int("chunks", st.LastRoundNew))
 		return nodeFormalizeAnswer
 	}
-	if st.RemainingS() <= MinRoundHeadroomS {
-		if logger != nil {
-			logger.Printf("[Routing] research budget nearly exhausted (%.0fs left); closing out with current evidence.", st.RemainingS())
-		}
+	if !grew && st.ZeroGrowthRounds > 1 {
+		// The one free hop the previous round was given did not turn into evidence either.
+		common.Info("routing: closing out, consecutive rounds added no passage",
+			zap.Int("zero_growth_rounds", st.ZeroGrowthRounds), zap.Bool("open_part", open != ""))
 		return nodeFormalizeAnswer
 	}
+	if st.SearchRounds >= maxRounds {
+		common.Info("routing: closing out, the round budget is spent", zap.Int("rounds", st.SearchRounds),
+			zap.Int("max_rounds", maxRounds), zap.Bool("open_part", open != ""), zap.Int("chunks", st.LastRoundNew))
+		return nodeFormalizeAnswer
+	}
+	if !canOpenRound(st.RemainingS()) {
+		common.Info("routing: closing out, not enough clock left for another round",
+			zap.Float64("left_s", st.RemainingS()), zap.Float64("finale_share_s", finaleShareS(st.RemainingS())),
+			zap.Float64("min_round_s", MinRoundS), zap.Bool("open_part", open != ""))
+		return nodeFormalizeAnswer
+	}
+	common.Info("routing: another round", zap.String("open_part", runtime.TruncateRunes(open, 160)),
+		zap.Int("chunks", st.LastRoundNew), zap.Int("rounds", st.SearchRounds), zap.Int("max_rounds", maxRounds),
+		zap.Float64("room_s", researchRoomS(st.RemainingS())), zap.Float64("left_s", st.RemainingS()))
 	return nodeRagAgentLoop
 }
 
@@ -1093,182 +1177,11 @@ func composedRecord(kb *runtime.Kbinfos) string {
 	if kb == nil {
 		return ""
 	}
-	record := strings.TrimSpace(kb.Record)
-	if ledger := probeLedger(kb); ledger != "" {
-		if record != "" {
-			record += "\n"
-		}
-		record += ledger
-	}
-	if kb.SufficiencyUnchecked() {
-		// The review that judges completeness never produced a verdict (see graph_sca), so the count
-		// is what the evidence supports rather than a checked total.
-		record += "- NOTE: the sufficiency review could not be completed for this question, so nobody checked whether the members above are complete. State the count as what the evidence supports and do not present it as exhaustive."
-	}
-	return record
+	return strings.TrimSpace(kb.Record)
 }
 
-// ledgerNonNameMax bounds the "NOT names" line: enough that the run's probing stays visible on
-// the record, few enough that the terms nobody may use do not crowd out the ones they may.
-const ledgerNonNameMax = 10
-
-// probeNameRunes bounds what a probed term can be if it is to pass as a name. The corpus's names
-// are short (华雄, 程远志, 太史慈) and a longer term is a phrase a session built rather than a name
 // it found (荥阳太守王植, 令左右推出斩之).
 const probeNameRunes = 5
-
-// probeLedgerTerms splits the reached terms into the ones that can be a name and the ones that
-// cannot: an act word names the deed, so does a term carrying one, a term with a separator, a space
-// or too many runes is a query, and the actor's own forms are not elements of what he did. What is
-// name-shaped is left to judgement, which is what the section is for.
-func probeLedgerTerms(kb *runtime.Kbinfos, reached []runtime.ReachedTerm) (named []runtime.ReachedTerm, others []string) {
-	acts, actors := kb.CoverageDecl()
-	for _, rt := range reached {
-		if probeNameShaped(rt.Term, acts, actors) {
-			named = append(named, rt)
-			continue
-		}
-		others = append(others, rt.Term)
-	}
-	return named, others
-}
-
-// probeNameShaped reports whether a probed term is shaped like a name (see probeLedgerTerms).
-func probeNameShaped(term string, acts, actors []string) bool {
-	t := strings.TrimSpace(term)
-	if t == "" || utf8.RuneCountInString(t) > probeNameRunes {
-		return false
-	}
-	for _, r := range t {
-		if unicode.IsSpace(r) || unicode.IsDigit(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
-			return false
-		}
-	}
-	lowered := strings.ToLower(t)
-	// An act word is rejected even when it is one rune and only contained: a name never carries the
-	// verb of the deed.
-	for _, act := range acts {
-		if act = strings.ToLower(strings.TrimSpace(act)); act != "" && strings.Contains(lowered, act) {
-			return false
-		}
-	}
-	// The actor's forms go through the same predicate as the member set (runtime.IsActorForm).
-	return !runtime.IsActorForm(t, actors)
-}
-
-// probeLedger renders the names the research PROBED — the terms the model itself
-// asked the corpus about, with what came back.
-//
-// It exists because the slots are the model's own bookkeeping and the ledger is
-// the framework's: a run can probe twenty-four terms, get a passage for each, and
-// record eleven of them in a slot, and then the answer is composed from the
-// eleven while the other thirteen exist only inside the pool. Measured
-// (fixrecall2, 2026-09-15): `members=0 reached=24` at the last turn, eleven names
-// in the final record, and 车胄 / 管亥 both proven present by the run's own probes
-// (`carry: 车胄(7) 管亥(3)`) yet absent from the answer — which meanwhile anchored
-// on the model's own PRIOR, delivered through a slot nobody could verify.
-//
-// The wording keeps the two lists apart on purpose. "Reached" is a fact about the
-// corpus; "belongs in the answer" is a judgement the answer still has to make.
-// And a term that was probed with nothing back is a fact about the QUERY — the
-// distinction the whole loop depends on, since reading it as absence is what
-// stops an enumeration short.
-func probeLedger(kb *runtime.Kbinfos) string {
-	if kb == nil {
-		return ""
-	}
-	var b strings.Builder
-	if reached := kb.ReachedTerms(); len(reached) > 0 {
-		// Per-member quotes are for a SET answer, which is the only answer that has
-		// to point at a passage per item. On a value direction they would be prompt
-		// tokens bought for nothing, so the quotes ride the same shape gate as the
-		// rest of the set machinery (the direction declares itself once, see
-		// Kbinfos.MarkSetDirection). The names stay in both cases: they are what the
-		// ledger has always been.
-		quoted := kb.IsSetDirection()
-		named, others := probeLedgerTerms(kb, reached)
-		terms := make([]string, 0, len(named))
-		for _, rt := range named {
-			// The name AND the words that prove it. Without the words the answer has
-			// a list of names and no way to point at a passage for any one of them,
-			// which is what a set answer needs to carry per member: measured
-			// (2026-09-16) an answer that was handed names only reported "21 listed,
-			// four counted but not listed" and cited one evidence RANGE for all of
-			// them, instead of one citation per member.
-			if quoted && len(terms) < ledgerQuoteMembers {
-				if quote := ledgerQuote(kb, rt.ChunkID, rt.Term); quote != "" {
-					terms = append(terms, fmt.Sprintf("%s — %s", rt.Term, quote))
-					continue
-				}
-			}
-			terms = append(terms, rt.Term)
-		}
-		if len(terms) > 0 {
-			fmt.Fprintf(&b, "Probed and answered (a passage came back for each of these, so they OCCUR in the corpus; whether each belongs in the answer is still your judgement — any name here that the record above does not mention is a finding nobody recorded; the words behind each name are its evidence, and a member without words is a member nobody can point at): %s",
-				strings.Join(terms, "；"))
-		}
-		if len(others) > 0 {
-			if b.Len() > 0 {
-				b.WriteString("\n")
-			}
-			if len(others) > ledgerNonNameMax {
-				others = append(others[:ledgerNonNameMax], "…")
-			}
-			fmt.Fprintf(&b, "Probed, NOT names (the act words and query-shaped terms this run also asked about — listed so its own probing is visible on the record; do NOT list them as members): %s",
-				strings.Join(others, "；"))
-		}
-	}
-	if absent := kb.ProbedAbsentTerms(); len(absent) > 0 {
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		fmt.Fprintf(&b, "Probed with NOTHING back (a fact about the query, not about the corpus — re-word it or change the angle; this is not \"absent\"): %s",
-			strings.Join(absent, "、"))
-	}
-	return b.String()
-}
-
-// ledgerQuoteRunes bounds one member's quoted evidence, and ledgerQuoteMembers
-// how many members carry a quote. Both are bounded because the ledger is part of
-// the ANSWER prompt: a couple of dozen members at a few dozen runes each is the
-// most a record may spend on evidence before it crowds out the question.
-const (
-	ledgerQuoteRunes   = 40
-	ledgerQuoteMembers = 24
-)
-
-// ledgerQuote is the words behind one reached term: a short window of the pool
-// chunk that carries it, in the reading order of that chunk.
-//
-// The ledger names the members; this is what lets an answer show, member by
-// member, the passage each one rests on — and lets a reader see which member has
-// no words behind it at all.
-func ledgerQuote(kb *runtime.Kbinfos, chunkID, term string) string {
-	c := kb.ChunkByID(chunkID)
-	if c == nil {
-		return ""
-	}
-	text := runtime.ChunkTextOf(c)
-	if text == "" {
-		return ""
-	}
-	runes := []rune(text)
-	start := 0
-	if at := strings.Index(text, term); at > 0 {
-		if r := utf8.RuneCountInString(text[:at]) - ledgerQuoteRunes/3; r > 0 {
-			start = r
-		}
-	}
-	end := min(start+ledgerQuoteRunes, len(runes))
-	if end-start < ledgerQuoteRunes && end == len(runes) {
-		start = max(0, end-ledgerQuoteRunes)
-	}
-	q := strings.TrimSpace(strings.ReplaceAll(string(runes[start:end]), "\n", " "))
-	if q == "" {
-		return ""
-	}
-	return "“" + q + "”"
-}
 
 // recordSource names which block the answer prompt carried, so a log reader can
 // tell "the model had a slot record" from "the model had a prose summary" without
@@ -1306,36 +1219,6 @@ const recordContract = "Research Record (INTERNAL — your own slot table plus t
 	"A name listed as probed-and-answered is one the corpus was asked about and produced: if the answer " +
 	"is a list or a count and that name is not in it, say why."
 
-// draftEvidenceSuffix renders the " [terminal=..., evidence_ids=['a', 'b']]" suffix; empty
-// when the session recorded neither.
-func draftEvidenceSuffix(ev SlotEvidence) string {
-	var parts []string
-	if ev.TerminalType != "" {
-		parts = append(parts, "terminal="+ev.TerminalType)
-	}
-	if len(ev.EvidenceIDs) > 0 {
-		parts = append(parts, "evidence_ids="+literalList(ev.EvidenceIDs))
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return " [" + strings.Join(parts, ", ") + "]"
-}
-
-// draftClueTail joins a resolved slot's last four discovered clues: each capped at
-// draftClueTailChars, separated by "; ". Empty clues are KEPT, so `["", "x"]` renders as
-// "; x".
-func draftClueTail(clues []string) string {
-	if len(clues) > 4 {
-		clues = clues[len(clues)-4:]
-	}
-	capped := make([]string, 0, len(clues))
-	for _, c := range clues {
-		capped = append(capped, truncateRunes(c, draftClueTailChars))
-	}
-	return strings.Join(capped, "; ")
-}
-
 // literalList renders a string slice as the protocol's list of quoted terms (['a', 'b']):
 // the draft text is prompt content the SCA reads, and Go's fmt.Sprint form ([a b]) does not
 // read as a list of terms.
@@ -1369,12 +1252,19 @@ type SlotResearchResult struct {
 	CollectedAnswer string
 	UnresolvedSlots []map[string]any
 	SlotEvidence    map[string]SlotEvidence
-	SlotDraft       string
+	// EvidenceRefs is the session's evidence registry in first-seen order: the chunk ids the
+	// model was shown as [ID:0], [ID:1], … (see SessionState.EvidenceRefs). The answer the
+	// session wrote cites THESE numbers, so a caller that lets that answer stand must pass this
+	// list on as the citation list.
+	EvidenceRefs []string
 	// SlotRecord is the same table rendered for the ANSWER prompt: the facts the
 	// research settled, without the machine fields the SCA needs (see
 	// RenderSlotRecord). The two are produced together so they cannot drift.
 	SlotRecord string
 	Attempted  []map[string]any
+	// Unresolved is the session's own statement of what it could not establish, when it wrote one
+	// (see runtime.Result.Unresolved). An answer beside an open part is not a finished round.
+	Unresolved string
 }
 
 // buildSlotTableFrom wraps InitializeState, converting its non-error result into
@@ -1412,7 +1302,8 @@ const (
 	EvidenceBatchMinSim    = 0.15
 	EvidenceBatchMinShared = 2
 	EvidenceBatchMaxSlots  = 4
-	EvidenceBatchMaxChars  = 12000
+	// The evidence a batch answer renders is bounded by the ANSWER stage's block bound (see
+	// runtime.StageChars(runtime.StageAnswer)), not by a constant declared here.
 )
 
 // EvidenceBatchPrompt
@@ -1434,11 +1325,10 @@ func intersectionSize(a, b map[string]bool) int {
 	return n
 }
 
-// Word-level coverage a pooled evidence row must reach before it is allowed to
-// answer a slot on its own. Deliberately strict: a wrong prefill costs
-// accuracy, while a missed prefill only costs one session (which still runs).
-// Strict on purpose: a wrong prefill costs accuracy, a missed one costs a session.
-const EvidencePrefillCoverage = 0.6
+// slotPrefillMinCoverage is the word-level coverage a pooled evidence row must reach before it
+// answers a slot on its own. Strict on purpose: a wrong prefill costs accuracy, a missed one
+// costs a session (which still runs).
+const slotPrefillMinCoverage = 0.6
 
 // The literal helpers this file's prompts render with (retrieval.formatLiteral /
 // retrieval.quoteLiteral) live in the runtime package: initialize_state needs the same
@@ -1459,8 +1349,9 @@ const (
 	// draftFallbackChars: raw-evidence fallback when no model is available or the
 	// call fails.
 	draftFallbackChars = 4000
-	// draftMaxChars caps the composed draft.
-	draftMaxChars = 6000
+	// The composed draft's cap is NOT a constant here: it is the draft stage's block bound (see
+	// runtime.StageChars(runtime.StageDraft)), so a draft is bounded in the same place as every
+	// other delivery rather than next to whoever composes it.
 )
 
 // containsNonASCII: a question carrying non-ASCII characters is answered in its own
@@ -1496,24 +1387,17 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 		st.KB = deps.KB
 	}
 	spec := runtime.ResolveMode(deps.Tools)
-	enableSCA := spec.EnableSCA
-	useFanout := spec.UseFanout
-	scaMaxRounds := spec.SCAMaxRounds
+	maxRounds := spec.MaxRounds
 
-	step(ctx, logger, "Agentic RAG", "Starting research in %s mode (self-check %s, question fan-out %s).",
-		spec.Label, onOff(enableSCA), onOff(useFanout))
+	step(ctx, logger, "Agentic RAG", "Starting research in %s mode (%s).",
+		spec.Label, runtime.CountOf(maxRounds, "follow-up round"))
 
 	// run_agentic_rag — there is NO whole-graph wall clock. Research stays
-	// bounded by the per-node timeouts (bounded / PassTimeoutS / SCATimeoutS…),
+	// bounded by the per-node timeouts (bounded / PassTimeoutS / the action clock…),
 	// the routing guards (MinRoundHeadroomS) and the visit limit; and because
 	// formalize_answer now composes inside the graph, the answer stream must be allowed to
 	// run until the model finishes. Capping the whole graph at TotalBudgetS+30s used to cut
 	// the composition short.
-
-	// Prefetch is gated on fan-out. NOTE: a stale comment elsewhere claims prefetch is
-	// DISABLED, but the wiring still enables it for fan-out modes — behaviour here matches
-	// the CODE, not the comment.
-	usePrefetch := useFanout
 
 	// run_agentic_rag — LangGraph counts NODE VISITS, not loop iterations: one
 	// research round is rag_agent → draft → sca = three visits. Counting run
@@ -1570,23 +1454,16 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	})
 	addNode("prefetch", func(ctx context.Context, s *AgenticState) (*AgenticState, error) {
 		visit(1)
-		// firstRound is always true here: prefetch is only reachable from the
-		// planner, which itself only runs on the first pass.
-		prefetchNode(ctx, deps, s, logger, true)
+		prefetchNode(ctx, deps, s, logger)
 		return s, nil
 	})
-	// rag_agent is one research round: rag_agent → draft → sca (build_agentic_graph).
-	// Both the first pass and the rewrite-driven passes enter this node.
+	// rag_agent is one research ROUND: one session reads the evidence and writes its answer.
+	// Both the first pass and the rewrite-driven passes enter this node. It used to be three
+	// nodes — rag_agent → draft → sca — where the draft existed only to be reviewed and the
+	// review existed only to judge the draft (see the note on routeResearch).
 	addNode("rag_agent", func(ctx context.Context, s *AgenticState) (*AgenticState, error) {
 		visit(agenticRoundVisits)
 		ragAgentNode(ctx, deps, s, logger)
-		draftNode(ctx, deps, s, logger)
-		scaNode(ctx, deps, s, logger)
-		return s, nil
-	})
-	addNode("query_rewrite", func(ctx context.Context, s *AgenticState) (*AgenticState, error) {
-		visit(1)
-		queryRewriteNode(ctx, deps, s, logger)
 		return s, nil
 	})
 	addNode("formalize_answer", func(c context.Context, s *AgenticState) (*AgenticState, error) {
@@ -1610,43 +1487,30 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 	addEdge("formalize_answer", compose.END)
 	addEdge("stop", compose.END)
 
-	// build_agentic_graph — onward to the planner, or straight to rag_agent when
-	// fan-out is off (medium).
+	// Every mode walks the same graph: formalize_question → planner → prefetch → rag_agent →
+	// … The planner used to be skipped (and prefetch with it) for the modes whose spec said
+	// `UseFanout: false`, so the QUESTION's own structure — which mode it happened to run
+	// under — decided whether the plan step existed at all. A mode now differs only in how
+	// much it may spend (see runtime/config.go): same nodes, same edges, same semantics.
 	addBranch("formalize_question", func(_ context.Context, _ *AgenticState) (string, error) {
-		if useFanout {
-			return guard("planner"), nil
-		}
-		return guard("rag_agent"), nil
-	}, map[string]bool{"stop": true, "planner": true, "rag_agent": true})
+		return guard("planner"), nil
+	}, map[string]bool{"stop": true, "planner": true})
 
 	addBranch("planner", func(_ context.Context, _ *AgenticState) (string, error) {
-		if usePrefetch {
-			return guard("prefetch"), nil
-		}
-		return guard("rag_agent"), nil
-	}, map[string]bool{"stop": true, "prefetch": true, "rag_agent": true})
+		return guard("prefetch"), nil
+	}, map[string]bool{"stop": true, "prefetch": true})
 
 	addBranch("prefetch", func(_ context.Context, _ *AgenticState) (string, error) {
 		return guard("rag_agent"), nil
 	}, map[string]bool{"stop": true, "rag_agent": true})
 
+	// ONE router after the research node: a round either ends the run (the session answered) or
+	// asks for another one, and there is no separate reviewer whose verdict could ask for it
+	// instead. The round count is the mode's, and nothing about the QUESTION shortens it: it
+	// used to be cut to two rounds for a table the planner had typed as a set, and that bound
+	// cannot be told from a slot type.
 	addBranch("rag_agent", func(_ context.Context, s *AgenticState) (string, error) {
-		rounds := scaMaxRounds
-		// An ENUMERATION runs a bounded number of rounds: one to ask the corpus the act
-		// patterns its seed carries and name what they return, one to recover what the
-		// round's own record shows it reached and did not record. Measured (2026-09-16,
-		// 三国/关羽, three runs): round 2 took a table from 11 members to 14 by recording
-		// 车胄 / 程远志 / 管亥 — and every round after it added `+0 chunks`, i.e. a third
-		// draft of the same list. The bound is on the ENUMERATION the planner declared
-		// (Coverage.Ok), so a value question keeps the rounds it buys accuracy with.
-		if runtime.CoverageOf(s.SlotTable).Ok() && rounds > 2 {
-			rounds = 2
-		}
-		return guard(agenticNodeName(routeSCA(s, enableSCA, rounds))), nil
-	}, map[string]bool{"stop": true, "query_rewrite": true, "formalize_answer": true})
-
-	addBranch("query_rewrite", func(_ context.Context, s *AgenticState) (string, error) {
-		return guard(agenticNodeName(routeRewrite(s, scaMaxRounds, logger))), nil
+		return guard(agenticNodeName(routeResearch(s, maxRounds))), nil
 	}, map[string]bool{"stop": true, "rag_agent": true, "formalize_answer": true})
 
 	if buildErr != nil {
@@ -1682,8 +1546,6 @@ func BuildAgenticGraph(ctx context.Context, deps RAGTools, question, keywords st
 // node keys.
 func agenticNodeName(n agenticNode) string {
 	switch n {
-	case nodeQueryRewrite:
-		return "query_rewrite"
 	case nodeRagAgentLoop:
 		return "rag_agent"
 	default:
@@ -1740,16 +1602,14 @@ func NewAgenticLoop() AgenticLoop {
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{
-			Tools:          toolset,
-			Search:         sd, // dual-channel fan-out retrieves directly
-			Model:          deps.Model,
-			ModelName:      deps.ModelName,
-			Prompts:        deps.Prompts,
-			KB:             kb,
-			SCAPrompts:     deps.Prompts,
-			RewritePrompts: deps.Prompts,
-			MaxLength:      deps.MaxLength,
-			Logger:         logger,
+			Tools:     toolset,
+			Search:    sd, // dual-channel fan-out retrieves directly
+			Model:     deps.Model,
+			ModelName: deps.ModelName,
+			Prompts:   deps.Prompts,
+			KB:        kb,
+			MaxLength: deps.MaxLength,
+			Logger:    logger,
 			// The terminal composition is the formalize_answer node body; it must reach the
 			// graph even though this deps copy is rebuilt here.
 			Finalize: deps.Finalize,
@@ -1787,21 +1647,18 @@ func NewAgenticLoop() AgenticLoop {
 		}
 		resp.Partial = st.PartialAnswer
 		resp.SearchRounds = st.SearchRounds
-		resp.Verdict = st.Verdict
-		// SCAFeedback is the body of the "[Research status]" note (status hint + hard
-		// violations + missing claims + confidence) that rag() folds into the answer for EVERY
-		// non-SUFFICIENT verdict. Rag() appends the trailing "STOP" vs "call rag again"
-		// sentence based on the consecutive-unanswerable count.
-		resp.SCAFeedback = scaFeedback(st.SCA, st.Verdict)
+		// RoundRecord is the body of the "[Research status]" note that rag() folds into the
+		// answer when the round did NOT answer. It is the round's own record (what it read, what
+		// the plan still lists as unresolved) rather than a reviewer's verdict. Rag() appends the
+		// trailing "STOP" vs "call rag again" sentence based on the consecutive-unanswerable count.
+		resp.RoundRecord = researchStatusNote(st)
 		// Update the consecutive-unanswerable guardrail on the shared per-turn *RAGCache.
 		// Rag() builds deps.Cache before the outer react branch, so this counter accumulates
 		// across the outer loop's multiple rag() calls within a single turn.
 		//
-		// A SUFFICIENT verdict resets the counter, any other verdict bumps it, and
-		// the update is locked because those calls run concurrently — hence the
-		// call goes straight to the cache method (it used to be a pass-through
-		// wrapper that only renamed it).
-		deps.Cache.NoteUnanswerable(st.Verdict)
+		// A round that ANSWERED resets the counter, one that did not bumps it, and the update is
+		// locked because those calls run concurrently.
+		deps.Cache.NoteUnanswerable(strings.TrimSpace(st.CollectedAnswer) != "")
 	}
 }
 
@@ -1843,13 +1700,13 @@ func formalizeStepLine(asAsked, standalone string) string {
 		if asAsked == "" {
 			return ""
 		}
-		return fmt.Sprintf("Kept the question as asked: %q", trunc(asAsked, 80))
+		return fmt.Sprintf("Kept the question as asked: %q", runtime.TruncateRunes(asAsked, 80))
 	}
 	if asAsked == "" {
-		return fmt.Sprintf("Standalone question for this turn: %q", trunc(standalone, 80))
+		return fmt.Sprintf("Standalone question for this turn: %q", runtime.TruncateRunes(standalone, 80))
 	}
 	return fmt.Sprintf("Rewrote the follow-up into a standalone question: %q → %q",
-		trunc(asAsked, 80), trunc(standalone, 80))
+		runtime.TruncateRunes(asAsked, 80), runtime.TruncateRunes(standalone, 80))
 }
 
 // formalizeQuestionNode is the graph's first node. It resolves pronouns and ellipses from
@@ -1884,7 +1741,7 @@ func formalizeQuestionNode(ctx context.Context, deps RAGTools, st *AgenticState,
 	if logger != nil {
 		asAsked, _ := transcriptOf(st.Messages)
 		if line := formalizeStepLine(asAsked, q); line != "" {
-			runtime.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+			runtime.StepsFrom(ctx).StageLine("Formalize", line)
 		}
 	}
 }
@@ -1918,7 +1775,7 @@ func formalizeQuestion(ctx context.Context, deps RAGTools, req *runtime.RunReque
 	if logger != nil {
 		asAsked, _ := transcriptOf(deps.Messages)
 		if line := formalizeStepLine(asAsked, q); line != "" {
-			runtime.StepsFrom(ctx).StageLine(logger, "Formalize", line)
+			runtime.StepsFrom(ctx).StageLine("Formalize", line)
 		}
 	}
 }
@@ -2005,7 +1862,7 @@ func providerErrorSummary(err error) string {
 	if err == nil {
 		return ""
 	}
-	return truncateRunes(strings.Join(strings.Fields(err.Error()), " "), providerErrorSummaryMax)
+	return runtime.TruncateRunes(runtime.FlattenLine(err.Error()), providerErrorSummaryMax)
 }
 
 // errorAnswerText renders a provider failure as the ANSWER, in the shape the
@@ -2018,36 +1875,13 @@ func errorAnswerText(err error) string {
 	return "**ERROR**: " + providerErrorSummary(err)
 }
 
-// ComposeAnswer: turn the gathered
-// evidence into a grounded, cited answer.
-//
-// Behaviour, in order:
-//  1. no evidence + configured empty_response → return it WITHOUT calling the LLM;
-//  2. rank chunks by similarity, keep the top citeChunkCap as citation reference;
-//  3. render the evidence block under the token budget (kb_prompt);
-//  4. prepend the fact-preserving pre_summary (the SCA-reviewed draft) when set;
-//  5. call the model with FINAL_ANSWER_SYSTEM + the composed user content.
-func ComposeAnswer(ctx context.Context, deps AnswerDeps, kb *runtime.Kbinfos, question string, partial, abstain bool) AnswerResult {
-	return ComposeAnswerWith(ctx, deps, kb, question, partial, abstain, false)
-}
-
 // multimodalUserMsg builds a user message that carries the given text plus any
 // vision-gated image data URIs. Returns nil when there is no text and no
 // images, so callers fall back to schema.UserMessage. Used by the non-outer
 // final-answer path so the compose model sees images even without the outer
 // react loop.
 func multimodalUserMsg(text string, images []string) *schema.Message {
-	parts := make([]schema.MessageInputPart, 0, 1+len(images))
-	if text != "" {
-		parts = append(parts, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: text})
-	}
-	for i := range images {
-		uri := images[i]
-		parts = append(parts, schema.MessageInputPart{
-			Type:  schema.ChatMessagePartTypeImageURL,
-			Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &uri}},
-		})
-	}
+	parts := imageMessageParts(text, images)
 	if len(parts) == 0 {
 		return nil
 	}
@@ -2072,215 +1906,146 @@ const answerTargetContract = "Answer Target Contract:\n" +
 	"Use bridge entities only as clues, and verify any proposed answer against " +
 	"the evidence. In EXTREME-SELECTION questions (shortest/longest/smallest/" +
 	"largest/most/least/最), compare the alternatives in the evidence and name " +
-	"the EXTREME one rather than the most common or first-listed.\n"
+	"the EXTREME one rather than the most common or first-listed. " +
+	"When the question asks HOW MANY members of a set (how many people X killed, " +
+	"which awards Y won, who were the holders of Z), the LIST is the answer: name " +
+	"every member the evidence supports, cite the passage behind each one, and give " +
+	"the total at the end. A bare number is not an answer, and a member with no " +
+	"passage behind it is left out rather than guessed.\n"
 
-// withCitedChunks puts the passage behind every enumerated item FIRST, then the top-scoring
-// remainder. An enumerated answer cites one passage per element, and those passages are in the pool
-// but not necessarily among the few that score highest: a sixteen-member table whose answer could
-// name only three of them was reading the same six blocks as any other question.
+// recordSessionEvidence copies the session's evidence registry onto the pool: the list of passages
+// the session was SHOWN ([ID:n]), which is what the answer stage resolves its markers against.
 //
-// Members first also means a token budget that truncates can only drop the scored extras, never an
-// element's own passage (see KBPrompt, which stops at the budget).
-func withCitedChunks(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []map[string]any {
+// It is recorded whether or not the session wrote an answer, and an empty list never CLEARS what an
+// earlier round recorded — the registry describes the run, and a session that read nothing has
+// nothing to say about it.
+//
+// It used to be assigned inside the "the session answered" branch of ragAgentNode, so a round that
+// read forty passages and wrote no answer left the pool with no registry at all (measured
+// 2026-09-20, 三国/关羽: 44 passages read, 0 patches, 0 answers — and the answer came back with no
+// citation for a single member).
+func recordSessionEvidence(kb *runtime.Kbinfos, refs []string) {
+	if kb == nil || len(refs) == 0 {
+		return
+	}
+	// MERGE, never replace: the registry is the run's, and a round's answer may cite what an earlier
+	// round showed — replacing it with the last session's list left those markers pointing into
+	// another round's passages (measured 2026-09-20 三国/关羽: an answer citing [ID:45] with a
+	// registry of 8, every anchored member "->(not-published)"). The session starts from this list
+	// (see loadEvidenceRefs), so a merge of its own list is a no-op and the new ids are the round's
+	// own additions.
+	kb.PublishEvidence(refs)
+}
+
+// evidenceOrder is the ANSWER stage's evidence list: the passages the run SHOWED first, then the ones it
+// READ, then the opening's ranked head, then the rest by score — deduped, and never more than `max`.
+//
+// WHAT THE RUN SHOWED comes first because it is evidence whether or not a tool call was spent on it. The
+// seed renders the scan's delivered windows as numbered material ([ID:n]) and the answer resolves its
+// markers against this list; before this change the windows were published for citation but were NOT in
+// the list, so a member the session enumerated from them had no block behind it. Measured 2026-09-21
+// (三国/关羽, three runs of one build, `list_chunks` called zero times in all three): rendered_blocks
+// 10/176/299 while the members' own windows were absent from two of the three answers — the shape the
+// reader reports as "14 names, no citations".
+//
+// It is mechanical on purpose: every id here is a passage the run was already handed (a shown window, a
+// read page, an opening preview), and "what the run was handed" needs no judgement about what those
+// passages mean (see the note on SessionRecord in runtime/session_state_line.go). It used to put the
+// passages behind a RUNTIME-DERIVED member list first — a ledger built by reading names out of the model's
+// queries and substring-matching them against the slots — which is the inference this design removes: a
+// passage the model never saw and never noted is not the run's evidence.
+//
+// The size and the de-duplication are the two halves of "the answer prompt does not grow with the pool"
+// (see the evidence constants in graph_compose.go): `max` is a COUNT, and two passages that say the same
+// thing (overlapping windows of adjacent chunks) take one slot, not two.
+func evidenceOrder(ranked []map[string]any, kb *runtime.Kbinfos, max int) []map[string]any {
 	if kb == nil || len(ranked) == 0 {
 		return ranked
 	}
-	cited := make([]map[string]any, 0, len(ranked))
+	if max <= 0 {
+		max = answerEvidenceBlocks
+	}
+	shown := make([]string, 0, len(kb.ScanWindows()))
+	for _, w := range kb.ScanWindows() {
+		if w.ChunkID != "" {
+			shown = append(shown, w.ChunkID)
+		}
+	}
+	material := make([]string, 0, len(shown)+len(kb.ReadIDs())+len(kb.Opening()))
+	material = append(material, shown...)
+	// The SESSION's own registry is the other half of "shown": a window the session cited or a page a tool
+	// published reached the model as material too, and the answer must be able to cite it back.
+	material = append(material, kb.SessionEvidenceRefs...)
+	material = append(material, kb.ReadIDs()...)
+	material = append(material, kb.Opening()...)
+	out := make([]map[string]any, 0, max)
 	used := map[string]bool{}
-	for _, id := range kb.CitedChunks() {
-		if c := kb.ChunkByID(id); c != nil && !used[id] {
+	texts := make([]string, 0, max)
+	neglected := 0
+	take := func(c map[string]any) bool {
+		if len(out) >= max {
+			return false
+		}
+		id := runtime.ChunkIDOf(c)
+		if id != "" {
+			if used[id] {
+				return true
+			}
 			used[id] = true
-			cited = append(cited, c)
+		}
+		text := runtime.ChunkTextOf(c)
+		for _, kept := range texts {
+			if runtime.NearDuplicate(kept, text) {
+				neglected++
+				return true
+			}
+		}
+		texts = append(texts, text)
+		out = append(out, c)
+		return true
+	}
+	for _, id := range material {
+		if len(out) >= max {
+			break
+		}
+		if c := kb.ChunkByID(id); c != nil {
+			take(c)
 		}
 	}
 	for _, c := range ranked {
-		if len(cited) >= len(kb.CitedChunks())+cap {
+		if len(out) >= max {
 			break
 		}
-		if id := runtime.ChunkIDOf(c); id != "" && used[id] {
-			continue
-		}
-		cited = append(cited, c)
+		take(c)
 	}
-	if len(cited) == 0 {
+	kb.NoteEvidenceSelection(len(out), neglected, len(material))
+	if len(out) == 0 {
 		return ranked
 	}
-	return cited
-}
-
-// compactAnchored renders each anchored member's block from the quote the naming node matched it
-// to, leaving every other chunk as it is. The block is what the budget is spent on, so whole
-// passages put only the first handful of members inside the render — and a member outside it has
-// no block number the model could cite. The quote carries the same words the record already
-// states, so no evidence is lost: the passage keeps its place in the pool and in the reference.
-func compactAnchored(chunks []map[string]any, kb *runtime.Kbinfos) []map[string]any {
-	if kb == nil {
-		return chunks
-	}
-	quotes := map[string]string{}
-	for _, ref := range kb.AnchoredRefs() {
-		if ref.ChunkID == "" || ref.Quote == "" {
-			continue
-		}
-		if _, dup := quotes[ref.ChunkID]; !dup {
-			quotes[ref.ChunkID] = ref.Quote
-		}
-	}
-	if len(quotes) == 0 {
-		return chunks
-	}
-	out := make([]map[string]any, 0, len(chunks))
-	for _, c := range chunks {
-		q, ok := quotes[runtime.ChunkIDOf(c)]
-		if !ok {
-			out = append(out, c)
-			continue
-		}
-		cp := make(map[string]any, len(c)+1)
-		for k, v := range c {
-			cp[k] = v
-		}
-		cp["content"] = q
-		out = append(out, cp)
-	}
 	return out
 }
 
-// anchoredPoolEntries rebuilds a pool record for every enumerated member whose passage is NOT in
-// the pool, from the quote the naming node took from that passage.
+// evidenceChunkForPrompt returns a COPY of a pool chunk whose text is capped at `runes`, for the answer
+// prompt only. The pool keeps the whole passage — list_chunks reads it and the reference list points at it
+// — while the BLOCK is what the answer pays for, and a constant block size is half of what keeps the
+// answer prompt a constant (see answerEvidenceChunkRunes).
 //
-// The citation chain is: marker number → position in the published list → the pool entry that id
-// resolves to. A member whose passage is gone therefore cannot be cited at all — the marker is
-// dropped (citePoolIdx answers -1) or opens nothing. Rebuilding the record from the member's own
-// quote keeps that chain whole, and the content it opens is exactly the text the answer states.
-func anchoredPoolEntries(kb *runtime.Kbinfos) []map[string]any {
-	if kb == nil {
-		return nil
+// The cap is what stops the "scattered fragments" complaint from being traded for its opposite: measured
+// 2026-09-21, the answer complained about fragments when its material was 240-rune cuts, and the run that
+// handed it the whole pool (176-299 blocks) stopped citing altogether.
+func evidenceChunkForPrompt(c map[string]any, runes int) map[string]any {
+	text := runtime.ChunkTextOf(c)
+	if runes <= 0 || len([]rune(text)) <= runes {
+		return c
 	}
-	var out []map[string]any
-	for _, r := range kb.AnchoredRefs() {
-		id := strings.TrimSpace(r.ChunkID)
-		quote := strings.TrimSpace(r.Quote)
-		if id == "" || quote == "" || kb.ChunkByID(id) != nil {
-			continue
-		}
-		out = append(out, map[string]any{
-			"chunk_id":            id,
-			"content":             quote,
-			"content_with_weight": quote,
-		})
+	cut := runtime.Snippet(text, runes)
+	out := make(map[string]any, len(c))
+	for k, v := range c {
+		out[k] = v
 	}
-	return out
-}
-
-// publishAnchoredMembers publishes the slot table's anchored members into the answer's evidence
-// ledger: the citation list the compose puts IN FRONT of the answer (see withCitedChunks) and the
-// member→passage table its markers are written from (see CiteAnchoredMembers).
-//
-// It exists because the enumeration is not the only writer of members. Both publish sites sit in the
-// enumeration's write-back (coverage_step.go), so a member set a METADATA selection defined never
-// reached the answer's evidence at all: measured (2026-09-21) the record listed 6 documents with
-// their update times, the answer stated all 6 — and the evidence it read carried six blocks about
-// OTHER documents with zero markers resolved. The data was in the table the whole time; nobody
-// published it.
-//
-// The anchors such a session records are not pool chunk ids. metadata_search runs no retrieval and
-// admits no passage (tool_executor.go), so it hands the session DOC ids and the session writes those
-// in: measured, 12 anchors, all 32-hex doc ids, none resolvable by ChunkByID. Resolution is
-// therefore part of publishing rather than a refinement of it (see resolveMemberAnchor).
-//
-// derived is what the table claims, resolved what the pool could point at. A member that resolves to
-// nothing is NOT published — it stays a name in the record, but gets no block and no marker rather
-// than a block that opens somebody else's passage.
-func publishAnchoredMembers(kb *runtime.Kbinfos, table *runtime.State) (derived, resolved int) {
-	if kb == nil || table == nil {
-		return 0, 0
-	}
-	refs := runtime.AnchoredItemRefs(table)
-	if derived = len(refs); derived == 0 {
-		return 0, 0
-	}
-	published := make([]runtime.AnchoredRef, 0, len(refs))
-	cited := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		id, quote := resolveMemberAnchor(kb, ref)
-		if id == "" {
-			continue
-		}
-		ref.ChunkID, ref.Quote = id, quote
-		published = append(published, ref)
-		cited = append(cited, id)
-	}
-	if resolved = len(cited); resolved == 0 {
-		return derived, 0
-	}
-	// UNION, not replace: NoteCitedChunks replaces, and the enumeration's own list may hold
-	// passages this derivation does not — a member whose anchor no longer resolves must not cost
-	// the answer a passage that still does.
-	kb.NoteCitedChunks(appendMissingIDs(kb.CitedChunks(), cited))
-	kb.NoteAnchoredRefs(mergeAnchoredRefs(kb.AnchoredRefs(), published))
-	return derived, resolved
-}
-
-// resolveMemberAnchor maps one member's recorded anchor to a passage the pool holds, and returns the
-// quote that block may be rendered from ("" = render the whole passage).
-//
-//  1. the anchor is a pool chunk id — the enumeration's own case;
-//  2. the anchor is a doc id the pool holds chunks for — a metadata selection's case: the member IS
-//     the document, so it takes that document's passage, preferring the one that carries the quote.
-//     Which passage stands for a document is otherwise arbitrary, and an arbitrary passage is one
-//     the answer's own quotation will not match (see CitedAnchoredMembers);
-//  3. neither — no passage, and the caller publishes nothing for it.
-//
-// The quote is KEPT only when the resolved passage carries it. compactAnchored renders a published
-// member's block from the quote INSTEAD of the passage, so a quote the passage does not contain —
-// measured: "file_name: …; update_time: 2026-09-21 13:35:46", the metadata line the session was
-// shown — would replace the passage with something that is not in it.
-func resolveMemberAnchor(kb *runtime.Kbinfos, ref runtime.AnchoredRef) (string, string) {
-	anchor := strings.TrimSpace(ref.ChunkID)
-	if anchor == "" {
-		return "", ""
-	}
-	if chunk := kb.ChunkByID(anchor); chunk != nil {
-		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
-			return anchor, ref.Quote
-		}
-		return anchor, ""
-	}
-	bestID := ""
-	bestScore := 0.0
-	for _, chunk := range kb.Chunks {
-		if runtime.DocIDOf(chunk) != anchor {
-			continue
-		}
-		id := runtime.ChunkIDOf(chunk)
-		if id == "" {
-			continue
-		}
-		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
-			return id, ref.Quote
-		}
-		if score := similarityOrScore(chunk); bestID == "" || score > bestScore {
-			bestID, bestScore = id, score
-		}
-	}
-	return bestID, ""
-}
-
-// mergeAnchoredRefs unions the refs already recorded with the ones just published, first occurrence
-// winning: a member the enumeration already matched to a passage keeps that passage, and this step
-// only adds the members it did not have.
-func mergeAnchoredRefs(existing, added []runtime.AnchoredRef) []runtime.AnchoredRef {
-	out := make([]runtime.AnchoredRef, 0, len(existing)+len(added))
-	seen := make(map[string]bool, len(existing)+len(added))
-	for _, group := range [][]runtime.AnchoredRef{existing, added} {
-		for _, ref := range group {
-			name := strings.ToLower(strings.TrimSpace(ref.Name))
-			if name == "" || strings.TrimSpace(ref.ChunkID) == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			out = append(out, ref)
+	for _, key := range []string{"content_with_weight", "content"} {
+		if _, ok := out[key]; ok {
+			out[key] = cut
 		}
 	}
 	return out
@@ -2310,34 +2075,24 @@ func appendMissingIDs(ids, extra []string) []string {
 func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question string, partial, noEvidence bool) answerPrompt {
 	chunks := []map[string]any{}
 	if kb != nil {
-		// An enumerated member whose passage is no longer in the pool is rebuilt from the quote the
-		// naming node took from it BEFORE anything is rendered or published: the marker's number
-		// indexes the published list and the client opens the pool entry behind it, so a member
-		// whose passage was evicted (the pool cap, or selectEvidence narrowing to another call)
-		// would otherwise lose its citation in the chat pipeline (citePoolIdx answers -1 and the
-		// marker is dropped).
-		if extra := anchoredPoolEntries(kb); len(extra) > 0 {
-			kb.Admit(func(p *runtime.PoolAdmitter) {
-				for _, c := range extra {
-					p.Add(c)
-				}
-			})
-		}
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
-	citeChunks := withCitedChunks(ranked, kb, citeChunkCap)
+	citeChunks := evidenceOrder(ranked, kb, answerEvidenceBlocks)
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}
-	// An anchored member's block is rendered from its QUOTE: the budget is spent per block, so a
-	// whole ~1200-char passage per member fits only the first handful of them, and every member
-	// past that one is a member neither the model nor the answer can cite. The quote is the same
-	// words the record states, and the passage itself stays in the pool and in the reference.
-	citeChunks = compactAnchored(citeChunks, kb)
 	maxTokens := d.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
+	}
+	// ONE block, ONE bound. The selection above is capped at answerEvidenceBlocks, and each block's text is
+	// capped here, so the evidence is a CONSTANT amount of material no matter how large the pool grew (see
+	// the evidence constants in graph_compose.go). The cap goes on a COPY: the pool keeps the whole passage
+	// (list_chunks reads it, and the reference list points at it).
+	renderChunks := make([]map[string]any, 0, len(citeChunks))
+	for _, c := range citeChunks {
+		renderChunks = append(renderChunks, evidenceChunkForPrompt(c, answerEvidenceChunkRunes))
 	}
 	// Publish the ordered evidence list the model is about to see so the chat
 	// pipeline can resolve the answer's [ID:n] markers against THE SAME list and put
@@ -2356,22 +2111,27 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// budget admits only the first few whole chunks, so a member past them holds no block
 	// number the model could write — and a member with no position is a member the answer
 	// cannot cite and the user cannot open. Appending keeps the rendered prefix intact
-	// (block n is still position n) and gives the completion its target
-	// (runtime.CiteAnchoredMembers).
-	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
+	// (block n is still position n) and gives the completion its target: the ids appended here
+	// are what the answer's markers resolve against.
+	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(renderChunks, maxTokens)
 	if kb != nil {
-		// Only ids the POOL still holds are appended: the chat pipeline resolves a marker by
-		// looking its chunk up in the pool, and a member whose passage is gone would publish a
-		// nil reference entry — the marker is then dropped and the line loses its citation
-		// entirely. A member the pool no longer holds must lose its citation, not break the one
-		// the user can open.
-		present := make([]string, 0, len(kb.CitedChunks()))
-		for _, id := range kb.CitedChunks() {
+		// The published list is the rendered blocks plus the passages the run READ that did not render a
+		// block (the budget admits only the first few whole chunks), so a marker the answer writes for a
+		// passage it read resolves even when that passage holds no block. Only ids the POOL still holds
+		// are appended: a gone passage would publish a nil reference entry, which drops the marker.
+		present := make([]string, 0, len(kb.ReadIDs()))
+		for _, id := range kb.ReadIDs() {
 			if kb.ChunkByID(id) != nil {
 				present = append(present, id)
 			}
 		}
-		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), present)
+		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(renderChunks, sources), present)
+		// The numbers behind the evidence, in the log: a selection that quietly renders 176 blocks instead
+		// of the constant 30 is a run whose answers will not cite (see the evidence constants).
+		carried, neglected, candidates := kb.EvidenceSelection()
+		common.Info("formalize evidence: blocks", zap.Int("blocks", len(blocks)), zap.Int("carried", carried),
+			zap.Int("offered", candidates), zap.Int("near_duplicates_dropped", neglected),
+			zap.Int("chunk_runes", answerEvidenceChunkRunes), zap.Int("budget", maxTokens))
 	}
 	evidence := strings.Join(blocks, "\n")
 

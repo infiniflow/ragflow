@@ -16,15 +16,15 @@
 
 package agentic_rag
 
-// The graph's CROSS-STAGE numbers live here: every budget, timeout and pool / session cap
-// that more than one stage reasons about — "how long may this step take" and "how much may
-// the pool hold" are answered in one place (see the call sites: nodeClock in every node,
-// SessionWallS and SetBudgetExtensionS in the research pass, MaxSnippetPool in the
-// prefetch).
+// The graph's CROSS-STAGE numbers live here: every budget and timeout that more than one
+// stage reasons about — "how long may this step take" is answered in one place (nodeClock in
+// every node). There is no per-shape clock and no budget extension any more: ONE clock per
+// question, set by the caller, and nothing inside a run widens it. The pool has NO storage
+// ceiling: see the note in runtime/kbinfos.go.
 //
 // What is deliberately NOT here: the numbers ONE stage spends — the fan-out shape guards
-// beside fanoutLooksLikeQuery, the batching thresholds beside BatchFillSlots, the draft caps
-// beside ComposeFallbackDraft, the sampling temperatures beside the calls they configure.
+// beside fanoutLooksLikeQuery, the draft caps beside ComposeFallbackDraft, the sampling
+// temperatures beside the calls they configure.
 // Moving those here would put a constant a long way from the only code that can explain it,
 // and a stage's tuning is exactly the thing that changes with its own measurements. The rule
 // is cohesion, not one file: a number shared across stages belongs here, a number one stage
@@ -43,90 +43,90 @@ package agentic_rag
 // floor is not worth starting at all, and a node that is the only chance to gather a
 // candidate pool is worth its floor even on an overrun budget. A caller that needs the room
 // protected therefore passes a smaller floor, or a roomS that already has the reserve
-// subtracted; a step that must not run at all on a spent budget says so at its own call
-// site (see RunCoverageResolve).
+// subtracted. A step that must not run at all on a spent budget says so at its own call
+// site; in this branch no step does (the coverage resolve that needed that rule is gone),
+// and the prefetch deliberately runs on its floor instead: it is the run's only chance to
+// gather a pool from the plan's own queries.
 func nodeClock(budgetS, floorS, roomS float64) float64 {
 	return min(budgetS, max(floorS, roomS))
 }
 
+// openingShareS is how much of the question the OPENING may spend (planner + prefetch together).
+func openingShareS(remaining float64) float64 {
+	return min(OpeningMaxS, max(OpeningMinS, 0.25*remaining))
+}
+
+// finaleShareS is how much of the question the ANSWER turn keeps: the research stops early enough
+// to hand it over, so a call that takes its time still returns an answer inside the question's
+// clock.
+func finaleShareS(remaining float64) float64 {
+	return min(FinaleMaxS, max(FinaleMinS, 0.25*remaining))
+}
+
+// researchRoomS is what the research may spend right now: the clock minus the finale's share.
+func researchRoomS(remaining float64) float64 {
+	return remaining - finaleShareS(remaining)
+}
+
+// canOpenRound reports whether another round still fits: the round itself AND the finale it has to
+// hand the question over to. This is the ONE gate the routing uses for "is there time for more
+// research" — it replaced a bare MinRoundHeadroomS, which asked only whether a round could START
+// and let it start without room for the answer (see routeResearch).
+func canOpenRound(remaining float64) bool {
+	return researchRoomS(remaining) >= MinRoundS
+}
+
+// The question's clock is DIVIDED here, once, and every phase asks for its share.
+//
+// The phases used to carry one cap each — planner 45, prefetch 90, round 120, finale 60 — whose
+// SUM was 315s against a 180s question, and each node took `min(its cap, what is left)`. Nothing
+// declared how much of the question the OPENING was allowed, so a slow prefetch could spend half
+// of it with zero model calls and hand the research whatever happened to remain (measured
+// 2026-09-20, FRAMES: 4 of 23 questions had an opening of 90/90/90/65s, and 5 sessions died at
+// exactly 110s because the round's own ctx was the last thing in the question).
+//
+// So the numbers below are SHARES, not caps, and the nodes read them instead of doing their own
+// arithmetic: opening (planner + prefetch together) / research (every round) / finale (the answer
+// turn plus the composition that may follow it). They sum to less than the budget by construction.
 const (
-	TotalBudgetS      = 180.0 // whole-graph wall-clock ceiling per question
-	MinRoundHeadroomS = 50.0  // need at least this much left to start a new round
-	PassTimeoutS      = 120.0 // slot research pass wall-clock
-	// SetBudgetExtensionS is added ONCE to a question's research budget when its
-	// table IS an enumeration — a count/set/list slot, a NAME-carrying slot and the
-	// act words (see runtime.Coverage.Ok and RunSlotResearchPass).
+	TotalBudgetS = 180.0 // whole-graph wall-clock ceiling per question
+
+	// OpeningMaxS bounds the OPENING AS A WHOLE — planner and prefetch share this deadline rather
+	// than owning one budget each. Measured: the opening's median is 2-9s, and the deep-recall
+	// opening (Stage 3) needs more room than that, so the ceiling is generous while the tail (90s)
+	// that used to starve the research is gone.
+	OpeningMaxS = 45.0
+	OpeningMinS = 15.0
+
+	// FinaleMinS is what the ANSWER turn must still have when the research stops.
 	//
-	// The question budget is sized for one pass (TotalBudgetS 180 ⊃ PassTimeoutS
-	// 120) and an enumeration needs a second one: its first pass spends the wall
-	// clock on batches of names, so a member that a cut session never patched has
-	// nowhere to be picked up: a spent pass leaves too little room for another round
-	// (MinRoundHeadroomS), and a member that was reached but never recorded is lost with
-	// it. The extension is what lets the round AFTER that one start at all.
-	SetBudgetExtensionS = 120.0
-	// setSessionSlackS is added to the session clock an ENUMERATION pass hands its
-	// sessions, so a session's own finalize/salvage step still fits inside the
-	// context the pass derived it from.
-	setSessionSlackS = 20.0
-	// downstreamReserveS is what the steps AFTER research need: the SCA review
-	// (SCATimeoutS), the draft and the composed answer. The budget extension is only
-	// bought when the caller's own context still holds it — otherwise the second
-	// research round would spend the time the answer needs, turning a missing member
-	// into a timed-out question, which is strictly worse.
-	downstreamReserveS = 90.0
-	// minBudgetExtensionS is the smallest extension worth buying: less than this and
-	// the following round could not start anyway (MinRoundHeadroomS), so the budget
-	// would be widened without anything being able to use it.
-	minBudgetExtensionS = 40.0
-	PrefetchTimeoutS    = 90.0 // programmatic fan-out fetch
-	DraftTimeoutS       = 60.0 // fallback draft synthesis
-	SCATimeoutS         = 60.0 // sufficient-context review call
-	// SCARetryHeadroomS is the clock that must be left before a FAILED review is retried once:
-	// the second attempt plus the answer that follows it. Below it the retry is skipped and the
-	// unavailable review is recorded as such (see graph_sca), because a retry that eats the
-	// answer's own clock trades a missing verdict for a missing answer.
-	SCARetryHeadroomS = 120.0
-	RewriteTimeoutS   = 45.0 // gap → query rewrite call
-	// CoverageResolveTimeoutS bounds the enumeration's last node (see RunCoverageResolve): it runs
-	// before the answer is composed, so it may not spend the clock the answer needs. It bounds the
-	// WHOLE resolve, which is batched and parallel, rather than one call carrying every
-	// window: one call that carries them all hits this clock and answers nothing at all.
-	CoverageResolveTimeoutS = 30.0
-	// SCAViewCap is the view the SCA is shown: large enough that the passage carrying the
-	// answer is not the one that gets cut.
-	SCAViewCap = 60
-	// CoverageEnrollHeadroomS is the clock the resolve node needs before it may run the
-	// direction's enumeration itself (see enrollEnumeration): the enumeration plus the answer
-	// that still has to be composed. Below it the node judges what it already has.
-	CoverageEnrollHeadroomS = 45.0
-	// MaxSnippetPool is the storage ceiling of the snippet pool across ALL
-	// rounds. Storage and REVIEW are decoupled: the SCA only reads a ranked
-	// view, so the pool may accumulate freely while prompts stay bounded.
-	MaxSnippetPool = 60
-	// DrillReserve: slots kept free after the FIRST prefetch so the research
-	// executor can top up evidence.
-	DrillReserve = 12
+	// The finale's own instrumentation reads ~6s, but one model call on the provider we run has a
+	// 40-60s tail, and the answer call is the one call that must never be raced by the wall (see
+	// sessionClockGuardS in runtime/action_session.go): 40s is that call's floor, not its median.
+	FinaleMinS = 40.0
+	FinaleMaxS = 60.0
+
+	// MinRoundS is the shortest research round worth opening. A round's job is to READ what the
+	// last one pointed at and write the answer, so a slice that cannot afford that is not spent.
+	MinRoundS = 40.0
+
+	PassTimeoutS = 120.0 // slot research pass wall-clock
+	// PrefetchTimeoutS is the fan-out's own ceiling. It is NOT the opening's budget any more: the
+	// opening share above is, and prefetch gets what the planner left of it (see plannerNode).
+	PrefetchTimeoutS = 90.0
 	// FanoutTopN is the per-query result count for the programmatic fetch.
 	FanoutTopN = 8
-	// FanoutTopNRewrite is the reduced count used after a rewrite round.
-	FanoutTopNRewrite = 6
 	// MaxFanouts caps planner fan-outs.
 	MaxFanouts = 5
-	// MaxSCAGaps caps gaps handed to the rewriter.
-	MaxSCAGaps = 8
 	// PoolHeadLines caps the evidence-pool summary shown to the rewriter.
 	PoolHeadLines = 12
 
-	// Slot-table research constants: how many sessions run at once, how many run per
-	// round, and the caps on a fallback clue and a draft candidate.
-	slotSessionConcurrency = 2
-	slotSessionsPerRound   = 3
-	slotFallbackClueChars  = 160
-	// draftCandidateChars caps a claim's draft text handed to the SCA.
-	draftCandidateChars = 400
-	// draftClueTailChars / draftUnresolvedClueChars are the per-clue caps in the
-	// rendered draft (240 for a resolved slot's discovered-clue tail, 80 for an
-	// unresolved slot's question clues).
-	draftClueTailChars       = 240
-	draftUnresolvedClueChars = 80
+	// Research constants: how many plan clues one round may open, and the caps on a
+	// fallback clue and a draft candidate.
+	//
+	// There is no session concurrency any more (rounds run ONE session, see
+	// RunSlotResearchPass): the concurrency that remains is between the retrieval legs of a
+	// single call, which is where it belongs.
+	planMaxFanouts        = 3
+	slotFallbackClueChars = 160
 )

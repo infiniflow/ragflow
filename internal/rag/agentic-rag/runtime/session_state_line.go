@@ -8,118 +8,111 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// SessionRecord is what a session has DONE so far, expressed as facts the ReAct
-// loop cannot recover from its own conversation.
+// sessionRecord is what a session can be told about its OWN progress. Every field is mechanical: the
+// notes the model itself wrote, and counters about what it has been shown.
 //
-// The session's message list holds the model's queries and the passages that came
-// back, and nothing else: which names were already probed (and which of those came
-// back empty), which members the record now holds, and which confirmed members are
-// still undecided — a name whose passage is in the pool and which no slot
-// mentions. Every one of those facts is computed by the runtime anyway, and
-// withholding them left the model driving its queries blind: it re-asked names it
-// had already resolved, and it could not see that a name it found was still
-// unrecorded.
-//
-// Without them a session can probe term after term and record none of them until it is
-// forced to, dropping a name it queried and found by its own reasoning — a decision the
-// runtime cannot see and therefore never asks about.
-//
-// The record is also the basis of the continuation decision: the offer the model
-// answers (offerContinuation) carries it, so "is anything still missing?" is a
-// question about facts the model can read, not about its appetite for searching.
-type SessionRecord struct {
+// It used to carry a member list the runtime had DERIVED — the terms probes reached, the names the
+// slots did not mention, the items a slot TYPE declared — and recall was decided by that derivation:
+// a name behind the one-line record's "+15" was a name no answer could have (measured 2026-09-20,
+// 三国/关羽: nineteen names in the derived ledger, ten in the answer). Deciding what counts as a member
+// is a SEMANTIC judgement and the runtime does not make it. The model's own notes are the ledger (its
+// <state> patches are this loop's scratchpad), and the runtime's job is to render them whole and to
+// say what it has shown.
+type sessionRecord struct {
 	// Pool is the shared evidence pool's size at this turn.
 	Pool int
-	// Members are the names the slot table currently records (split out of the
-	// candidates, so "孔秀、孟坦" counts as two).
-	Members []string
-	// Reached are the named terms a probe reached, with evidence (Kbinfos.Reached).
-	Reached []string
-	// Absent are the named terms probes looked for and did not find
-	// (Kbinfos.ProbedAbsent): "asked and nothing came back" is a result, and it
-	// is the one that tells the model to change the spelling or the angle.
-	Absent []string
-	// Undecided are confirmed members (Reached) that the slot table does not
-	// mention at all: the evidence exists, the decision does not.
-	Undecided []string
+	// Notes are the model's OWN notes, verbatim and in the order it wrote them: the slot candidates
+	// its patches produced. Nothing is split, counted, filtered or truncated — the ledger belongs to
+	// the model (see sessionState.noteValues).
+	Notes []string
+	// ShownSinceNote is how many passages the run has shown the model since it last wrote a note: the
+	// mechanical face of "you have read more than you have written down", and the replacement for the
+	// reach-ledger comparison the runtime used to make on the model's behalf.
+	ShownSinceNote int
+	// Asked are this session's own queries, verbatim, so it can see it has already run them. The
+	// strings are the model's, not the runtime's reading of them.
+	Asked []string
 }
 
-// CollectSessionRecord gathers the record from the live pool plus the session's
-// slot table. A nil pool yields the table half only.
-//
-// Everything here is derived from facts the runtime already holds — the slot
-// table and the ledger of terms the session itself asked about — and needs no
-// knowledge of the corpus's language, subject or relation.
-func CollectSessionRecord(table State, kb *Kbinfos) SessionRecord {
-	var r SessionRecord
-	if kb != nil {
-		r.Pool = kb.PoolSize()
-		for _, rt := range kb.ReachedTerms() {
-			r.Reached = append(r.Reached, rt.Term)
-		}
-		r.Absent = kb.ProbedAbsentTerms()
+// sessionRecord gathers the record from the live pool plus the session's own notes.
+func (s *sessionState) sessionRecord() sessionRecord {
+	var r sessionRecord
+	if s == nil {
+		return r
 	}
-	// Members come from the slots that DECLARE members (slots.KindItems), each
-	// item carrying its evidence. Nothing is split out of text: a slot holding a
-	// sentence, a date or a count contributes no members, and the text is never
-	// inspected to find out whether it might have been a list (see package slots for
-	// the measurement that made this fail closed).
-	// ONE definition of the table's members (see MemberNames): the count the answer
-	// reports and the list this line shows read the same fact.
-	r.Members = ItemValues(&table)
-	joined := strings.ToLower(strings.Join(r.Members, "\x00"))
-	for _, term := range r.Reached {
-		// Substring containment, not equality: a candidate is often a clause
-		// ("庞德被周仓生擒") rather than a bare name, and the question is only
-		// whether the record has taken a position on this term at all.
-		if !strings.Contains(joined, strings.ToLower(term)) {
-			r.Undecided = append(r.Undecided, term)
-		}
+	if s.KB != nil {
+		r.Pool = s.KB.PoolSize()
 	}
+	r.Notes = s.noteValues(s.workingTable())
+	r.ShownSinceNote = max(0, len(s.RetrievedEvidenceIDs)-s.notesAtEvidence)
+	r.Asked = append([]string(nil), s.SearchQueries...)
 	return r
+}
+
+// noteValues are the values the MODEL has written into the table, verbatim: the candidates its patches
+// produced and the claims they displaced. The table is the session's scratchpad, so this is its
+// notebook — and the runtime reads it only to render it back (see sessionRecord.Notes).
+func (s *sessionState) noteValues(table State) []string {
+	var out []string
+	for _, v := range table.State {
+		if v.Candidate != nil {
+			if c := strings.TrimSpace(*v.Candidate); c != "" {
+				out = append(out, c)
+			}
+		}
+		for _, a := range v.Alternates {
+			if a = strings.TrimSpace(a); a != "" {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
 }
 
 // Line renders the record as ONE line for the tool result the model reads.
 //
-// It is deliberately a single line of counts plus a few names, not a block: it is
-// appended to every tool result, so its cost is paid once per turn, and it must
-// stay small enough that it never crowds out the passages it annotates.
-func (r SessionRecord) Line() string {
+// Counts and the model's own queries only. It may NOT summarize the model's own notes: a "+15" of the
+// model's own writing is a line the model cannot act on, and that is exactly how recall was lost (see
+// the type's note). The notes themselves are already in the conversation — the model wrote them — and
+// the places that have to account for them render them whole (see Verbose).
+func (r sessionRecord) Line() string {
 	var b strings.Builder
-	b.WriteString("[record] ")
-	fmt.Fprintf(&b, "members=%d", len(r.Members))
-	if len(r.Members) > 0 {
-		fmt.Fprintf(&b, " (%s)", shortList(r.Members, 6))
-	}
-	fmt.Fprintf(&b, " | probed-reached=%d", len(r.Reached))
-	if len(r.Absent) > 0 {
-		fmt.Fprintf(&b, " asked-nothing-back=%d (%s)", len(r.Absent), shortList(r.Absent, 4))
-	}
-	if len(r.Undecided) > 0 {
-		fmt.Fprintf(&b, " | FOUND BUT NOT RECORDED=%s", shortList(r.Undecided, 4))
+	fmt.Fprintf(&b, "[record] your notes=%d item(s)", len(r.Notes))
+	if r.ShownSinceNote > 0 {
+		fmt.Fprintf(&b, " | %d passage(s) shown since your last note", r.ShownSinceNote)
 	}
 	fmt.Fprintf(&b, " | pool=%d", r.Pool)
+	if len(r.Asked) > 0 {
+		fmt.Fprintf(&b, " | already asked: %s", strings.Join(r.Asked, " ; "))
+	}
 	return b.String()
 }
 
-// shortList joins up to max items on the list separator and marks the remainder.
-func shortList(items []string, max int) string {
-	if len(items) > max {
-		return strings.Join(items[:max], "、") + fmt.Sprintf("…+%d", len(items)-max)
+// Verbose renders the model's notes in FULL — one per line, verbatim — for the places where the model
+// is asked to account for what it has: the answer turn, and the composition that follows it.
+func (r sessionRecord) Verbose() string {
+	if len(r.Notes) == 0 {
+		return ""
 	}
-	return strings.Join(items, "、")
+	lines := make([]string, 0, len(r.Notes))
+	for i, n := range r.Notes {
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, n))
+	}
+	return fmt.Sprintf("Your own notes so far (%s, verbatim — what you wrote down as you worked):\n%s",
+		CountOf(len(r.Notes), "item"), strings.Join(lines, "\n"))
 }
 
-// sessionRecordNow computes the session's record as of this turn.
-func (s *SessionState) sessionRecordNow() SessionRecord {
-	return CollectSessionRecord(s.workingTable(), s.KB)
+// Brief is the record's counts, for logs.
+func (r sessionRecord) Brief() string {
+	return fmt.Sprintf("notes=%d shown_since_note=%d pool=%d asked=%d",
+		len(r.Notes), r.ShownSinceNote, r.Pool, len(r.Asked))
 }
 
 // workingTable is the slot table as THIS session has patched it: the parent table
 // with the session's own branch patches applied in order. Reading the parent table
 // alone would report the record as it stood when the session started, so a member
 // the session itself just found would still read as missing.
-func (s *SessionState) workingTable() State {
+func (s *sessionState) workingTable() State {
 	t := State{
 		State:                append([]Variable(nil), s.ParentState.State...),
 		Depth:                s.ParentState.Depth,
@@ -138,13 +131,6 @@ func (s *SessionState) workingTable() State {
 		}
 	}
 	return t
-}
-
-// Brief is the record's counts, for logs.
-func (r SessionRecord) Brief() string {
-	out := fmt.Sprintf("members=%d reached=%d absent=%d undecided=%d",
-		len(r.Members), len(r.Reached), len(r.Absent), len(r.Undecided))
-	return out
 }
 
 // poolExcerptRunes bounds how much pool text one turn may add to the model's
@@ -185,7 +171,7 @@ const subjectWordsMax = 8
 // session already read, so they score LOW. The
 // words the session itself used are what tells the two apart, and they are the
 // model's words, not a lexicon.
-func (s *SessionState) unreadPoolExcerpt() string {
+func (s *sessionState) unreadPoolExcerpt() string {
 	// ONE per session, and that is deliberate. The premise holds — such a passage really is
 	// in the pool and really is unread — but the selection is not reliable enough to spend
 	// context on every flat turn, so it stays available as the session's last resort rather
@@ -251,14 +237,14 @@ func mentionsAny(text string, words []string) bool {
 //
 // They are the model's (or the planner's) own words, read with the corpus's own
 // tokenizer, so no list of names or verbs is involved anywhere.
-func (s *SessionState) subjectWords() []string {
+func (s *sessionState) subjectWords() []string {
 	var out []string
 	seen := map[string]bool{}
 	add := func(text string) {
 		if text == "" || len(out) >= subjectWordsMax {
 			return
 		}
-		for _, w := range append(GrepWordsFromQuery(text), tokenizerWords(text)...) {
+		for _, w := range append(grepWordsFromQuery(text), tokenizerWords(text)...) {
 			w = strings.TrimSpace(w)
 			if r := utf8.RuneCountInString(w); r < 2 || r > cjkPhraseRunes {
 				continue
@@ -290,18 +276,6 @@ func (s *SessionState) subjectWords() []string {
 	}
 	add(s.Direction)
 	return out
-}
-
-// grewFrom reports whether this record knows something the previous turn's did.
-//
-// It is the same signal the continuation offer is built on (see
-// offerContinuation), used for the opposite decision: an enumeration session whose
-// record is still growing is already finding things, so the pool read stays out of
-// its way and only steps in when the record has gone flat.
-func (r SessionRecord) grewFrom(prev SessionRecord) bool {
-	return len(r.Members) > len(prev.Members) ||
-		len(r.Reached) > len(prev.Reached) ||
-		len(r.Absent) > len(prev.Absent)
 }
 
 // tokenizerWords runs the corpus's own tokenizer over a text (see
@@ -347,20 +321,18 @@ func novelAnchor(text string, known map[string]bool) (string, int) {
 	return anchor, n
 }
 
-// recordVocabulary is everything the record already accounts for: its members, the
-// terms probes reached, and the terms probes asked about and did not find. A term
-// in here is not new information.
-func (s *SessionState) recordVocabulary() map[string]bool {
+// recordVocabulary is everything the model's OWN record already accounts for: the notes it wrote and
+// the words of the queries it ran. A term in here is not new information — and the judgement is
+// mechanical, because what is "already known" is exactly what the model has written and asked.
+func (s *sessionState) recordVocabulary() map[string]bool {
 	out := map[string]bool{}
-	for _, group := range [][]string{s.Record.Members, s.Record.Reached, s.Record.Absent, s.Record.Undecided} {
-		for _, t := range group {
-			if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
-				out[t] = true
-			}
+	for _, t := range s.Record.Notes {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			out[t] = true
 		}
 	}
 	for _, q := range s.SearchQueries {
-		for _, w := range GrepWordsFromQuery(q) {
+		for _, w := range grepWordsFromQuery(q) {
 			out[strings.ToLower(w)] = true
 		}
 	}
@@ -371,7 +343,7 @@ func (s *SessionState) recordVocabulary() map[string]bool {
 // first occurrence of word, so the excerpt carries both the mention and the
 // sentence around it.
 func excerptAround(text, word string, maxRunes int) string {
-	flat := []rune(strings.Join(strings.Fields(text), " "))
+	flat := []rune(FlattenLine(text))
 	at := []rune(word)
 	pos := -1
 	for i := 0; i+len(at) <= len(flat); i++ {

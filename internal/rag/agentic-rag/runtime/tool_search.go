@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"ragflow/internal/common"
@@ -34,6 +35,35 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
+// The retrieval attempt's own bounds: one attempt may take at most this much of the leg's clock,
+// floored so a nearly-spent clock still gets a real attempt (see runSearch's retry).
+const (
+	searchAttemptMaxS = 20.0
+	searchAttemptMinS = 5.0
+)
+
+// searchAttemptBudget is how long ONE retrieval attempt may take: a fixed slice, or half of what the
+// caller's context has left when that is smaller — never the whole of it, because the retry needs room
+// and the leg's clock is the question's.
+func searchAttemptBudget(ctx context.Context) time.Duration {
+	room := searchAttemptMaxS
+	if dl, ok := ctx.Deadline(); ok {
+		if left := time.Until(dl).Seconds(); left/2 < room {
+			room = left / 2
+		}
+	}
+	if room < searchAttemptMinS {
+		room = searchAttemptMinS
+	}
+	return time.Duration(room * float64(time.Second))
+}
+
+// compiledExpansionTimeout bounds the compiled-expansion enrichment (see runSearch step 7). It is a
+// wall on an OPTIONAL step that runs after the leg already has its chunks, so it is short: a dead
+// search backend may cost this and no more. It is a var so a test can hold the whole leg to it
+// without waiting the production number out.
+var compiledExpansionTimeout = 8 * time.Second
+
 // Search tools: the retrieval legs plus the narrowing that runs on top.
 //
 // One call carries both legs — the vector / BM25 split is a weight on the same call —
@@ -41,10 +71,10 @@ import (
 
 // Retrieval defaults: callers that supply no configuration get exactly these values.
 const (
-	DefaultSimilarityThreshold   = 0.2
-	DefaultTopN                  = 12
-	DefaultRerankCandidatesCount = 64
-	DefaultTopK                  = 1024
+	defaultSimilarityThreshold   = 0.2
+	defaultTopN                  = 12
+	defaultRerankCandidatesCount = 64
+	defaultTopK                  = 1024
 	// maxEffectiveQueryChars caps the expanded query in CODE POINTS. A byte cap would cut
 	// a multi-byte rune in half and, for CJK, would apply a ~133-character cap instead of
 	// 400.
@@ -62,30 +92,30 @@ var (
 	// discriminating entity.
 	queryMetaRe = regexp.MustCompile(`[.*+?^$()\[\]{}]`)
 
-	// DefaultAgenticVectorWeight is the vector leg's weight when agentic
+	// defaultAgenticVectorWeight is the vector leg's weight when agentic
 	// retrieval runs keyword-only: zero.
 	//
 	// The agentic loop runs on keyword matches plus reranking, and nothing turns the
 	// embedded leg on: SearchDeps.UsingEmbedding defaults to false, so the weight
 	// forwarded is 0.0. Keeping that default is what keeps recall on keyword matches.
-	DefaultAgenticVectorWeight = 0.0
+	defaultAgenticVectorWeight = 0.0
 
-	// DefaultHybridVectorWeight is the vector leg's weight when embedding IS used
+	// defaultHybridVectorWeight is the vector leg's weight when embedding IS used
 	// (SearchDeps.UsingEmbedding true): 0.7, the configured default when a caller turns
 	// embedding on.
-	DefaultHybridVectorWeight = 0.7
+	defaultHybridVectorWeight = 0.7
 
-	// HybridSearchDefaultVectorWeight is the vector leg's weight for the standalone
+	// hybridSearchDefaultVectorWeight is the vector leg's weight for the standalone
 	// hybrid_search tool: 0.3 — NOT 0.7 — because that tool reads its own configured
 	// default rather than the retrieve channel's.
-	HybridSearchDefaultVectorWeight = 0.3
+	hybridSearchDefaultVectorWeight = 0.3
 
-	// VectorSearchDefaultSimilarityThreshold is the engine similarity floor for
+	// vectorSearchDefaultSimilarityThreshold is the engine similarity floor for
 	// the pure-vector entry point (search.py:vector_search, 0.2).
-	VectorSearchDefaultSimilarityThreshold = 0.2
-	// BM25SearchDefaultSimilarityThreshold is the engine similarity floor for
+	vectorSearchDefaultSimilarityThreshold = 0.2
+	// bm25SearchDefaultSimilarityThreshold is the engine similarity floor for
 	// bm25_search / grep_search (/395: 0.0).
-	BM25SearchDefaultSimilarityThreshold = 0.0
+	bm25SearchDefaultSimilarityThreshold = 0.0
 )
 
 // Retriever is the retrieval backend the runtime searches through.
@@ -144,7 +174,7 @@ type DocTenant struct {
 // datasetIDs, so graph_explore can group documents by their real owner and
 // search knowledge bases that were not in the original search set. The lookup
 // is left to the caller (this package stays database-free); an error or a nil
-// resolver makes ExploreGraph fall back to the pre-existing behaviour of
+// resolver makes exploreGraph fall back to the pre-existing behaviour of
 // searching each bound dataset with the whole DocScope.
 type DocTenantResolver interface {
 	ResolveDocTenants(ctx context.Context, docIDs []string) (map[string]DocTenant, error)
@@ -261,22 +291,22 @@ func floatPtrOrDef(v *float64, fallback float64) float64 {
 	return fallback
 }
 
-// SearchChannel identifies which search entry point a call mirrors. The three channels
+// searchChannel identifies which search entry point a call mirrors. The three channels
 // are genuinely different search functions rather than one with a flag; collapsing them
 // let a single global UsingEmbedding switch silently disable the vector leg for a tool
 // that never consulted it.
-type SearchChannel int
+type searchChannel int
 
 const (
-	// ChannelGrep: the `retrieve`, `grep_search` and `grep_chunks` session tools. It is
+	// channelGrep: the `retrieve`, `grep_search` and `grep_chunks` session tools. It is
 	// keyword-only: the grep leg has NO vector leg at all, so the weight is
 	// unconditionally 0 and UsingEmbedding must not be consulted.
-	ChannelGrep SearchChannel = iota
-	// ChannelHybrid is the standalone hybrid search — the `search_chunks` session tool.
+	channelGrep searchChannel = iota
+	// channelHybrid is the standalone hybrid search — the `search_chunks` session tool.
 	// Its vector leg is gated on an embedder being available (the configured weight when
 	// one is, else 0), NOT on UsingEmbedding; production always supplies an embed model,
 	// so it runs. Default weight 0.3.
-	ChannelHybrid
+	channelHybrid
 	// ChannelRetrieve is used by the low/naive direct passes. THIS is the only channel
 	// that honours UsingEmbedding (false by default). Default weight 0.7 when embedding is
 	// on.
@@ -286,28 +316,28 @@ const (
 // resolveKeywordsSimilarityWeight mirrors the weight each Python entry point computes. The
 // gate differs per channel — that is the whole point:
 //
-//   - ChannelGrep: always 1 (grep_search has no vector leg).
-//   - ChannelHybrid: 1 when no embedder is configured (Python's `if embd_mdl`),
+//   - channelGrep: always 1 (grep_search has no vector leg).
+//   - channelHybrid: 1 when no embedder is configured (Python's `if embd_mdl`),
 //     otherwise KeywordsSimilarityWeight ?? 0.7. UsingEmbedding is IRRELEVANT
 //     here: Python's hybrid_search has no such parameter.
 //   - ChannelRetrieve: 1 unless UsingEmbedding (Python's using_embedding),
 //     otherwise KeywordsSimilarityWeight ?? 0.3.
-func resolveKeywordsSimilarityWeight(deps SearchDeps, ch SearchChannel) float64 {
+func resolveKeywordsSimilarityWeight(deps SearchDeps, ch searchChannel) float64 {
 	switch ch {
-	case ChannelGrep:
+	case channelGrep:
 		return 1
-	case ChannelHybrid:
+	case channelHybrid:
 		// The configured weight when an embedder is available, else 0. HasEmbedder says
 		// only that one is available — the retrieval service resolves the actual model.
 		if !deps.HasEmbedder {
 			return 1
 		}
-		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-HybridSearchDefaultVectorWeight)
+		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-hybridSearchDefaultVectorWeight)
 	default:
 		if !deps.UsingEmbedding {
 			return 1
 		}
-		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-DefaultHybridVectorWeight)
+		return floatPtrOrDef(deps.KeywordsSimilarityWeight, 1-defaultHybridVectorWeight)
 	}
 }
 
@@ -346,10 +376,10 @@ type SearchDeps struct {
 	// NavRouter descends the dataset's compiled navigation tree for the
 	// navigate_tree tool. Nil falls back to nav.NewNavServiceRouter() (the
 	// internal/service/nav singleton).
-	NavRouter NavTreeRouter
+	NavRouter navTreeRouter
 	// Model is the request-scoped chat model. It drives
 	// the calculate tool's expression-writing call and the graph_explore
-	// structure verdict (AskStructure). Required for `calculate`; nil makes the
+	// structure verdict (askStructure). Required for `calculate`; nil makes the
 	// model-backed tools report a miss.
 	Model SessionModel
 	// Logger is optional; nil uses the default logger. It is the DEVELOPER log:
@@ -437,7 +467,7 @@ type SearchDeps struct {
 	// WebSearch is the optional open-web provider for the `web_search` tool. Nil HIDES
 	// the tool from the session surface — Toolset.HasWebSearch is set from
 	// mode.HasTool("web_search") && WebSearch != nil. Should a call reach the handler
-	// anyway, it reports StatusError/ReasonInfra with a do-not-retry note, never a
+	// anyway, it reports StatusError/reasonInfra with a do-not-retry note, never a
 	// query-level MISS.
 	WebSearch WebSearcher
 	// WikiRetriever is the optional provider for the `wiki_query` tool. The tool is
@@ -532,7 +562,7 @@ func FanoutKeyedTerms(terms []string) []string {
 		digits := isAllDigits(t)
 		// The stopword set is lowercase while the terms themselves keep their case, so
 		// "The" must be dropped like "the".
-		if (utf8.RuneCountInString(t) >= 3 && !IsStopword(strings.ToLower(t)) && !digits) ||
+		if (utf8.RuneCountInString(t) >= 3 && !isStopword(strings.ToLower(t)) && !digits) ||
 			(utf8.RuneCountInString(t) >= 4 && digits) {
 			out = append(out, t)
 		}
@@ -575,7 +605,7 @@ type searchOpts struct {
 	//
 	// The think block gets thinkVerb through searchThinkLine instead — one sentence
 	// family for every leg, with the method named and the keyword list left out. The
-	// two sentences come from the same call (runSearch / GrepSearch), so they can
+	// two sentences come from the same call (runSearch / grepSearch), so they can
 	// never describe different searches.
 	//
 	// The RESULT line is the other half of a leg (reportSearchResult): every leg
@@ -638,7 +668,7 @@ func searchLogLine(verb, question string) string {
 // It is the log line's sibling, not a replacement: StageLineDetail reports this
 // one and logs searchLogLine's, from the same call.
 func searchThinkLine(verb, question string) string {
-	return fmt.Sprintf("%s %q.", verb, trunc(question, 80))
+	return fmt.Sprintf("%s %q.", verb, TruncateRunes(question, 80))
 }
 
 // searchLogger returns the run's logger, falling back to the package logger.
@@ -654,6 +684,10 @@ func searchLogger(deps SearchDeps) *log.Logger {
 // calling function.
 func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts searchOpts) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
+	// Every retrieval leg goes through here, so this is where a query that is not a query becomes
+	// one (see sanitizeRetrievalQuery): the session's seed is a BLOCK, and a model that hands the
+	// block back turns one call into a fistful of single-word searches.
+	p.Question = sanitizeRetrievalQuery(p.Question)
 	// An explicit argument wins, then the caller's configuration, then this package's own
 	// defaults.
 	topN := p.TopN
@@ -661,7 +695,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		topN = deps.TopN
 	}
 	if topN <= 0 {
-		topN = DefaultTopN
+		topN = defaultTopN
 	}
 	// The structured (SQL) datasets are folded into the target id list. The explicit
 	// argument still wins; otherwise the session's kb ids and sql ids are merged, so the
@@ -700,7 +734,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 		// half — handing the retriever invalid UTF-8 — and, for CJK, stop at ~133
 		// characters, silently dropping two thirds of the expansion terms the fan-out leg
 		// weighs on.
-		effectiveQuery = truncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
+		effectiveQuery = TruncateRunes(strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.RetrievalQuery)), maxEffectiveQueryChars)
 	} else if strings.TrimSpace(p.Keywords) != "" {
 		effectiveQuery = strings.TrimSpace(fmt.Sprintf("%s %s", p.Question, p.Keywords))
 	} else {
@@ -740,7 +774,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	if thinkVerb == "" {
 		thinkVerb = opts.logVerb
 	}
-	StepsFrom(ctx).StageLineDetail(logger, opts.logLabel,
+	StepsFrom(ctx).StageLineDetail(opts.logLabel,
 		searchThinkLine(thinkVerb, p.Question), searchLine)
 
 	// 3. Per-request dedup: an identical query+scope is retrieved at most once,
@@ -748,7 +782,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// repeat the round-trip, child fetch and narrowing. The cache is hybrid-only — both the
 	// lookup and the store belong to that leg — hence opts.cache.
 	if deps.KB != nil && opts.cache {
-		if chunks, aggs, ok := deps.KB.SearchCacheLoad(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope)); ok {
+		if chunks, aggs, ok := deps.KB.SearchCacheLoad(searchCacheKey(effectiveQuery, targetIDs, topN, docScope)); ok {
 			logger.Printf("[%s] Already searched this — reusing the %d passage(s) found earlier.", opts.logLabel, len(chunks))
 			// A cache hit still hands a pool back, so it still reports one: the
 			// dedup line explains WHY nothing was retrieved, this says WHAT the leg
@@ -776,27 +810,49 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// from a question whose whole work is coverage. One retry costs one round trip on the
 	// failure path only, and it is a retry of the same request (no re-planning, nothing
 	// cached, nothing narrowed yet).
-	retrieve := func() ([]map[string]any, error) {
-		return deps.Backend.Retrieve(ctx, RetrieveRequest{
+	// attemptCtx bounds ONE attempt: the retry below exists because upstreams fail transiently, and a
+	// first attempt that consumes the leg's whole clock makes the retry pointless while the leg still
+	// reports a failure. Measured 2026-09-20 (三国/关羽): the embedder stalled, the first attempt spent 56
+	// SECONDS of a 75s tool wall, the retry died immediately on `context deadline exceeded`, and the
+	// session's round was gone — the answer it salvaged could name one member of sixteen. Two bounded
+	// attempts beat one unbounded one.
+	//
+	// The "no dense leg" retry is expressed in the request's own vocabulary: KeywordsSimilarityWeight is
+	// the keyword leg's weight (0.0 vector-only, 0.7 hybrid, 1.0 keyword-only — see RetrieveRequest), so
+	// keyword-only IS the dense leg switched off, and it is the same weight the Python entry point
+	// bm25_search passes.
+	retrieve := func(keywordOnly bool) ([]map[string]any, error) {
+		attemptCtx, cancelAttempt := context.WithTimeout(ctx, searchAttemptBudget(ctx))
+		defer cancelAttempt()
+		weight := opts.keywordsSimilarityWeight
+		if keywordOnly {
+			// 1.0 IS "no dense leg" in this API (see RetrieveRequest): the keyword leg is then the whole
+			// retrieval, which is what the retry wants when the embedder is the thing that is down.
+			weight = 1.0
+		}
+		return deps.Backend.Retrieve(attemptCtx, RetrieveRequest{
 			Query:                    effectiveQuery,
 			DatasetIDs:               targetIDs,
 			DocScope:                 docScope,
 			TopN:                     topN,
-			TopK:                     intOrDef(deps.TopK, DefaultTopK),
-			RerankCandidatesCount:    max(intOrDef(deps.RerankCandidatesCount, DefaultRerankCandidatesCount), topN),
+			TopK:                     intOrDef(deps.TopK, defaultTopK),
+			RerankCandidatesCount:    max(intOrDef(deps.RerankCandidatesCount, defaultRerankCandidatesCount), topN),
 			SimilarityThreshold:      &opts.threshold,
-			KeywordsSimilarityWeight: &opts.keywordsSimilarityWeight,
+			KeywordsSimilarityWeight: &weight,
 			TenantID:                 deps.TenantID,
 			MetaDataFilter:           deps.MetaDataFilter,
 			RankFeature:              rankFeature,
 			ExcludeCompiled:          opts.excludeCompiled,
 		})
 	}
-	chunks, err := retrieve()
+	chunks, err := retrieve(false)
 	if err != nil {
-		// Go-only line: the retriever's failure is reported here instead of propagating.
-		logger.Printf("[%s] retrieval failed: %v — retrying once.", opts.logLabel, err)
-		chunks, err = retrieve()
+		// The retry DEGRADES instead of repeating: a disabled dense leg is the one difference that makes
+		// the second attempt worth its time when the embedder is the thing that is down, and the sparse
+		// leg is where the query's own words are. A failed leg used to return nil — so the passage the
+		// keyword half had already matched was discarded with the vector half's failure.
+		logger.Printf("[%s] retrieval failed: %v — retrying once WITHOUT the dense leg.", opts.logLabel, err)
+		chunks, err = retrieve(true)
 	}
 	if err != nil {
 		logger.Printf("[%s] retrieval failed twice: %v", opts.logLabel, err)
@@ -826,18 +882,28 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 	// Memory BEFORE narrowing: the raw corpus may hold a fact the narrowing
 	// drops, and a gap-driven grep over memory recovers it without re-querying.
 	if deps.KB != nil {
-		MemoryAdd(deps.KB, chunks)
+		memoryAdd(deps.KB, chunks)
 	}
 
 	// 6. Narrow-or-keep (chunks only; doc_aggs stays as retrieved).
-	chunks = NarrowOrKeep(ctx, chunks, p.Keywords, opts.narrowLabel, logger)
+	chunks = narrowOrKeep(ctx, chunks, p.Keywords, opts.narrowLabel, logger)
 
 	// 7. Compiled expansion.
+	//
+	// It is an ENRICHMENT of chunks the leg already has, so it gets its own small slice of the clock
+	// rather than the leg's whole context: measured 2026-09-20 (三国/关羽), a dead Elasticsearch sent
+	// this step's per-index queries into failure one after another and the search_chunks call took
+	// 68 SECONDS — a third of the question, spent on an optional enrichment — after which the
+	// session's own answer call lost its race. Bounded, the same failure costs seconds and the leg
+	// returns what it retrieved.
 	if p.UseCompiled && len(chunks) > 0 && deps.Expand != nil {
 		logger.Printf("[%s] Compiled expansion enabled — enriching with page_index/tree/KG navigation.", opts.logLabel)
-		if err := deps.Expand.Expand(ctx, deps.KB, p.Question, p.Keywords, docScope); err != nil {
-			logger.Printf("[%s] compiled expansion failed: %v", opts.logLabel, err)
+		expStarted := time.Now()
+		expCtx, cancelExp := context.WithTimeout(ctx, compiledExpansionTimeout)
+		if err := deps.Expand.Expand(expCtx, deps.KB, p.Question, p.Keywords, docScope); err != nil {
+			logger.Printf("[%s] compiled expansion failed after %.1fs: %v", opts.logLabel, time.Since(expStarted).Seconds(), err)
 		}
+		cancelExp()
 	}
 
 	// What the leg FOUND, reported once, on every path (see reportSearchResult).
@@ -845,7 +911,7 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 
 	// 8. Cache the result — hybrid leg only.
 	if deps.KB != nil && opts.cache {
-		deps.KB.SearchCacheStore(SearchCacheKey(effectiveQuery, targetIDs, topN, docScope), chunks, aggs)
+		deps.KB.SearchCacheStore(searchCacheKey(effectiveQuery, targetIDs, topN, docScope), chunks, aggs)
 	}
 	return chunks, aggs
 }
@@ -854,8 +920,8 @@ func runSearch(ctx context.Context, deps SearchDeps, p SearchParams, opts search
 // weight when one is, else 0); default weight 0.3. Compiled rows are excluded.
 func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
-		keywordsSimilarityWeight: resolveKeywordsSimilarityWeight(deps, ChannelHybrid),
-		threshold:                floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
+		keywordsSimilarityWeight: resolveKeywordsSimilarityWeight(deps, channelHybrid),
+		threshold:                floatOrDef(deps.SimilarityThreshold, defaultSimilarityThreshold),
 		excludeCompiled:          true,
 		promoteChildren:          true,
 		logLabel:                 "Hybrid search",
@@ -870,7 +936,7 @@ func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 	})
 }
 
-// MetadataDocIDs resolves the documents a metadata filter matches: metadata-index
+// metadataDocIDs resolves the documents a metadata filter matches: metadata-index
 // push-down (ES / Infinity) -> in-memory filter when the push-down is not viable ->
 // intersect with the session document scope.
 //
@@ -878,7 +944,7 @@ func HybridSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 // every match. That is a normal empty result, never an error: the caller reports a
 // query-level miss. The resolution is query-independent, so callers resolve once and then
 // search inside the returned documents.
-func MetadataDocIDs(ctx context.Context, deps SearchDeps, filters []map[string]any, logic string) ([]string, bool) {
+func metadataDocIDs(ctx context.Context, deps SearchDeps, filters []map[string]any, logic string) ([]string, bool) {
 	logger := searchLogger(deps)
 	if len(filters) == 0 || deps.MetadataResolver == nil {
 		return nil, false
@@ -911,16 +977,16 @@ func MetadataDocIDs(ctx context.Context, deps SearchDeps, filters []map[string]a
 }
 
 // MetadataSearch: hybrid retrieval restricted to the documents a metadata filter matches
-// (MetadataDocIDs + HybridSearch), the leg the pre-search metadata channel runs.
+// (metadataDocIDs + HybridSearch), the leg the pre-search metadata channel runs.
 //
 // Compiled expansion stays OFF: it would pull in out-of-scope chunks and break the "only
 // these documents" contract.
 func MetadataSearch(ctx context.Context, deps SearchDeps, p SearchParams, filters []map[string]any, logic string) ([]map[string]any, []map[string]any) {
-	docIDs, ok := MetadataDocIDs(ctx, deps, filters, logic)
+	docIDs, ok := metadataDocIDs(ctx, deps, filters, logic)
 	if !ok {
 		return nil, nil
 	}
-	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", trunc(p.Question, 80), len(docIDs), filters)
+	searchLogger(deps).Printf("[Metadata search] %q searching %d matched doc(s) via filters=%v", TruncateRunes(p.Question, 80), len(docIDs), filters)
 	return HybridSearch(ctx, deps, SearchParams{
 		Question:    p.Question,
 		Keywords:    p.Keywords,
@@ -949,13 +1015,19 @@ func metadataTargetIDs(deps SearchDeps) []string {
 	return out
 }
 
-// Metadata-search catalog caps: fields listed, values shown per field, and the rendered
-// block's length in CODE POINTS (a byte cap would cut CJK fields early).
-const (
-	metadataCatalogKeysMax       = 20
-	metadataCatalogSamplesPerKey = 8
-	metadataCatalogRenderMax     = 2000
-)
+// The metadata catalog is rendered in FULL — every offered field, and every value the index
+// holds for it. It used to be capped three ways (20 fields, 8 values per field, 2000 code
+// points), and those caps are what broke the feature: fields are written in sorted order, so
+// a long `author`/`title` sample list spent the budget before `update_time` was ever written,
+// and the block's own closing line then told the model the field it needed did not exist.
+// Measured 2026-09-22 on a 16-document KB: the model reported "the fields are only
+// author/field/file_name/rationale" and refused a question the metadata index could answer.
+// A field list is a completeness contract — a field a filter could have named is worth more
+// than the samples that hid it.
+//
+// For that reason the catalog stage's block bound (deliver.go, stageCatalog) is deliberately NOT
+// applied here: a delivery bound whose effect is to drop fields IS the defect above, so this block
+// is rendered whole.
 
 // metadataCatalogSystemKeys are metadata keys that exist in the doc-metadata index but
 // must never be offered as filters: unique identifiers and benchmark annotations let a
@@ -1006,7 +1078,7 @@ func (c MetadataCatalog) Empty() bool { return len(c.Keys) == 0 }
 // Render builds the seed block. Empty catalogs render as "" so the caller can append
 // unconditionally. Each field carries what is known about it — its declared meaning, the
 // values it accepts, and the values seen in the index — so the model fills a filter instead
-// of guessing. The result is capped at metadataCatalogRenderMax code points.
+// of guessing. Nothing is capped: see the note on the removed caps above.
 func (c MetadataCatalog) Render() string {
 	if c.Empty() {
 		return ""
@@ -1028,7 +1100,7 @@ func (c MetadataCatalog) Render() string {
 		}
 	}
 	b.WriteString("\nFields NOT listed here are unusable as filters — never invent one.")
-	return truncateRunes(b.String(), metadataCatalogRenderMax)
+	return b.String()
 }
 
 // describeMetadataField renders a field's declared meaning and allowed values, shared by
@@ -1047,7 +1119,7 @@ func describeMetadataField(def common.MetadataFieldDef) string {
 	return b.String()
 }
 
-// MetadataCatalogFor reads the metadata fields the session's datasets offer, for the
+// metadataCatalogFor reads the metadata fields the session's datasets offer, for the
 // metadata_search schema and the session seed.
 //
 // It is DELIBERATELY error-free: the observational read is the same GetFlattedMetaByKBs the
@@ -1055,7 +1127,7 @@ func describeMetadataField(def common.MetadataFieldDef) string {
 // empty KB set all degrade to whatever the other half provides — "keep today's behaviour"
 // rather than failing the session. (A resolver failure is still reported to the model by the
 // tool itself as ERROR/infra if a call reaches the executor.)
-func MetadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
+func metadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
 	keys, metas, declared, err := resolveMetadataFields(ctx, deps)
 	if err != nil || len(keys) == 0 {
 		return MetadataCatalog{}
@@ -1066,17 +1138,18 @@ func MetadataCatalogFor(ctx context.Context, deps SearchDeps) MetadataCatalog {
 		Samples: make(map[string][]MetadataSample, len(keys)),
 	}
 	for _, k := range keys {
-		if samples := topMetadataSamples(metas[k], metadataCatalogSamplesPerKey); len(samples) > 0 {
+		// 0 = no cap: the catalog advertises every value the index holds for the field.
+		if samples := topMetadataSamples(metas[k], 0); len(samples) > 0 {
 			cat.Samples[k] = samples
 		}
 	}
 	return cat
 }
 
-// MetadataCatalogPtr is MetadataCatalogFor returning nil for an empty catalog, so a
+// MetadataCatalogPtr is metadataCatalogFor returning nil for an empty catalog, so a
 // Toolset carries "no catalog" as nil and every render path skips it by construction.
 func MetadataCatalogPtr(ctx context.Context, deps SearchDeps) *MetadataCatalog {
-	cat := MetadataCatalogFor(ctx, deps)
+	cat := metadataCatalogFor(ctx, deps)
 	if cat.Empty() {
 		return nil
 	}
@@ -1141,9 +1214,6 @@ func resolveMetadataFields(ctx context.Context, deps SearchDeps) ([]string, comm
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if len(keys) > metadataCatalogKeysMax {
-		keys = keys[:metadataCatalogKeysMax]
-	}
 	if len(declared) == 0 {
 		declared = nil
 	}
@@ -1207,15 +1277,15 @@ func metaFilterDocIDs(metas common.MetaData, filters []map[string]any, logic str
 	return service.ApplyMetaFilter(metas, conditions, logic)
 }
 
-// VectorSearch: the pure vector entry point. With no embedder it returns nothing,
+// vectorSearch: the pure vector entry point. With no embedder it returns nothing,
 // otherwise the vector weight is 1.0 and compiled rows are excluded.
-func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
+func vectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	if !deps.HasEmbedder {
 		return nil, nil
 	}
 	return runSearch(ctx, deps, p, searchOpts{
 		keywordsSimilarityWeight: 0,
-		threshold:                VectorSearchDefaultSimilarityThreshold,
+		threshold:                vectorSearchDefaultSimilarityThreshold,
 		excludeCompiled:          true,
 		promoteChildren:          true,
 		logLabel:                 "Vector search",
@@ -1232,7 +1302,7 @@ func VectorSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[s
 func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
 		keywordsSimilarityWeight: 1,
-		threshold:                BM25SearchDefaultSimilarityThreshold,
+		threshold:                bm25SearchDefaultSimilarityThreshold,
 		excludeCompiled:          true,
 		promoteChildren:          true,
 		logLabel:                 "BM25 search",
@@ -1255,15 +1325,15 @@ func BM25Search(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 // knowing the name, and a narrow recall has it looking through a keyhole.
 //
 // It is the widest per-operand number the pipeline already uses elsewhere
-// (SCAViewCap), and only the MATCHED windows travel onwards — the grep output cap
-// (GrepOutTotalChars) still bounds what the model pays for.
+// (the seed's own SCAN-window cap), and only the MATCHED windows travel onwards — the grep output cap
+// (grepOutTotalChars) still bounds what the model pays for.
 //
 // 200, because the binding constraint is the recall bound rather than the corpus: an
 // operand's own match count runs well past a small topN, so a pattern's recall stops before
 // the corpus does and the passages past a ranking's head are never matched against the
 // pattern at all — and those are exactly the windows that hold the members nobody has
 // named. The number is a RECALL bound on candidates that are only matched and narrowed (the
-// model sees the matched windows, capped by GrepOutTotalChars), so widening it costs
+// model sees the matched windows, capped by grepOutTotalChars), so widening it costs
 // retrieval, not prompt — and a pattern whose operand hits the bound is logged rather than
 // silently truncated (see retrieveGrepCandidates).
 const patternRecallTopN = 200
@@ -1319,7 +1389,7 @@ func callerBatch(query string) bool {
 // empty is a name the corpus does not carry. That empty answer is the point of
 // the probe, so it is returned, not filled with the hits the other terms found.
 //
-// The weave is bounded by the terms (GrepTermsMax) and by each search's own
+// The weave is bounded by the terms (grepTermsMax) and by each search's own
 // TopN, and the narrowing stage's char budget still decides how much of the
 // woven set survives.
 //
@@ -1366,22 +1436,10 @@ func retrieveGrepCandidates(
 		}
 		perTerm = append(perTerm, chunks)
 		aggs = append(aggs, docAggs...)
-		// A term searched ON ITS OWN is the caller's probe of ONE individual, so
-		// a passage that carries it is a confirmed member with its evidence —
-		// recorded as such, because the round needs the members (and the passages
-		// behind them), not just the number of chunks it holds.
-		//
-		// Except when the caller IS the runtime: the completeness pass searches the
-		// actor and the act words, which are not names and must not enter the record's
-		// to-do list (see SearchParams.SkipReachLedger).
-		if !bp.SkipReachLedger {
-			for _, c := range chunks {
-				if strings.Contains(strings.ToLower(ChunkTextOf(c)), strings.ToLower(term)) {
-					deps.KB.RecordReachedTerm(term, ChunkIDOf(c))
-					break
-				}
-			}
-		}
+		// What a term searched on its own FOUND is the passages it returned: they are in the pool and
+		// in the caller's result, which is where the model reads them. Whether a passage that carries a
+		// name makes that name a member of anything is the model's judgement, not this loop's — the run
+		// keeps no reach ledger of its own (see the note on sessionRecord in session_state_line.go).
 	}
 
 	seen := make(map[string]bool)
@@ -1414,57 +1472,11 @@ func retrieveGrepCandidates(
 	return out, aggs
 }
 
-// ProbeSeatTopN bounds how many candidates one term's seat search takes before
+// probeSeatTopN bounds how many candidates one term's seat search takes before
 // the window is picked: a seat exists to carry the name, not to rank it.
-const ProbeSeatTopN = 3
+const probeSeatTopN = 3
 
-// TermSeat runs ONE cheap keyword search for a single named term and returns the
-// passage that carries it, narrowed to that term's own window, or (nil, false)
-// when nothing reached it.
-//
-// This is the retrieval unit an enumeration needs, and it is deliberately not a
-// query SYNTAX: the caller's terms may arrive as an alternation ("A|B|C"), as a
-// space-separated list inside one string, or as a list of query strings, and the
-// seat is the same thing in all three cases. What it replaces is asking for
-// several individuals at once: one ranked search hands its seats to the passages
-// that match MANY of the named terms, so the rarest name — the reason the call
-// was made — is the one that loses: most queries in a call are cut by the per-query cap,
-// and the candidates that did come back were flattened to one hit each, so the rarest names
-// are missing from an answer whose retrieval had returned tens of candidates per query.
-//
-// The term alone is the query, on the keyword leg only: no vector leg, no
-// compiled expansion, no model call — a few hundred milliseconds, which is what
-// lets the caller afford one per named term.
-//
-// The boolean is the OTHER half of the answer: false means this corpus reached
-// nothing for that term, which is a fact about the corpus the run must keep
-// (Kbinfos.RecordProbedAbsent) rather than a failed lookup to retry.
-func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term string) ([]map[string]any, bool) {
-	term = strings.TrimSpace(term)
-	if term == "" {
-		return nil, false
-	}
-	sub := base
-	sub.Question = term
-	sub.Keywords = term
-	sub.TopN = ProbeSeatTopN
-	sub.UseCompiled = false
-	chunks, _ := BM25Search(ctx, deps, sub)
-	if len(chunks) == 0 {
-		return nil, false
-	}
-	res := NarrowByTerms(chunks, []string{term}, nil, term,
-		NarrowContext{Before: 1, After: 0}, GrepOutCharsPerChunk, GrepOutTotalChars)
-	if len(res.Kept) > 0 {
-		return res.Kept[:1], true
-	}
-	// The keyword leg returned candidates that do not carry the term: on a
-	// keyword leg that is the corpus answering "not here", so the seat is empty
-	// rather than filled with the nearest passages.
-	return nil, false
-}
-
-// GrepSearch: a keyword-first locate that runs the bm25 leg and then narrows the prose
+// grepSearch: a keyword-first locate that runs the bm25 leg and then narrows the prose
 // candidates to the term-grep window (regex locate + short line-context).
 //
 // Behaviour:
@@ -1477,9 +1489,9 @@ func TermSeat(ctx context.Context, deps SearchDeps, base SearchParams, term stri
 //     after:0}, per-chunk 700-char and total 8000-char caps.
 //   - When grep matches nothing, the raw BM25 candidates are returned unchanged so
 //     evidence is never dropped (enumeration / multi-hop must not lose candidates).
-func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
+func grepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	logger := searchLogger(deps)
-	query := strings.TrimSpace(p.Question)
+	query := sanitizeRetrievalQuery(p.Question)
 	// Python logs the locate line BEFORE extracting the terms and before the
 	// empty-query bail-out (search.py:grep_search).
 	//
@@ -1487,7 +1499,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// locate for", search.py:418) and the think block says what the leg does — find
 	// these exact words — in the family the other legs use. "Keyword-first locate"
 	// was a noun phrase naming the implementation, not an action a reader could read.
-	StepsFrom(ctx).StageLineDetail(logger, "Grep search",
+	StepsFrom(ctx).StageLineDetail("Grep search",
 		searchThinkLine("Searching for the exact words", query),
 		searchLogLine("Keyword-first locate for", query))
 	// Python prints its result line at the END of grep_search, reading whatever the
@@ -1505,17 +1517,17 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 		// read like a search that ran and came back empty.
 		return nil, nil
 	}
-	terms := GrepTermsFromQuery(query)
+	terms := grepTermsForLocate(query)
 	pattern := grepPatternOf(query)
 	if pattern != nil {
-		// The operands of a pattern ARE its recall terms (see GrepPatternOperands):
+		// The operands of a pattern ARE its recall terms (see grepPatternOperands):
 		// the phrase reading of the same string would treat "关公.*斩" as one clause
 		// and lose half of it.
-		terms = GrepPatternOperands(query)
+		terms = grepPatternOperands(query)
 	}
 	// The WEAVE searches the caller's own WORDS; `terms` above is the LOCATOR's
 	// list, and for an unbroken CJK clause it is a set of two-rune windows (see
-	// GrepWordsFromQuery).
+	// grepWordsFromQuery).
 	//
 	// A window searched on its own spends a retrieval on a fragment nobody
 	// proposed — and, because a term searched on its own records what it reached,
@@ -1528,7 +1540,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// recall needs the long ones (`关公.*斩` searches 关公 and 斩).
 	weave := terms
 	if pattern == nil {
-		weave = GrepWordsFromQuery(query)
+		weave = grepWordsFromQuery(query)
 	}
 	// The grep leg then delegates to the bm25 leg with an explicit keywords hint: the
 	// caller's keywords when supplied, else the extracted terms joined. A long question
@@ -1564,7 +1576,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 
 	var table, prose []map[string]any
 	for _, c := range chunks {
-		if IsTableChunk(c) {
+		if isTableChunk(c) {
 			table = append(table, c)
 		} else {
 			prose = append(prose, c)
@@ -1584,7 +1596,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 	// operands — so `|` and `.*` are operators here rather than characters somebody
 	// has to escape.
 	if pattern != nil {
-		kept, matched := matchGrepPattern(prose, pattern, contextCharBudget, GrepOutTotalChars)
+		kept, matched := matchGrepPattern(prose, pattern, contextCharBudget, grepOutTotalChars)
 		if matched == 0 {
 			// The pattern matched nothing in what was reached: keep the raw
 			// candidates so evidence is not dropped, and SAY what happened — a
@@ -1601,13 +1613,13 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 			chars += len(ChunkTextOf(c))
 		}
 		logger.Printf("[Grep search] pattern %q matched %d/%d candidate(s) -> %d chunk(s), %.1fK chars.",
-			trunc(query, 80), matched, len(prose), len(out), float64(chars)/1000.0)
+			TruncateRunes(query, 80), matched, len(prose), len(out), float64(chars)/1000.0)
 		logGrepReach(logger, query, chunks, terms)
 		return out, docAggs
 	}
 
 	res := NarrowByTerms(prose, terms, nil, query, NarrowContext{Before: 1, After: 0},
-		GrepOutCharsPerChunk, GrepOutTotalChars)
+		grepOutCharsPerChunk, grepOutTotalChars)
 	kept := res.Kept
 	if len(kept) == 0 {
 		// Nothing matched: keep the raw BM25 candidates so evidence is not dropped
@@ -1637,7 +1649,7 @@ func GrepSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[str
 func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map[string]any, []map[string]any) {
 	return runSearch(ctx, deps, p, searchOpts{
 		keywordsSimilarityWeight: resolveKeywordsSimilarityWeight(deps, ChannelRetrieve),
-		threshold:                floatOrDef(deps.SimilarityThreshold, DefaultSimilarityThreshold),
+		threshold:                floatOrDef(deps.SimilarityThreshold, defaultSimilarityThreshold),
 		excludeCompiled:          false,
 		promoteChildren:          true,
 		// Go-only identity: Python's L1 RAGTools.retrieve
@@ -1658,12 +1670,12 @@ func RetrieveSearch(ctx context.Context, deps SearchDeps, p SearchParams) ([]map
 // is capped at 8 chunks and at most two queries run, so 16 is the maximum.
 const webSearchMaxChunks = 16
 
-// WebSearchTool: the `web_search` tool. Its schema takes a 1-2 element array of query
+// webSearchTool: the `web_search` tool. Its schema takes a 1-2 element array of query
 // strings (see webSearchToolSpec), so args is the positional query list, not a key/value
 // object. Results share the RAGFlow chunk shape so they merge into the SAME shared
 // evidence pool as corpus hits, and the model sees the same REDUNDANT/OK/MISS outcome as
 // the corpus tools.
-func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (ToolOutcome, error) {
+func webSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (ToolOutcome, error) {
 	if deps.WebSearch == nil {
 		// An absent provider is an infra ERROR with an explicit do-not-retry note (returning
 		// MISS would let the model retry the same dead tool and burn turns), never a
@@ -1674,7 +1686,7 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 				"note": "Web search is NOT configured for this session. Do not use this tool again; use the corpus tools (retrieve / search_chunks / navigate_*) instead.",
 			}},
 			Status:  StatusError,
-			Reason:  ReasonInfra,
+			Reason:  reasonInfra,
 			Metrics: map[string]any{},
 		}, nil
 	}
@@ -1724,11 +1736,6 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			if r == "" || seen[r] {
 				continue
 			}
-			// Admission early-stops at the pool cap, BEFORE the chunk is recorded as seen, so
-			// a rejected passage is retried once room frees.
-			if p.Full() {
-				continue
-			}
 			chunkID := fmt.Sprintf("web_%d", i)
 			seen[r] = true
 			c := map[string]any{
@@ -1748,8 +1755,8 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 			// Passage shape: {"id","content"} (no doc_id), non-table text cut to 1200 code
 			// points (plain slice, no ellipsis).
 			content := r
-			if !IsTableChunk(c) {
-				content = truncateRunes(content, 1200)
+			if !isTableChunk(c) {
+				content = TruncateRunes(content, 1200)
 			}
 			payload = append(payload, map[string]any{"id": chunkID, "content": content})
 		}
@@ -1760,7 +1767,7 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 	}
 	status := StatusOK
 	if newChunks == 0 {
-		status = StatusRedundant
+		status = statusRedundant
 	}
 	return ToolOutcome{
 		Payload:     payload,
@@ -1772,9 +1779,10 @@ func WebSearchTool(ctx context.Context, deps SearchDeps, args map[string]any) (T
 
 // list_chunks deep-read caps.
 const (
-	// listChunksMaxDeep caps the deep-read pool admission.
-	listChunksMaxDeep = 80
-	// listChunksMaxOut caps the model-facing passage list.
+	// listChunksMaxOut is ONE PAGE of a document: both the pool admission and the
+	// model-facing list for a single list_chunks call. Reading on is the caller's choice
+	// (the offset argument), not a bigger page — a page the model cannot finish reading is
+	// evidence it pays tokens for and never uses.
 	listChunksMaxOut = 30
 )
 
@@ -1796,15 +1804,19 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 		// An empty doc_id is a query-level MISS.
 		return ToolOutcome{Payload: []any{}, Status: StatusMiss, Reason: ReasonNoDoc, Metrics: map[string]any{"hits": 0}}, nil
 	}
+	offset := argInt(args, "offset", 0)
+	if offset < 0 {
+		offset = 0
+	}
 
 	var chunks []map[string]any
+	hasMore := false
 	if e.deps.DocChunks != nil {
-		// Real doc-store deep read, budgeted by the model window.
-		deep, _ := fetchFullDocument(ctx, e.deps, docID, e.req.MaxLength)
-		if len(deep) > listChunksMaxDeep {
-			deep = deep[:listChunksMaxDeep]
-		}
-		chunks = deep
+		// ONE PAGE of the document, starting where the caller left off. The read is bounded
+		// by the page size rather than by the model window, and the page itself says whether
+		// the document continues (see fetchDocumentPage): a long document used to be readable
+		// only up to the window, with nothing telling the model it had stopped early.
+		chunks, hasMore = fetchDocumentPage(ctx, e.deps, docID, offset, listChunksMaxOut)
 	} else if e.deps.KB != nil {
 		// Fallback: scan the in-memory evidence pool (unit-test / unwired path).
 		for _, c := range e.deps.KB.Chunks {
@@ -1826,13 +1838,11 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 		e.deps.KB = &Kbinfos{}
 	}
 
-	// Only the first listChunksMaxOut (30) of the listChunksMaxDeep (80) fetched passages
-	// are admitted: no-id chunks and in-call duplicates are skipped, evidence references
-	// the chunk id, and only chunks new to the shared pool are appended.
+	// The page IS the admission set — fetchDocumentPage already bounded it at
+	// listChunksMaxOut, so there is nothing left to slice here. No-id chunks and in-call
+	// duplicates are still skipped, evidence references the chunk id, and only chunks new
+	// to the shared pool are appended.
 	admit := chunks
-	if len(admit) > listChunksMaxOut {
-		admit = admit[:listChunksMaxOut]
-	}
 	seen := map[string]bool{}
 	var payload []any
 	var evidenceIDs []string
@@ -1848,27 +1858,21 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 				// A blank cid is skipped in the caller, BEFORE admission.
 				continue
 			}
-			// Admission early-stops at the pool cap, BEFORE the per-call dedup.
-			if p.Full() {
-				continue
-			}
 			if seen[cid] {
 				continue
 			}
 			// already quoted verbatim by a pooled claim →
 			// skip the full passage (table chunks exempt).
-			if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
+			if p.CoveredByClaim(cid, covered, isTableChunk(c)) {
 				continue
 			}
 			seen[cid] = true
 			evidenceIDs = append(evidenceIDs, cid)
-			// Pool shape: {"id","content"} (no doc_id), with non-table text cut to 1200 code
-			// points (a plain slice, no ellipsis).
-			content := ChunkTextOf(c)
-			if !IsTableChunk(c) {
-				content = truncateRunes(content, 1200)
-			}
-			payload = append(payload, map[string]any{"id": cid, "content": content})
+			// The text comes from the SAME renderer every other tool uses (passageContent): a
+			// table arrives as the rendered field view (one JSON object per row), whole, and plain
+			// text is cut at 1200 code points. The dict stays {id, content} — this path spells its
+			// passages without doc_id by contract (mirrors Python's _admit_evidence(include_doc_id=False)).
+			payload = append(payload, map[string]any{"id": cid, "content": passageContent(c)})
 			if p.Add(c) {
 				newChunks++
 			}
@@ -1886,21 +1890,39 @@ func (e *searchExecutor) listChunks(ctx context.Context, args map[string]any) (T
 	}
 	status := StatusOK
 	if newChunks == 0 {
-		status = StatusRedundant
+		status = statusRedundant
+	}
+	// The READ ledger: this call READ the document, it did not merely search it. Every later tool
+	// result marks the passages the run has read differently from the ones it has only been SHOWN
+	// (see the read/preview note in action_session.go's toolNode), and the session's seed says how
+	// far into each document the run got — so an answer built on a snippet can be told apart from
+	// one built on the page the snippet came from.
+	e.deps.KB.NoteChunksRead(docID, offset, evidenceIDs, hasMore)
+	// Where this page sits in the document, and whether the document continues, are DATA the
+	// model needs in order to finish reading it: without them a long document looks complete
+	// at whatever the page happened to hold, and there is no way to ask for the rest.
+	note := ""
+	switch {
+	case hasMore:
+		note = fmt.Sprintf("This document continues: %s shown from offset %d; call list_chunks again with doc_id=%q and offset=%d to read on.",
+			CountOf(len(payload), "passage"), offset, docID, offset+len(chunks))
+	case len(payload) > 0:
+		note = fmt.Sprintf("This is the END of the document from offset %d on: every chunk of it is now in your evidence.", offset)
 	}
 	return ToolOutcome{
 		Payload:     payload,
 		EvidenceIDs: evidenceIDs,
 		Status:      status,
-		Reason:      ReasonNone,
+		Reason:      reasonNone,
+		Note:        note,
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 	}, nil
 }
 
-// SearchCacheKey: the tuple of what actually
+// searchCacheKey: the tuple of what actually
 // determines a retrieval result. Scope and limits are part of the key so only a
 // genuinely identical query is served from cache.
-func SearchCacheKey(effectiveQuery string, targetIDs []string, topN int, docScope []string) string {
+func searchCacheKey(effectiveQuery string, targetIDs []string, topN int, docScope []string) string {
 	query := normalizeSpace(effectiveQuery)
 	ids := append([]string(nil), targetIDs...)
 	sort.Strings(ids)
@@ -1910,7 +1932,7 @@ func SearchCacheKey(effectiveQuery string, targetIDs []string, topN int, docScop
 }
 
 func normalizeSpace(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+	return strings.ToLower(FlattenLine(s))
 }
 
 // docInDatasets reports whether docID belongs to the datasets being searched.
@@ -2094,10 +2116,10 @@ func DocAggs(chunks []map[string]any) []map[string]any {
 // call.
 func searchResultLine(query string, chunks []map[string]any) string {
 	if len(chunks) == 0 {
-		return fmt.Sprintf("Found nothing for %q.", trunc(query, 80))
+		return fmt.Sprintf("Found nothing for %q.", TruncateRunes(query, 80))
 	}
 	return fmt.Sprintf("Found %s in %s for %q.", CountOf(len(chunks), "passage"),
-		CountOf(len(DocAggs(chunks)), "document"), trunc(query, 80))
+		CountOf(len(DocAggs(chunks)), "document"), TruncateRunes(query, 80))
 }
 
 // searchResultLogLine renders the same result in the log's shape:
@@ -2105,7 +2127,7 @@ func searchResultLine(query string, chunks []map[string]any) string {
 // :471 for grep). The breakdown is dropped when the leg returned nothing, so a
 // zero-result line does not end on a dangling colon.
 func searchResultLogLine(query string, chunks []map[string]any) string {
-	line := fmt.Sprintf("%q -> %d chunk(s)", trunc(query, 80), len(chunks))
+	line := fmt.Sprintf("%q -> %d chunk(s)", TruncateRunes(query, 80), len(chunks))
 	if stats := docStatsLine(chunks); stats != "" {
 		line += ": " + stats
 	}
@@ -2124,7 +2146,7 @@ func searchResultLogLine(query string, chunks []map[string]any) string {
 // (search.py:215/252), and Go deliberately adds the result line, because those legs
 // are the ones whose pool size a reader most needs.
 func reportSearchResult(ctx context.Context, logger *log.Logger, label, query string, chunks []map[string]any) {
-	StepsFrom(ctx).StageLineDetail(logger, label,
+	StepsFrom(ctx).StageLineDetail(label,
 		searchResultLine(query, chunks), searchResultLogLine(query, chunks))
 }
 

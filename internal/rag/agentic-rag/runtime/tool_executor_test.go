@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 
@@ -30,6 +31,9 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 )
 
@@ -331,7 +335,7 @@ func TestRenderToolArgs(t *testing.T) {
 	if strings.Contains(got, long) || !strings.Contains(got, "…") {
 		t.Errorf("long args = %q, want the value capped with an ellipsis", got)
 	}
-	if n := utf8.RuneCountInString(got); n > ThinkLabelMaxRunes+16 {
+	if n := utf8.RuneCountInString(got); n > thinkLabelMaxRunes+16 {
 		t.Errorf("rendered args = %d runes, want one capped value", n)
 	}
 	// Capping must not produce invalid UTF-8 (it cuts on rune boundaries)...
@@ -424,6 +428,10 @@ func TestCountOfPluralizes(t *testing.T) {
 // gets the tool name, arguments, status, result/document counts and evidence
 // anchors without parsing the sentences.
 func TestExecuteNarratesToolOutcome(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prev })
 	var buf bytes.Buffer
 	deps, _ := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
 		{"chunk_id": "c1", "doc_id": "d1", "content": "hit one"},
@@ -440,7 +448,7 @@ func TestExecuteNarratesToolOutcome(t *testing.T) {
 	if _, err := ex.Execute(ctx, "search_chunks", map[string]any{"query": "q"}); err != nil {
 		t.Fatalf("search_chunks: %v", err)
 	}
-	out := buf.String()
+	out := stageLogText(logs) + buf.String()
 	for _, want := range []string{
 		"[Function tool] Running the search_chunks tool with: ",
 		`[Function tool] The search_chunks tool returned 3 results from 2 documents for "q".`,
@@ -461,7 +469,7 @@ func TestExecuteNarratesToolOutcome(t *testing.T) {
 			call = ev
 		case ThinkKindToolResult:
 			result = ev
-		case ThinkKindStage:
+		case thinkKindStage:
 			legLines = append(legLines, ev.Summary)
 		}
 	}
@@ -694,7 +702,7 @@ func TestRenderToolOutcomeCoversEveryStatus(t *testing.T) {
 			Payload: []any{map[string]any{"id": "c1"}}},
 			"The list_chunks tool returned 1 result."},
 		// Singular "1 result" must not be followed by "all of them".
-		{"redundant", "retrieve", ` for "q"`, ToolOutcome{Status: StatusRedundant,
+		{"redundant", "retrieve", ` for "q"`, ToolOutcome{Status: statusRedundant,
 			Payload: []any{map[string]any{"id": "c1"}}},
 			`The retrieve tool returned 1 result for "q", already in the evidence pool.`},
 		{"miss", "retrieve", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonNoDoc},
@@ -707,13 +715,13 @@ func TestRenderToolOutcomeCoversEveryStatus(t *testing.T) {
 		{"unwired", "time_travel", ` for "q"`, ToolOutcome{Status: StatusMiss, Reason: ReasonUnwired},
 			`The time_travel tool is not wired in this deployment, so nothing ran for "q".`},
 		{"empty-no-structure", "navigate_structure", ` for "曹操是谁"`,
-			ToolOutcome{Status: StatusEmpty, Reason: ReasonNoStructure},
+			ToolOutcome{Status: StatusEmpty, Reason: reasonNoStructure},
 			`The navigate_structure tool has no compiled structure to read for "曹操是谁".`},
-		{"poor", "calculate", ` for "how many people"`, ToolOutcome{Status: StatusPoor, Reason: ReasonNoDoc},
+		{"poor", "calculate", ` for "how many people"`, ToolOutcome{Status: statusPoor, Reason: ReasonNoDoc},
 			`The calculate tool produced a result too weak to use for "how many people".`},
 		// The producer's own diagnostic is the actionable half of a failure; the
 		// reason token stays in the event.
-		{"error-with-cause", "navigate_tree", "", ToolOutcome{Status: StatusError, Reason: ReasonInfra,
+		{"error-with-cause", "navigate_tree", "", ToolOutcome{Status: StatusError, Reason: reasonInfra,
 			Diagnostic: "nav-tree descent failed for kb=kb1"},
 			"The navigate_tree tool could not run: nav-tree descent failed for kb=kb1."},
 	}
@@ -773,7 +781,7 @@ func TestQuoteQueries(t *testing.T) {
 	if !strings.Contains(label, "…") {
 		t.Errorf("quoteQueries(long) = %q, want it capped", label)
 	}
-	if n := utf8.RuneCountInString(label); n > ThinkLabelMaxRunes+4 {
+	if n := utf8.RuneCountInString(label); n > thinkLabelMaxRunes+4 {
 		t.Errorf("quoteQueries(long) = %d runes, want a capped label", n)
 	}
 	if !utf8.ValidString(label) {
@@ -858,70 +866,188 @@ func TestListChunksDeepReadsDocStore(t *testing.T) {
 	}
 }
 
-// TestListChunksCapsDeepReadAndOutput pins the two caps: the deep read may fetch up to
-// listChunksMaxDeep (80) chunks, but list_chunks admits only the first listChunksMaxOut (30)
-// into the shared pool and shows the model the same 30 — so the pool holds 30, not 80.
-func TestListChunksCapsDeepReadAndOutput(t *testing.T) {
+// tableChunksFor serves one table chunk for docID, so a test can pin how THIS path renders a
+// table (the shape contract above must not cost the shared renderer).
+func tableChunksFor(docID, raw string) DocChunkLister {
+	return tableChunksStub{docID: docID, raw: raw}
+}
+
+type tableChunksStub struct {
+	docID string
+	raw   string
+}
+
+func (s tableChunksStub) DocChunks(_ context.Context, req DocChunksRequest) ([]map[string]any, error) {
+	if req.DocID != s.docID || req.Offset > 0 {
+		return nil, nil
+	}
+	return []map[string]any{{
+		"chunk_id": "t0",
+		"doc_id":   s.docID,
+		"content":  s.raw,
+	}}, nil
+}
+
+// TestListChunksTablePassageIsRendered pins the SHARED renderer on the list_chunks path: a table
+// chunk must reach the model as the rendered field view — one JSON object per row, see renderTables —
+// not as raw <table> markup. This path used to build its own passage dict, which is how an
+// 8275-code-point standings table reached the model as raw HTML and then, cut to its first ~800 code
+// points, read as "only the top four finishers". What the assertion is really about is the ROW SET
+// surviving the render (hence the last row); the notation is the renderer's business.
+func TestListChunksTablePassageIsRendered(t *testing.T) {
+	const raw = `<table><thead><tr><th>Rank</th><th>Player</th><th>Total</th></tr></thead>` +
+		`<tbody><tr><td>1</td><td>Kelly Kulick</td><td>587</td></tr>` +
+		`<tr><td>19</td><td>Mariana Ayala</td><td>501</td></tr></tbody></table>`
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.DocChunks = tableChunksFor("doc-t", raw)
+	ex := &searchExecutor{deps: deps, req: RunRequest{DatasetIDs: []string{"kb1"}, MaxLength: 8192}}
+
+	oc, err := ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-t"})
+	if err != nil {
+		t.Fatalf("list_chunks: %v", err)
+	}
+	if len(oc.Payload) != 1 {
+		t.Fatalf("payload = %d, want 1", len(oc.Payload))
+	}
+	content, _ := oc.Payload[0].(map[string]any)["content"].(string)
+	if strings.Contains(content, "<table") {
+		t.Errorf("table passage still carries raw markup:\n%s", content)
+	}
+	if !strings.Contains(content, `"Player": "Mariana Ayala"`) {
+		t.Errorf("table passage is not the rendered field view carrying its late rows:\n%s", content)
+	}
+}
+
+// TestListChunksPagesThroughADocument pins the paging reader: one call returns ONE PAGE
+// (listChunksMaxOut chunks) and its note says whether the document continues, so a long
+// document is read by advancing the offset rather than by widening the page.
+//
+// This replaced a pair of caps: the reader fetched up to listChunksMaxDeep (80) passages and
+// admitted the first listChunksMaxOut (30), and the model was told nothing about the other
+// fifty — a document was either short enough to fit one page or silently truncated.
+func TestListChunksPagesThroughADocument(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.DocChunks = docChunksFor("doc-a", 100)
 	ex := &searchExecutor{deps: deps, req: RunRequest{DatasetIDs: []string{"kb1"}, MaxLength: 1 << 20}}
 
+	// Page 1: one page admitted, and the note says where the document continues.
 	oc, err := ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a"})
 	if err != nil {
 		t.Fatalf("list_chunks: %v", err)
 	}
+	if len(oc.Payload) != listChunksMaxOut {
+		t.Fatalf("payload = %d, want one page of %d", len(oc.Payload), listChunksMaxOut)
+	}
 	if len(kb.Chunks) != listChunksMaxOut {
-		t.Errorf("kb.Chunks = %d, want admitted cap %d", len(kb.Chunks), listChunksMaxOut)
+		t.Errorf("kb.Chunks = %d, want %d admitted", len(kb.Chunks), listChunksMaxOut)
+	}
+	if !strings.Contains(oc.Note, "continues") || !strings.Contains(oc.Note, "offset=30") {
+		t.Errorf("note = %q, want the page to say the document continues at offset 30", oc.Note)
+	}
+
+	// Page 2 starts where page 1 stopped, and the pool holds both pages.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(30)})
+	if err != nil {
+		t.Fatalf("list_chunks (page 2): %v", err)
 	}
 	if len(oc.Payload) != listChunksMaxOut {
-		t.Errorf("payload = %d, want output cap %d", len(oc.Payload), listChunksMaxOut)
+		t.Errorf("page 2 payload = %d, want %d", len(oc.Payload), listChunksMaxOut)
+	}
+	if len(kb.Chunks) != 2*listChunksMaxOut {
+		t.Errorf("kb.Chunks = %d, want %d (both pages)", len(kb.Chunks), 2*listChunksMaxOut)
+	}
+
+	// Page 3 fills in the middle, so paging is the only way to reach the end.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(60)})
+	if err != nil {
+		t.Fatalf("list_chunks (page 3): %v", err)
+	}
+	if len(kb.Chunks) != 3*listChunksMaxOut {
+		t.Errorf("kb.Chunks = %d, want %d (three pages)", len(kb.Chunks), 3*listChunksMaxOut)
+	}
+
+	// The last page is short, and the note says the document ends here.
+	oc, err = ex.listChunks(context.Background(), map[string]any{"doc_id": "doc-a", "offset": float64(90)})
+	if err != nil {
+		t.Fatalf("list_chunks (last page): %v", err)
+	}
+	if len(oc.Payload) != 10 {
+		t.Errorf("last page payload = %d, want the remaining 10", len(oc.Payload))
+	}
+	if !strings.Contains(oc.Note, "END") {
+		t.Errorf("note = %q, want the last page to say the document ends here", oc.Note)
+	}
+	if len(kb.Chunks) != 100 {
+		t.Errorf("kb.Chunks = %d, want 100 (the whole document, once paged through)", len(kb.Chunks))
+	}
+
+	// Every page also went into the READ ledger: the run can now tell a passage it READ from one it
+	// was only shown as a search snippet (see Kbinfos.NoteChunksRead). Four pages, 100 distinct
+	// chunks, and the last page is not the last one the document has — this one ended.
+	progress := kb.ReadProgress()
+	if len(progress) != 1 {
+		t.Fatalf("ReadProgress = %v, want one line for doc-a", progress)
+	}
+	line := progress[0]
+	for _, want := range []string{"doc-a", "4 page(s)", "100 chunk(s) read", "offset 90"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("ReadProgress line = %q, want it to carry %q", line, want)
+		}
+	}
+	if kb.WasRead(payloadChunkID(oc.Payload[0].(map[string]any))) != true {
+		t.Error("the last page's first passage was not recorded as READ")
 	}
 }
 
-// TestEvidencePoolCapStopsAdmitting pins the PR's _EVIDENCE_POOL_CAP early-stop:
-// once the shared pool reaches the cap, a search admits no further chunk, so its
-// outcome collapses to MISS (nothing new was admitted) — a saturated session
-// stops bloating the pool beyond what the SCA view can read.
-func TestEvidencePoolCapStopsAdmitting(t *testing.T) {
-	pre := make([]map[string]any, 0, evidencePoolCap)
-	for i := 0; i < evidencePoolCap; i++ {
+// TestLargePoolStillAdmitsNewEvidence pins that the pool has NO ceiling at the tool
+// boundary: a search over an already-large pool still admits the chunk it found.
+//
+// The cap this replaces early-stopped admission at a hard number, and what it refused fell
+// on the MODEL's evidence rather than on storage — the passage that would have reached an
+// enumeration's last members, which are named late in the run (see the note on Kbinfos).
+// Identity is the only thing the pool still refuses, which the second half asserts.
+func TestLargePoolStillAdmitsNewEvidence(t *testing.T) {
+	pre := make([]map[string]any, 0, 400)
+	for i := 0; i < 400; i++ {
 		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "old"})
 	}
 	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{{"content": "hit", "chunk_id": "c1"}}})
 	kb.Chunks = pre
 	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
+
 	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if oc.Status != StatusMiss {
-		t.Errorf("status = %s, want %s (a full pool admits nothing)", oc.Status, StatusMiss)
+	if oc.Status != StatusOK {
+		t.Errorf("status = %s, want %s (a large pool does not refuse evidence)", oc.Status, StatusOK)
 	}
-	if len(kb.Chunks) != evidencePoolCap {
-		t.Errorf("kb.Chunks = %d, want the pool to stay at the cap %d", len(kb.Chunks), evidencePoolCap)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want %d (the hit was admitted)", len(kb.Chunks), len(pre)+1)
 	}
-	// Dropping one chunk frees a slot and admission resumes.
-	kb.Chunks = kb.Chunks[:evidencePoolCap-1]
+	// The same search again: the chunk is already pooled, so nothing new is admitted.
 	oc, err = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q"})
 	if err != nil {
-		t.Fatalf("retrieve after freeing a slot: %v", err)
+		t.Fatalf("retrieve (second): %v", err)
 	}
-	if oc.Status != StatusOK {
-		t.Errorf("status after freeing a slot = %s, want %s", oc.Status, StatusOK)
+	if oc.Status != statusRedundant && oc.Status != StatusMiss {
+		t.Errorf("status = %s, want REDUNDANT/MISS on the repeated search", oc.Status)
+	}
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), len(pre)+1)
 	}
 }
 
-// TestEvidencePoolCapExemptsTheProbeWindow pins the cap EXEMPTION at the tool
-// boundary: a FULL pool still takes the window that answers a name the pool has
-// not reached, because that window is the probe's own RESULT.
+// TestProbeWindowLandsOnALargePool pins the INTENT the cap exemption used to serve, now
+// held by the pool itself: on a large pool a probe's per-name window is admitted, because
+// that window is the batch's RESULT rather than one more passage. Drop it and "this name was
+// found here" becomes "nothing new", which the model reads as "not a member".
 //
-// The contrasting case is the test above: the same full pool, a query that is not
-// a probe, and nothing is admitted. Both behaviours are needed — the exemption is
-// what keeps a name batch from turning a found member into "nothing new", and the
-// cap is what keeps everything else from bloating storage.
-func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
-	pre := make([]map[string]any, 0, evidencePoolCap)
-	for i := 0; i < evidencePoolCap; i++ {
+// The cap that needed an exemption to achieve this is gone (see the note on Kbinfos), so the
+// window now lands for the ordinary reason: nothing is refused for want of room.
+func TestProbeWindowLandsOnALargePool(t *testing.T) {
+	pre := make([]map[string]any, 0, 400)
+	for i := 0; i < 400; i++ {
 		pre = append(pre, map[string]any{"chunk_id": fmt.Sprintf("pre-%d", i), "content": "already pooled prose"})
 	}
 	deps, kb := newTestSearchDeps(&stubRetriever{chunks: []map[string]any{
@@ -937,8 +1063,8 @@ func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
 	if oc.Status != StatusOK {
 		t.Errorf("status = %s, want %s (the probe window answered an unanswered name)", oc.Status, StatusOK)
 	}
-	if len(kb.Chunks) != evidencePoolCap+1 {
-		t.Errorf("kb.Chunks = %d, want %d (one seat for the unanswered name)", len(kb.Chunks), evidencePoolCap+1)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want %d (the probe's window was admitted)", len(kb.Chunks), len(pre)+1)
 	}
 	if len(oc.Payload) != 1 {
 		t.Errorf("payload = %d, want the probe's window", len(oc.Payload))
@@ -950,10 +1076,10 @@ func TestEvidencePoolCapExemptsTheProbeWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve (second): %v", err)
 	}
-	if len(kb.Chunks) != evidencePoolCap+1 {
-		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), evidencePoolCap+1)
+	if len(kb.Chunks) != len(pre)+1 {
+		t.Errorf("kb.Chunks = %d, want the pool to stay at %d", len(kb.Chunks), len(pre)+1)
 	}
-	if oc.Status != StatusMiss && oc.Status != StatusRedundant {
+	if oc.Status != StatusMiss && oc.Status != statusRedundant {
 		t.Errorf("status = %s, want MISS/REDUNDANT on the repeated probe", oc.Status)
 	}
 }
@@ -965,7 +1091,7 @@ func TestWebSearchAdmitsToPool(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"web answer one", "web answer two", "web answer three"}}
 	// The query list is read from args["query"].
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
+	oc, err := webSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
@@ -995,7 +1121,7 @@ func TestWebSearchDedupsAcrossQueries(t *testing.T) {
 	deps, kb := newTestSearchDeps(&stubRetriever{})
 	deps.WebSearch = stubWebSearch{results: []string{"dup passage", "unique one", "dup passage"}}
 	// Same args["query"] contract as above.
-	oc, err := WebSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
+	oc, err := webSearchTool(context.Background(), deps, map[string]any{"query": []any{"q1", "q2"}})
 	if err != nil {
 		t.Fatalf("web_search: %v", err)
 	}
@@ -1044,8 +1170,23 @@ func (s docChunksStub) DocChunks(_ context.Context, req DocChunksRequest) ([]map
 	if req.DocID != s.docID {
 		return nil, nil
 	}
-	out := make([]map[string]any, 0, s.n)
-	for i := 0; i < s.n; i++ {
+	// The lister contract is page-ordered and paged ("up to Limit chunks starting at
+	// Offset; a short page means the document is exhausted"), so the stub honours both: a
+	// stub that returned everything whatever the request asked for could not tell a paging
+	// reader from one that ignores the page.
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= s.n {
+		return nil, nil
+	}
+	end := s.n
+	if req.Limit > 0 && offset+req.Limit < end {
+		end = offset + req.Limit
+	}
+	out := make([]map[string]any, 0, end-offset)
+	for i := offset; i < end; i++ {
 		out = append(out, map[string]any{
 			"chunk_id": fmt.Sprintf("c%d", i),
 			"doc_id":   s.docID,
@@ -1088,7 +1229,7 @@ func (s stubWebSearch) Search(_ context.Context, _ []string) ([]string, error) {
 }
 
 // TestSearchRedundantReturnsFullPayload pins fix #5: when every hit is already in the
-// evidence pool the result is StatusRedundant — but the FULL passages are still returned so
+// evidence pool the result is statusRedundant — but the FULL passages are still returned so
 // the model sees what it already has. Dropping the payload to empty hid the evidence.
 func TestSearchRedundantReturnsFullPayload(t *testing.T) {
 	chunk := map[string]any{"content": "already known passage", "chunk_id": "c1"}
@@ -1100,8 +1241,8 @@ func TestSearchRedundantReturnsFullPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	if oc.Status != StatusRedundant {
-		t.Fatalf("status = %s, want %s", oc.Status, StatusRedundant)
+	if oc.Status != statusRedundant {
+		t.Fatalf("status = %s, want %s", oc.Status, statusRedundant)
 	}
 	if len(oc.Payload) != 1 {
 		t.Fatalf("REDUNDANT payload = %v, want 1 full passage", oc.Payload)
@@ -1146,10 +1287,17 @@ func TestNavigateToolsRouteWithinSessionDocScope(t *testing.T) {
 // canvas state is attached) into the citation store.
 
 // corpusRetriever answers every query from a fixed corpus.
-type corpusRetriever struct{ calls []string }
+type corpusRetriever struct {
+	mu    sync.Mutex
+	calls []string
+}
 
 func (c *corpusRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	// Locked: the search legs run concurrently (see runSearch), so the retriever contract is
+	// concurrent and a fixture that appends without a lock is a race.
+	c.mu.Lock()
 	c.calls = append(c.calls, req.Query)
+	c.mu.Unlock()
 	return []map[string]any{{
 		"chunk_id":   "c1",
 		"content":    "Culdcept was created by OmiyaSoft and released in 1999.",
@@ -1178,7 +1326,7 @@ func TestSearchExecutorReportsMissAndRedundancy(t *testing.T) {
 
 	// Same query again: every hit is already in the pool -> REDUNDANT, not ok.
 	oc, _ = ex.Execute(context.Background(), "retrieve", map[string]any{"query": "q1"})
-	if oc.Status != StatusRedundant {
+	if oc.Status != statusRedundant {
 		t.Errorf("repeat call status = %s, want redundant", oc.Status)
 	}
 
@@ -1226,8 +1374,8 @@ func TestSearchRecordsDocAggsForReferences(t *testing.T) {
 // fakeWikiRetriever returns a fixed compiled wiki page.
 type fakeWikiRetriever struct{}
 
-func (f *fakeWikiRetriever) SearchWiki(_ context.Context, question string, keywords []string, topN int) ([]WikiPage, error) {
-	return []WikiPage{{
+func (f *fakeWikiRetriever) SearchWiki(_ context.Context, question string, keywords []string, topN int) ([]wikiPage, error) {
+	return []wikiPage{{
 		ChunkID: "w1", DocID: "wdoc1", DocName: "Synthesis", Title: "Culdcept Overview",
 		Content: "Culdcept is a board game by OmiyaSoft.", Score: 0.9,
 	}}, nil
@@ -1299,7 +1447,7 @@ func TestListChunksReadsFromEvidencePool(t *testing.T) {
 	oc, _ := ex.Execute(context.Background(), "list_chunks", map[string]any{"doc_id": "doc-a"})
 	// Already in evidence → REDUNDANT (nothing new admitted), but the passages
 	// are still returned.
-	if oc.Status != StatusRedundant {
+	if oc.Status != statusRedundant {
 		t.Fatalf("status = %s, want redundant", oc.Status)
 	}
 	if len(oc.Payload) != 2 {
@@ -1421,7 +1569,7 @@ func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	if out.Status != StatusError || out.Reason != ReasonInfra {
+	if out.Status != StatusError || out.Reason != reasonInfra {
 		t.Errorf("status/reason = %s/%s, want error/infra", out.Status, out.Reason)
 	}
 	if note := toolNote(out); !strings.Contains(note, "NOT a statement about the dataset") {
@@ -1704,37 +1852,35 @@ func TestNormalizeMetadataValue(t *testing.T) {
 	}
 }
 
-// TestMetadataSearchOneShotGuardBlocksSecondCall pins the one-shot policy end to end at
-// the tool node: the first call runs, the second within the same session is answered with
-// a nudge and never executed.
-func TestMetadataSearchOneShotGuardBlocksSecondCall(t *testing.T) {
+// TestMetadataSearchSecondFilterRuns pins the ABSENCE of the old one-shot guard: the tool is a
+// document-set SELECTOR, so a question that spans two conditions (two days, two authors) needs
+// one call per condition, and the second filter must reach the executor instead of being nudged
+// away. (Identical calls are still answered from the tool cache — only a NEW filter re-runs.)
+func TestMetadataSearchSecondFilterRuns(t *testing.T) {
 	exec := &ladderExec{emptyFor: map[string]bool{}}
-	st := &SessionState{
+	dayFilter := func(day string) map[string]any {
+		return map[string]any{"filters": []any{map[string]any{
+			"key": "update_time", "op": "start with", "value": day,
+		}}}
+	}
+	st := &sessionState{
 		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
 		DeadlineLeft: 60,
 		ToolCache:    NewToolCache(),
-		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search"}},
+		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search", Args: dayFilter("2026-09-20")}},
 	}
 	if err := st.toolNode(context.Background()); err != nil {
 		t.Fatalf("toolNode: %v", err)
 	}
-	if len(exec.calls) != 1 || exec.calls[0] != "metadata_search" {
-		t.Fatalf("calls = %v, want the first metadata_search executed", exec.calls)
-	}
-	if !st.MetadataSearchUsed {
-		t.Error("MetadataSearchUsed must be set after the first call")
-	}
-
-	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search"}}
+	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search", Args: dayFilter("2026-09-21")}}
 	if err := st.toolNode(context.Background()); err != nil {
 		t.Fatalf("toolNode (second turn): %v", err)
 	}
-	if len(exec.calls) != 1 {
-		t.Errorf("calls = %v, want the second metadata_search blocked", exec.calls)
+	if len(exec.calls) != 2 {
+		t.Fatalf("calls = %v, want both filters executed", exec.calls)
 	}
-	last := st.Messages[len(st.Messages)-1]
-	if !strings.Contains(last.Content, "ONE-SHOT") {
-		t.Errorf("second call's tool message = %q, want the one-shot nudge", last.Content)
+	if last := st.Messages[len(st.Messages)-1]; strings.Contains(last.Content, "ONE-SHOT") {
+		t.Errorf("the second filter was nudged away instead of executed: %q", last.Content)
 	}
 }
 
@@ -1751,10 +1897,10 @@ func toolNote(out ToolOutcome) string {
 	return note
 }
 
-// TestPassageFromChunkRendersTablesAsMarkdown pins the action-session table shape: the
-// model sees a Markdown view (same rows, a fraction of the tokens) and never the raw
-// <table>/<td> markup. The chunk in the shared pool stays raw for citation.
-func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
+// TestPassageFromChunkRendersTablesAsLines pins the action-session table shape: the model
+// sees the rendered view (one "key: value" line per row, a fraction of the tokens) and never
+// the raw <table>/<td> markup. The chunk in the shared pool stays raw for citation.
+func TestPassageFromChunkRendersTablesAsLines(t *testing.T) {
 	table := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
 		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
 		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
@@ -1765,7 +1911,7 @@ func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
 	if strings.Contains(content, "<td>") || strings.Contains(content, "<table") {
 		t.Errorf("the model-visible passage still carries raw HTML: %q", content)
 	}
-	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+	for _, want := range []string{`"Rank": "19"`, `"Rider": "Danilo"`, `"Points": "62"`, `"Rank": "20"`} {
 		if !strings.Contains(content, want) {
 			t.Errorf("passage lost %q: %q", want, content)
 		}
@@ -1780,12 +1926,16 @@ func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
 // the same term twice), so a fixture must not depend on how that string is
 // assembled.
 type seatRetriever struct {
+	mu      sync.Mutex
 	byQuery map[string][]map[string]any
 	calls   []string
 }
 
 func (s *seatRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[string]any, error) {
+	// Locked: the seat pass runs beside the query legs, so calls arrive concurrently.
+	s.mu.Lock()
 	s.calls = append(s.calls, req.Query)
+	s.mu.Unlock()
 	seen := map[string]bool{}
 	var tokens []string
 	for _, tok := range strings.Fields(req.Query) {
@@ -1796,63 +1946,6 @@ func (s *seatRetriever) Retrieve(_ context.Context, req RetrieveRequest) ([]map[
 		tokens = append(tokens, tok)
 	}
 	return s.byQuery[strings.Join(tokens, " ")], nil
-}
-
-// TestNamedTermSeatsReachTermsThePhraseSearchMissed pins the seat pass: every
-// individual a call NAMES gets its own cheap keyword search, so the names the
-// call's own phrase queries cannot reach still arrive with a passage.
-//
-// Three things are asserted, and each one is a measured loss from the 2026-09-15
-// run: (a) a name the phrase query's ranking stranded (荀正) still gets a
-// passage; (b) a name in a list item maxQ DROPPED (杨龄 — the run left 8 of 29
-// named queries unexecuted) still gets one; (c) a name nothing reaches is
-// recorded as probed-and-absent rather than silently dropped (庞德).
-func TestNamedTermSeatsReachTermsThePhraseSearchMissed(t *testing.T) {
-	famous := map[string]any{"chunk_id": "c-famous", "content": "关羽 斩华雄 于马下。"}
-	rare := map[string]any{"chunk_id": "c-rare", "content": "荀正 引军来战，关羽一刀斩之。"}
-	predicate := map[string]any{"chunk_id": "c-pred", "content": "云长 斩颜良 于白马，文丑心怯。"}
-	third := map[string]any{"chunk_id": "c-third", "content": "杨龄 出马，关羽手起刀落。"}
-	r := &seatRetriever{byQuery: map[string][]map[string]any{
-		// The phrase batch returns ONLY the passage matching several names at
-		// once — the ranking that strands the rare ones.
-		"关羽 斩华雄 荀正": {famous},
-		"关羽 斩颜良":    {},
-		"关羽":        {famous},
-		"斩华雄":       {famous},
-		"荀正":        {rare},
-		"斩颜良":       {predicate},
-		"杨龄":        {third},
-		// 庞德 reaches nothing anywhere: the corpus does not carry it.
-		"庞德": {},
-	}}
-	deps, kb := newTestSearchDeps(r)
-	ex := NewSearchExecutor(deps, RunRequest{DatasetIDs: []string{"kb1"}})
-
-	oc, err := ex.Execute(context.Background(), "retrieve", map[string]any{
-		"query": []any{"关羽 斩华雄 荀正", "关羽 斩颜良", "杨龄", "庞德"},
-	})
-	if err != nil {
-		t.Fatalf("retrieve: %v", err)
-	}
-	pool := map[string]bool{}
-	for _, c := range kb.Chunks {
-		pool[ChunkIDOf(c)] = true
-	}
-	for _, want := range []string{"c-famous", "c-rare", "c-pred", "c-third"} {
-		if !pool[want] {
-			t.Errorf("pool lacks %s: %v — a named term lost its seat (phrase ranking, maxQ cut, or the flat per-query cap)", want, pool)
-		}
-	}
-	if oc.Status != StatusOK {
-		t.Errorf("status = %s, want %s (the seats are new evidence)", oc.Status, StatusOK)
-	}
-	absent := kb.ProbedAbsentTerms()
-	if !containsString(absent, "庞德") {
-		t.Errorf("ProbedAbsent = %v, want 庞德 recorded: a probe that reaches nothing is a fact about the corpus, not a failed lookup", absent)
-	}
-	if containsString(absent, "荀正") || containsString(absent, "杨龄") {
-		t.Errorf("ProbedAbsent = %v: a term that got a seat must not be recorded as unreached", absent)
-	}
 }
 
 func containsString(list []string, want string) bool {

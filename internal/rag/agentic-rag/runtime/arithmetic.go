@@ -26,8 +26,10 @@ import (
 	"unicode"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Deterministic arithmetic over retrieved evidence.
@@ -46,8 +48,8 @@ import (
 //
 // Public interface
 //
-//	Compute(expression) -> (rendered, error)     evaluate one expression safely.
-//	ComputeFromFacts(question, facts, fitBudget) -> *ComputedFact | nil
+//	compute(expression) -> (rendered, error)     evaluate one expression safely.
+//	computeFromFacts(question, facts, fitBudget) -> *computedFact | nil
 //	    ask the model whether the question asks for a derivable number; if so,
 //	    write the expression, evaluate it, return a structured result.
 
@@ -61,11 +63,11 @@ const (
 	maxPowExponent = 64
 )
 
-// Compute evaluates an LLM-written arithmetic expression.
+// compute evaluates an LLM-written arithmetic expression.
 // Returns (rendered, error); exactly one of the two is non-empty. Every
 // rejection is a normal outcome — the caller simply carries on without the
 // computed evidence.
-func Compute(expression string) (string, string) {
+func compute(expression string) (string, string) {
 	expr := strings.TrimSpace(expression)
 	if expr == "" {
 		return "", "empty expression"
@@ -1396,18 +1398,18 @@ func parseISODate(s string) (time.Time, error) {
 	return t, nil
 }
 
-// ComputeFromFacts decides whether the question asks for a derivable number and, if so,
-// computes it. The evaluator side of this lives above (Compute / the parser); the two
+// computeFromFacts decides whether the question asks for a derivable number and, if so,
+// computes it. The evaluator side of this lives above (compute / the parser); the two
 // together form the compute tool.
 
-// ComputeSystem is the compute prompt. It is inlined (rather than loaded from rag/prompts)
+// computeSystem is the compute prompt. It is inlined (rather than loaded from rag/prompts)
 // because the runtime has no template env and the text carries no variables.
 //
 // IMPORTANT: the prompt asks for an arithmetic expression, and the parser in
 // arithmetic.go implements exactly the expression subset the prompt promises
 // (`**`, `x if y else z`, list literals, the listed functions). Changing one without the
 // other will silently refuse every model-written expression.
-const ComputeSystem = `You are given the ORIGINAL question and every fact discovered so far. Decide whether that question asks for a NUMBER that NO fact states outright but that FOLLOWS ARITHMETICALLY from figures the facts DO state — a sum, a difference, a count, an average, a percentage, a unit conversion, an elapsed span.
+const computeSystem = `You are given the ORIGINAL question and every fact discovered so far. Decide whether that question asks for a NUMBER that NO fact states outright but that FOLLOWS ARITHMETICALLY from figures the facts DO state — a sum, a difference, a count, an average, a percentage, a unit conversion, an elapsed span.
 
 If it does, compute it by writing ONE arithmetic expression with every figure substituted as a literal. The expression is evaluated on its own: no variables, no assignments, no imports, no attributes, no subscripts. The only functions available are abs, round, min, max, sum, len, int, float, sorted, letters, digit_sum and date_diff.
   combined population of three  -> 12345 + 6789 + 101112
@@ -1448,8 +1450,8 @@ Return "needed": false, with an empty expression, ONLY when:
 Output ONLY JSON, no prose, no code fences:
 {"needed": true/false, "expression": "<one arithmetic expression, or empty>", "label": "<short noun phrase>", "uses": [<index number>, ...]}`
 
-// ComputedFact: return dict.
-type ComputedFact struct {
+// computedFact: return dict.
+type computedFact struct {
 	Needed     bool
 	Label      string
 	Value      string
@@ -1457,45 +1459,45 @@ type ComputedFact struct {
 	Uses       []int
 }
 
-// ComputeFromFacts asks the model whether `question` asks for a derivable
+// computeFromFacts asks the model whether `question` asks for a derivable
 // number and, if so, writes + safely evaluates the expression over `facts`.
 //
 // Returns nil when no derivation is needed or possible — including when the
 // model's expression is refused by the whitelist. A refusal is logged, never
 // propagated: the caller simply carries on without the computed evidence.
-func ComputeFromFacts(ctx context.Context, model SessionModel, question string, facts []string, fitBudget int) *ComputedFact {
+func computeFromFacts(ctx context.Context, model SessionModel, question string, facts []string, fitBudget int) *computedFact {
 	if model == nil || strings.TrimSpace(question) == "" || len(facts) == 0 {
 		return nil
 	}
-	ctx, done := Phase(ctx, PhaseCompute)
+	ctx, done := Phase(ctx, phaseCompute)
 	defer done()
 
 	user := fmt.Sprintf("Facts discovered so far:\n%s\n\nOriginal question:\n%s\n\nOutput JSON:",
 		renderFacts(facts), question)
 
-	// Budget = fit_budget or the model's context length, then the prompt is fitted to it.
-	// The chat seam exposes the context length via ContextLengthModel; when neither an
+	// budget = fit_budget or the model's context length, then the prompt is fitted to it.
+	// The chat seam exposes the context length via contextLengthModel; when neither an
 	// explicit fitBudget nor a model context window is available the 8192 default
 	// (chat.EffectiveContextLength) applies, i.e. when the model config omits it.
 	budget := fitBudget
 	if budget <= 0 {
-		if cl, ok := model.(ContextLengthModel); ok {
+		if cl, ok := model.(contextLengthModel); ok {
 			budget = cl.ContextLength()
 		}
 		if budget <= 0 {
 			budget = chat.EffectiveContextLength(0)
 		}
 	}
-	fitted, fitErr := chat.FitMessages(ComputeSystem, []schema.Message{
+	fitted, fitErr := chat.FitMessages(computeSystem, []schema.Message{
 		*schema.UserMessage(user),
 	}, budget)
 	if fitErr != "" {
-		_LOG.Printf("[Compute] prompt fitting failed: %s", fitErr)
+		common.Warn("compute: prompt fitting failed", zap.Any("error", fitErr))
 		return nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
 	// call is exactly [system, user...].
-	systemPrompt := ComputeSystem
+	systemPrompt := computeSystem
 	history := fitted
 	if len(fitted) > 0 && fitted[0].Role == schema.System {
 		systemPrompt = fitted[0].Content
@@ -1517,12 +1519,12 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 		reply, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {
-		_LOG.Printf("[Compute] LLM call failed: %v", err)
+		common.Warn("compute: LLM call failed", zap.Error(err))
 		return nil
 	}
-	data, _ := ExtractJSON(StripThinkAndFences(reply.Content)).(map[string]any)
+	data, _ := ExtractJSON(stripThinkAndFences(reply.Content)).(map[string]any)
 	if data == nil {
-		_LOG.Printf("[Compute] could not parse LLM JSON")
+		common.Warn("compute: could not parse LLM JSON")
 		return nil
 	}
 	// A truthy non-bool (1, "true", a non-empty list) counts as needed — i.e. builtin bool()
@@ -1554,12 +1556,13 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 		}
 	}
 
-	value, problem := Compute(expression)
+	value, problem := compute(expression)
 	if problem != "" {
-		_LOG.Printf("[Compute] refused %q — %s", trunc(expression, 120), problem)
+		common.Warn("compute: refused expression", zap.String("expression", TruncateRunes(expression, 120)),
+			zap.Any("problem", problem))
 		return nil
 	}
-	return &ComputedFact{
+	return &computedFact{
 		Needed:     true,
 		Label:      label,
 		Value:      value,

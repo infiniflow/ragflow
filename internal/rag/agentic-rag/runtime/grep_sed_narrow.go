@@ -18,7 +18,9 @@ package runtime
 
 import (
 	"fmt"
+	"go.uber.org/zap"
 	"log"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"unicode"
@@ -96,9 +98,9 @@ func isAlphaNumRune(r rune) bool {
 	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
 }
 
-// TermsToPatterns turns grep terms into a list of compiled regexes (one per
+// termsToPatterns turns grep terms into a list of compiled regexes (one per
 // term), capped at maxGrepTerms.
-func TermsToPatterns(terms []string) []*regexp.Regexp {
+func termsToPatterns(terms []string) []*regexp.Regexp {
 	out := make([]*regexp.Regexp, 0, len(terms))
 	for _, term := range terms {
 		if len(out) >= maxGrepTerms {
@@ -117,21 +119,21 @@ func TermsToPatterns(terms []string) []*regexp.Regexp {
 	return out
 }
 
-// GrepTermsMax caps the terms extracted from a query.
-const GrepTermsMax = 10
+// grepTermsMax caps the terms extracted from a query.
+const grepTermsMax = 10
 
 // cjkPhraseRunes is the length at which a CJK token stops being a term and
-// becomes a clause: see GrepTermsFromQuery. Four is the longest Chinese proper
+// becomes a clause: see grepTermsForLocate. Four is the longest Chinese proper
 // name that is still read as one token (成吉思汗), so a longer run is prose.
 const cjkPhraseRunes = 4
 
-// GrepOutCharsPerChunk is the grep narrow's per-chunk output cap.
-const GrepOutCharsPerChunk = 700
+// grepOutCharsPerChunk is the grep narrow's per-chunk output cap.
+const grepOutCharsPerChunk = 700
 
-// GrepOutTotalChars is the grep narrow's total output cap.
-const GrepOutTotalChars = 8000
+// grepOutTotalChars is the grep narrow's total output cap.
+const grepOutTotalChars = 8000
 
-// GrepTermsFromQuery: bare alnum words of
+// grepTermsForLocate: bare alnum words of
 // length>=2, deduped (order-preserving) and capped — and extends it to CJK.
 //
 // An ALNUM-ONLY tokenizer yields no term at all for a Chinese query, and the grep leg's
@@ -152,45 +154,11 @@ const GrepOutTotalChars = 8000
 //     token either way, so its two-rune windows are used, left to right: the
 //     names in the clause still locate, and a window that occurs nowhere costs
 //     one failed lookup inside the narrowing pass and nothing else.
-func GrepTermsFromQuery(query string) []string {
+func grepTermsForLocate(query string) []string {
 	return grepTermsFromQuery(query, true)
 }
 
-// probeItemsOf returns the terms a call proposed AS ITEMS — a string the model
-// wrote to ask about one individual.
-//
-// Two shapes qualify: the pieces of a whitespace-separated batch, and a query that
-// IS one word. Everything else is prose the model wrote to ask a
-// question, whose words belong to the question rather than to a member list; and
-// the two-rune windows an unbroken clause decomposes into are our guesses, not the
-// caller's words at all (see GrepWordsFromQuery).
-//
-// The distinction matters at the reach ledger. The ledger is read back as the
-// session's to-do list — "you probed this, it came back with a passage, it is in
-// no slot" — and a to-do list built from a question's words tells the model
-// nothing: its entries are the question's own words, none of them the members the
-// sessions are missing, while the window fragments cost a retrieval each.
-func probeItemsOf(queries []string) map[string]bool {
-	out := make(map[string]bool)
-	for _, q := range queries {
-		q = strings.TrimSpace(q)
-		if q == "" {
-			continue
-		}
-		items := GrepWordsFromQuery(q)
-		if !callerBatch(q) && len(items) != 1 {
-			continue
-		}
-		for _, it := range items {
-			if it = strings.TrimSpace(it); it != "" {
-				out[strings.ToLower(it)] = true
-			}
-		}
-	}
-	return out
-}
-
-// GrepWordsFromQuery is GrepTermsFromQuery restricted to the caller's OWN words:
+// grepWordsFromQuery is grepTermsForLocate restricted to the caller's OWN words:
 // the pieces of an alternation, and the tokens separated by whitespace or
 // punctuation. It has NO CJK-window fallback.
 //
@@ -203,7 +171,7 @@ func probeItemsOf(queries []string) map[string]bool {
 //
 // So a caller that READS these (the named-term seat pass) uses the words; a
 // caller that LOCATES with them uses the terms.
-func GrepWordsFromQuery(query string) []string {
+func grepWordsFromQuery(query string) []string {
 	return grepTermsFromQuery(query, false)
 }
 
@@ -212,19 +180,19 @@ func grepTermsFromQuery(query string, windows bool) []string {
 	if q == "" {
 		return nil
 	}
-	terms := make([]string, 0, GrepTermsMax)
-	seen := make(map[string]struct{}, GrepTermsMax)
+	terms := make([]string, 0, grepTermsMax)
+	seen := make(map[string]struct{}, grepTermsMax)
 	add := func(t string) (full bool) {
 		if t == "" {
-			return len(terms) >= GrepTermsMax
+			return len(terms) >= grepTermsMax
 		}
 		low := strings.ToLower(t)
 		if _, dup := seen[low]; dup {
-			return len(terms) >= GrepTermsMax
+			return len(terms) >= grepTermsMax
 		}
 		seen[low] = struct{}{}
 		terms = append(terms, t)
-		return len(terms) >= GrepTermsMax
+		return len(terms) >= grepTermsMax
 	}
 
 	if strings.Contains(q, "|") {
@@ -252,15 +220,15 @@ func grepTermsFromQuery(query string, windows bool) []string {
 			//
 			//   LOCATING (windows) — decompose the clause into the two-rune
 			//   windows a name can actually be found in;
-			//   the caller's WORDS (GrepWordsFromQuery) — drop it. A clause names
+			//   the caller's WORDS (grepWordsFromQuery) — drop it. A clause names
 			//   no individual, and its own phrase search already covers it.
 			if !windows {
 				if runes > cjkPhraseRunes {
 					continue
 				}
 			} else if runes >= cjkPhraseRunes {
-				full := len(terms) >= GrepTermsMax
-				for _, window := range cjkWindowsOf(token, GrepTermsMax) {
+				full := len(terms) >= grepTermsMax
+				for _, window := range cjkWindowsOf(token, grepTermsMax) {
 					if add(window) {
 						full = true
 						break
@@ -281,7 +249,7 @@ func grepTermsFromQuery(query string, windows bool) []string {
 	if len(terms) > 0 || !windows {
 		return terms
 	}
-	return cjkWindowsOf(q, GrepTermsMax)
+	return cjkWindowsOf(q, grepTermsMax)
 }
 
 // trimTermEdges strips the punctuation a token can carry (the regex equivalent is
@@ -325,7 +293,7 @@ func isCJKRune(r rune) bool {
 
 // cjkWindowsOf returns the two-rune windows of a string's CJK runs, in order,
 // deduped and capped. It is the last-resort term derivation for a query that is
-// one unbroken clause (see GrepTermsFromQuery).
+// one unbroken clause (see grepTermsForLocate).
 func cjkWindowsOf(query string, limit int) []string {
 	out := make([]string, 0, limit)
 	run := make([]rune, 0, 16)
@@ -414,16 +382,16 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		// Keep fact-dense sentences to avoid dropping numbers/entities; with none, the raw
 		// head is kept.
 		var kept []string
-		for _, s := range SplitSentences(content) {
-			if IsFactDenseSentence(s) {
+		for _, s := range splitSentences(content) {
+			if isFactDenseSentence(s) {
 				kept = append(kept, s)
 			}
 		}
 		narrowed := strings.TrimSpace(strings.Join(kept, ""))
 		if narrowed != "" {
-			return truncHead(narrowed, headFallbackChars*4), false
+			return TruncateRunes(narrowed, headFallbackChars*4), false
 		}
-		return truncHead(content, headFallbackChars), false
+		return TruncateRunes(content, headFallbackChars), false
 	}
 
 	// Step 2: merge overlapping/adjacent matches.
@@ -476,7 +444,7 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 		if p == "" {
 			continue
 		}
-		key := truncHead(p, 200)
+		key := TruncateRunes(p, 200)
 		if seen[key] {
 			continue
 		}
@@ -485,10 +453,10 @@ func execOnText(content string, patterns []*regexp.Regexp, before, after, outCha
 	}
 	narrowed := strings.TrimSpace(strings.Join(outParts, "\n\n"))
 	if charLen(narrowed) > outCharsPerChunk {
-		narrowed = truncHead(narrowed, outCharsPerChunk)
+		narrowed = TruncateRunes(narrowed, outCharsPerChunk)
 	}
 	if narrowed == "" {
-		return truncHead(content, headFallbackChars), true
+		return TruncateRunes(content, headFallbackChars), true
 	}
 	return narrowed, true
 }
@@ -531,8 +499,8 @@ func isSentenceTerminator(r rune) bool {
 	return false
 }
 
-// NarrowStats carries the narrowing accounting.
-type NarrowStats struct {
+// narrowStats carries the narrowing accounting.
+type narrowStats struct {
 	ChunksIn  int
 	ChunksKpt int
 	CharsIn   int
@@ -541,10 +509,10 @@ type NarrowStats struct {
 	UsedTerms int
 }
 
-// NarrowResult is the outcome of NarrowByTerms / GrepSedNarrow.
-type NarrowResult struct {
+// narrowResult is the outcome of NarrowByTerms / grepSedNarrow.
+type narrowResult struct {
 	Kept  []map[string]any
-	Stats NarrowStats
+	Stats narrowStats
 }
 
 // grepPatternSyntax are the constructs that make a query a PATTERN rather than a
@@ -585,18 +553,18 @@ func grepPatternOf(query string) *regexp.Regexp {
 // for syntax.
 var grepPatternOperators = []string{".*", ".+", "|", ".", "*", "+", "?", "^", "$", `\b`, `\d`, `\w`, `\s`, "(", ")", "[", "]", "{", "}", `\`}
 
-// GrepPatternOperands returns the literal runs a PATTERN asks the corpus for.
+// grepPatternOperands returns the literal runs a PATTERN asks the corpus for.
 //
 // A pattern's operands are what a keyword leg can search: "华雄|荀正" names two,
 // "关公.*斩" names two, and the operators between them are not terms. They cannot
-// go through the phrase path (GrepTermsFromQuery), which reads an unbroken CJK run
+// go through the phrase path (grepTermsForLocate), which reads an unbroken CJK run
 // as a clause and decomposes it into windows — on "关公.*斩" that yielded 关公 alone
 // and dropped the 斩, so recall never asked about half the pattern.
 //
 // Single CJK runes are KEPT here, unlike the general two-rune floor: inside a
 // pattern the caller wrote that literal deliberately, so it is not the stray
 // particle the floor exists to drop.
-func GrepPatternOperands(query string) []string {
+func grepPatternOperands(query string) []string {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil
@@ -605,7 +573,7 @@ func GrepPatternOperands(query string) []string {
 		q = strings.ReplaceAll(q, op, " ")
 	}
 	var out []string
-	seen := make(map[string]bool, GrepTermsMax)
+	seen := make(map[string]bool, grepTermsMax)
 	for _, tok := range strings.Fields(q) {
 		tok = trimTermEdges(tok)
 		if tok == "" {
@@ -617,7 +585,7 @@ func GrepPatternOperands(query string) []string {
 		}
 		seen[low] = true
 		out = append(out, tok)
-		if len(out) >= GrepTermsMax {
+		if len(out) >= grepTermsMax {
 			break
 		}
 	}
@@ -692,7 +660,7 @@ func logGrepReach(logger *log.Logger, query string, candidates []map[string]any,
 	}
 }
 
-// GrepReachLine is reachBody, prefixed for the MODEL.
+// grepReachLine is reachBody, prefixed for the MODEL.
 //
 // The reach report was log-only, and that was the last piece of the loop missing:
 // a batch of names ("华雄|颜良|蔡阳") came back as passages, every name looking the
@@ -700,7 +668,7 @@ func logGrepReach(logger *log.Logger, query string, candidates []map[string]any,
 // what a search-driven loop does with it, act on WHICH alternative came back
 // empty. The engine, the pattern matcher and the per-term accounting already
 // existed; only the reader was missing.
-func GrepReachLine(query string, candidates []map[string]any, terms []string) string {
+func grepReachLine(query string, candidates []map[string]any, terms []string) string {
 	body := reachBody(query, candidates, terms)
 	if body == "" {
 		return ""
@@ -719,22 +687,22 @@ func reachBody(query string, candidates []map[string]any, terms []string) string
 	for i, t := range located {
 		parts = append(parts, fmt.Sprintf("%s(%d)", t, counts[i]))
 	}
-	line := fmt.Sprintf("%d candidate(s) for %q carry: %s", len(candidates), trunc(query, 60), strings.Join(parts, " "))
+	line := fmt.Sprintf("%d candidate(s) for %q carry: %s", len(candidates), TruncateRunes(query, 60), strings.Join(parts, " "))
 	if len(absent) > 0 {
 		line += fmt.Sprintf(" | NOT reached by this query (not necessarily absent from the corpus): %s", strings.Join(absent, " "))
 	}
 	return line
 }
 
-// ReachTermsOf returns the terms a query's reach is reported over: the operands
+// reachTermsOf returns the terms a query's reach is reported over: the operands
 // for a PATTERN (its operands are what a keyword leg searched for), the extracted
-// terms otherwise. It mirrors the choice GrepSearch makes, so the line the model
+// terms otherwise. It mirrors the choice grepSearch makes, so the line the model
 // reads and the line the log carries describe the same search.
-func ReachTermsOf(query string) []string {
+func reachTermsOf(query string) []string {
 	if grepPatternOf(query) != nil {
-		return GrepPatternOperands(query)
+		return grepPatternOperands(query)
 	}
-	return GrepTermsFromQuery(query)
+	return grepTermsForLocate(query)
 }
 
 // NarrowByTerms narrows retrieval chunks by locating grep terms:
@@ -746,7 +714,7 @@ func ReachTermsOf(query string) []string {
 //   - when matched, a total-length budget is distributed across chunks.
 //
 // Table exemption: chunks that look like tables (HTML <table>/<tr> markup, or >=3 pipe
-// rows — see IsTableChunk) are NEVER narrowed, by any caller of this engine, and are
+// rows — see isTableChunk) are NEVER narrowed, by any caller of this engine, and are
 // exempt from the per-chunk/total char budget. Two reasons, both measured: the term
 // window either cuts the <table> opening tag, and then the downstream table view
 // refuses the fragment ("<table" not present) so the model is handed a partial
@@ -755,12 +723,12 @@ func ReachTermsOf(query string) []string {
 // 14.7K-char table). Tables come back VERBATIM.
 //
 // Never raises.
-func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []string, keywords string, context NarrowContext, maxOutCharsPerChunk, maxOutTotalChars int) NarrowResult {
+func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []string, keywords string, context NarrowContext, maxOutCharsPerChunk, maxOutTotalChars int) narrowResult {
 	before := clampInt(context.Before, 0, maxContext)
 	after := clampInt(context.After, 0, maxContext)
 
-	patterns := TermsToPatterns(terms)
-	stats := NarrowStats{
+	patterns := termsToPatterns(terms)
+	stats := narrowStats{
 		ChunksIn:  len(chunks),
 		UsedTerms: len(patterns),
 	}
@@ -768,15 +736,15 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 		stats.CharsIn += len(ChunkTextOf(c))
 	}
 	if len(chunks) == 0 {
-		return NarrowResult{Kept: nil, Stats: stats}
+		return narrowResult{Kept: nil, Stats: stats}
 	}
 	if len(patterns) == 0 {
-		narrowed := NarrowWithFallbackKeyword(chunks, keywords)
+		narrowed := narrowWithFallbackKeyword(chunks, keywords)
 		stats.ChunksKpt = len(narrowed)
 		for _, c := range narrowed {
 			stats.CharsOut += len(ChunkTextOf(c))
 		}
-		return NarrowResult{Kept: narrowed, Stats: stats}
+		return narrowResult{Kept: narrowed, Stats: stats}
 	}
 
 	// Whole-table exemption, computed once and reused by the char-budget pass below
@@ -784,7 +752,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 	// false = "this chunk was NOT narrowed" -> returned verbatim.
 	tableFlags := make([]bool, len(chunks))
 	for i, c := range chunks {
-		tableFlags[i] = IsTableChunk(c)
+		tableFlags[i] = isTableChunk(c)
 	}
 
 	run := func(active []*regexp.Regexp) ([]map[string]any, []bool, int) {
@@ -820,7 +788,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 
 	// Gentle retry (no extra LLM): primary terms hit nothing -> fallback terms once.
 	if len(fallbackTerms) > 0 && !anyBool(matchedFlags) {
-		if fb := TermsToPatterns(fallbackTerms); len(fb) > 0 {
+		if fb := termsToPatterns(fallbackTerms); len(fb) > 0 {
 			kept, matchedFlags, _ = run(fb)
 			if len(fb) > stats.UsedTerms {
 				stats.UsedTerms = len(fb)
@@ -861,7 +829,7 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 					break
 				}
 				if take < charLen(t) {
-					c = withNarrowedText(cloneMap(c), truncHead(t, take))
+					c = withNarrowedText(cloneMap(c), TruncateRunes(t, take))
 				}
 				trimmed = append(trimmed, c)
 				acc += take
@@ -876,13 +844,13 @@ func NarrowByTerms(chunks []map[string]any, terms []string, fallbackTerms []stri
 	}
 	stats.Matched = anyBool(matchedFlags)
 	logGrepSed(stats)
-	return NarrowResult{Kept: kept, Stats: stats}
+	return narrowResult{Kept: kept, Stats: stats}
 }
 
-// NarrowWithFallbackKeyword applies keyword narrowing (zero LLM), returning the
+// narrowWithFallbackKeyword applies keyword narrowing (zero LLM), returning the
 // originals when keyword narrowing yields nothing.
-func NarrowWithFallbackKeyword(chunks []map[string]any, keywords string) []map[string]any {
-	if narrowed := NarrowByKeywords(chunks, keywords); len(narrowed) > 0 {
+func narrowWithFallbackKeyword(chunks []map[string]any, keywords string) []map[string]any {
+	if narrowed := narrowByKeywords(chunks, keywords); len(narrowed) > 0 {
 		return narrowed
 	}
 	return chunks
@@ -900,10 +868,10 @@ var fallbackStopwords = map[string]bool{
 	"according": true, "not": true,
 }
 
-// SplitFallbackTerms splits free text into fallback grep terms (zero LLM),
+// splitFallbackTerms splits free text into fallback grep terms (zero LLM),
 // splitting on sentence/comma boundaries, dropping short/stopword tokens, keeping numbers
 // and multi-word phrases.
-func SplitFallbackTerms(texts ...string) []string {
+func splitFallbackTerms(texts ...string) []string {
 	var terms []string
 	seen := map[string]bool{}
 	for _, v := range texts {
@@ -930,22 +898,22 @@ func SplitFallbackTerms(texts ...string) []string {
 
 var reFallbackSplit = regexp.MustCompile(`[\n。；;,.?!?]+`)
 
-// GrepSedNarrow narrows chunks by grepping terms extracted directly from the
-// claim (zero LLM). Terms are derived from the claim text via SplitFallbackTerms; no extra
+// grepSedNarrow narrows chunks by grepping terms extracted directly from the
+// claim (zero LLM). Terms are derived from the claim text via splitFallbackTerms; no extra
 // LLM call. Never raises.
-func GrepSedNarrow(chunks []map[string]any, claimSources []string, maxOutCharsPerChunk, maxOutTotalChars int) NarrowResult {
+func grepSedNarrow(chunks []map[string]any, claimSources []string, maxOutCharsPerChunk, maxOutTotalChars int) narrowResult {
 	if len(chunks) == 0 {
-		return NarrowResult{Kept: chunks, Stats: NarrowStats{ChunksIn: 0}}
+		return narrowResult{Kept: chunks, Stats: narrowStats{ChunksIn: 0}}
 	}
-	terms := SplitFallbackTerms(claimSources...)
+	terms := splitFallbackTerms(claimSources...)
 	return NarrowByTerms(chunks, terms, nil, strings.Join(claimSources, " "), NarrowContext{}, maxOutCharsPerChunk, maxOutTotalChars)
 }
 
-// GrepSummaryFromClaims: public convenience: given
+// grepSummaryFromClaims: public convenience: given
 // claim/question texts, produce a compact narrowed evidence string (used by the
 // compiled-structure grepper in search.go). Returns "" when nothing was kept.
-func GrepSummaryFromClaims(chunks []map[string]any, claimSources []string) string {
-	res := GrepSedNarrow(chunks, claimSources, defaultOutCharsPerChunk, defaultOutTotalChars)
+func grepSummaryFromClaims(chunks []map[string]any, claimSources []string) string {
+	res := grepSedNarrow(chunks, claimSources, defaultOutCharsPerChunk, defaultOutTotalChars)
 	if len(res.Kept) == 0 {
 		return ""
 	}
@@ -959,9 +927,10 @@ func GrepSummaryFromClaims(chunks []map[string]any, claimSources []string) strin
 	return b.String()
 }
 
-func logGrepSed(s NarrowStats) {
-	_LOG.Printf("[grep-sed] chunks=%d->%d chars=%d->%d matched=%t terms=%d",
-		s.ChunksIn, s.ChunksKpt, s.CharsIn, s.CharsOut, s.Matched, s.UsedTerms)
+func logGrepSed(s narrowStats) {
+	common.Info("grep-sed: narrowing summary", zap.Any("chunks_in", s.ChunksIn), zap.Any("chunks_kept", s.ChunksKpt),
+		zap.Any("chars_in", s.CharsIn), zap.Any("chars_out", s.CharsOut), zap.Any("matched", s.Matched),
+		zap.Any("terms", s.UsedTerms))
 }
 
 // Local helpers shared with the narrowing paths
@@ -990,16 +959,6 @@ func withNarrowedText(c map[string]any, narrowed string) map[string]any {
 // charLen is the codepoint length. Go's len(string) is bytes, which diverges for CJK; the
 // narrowing caps are codepoint budgets.
 func charLen(s string) int { return utf8.RuneCountInString(s) }
-
-// truncHead keeps the first n codepoints (not bytes) of s. Byte slicing would corrupt
-// multi-byte CJK and mis-size output; rune slicing is faithful to the engine's codepoint
-// budgets.
-func truncHead(s string, n int) string {
-	if charLen(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
 
 func sort2DRanges(ranges [][2]int) {
 	for i := 0; i < len(ranges); i++ {
