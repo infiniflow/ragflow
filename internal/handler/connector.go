@@ -326,6 +326,10 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "config is required")
 		return
 	}
+	if common.HasEncryptedConnectorCredentials(req.Config) {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, service.ErrConnectorEncryptedCredentials.Error())
+		return
+	}
 
 	ctx := c.Request.Context()
 

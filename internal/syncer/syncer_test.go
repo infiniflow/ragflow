@@ -248,7 +248,7 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 			Name:        connectorID,
 			Source:      "mock",
 			InputType:   "poll",
-			Config:      entity.JSONMap{"sync_deleted_files": true},
+			Config:      entity.ConnectorConfig{"sync_deleted_files": true},
 			RefreshFreq: 0,
 			PruneFreq:   0,
 			TimeoutSecs: 60,
@@ -1271,6 +1271,63 @@ func TestTransientFailureFailsAfterThreeRetries(t *testing.T) {
 	}
 	if !strings.Contains(task.ErrorMsg, "failed after 3 retries") || !strings.Contains(task.ErrorMsg, "unexpected EOF") {
 		t.Fatalf("error_msg = %q", task.ErrorMsg)
+	}
+}
+
+// TestEncryptedCredentialsWithoutKeyFailAfterRetries verifies a lost
+// RAGFLOW_CONNECTOR_KEY ends a built-in connector task as FAIL through the
+// normal retry budget, and the stored error leaks no secret.
+func TestEncryptedCredentialsWithoutKeyFailAfterRetries(t *testing.T) {
+	const key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+	t.Setenv(common.EnvRAGFlowConnectorKey, key)
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	if err := db.Model(&entity.Connector{}).Where("id = ?", "conn-1").Updates(map[string]any{
+		"source": "github",
+		"config": entity.ConnectorConfig{"repository_owner": "octo", "credentials": map[string]any{"github_access_token": "tok-123"}},
+	}).Error; err != nil {
+		t.Fatalf("set github connector: %v", err)
+	}
+	var connector entity.Connector
+	if err := db.First(&connector, "id = ?", "conn-1").Error; err != nil {
+		t.Fatalf("load connector: %v", err)
+	}
+	ciphertext, _ := connector.Config["credentials"].(string)
+	if !strings.HasPrefix(ciphertext, "enc:v1:") {
+		t.Fatalf("stored credentials = %#v, want an enc:v1: string", connector.Config["credentials"])
+	}
+	t.Setenv(common.EnvRAGFlowConnectorKey, "")
+
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	registry := syncerconnector.NewRegistry()
+	syncerconnector.RegisterBuiltIns(registry)
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, registry, &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
+
+	var task entity.SyncLogs
+	for attempt := 1; attempt <= 3; attempt++ {
+		claimed, err := taskService.Claim(t.Context(), "task-1")
+		if err != nil || !claimed {
+			t.Fatalf("attempt %d: claim = (%v, %v), want (true, nil)", attempt, claimed, err)
+		}
+		worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1"})
+		if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+			t.Fatalf("load task: %v", err)
+		}
+		if attempt < 3 && task.Status != dao.SyncStatusSchedule {
+			t.Fatalf("attempt %d: status = %s, want schedule for a retry", attempt, task.Status)
+		}
+	}
+	if task.Status != dao.SyncStatusFail {
+		t.Fatalf("status = %s, want fail", task.Status)
+	}
+	if !strings.Contains(task.ErrorMsg, "RAGFLOW_CONNECTOR_KEY is not set") {
+		t.Fatalf("error_msg = %q, want the missing key error", task.ErrorMsg)
+	}
+	for _, secret := range []string{strings.TrimPrefix(ciphertext, "enc:v1:"), key, "tok-123"} {
+		if strings.Contains(task.ErrorMsg, secret) {
+			t.Fatalf("error_msg = %q leaks %q", task.ErrorMsg, secret)
+		}
 	}
 }
 

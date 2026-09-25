@@ -106,7 +106,9 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
     monkeypatch.setattr(db_models, "relax_gaussdb_empty_string_compatible_columns", lambda: events.append(("relax",)))
     monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
-    monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
+    data_steps = []
+    monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: data_steps.append("model_type_names"))
+    monkeypatch.setattr(db_models, "migrate_connector_credentials", lambda: data_steps.append("connector_credentials"))
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
 
     db_models.migrate_db()
@@ -116,6 +118,7 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
         assert field.null is True
     assert set(migrated_fields) == {("document", "suffix"), ("user_canvas", "tags")}
     assert events[-1] == ("relax",)
+    assert data_steps == ["model_type_names", "connector_credentials"]
 
 
 def test_empty_string_char_field_keeps_non_gaussdb_constraints(monkeypatch):

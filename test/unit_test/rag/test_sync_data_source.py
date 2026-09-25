@@ -1235,3 +1235,58 @@ def test_redact_url_strips_credentials_query_and_fragment():
     assert _redact_url("") == ""
     assert _redact_url("organization(myorg)") == "organization(myorg)"
     assert _redact_url("http://[invalid") == "<invalid URL>"
+
+
+# Bytes 0..31 and a value encrypted with them; the Go tests use the same pair.
+_CONNECTOR_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+_ENCRYPTED_CREDENTIALS = "enc:v1:ZGVmZ2hpamtsbW5vMzm/FhC2IvFVBzHK4EVIiS2pKzu5X9Feh/PZO57Rh3K0yyGkLTDmruUEeZB6LtRoLedehJBJUg=="
+
+
+class _CredentialsProbe(sync_data_source.SyncBase):
+    SOURCE_NAME = "probe"
+
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.seen_credentials = None
+
+    async def _run_task_logic(self, task: dict):
+        self.seen_credentials = self.conf["credentials"]
+
+
+def _record_sync_log_calls(monkeypatch):
+    calls = {"update_by_id": [], "schedule": []}
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "start", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "update_by_id", lambda task_id, fields: calls["update_by_id"].append((task_id, fields)))
+    monkeypatch.setattr(sync_data_source.SyncLogsService, "schedule", lambda *args, **_kwargs: calls["schedule"].append(args))
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_call_decrypts_credentials_before_the_task_runs(monkeypatch):
+    monkeypatch.setenv("RAGFLOW_CONNECTOR_KEY", _CONNECTOR_KEY)
+    calls = _record_sync_log_calls(monkeypatch)
+    sync = _CredentialsProbe({"credentials": _ENCRYPTED_CREDENTIALS})
+
+    await sync({**_make_task(), "timeout_secs": 60})
+
+    assert sync.seen_credentials == {"api_token": "tok-123", "user": "ada"}
+    assert calls["update_by_id"] == []
+    assert len(calls["schedule"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.p2
+async def test_call_fails_the_task_when_credentials_cannot_be_decrypted(monkeypatch):
+    monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    calls = _record_sync_log_calls(monkeypatch)
+    sync = _CredentialsProbe({"credentials": _ENCRYPTED_CREDENTIALS})
+
+    await sync({**_make_task(), "timeout_secs": 60})
+
+    assert sync.seen_credentials is None
+    [(task_id, fields)] = calls["update_by_id"]
+    assert task_id == "task-1"
+    assert fields["status"] == sync_data_source.TaskStatus.FAIL
+    assert fields["error_msg"] == "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set"
+    assert calls["schedule"] == []

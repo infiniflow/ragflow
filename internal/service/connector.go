@@ -87,6 +87,8 @@ var (
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
 	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
 	ErrConnectorInternal = errors.New("Internal server error")
+	// ErrConnectorEncryptedCredentials is returned when a request sends credentials in the stored "enc:" form.
+	ErrConnectorEncryptedCredentials = errors.New("config.credentials must be plaintext, not an \"enc:\" value")
 )
 
 // ConnectorService connector service
@@ -316,7 +318,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 		Name:        req.Name,
 		Source:      req.Source,
 		InputType:   connectorInputTypePoll,
-		Config:      req.Config,
+		Config:      entity.ConnectorConfig(req.Config),
 		RefreshFreq: refreshFreq,
 		PruneFreq:   pruneFreq,
 		TimeoutSecs: timeoutSecs,
@@ -327,7 +329,11 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 		return nil, err
 	}
 
-	return s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
+	created, err := s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
+	if err != nil {
+		return nil, err
+	}
+	return withDecryptedCredentials(created)
 }
 
 // GetConnector returns one connector when the user can access its tenant.
@@ -352,6 +358,17 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 	if !canAccess {
 		return nil, ErrConnectorNoAuth
 	}
+	return withDecryptedCredentials(connector)
+}
+
+// withDecryptedCredentials decrypts the credentials of a connector that goes
+// back to the client. The web form sends this config back on update.
+func withDecryptedCredentials(connector *entity.Connector) (*entity.Connector, error) {
+	config, err := common.DecryptConnectorCredentials(connector.Config)
+	if err != nil {
+		return nil, err
+	}
+	connector.Config = config
 	return connector, nil
 }
 
@@ -446,16 +463,19 @@ func testConnectorSettings(stored *entity.Connector, request entity.JSONMap) (st
 	var config entity.JSONMap
 	if stored != nil {
 		source = strings.TrimSpace(stored.Source)
-		config = stored.Config
+		config = entity.JSONMap(stored.Config)
 	}
+	fromRequest := false
 	if request != nil {
 		if value := strings.TrimSpace(stringConfigValue(request["source"])); value != "" {
 			source = value
 		}
 		if nested, ok := request["config"]; ok {
 			config = jsonMapValue(nested)
+			fromRequest = true
 		} else if _, ok := request["source"]; !ok {
 			config = request
+			fromRequest = true
 		}
 	}
 	if source == "" {
@@ -464,7 +484,18 @@ func testConnectorSettings(stored *entity.Connector, request entity.JSONMap) (st
 	if config == nil {
 		return "", nil, fmt.Errorf("connector configuration is missing")
 	}
-	return source, config, nil
+	if fromRequest {
+		if common.HasEncryptedConnectorCredentials(config) {
+			return "", nil, &syncerconnector.ConnectorValidationError{Message: ErrConnectorEncryptedCredentials.Error()}
+		}
+		return source, config, nil
+	}
+	// Decrypt only the stored fallback, so testing new credentials works without the key.
+	decrypted, err := common.DecryptConnectorCredentials(config)
+	if err != nil {
+		return "", nil, err
+	}
+	return source, decrypted, nil
 }
 
 func jsonMapValue(value any) entity.JSONMap {
@@ -994,6 +1025,13 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	if !canAccess {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
+	// The response returns the stored credentials. Fail before any write when they
+	// cannot be decrypted; a request with new credentials replaces them instead.
+	if req == nil || req.Config == nil {
+		if _, err = common.DecryptConnectorCredentials(connector.Config); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
 
 	updates := map[string]interface{}{}
 	if req != nil {
@@ -1004,7 +1042,11 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			updates["refresh_freq"] = *req.RefreshFreq
 		}
 		if req.Config != nil {
-			updates["config"] = req.Config
+			if common.HasEncryptedConnectorCredentials(req.Config) {
+				return nil, common.CodeDataError, ErrConnectorEncryptedCredentials
+			}
+			// GORM writes map update values as given, so the value itself must be the type that encrypts.
+			updates["config"] = entity.ConnectorConfig(req.Config)
 		}
 		if req.TimeoutSecs != nil {
 			updates["timeout_secs"] = *req.TimeoutSecs
@@ -1048,6 +1090,10 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 		return nil, common.CodeServerError, err
 	}
 
+	connector, err = withDecryptedCredentials(connector)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 	return connector, common.CodeSuccess, nil
 }
 

@@ -23,6 +23,7 @@ from datetime import date
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
+from common.connector_credentials import connector_key
 from common.misc_utils import env_flag, pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
@@ -308,6 +309,9 @@ class StorageFactory:
 
 
 def init_settings():
+    # A bad key must stop startup, not fail later on the first connector write.
+    connector_key()
+
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
     DATABASE = load_database_config(DATABASE_TYPE)

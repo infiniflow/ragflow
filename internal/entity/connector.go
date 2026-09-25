@@ -17,29 +17,66 @@
 package entity
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // Connector connector model
 type Connector struct {
-	ID            string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID      string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name          string     `gorm:"column:name;size:128;not null" json:"name"`
-	Source        string     `gorm:"column:source;size:128;not null;index" json:"source"`
-	InputType     string     `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
-	Config        JSONMap    `gorm:"column:config;type:longtext;not null" json:"config"`
-	RefreshFreq   int64      `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
-	PruneFreq     int64      `gorm:"column:prune_freq;default:0" json:"prune_freq"`
-	TimeoutSecs   int64      `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
-	IndexingStart *time.Time `gorm:"column:indexing_start;index" json:"indexing_start,omitempty"`
-	Status        string     `gorm:"column:status;size:16;not null;default:schedule;index" json:"status"`
+	ID            string          `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID      string          `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name          string          `gorm:"column:name;size:128;not null" json:"name"`
+	Source        string          `gorm:"column:source;size:128;not null;index" json:"source"`
+	InputType     string          `gorm:"column:input_type;size:128;not null;index" json:"input_type"`
+	Config        ConnectorConfig `gorm:"column:config;type:longtext;not null" json:"config"`
+	RefreshFreq   int64           `gorm:"column:refresh_freq;default:0" json:"refresh_freq"`
+	PruneFreq     int64           `gorm:"column:prune_freq;default:0" json:"prune_freq"`
+	TimeoutSecs   int64           `gorm:"column:timeout_secs;default:3600" json:"timeout_secs"`
+	IndexingStart *time.Time      `gorm:"column:indexing_start;index" json:"indexing_start,omitempty"`
+	Status        string          `gorm:"column:status;size:16;not null;default:schedule;index" json:"status"`
 	BaseModel
 }
 
 // TableName specify table name
 func (Connector) TableName() string {
 	return "connector"
+}
+
+// ConnectorConfig is the connector config column. Writes encrypt config["credentials"] when
+// RAGFLOW_CONNECTOR_KEY is set. Reads keep it encrypted, so access checks and deletes work
+// without the key; callers that need the credentials call common.DecryptConnectorCredentials.
+type ConnectorConfig map[string]interface{}
+
+// Value implements driver.Valuer interface
+func (c ConnectorConfig) Value() (driver.Value, error) {
+	if c == nil {
+		return nil, nil
+	}
+	config, err := common.EncryptConnectorCredentials(c)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(config)
+}
+
+// Scan implements sql.Scanner interface
+func (c *ConnectorConfig) Scan(value interface{}) error {
+	if value == nil {
+		*c = nil
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return json.Unmarshal([]byte(value.(string)), c)
+	}
+	return json.Unmarshal(b, c)
+}
+
+func (c *ConnectorConfig) GormDataType() string {
+	return "longtext"
 }
 
 // MarshalJSON formats connector timestamps to match the Python API contract.
@@ -68,7 +105,7 @@ func (c Connector) MarshalJSON() ([]byte, error) {
 		Name:          c.Name,
 		Source:        c.Source,
 		InputType:     c.InputType,
-		Config:        c.Config,
+		Config:        JSONMap(c.Config),
 		RefreshFreq:   c.RefreshFreq,
 		PruneFreq:     c.PruneFreq,
 		TimeoutSecs:   c.TimeoutSecs,

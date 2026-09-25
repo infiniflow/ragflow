@@ -990,7 +990,7 @@ func insertDatasetUpdateConnector(t *testing.T, id, tenantID string) {
 		Name:      "Test Connector",
 		Source:    "google_drive",
 		InputType: "oauth",
-		Config:    entity.JSONMap{"sync_deleted_files": false},
+		Config:    entity.ConnectorConfig{"sync_deleted_files": false},
 		Status:    string(entity.TaskStatusDone),
 	}
 	if err := dao.DB.Create(connector).Error; err != nil {

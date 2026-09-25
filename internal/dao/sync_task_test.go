@@ -25,6 +25,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -137,5 +138,32 @@ func TestHandleTransientFailureUsesClassScopedRetryBudget(t *testing.T) {
 	}
 	if task.RetryCount != 4 {
 		t.Fatalf("retry_count = %d, want 4", task.RetryCount)
+	}
+}
+
+// TestGetTaskContextKeepsCredentialsEncrypted verifies that loading a task
+// never needs the connector key, so claiming and failing a task still work
+// after the key is lost.
+func TestGetTaskContextKeepsCredentialsEncrypted(t *testing.T) {
+	t.Setenv(common.EnvRAGFlowConnectorKey, "")
+	db := setupConnectorCredentialsTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector2Kb{}, &entity.Knowledgebase{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	insertRawConnector(t, db, "conn-1", `{"credentials":"enc:v1:abc","sync_deleted_files":true}`)
+	insertRunningSyncTask(t, db, "task-1", 0, 0, "")
+	if err := db.Create(&entity.Connector2Kb{ID: "link-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "kb", EmbdID: "embd", Permission: "me", CreatedBy: "user-1", ParserID: "naive", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+
+	taskContext, err := NewSyncTaskDAO(db).GetTaskContext(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("GetTaskContext: %v", err)
+	}
+	if taskContext.Connector.Config["credentials"] != "enc:v1:abc" || taskContext.Connector.Config["sync_deleted_files"] != true {
+		t.Fatalf("connector config = %#v, want the stored value", taskContext.Connector.Config)
 	}
 }
