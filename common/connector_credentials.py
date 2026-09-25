@@ -88,7 +88,7 @@ def decrypt_connector_config(config):
     if key is None:
         raise ConnectorCredentialsError(f"connector credentials are encrypted but {_KEY_ENV} is not set")
     try:
-        plaintext = _decrypt(key, config["credentials"][len(_PREFIX) :])
+        credentials = json.loads(_decrypt(key, config["credentials"][len(_PREFIX) :]))
     except ValueError:
         raise ConnectorCredentialsError(f"cannot decrypt connector credentials: wrong {_KEY_ENV} or corrupted value") from None
-    return {**config, "credentials": json.loads(plaintext)}
+    return {**config, "credentials": credentials}

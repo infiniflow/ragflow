@@ -139,6 +139,10 @@ class TestMigrateConnectorCredentials:
         assert decrypt_connector_config(migrated) == _PLAIN
         assert _raw(sqlite_db, "conn-empty") == empty_raw
 
+        def _no_write(*_args, **_kwargs):
+            raise AssertionError("a second run must not write any row")
+
+        monkeypatch.setattr(Connector, "update", _no_write)
         migrate_connector_credentials()
         assert _raw(sqlite_db, "conn-plain") == migrated_raw
 

@@ -176,14 +176,31 @@ _PLAINTEXT = {"api_token": "tok-123", "user": "ada"}
 _ENCRYPTED_INPUT_MESSAGE = "config.credentials must be plaintext, not an encrypted value."
 
 
+class _StoredConnector:
+    tenant_id = "tenant-1"
+
+    def __init__(self, config):
+        self.config = config
+
+    def to_dict(self):
+        return {"id": "conn-1", "name": "kb", "config": self.config}
+
+
 def _serve_stored_connector(monkeypatch, module, config):
-    stored = SimpleNamespace(tenant_id="tenant-1", to_dict=lambda: {"id": "conn-1", "name": "kb", "config": config})
-    updates = []
+    stored = _StoredConnector(config)
+    calls = []
+
+    def _update_by_id(_id, fields):
+        calls.append(("update_by_id", fields))
+        stored.config = fields.get("config", stored.config)
+
     monkeypatch.setattr(module.ConnectorService, "accessible", lambda *_args: True, raising=False)
     monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _id: (True, stored))
-    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda _id, fields: updates.append(fields), raising=False)
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", _update_by_id, raising=False)
+    for name in ("cancel_tasks", "schedule_tasks", "delete_by_id"):
+        monkeypatch.setattr(module.ConnectorService, name, lambda _id, name=name: calls.append((name, _id)), raising=False)
     monkeypatch.setattr(module, "TaskStatus", SimpleNamespace(UNSTART="0", CANCEL="cancel", SCHEDULE="schedule"))
-    return updates
+    return calls
 
 
 def _stub_connector_builder(monkeypatch, module):
@@ -217,14 +234,25 @@ def test_create_rejects_encrypted_credentials(monkeypatch, credentials):
 
 
 @pytest.mark.p2
-def test_update_rejects_encrypted_credentials(monkeypatch):
+@pytest.mark.parametrize(
+    "credentials, expected, writes",
+    [
+        (_ENCRYPTED, {"code": 101, "message": _ENCRYPTED_INPUT_MESSAGE, "data": None}, []),
+        (
+            {"api_token": "tok-123"},
+            {"code": 0, "message": "", "data": {"id": "conn-1", "name": "kb", "config": {"credentials": {"api_token": "tok-123"}}}},
+            [("update_by_id", {"id": "conn-1", "refresh_freq": 7, "config": {"credentials": {"api_token": "tok-123"}}})],
+        ),
+    ],
+)
+def test_update_rejects_encrypted_credentials(monkeypatch, credentials, expected, writes):
     module = _load_connector_api(monkeypatch)
-    updates = _serve_stored_connector(monkeypatch, module, {})
+    calls = _serve_stored_connector(monkeypatch, module, {})
     REQUEST_JSON.clear()
-    REQUEST_JSON.update({"refresh_freq": 7, "config": {"credentials": _ENCRYPTED}})
+    REQUEST_JSON.update({"refresh_freq": 7, "config": {"credentials": credentials}})
     res = asyncio.run(module.update_connector("conn-1"))
-    assert res == {"code": 101, "message": _ENCRYPTED_INPUT_MESSAGE, "data": None}
-    assert updates == []
+    assert res == expected
+    assert calls == writes
 
 
 @pytest.mark.p2
@@ -274,3 +302,38 @@ def test_get_reports_a_safe_error_when_the_key_is_missing(monkeypatch):
     _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
     res = module.get_connector("conn-1")
     assert res == {"code": 102, "message": "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set", "data": None}
+
+
+@pytest.mark.p2
+def test_delete_works_when_the_key_is_lost(monkeypatch):
+    monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    module = _load_connector_api(monkeypatch)
+    calls = _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
+    res = module.rm_connector("conn-1")
+    assert res == {"code": 0, "message": "", "data": True}
+    assert calls == [("cancel_tasks", "conn-1"), ("delete_by_id", "conn-1")]
+
+
+@pytest.mark.p2
+def test_update_accepts_new_credentials_when_the_key_is_lost(monkeypatch):
+    monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    module = _load_connector_api(monkeypatch)
+    calls = _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update({"config": {"credentials": {"api_token": "tok-456"}}})
+    res = asyncio.run(module.update_connector("conn-1"))
+    assert res == {"code": 0, "message": "", "data": {"id": "conn-1", "name": "kb", "config": {"credentials": {"api_token": "tok-456"}}}}
+    assert calls == [("update_by_id", {"id": "conn-1", "config": {"credentials": {"api_token": "tok-456"}}})]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("payload", [{"refresh_freq": 7}, {"refresh_freq": 7, "reschedule": True}, {"status": "CANCEL"}, {"status": "SCHEDULE"}])
+def test_update_without_new_credentials_writes_nothing_when_the_key_is_lost(monkeypatch, payload):
+    monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    module = _load_connector_api(monkeypatch)
+    calls = _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update(payload)
+    res = asyncio.run(module.update_connector("conn-1"))
+    assert res == {"code": 102, "message": "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set", "data": None}
+    assert calls == []

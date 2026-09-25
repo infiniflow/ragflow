@@ -80,6 +80,12 @@ async def update_connector(connector_id):
     if req:
         if has_encrypted_credentials(req.get("config")):
             return _encrypted_credentials_error()
+        if "config" not in req:
+            # The response cannot decrypt the stored credentials either, so fail before any write or task change.
+            try:
+                decrypt_connector_config(conn.config)
+            except ConnectorCredentialsError as exc:
+                return get_data_error_result(message=str(exc))
         update_fields = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         if update_fields:
             update_fields["id"] = connector_id

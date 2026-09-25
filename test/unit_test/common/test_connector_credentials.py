@@ -24,6 +24,7 @@ import copy
 import json
 
 import pytest
+from Cryptodome.Cipher import AES
 
 from common import settings
 from common.connector_credentials import (
@@ -71,6 +72,8 @@ def test_valid_key_decodes_to_32_bytes(key):
     [
         ("not base64!", "base64"),
         (_KEY.rstrip("="), "base64"),
+        (_KEY + "\n", "base64"),
+        (_KEY + "\r\n", "base64"),
         (base64.b64encode(bytes(16)).decode(), "32 bytes"),
         (base64.b64encode(bytes(33)).decode(), "32 bytes"),
     ],
@@ -179,6 +182,20 @@ def _tampered(value: str) -> str:
 def test_decrypt_rejects_a_corrupted_value(key, credentials):
     with pytest.raises(ConnectorCredentialsError, match="cannot decrypt connector credentials"):
         decrypt_connector_config({"credentials": credentials})
+
+
+def _encrypt_bytes(plaintext: bytes) -> str:
+    cipher = AES.new(bytes(range(32)), AES.MODE_GCM, nonce=bytes(12))
+    ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+    return "enc:v1:" + base64.b64encode(cipher.nonce + ciphertext + tag).decode()
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("plaintext", [b"not json", b"\x80"])
+def test_decrypt_rejects_an_authentic_payload_that_is_not_json(key, plaintext):
+    with pytest.raises(ConnectorCredentialsError) as exc:
+        decrypt_connector_config({"credentials": _encrypt_bytes(plaintext)})
+    assert str(exc.value) == "cannot decrypt connector credentials: wrong RAGFLOW_CONNECTOR_KEY or corrupted value"
 
 
 @pytest.mark.p2
