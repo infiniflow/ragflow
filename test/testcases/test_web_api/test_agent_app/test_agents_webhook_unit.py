@@ -107,6 +107,7 @@ class _StubCanvas:
         self.user_id = user_id
         self.agent_id = agent_id
         self.canvas_id = canvas_id
+        self.error = ""
 
     async def run(self, **_kwargs):
         if False:

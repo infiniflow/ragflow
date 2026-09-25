@@ -2348,6 +2348,28 @@ async def _webhook_impl(agent_id: str, is_test: bool):
             # Trace persistence is best-effort and must not fail the Agent run.
             logging.exception("Failed to append webhook trace")
 
+    def finish_webhook_run(message="", status=200):
+        # Canvas can finish normally after recording an unhandled component
+        # error. Recovered node errors leave canvas.error empty.
+        success = not canvas.error
+        if not success:
+            cancelled = "Task has been canceled" in canvas.error
+            status = 409 if cancelled else 500
+            message = "Agent run was cancelled." if cancelled else "Agent run failed."
+            if is_test:
+                append_webhook_trace(
+                    agent_id,
+                    start_ts,
+                    {"event": "cancelled" if cancelled else "error", "message": message},
+                )
+        if is_test:
+            append_webhook_trace(
+                agent_id,
+                start_ts,
+                {"event": "finished", "elapsed_time": time.time() - start_ts, "success": success},
+            )
+        return {"message": message, "success": success, "code": status}
+
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
         try:
@@ -2383,16 +2405,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                     if is_test:
                         append_webhook_trace(agent_id, start_ts, ans)
 
-                if is_test:
-                    append_webhook_trace(
-                        agent_id,
-                        start_ts,
-                        {
-                            "event": "finished",
-                            "elapsed_time": time.time() - start_ts,
-                            "success": True,
-                        },
-                    )
+                finish_webhook_run()
 
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(cvs.user_id, cvs.to_dict())
@@ -2451,22 +2464,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
                         status = int(ans["data"].get("status", status))
                     if is_test:
                         append_webhook_trace(agent_id, start_ts, ans)
-                if is_test:
-                    append_webhook_trace(
-                        agent_id,
-                        start_ts,
-                        {
-                            "event": "finished",
-                            "elapsed_time": time.time() - start_ts,
-                            "success": True,
-                        },
-                    )
-                final_content = "".join(contents)
-                return {
-                    "message": final_content,
-                    "success": True,
-                    "code": status,
-                }
+                return finish_webhook_run("".join(contents), status)
 
             except Exception as e:
                 if is_test:
