@@ -832,12 +832,14 @@ func normalizePDFDocType(item map[string]any) {
 	layoutType, _ := item["layout_type"].(string)
 	// A figure caption is a media section even when the parser no longer
 	// inlines its cropped image (cgo): it still carries PDF positions, so the
-	// downstream VLM/chunker crop it on demand. Classify it as image whenever
-	// it has positions (the inlined image was only a side effect of cropping).
+	// downstream VLM/chunker crop it on demand.
 	_, hasMedia := ExtractPDFPositions(item)
-	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
-		// A figure caption keeps its media classification so the downstream
-		// VLM enhancement and on-demand chunker crop it.
+	docType, _ := item["doc_type_kwd"].(string)
+	if img, _ := item["image"].(string); img != "" && docType != "table" && layoutType != "table" && hasMedia {
+		item["doc_type_kwd"] = "image"
+		return
+	}
+	if docType != "" {
 		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption && hasMedia {
 			item["doc_type_kwd"] = "image"
 		}
@@ -855,10 +857,6 @@ func normalizePDFDocType(item map[string]any) {
 			item["doc_type_kwd"] = "text"
 		}
 	default:
-		if img, _ := item["image"].(string); img != "" {
-			item["doc_type_kwd"] = "image"
-			return
-		}
 		item["doc_type_kwd"] = "text"
 	}
 }

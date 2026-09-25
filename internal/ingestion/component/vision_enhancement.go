@@ -150,8 +150,7 @@ type visionImageCropper interface {
 }
 
 // maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
-// descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
-// with non-empty image field).
+// descriptions when an item carries a non-empty image field (any doc_type_kwd).
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -192,10 +191,6 @@ func maybeDispatchVisionEnhancement(
 	}
 	var targets []target
 	for i, item := range dispatched.JSON {
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" && kd != "table" {
-			continue
-		}
 		if img, _ := item["image"].(string); img != "" {
 			targets = append(targets, target{idx: i})
 			continue

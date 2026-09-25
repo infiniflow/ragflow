@@ -877,3 +877,27 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
 }
+
+func TestNormalizePDFDocType_EmbeddedImageOnTextLayout(t *testing.T) {
+	item := map[string]any{
+		"doc_type_kwd": "text",
+		"layout_type":  "title",
+		"image":        "aGVsbG8=",
+	}
+	normalizePDFDocType(item)
+	if got, want := item["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+}
+
+func TestNormalizePDFDocType_KeepsTableWhenImagePresent(t *testing.T) {
+	item := map[string]any{
+		"doc_type_kwd": "table",
+		"layout_type":  "table",
+		"image":        "aGVsbG8=",
+	}
+	normalizePDFDocType(item)
+	if got, want := item["doc_type_kwd"], "table"; got != want {
+		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
+	}
+}
