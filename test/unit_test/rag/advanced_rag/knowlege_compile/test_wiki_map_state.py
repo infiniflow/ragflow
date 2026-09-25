@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import sys
 from types import ModuleType, SimpleNamespace
@@ -46,8 +47,11 @@ class _StateDocStore:
         self.insert_calls = []
 
     def search(self, fields, _highlights, condition, _matches, _order, offset, limit, _index, _dataset_ids):
+        condition = condition or {}
         rows = []
         for row in self.rows.values():
+            if condition.get("kb_id") and row.get("kb_id") not in condition["kb_id"]:
+                continue
             if any(condition.get(key) and row.get(key) not in condition[key] for key in ("id", "compile_kwd", "type_kwd")):
                 continue
             if condition.get("doc_id") and row.get("doc_id") not in condition["doc_id"]:
@@ -80,20 +84,7 @@ class _KbScopedDocStore(_StateDocStore):
         scoped = dict(condition or {})
         if dataset_ids:
             scoped["kb_id"] = list(dataset_ids)
-        rows = []
-        for row in self.rows.values():
-            if scoped.get("kb_id") and row.get("kb_id") not in scoped["kb_id"]:
-                continue
-            if any(scoped.get(key) and row.get(key) not in scoped[key] for key in ("id", "compile_kwd", "type_kwd")):
-                continue
-            if scoped.get("doc_id") and row.get("doc_id") not in scoped["doc_id"]:
-                continue
-            if scoped.get("source_chunk_ids") and not set(row.get("source_chunk_ids") or []) & set(scoped["source_chunk_ids"]):
-                continue
-            if scoped.get("chunk_hash_kwd") and row.get("chunk_hash_kwd") not in scoped["chunk_hash_kwd"]:
-                continue
-            rows.append(row)
-        return rows[offset : offset + limit]
+        return super().search(fields, highlights, scoped, matches, order, offset, limit, index, dataset_ids)
 
 
 # Reporter chunk ids from infiniflow/ragflow#19092. MAP logged extracted=9 then
@@ -369,3 +360,89 @@ def test_wiki_map_from_chunks_successful_extract_is_not_reported_missing(monkeyp
     assert second["_meta"]["cache_hits"] == len(_REPORTER_CHUNK_IDS)
     assert second["_meta"]["extracted"] == 0
     assert extracted_from_llm == list(_REPORTER_CHUNK_IDS)
+
+
+def test_state_doc_store_search_applies_kb_id_with_shared_pagination():
+    """kb_id filtering and pagination live on the parent search path."""
+    rows = [
+        {"id": "a", "kb_id": "kb-1", "doc_id": "d", "compile_kwd": "wiki_map_extract", "source_chunk_ids": ["c1"], "chunk_hash_kwd": "h1"},
+        {"id": "b", "kb_id": "kb-1", "doc_id": "d", "compile_kwd": "wiki_map_extract", "source_chunk_ids": ["c2"], "chunk_hash_kwd": "h2"},
+        {"id": "c", "kb_id": "kb-2", "doc_id": "d", "compile_kwd": "wiki_map_extract", "source_chunk_ids": ["c3"], "chunk_hash_kwd": "h3"},
+        {"id": "d", "kb_id": "kb-1", "doc_id": "d", "compile_kwd": "wiki_map_extract", "source_chunk_ids": ["c4"], "chunk_hash_kwd": "h4"},
+    ]
+    parent = _StateDocStore(rows)
+    page = parent.search([], [], {"kb_id": ["kb-1"], "doc_id": ["d"]}, [], None, 1, 2, "idx", None)
+    assert [row["id"] for row in page] == ["b", "d"]
+
+    scoped = _KbScopedDocStore(rows)
+    delegated = scoped.search(
+        [],
+        [],
+        {"doc_id": ["d"], "chunk_hash_kwd": ["h2", "h4"], "compile_kwd": ["wiki_map_extract"]},
+        [],
+        None,
+        0,
+        10,
+        "idx",
+        ["kb-1"],
+    )
+    assert [row["id"] for row in delegated] == ["b", "d"]
+    assert scoped.search([], [], {"doc_id": ["d"]}, [], None, 0, 10, "idx", ["kb-2"])[0]["id"] == "c"
+
+
+def test_build_resume_doc_requires_keyword_kb_id(monkeypatch):
+    wiki = _load_wiki_module(monkeypatch)
+    with pytest.raises(TypeError):
+        wiki._wiki_build_resume_doc("chunk", "doc", {}, "hash", "kb-1")
+    with pytest.raises(TypeError):
+        wiki._wiki_build_resume_doc("chunk", "doc", {})
+
+    doc = wiki._wiki_build_resume_doc("chunk", "doc", {"entities": []}, chunk_hash="hash", kb_id="kb-1")
+    assert doc["kb_id"] == "kb-1"
+    scope = wiki._wiki_log_scope_id("kb-1")
+    assert scope != "kb-1"
+    assert "kb-1" not in scope
+    assert scope == wiki._wiki_log_scope_id("kb-1")
+    assert scope != wiki._wiki_log_scope_id("kb-2")
+
+
+def test_persist_and_kb_scoped_resume_load_together(monkeypatch, caplog):
+    """A successful MAP persist is visible to the kb-scoped resume load.
+
+    Persist and ``_wiki_load_map_versions`` run against the same knowledge
+    base. The success log records the inserted row count and a scope token
+    derived from kb_id, and omits the raw id.
+    """
+    wiki = _load_wiki_module(monkeypatch)
+    store = _KbScopedDocStore()
+    monkeypatch.setattr(sys.modules["common.settings"], "docStoreConn", store)
+
+    doc_id = "6dc70e7aa5a411f19c0109b856bc47ac"
+    kb_id = "ff675c34a5a111f19c0109b856bc47ac"
+    chunk_ids = _REPORTER_CHUNK_IDS[:3]
+    per_chunk = {chunk_id: {"entities": [{"name": f"entity-{chunk_id}"}]} for chunk_id in chunk_ids}
+    hashes = {chunk_id: f"hash-{chunk_id}" for chunk_id in chunk_ids}
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(wiki._wiki_persist_extracts(per_chunk, doc_id, "tenant-1", kb_id, chunk_hashes=hashes))
+
+    scope = wiki._wiki_log_scope_id(kb_id)
+    success = [rec for rec in caplog.records if rec.levelno == logging.INFO and rec.msg == "wiki_map: persisted %d KB-scoped MAP resume rows scope=%s"]
+    assert len(success) == 1
+    assert success[0].args == (len(chunk_ids), scope)
+    message = success[0].getMessage()
+    assert kb_id not in message
+    assert doc_id not in message
+    for chunk_id in chunk_ids:
+        assert chunk_id not in message
+
+    versions = asyncio.run(wiki._wiki_load_map_versions(doc_id, "tenant-1", kb_id, hashes))
+    assert set(versions) == set(chunk_ids)
+    for chunk_id in chunk_ids:
+        assert versions[chunk_id][hashes[chunk_id]]["entities"][0]["name"] == f"entity-{chunk_id}"
+
+    other_kb = asyncio.run(wiki._wiki_load_map_versions(doc_id, "tenant-1", "other-kb", hashes))
+    assert other_kb == {}
+
+    state = {chunk_id: {"doc_id": doc_id, "hash": hashes[chunk_id]} for chunk_id in chunk_ids}
+    assert _missing_after_resolve(wiki, "tenant-1", kb_id, state, set(chunk_ids)) == set()
