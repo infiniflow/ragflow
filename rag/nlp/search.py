@@ -76,6 +76,54 @@ def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     return bool(_chunk_scalar(chunk.get("compile_kwd")))
 
 
+def _highlight_terms(children: list[dict]) -> list[str]:
+    terms = []
+    seen = set()
+    for child in children:
+        highlight = child.get("highlight") or ""
+        if not isinstance(highlight, str):
+            continue
+        for term in re.findall(r"<em>([^<]+)</em>", highlight, flags=re.IGNORECASE):
+            cleaned = term.strip()
+            key = cleaned.lower()
+            if key and key not in seen:
+                seen.add(key)
+                terms.append(cleaned)
+    return terms
+
+
+def _highlight_parent_content(store, content: str, children: list[dict]) -> str:
+    terms = _highlight_terms(children)
+    if not content or not terms:
+        return ""
+    highlighter = getattr(store, "highlight", None)
+    if callable(highlighter):
+        highlighted = highlighter(content, "", " ".join(terms), terms)
+        return highlighted or ""
+    return _mark_terms_outside_em(content, terms)
+
+
+def _mark_terms_outside_em(content: str, terms: list[str]) -> str:
+    ordered = sorted((term for term in terms if term.strip()), key=len, reverse=True)
+    if not ordered:
+        return ""
+    pattern = re.compile("|".join(re.escape(term) for term in ordered), re.IGNORECASE)
+    pieces = []
+    cursor = 0
+    replaced = False
+    for match in pattern.finditer(content):
+        if content[: match.start()].lower().count("<em>") > content[: match.start()].lower().count("</em>"):
+            continue
+        pieces.append(content[cursor : match.start()])
+        pieces.append(f"<em>{match.group(0)}</em>")
+        cursor = match.end()
+        replaced = True
+    if not replaced:
+        return ""
+    pieces.append(content[cursor:])
+    return "".join(pieces)
+
+
 class Dealer:
     # Short-lived cache of "doc_id exists in MySQL" used by _prune_deleted_chunks.
     # Every retrieval would otherwise hit MySQL per query (fan-out searches and the
@@ -1134,6 +1182,10 @@ class Dealer:
                     d["vector"] = cks[0][k]
                     vector_size = len(cks[0][k])
                     break
+            if any(ck.get("highlight") for ck in cks):
+                highlighted = _highlight_parent_content(self.dataStore, chunk.get("content_with_weight") or "", cks)
+                if highlighted:
+                    d["highlight"] = highlighted
             chunks.append(d)
 
         return sorted(chunks, key=lambda x: x["similarity"] * -1)

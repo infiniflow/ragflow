@@ -1434,7 +1434,7 @@ func markKnownTerms(content string, terms []string) string {
 	cursor := 0
 	lastEnd := 0
 	for _, span := range spans {
-		if span[0] < lastEnd {
+		if span[0] < lastEnd || emphasisDepth(content[:span[0]]) > 0 {
 			continue
 		}
 		b.WriteString(content[cursor:span[0]])
@@ -1446,4 +1446,25 @@ func markKnownTerms(content string, terms []string) string {
 	}
 	b.WriteString(content[cursor:])
 	return b.String()
+}
+
+func emphasisDepth(prefix string) int {
+	depth := 0
+	lower := strings.ToLower(prefix)
+	for i := 0; i < len(lower); {
+		if strings.HasPrefix(lower[i:], "</em>") {
+			if depth > 0 {
+				depth--
+			}
+			i += len("</em>")
+			continue
+		}
+		if strings.HasPrefix(lower[i:], "<em>") {
+			depth++
+			i += len("<em>")
+			continue
+		}
+		i++
+	}
+	return depth
 }
