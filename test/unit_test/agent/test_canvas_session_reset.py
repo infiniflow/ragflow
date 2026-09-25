@@ -75,3 +75,15 @@ def test_start_new_session_normalizes_invalid_system_history(monkeypatch):
 
     assert canvas.globals["sys.history"] == []
     assert canvas.path == []
+
+
+def test_retrieval_diagnostics_are_included_without_chunks(monkeypatch):
+    module = _load_canvas_module(monkeypatch)
+    canvas = module.Canvas.__new__(module.Canvas)
+    canvas.retrieval = []
+    diagnostics = {"method": "semi_auto", "status": "not_generated"}
+
+    canvas.add_reference([], [], metadata_filter=diagnostics)
+
+    assert canvas.get_reference()["metadata_filters"] == [diagnostics]
+    assert canvas._has_reference()

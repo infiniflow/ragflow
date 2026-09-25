@@ -1087,11 +1087,13 @@ class Canvas(Graph):
         except Exception as e:
             logging.exception(e)
 
-    def add_reference(self, chunks: list[object], doc_infos: list[object]):
+    def add_reference(self, chunks: list[object], doc_infos: list[object], metadata_filter: dict | None = None):
         if not self.retrieval:
             self.retrieval = [{"chunks": {}, "doc_aggs": {}}]
 
         r = self.retrieval[-1]
+        if metadata_filter is not None:
+            r.setdefault("metadata_filters", []).append(metadata_filter)
         for ck in chunks_format({"chunks": chunks}):
             cid = hash_str2int(ck["id"], 500)
             # cid = uuid.uuid5(uuid.NAMESPACE_DNS, ck["id"])
@@ -1111,7 +1113,7 @@ class Canvas(Graph):
         ref = self.get_reference()
         if not isinstance(ref, dict):
             return False
-        return bool(ref.get("chunks") or ref.get("doc_aggs"))
+        return bool(ref.get("chunks") or ref.get("doc_aggs") or ref.get("metadata_filters"))
 
     def _build_message_end(self, cpn_obj) -> dict:
         message_end = {}
