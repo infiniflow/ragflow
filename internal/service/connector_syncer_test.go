@@ -57,7 +57,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "rss",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusCancel),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -124,7 +124,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "gmail",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusFail),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -207,7 +207,7 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		Name:        "conn-1",
 		Source:      "gmail",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusFail),
 		RefreshFreq: 0,
 		PruneFreq:   0,
@@ -280,7 +280,7 @@ func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
 	}
 	if err := db.Create(&entity.Connector{
 		ID: "conn-1", TenantID: "user-1", Name: "conn-1", Source: "gmail",
-		InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusSchedule),
+		InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusSchedule),
 		RefreshFreq: 0, PruneFreq: 0, TimeoutSecs: 60,
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)
@@ -329,7 +329,7 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 		Name:        "conn-1",
 		Source:      "rss",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusRunning),
 		RefreshFreq: 0,
 		PruneFreq:   0,

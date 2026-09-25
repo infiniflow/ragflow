@@ -87,6 +87,8 @@ The [.env](./.env) file contains important environment variables for Docker.
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
   The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2`. The RAGFlow Docker image does not include embedding models.
+- `RAGFLOW_CONNECTOR_KEY`
+  The key that encrypts the credentials of data source connectors in the database. Use 32 random bytes in standard base64, for example the output of `openssl rand -base64 32`. Not set by default, and then credentials are stored as plaintext. When the key is set, the database migration encrypts the credentials that are already stored. If the key is lost, stored credentials cannot be read: enter them again through the connector update API, or delete and re-create the connector.
 
 
 > [!TIP]

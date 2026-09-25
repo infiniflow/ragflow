@@ -19,6 +19,7 @@ package connector
 import (
 	"context"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 )
 
@@ -75,6 +76,12 @@ func registerBuiltIn[T Connector](registry *Registry, source string, factory fun
 		return factory(config)
 	})
 	registry.Register(source, func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
-		return factory(map[string]any(taskContext.Connector.Config))
+		// Decrypt here, not when the task is loaded: a missing key then fails
+		// this task through the normal retry path instead of blocking its claim.
+		config, err := common.DecryptConnectorCredentials(taskContext.Connector.Config)
+		if err != nil {
+			return nil, err
+		}
+		return factory(config)
 	})
 }
