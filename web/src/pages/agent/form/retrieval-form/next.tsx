@@ -14,6 +14,7 @@ import {
   rerankCandidatesCountSchema,
 } from '@/components/rerank-candidates-count-item';
 
+import { SwitchFormField } from '@/components/switch-fom-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
@@ -51,6 +52,7 @@ export const RetrievalPartialSchema = {
   dataset_ids: z.array(z.string()).optional(),
   rerank_id: z.string(),
   cross_languages: z.array(z.string()),
+  highlight: z.boolean().optional(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
   retrieval_from: z.string(),
@@ -203,6 +205,11 @@ function RetrievalForm({ node }: INextOperatorForm) {
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <SwitchFormField
+                  name="highlight"
+                  label={t('flow.highlight')}
+                  tooltip={t('flow.highlightTip')}
+                ></SwitchFormField>
               </>
             )}
           </section>

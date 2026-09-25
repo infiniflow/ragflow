@@ -3434,6 +3434,9 @@ This process aggregates variables from multiple branches into a single variable 
       switchPromptMessage:
         'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
+      highlight: 'Highlight',
+      highlightTip:
+        'Mark the matched words in retrieved chunks. The highlight text is returned with each chunk.',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add agent',

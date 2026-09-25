@@ -2977,6 +2977,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       query: '查询变量',
       queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
+      highlight: '高亮',
+      highlightTip: '在检索到的片段中标记命中的词，并随片段一起返回高亮文本。',
       agent: '智能体',
       addAgent: '添加智能体',
       agentDescription: '构建具备推理、工具调用和多智能体协同的智能体组件。',
