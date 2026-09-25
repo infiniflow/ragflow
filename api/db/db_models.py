@@ -62,6 +62,7 @@ from api.db.gaussdb_error_utils import (
 from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
 
+from common.connector_credentials import connector_key, encrypt_connector_config
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
 from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
@@ -181,6 +182,18 @@ class JSONField(LongTextField):
 
 class ListField(JSONField):
     default_value = []
+
+
+class ConnectorConfigField(JSONField):
+    """Encrypts config["credentials"] on every write.
+
+    Reads keep the stored ciphertext, so access checks and deletes still work
+    with a lost key. Code that needs the credentials calls
+    decrypt_connector_config.
+    """
+
+    def db_value(self, value):
+        return super().db_value(encrypt_connector_config(value))
 
 
 class SerializedField(LongTextField):
@@ -1714,7 +1727,7 @@ class Connector(DataBaseModel):
     name = CharField(max_length=128, null=False, help_text="Search name", index=False)
     source = CharField(max_length=128, null=False, help_text="Data source", index=True)
     input_type = CharField(max_length=128, null=False, help_text="poll/event/..", index=True)
-    config = JSONField(null=False, default={})
+    config = ConnectorConfigField(null=False, default={})
     refresh_freq = IntegerField(default=0, index=False)
     prune_freq = IntegerField(default=0, index=False)
     timeout_secs = IntegerField(default=3600, index=False)
@@ -2530,7 +2543,33 @@ def migrate_db():
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
+    migrate_connector_credentials()
     ensure_model_indexes(migrator)
+
+
+def migrate_connector_credentials():
+    """Encrypt connector credentials stored before RAGFLOW_CONNECTOR_KEY was set.
+
+    Idempotent: encrypted rows are left alone. The UPDATE matches the raw text
+    that was read, so a row written in between keeps that newer write; its
+    next write or the next run encrypts it.
+    """
+    if connector_key() is None:
+        return
+    # Without coerce the WHERE value would pass through db_value and never match.
+    raw_config = Connector.config.coerce(False)
+    encrypted = 0
+    for connector_id, raw in list(Connector.select(Connector.id, raw_config).tuples()):
+        try:
+            config = json_loads(raw)
+        except (TypeError, ValueError):
+            continue
+        new_config = encrypt_connector_config(config)
+        if new_config == config:
+            continue
+        encrypted += Connector.update(config=new_config).where(Connector.id == connector_id, raw_config == raw).execute()
+    if encrypted:
+        logging.info("Encrypted the credentials of %s connectors", encrypted)
 
 
 def migrate_model_type_names():

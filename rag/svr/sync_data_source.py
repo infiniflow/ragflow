@@ -44,6 +44,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.constants import ConnectorTaskType, FileSource, TaskStatus
 from common.config_utils import show_configs
+from common.connector_credentials import decrypt_connector_config
 from common.data_source.config import INDEX_BATCH_SIZE, SYNC_BATCH_PAUSE_SECONDS
 from common.data_source import (
     BlobStorageConnector,
@@ -210,6 +211,7 @@ class SyncBase:
 
         async with task_limiter:
             try:
+                self.conf = decrypt_connector_config(self.conf)
                 await asyncio.wait_for(self._run_task_logic(task), timeout=task["timeout_secs"])
 
             except asyncio.TimeoutError:

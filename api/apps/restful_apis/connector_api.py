@@ -28,6 +28,7 @@ from api.db import InputType
 from api.db.services.connector_service import ConnectorAuthorizationError, ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from common.connector_credentials import ConnectorCredentialsError, decrypt_connector_config, has_encrypted_credentials
 from common.constants import FileSource, RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
@@ -44,6 +45,20 @@ def _connector_auth_error(connector_id: str, user_id: str):
     """Return the connector authorization failure response and log the denial."""
     LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
     return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
+
+
+def _encrypted_credentials_error():
+    return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config.credentials must be plaintext, not an encrypted value.")
+
+
+def _connector_result(conn):
+    """Return the connector with plaintext credentials; the web edit form sends this config back on PATCH."""
+    data = conn.to_dict()
+    try:
+        config = decrypt_connector_config(data["config"])
+    except ConnectorCredentialsError as exc:
+        return get_data_error_result(message=str(exc))
+    return get_json_result(data={**data, "config": config})
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
@@ -63,6 +78,8 @@ async def update_connector(connector_id):
 
     should_sleep = False
     if req:
+        if has_encrypted_credentials(req.get("config")):
+            return _encrypted_credentials_error()
         update_fields = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         if update_fields:
             update_fields["id"] = connector_id
@@ -83,7 +100,7 @@ async def update_connector(connector_id):
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
 
-    return get_json_result(data=conn.to_dict())
+    return _connector_result(conn)
 
 
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
@@ -93,6 +110,8 @@ async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
+        if has_encrypted_credentials(req["config"]):
+            return _encrypted_credentials_error()
 
         def _parse_frequency(value):
             if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
@@ -123,7 +142,7 @@ async def create_connector():
     await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(req["id"])
 
-    return get_json_result(data=conn.to_dict())
+    return _connector_result(conn)
 
 
 @manager.route("/connectors", methods=["GET"])  # noqa: F821
@@ -143,7 +162,7 @@ def get_connector(connector_id):
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
-    return get_json_result(data=conn.to_dict())
+    return _connector_result(conn)
 
 
 @manager.route("/connectors/<connector_id>/logs", methods=["GET"])  # noqa: F821
@@ -212,6 +231,8 @@ async def test_connector(connector_id):
     config = req.get("config") or {}
     if not isinstance(config, dict):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
+    if has_encrypted_credentials(config):
+        return _encrypted_credentials_error()
 
     if not unsaved:
         ok, conn = ConnectorService.get_by_id(connector_id)

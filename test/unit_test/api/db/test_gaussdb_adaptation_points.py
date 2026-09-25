@@ -107,6 +107,7 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
     monkeypatch.setattr(db_models, "migrate", lambda *_operations: None)
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
     monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
+    monkeypatch.setattr(db_models, "migrate_connector_credentials", lambda: None)
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
 
     db_models.migrate_db()

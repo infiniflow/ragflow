@@ -18,6 +18,9 @@
 
 Missing mandatory fields and non-integer frequency values must produce a
 data error (400-class envelope) instead of KeyError/ValueError 500s.
+
+The connector handlers also reject encrypted credentials in a request and
+return stored credentials decrypted.
 """
 
 import asyncio
@@ -65,7 +68,7 @@ def _validate_request(*required):
 def _load_connector_api(monkeypatch):
     repo_root = Path(__file__).resolve().parents[5]
 
-    saved_connector = SimpleNamespace(to_dict=lambda: {"id": "conn-1", "name": "kb"})
+    saved_connector = SimpleNamespace(to_dict=lambda: {"id": "conn-1", "name": "kb", "config": {}})
     connector_service = SimpleNamespace(
         save=lambda **kw: SAVED_CONNECTORS.append(kw),
         get_by_id=lambda _id: (True, saved_connector),
@@ -164,3 +167,110 @@ def test_valid_payload_creates_connector_with_defaults(monkeypatch):
     assert SAVED_CONNECTORS[0]["refresh_freq"] == 5
     assert SAVED_CONNECTORS[0]["prune_freq"] == 5
     assert SAVED_CONNECTORS[0]["timeout_secs"] == 60 * 29
+
+
+# Bytes 0..31 and a value encrypted with them; the Go tests use the same pair.
+_CONNECTOR_KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+_ENCRYPTED = "enc:v1:ZGVmZ2hpamtsbW5vMzm/FhC2IvFVBzHK4EVIiS2pKzu5X9Feh/PZO57Rh3K0yyGkLTDmruUEeZB6LtRoLedehJBJUg=="
+_PLAINTEXT = {"api_token": "tok-123", "user": "ada"}
+_ENCRYPTED_INPUT_MESSAGE = "config.credentials must be plaintext, not an encrypted value."
+
+
+def _serve_stored_connector(monkeypatch, module, config):
+    stored = SimpleNamespace(tenant_id="tenant-1", to_dict=lambda: {"id": "conn-1", "name": "kb", "config": config})
+    updates = []
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda *_args: True, raising=False)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _id: (True, stored))
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda _id, fields: updates.append(fields), raising=False)
+    monkeypatch.setattr(module, "TaskStatus", SimpleNamespace(UNSTART="0", CANCEL="cancel", SCHEDULE="schedule"))
+    return updates
+
+
+def _stub_connector_builder(monkeypatch, module):
+    built = []
+
+    def _build(source, config):
+        built.append((source, config))
+        return SimpleNamespace(validate_connector_settings=lambda: None)
+
+    monkeypatch.setitem(sys.modules, "common.data_source", _module_stub("common.data_source", build_connector_for_source=_build))
+    monkeypatch.setitem(
+        sys.modules,
+        "common.data_source.exceptions",
+        _module_stub("common.data_source.exceptions", ConnectorMissingCredentialError=RuntimeError, ConnectorValidationError=RuntimeError),
+    )
+    monkeypatch.setattr(module, "FileSource", [])
+    monkeypatch.setattr(module, "asyncio", SimpleNamespace(to_thread=asyncio.to_thread))
+    return built
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("credentials", [_ENCRYPTED, "enc:v2:future"])
+def test_create_rejects_encrypted_credentials(monkeypatch, credentials):
+    module = _load_connector_api(monkeypatch)
+    SAVED_CONNECTORS.clear()
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update({"name": "kb", "source": "rss", "config": {"credentials": credentials}})
+    res = asyncio.run(module.create_connector())
+    assert res == {"code": 101, "message": _ENCRYPTED_INPUT_MESSAGE, "data": None}
+    assert SAVED_CONNECTORS == []
+
+
+@pytest.mark.p2
+def test_update_rejects_encrypted_credentials(monkeypatch):
+    module = _load_connector_api(monkeypatch)
+    updates = _serve_stored_connector(monkeypatch, module, {})
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update({"refresh_freq": 7, "config": {"credentials": _ENCRYPTED}})
+    res = asyncio.run(module.update_connector("conn-1"))
+    assert res == {"code": 101, "message": _ENCRYPTED_INPUT_MESSAGE, "data": None}
+    assert updates == []
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "credentials, expected, builds",
+    [
+        (_ENCRYPTED, {"code": 101, "message": _ENCRYPTED_INPUT_MESSAGE, "data": None}, 0),
+        ({"api_token": "tok-123"}, {"code": 0, "message": "", "data": True}, 1),
+    ],
+)
+def test_test_connector_rejects_encrypted_credentials(monkeypatch, credentials, expected, builds):
+    module = _load_connector_api(monkeypatch)
+    _serve_stored_connector(monkeypatch, module, {})
+    built = _stub_connector_builder(monkeypatch, module)
+    REQUEST_JSON.clear()
+    REQUEST_JSON.update({"source": "rss", "config": {"credentials": credentials}})
+    res = asyncio.run(module.test_connector("conn-1"))
+    assert res == expected
+    assert len(built) == builds
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("handler", ["get", "create", "update"])
+def test_responses_return_decrypted_credentials(monkeypatch, handler):
+    monkeypatch.setenv("RAGFLOW_CONNECTOR_KEY", _CONNECTOR_KEY)
+    module = _load_connector_api(monkeypatch)
+    stored_config = {"credentials": _ENCRYPTED, "sync_deleted_files": True}
+    _serve_stored_connector(monkeypatch, module, stored_config)
+    REQUEST_JSON.clear()
+    if handler == "get":
+        res = module.get_connector("conn-1")
+    elif handler == "create":
+        REQUEST_JSON.update({"name": "kb", "source": "rss", "config": {"credentials": _PLAINTEXT}})
+        res = asyncio.run(module.create_connector())
+    else:
+        REQUEST_JSON.update({"refresh_freq": 7})
+        res = asyncio.run(module.update_connector("conn-1"))
+    assert res["code"] == 0
+    assert res["data"]["config"] == {"credentials": _PLAINTEXT, "sync_deleted_files": True}
+    assert stored_config["credentials"] == _ENCRYPTED
+
+
+@pytest.mark.p2
+def test_get_reports_a_safe_error_when_the_key_is_missing(monkeypatch):
+    monkeypatch.delenv("RAGFLOW_CONNECTOR_KEY", raising=False)
+    module = _load_connector_api(monkeypatch)
+    _serve_stored_connector(monkeypatch, module, {"credentials": _ENCRYPTED})
+    res = module.get_connector("conn-1")
+    assert res == {"code": 102, "message": "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set", "data": None}

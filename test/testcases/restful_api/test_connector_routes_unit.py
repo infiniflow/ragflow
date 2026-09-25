@@ -70,7 +70,7 @@ class _FakeConnectorRecord:
         self._payload = payload
 
     def to_dict(self):
-        return dict(self._payload)
+        return {"config": {}, **self._payload}
 
 
 class _FakeCredentials:
