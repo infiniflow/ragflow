@@ -153,3 +153,4 @@ These steps are not gated by the version marker. They are idempotent and run on 
 | Table | Change |
 |---|---|
 | `knowledgebase`, `dialog` | `parser_config` entries stored under the legacy key `TokenChunker:SixApplesFall` are rewritten to `GeneralChunker:SixApplesFall`. Values already stored under the new key win; `TokenChunker`-only fields (`delimiter_mode`, `outputs`) are dropped, and a legacy `delimiter` becomes `delimiters`. `delimiter` is discarded when `delimiters` already exists. |
+| `connector` | When `RAGFLOW_CONNECTOR_KEY` is set, a plaintext `config["credentials"]` value is encrypted to an `enc:v1:` string (AES-256-GCM). Rows that are already encrypted and rows whose `config` is not valid JSON are left unchanged. Without the key, the step changes nothing. |
