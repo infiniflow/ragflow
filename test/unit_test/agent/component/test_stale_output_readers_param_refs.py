@@ -163,6 +163,14 @@ class TestVariableAssignerParamRefs:
         )
         assert c.param_refs() == ["counter"]
 
+    @pytest.mark.parametrize("operator", ["clear", "remove_first", "remove_last"])
+    def test_unused_parameter_is_not_a_dependency(self, operator):
+        c = _variable_assigner(
+            [{"variable": "user_input", "operator": operator, "parameter": "retrieval:0@output"}]
+        )
+        assert c.param_refs() == ["user_input"]
+        assert c.get_dependency_ids() == []
+
     def test_multiple_rows_aggregate(self):
         c = _variable_assigner(
             [

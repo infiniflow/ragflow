@@ -54,7 +54,8 @@ class VariableAssigner(ComponentBase, ABC):
         for item in self._param.variables or []:
             if not isinstance(item, dict):
                 continue
-            for key in ("variable", "parameter"):
+            keys = ("variable",) if item.get("operator") in self._NO_PARAMETER_OPERATORS else ("variable", "parameter")
+            for key in keys:
                 ref = item.get(key)
                 if isinstance(ref, str) and ref:
                     refs.append(ref)
