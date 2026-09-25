@@ -1203,6 +1203,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 				return fmt.Errorf("save version: %w", err)
 			}
 		}
+		if newDSL, ok := updates["dsl"].(entity.JSONMap); ok &&
+			updatedAgentCanvasCategory(canvasInstance, updates) == dataflowCanvasCategory {
+			if err := rebaseBoundPipelineParserConfigs(ctx, tx, canvasID, canvasInstance.DSL, newDSL); err != nil {
+				return fmt.Errorf("update agent %s: %w", canvasID, err)
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -1319,6 +1325,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		}
 	}
 
+	previousDSL := canvasInstance.DSL
 	canvasInstance.DSL = dsl
 	canvasInstance.Title = title
 	canvasInstance.Description = description
@@ -1338,6 +1345,11 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 			return fmt.Errorf("publish agent %s: save version: %w", canvasID, err)
 		}
 		row = saved
+		if req != nil && req.DSL != nil && canvasInstance.CanvasCategory == dataflowCanvasCategory {
+			if err := rebaseBoundPipelineParserConfigs(ctx, tx, canvasID, previousDSL, dsl); err != nil {
+				return fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
+		}
 		return nil
 	}); err != nil {
 		return nil, err
