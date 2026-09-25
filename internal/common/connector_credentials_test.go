@@ -50,13 +50,14 @@ func TestConnectorKey(t *testing.T) {
 		t.Fatalf("valid key: got %v, want %v", key, want)
 	}
 
-	for _, bad := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString(make([]byte, 16))} {
+	// Python's b64decode(validate=True) rejects line breaks that Go's decoder skips.
+	for _, bad := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString(make([]byte, 16)), testConnectorKey + "\n", testConnectorKey + "\r\n"} {
 		t.Setenv(EnvRAGFlowConnectorKey, bad)
 		key, err = ConnectorKey()
 		if err == nil || key != nil {
 			t.Fatalf("bad key %q: got (%v, %v), want an error", bad, key, err)
 		}
-		if !strings.Contains(err.Error(), EnvRAGFlowConnectorKey) || strings.Contains(err.Error(), bad) {
+		if !strings.Contains(err.Error(), EnvRAGFlowConnectorKey) || strings.Contains(err.Error(), strings.TrimSpace(bad)) {
 			t.Fatalf("bad key %q: error %q must name the variable and not the value", bad, err)
 		}
 	}

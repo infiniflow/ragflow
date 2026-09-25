@@ -46,8 +46,9 @@ func ConnectorKey() ([]byte, error) {
 	if encoded == "" {
 		return nil, nil
 	}
+	// Go's decoder skips \r and \n; reject them so a key is valid in Go only when it is valid in Python.
 	key, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
+	if err != nil || strings.ContainsAny(encoded, "\r\n") {
 		return nil, fmt.Errorf("%s is not valid base64", EnvRAGFlowConnectorKey)
 	}
 	if len(key) != connectorCredentialsKeyBytes {

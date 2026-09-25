@@ -1025,6 +1025,13 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	if !canAccess {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
+	// The response returns the stored credentials. Fail before any write when they
+	// cannot be decrypted; a request with new credentials replaces them instead.
+	if req == nil || req.Config == nil {
+		if _, err = common.DecryptConnectorCredentials(connector.Config); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
 
 	updates := map[string]interface{}{}
 	if req != nil {

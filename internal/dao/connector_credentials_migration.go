@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/common"
 
@@ -50,8 +51,15 @@ func migrateConnectorCredentials(ctx context.Context, db *gorm.DB) error {
 	result := db.WithContext(ctx).Table("connector").Select("id", "config").
 		FindInBatches(&rows, connectorCredentialsMigrationBatchSize, func(_ *gorm.DB, _ int) error {
 			for _, row := range rows {
+				// The whole row is rewritten, so numbers must survive exactly; float64 rounds above 2^53.
+				// Decode stops after the first value, so json.Valid keeps rows with trailing data skipped.
+				if !json.Valid([]byte(row.Config)) {
+					continue
+				}
 				var config map[string]interface{}
-				if err := json.Unmarshal([]byte(row.Config), &config); err != nil {
+				dec := json.NewDecoder(strings.NewReader(row.Config))
+				dec.UseNumber()
+				if err := dec.Decode(&config); err != nil {
 					continue
 				}
 				if _, ok := config["credentials"]; !ok || common.HasEncryptedConnectorCredentials(config) {
