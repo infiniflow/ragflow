@@ -141,7 +141,8 @@ def _markup_state(content: str, pos: int) -> tuple[bool, int]:
             continue
         tag_end = _html_tag_end(content, i)
         if tag_end < 0:
-            return True, em_depth
+            i += 1
+            continue
         if tag_end >= pos:
             return True, em_depth
         name = _html_tag_name(content, i, tag_end)

@@ -1433,16 +1433,21 @@ func markKnownTerms(content string, terms []string) string {
 	var b strings.Builder
 	cursor := 0
 	lastEnd := 0
+	accepted := false
 	for _, span := range spans {
 		if span[0] < lastEnd || !matchIsUnmarkedText(content, span[0], span[1]) {
 			continue
 		}
+		accepted = true
 		b.WriteString(content[cursor:span[0]])
 		b.WriteString("<em>")
 		b.WriteString(content[span[0]:span[1]])
 		b.WriteString("</em>")
 		cursor = span[1]
 		lastEnd = span[1]
+	}
+	if !accepted && !strings.Contains(strings.ToLower(content), "<em>") {
+		return ""
 	}
 	b.WriteString(content[cursor:])
 	return b.String()
@@ -1465,7 +1470,11 @@ func markupState(content string, pos int) (bool, int) {
 			continue
 		}
 		tagEnd := htmlTagEnd(content, i)
-		if tagEnd < 0 || tagEnd >= pos {
+		if tagEnd < 0 {
+			i++
+			continue
+		}
+		if tagEnd >= pos {
 			return true, emDepth
 		}
 		switch htmlTagName(content, i, tagEnd) {
