@@ -623,8 +623,15 @@ class ComponentBase(ABC):
     def get_dependency_ids(self) -> list[str]:
         ids = [ele["_cpn_id"] for ele in self.get_input_elements().values() if isinstance(ele, dict) and ele.get("_cpn_id")]
         for ref in self.param_refs():
-            if isinstance(ref, str) and ref.find("@") > 0:
-                ids.append(ref.split("@", 1)[0])
+            if not isinstance(ref, str) or not ref:
+                continue
+            matches = list(self._iter_template_matches(self.variable_ref_patt_re, ref))
+            atomic_refs = [match.group(1) for match in matches] if matches else [ref]
+            for atomic_ref in atomic_refs:
+                # Standalone refs can also be passed with outer braces.
+                normalized = atomic_ref.strip().strip("{").strip("}").strip(" ").strip("{").strip("}")
+                if normalized.find("@") > 0:
+                    ids.append(normalized.split("@", 1)[0])
         return ids
 
     def get_input_form(self) -> dict[str, dict]:

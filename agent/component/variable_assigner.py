@@ -40,6 +40,27 @@ class VariableAssigner(ComponentBase, ABC):
     component_name = "VariableAssigner"
     _NO_PARAMETER_OPERATORS = {"clear", "remove_first", "remove_last"}
 
+    def param_refs(self) -> list[str]:
+        # Each row holds a `variable` (the LHS canvas variable the row
+        # writes into) and an optional `parameter` (the RHS the operator
+        # consumes). The RHS comes from `_canvas.get_variable_value(...)`,
+        # so when it is itself a `producer@output` reference the row has
+        # a hidden dependency on the sibling producer that the input
+        # graph does not encode. Without this override the batch
+        # scheduler puts VariableAssigner in the same window as the
+        # producer and reads the pre-run value (often empty when the
+        # producer is a slow Retrieval/LLM). See issue #19360.
+        refs: list[str] = []
+        for item in self._param.variables or []:
+            if not isinstance(item, dict):
+                continue
+            keys = ("variable",) if item.get("operator") in self._NO_PARAMETER_OPERATORS else ("variable", "parameter")
+            for key in keys:
+                ref = item.get(key)
+                if isinstance(ref, str) and ref:
+                    refs.append(ref)
+        return refs
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if not isinstance(self._param.variables, list):
