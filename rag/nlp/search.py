@@ -112,7 +112,7 @@ def _mark_terms_outside_em(content: str, terms: list[str]) -> str:
     cursor = 0
     replaced = False
     for match in pattern.finditer(content):
-        if content[: match.start()].lower().count("<em>") > content[: match.start()].lower().count("</em>"):
+        if not _match_is_unmarked_text(content, match.start(), match.end()):
             continue
         pieces.append(content[cursor : match.start()])
         pieces.append(f"<em>{match.group(0)}</em>")
@@ -122,6 +122,69 @@ def _mark_terms_outside_em(content: str, terms: list[str]) -> str:
         return ""
     pieces.append(content[cursor:])
     return "".join(pieces)
+
+
+def _match_is_unmarked_text(content: str, start: int, end: int) -> bool:
+    in_tag, em_depth = _markup_state(content, start)
+    if in_tag or em_depth > 0:
+        return False
+    in_tag, _ = _markup_state(content, end)
+    return not in_tag
+
+
+def _markup_state(content: str, pos: int) -> tuple[bool, int]:
+    em_depth = 0
+    i = 0
+    while i < pos:
+        if content[i] != "<":
+            i += 1
+            continue
+        tag_end = _html_tag_end(content, i)
+        if tag_end < 0:
+            return True, em_depth
+        if tag_end >= pos:
+            return True, em_depth
+        name = _html_tag_name(content, i, tag_end)
+        if name == "em":
+            em_depth += 1
+        elif name == "/em" and em_depth > 0:
+            em_depth -= 1
+        i = tag_end + 1
+    return False, em_depth
+
+
+def _html_tag_end(content: str, start: int) -> int:
+    if start + 1 >= len(content):
+        return -1
+    nxt = content[start + 1]
+    if not (nxt.isalpha() or nxt in "/!"):
+        return -1
+    quote = ""
+    i = start + 1
+    while i < len(content):
+        ch = content[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == ">":
+            return i
+        i += 1
+    return -1
+
+
+def _html_tag_name(content: str, start: int, tag_end: int) -> str:
+    body = content[start + 1 : tag_end].strip().lower()
+    if body.startswith("/"):
+        body = "/" + body[1:].lstrip()
+    name = []
+    for ch in body:
+        if ch.isalnum() or ch in "/":
+            name.append(ch)
+            continue
+        break
+    return "".join(name)
 
 
 class Dealer:

@@ -653,7 +653,7 @@ func markKnownTerms(content string, terms []string) string {
 	cursor := 0
 	lastEnd := 0
 	for _, span := range spans {
-		if span[0] < lastEnd || emphasisDepth(content[:span[0]]) > 0 {
+		if span[0] < lastEnd || !matchIsUnmarkedText(content, span[0], span[1]) {
 			continue
 		}
 		b.WriteString(content[cursor:span[0]])
@@ -667,25 +667,81 @@ func markKnownTerms(content string, terms []string) string {
 	return b.String()
 }
 
-func emphasisDepth(prefix string) int {
-	depth := 0
-	lower := strings.ToLower(prefix)
-	for i := 0; i < len(lower); {
-		if strings.HasPrefix(lower[i:], "</em>") {
-			if depth > 0 {
-				depth--
-			}
-			i += len("</em>")
-			continue
-		}
-		if strings.HasPrefix(lower[i:], "<em>") {
-			depth++
-			i += len("<em>")
-			continue
-		}
-		i++
+func matchIsUnmarkedText(content string, start, end int) bool {
+	inTag, emDepth := markupState(content, start)
+	if inTag || emDepth > 0 {
+		return false
 	}
-	return depth
+	inTag, _ = markupState(content, end)
+	return !inTag
+}
+
+func markupState(content string, pos int) (bool, int) {
+	emDepth := 0
+	for i := 0; i < pos; {
+		if content[i] != '<' {
+			i++
+			continue
+		}
+		tagEnd := htmlTagEnd(content, i)
+		if tagEnd < 0 || tagEnd >= pos {
+			return true, emDepth
+		}
+		switch htmlTagName(content, i, tagEnd) {
+		case "em":
+			emDepth++
+		case "/em":
+			if emDepth > 0 {
+				emDepth--
+			}
+		}
+		i = tagEnd + 1
+	}
+	return false, emDepth
+}
+
+func htmlTagEnd(content string, start int) int {
+	if start+1 >= len(content) {
+		return -1
+	}
+	next := content[start+1]
+	if !((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '/' || next == '!') {
+		return -1
+	}
+	quote := byte(0)
+	for i := start + 1; i < len(content); i++ {
+		ch := content[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			quote = ch
+			continue
+		}
+		if ch == '>' {
+			return i
+		}
+	}
+	return -1
+}
+
+func htmlTagName(content string, start, tagEnd int) string {
+	body := strings.TrimSpace(strings.ToLower(content[start+1 : tagEnd]))
+	if strings.HasPrefix(body, "/") {
+		body = "/" + strings.TrimLeft(body[1:], " \t")
+	}
+	var name strings.Builder
+	for _, ch := range body {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '/' {
+			name.WriteRune(ch)
+			continue
+		}
+		break
+	}
+	return name.String()
 }
 
 func asMap(v interface{}) map[string]interface{} {
