@@ -1411,18 +1411,39 @@ func markKnownTerms(content string, terms []string) string {
 	if content == "" || len(terms) == 0 {
 		return ""
 	}
-	marked := content
-	replaced := false
-	for _, term := range terms {
-		pattern := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(term))
-		next := pattern.ReplaceAllString(marked, "<em>$0</em>")
-		if next != marked {
-			replaced = true
-			marked = next
+	ordered := append([]string(nil), terms...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return len(ordered[i]) > len(ordered[j])
+	})
+	parts := make([]string, 0, len(ordered))
+	for _, term := range ordered {
+		if strings.TrimSpace(term) == "" {
+			continue
 		}
+		parts = append(parts, regexp.QuoteMeta(term))
 	}
-	if !replaced {
+	if len(parts) == 0 {
 		return ""
 	}
-	return marked
+	pattern := regexp.MustCompile(`(?i)(?:` + strings.Join(parts, "|") + `)`)
+	spans := pattern.FindAllStringIndex(content, -1)
+	if len(spans) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	cursor := 0
+	lastEnd := 0
+	for _, span := range spans {
+		if span[0] < lastEnd {
+			continue
+		}
+		b.WriteString(content[cursor:span[0]])
+		b.WriteString("<em>")
+		b.WriteString(content[span[0]:span[1]])
+		b.WriteString("</em>")
+		cursor = span[1]
+		lastEnd = span[1]
+	}
+	b.WriteString(content[cursor:])
+	return b.String()
 }
