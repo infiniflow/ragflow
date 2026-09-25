@@ -468,6 +468,16 @@ class DocumentService(CommonService):
         if not cls.delete_document_and_update_kb_counts(doc.id):
             return True
 
+        # Invalidate the doc-existence cache behind _prune_deleted_chunks so
+        # vector-store chunks left behind by an in-flight delete cannot keep
+        # surfacing through retrieval for the full 120-second TTL (#19071).
+        try:
+            from rag.nlp.search import Dealer
+
+            Dealer.invalidate_doc_exists(doc.id)
+        except Exception as e:
+            logging.warning("Failed to invalidate doc-exists cache for %s: %s", doc.id, e)
+
         chunk_index_name = search.index_name(tenant_id)
         chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
 
