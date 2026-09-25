@@ -43,6 +43,54 @@ except Exception:
     PdfPipelineOptions = None
 
 try:
+    from huggingface_hub import errors as _hf_errors
+except Exception:
+    _hf_errors = None
+
+
+# DocumentConverter wraps a download from huggingface.co for its models.
+# The download goes through huggingface_hub, which can raise a small family
+# of errors when the response from a proxy / corporate firewall does not
+# look like huggingface.co metadata — most commonly
+# `huggingface_hub.errors.FileMetadataError("Distant resource does not seem to
+# be on huggingface.co.")`. Without this map the operator only sees
+# "Internal server error while chunking" with a 30-line traceback in the
+# logs. Translate the family into a clearer message that names the actual
+# cause and points at the workarounds.
+_HF_DOWNLOAD_ERROR_HINTS = (
+    (
+        "Distant resource does not seem to be on huggingface.co",
+        "docling could not download its model from huggingface.co (proxy / firewall "
+        "interception or transient hub outage). Either pre-download the docling "
+        "model and set HF_HUB_OFFLINE=1, or set HF_TOKEN to authenticate, or "
+        "whitelist https://huggingface.co in your proxy.",
+    ),
+    (
+        "Repository Not Found",
+        "docling's model repository was not found on huggingface.co. The repo may have moved or been renamed; check DOCLING_* env vars and the docling release notes.",
+    ),
+    (
+        "Access to this resource is restricted",
+        "docling's model is gated on huggingface.co. Set HF_TOKEN to a token that has access to the docling model repo.",
+    ),
+)
+
+
+def _classify_hf_download_error(exc: BaseException) -> str | None:
+    msg = str(exc) or ""
+    needle = msg.lower()
+    for substr, hint in _HF_DOWNLOAD_ERROR_HINTS:
+        if substr.lower() in needle:
+            return hint
+    # Fallback: detect by exception class name (covers RepositoryNotFoundError,
+    # GatedRepoError, etc.) so future additions don't need a string table.
+    cls = exc.__class__.__name__
+    if cls in {"FileMetadataError", "RepositoryNotFoundError", "GatedRepoError", "RevisionNotFoundError", "EntryNotFoundError"}:
+        return f"docling model download from huggingface.co failed ({cls}: {msg}). Check proxy / firewall / HF_TOKEN / HF_HUB_OFFLINE settings; the underlying error is re-raised after this message."
+    return None
+
+
+try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
 
@@ -614,8 +662,21 @@ class DoclingParser(RAGFlowPdfParser):
         self.logger.info(f"[Docling] Local conversion (formula_enrichment={do_formula_enrichment}): {src_path}")
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_formula_enrichment = do_formula_enrichment
-        conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
-        conv_res = conv.convert(str(src_path))
+        try:
+            conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
+            conv_res = conv.convert(str(src_path))
+        except Exception as e:
+            hint = _classify_hf_download_error(e)
+            if hint is None:
+                raise
+            # The downstream `by_docling` / `task_executor` path surfaces
+            # the traceback in the logs already; here we just give the
+            # operator a one-line, actionable summary that names the
+            # actual cause (model download failure) and the workarounds.
+            self.logger.error(f"[Docling] {hint}")
+            if callback:
+                callback(-1, hint)
+            raise RuntimeError(hint) from e
         doc = conv_res.document
         if callback:
             callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")
