@@ -53,6 +53,7 @@ Deliberate first-cut simplifications (documented, revisit on in-app eval):
   - rank_feature tag boosting is skipped (parity: ob_conn TODOs it as well); pagerank IS applied.
 """
 
+import io
 import json
 import logging
 import os
@@ -238,9 +239,99 @@ class SereneDBConnection(DocStoreConnection):
                 cur.execute(sql, params)
                 if fetch and cur.description is not None:
                     return cur.fetchall(), [d[0] for d in cur.description]
-                return [], []
+                if fetch:
+                    # A fetching caller iterates the second slot, so it stays a list.
+                    return [], []
+                # fetch=False only: the second slot is rowcount, so delete() can report
+                # its effect without a COUNT(*) first.
+                return [], cur.rowcount
         finally:
             self._pool.putconn(conn)
+
+    # ---- bulk write path -----------------------------------------------------
+
+    @staticmethod
+    def _copy_escape(text: str) -> str:
+        r"""Escape one finished value for COPY TEXT: backslash, tab, newline and CR, or the
+        row framing breaks silently mid-stream."""
+        return (text.replace("\\", "\\\\").replace("\t", "\\t")
+                .replace("\n", "\\n").replace("\r", "\\r"))
+
+    @staticmethod
+    def _copy_field(v) -> str:
+        r"""One value in COPY TEXT format. \N is NULL.
+
+        An array is escaped TWICE and the order matters: the inner quoting is what the array
+        parser reads, and the finished literal is then escaped for COPY, which strips its own
+        layer first. Escaping only for the array parser leaves `a\b` arriving as `ab`, and a
+        tab inside an element ends the field early.
+        """
+        if v is None:
+            return r"\N"
+        if isinstance(v, bool):
+            return "t" if v else "f"
+        if isinstance(v, (int, float)):
+            return repr(v)
+        if isinstance(v, (list, tuple)):
+            if v and isinstance(v[0], (int, float)):
+                lit = "{" + ",".join(repr(x) for x in v) + "}"
+            else:
+                parts = []
+                for x in v:
+                    x = "" if x is None else str(x)
+                    parts.append('"' + x.replace("\\", "\\\\").replace('"', '\\"') + '"')
+                lit = "{" + ",".join(parts) + "}"
+            return SereneDBConnection._copy_escape(lit)
+        return SereneDBConnection._copy_escape(str(v))
+
+    def _copy_upsert(self, cur, index_name: str, cols, val_rows, updates) -> bool:
+        """COPY into a temp table, then upsert from it. True if it worked.
+
+        Returns False rather than raising so the caller can fall back to the literal
+        INSERT: this is a performance path, and a corpus that stops ingesting is a far
+        worse outcome than one that ingests slowly.
+
+        SereneDB has no `CREATE TEMP TABLE (LIKE t)` - it is a syntax error - so the
+        temp table is spelled out from COLUMN_DDL, with the vector columns recovered
+        from their q_<size>_vec name.
+        """
+        try:
+            types = []
+            for c in cols:
+                # q_<n>_vec matches directly; q_<n>_vec_n is the normalized shadow column and
+                # needs its `_n` stripped. `c[:-2] + "vec"` produced q_<n>_vecvec, which matched
+                # nothing - and insert() adds the shadow column to EVERY vector batch, so the
+                # `return False` below fired every time and COPY never ran at all.
+                m = vector_column_pattern.match(c) or vector_column_pattern.match(c[:-2])
+                if c in COLUMN_DDL:
+                    types.append(f"{c} {COLUMN_DDL[c].replace(' PRIMARY KEY', '')}")
+                elif m:
+                    types.append(f"{c} FLOAT[{int(m.group('vector_size'))}]")
+                else:
+                    return False                      # unknown column: take the safe path
+            tmp = f"rf_copy_{abs(hash((index_name, cols))) % 10**9}"
+            cur.execute(f"DROP TABLE IF EXISTS {tmp}")
+            cur.execute(f"CREATE TEMP TABLE {tmp} ({', '.join(types)})")
+            buf = io.StringIO()
+            for row in val_rows:
+                buf.write("\t".join(self._copy_field(v) for v in row) + "\n")
+            buf.seek(0)
+            cur.copy_expert(f"COPY {tmp} ({', '.join(cols)}) FROM STDIN", buf)
+            cur.execute(f"INSERT INTO {index_name} ({', '.join(cols)}) "
+                        f"SELECT {', '.join(cols)} FROM {tmp} "
+                        f"ON CONFLICT (id) DO UPDATE SET {updates}")
+            cur.execute(f"DROP TABLE IF EXISTS {tmp}")
+            return True
+        except Exception as e:
+            logger.warning(f"SereneDB COPY path unavailable on {index_name}, "
+                           f"falling back to INSERT: {e}")
+            try:
+                cur.execute("ROLLBACK")
+            except Exception as rb:
+                # Nothing to do about it - the caller falls back to the literal INSERT
+                # either way - but a silent swallow hides a connection that is already gone.
+                logger.debug(f"SereneDB COPY rollback failed on {index_name}: {rb}")
+            return False
 
     """
     Database operations
@@ -267,14 +358,50 @@ class SereneDBConnection(DocStoreConnection):
         self._run(f"CREATE TABLE IF NOT EXISTS {index_name} ({cols}, {vec} FLOAT[{vector_size}], {vec_n} FLOAT[{vector_size}])", fetch=False)
         self._run(DICTIONARY_DDL, fetch=False)
         fts = ", ".join(f"{c} {DICTIONARY_NAME}" for c in FTS_COLUMNS)
+        # CREATE INDEX IF NOT EXISTS is not free when the index exists: GetGlobalSinkState
+        # skips the SINK, but the child pipeline still scans the whole relation and Sink()
+        # discards every chunk. 40-70s per call on 422GB, once per task per executor.
+        # The probe deliberately does not catch: a swallowed failure is read as absence and
+        # feeds the same loop index_exist() documents.
+        rel = _index_relation(index_name)
+        got, _ = self._run(
+            f"SELECT 1 FROM pg_class WHERE relname = '{rel}' LIMIT 1")
+        if got:
+            # The inverted index is there, but the doc_id one may not be: an EXISTING tenant
+            # table predates it, so returning here would leave every upgraded deployment on
+            # the slow lookup for ever. Each index is probed on its own.
+            self._ensure_doc_id_index(index_name)
+            with self._known_lock:
+                self._known_tables.add(index_name)
+            return
         self._run(
-            f"CREATE INDEX IF NOT EXISTS {_index_relation(index_name)} ON {index_name} "
+            f"CREATE INDEX IF NOT EXISTS {rel} ON {index_name} "
             f"USING inverted (id, {fts}, {vec_n} ivf (metric = 'ip', quant = 'sq8')) "
             f"WITH (optimize_top_k = 'bm25(1.2, 0.75)')",
             fetch=False,
         )
+        # doc_id needs its own index: every delete-by-document and every per-document
+        # lookup filters on it, and without this the planner does a SEQ_SCAN of the whole
+        # table. Measured 2026-09-09 on 43.6M rows: 391.8ms per lookup without it. The parse
+        # endpoint issues one delete per document, so ~600 documents cost ~204s of a ~320s
+        # ingest pass - the single largest cost in the pipeline.
+        # Created here rather than by hand so a fresh tenant table is not silently slow.
+        self._ensure_doc_id_index(index_name)
         with self._known_lock:
             self._known_tables.add(index_name)
+
+    def _ensure_doc_id_index(self, index_name):
+        """Probed separately from the inverted index, because an existing table has one and
+        not the other."""
+        doc_idx = f"idx_{index_name}_doc_id"
+        got, _ = self._run(
+            f"SELECT 1 FROM pg_class WHERE relname = '{doc_idx}' LIMIT 1")
+        if got:
+            return
+        self._run(
+            f"CREATE INDEX IF NOT EXISTS {doc_idx} ON {index_name} (doc_id)",
+            fetch=False,
+        )
 
     def create_doc_meta_idx(self, index_name: str):
         # RAGFlow calls this directly for the per-tenant metadata table (not in the ABC, but the
@@ -291,16 +418,36 @@ class SereneDBConnection(DocStoreConnection):
         with self._known_lock:
             self._known_tables.discard(index_name)
 
+    # Errors that actually mean "this table is not there". Anything else - a timeout, a
+    # dropped connection, the server being busy - means WE DO NOT KNOW, and must not be
+    # reported as absence.
+    _MISSING_TABLE_SQLSTATES = frozenset({
+        "42P01",   # undefined_table
+        "3F000",   # invalid_schema_name
+    })
+
     def index_exist(self, index_name: str, dataset_id: str = None) -> bool:
+        """Does the table exist? Raises if it cannot tell.
+
+        Catching every exception and returning False makes a timed-out probe look like
+        absence, so the caller runs CREATE INDEX over the whole relation, saturates the
+        disk, and times out the next probe. Observed: concurrent 20-70s CREATE INDEX
+        statements at ~4 GB/s that continued after ingest stopped.
+        """
         if index_name in self._known_tables:
             return True
         try:
             self._run(f"SELECT 1 FROM {index_name} LIMIT 0")
-            with self._known_lock:
-                self._known_tables.add(index_name)
-            return True
-        except Exception:
-            return False
+        except Exception as e:
+            code = getattr(e, "pgcode", None) or getattr(getattr(e, "diag", None), "sqlstate", None)
+            if code in self._MISSING_TABLE_SQLSTATES:
+                return False
+            # Unknown failure: say so. Reporting absence here is what caused the
+            # CREATE INDEX storm.
+            raise
+        with self._known_lock:
+            self._known_tables.add(index_name)
+        return True
 
     """
     Filters
@@ -332,6 +479,13 @@ class SereneDBConnection(DocStoreConnection):
                     filters.append(f"{k} IN ({', '.join(_escape(x) for x in v)})")
                 else:
                     filters.append(f"{k} = {_escape(v)}")
+            else:
+                # A predicate this schema cannot represent matches NOTHING; dropping it turns a
+                # narrow query into a silent full scan. remove_wiki_products() filters on
+                # compile_kwd and source_doc_ids, neither a column here, so only kb_id survived -
+                # 42.8M rows - and its pager walked them for every document deleted.
+                logger.debug("SereneDB filter on unknown column %r -> no rows can match", k)
+                filters.append("FALSE")
         return filters
 
     """
@@ -371,6 +525,10 @@ class SereneDBConnection(DocStoreConnection):
         fields_expr = ", ".join(output_fields)
 
         condition = dict(condition or {})
+        # kb_id ALWAYS here, unlike delete() and update(). This doc_id comes off the wire -
+        # search.py copies the request's doc_ids into the condition - and one tenant table
+        # holds every knowledge base, so dropping kb_id would let a caller read another
+        # dataset by naming a document in it. delete()/update() ids are the caller's own.
         condition["kb_id"] = dataset_ids
         filters = self._get_filters(condition)
         filters_expr = " AND ".join(filters) if filters else "TRUE"
@@ -378,6 +536,7 @@ class SereneDBConnection(DocStoreConnection):
         text_query = text_topn = None
         vec_col = vec_data = vec_topn = None
         vec_threshold = 0.0
+        has_vec_threshold = False
         vector_weight = 0.5
         for m in match_expressions:
             if isinstance(m, MatchTextExpr):
@@ -391,7 +550,9 @@ class SereneDBConnection(DocStoreConnection):
                 vec_col = m.vector_column_name
                 vec_data = list(m.embedding_data)
                 vec_topn = m.topn
-                vec_threshold = float((m.extra_options or {}).get("similarity", 0.0))
+                if "similarity" in (m.extra_options or {}):
+                    vec_threshold = float(m.extra_options["similarity"])
+                    has_vec_threshold = True
             elif isinstance(m, FusionExpr):
                 if m.method == "weighted_sum" and "weights" in (m.fusion_params or {}):
                     vector_weight = float(m.fusion_params["weights"].split(",")[1])
@@ -416,17 +577,37 @@ class SereneDBConnection(DocStoreConnection):
                 )
                 search_type = "fulltext"
             elif vec_data:
-                # Similarity threshold goes straight in the ANN scan's WHERE (relies on the
-                # 26.07.4 fix #964 — on <26.07.4 a vector-op predicate here silently emptied the
-                # result and had to be applied outside the scan).
+                # The threshold is deliberately NOT in the WHERE clause: SereneDB compiles it
+                # to `Vector Range / Radius <= -0` and enumerates ~8.5M of 42.8M rows so TOP_N
+                # can keep 10. 104,095ms -> 626ms. No sibling backend constrains the search
+                # this way, and search.py re-applies the threshold anyway against the HYBRID
+                # score, not pure vector similarity - so the predicate could drop a chunk with
+                # a strong term match. Cost: the IVF index answers approximately, recall@10
+                # 88% at nprobe=8, 93% at 32, 97% at 128.
                 vec_n = _norm_column(len(vec_data))
                 qv = "ARRAY[" + ",".join(str(float(x)) for x in _l2_normalize(vec_data)) + f"]::FLOAT[{len(vec_data)}]"
                 n = limit if limit > 0 else (vec_topn or 10)
+                # _vec_sim is the RAW similarity: _score adds pagerank, so a 0.75 similarity
+                # with 0.10 of pagerank would pass a 0.80 threshold. Subquery so the distance
+                # is computed once. pagerank_fea is itself selectable, so it joins the inner
+                # projection only when the caller did not ask for it - twice is ambiguous.
+                inner_extra = "" if PAGERANK_FLD in output_fields else f", {PAGERANK_FLD}"
                 rows, _ = self._run(
-                    f"SELECT {fields_expr}, -({vec_n} <#> {qv}) + {pagerank_expr} AS _score "
-                    f"FROM {idx} WHERE {filters_expr} AND -({vec_n} <#> {qv}) >= {vec_threshold} "
-                    f"ORDER BY {vec_n} <#> {qv} LIMIT {n} OFFSET {offset}"
+                    f"SELECT {fields_expr}, _vec_sim, _vec_sim + {pagerank_expr} AS _score FROM ("
+                    f"SELECT {fields_expr}{inner_extra}, -({vec_n} <#> {qv}) AS _vec_sim "
+                    f"FROM {idx} WHERE {filters_expr} "
+                    f"ORDER BY {vec_n} <#> {qv} LIMIT {n} OFFSET {offset}) t"
                 )
+                # fields_expr is exactly output_fields, so _vec_sim lands at that index and
+                # _score just after it.
+                sim_i = len(output_fields)
+                # Whenever a threshold was GIVEN, not only a positive one: similarity is
+                # -(v <#> q) and is legitimately negative, so 0 and below are real cutoffs.
+                if has_vec_threshold:
+                    # NULL similarity is DROPPED: the vector columns are nullable, and a
+                    # chunk with no vector must not survive a threshold.
+                    rows = [r for r in rows if r[sim_i] is not None and r[sim_i] >= vec_threshold]
+                rows = [tuple(r[:sim_i]) + tuple(r[sim_i + 1:]) for r in rows]
                 search_type = "vector"
             elif agg_fields:
                 self._aggregation(result, index_name, agg_fields, filters_expr)
@@ -474,7 +655,7 @@ WITH lex AS (
 lexn AS (SELECT id, s / NULLIF(MAX(s) OVER (), 0) AS sn FROM lex),
 vec AS (
     SELECT id, -({vec_n} <#> {qv}) AS sim
-    FROM {idx} WHERE {filters_expr} AND -({vec_n} <#> {qv}) >= {vec_threshold}
+    FROM {idx} WHERE {filters_expr}
     ORDER BY {vec_n} <#> {qv} LIMIT {v_n}),
 fused AS (
     SELECT COALESCE(l.id, v.id) AS id,
@@ -507,7 +688,12 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             return None
         return self._row_to_entity(rows[0], cols)
 
-    def insert(self, rows: list[dict], index_name: str, dataset_id: str = None) -> list[str]:
+    def insert(self, rows: list[dict], index_name: str, dataset_id: str = None,
+               refresh: str | bool = "wait_for") -> list[str]:
+        # `refresh` is part of the DocStoreConnection signature and callers pass it
+        # positionally; without it every insert raises TypeError and the document FAILs.
+        # Ignored rather than honoured: it is an Elasticsearch concept, and a SereneDB
+        # write is already visible to the next statement.
         if not rows:
             return []
         if index_name.startswith("ragflow_doc_meta_"):
@@ -563,6 +749,12 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             with conn.cursor() as cur:
                 for cols, val_rows in groups.items():
                     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols if c != "id")
+                    # COPY first, literal INSERT as a fallback. execute_values interpolates
+                    # every value into one statement client-side - ~726 KB at DOC_BULK_SIZE=32,
+                    # two 1024-dim float arrays per chunk - and the cost is the parse:
+                    # 317.8ms against 20.8ms for the same rows via COPY.
+                    if self._copy_upsert(cur, index_name, cols, val_rows, updates):
+                        continue
                     try:
                         psycopg2.extras.execute_values(cur, f"INSERT INTO {index_name} ({', '.join(cols)}) VALUES %s ON CONFLICT (id) DO UPDATE SET {updates}", val_rows, page_size=500)
                     except Exception as e:
@@ -595,7 +787,14 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             return True
         condition = dict(condition or {})
         if not index_name.startswith("ragflow_doc_meta_"):
-            condition["kb_id"] = dataset_id
+            # kb_id is redundant once doc_id is fixed - a document has one knowledge base -
+            # and expensive: every row here shares a kb_id, so the planner picks that
+            # non-selective column and scans. 6.8ms with doc_id alone, 391.8ms with both.
+            # A composite index does not help either ordering. 204s of every ~320s pass.
+            # `not .get(...)`, not `not in`: _get_filters skips falsy values, so doc_id=None
+            # loses its predicate, and testing the key alone would drop kb_id as well.
+            if not condition.get("doc_id"):
+                condition["kb_id"] = dataset_id
         filters = self._get_filters(condition)
         if not filters:
             return False
@@ -632,15 +831,20 @@ ORDER BY _score DESC LIMIT {n} OFFSET {offset}"""
             return 0
         condition = dict(condition or {})
         if not index_name.startswith("ragflow_doc_meta_"):
-            condition["kb_id"] = dataset_id
+            # kb_id is redundant once doc_id is fixed, and costs 6.8ms -> 391.8ms because
+            # every row shares it. See the fuller note on delete().
+            if not condition.get("doc_id"):
+                condition["kb_id"] = dataset_id
         filters = self._get_filters(condition)
         if not filters:
             return 0
         where = " AND ".join(filters)
-        rows, _ = self._run(f"SELECT count(*) FROM {index_name} WHERE {where}")
-        n = rows[0][0]
-        if n:
-            self._run(f"DELETE FROM {index_name} WHERE {where}", fetch=False)
+        # No COUNT(*) before the DELETE. That count was 173ms per call on 43.6M rows -
+        # measured 2026-09-09 as 102.8s of a 136.4s parse-trigger phase, 41% of the whole
+        # ingest pass - and for a freshly uploaded document it returns 0, so the DELETE it
+        # guards never even runs. The work existed purely to produce a return value, which
+        # the DELETE itself now reports via rowcount.
+        _, n = self._run(f"DELETE FROM {index_name} WHERE {where}", fetch=False)
         return n
 
     """
