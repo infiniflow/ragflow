@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import {
   Accordion,
   AccordionContent,
@@ -130,6 +131,7 @@ export function AccordionOperators({
               Operator.KeenableSearch,
               Operator.YouComSearch,
               Operator.SofyaSearch,
+      Operator.FXMacroData,
               Operator.DocGenerator,
               Operator.Browser,
             ]}
