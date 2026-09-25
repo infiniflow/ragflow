@@ -502,48 +502,6 @@ func (c *CLI) ListDatasetDocumentUserCommand(commandCount int, cmd *Command) (Re
 	return &result, nil
 }
 
-// getDatasetID gets dataset ID by name
-func (c *CLI) getDatasetID(datasetName string) (string, error) {
-
-	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request(1, "GET", "/datasets", "web", nil, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return "", fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return "", fmt.Errorf("failed to list datasets: %s", msg)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response format")
-	}
-
-	for _, kb := range data {
-		if kbMap, ok := kb.(map[string]interface{}); ok {
-			if name, _ := kbMap["name"].(string); name == datasetName {
-				if id, _ := kbMap["id"].(string); id != "" {
-					return id, nil
-				}
-			}
-		}
-	}
-
-	return "", fmt.Errorf("dataset '%s' not found", datasetName)
-}
-
 // DevGetMetadataCommand gets metadata for one or more datasets
 func (c *CLI) DevGetMetadataCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -558,7 +516,7 @@ func (c *CLI) DevGetMetadataCommand(commandCount int, cmd *Command) (ResponseIf,
 	// Convert dataset names to IDs
 	datasetIDs := make([]string, 0, len(datasetNames))
 	for _, name := range datasetNames {
-		id, err := c.getDatasetID(name)
+		id, err := c.getDatasetIDByName(name)
 		if err != nil {
 			return nil, err
 		}
@@ -642,7 +600,7 @@ func (c *CLI) SearchOnDatasets(commandCount int, cmd *Command) (ResponseIf, erro
 	datasetIDs := make([]string, 0, len(datasetNames))
 	for _, name := range datasetNames {
 		name = strings.TrimSpace(name)
-		id, err := c.getDatasetID(name)
+		id, err := c.getDatasetIDByName(name)
 		if err != nil {
 			return nil, err
 		}
@@ -1264,7 +1222,7 @@ func (c *CLI) DevCreateChunkStoreCommand(commandCount int, cmd *Command) (Respon
 	}
 
 	// Get dataset ID by name
-	datasetID, err := c.getDatasetID(datasetName)
+	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
 		return nil, err
 	}
@@ -1318,7 +1276,7 @@ func (c *CLI) DevDropChunkStoreCommand(commandCount int, cmd *Command) (Response
 	}
 
 	// Get dataset ID by name
-	datasetID, err := c.getDatasetID(datasetName)
+	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
 		return nil, err
 	}
@@ -2919,7 +2877,7 @@ func (c *CLI) DevUpdateChunkCommand(commandCount int, cmd *Command) (ResponseIf,
 	}
 
 	// Look up dataset_id from dataset_name
-	datasetID, err := c.getDatasetID(datasetName)
+	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset ID: %w", err)
 	}
@@ -3139,7 +3097,7 @@ func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf
 	}
 
 	// Look up dataset ID by name
-	datasetID, err := c.getDatasetID(datasetName)
+	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
 		return nil, fmt.Errorf("dataset not found: %w", err)
 	}
@@ -3355,7 +3313,7 @@ func (c *CLI) APIListSyncLogsCommand(commandCount int, cmd *Command) (ResponseIf
 		datasetID = strings.TrimSpace(rawID)
 	}
 	if datasetName, ok := cmd.Params["dataset_name"].(string); ok && datasetName != "" {
-		id, err := c.getDatasetID(datasetName)
+		id, err := c.getDatasetIDByName(datasetName)
 		if err != nil {
 			return nil, err
 		}

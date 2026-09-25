@@ -74,7 +74,7 @@ func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*Benchmark
 		datasetIDs := make([]string, 0, len(datasetNames))
 		for _, name := range datasetNames {
 			name = strings.TrimSpace(name)
-			id, err := c.getDatasetID(name)
+			id, err := c.getDatasetIDByName(name)
 			if err != nil {
 				return nil, err
 			}
@@ -147,7 +147,7 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 		datasetIDs := make([]string, 0, len(datasetNames))
 		for _, name := range datasetNames {
 			name = strings.TrimSpace(name)
-			id, err := c.getDatasetID(name)
+			id, err := c.getDatasetIDByName(name)
 			if err != nil {
 				return nil, err
 			}
