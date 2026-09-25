@@ -42,13 +42,34 @@ import numpy as np
 from common import settings
 from common.constants import MAXIMUM_PAGE_NUMBER
 
-# tiktoken for long random string filtering (ref: SmartResume should_remove strategy)
-try:
-    import tiktoken
+# tiktoken for long random string filtering (ref: SmartResume should_remove strategy).
+# Lazy: built on first use through ``common.token_utils.get_encoder``, the same helper
+# ``rag.nlp.num_tokens_from_string`` uses, instead of a module-level call to
+# ``tiktoken.encoding_for_model``. ``encoding_for_model("gpt-3.5-turbo")`` and
+# ``get_encoding("cl100k_base")`` resolve to the same BPE table, so the heuristic
+# below keeps the same tokenization; the only difference is that an unreachable
+# BPE table is now a runtime error from the helper instead of a startup error from
+# this import. ``resume`` is imported eagerly from a few API handlers even when
+# the resume pipeline is not in use, so the eager build used to load the BPE on
+# every server start regardless of whether it was needed.
+_tiktoken_encoding_holder: list = []
 
-    _tiktoken_encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
-except ImportError:
-    _tiktoken_encoding = None
+
+def _get_tiktoken_encoding():
+    """Return the cl100k_base encoder for the SmartResume heuristics, or None
+    when tiktoken is unavailable. The holder list keeps the encoder alive across
+    requests (lazy load, then memoized)."""
+    if _tiktoken_encoding_holder:
+        return _tiktoken_encoding_holder[0]
+    try:
+        from common.token_utils import get_encoder
+
+        encoding = get_encoder()
+    except Exception:
+        encoding = None
+    _tiktoken_encoding_holder.append(encoding)
+    return encoding
+
 
 # Long random string pattern: 40+ char alphanumeric mixed strings (hash, token, tracking ID, etc.)
 _LONG_RANDOM_PATTERN = re.compile(r"[a-zA-Z0-9\-~_]{40,}")
@@ -276,12 +297,13 @@ def _should_remove_random_str(match: re.Match) -> bool:
     Returns:
         True means it should be removed
     """
-    if _tiktoken_encoding is None:
+    encoding = _get_tiktoken_encoding()
+    if encoding is None:
         # When tiktoken is unavailable, use simple heuristic: case/digit alternation frequency
         s = match.group(0)
         changes = sum(1 for i in range(1, len(s)) if s[i].isdigit() != s[i - 1].isdigit() or (s[i].isalpha() and s[i - 1].isalpha() and s[i].isupper() != s[i - 1].isupper()))
         return changes / len(s) > 0.3
-    encoded = _tiktoken_encoding.encode(match.group(0))
+    encoded = encoding.encode(match.group(0))
     return len(encoded) > len(match.group(0)) * 0.5
 
 
@@ -2743,9 +2765,9 @@ def _text_shingles(text: str, n: int = 5) -> set[tuple[int, ...]]:
     Returns:
         Set of n-gram shingles (each shingle is a tuple of token ids)
     """
-    if not text or _tiktoken_encoding is None:
+    if not text or _get_tiktoken_encoding() is None:
         return set()
-    tokens = _tiktoken_encoding.encode(text)
+    tokens = _get_tiktoken_encoding().encode(text)
     if len(tokens) < n:
         # Text too short: return the entire token sequence as a single shingle
         return {tuple(tokens)} if tokens else set()
