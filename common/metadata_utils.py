@@ -150,6 +150,19 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     return list(doc_ids or [])
 
 
+def _empty_filter_result(base_doc_ids: list[str] | None) -> list[str] | None:
+    """Map an empty filter match onto the caller-visible no-result contract.
+
+    Callers treat ``None`` as "no document restriction" (search the whole KB).
+    When the caller already narrowed to ``base_doc_ids``, an empty match must
+    not lift that restriction: return the ``-999`` sentinel so retrieval
+    yields no documents.
+    """
+    if base_doc_ids:
+        return ["-999"]
+    return None
+
+
 async def apply_meta_data_filter(
     meta_data_filter: dict | None,
     metas: dict | None = None,
@@ -182,8 +195,11 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        list of doc_ids, ["-999"] when a filter with real conditions yields no
+        result in the caller scope (manual always; auto/semi_auto when
+        ``base_doc_ids`` was set), or None when auto/semi_auto filters return
+        empty without a base scope. Empty generated ``conditions`` skip
+        filtering and keep the base scope (or None when there is no base).
     """
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
@@ -239,9 +255,12 @@ async def apply_meta_data_filter(
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+        conditions = filters["conditions"]
+        if not conditions:
+            return doc_ids or None
+        doc_ids = _constrain(_run_metadata_filter(conditions, filters.get("logic", "and")))
         if not doc_ids:
-            return None
+            return _empty_filter_result(base_doc_ids)
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -261,9 +280,12 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
+                conditions = filters["conditions"]
+                if not conditions:
+                    return doc_ids or None
+                doc_ids = _constrain(_run_metadata_filter(conditions, filters.get("logic", "and")))
                 if not doc_ids:
-                    return None
+                    return _empty_filter_result(base_doc_ids)
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
