@@ -253,8 +253,8 @@ def test_pandas_fallback_keeps_na_text_and_leaves_blank_cells_empty(monkeypatch)
 
 @pytest.mark.p2
 def test_calamine_fallback_keeps_na_text_as_well(monkeypatch):
-    """The last fallback. The default engine stands in for calamine, which is an
-    optional dependency, and receives the same options."""
+    """The last fallback. The default engine stands in for calamine, so the test
+    does not need calamine installed, and it receives the same options."""
     real_read_excel = _mod.pd.read_excel
 
     def _openpyxl_cannot_read(*args, **kwargs):
