@@ -144,3 +144,25 @@ def test_an_attachment_inside_a_nested_container_is_still_chunked():
 
     assert text.count("Body inside a nested container.") == 1
     assert text.count("Nested attachment line.") == 1
+
+
+@pytest.mark.p2
+def test_an_empty_rendering_does_not_hide_a_later_html_part():
+    """A rejected alternative used to stay in the HTML list, and HtmlParser
+    reads only the first <body> of the joined parts."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText("Plain rendering of the body.", "plain"))
+    alternative.attach(MIMEText("<html><body>  </body></html>", "html"))
+    outer = MIMEMultipart("mixed")
+    outer["From"] = "sender@example.com"
+    outer["Subject"] = "an inline part after the body"
+    outer.attach(alternative)
+    outer.attach(MIMEText("<html><body><p>Readable inline part.</p></body></html>", "html"))
+
+    text = _chunk_text(outer)
+
+    assert text.count("Plain rendering of the body.") == 1
+    assert text.count("Readable inline part.") == 1

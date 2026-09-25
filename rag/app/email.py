@@ -106,6 +106,11 @@ def chunk(
                 added = text_txt[text_start:] + HtmlParser.parser_txt("\n".join(html_txt[html_start:]), chunk_token_num=parser_config["chunk_token_num"])
                 if any(piece.strip() for piece in added):
                     break
+                # A rendering without readable text leaves nothing behind: an
+                # empty HTML document joined before a later HTML part hides that
+                # part from HtmlParser, which reads the first <body> only.
+                del text_txt[text_start:]
+                del html_txt[html_start:]
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
