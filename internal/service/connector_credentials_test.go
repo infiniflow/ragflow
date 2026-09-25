@@ -159,14 +159,19 @@ func TestConnectorWithLostKeyCanBeUpdatedAndDeleted(t *testing.T) {
 
 func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
 	refreshFreq := int64(30)
+	missingKey := "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set"
 	for _, tc := range []struct {
 		name string
 		req  *UpdateConnectorRequest
+		key  string
+		err  string
 	}{
-		{name: "refresh_freq", req: &UpdateConnectorRequest{RefreshFreq: &refreshFreq}},
-		{name: "cancel", req: &UpdateConnectorRequest{Status: "CANCEL"}},
-		{name: "schedule", req: &UpdateConnectorRequest{Status: string(entity.TaskStatusSchedule)}},
-		{name: "reschedule", req: &UpdateConnectorRequest{Reschedule: true}},
+		{name: "refresh_freq", req: &UpdateConnectorRequest{RefreshFreq: &refreshFreq}, err: missingKey},
+		{name: "cancel", req: &UpdateConnectorRequest{Status: "CANCEL"}, err: missingKey},
+		{name: "schedule", req: &UpdateConnectorRequest{Status: string(entity.TaskStatusSchedule)}, err: missingKey},
+		{name: "reschedule", req: &UpdateConnectorRequest{Reschedule: true}, err: missingKey},
+		// Bytes 1..32, not the key the row was written with.
+		{name: "wrong key", req: &UpdateConnectorRequest{RefreshFreq: &refreshFreq}, key: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=", err: "cannot decrypt connector credentials: wrong RAGFLOW_CONNECTOR_KEY or corrupted value"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
@@ -190,11 +195,11 @@ func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
 			}).Error; err != nil {
 				t.Fatalf("insert running task: %v", err)
 			}
-			t.Setenv(common.EnvRAGFlowConnectorKey, "")
+			t.Setenv(common.EnvRAGFlowConnectorKey, tc.key)
 
 			_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "tenant-1", tc.req)
-			if err == nil || err.Error() != "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set" || code != common.CodeServerError {
-				t.Fatalf("UpdateConnector: code=%v err=%v, want CodeServerError and the missing key error", code, err)
+			if err == nil || err.Error() != tc.err || code != common.CodeServerError {
+				t.Fatalf("UpdateConnector: code=%v err=%v, want CodeServerError and %q", code, err, tc.err)
 			}
 			var connector entity.Connector
 			if err := db.First(&connector, "id = ?", "conn-1").Error; err != nil {
