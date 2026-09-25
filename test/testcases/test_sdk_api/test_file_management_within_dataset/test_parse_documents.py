@@ -177,6 +177,7 @@ def test_get_documents_status_raises_for_missing_document(add_dataset_func, monk
 
 @pytest.mark.p2
 def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(add_dataset_func, monkeypatch):
+    """Cancel an interrupted start and return the subsequent status result."""
     dataset = add_dataset_func
     state = {"cancel_calls": 0, "status_calls": 0}
     expected_status = [("doc-1", "DONE", 1, 2)]
@@ -188,7 +189,9 @@ def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(
         state["cancel_calls"] += 1
         assert document_ids == ["doc-1"]
 
-    def _status(document_ids):
+    def _status(document_ids, *, on_progress=None):
+        """Record status polling with the default progress callback disabled."""
+        assert on_progress is None
         state["status_calls"] += 1
         assert document_ids == ["doc-1"]
         return expected_status
@@ -212,7 +215,9 @@ def test_parse_documents_returns_first_completed_status(add_dataset_func, monkey
     def _noop_parse(_document_ids):
         return None
 
-    def _status(document_ids):
+    def _status(document_ids, *, on_progress=None):
+        """Record status polling with the default progress callback disabled."""
+        assert on_progress is None
         state["status_calls"] += 1
         assert document_ids == ["doc-1"]
         return [("doc-1", f"DONE-{state['status_calls']}", 1, 2)]
