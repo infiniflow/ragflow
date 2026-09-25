@@ -1962,9 +1962,22 @@ class TenantModelIdMigrationStage(MigrationStage):
         )
         lookup = {}
         for model_id, model_name, model_type, tenant_id, provider_name in cursor.fetchall():
-            # model_type is a binary integer; we check each bit
+            # The driver returns model_type as str while the column is still varchar
+            # (this stage converts it to integer bitmask), so coerce defensively.
+            # A row whose model_type cannot be parsed is logged and skipped instead
+            # of aborting the entire stage. See issue #19569.
+            try:
+                model_type_int = int(model_type)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Skipping tenant_model row with unparseable model_type: id=%s model_name=%s model_type=%r",
+                    model_id,
+                    model_name,
+                    model_type,
+                )
+                continue
             for type_str, type_bit in self.MODEL_TYPE_TO_INT.items():
-                if model_type & type_bit:
+                if model_type_int & type_bit:
                     key = (tenant_id, model_name, provider_name, type_str)
                     lookup[key] = model_id
         return lookup
