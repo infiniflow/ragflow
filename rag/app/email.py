@@ -59,9 +59,17 @@ def chunk(
             msg = BytesParser(policy=policy.default).parse(buffer)
 
     text_txt, html_txt = [], []
+    # Attached files the body walk passes over, chunked with the attachments below.
+    body_attachments = []
     # get the email header info
     for header, value in msg.items():
         text_txt.append(f"{header}: {value}")
+
+    def _html_sections(documents):
+        # HtmlParser reads the first <body> of the text it is given, so each HTML
+        # part is parsed on its own. Apple Mail, for one, splits an HTML body
+        # around an inline attachment into several HTML parts.
+        return [section for document in documents for section in HtmlParser.parser_txt(document, chunk_token_num=parser_config["chunk_token_num"])]
 
     #  get the email main info
     def _add_content(msg, content_type):
@@ -78,6 +86,12 @@ def chunk(
                 else:
                     target_list.append(payload.decode("utf-8", errors="ignore"))
 
+        # An attached file is chunked on its own below, not as part of the body. A
+        # container, such as a forwarded message/rfc822, has no payload of its own
+        # for that loop to chunk, so it is not skipped here.
+        if msg.get_content_disposition() == "attachment" and not msg.is_multipart():
+            body_attachments.append(msg)
+            return
         if content_type == "text/plain":
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
@@ -86,6 +100,21 @@ def chunk(
             payload = msg.get_payload(decode=True)
             charset = msg.get_content_charset() or "utf-8"
             _decode_payload(payload, charset, html_txt)
+        elif content_type == "multipart/alternative":
+            # The parts render the same body, in increasing order of preference
+            # (RFC 2046, 5.1.4), so only the last one that yields readable text is
+            # used. A rendering this parser cannot read, such as text/calendar, or
+            # one without text falls back to the one before it. HTML is judged by
+            # what HtmlParser makes of it, which is what gets indexed.
+            for part in reversed(list(msg.iter_parts())):
+                text_start, html_start = len(text_txt), len(html_txt)
+                _add_content(part, part.get_content_type())
+                added = text_txt[text_start:] + _html_sections(html_txt[html_start:])
+                if any(piece.strip() for piece in added):
+                    break
+                # A rendering without readable text leaves nothing behind.
+                del text_txt[text_start:]
+                del html_txt[html_start:]
         elif "multipart" in content_type:
             if msg.is_multipart():
                 for part in msg.iter_parts():
@@ -93,7 +122,7 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line]
+    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in _html_sections(html_txt) if line]
 
     st = timer()
     chunks = naive_merge(
@@ -105,7 +134,9 @@ def chunk(
     main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
-    for part in msg.iter_attachments():
+    attachments = list(msg.iter_attachments())
+    attachments += [part for part in body_attachments if not any(part is known for known in attachments)]
+    for part in attachments:
         content_disposition = part.get("Content-Disposition")
         if content_disposition:
             dispositions = content_disposition.strip().split(";")

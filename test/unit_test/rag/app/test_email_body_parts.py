@@ -1,0 +1,211 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+"""Each part of an email reaches the chunks once: the body in one rendering,
+an attachment as an attachment."""
+
+from __future__ import annotations
+
+from email.message import EmailMessage
+
+import pytest
+
+from rag.app import email
+
+
+@pytest.fixture(autouse=True)
+def _stub_rag_tokenizer(monkeypatch):
+    def fake_tokenize(text):
+        return str(text)
+
+    monkeypatch.setattr("rag.nlp.rag_tokenizer.tokenize", fake_tokenize)
+    monkeypatch.setattr("rag.nlp.rag_tokenizer.fine_grained_tokenize", fake_tokenize)
+
+
+def _message(plain="Plain rendering of the body."):
+    msg = EmailMessage()
+    msg["From"] = "sender@example.com"
+    msg["To"] = "receiver@example.com"
+    msg["Subject"] = "quarterly numbers"
+    msg.set_content(plain)
+    return msg
+
+
+def _chunk_text(msg):
+    chunks = email.chunk("message.eml", binary=msg.as_bytes(), callback=lambda *a, **k: None)
+    return "\n".join(chunk["content_with_weight"] for chunk in chunks)
+
+
+@pytest.mark.p2
+def test_a_plain_and_html_body_is_read_once():
+    """The last alternative is the preferred one, and only one is read."""
+    msg = _message()
+    msg.add_alternative("<html><body><p>HTML rendering of the body.</p></body></html>", subtype="html")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+    assert "Plain rendering of the body." not in text
+
+
+@pytest.mark.p2
+def test_an_alternative_the_parser_cannot_read_is_passed_over():
+    """A meeting invitation ends in text/calendar; the HTML before it is read."""
+    msg = _message()
+    msg.add_alternative("<html><body><p>HTML rendering of the body.</p></body></html>", subtype="html")
+    msg.add_alternative("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", subtype="calendar")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+    assert "Plain rendering of the body." not in text
+    assert "VCALENDAR" not in text
+
+
+@pytest.mark.p2
+def test_an_html_body_with_inline_images_is_read_once():
+    """With inline images the HTML alternative is itself multipart/related."""
+    msg = _message()
+    msg.add_alternative('<html><body><p>HTML rendering of the body.</p><img src="cid:chart"></body></html>', subtype="html")
+    msg.get_payload()[1].add_related(b"\x89PNG\r\n\x1a\n", maintype="image", subtype="png", cid="<chart>")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+    assert "Plain rendering of the body." not in text
+
+
+@pytest.mark.p2
+def test_a_text_attachment_is_read_as_an_attachment_only():
+    msg = _message(plain="The notes are attached.")
+    msg.add_attachment(b"Attachment line about budgets.", maintype="text", subtype="plain", filename="notes.txt")
+
+    text = _chunk_text(msg)
+
+    assert text.count("The notes are attached.") == 1
+    assert text.count("Attachment line about budgets.") == 1
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("html", ["<html><body>  </body></html>", "<html><body><p>&nbsp;</p></body></html>"])
+def test_an_empty_preferred_alternative_falls_back_to_the_one_before_it(html):
+    msg = _message()
+    msg.add_alternative(html, subtype="html")
+
+    text = _chunk_text(msg)
+
+    assert text.count("Plain rendering of the body.") == 1
+
+
+@pytest.mark.p2
+def test_an_empty_plain_rendering_listed_last_falls_back_to_the_html():
+    msg = EmailMessage()
+    msg["From"] = "sender@example.com"
+    msg["Subject"] = "quarterly numbers"
+    msg.set_content("<html><body><p>HTML rendering of the body.</p></body></html>", subtype="html")
+    msg.add_alternative("  \n", subtype="plain")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+
+
+@pytest.mark.p2
+def test_an_attachment_inside_a_nested_container_is_still_chunked():
+    """The attachment loop only sees the root's own parts, so an attached file
+    one level down reaches it through the body walk."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    inner = MIMEMultipart("mixed")
+    inner.attach(MIMEText("Body inside a nested container.", "plain"))
+    attached = MIMEText("Nested attachment line.", "plain")
+    attached.add_header("Content-Disposition", "attachment", filename="nested.txt")
+    inner.attach(attached)
+    outer = MIMEMultipart("mixed")
+    outer["From"] = "sender@example.com"
+    outer["To"] = "receiver@example.com"
+    outer["Subject"] = "nested parts"
+    outer.attach(inner)
+
+    text = _chunk_text(outer)
+
+    assert text.count("Body inside a nested container.") == 1
+    assert text.count("Nested attachment line.") == 1
+
+
+@pytest.mark.p2
+def test_an_empty_rendering_does_not_hide_a_later_html_part():
+    """An empty HTML rendering passed over for the plain one, then an inline
+    HTML part after the alternative."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText("Plain rendering of the body.", "plain"))
+    alternative.attach(MIMEText("<html><body>  </body></html>", "html"))
+    outer = MIMEMultipart("mixed")
+    outer["From"] = "sender@example.com"
+    outer["Subject"] = "an inline part after the body"
+    outer.attach(alternative)
+    outer.attach(MIMEText("<html><body><p>Readable inline part.</p></body></html>", "html"))
+
+    text = _chunk_text(outer)
+
+    assert text.count("Plain rendering of the body.") == 1
+    assert text.count("Readable inline part.") == 1
+
+
+def _html_split_around_a_file(before, after, plain):
+    """Apple Mail splits the HTML rendering around an inline attachment, so the
+    body arrives as several HTML parts in a multipart/mixed."""
+    from email.mime.application import MIMEApplication
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    mixed = MIMEMultipart("mixed")
+    mixed.attach(MIMEText(f"<html><body>{before}</body></html>", "html"))
+    report = MIMEApplication(b"%PDF-1.4", "pdf")
+    report.add_header("Content-Disposition", "inline", filename="report.pdf")
+    mixed.attach(report)
+    mixed.attach(MIMEText(f"<html><body>{after}</body></html>", "html"))
+    alternative = MIMEMultipart("alternative")
+    alternative["From"] = "sender@example.com"
+    alternative["Subject"] = "a body split around a file"
+    alternative.attach(MIMEText(plain, "plain"))
+    alternative.attach(mixed)
+    return alternative
+
+
+@pytest.mark.p2
+def test_an_html_body_split_around_an_attachment_is_read_whole():
+    """HtmlParser reads only the first <body> of the text it is given."""
+    msg = _html_split_around_a_file("<p>Text before the file.</p>", "<p>Text after the file.</p>", "Text before the file.\n\n<report.pdf>\n\nText after the file.")
+
+    text = _chunk_text(msg)
+
+    assert text.count("Text before the file.") == 1
+    assert text.count("Text after the file.") == 1
+
+
+@pytest.mark.p2
+def test_an_html_body_that_opens_with_an_attachment_is_the_rendering_read():
+    """The first HTML part is empty then, and the text follows the file."""
+    msg = _html_split_around_a_file("", "<p>HTML rendering of the body.</p>", "Plain rendering of the body.")
+
+    text = _chunk_text(msg)
+
+    assert text.count("HTML rendering of the body.") == 1
+    assert "Plain rendering of the body." not in text
