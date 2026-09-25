@@ -33,10 +33,11 @@ def fence_marker(line):
     """The code fence ``line`` opens, as ``(character, length)``, or None.
 
     A fence is three or more backticks or tildes after at most three spaces.
-    The info string after a backtick fence cannot contain a backtick, so a line
-    such as ```` ```inline``` text ```` is inline code, not a fence.
+    A tab counts as four columns, so a tab-indented line is indented code, not
+    a fence. The info string after a backtick fence cannot contain a backtick,
+    so a line such as ```` ```inline``` text ```` is inline code, not a fence.
     """
-    match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$", line)
+    match = re.match(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$", line)
     if not match:
         return None
     fence = match.group("fence")
@@ -47,7 +48,7 @@ def fence_marker(line):
 
 def is_closing_fence(line, fence_char, fence_len):
     """Whether ``line`` closes a fence of ``fence_len`` ``fence_char`` characters."""
-    pattern = r"^[ \t]{0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
+    pattern = r"^ {0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
     return re.match(pattern, line) is not None
 
 

@@ -72,3 +72,31 @@ def test_a_code_block_in_an_answer_stays_a_code_block():
     assert "<pre><code" in answer
     assert "# install the dependencies first" in answer
     assert "<h1>" not in answer
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "block",
+    [
+        "```bash\n# install the dependencies first\npip install ragflow\n````",
+        "  ```bash\n# install the dependencies first\npip install ragflow\n  ```",
+        "```bash\n# install the dependencies first\npip install ragflow",
+    ],
+    ids=["closed-by-a-longer-fence", "indented-fence", "left-open"],
+)
+def test_a_code_block_renders_wherever_the_chunker_finds_one(block):
+    """fenced_code only closes a block on an identical, flush-left fence."""
+    pairs = _pairs(f"# How do I install it?\n\n{block}\n")
+
+    answer = pairs[0][1]
+    assert "<pre><code" in answer
+    assert "<h1>" not in answer
+
+
+@pytest.mark.p2
+def test_a_tab_indented_fence_is_not_a_fence():
+    """A tab counts as four columns, which makes the line indented code."""
+    pairs = _pairs("# First?\n\n\t```\n\n# Second?\n\nAnswer.\n")
+
+    assert [question for question, _ in pairs] == ["First?", "Second?"]
+

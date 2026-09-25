@@ -294,6 +294,30 @@ def beAdoc(d, q, a, eng, row_num=-1):
 _MD_ANSWER_EXTENSIONS = ["markdown.extensions.tables", "markdown.extensions.fenced_code"]
 
 
+def _render_md_answer(text):
+    """Render an answer, with its code blocks where the chunker found them.
+
+    The chunker reads fences like the Markdown parser (up to three spaces of
+    indentation, a closing fence at least as long as the opening one), while
+    fenced_code only closes a block on an identical, flush-left fence. So each
+    fence line is rewritten to the form fenced_code reads, and a block the
+    answer leaves open is closed.
+    """
+    lines, fence = [], None
+    for line in text.split("\n"):
+        if fence is None:
+            fence = fence_marker(line)
+            if fence is not None:
+                line = line.lstrip(" ")
+        elif is_closing_fence(line, *fence):
+            line = fence[0] * fence[1]
+            fence = None
+        lines.append(line)
+    if fence is not None:
+        lines.append(fence[0] * fence[1])
+    return markdown("\n".join(lines), extensions=_MD_ANSWER_EXTENSIONS)
+
+
 def mdQuestionLevel(s):
     match = re.match(r"#*", s)
     return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
@@ -427,7 +451,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 if last_answer.strip():
                     sum_question = "\n".join(question_stack)
                     if sum_question:
-                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=_MD_ANSWER_EXTENSIONS), eng, index))
+                        res.append(beAdoc(deepcopy(doc), sum_question, _render_md_answer(last_answer), eng, index))
                     last_answer = ""
 
                 i = question_level
@@ -439,7 +463,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if last_answer.strip():
             sum_question = "\n".join(question_stack)
             if sum_question:
-                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=_MD_ANSWER_EXTENSIONS), eng, index))
+                res.append(beAdoc(deepcopy(doc), sum_question, _render_md_answer(last_answer), eng, index))
         return res
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
