@@ -46,6 +46,15 @@ class IterationParam(ComponentParamBase):
 class Iteration(ComponentBase, ABC):
     component_name = "Iteration"
 
+    def param_refs(self) -> list[str]:
+        # `items_ref` is a `producer@output` reference (or a canvas global)
+        # resolved through `_canvas.get_variable_value` inside `_invoke`.
+        # Declare it so the batch scheduler defers Iteration behind its
+        # producer. An empty `items_ref` is a static-array Iteration —
+        # nothing to defer against. See issue #19360.
+        ref = getattr(self._param, "items_ref", None)
+        return [ref] if isinstance(ref, str) and ref else []
+
     def get_start(self):
         for cid in self._canvas.components.keys():
             if self._canvas.get_component(cid)["obj"].component_name.lower() != "iterationitem":

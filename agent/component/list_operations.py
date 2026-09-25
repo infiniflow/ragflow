@@ -48,6 +48,15 @@ class ListOperationsParam(ComponentParamBase):
 class ListOperations(ComponentBase, ABC):
     component_name = "ListOperations"
 
+    def param_refs(self) -> list[str]:
+        # `query` is resolved through `_canvas.get_variable_value` and may
+        # be a `producer@output` reference. Declare it so the batch
+        # scheduler defers ListOperations behind its producer. An unset or
+        # empty `query` is a literal value (operators read it directly).
+        # See issue #19360.
+        ref = getattr(self._param, "query", None)
+        return [ref] if isinstance(ref, str) and ref else []
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         self.input_objects = []

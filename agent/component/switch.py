@@ -57,6 +57,28 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
+    def param_refs(self) -> list[str]:
+        # Each condition item references another component's output via its
+        # `cpn_id` and `_invoke` reads it through `get_variable_value`. The
+        # batch scheduler defers a node behind the components reported by
+        # `get_dependency_ids()`, so every `cpn_id` here must reach that
+        # list — otherwise Switch runs in the same batch window as the
+        # sibling producer and reads its pre-run (empty/stale) output.
+        # See issue #19360. The `to`/`end_cpn_ids` fields are output
+        # routing, not inputs to the condition evaluation, so they are
+        # not declared as deps here.
+        refs: list[str] = []
+        for cond in self._param.conditions or []:
+            if not isinstance(cond, dict):
+                continue
+            for item in cond.get("items") or []:
+                if not isinstance(item, dict):
+                    continue
+                cpn_id = item.get("cpn_id")
+                if isinstance(cpn_id, str) and cpn_id:
+                    refs.append(cpn_id)
+        return refs
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("Switch processing"):
