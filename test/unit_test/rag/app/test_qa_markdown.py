@@ -99,4 +99,3 @@ def test_a_tab_indented_fence_is_not_a_fence():
     pairs = _pairs("# First?\n\n\t```\n\n# Second?\n\nAnswer.\n")
 
     assert [question for question, _ in pairs] == ["First?", "Second?"]
-
