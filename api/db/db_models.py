@@ -1046,14 +1046,12 @@ DB.lock = DatabaseLock[settings.DATABASE_TYPE.upper()].value
 
 
 def close_connection():
+    # The request's teardown returns this thread's connection to the pool. It never reaches other
+    # threads' connections: closing those under them (the pool's close_stale) leaves each holder
+    # pointing at a dead object, and its next query fails on a closed socket and reconnects.
     try:
-        if DB:
-            if settings.DATABASE_TYPE.upper() in GAUSSDB_COMPATIBLE_DATABASE_TYPES:
-                if not DB.is_closed():
-                    # Return this worker thread's connection to the GaussDB pool.
-                    DB.close()
-            else:
-                DB.close_stale(age=30)
+        if DB and not DB.is_closed():
+            DB.close()
     except Exception as e:
         logging.exception(e)
 
