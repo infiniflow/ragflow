@@ -617,21 +617,31 @@ func TestMetaFilter_NotEquals(t *testing.T) {
 
 // --- DeclaredMetadataFieldsFromParserConfig ---
 
-// TestDeclaredMetadataFieldsFromDatasetConfig pins the declarative read: the dataset-level
-// config's fields, with their meaning and allowed values, and a field declared in both lists
-// resolved once (first definition wins, so the richer entry is the one kept).
-func TestDeclaredMetadataFieldsFromDatasetConfig(t *testing.T) {
+// TestDeclaredMetadataFieldsFromExtractorNode pins the declarative read: the Extractor node
+// is the only place a modular metadata config is stored, so its fields — with their meaning
+// and allowed values — are what a dataset declares, and a field declared in both lists
+// resolves once (first definition wins, so the richer entry is the one kept). A top-level
+// metadata key is input-only and must be ignored.
+func TestDeclaredMetadataFieldsFromExtractorNode(t *testing.T) {
 	pc := map[string]any{
 		"metadata": map[string]any{
 			"enabled": true,
 			"metadata": []any{
-				map[string]any{"key": "author", "type": "string", "description": "who wrote it"},
-				map[string]any{"key": "doc_type", "type": "string", "enum": []any{"report", "paper"}},
-				map[string]any{"key": "", "type": "string"}, // blank key dropped
+				map[string]any{"key": "top_level_only", "type": "string"},
 			},
-			"built_in_metadata": []any{
-				map[string]any{"key": "author", "type": "string"}, // duplicate: dropped
-				map[string]any{"key": "file_name", "type": "string"},
+		},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"metadata": []any{
+					map[string]any{"key": "author", "type": "string", "description": "who wrote it"},
+					map[string]any{"key": "doc_type", "type": "string", "enum": []any{"report", "paper"}},
+					map[string]any{"key": "", "type": "string"}, // blank key dropped
+				},
+				"built_in_metadata": []any{
+					map[string]any{"key": "author", "type": "string"}, // duplicate: dropped
+					map[string]any{"key": "file_name", "type": "string"},
+				},
 			},
 		},
 	}
@@ -643,25 +653,6 @@ func TestDeclaredMetadataFieldsFromDatasetConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("fields = %#v, want %#v", got, want)
-	}
-}
-
-// TestDeclaredMetadataFieldsFallsBackToExtractorNode pins the second location: a config that
-// lives on the Extractor component node is read when the dataset level declares nothing.
-func TestDeclaredMetadataFieldsFallsBackToExtractorNode(t *testing.T) {
-	pc := map[string]any{
-		"Extractor:AutoExtractDefault": map[string]any{
-			"metadata": map[string]any{
-				"enabled": true,
-				"metadata": []any{
-					map[string]any{"key": "topic", "description": "subject area"},
-				},
-			},
-		},
-	}
-	got := DeclaredMetadataFieldsFromParserConfig(pc)
-	if len(got) != 1 || got[0].Key != "topic" || got[0].Description != "subject area" {
-		t.Errorf("fields = %#v, want the extractor node's topic field", got)
 	}
 }
 

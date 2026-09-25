@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -522,8 +523,11 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 			mm = v
 		}
 	}
-	if mm != nil {
-		next["metadata"] = mm
+	// The modular metadata config lives on the Extractor node only. A pipeline with no
+	// Extractor node has nowhere to scope it, and the top-level key is never written. A
+	// document-level metadata map (no modular shape) is left where it is.
+	if mm != nil && common.IsModularMetadataConfig(mm) {
+		common.SetExtractorMetadataConfig(map[string]any(next), mm)
 	}
 	var parentChild map[string]any
 	if incoming != nil {
@@ -535,9 +539,6 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 		if value, ok := existing["parent_child"].(map[string]any); ok {
 			parentChild = value
 		}
-	}
-	if parentChild != nil {
-		next["parent_child"] = parentChild
 	}
 	requestedChildren := make(map[string]interface{})
 	for componentID, value := range incoming {

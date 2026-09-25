@@ -128,9 +128,8 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
 		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
 	}
-	parentChild, ok := persisted.ParserConfig["parent_child"].(map[string]interface{})
-	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
-		t.Fatalf("parent_child = %#v, want persisted public setting", persisted.ParserConfig["parent_child"])
+	if _, ok := persisted.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level parent_child must not be persisted: %#v", persisted.ParserConfig["parent_child"])
 	}
 }
 
@@ -1222,12 +1221,19 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level metadata must not be persisted: %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected the Extractor node to carry the metadata config, got %#v", persisted.ParserConfig)
+	}
+	if !reflect.DeepEqual(extractor["metadata"], map[string]interface{}{
 		"enabled":           true,
 		"metadata":          incomingMetadata,
 		"built_in_metadata": incomingBuiltInMetadata,
 	}) {
-		t.Fatalf("modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("modular metadata was not scoped onto the Extractor node: %#v", extractor["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])
@@ -1275,12 +1281,19 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level metadata must not be persisted: %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected the Extractor node to carry the metadata config, got %#v", persisted.ParserConfig)
+	}
+	if !reflect.DeepEqual(extractor["metadata"], map[string]interface{}{
 		"enabled":           true,
 		"metadata":          existingMetadata,
 		"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
 	}) {
-		t.Fatalf("existing modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("existing modular metadata was not scoped onto the Extractor node: %#v", extractor["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])

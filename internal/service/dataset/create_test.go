@@ -80,13 +80,26 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
 	}
-	parentChild, ok := config["parent_child"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("parent_child = %#v, want default map", config["parent_child"])
+	if _, ok := config["parent_child"]; ok {
+		t.Fatalf("top-level parent_child must not be persisted: %#v", config["parent_child"])
 	}
-	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
-		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
+	// The default (disabled) parent_child derives empty children_delimiters onto the
+	// chunker component; the setting itself has no top-level key to keep.
+	for key, raw := range config {
+		params, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		delimiters, ok := params["children_delimiters"]
+		if !ok {
+			continue
+		}
+		if list, isList := delimiters.([]interface{}); !isList || len(list) != 0 {
+			t.Fatalf("%s children_delimiters = %#v, want none for a disabled parent_child", key, delimiters)
+		}
+		return
 	}
+	t.Fatalf("expected a chunker component carrying children_delimiters, got %#v", config)
 }
 
 func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {

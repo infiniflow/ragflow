@@ -380,11 +380,19 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 	}
 	for name, incomingMetadata := range cases {
 		t.Run(name, func(t *testing.T) {
+			next := entity.JSONMap{"Extractor:AutoExtractDefault": map[string]any{}}
 			incoming := map[string]interface{}{"metadata": incomingMetadata}
-			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
-			meta, ok := got["metadata"].(map[string]any)
+			got := preserveDatasetParserConfigState(next, existing, incoming)
+			if _, ok := got["metadata"]; ok {
+				t.Fatalf("top-level metadata must not be written, got %#v", got["metadata"])
+			}
+			node, ok := got["Extractor:AutoExtractDefault"].(map[string]any)
 			if !ok {
-				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
+				t.Fatalf("expected the Extractor node, got %#v", got)
+			}
+			meta, ok := node["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected existing modular metadata scoped onto the Extractor node, got %#v", node["metadata"])
 			}
 			fields, ok := meta["metadata"].([]any)
 			if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "existing_field" {
@@ -409,10 +417,18 @@ func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 			"built_in_metadata": []any{},
 		},
 	}
-	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
-	meta, ok := got["metadata"].(map[string]any)
+	next := entity.JSONMap{"Extractor:AutoExtractDefault": map[string]any{}}
+	got := preserveDatasetParserConfigState(next, existing, incoming)
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("top-level metadata must not be written, got %#v", got["metadata"])
+	}
+	node, ok := got["Extractor:AutoExtractDefault"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])
+		t.Fatalf("expected the Extractor node, got %#v", got)
+	}
+	meta, ok := node["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected modular metadata scoped onto the Extractor node, got %#v", node["metadata"])
 	}
 	fields, ok := meta["metadata"].([]any)
 	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "incoming_field" {
