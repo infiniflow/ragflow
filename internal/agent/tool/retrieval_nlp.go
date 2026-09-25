@@ -339,7 +339,7 @@ func nlpRequestFromRetrieval(
 		PageSize:           topN,
 		EmbeddingModel:     embeddingModel,
 		Aggs:               boolPtr(false),
-		Highlight:          boolPtr(false),
+		Highlight:          boolPtr(req.Highlight),
 		AllowDenseFallback: req.AllowDenseFallback,
 		VectorOnly:         req.KeywordsSimilarityWeight != nil && *req.KeywordsSimilarityWeight < 0.01,
 	}
@@ -593,6 +593,7 @@ func translateChunk(raw map[string]any) RetrievalChunk {
 		MomID:            StringFromMap(raw, "mom_id"),
 		ChunkIndex:       IntFromMap(raw, "chunk_order_int"),
 		PageNum:          IntFromMap(raw, "page_num_int"),
+		Highlight:        StringFromMap(raw, "highlight"),
 		Score:            scoreFromMap(raw),
 		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
 		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),

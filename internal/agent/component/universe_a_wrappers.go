@@ -81,6 +81,7 @@ type retrievalParams struct {
 	EmptyResponse            string
 	CrossLanguages           []string
 	TOCEnhance               bool
+	Highlight                bool
 	UseKG                    bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
@@ -139,6 +140,9 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	out.CrossLanguages = toStringSlice(params["cross_languages"])
 	if v, ok := params["toc_enhance"].(bool); ok {
 		out.TOCEnhance = v
+	}
+	if v, ok := params["highlight"].(bool); ok {
+		out.Highlight = v
 	}
 	if v, ok := params["use_kg"].(bool); ok {
 		out.UseKG = v
@@ -308,6 +312,9 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	}
 	if _, ok := out["toc_enhance"]; !ok && c.params.TOCEnhance {
 		out["toc_enhance"] = true
+	}
+	if _, ok := out["highlight"]; !ok && c.params.Highlight {
+		out["highlight"] = true
 	}
 	if _, ok := out["use_kg"]; !ok && c.params.UseKG {
 		out["use_kg"] = true

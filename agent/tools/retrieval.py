@@ -84,6 +84,7 @@ class RetrievalParam(ToolParamBase):
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
+        self.highlight = False
         self.meta_data_filter = {}
 
     def check(self):
@@ -207,6 +208,7 @@ class Retrieval(ToolBase, ABC):
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,
+                highlight=bool(getattr(self._param, "highlight", False)),
                 rank_feature=label_question(query, kbs),
                 rerank_candidates_count=self._param.rerank_candidates_count,
             )

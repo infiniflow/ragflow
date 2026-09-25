@@ -50,7 +50,9 @@ type RetrievalChunk struct {
 	// for top-level chunks. It is threaded through so the harness can run
 	// retrieval_by_children (child fragments are promoted to their parent chunk)
 	// after search, mirroring Python settings.retriever.retrieval_by_children.
-	MomID            string
+	MomID string
+	// Highlight is the retrieval snippet with matched words wrapped in <em>.
+	Highlight        string
 	Score            float64
 	TermSimilarity   float64
 	VectorSimilarity float64
@@ -77,6 +79,7 @@ type RetrievalRequest struct {
 	RerankID                 string
 	CrossLanguages           []string
 	TOCEnhance               bool
+	Highlight                bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
 	// DocScope restricts retrieval to a set of document ids (the doc_id list

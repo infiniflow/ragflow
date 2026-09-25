@@ -76,6 +76,118 @@ def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     return bool(_chunk_scalar(chunk.get("compile_kwd")))
 
 
+def _highlight_terms(children: list[dict]) -> list[str]:
+    terms = []
+    seen = set()
+    for child in children:
+        highlight = child.get("highlight") or ""
+        if not isinstance(highlight, str):
+            continue
+        for term in re.findall(r"<em>([^<]+)</em>", highlight, flags=re.IGNORECASE):
+            cleaned = term.strip()
+            key = cleaned.lower()
+            if key and key not in seen:
+                seen.add(key)
+                terms.append(cleaned)
+    return terms
+
+
+def _highlight_parent_content(store, content: str, children: list[dict]) -> str:
+    terms = _highlight_terms(children)
+    if not content or not terms:
+        return ""
+    highlighter = getattr(store, "highlight", None)
+    if callable(highlighter):
+        highlighted = highlighter(content, "", " ".join(terms), terms)
+        return highlighted or ""
+    return _mark_terms_outside_em(content, terms)
+
+
+def _mark_terms_outside_em(content: str, terms: list[str]) -> str:
+    ordered = sorted((term for term in terms if term.strip()), key=len, reverse=True)
+    if not ordered:
+        return ""
+    pattern = re.compile("|".join(re.escape(term) for term in ordered), re.IGNORECASE)
+    pieces = []
+    cursor = 0
+    replaced = False
+    for match in pattern.finditer(content):
+        if not _match_is_unmarked_text(content, match.start(), match.end()):
+            continue
+        pieces.append(content[cursor : match.start()])
+        pieces.append(f"<em>{match.group(0)}</em>")
+        cursor = match.end()
+        replaced = True
+    if not replaced:
+        return ""
+    pieces.append(content[cursor:])
+    return "".join(pieces)
+
+
+def _match_is_unmarked_text(content: str, start: int, end: int) -> bool:
+    in_tag, em_depth = _markup_state(content, start)
+    if in_tag or em_depth > 0:
+        return False
+    in_tag, _ = _markup_state(content, end)
+    return not in_tag
+
+
+def _markup_state(content: str, pos: int) -> tuple[bool, int]:
+    em_depth = 0
+    i = 0
+    while i < pos:
+        if content[i] != "<":
+            i += 1
+            continue
+        tag_end = _html_tag_end(content, i)
+        if tag_end < 0:
+            i += 1
+            continue
+        if tag_end >= pos:
+            return True, em_depth
+        name = _html_tag_name(content, i, tag_end)
+        if name == "em":
+            em_depth += 1
+        elif name == "/em" and em_depth > 0:
+            em_depth -= 1
+        i = tag_end + 1
+    return False, em_depth
+
+
+def _html_tag_end(content: str, start: int) -> int:
+    if start + 1 >= len(content):
+        return -1
+    nxt = content[start + 1]
+    if not (nxt.isalpha() or nxt in "/!"):
+        return -1
+    quote = ""
+    i = start + 1
+    while i < len(content):
+        ch = content[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == ">":
+            return i
+        i += 1
+    return -1
+
+
+def _html_tag_name(content: str, start: int, tag_end: int) -> str:
+    body = content[start + 1 : tag_end].strip().lower()
+    if body.startswith("/"):
+        body = "/" + body[1:].lstrip()
+    name = []
+    for ch in body:
+        if ch.isalnum() or ch in "/":
+            name.append(ch)
+            continue
+        break
+    return "".join(name)
+
+
 class Dealer:
     # Short-lived cache of "doc_id exists in MySQL" used by _prune_deleted_chunks.
     # Every retrieval would otherwise hit MySQL per query (fan-out searches and the
@@ -1134,6 +1246,10 @@ class Dealer:
                     d["vector"] = cks[0][k]
                     vector_size = len(cks[0][k])
                     break
+            if any(ck.get("highlight") for ck in cks):
+                highlighted = _highlight_parent_content(self.dataStore, chunk.get("content_with_weight") or "", cks)
+                if highlighted:
+                    d["highlight"] = highlighted
             chunks.append(d)
 
         return sorted(chunks, key=lambda x: x["similarity"] * -1)

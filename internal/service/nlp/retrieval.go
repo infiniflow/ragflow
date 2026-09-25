@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1150,6 +1151,13 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
 		}
+		childMaps := make([]map[string]interface{}, 0, len(childList))
+		for _, child := range childList {
+			childMaps = append(childMaps, child.chunk)
+		}
+		if hl := parentHighlight(parentMap, childMaps); hl != "" {
+			aggregated["highlight"] = hl
+		}
 
 		// Get vector from first child if available
 	childVecLoop:
@@ -1366,4 +1374,162 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 	}
 
 	return out, nil
+}
+
+var emTermPattern = regexp.MustCompile(`(?i)<em>([^<]+)</em>`)
+
+func parentHighlight(parent map[string]interface{}, children []map[string]interface{}) string {
+	if hl, ok := parent["highlight"].(string); ok && strings.Contains(strings.ToLower(hl), "<em>") {
+		return hl
+	}
+	content, _ := parent["content_with_weight"].(string)
+	return markKnownTerms(content, emTerms(children))
+}
+
+func emTerms(chunks []map[string]interface{}) []string {
+	seen := map[string]struct{}{}
+	var terms []string
+	for _, chunk := range chunks {
+		hl, _ := chunk["highlight"].(string)
+		for _, match := range emTermPattern.FindAllStringSubmatch(hl, -1) {
+			term := strings.TrimSpace(match[1])
+			if term == "" {
+				continue
+			}
+			key := strings.ToLower(term)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+func markKnownTerms(content string, terms []string) string {
+	if content == "" || len(terms) == 0 {
+		return ""
+	}
+	ordered := append([]string(nil), terms...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return len(ordered[i]) > len(ordered[j])
+	})
+	parts := make([]string, 0, len(ordered))
+	for _, term := range ordered {
+		if strings.TrimSpace(term) == "" {
+			continue
+		}
+		parts = append(parts, regexp.QuoteMeta(term))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	pattern := regexp.MustCompile(`(?i)(?:` + strings.Join(parts, "|") + `)`)
+	spans := pattern.FindAllStringIndex(content, -1)
+	if len(spans) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	cursor := 0
+	lastEnd := 0
+	accepted := false
+	for _, span := range spans {
+		if span[0] < lastEnd || !matchIsUnmarkedText(content, span[0], span[1]) {
+			continue
+		}
+		accepted = true
+		b.WriteString(content[cursor:span[0]])
+		b.WriteString("<em>")
+		b.WriteString(content[span[0]:span[1]])
+		b.WriteString("</em>")
+		cursor = span[1]
+		lastEnd = span[1]
+	}
+	if !accepted && !strings.Contains(strings.ToLower(content), "<em>") {
+		return ""
+	}
+	b.WriteString(content[cursor:])
+	return b.String()
+}
+
+func matchIsUnmarkedText(content string, start, end int) bool {
+	inTag, emDepth := markupState(content, start)
+	if inTag || emDepth > 0 {
+		return false
+	}
+	inTag, _ = markupState(content, end)
+	return !inTag
+}
+
+func markupState(content string, pos int) (bool, int) {
+	emDepth := 0
+	for i := 0; i < pos; {
+		if content[i] != '<' {
+			i++
+			continue
+		}
+		tagEnd := htmlTagEnd(content, i)
+		if tagEnd < 0 {
+			i++
+			continue
+		}
+		if tagEnd >= pos {
+			return true, emDepth
+		}
+		switch htmlTagName(content, i, tagEnd) {
+		case "em":
+			emDepth++
+		case "/em":
+			if emDepth > 0 {
+				emDepth--
+			}
+		}
+		i = tagEnd + 1
+	}
+	return false, emDepth
+}
+
+func htmlTagEnd(content string, start int) int {
+	if start+1 >= len(content) {
+		return -1
+	}
+	next := content[start+1]
+	if !((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '/' || next == '!') {
+		return -1
+	}
+	quote := byte(0)
+	for i := start + 1; i < len(content); i++ {
+		ch := content[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			quote = ch
+			continue
+		}
+		if ch == '>' {
+			return i
+		}
+	}
+	return -1
+}
+
+func htmlTagName(content string, start, tagEnd int) string {
+	body := strings.TrimSpace(strings.ToLower(content[start+1 : tagEnd]))
+	if strings.HasPrefix(body, "/") {
+		body = "/" + strings.TrimLeft(body[1:], " \t")
+	}
+	var name strings.Builder
+	for _, ch := range body {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '/' {
+			name.WriteRune(ch)
+			continue
+		}
+		break
+	}
+	return name.String()
 }
