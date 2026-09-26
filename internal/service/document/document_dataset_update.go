@@ -380,7 +380,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
+			return common.CodeDataError, errors.New("duplicated document name in the same dataset.")
 		}
 	}
 

@@ -226,6 +226,47 @@ def test_missing_indexes_still_skip_result_conversion(monkeypatch):
     conn.get_fields.assert_called_once_with({}, ["message_id", "content", "content_embed"])
 
 
+def test_insert_repairs_missing_message_columns_before_writing():
+    """Fresh Infinity tables can be visible before every declared column is."""
+    cls = next(cell.cell_contents for cell in infinity_conn.InfinityConnection.__closure__ if isinstance(cell.cell_contents, type))
+    conn = cls.__new__(cls)
+    conn.dbName = "test_memory"
+    conn.mapping_file_name = "message_infinity_mapping.json"
+    conn.logger = logging.getLogger(__name__)
+    conn.connPool = MagicMock()
+    table = MagicMock()
+    refreshed_table = MagicMock()
+    table.show_columns.return_value.rows.return_value = [
+        ("id", "Varchar", "", ""),
+        ("q_2_vec", "Embedding(float,2)", None, ""),
+    ]
+    conn.connPool.get_conn.return_value.get_database.return_value.get_table.side_effect = [table, refreshed_table]
+
+    conn.insert(
+        [
+            {
+                "id": "mem-1_1",
+                "message_id": 1,
+                "agent_id": "agent-1",
+                "invalid_at": None,
+                "content_embed": [0.1, 0.2],
+            }
+        ],
+        "memory_tenant-1",
+        "mem-1",
+    )
+
+    table.add_columns.assert_called_once_with(
+        {
+            "agent_id": {"type": "varchar", "default": ""},
+            "invalid_at": {"type": "varchar", "default": ""},
+            "invalid_at_flt": {"type": "float", "default": 0.0},
+            "message_id": {"type": "integer", "default": 0},
+        }
+    )
+    refreshed_table.insert.assert_called_once()
+
+
 async def test_capacity_overflow_evicts_old_messages_and_saves_new_message(store, monkeypatch):
     """Exercise FIFO deletion, embedding persistence and capacity accounting."""
     from api.db.joint_services import memory_message_service

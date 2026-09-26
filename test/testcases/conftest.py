@@ -325,9 +325,94 @@ def add_model_instance(auth):
             pytest.exit(f"Critical error in check added model: {provider_name} add model failed")
 
 
+_GO_REQUIRED_MODELS = {
+    ("ZHIPU-AI", "CI"): (
+        {"model_name": "glm-4-flash", "model_type": ["chat"]},
+        {"model_name": "glm-4", "model_type": ["chat"]},
+        {"model_name": "embedding-3", "model_type": ["embedding"]},
+    ),
+    ("SILICONFLOW", "CI"): (
+        {"model_name": "BAAI/bge-m3", "model_type": ["embedding"]},
+        {"model_name": "BAAI/bge-reranker-v2-m3", "model_type": ["rerank"]},
+    ),
+}
+
+
+def _go_instance_models(auth, provider_name, instance_name):
+    response = requests.get(
+        url=HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances/{instance_name}/models",
+        headers={"Authorization": auth},
+        timeout=60,
+    )
+    payload = _response_json_or_warning(response, f"list {provider_name}/{instance_name} models")
+    if payload.get("code") != 0:
+        return None, payload.get("message", "unknown error")
+    return {model.get("name") or model.get("model_name") for model in payload.get("data", [])}, None
+
+
+def _ensure_go_model_setup(auth):
+    """Seed only the models exercised by the Go REST tests.
+
+    Unlike Python, Go's added-model listing reflects existing provider
+    catalog rows.  A provider being present therefore does not imply that
+    the CI instance contains the models this suite uses.
+    """
+    authorization = {"Authorization": auth}
+    for (provider_name, instance_name), required_models in _GO_REQUIRED_MODELS.items():
+        model_names, error = _go_instance_models(auth, provider_name, instance_name)
+        if model_names is None:
+            response = requests.put(
+                url=HOST_ADDRESS + "/api/v1/providers",
+                headers=authorization,
+                json={"provider_name": provider_name},
+                timeout=60,
+            )
+            payload = _response_json_or_warning(response, f"add {provider_name} provider")
+            if payload.get("code") != 0:
+                pytest.exit(f"Critical error adding Go model provider {provider_name}: {payload.get('message', error)}")
+
+            instance_payload = {
+                "instance_name": instance_name,
+                "api_key": ZHIPU_AI_API_KEY if provider_name == "ZHIPU-AI" else SILICONFLOW_API_KEY,
+                "region": "default",
+                "base_url": "",
+                "model_info": list(required_models),
+            }
+            response = requests.post(
+                url=HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances",
+                headers=authorization,
+                json=instance_payload,
+                timeout=60,
+            )
+            payload = _response_json_or_warning(response, f"create {provider_name}/{instance_name} model instance")
+            if payload.get("code") != 0 and "already exist" not in payload.get("message", "").casefold():
+                pytest.exit(f"Critical error in Go model setup for {provider_name}/{instance_name}: {payload.get('message', error)}")
+            model_names, error = _go_instance_models(auth, provider_name, instance_name)
+            if model_names is None:
+                pytest.exit(f"Critical error listing Go models for {provider_name}/{instance_name}: {error}")
+
+        for model in required_models:
+            if model["model_name"] in model_names:
+                continue
+            response = requests.post(
+                url=HOST_ADDRESS + f"/api/v1/providers/{provider_name}/instances/{instance_name}/models",
+                headers=authorization,
+                json={**model, "max_tokens": 8192},
+                timeout=60,
+            )
+            payload = _response_json_or_warning(response, f"add {provider_name}/{instance_name}/{model['model_name']}")
+            if payload.get("code") != 0 and "already exists" not in payload.get("message", "").casefold():
+                pytest.exit(f"Critical error adding Go model {provider_name}/{instance_name}/{model['model_name']}: {payload.get('message')}")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def set_tenant_info(auth):
-    if not get_added_models(auth, "ZHIPU-AI") or not get_added_models(auth, "SILICONFLOW"):
+    if IS_GO_PROXY:
+        _ensure_go_model_setup(auth)
+        embedding_instance = "default"
+    else:
+        embedding_instance = "Local"
+    if not IS_GO_PROXY and (not get_added_models(auth, "ZHIPU-AI") or not get_added_models(auth, "SILICONFLOW")):
         try:
             add_model_instance(auth)
         except Exception as e:
@@ -348,7 +433,7 @@ def set_tenant_info(auth):
     set_default_embedding_response = requests.patch(
         url=url,
         headers=authorization,
-        json={"model_provider": "Builtin", "model_instance": "Local", "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"},
+        json={"model_provider": "Builtin", "model_instance": embedding_instance, "model_type": "embedding", "model_name": "BAAI/bge-small-en-v1.5"},
         timeout=60,
     )
     embd_res = _response_json_or_warning(set_default_embedding_response, "set default embedding LLM")

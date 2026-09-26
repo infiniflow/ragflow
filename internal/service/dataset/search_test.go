@@ -3,8 +3,37 @@ package dataset
 import (
 	"testing"
 
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestSearchDatasetsRejectsDocumentsOutsideDatasets(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-1",
+		TenantID:   "tenant-1",
+		CreatedBy:  "tenant-1",
+		Name:       "Dataset",
+		Permission: string(entity.TenantPermissionMe),
+		Status:     sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert test dataset: %v", err)
+	}
+
+	_, err := (&DatasetService{
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}).SearchDatasets(t.Context(), &service.SearchDatasetsRequest{
+		Question:    "question",
+		DatasetIDs:  []string{"kb-1"},
+		DocumentIDs: []string{"not-owned"},
+	}, "tenant-1")
+	if err == nil || err.Error() != "The datasets don't own the document not-owned" {
+		t.Fatalf("error=%v want document ownership error", err)
+	}
+}
 
 func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	page := 2

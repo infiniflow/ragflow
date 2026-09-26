@@ -1082,9 +1082,8 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	var req service.SearchDatasetsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+	req, ok := decodeSearchDatasetsRequest(c)
+	if !ok {
 		return
 	}
 
@@ -1115,7 +1114,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if req.DatasetIDs == nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id is required")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`dataset_ids` is required.")
 		return
 	}
 
@@ -1123,8 +1122,12 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id array cannot be empty")
 		return
 	}
-	if err := validateSearchDatasetsRequest(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+	if err := validateSearchDatasetsRequest(req); err != nil {
+		code := common.CodeArgumentError
+		if strings.HasPrefix(err.Error(), "`top_k`") {
+			code = common.CodeDataError
+		}
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 
@@ -1139,7 +1142,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
+	resp, err := searchService.SearchDatasets(ctx, req, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
@@ -1204,6 +1207,87 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 	common.SuccessNoMessage(c, resp)
 }
 
+func decodeSearchDatasetsRequest(c *gin.Context) (*service.SearchDatasetsRequest, bool) {
+	body, raw, ok := parseJSONRequestObject(c)
+	if !ok {
+		return nil, false
+	}
+
+	for _, field := range []string{"page", "page_size", "size", "rerank_candidates_count", "knn_top_k", "top_k", "knn_num_candidates"} {
+		value, present := raw[field]
+		if !present {
+			continue
+		}
+		if value == nil {
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, fmt.Sprintf("TypeError: %s cannot be None", field))
+			return nil, false
+		}
+		if text, isString := value.(string); isString {
+			parsed, err := strconv.Atoi(text)
+			if err != nil {
+				if field == "top_k" {
+					common.ResponseWithCodeData(c, common.CodeDataError, nil, "`top_k` should be an integer")
+				} else {
+					common.ResponseWithCodeData(c, common.CodeExceptionError, nil, fmt.Sprintf("invalid literal for int(): %s", text))
+				}
+				return nil, false
+			}
+			raw[field] = parsed
+		}
+	}
+
+	for _, field := range []string{"highlight", "keyword", "use_kg", "include_knowledge_compilation"} {
+		value, present := raw[field]
+		if !present || value == nil {
+			if field == "highlight" || field == "keyword" {
+				raw[field] = false
+			} else if present {
+				delete(raw, field)
+			}
+			continue
+		}
+		text, isString := value.(string)
+		if !isString {
+			continue
+		}
+		parsed, valid := parsePythonBool(text)
+		if !valid {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("`%s` should be a boolean", field))
+			return nil, false
+		}
+		raw[field] = parsed
+	}
+
+	if value, present := raw["document_ids"]; present {
+		if _, isString := value.(string); isString {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "`documents` should be a list")
+			return nil, false
+		}
+	}
+	for _, field := range []string{"vector_similarity_weight", "similarity_threshold"} {
+		value, present := raw[field]
+		if !present || value == nil {
+			continue
+		}
+		if text, isString := value.(string); isString {
+			parsed, err := strconv.ParseFloat(text, 64)
+			if err != nil {
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("`%s` should be a number", field))
+				return nil, false
+			}
+			raw[field] = parsed
+		}
+	}
+
+	body, _ = json.Marshal(raw)
+	var req service.SearchDatasetsRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return nil, false
+	}
+	return &req, true
+}
+
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
@@ -1213,9 +1297,6 @@ func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
 }
 
 func validateSearchParams(page, pageSize, size, knnTopK, topK, knnNumCandidates *int, similarityThreshold, vectorSimilarityWeight *float64) error {
-	if page != nil && *page < 1 {
-		return fmt.Errorf("page must be greater than or equal to 1")
-	}
 	if pageSize != nil && *pageSize < 1 {
 		return fmt.Errorf("page_size must be greater than or equal to 1")
 	}
@@ -1231,6 +1312,9 @@ func validateSearchParams(page, pageSize, size, knnTopK, topK, knnNumCandidates 
 		knnTopKName = "top_k (alias for knn_top_k)"
 	}
 	if effectiveKNNTopK < 1 || effectiveKNNTopK > 2048 {
+		if topK != nil && *topK < 0 {
+			return fmt.Errorf("`top_k` must be greater than 0")
+		}
 		return fmt.Errorf("%s must be between 1 and 2048", knnTopKName)
 	}
 	effectiveKNNNumCandidates := 2048
@@ -1245,9 +1329,6 @@ func validateSearchParams(page, pageSize, size, knnTopK, topK, knnNumCandidates 
 	}
 	if similarityThreshold != nil && (*similarityThreshold < 0 || *similarityThreshold > 1) {
 		return fmt.Errorf("similarity_threshold must be between 0 and 1")
-	}
-	if vectorSimilarityWeight != nil && (*vectorSimilarityWeight < 0 || *vectorSimilarityWeight > 1) {
-		return fmt.Errorf("vector_similarity_weight must be between 0 and 1")
 	}
 	return nil
 }

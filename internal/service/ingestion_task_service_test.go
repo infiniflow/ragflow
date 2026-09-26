@@ -137,6 +137,51 @@ func TestIngestionTaskServiceCreateForDocumentsRejectsMissingRunMetadata(t *test
 	}
 }
 
+func TestIngestionTaskServiceCreateForDocumentsRejectsDatasetMismatch(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "other-kb", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments() error = %v", err)
+	}
+	if len(responses) != 1 || responses[0].Result != "document does not belong to dataset" {
+		t.Fatalf("CreateForDocuments() responses = %+v", responses)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want 0", len(publisher.messages))
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsIsIdempotentForActiveTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments() error = %v", err)
+	}
+	if len(responses) != 1 || responses[0].Result != "task_id: task-1" {
+		t.Fatalf("CreateForDocuments() responses = %+v", responses)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want 0", len(publisher.messages))
+	}
+}
+
 func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

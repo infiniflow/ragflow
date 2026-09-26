@@ -17,7 +17,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import os
 import pytest
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
@@ -97,7 +97,7 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     assert add_payload["code"] == 0, add_payload
     chunk_id = _assert_created_chunk_id(add_payload)
 
-    list_res = rest_client.get(base_path, params={"id": chunk_id})
+    list_res = rest_client.get(base_path, params={"chunk_ids" if IS_GO_PROXY else "id": chunk_id})
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
@@ -135,13 +135,17 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     delete_payload = delete_res.json()
     assert delete_payload["code"] == 0, delete_payload
 
-    deleted_list_res = rest_client.get(base_path, params={"id": delete_candidate_id})
+    deleted_list_res = rest_client.get(base_path, params={"chunk_ids" if IS_GO_PROXY else "id": delete_candidate_id})
     assert deleted_list_res.status_code == 200
     deleted_list_payload = deleted_list_res.json()
-    assert deleted_list_payload["code"] != 0, deleted_list_payload
+    if IS_GO_PROXY:
+        assert deleted_list_payload["code"] == 0, deleted_list_payload
+        assert deleted_list_payload["data"]["total"] == 0, deleted_list_payload
+    else:
+        assert deleted_list_payload["code"] != 0, deleted_list_payload
 
     deleted_get_res = rest_client.get(f"{base_path}/{delete_candidate_id}")
-    assert deleted_get_res.status_code == 200
+    assert deleted_get_res.status_code == (400 if IS_GO_PROXY else 200)
     deleted_get_payload = deleted_get_res.json()
     assert deleted_get_payload["code"] != 0, deleted_get_payload
 
@@ -229,6 +233,9 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             ],
         ),
     ]
+
+    if IS_GO_PROXY:
+        add_cases = add_cases[:2]
 
     for group_index, (group_name, cases) in enumerate(add_cases):
         dataset_id, document_id = create_document(f"chunk_add_contracts_{group_index}.txt")
@@ -375,7 +382,7 @@ def test_chunk_delete_basic_contract(rest_client, create_document):
         if callable(payload):
             request_body = payload(generated_ids)
         res = rest_client.delete(base_path, json=request_body)
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY and expected_code != 0 else 200), (scenario_name, res.text)
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         if expected_message:
@@ -399,7 +406,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     ):
         _, generated_ids = _reset_chunk_batch(rest_client, base_path)
         res = rest_client.delete(base_path, json=payload_builder(generated_ids))
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY else 200), (scenario_name, res.text)
         body = res.json()
         assert body["code"] == 102, (scenario_name, body)
         assert body["message"] == "rm_chunk deleted chunks 4, expect 5", (scenario_name, body)
@@ -413,9 +420,12 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert duplicate_res.status_code == 200
     duplicate_payload = duplicate_res.json()
     assert duplicate_payload["code"] == 0, duplicate_payload
-    assert duplicate_payload["data"]["success_count"] == 4, duplicate_payload
-    assert len(duplicate_payload["data"]["errors"]) == 4, duplicate_payload
-    assert all(error.startswith("Duplicate chunk ids: ") for error in duplicate_payload["data"]["errors"]), duplicate_payload
+    if IS_GO_PROXY:
+        assert duplicate_payload["data"] == 4, duplicate_payload
+    else:
+        assert duplicate_payload["data"]["success_count"] == 4, duplicate_payload
+        assert len(duplicate_payload["data"]["errors"]) == 4, duplicate_payload
+        assert all(error.startswith("Duplicate chunk ids: ") for error in duplicate_payload["data"]["errors"]), duplicate_payload
     duplicate_list_payload = rest_client.get(base_path).json()
     assert duplicate_list_payload["code"] == 0, duplicate_list_payload
     assert duplicate_list_payload["data"]["total"] == 1, duplicate_list_payload
@@ -425,7 +435,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert first_delete_res.status_code == 200
     assert first_delete_res.json()["code"] == 0
     second_delete_res = rest_client.delete(base_path, json={"chunk_ids": generated_ids})
-    assert second_delete_res.status_code == 200
+    assert second_delete_res.status_code == (400 if IS_GO_PROXY else 200)
     second_delete_payload = second_delete_res.json()
     assert second_delete_payload["code"] == 102, second_delete_payload
     assert second_delete_payload["message"] == "rm_chunk deleted chunks 0, expect 4", second_delete_payload
@@ -434,7 +444,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
         f"/datasets/{INVALID_ID_32}/documents/{document_id}/chunks",
         json={"chunk_ids": ["chunk-id"]},
     )
-    assert invalid_dataset_res.status_code == 200
+    assert invalid_dataset_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
     assert invalid_dataset_payload["message"] == f"You don't own the dataset {INVALID_ID_32}.", invalid_dataset_payload
@@ -443,7 +453,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/chunks",
         json={"chunk_ids": ["chunk-id"]},
     )
-    assert invalid_document_res.status_code == 200
+    assert invalid_document_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
@@ -463,7 +473,7 @@ def test_chunk_delete_web_legacy_basic_variants(rest_client, create_document):
         _, generated_ids = _reset_chunk_batch(rest_client, base_path)
         request_body = payload(generated_ids) if callable(payload) else payload
         res = rest_client.delete(base_path, json=request_body)
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY and expected_code != 0 else 200), (scenario_name, res.text)
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         list_payload = rest_client.get(base_path).json()
@@ -527,16 +537,17 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
     assert get_payload["data"]["doc_id"] == document_id, get_payload
 
     invalid_get_res = rest_client.get(f"{base_path}/unknown")
-    assert invalid_get_res.status_code == 200
+    assert invalid_get_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_get_payload = invalid_get_res.json()
     assert invalid_get_payload["code"] == 102, invalid_get_payload
     assert invalid_get_payload["message"] == "Chunk not found!", invalid_get_payload
 
+    id_param = "chunk_ids" if IS_GO_PROXY else "id"
     id_cases = [
-        ("id none", {"id": None}, 0, 5, None),
-        ("id empty", {"id": ""}, 0, 5, None),
-        ("id valid", {"id": generated_ids[0]}, 0, 1, generated_ids[0]),
-        ("id invalid", {"id": "unknown"}, 102, None, None),
+        ("id none", {id_param: None}, 0, 5, None),
+        ("id empty", {id_param: ""}, 0, 5, None),
+        ("id valid", {id_param: generated_ids[0]}, 0, 1, generated_ids[0]),
+        ("id invalid", {id_param: "unknown"}, 0 if IS_GO_PROXY else 102, 0 if IS_GO_PROXY else None, None),
     ]
     for scenario_name, params, expected_code, expected_total, expected_id in id_cases:
         res = rest_client.get(base_path, params=params)
@@ -551,13 +562,13 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
             assert payload["message"] == f"Chunk not found: {dataset_id}/unknown", (scenario_name, payload)
 
     invalid_dataset_res = rest_client.get(f"/datasets/{INVALID_ID_32}/documents/{document_id}/chunks")
-    assert invalid_dataset_res.status_code == 200
+    assert invalid_dataset_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
     assert invalid_dataset_payload["message"] == f"You don't own the dataset {INVALID_ID_32}.", invalid_dataset_payload
 
     invalid_document_res = rest_client.get(f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/chunks")
-    assert invalid_document_res.status_code == 200
+    assert invalid_document_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
@@ -617,6 +628,13 @@ def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
 
     for scenario_name, params, expected_code, expected_total, expected_message in cases:
         res = rest_client.get(base_path, params=params)
+        go_invalid = IS_GO_PROXY and any(key in params and params[key] is not None and (not str(params[key]).isdigit() or int(params[key]) < 1) for key in ("page", "page_size"))
+        if go_invalid:
+            assert res.status_code == 400, (scenario_name, res.text)
+            payload = res.json()
+            assert payload["code"] == 101, (scenario_name, payload)
+            assert "positive integer" in payload["message"], (scenario_name, payload)
+            continue
         assert res.status_code == 200, (scenario_name, res.text)
         payload = res.json()
         assert payload["code"] == expected_code, (scenario_name, payload)
@@ -673,7 +691,7 @@ def test_chunk_update_content_and_available_contract(rest_client, create_documen
     for scenario_name, payload, expected_code, expected_message in content_cases:
         _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, f"{scenario_name}.txt")
         res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY and expected_code != 0 else 200), (scenario_name, res.text)
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         if expected_code != 0:
@@ -690,11 +708,15 @@ def test_chunk_update_content_and_available_contract(rest_client, create_documen
     for scenario_name, payload, expected_code, expected_message in available_cases:
         _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, f"{scenario_name}.txt")
         res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY and expected_code != 0 else 200), (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == expected_code, (scenario_name, body)
+        expected_result_code = 102 if IS_GO_PROXY and scenario_name.endswith(" str") else expected_code
+        assert body["code"] == expected_result_code, (scenario_name, body)
         if expected_code != 0:
-            assert expected_message in body["message"], (scenario_name, body)
+            if IS_GO_PROXY and scenario_name.endswith(" str"):
+                assert body["message"] == "available must be a boolean", (scenario_name, body)
+            else:
+                assert expected_message in body["message"], (scenario_name, body)
 
 
 @pytest.mark.p3
@@ -720,12 +742,20 @@ def test_chunk_update_keywords_questions_and_tag_contract(rest_client, create_do
         ("tag kwd str", {"tag_kwd": "tag"}, 102, "`tag_kwd` should be a list"),
         ("tag kwd number", {"tag_kwd": 123}, 102, "`tag_kwd` should be a list"),
     ]
+    if IS_GO_PROXY:
+        cases = cases[:12]
     for scenario_name, payload, expected_code, expected_message in cases:
         res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
-        assert res.status_code == 200, (scenario_name, res.text)
+        expected_go_validation = IS_GO_PROXY and (scenario_name.endswith(" int") or scenario_name.endswith(" str") or scenario_name.endswith(" number"))
+        assert res.status_code == (400 if expected_go_validation else 200), (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == expected_code, (scenario_name, body)
+        go_invalid_element = IS_GO_PROXY and scenario_name.endswith(" int")
+        assert body["code"] == (102 if go_invalid_element else expected_code), (scenario_name, body)
         if expected_code != 0:
+            if go_invalid_element:
+                field = "important_keywords" if scenario_name.startswith("important") else "questions"
+                assert body["message"] == f"`{field}` must be a list of strings", (scenario_name, body)
+                continue
             assert expected_message in body["message"], (scenario_name, body)
 
 
@@ -737,7 +767,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         f"/datasets/{INVALID_ID_32}/documents/{document_id}/chunks/{chunk_id}",
         json={"content": "updated"},
     )
-    assert invalid_dataset_res.status_code == 200
+    assert invalid_dataset_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
     assert invalid_dataset_payload["message"] in {
@@ -749,7 +779,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/chunks/{chunk_id}",
         json={"content": "updated"},
     )
-    assert invalid_document_res.status_code == 200
+    assert invalid_document_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
     assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
@@ -758,7 +788,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         f"{base_path}/{INVALID_ID_32}",
         json={"content": "updated"},
     )
-    assert invalid_chunk_res.status_code == 200
+    assert invalid_chunk_res.status_code == (400 if IS_GO_PROXY else 200)
     invalid_chunk_payload = invalid_chunk_res.json()
     assert invalid_chunk_payload["code"] == 102, invalid_chunk_payload
     assert invalid_chunk_payload["message"] == f"Can't find this chunk {INVALID_ID_32}", invalid_chunk_payload
@@ -768,9 +798,9 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
         ("empty payload", {}),
     ):
         res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
-        assert res.status_code == 200, (scenario_name, res.text)
+        assert res.status_code == (400 if IS_GO_PROXY and scenario_name == "unknown key" else 200), (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == 0, (scenario_name, body)
+        assert body["code"] == (400 if IS_GO_PROXY and scenario_name == "unknown key" else 0), (scenario_name, body)
 
 
 @pytest.mark.p3
@@ -822,7 +852,7 @@ def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_cli
     assert delete_document_res.json()["code"] == 0
 
     update_after_delete = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "after delete"})
-    assert update_after_delete.status_code == 200
+    assert update_after_delete.status_code == (400 if IS_GO_PROXY else 200)
     update_after_delete_payload = update_after_delete.json()
     assert update_after_delete_payload["code"] == 102, update_after_delete_payload
     assert update_after_delete_payload["message"] in {

@@ -15,7 +15,7 @@
 #
 
 import pytest
-from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 
@@ -55,6 +55,7 @@ def test_document_download_by_id_requires_auth(create_document):
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(IS_GO_PROXY, reason="Go's /documents/:id route returns document metadata; downloads require the dataset-scoped route")
 def test_document_download_by_id_invalid_id_contract(rest_client):
     res = rest_client.get("/documents/invalid_document_id")
     assert res.status_code == 200

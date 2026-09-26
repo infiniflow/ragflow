@@ -17,6 +17,7 @@
 import re
 import json
 import copy
+import os
 from infinity.common import InfinityException, SortType
 from infinity.errors import ErrorCode
 
@@ -24,6 +25,7 @@ from common.decorator import singleton
 import pandas as pd
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+from common.file_utils import get_project_base_directory
 from common.time_utils import date_string_to_timestamp
 from common.float_utils import format_minimum_should_match_percent
 
@@ -394,7 +396,8 @@ class InfinityConnection(InfinityConnectionBase):
 
             # embedding fields can't have a default value....
             embedding_columns = []
-            table_columns = table_instance.show_columns().rows()
+            table_columns = list(table_instance.show_columns().rows())
+            existing_columns = {n for n, *_ in table_columns}
             for n, ty, _, _ in table_columns:
                 r = re.search(r"Embedding\([a-z]+,([0-9]+)\)", ty)
                 if not r:
@@ -432,6 +435,20 @@ class InfinityConnection(InfinityConnectionBase):
                     if n in d:
                         continue
                     d[n] = [0] * vs
+
+            missing_columns = sorted({column for doc in docs for column in doc} - existing_columns)
+            if missing_columns:
+                with open(os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)) as f:
+                    schema = json.load(f)
+                schema[f"q_{vector_size}_vec"] = {"type": f"vector,{vector_size},float"}
+                table_instance.add_columns({column: schema[column] for column in missing_columns})
+                # Refresh the handle: Infinity may keep the pre-upgrade schema
+                # on an already fetched table object.
+                table_instance = db_instance.get_table(table_name)
+            else:
+                # Do the same refresh for tables whose metadata was stale but
+                # happened to report all columns during the first inspection.
+                table_instance = db_instance.get_table(table_name)
             ids = ["'{}'".format(d["id"]) for d in docs]
             str_ids = ", ".join(ids)
             str_filter = f"id IN ({str_ids})"

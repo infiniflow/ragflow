@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -168,6 +169,11 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.Get(ctx, req, user.ID)
 	if err != nil {
+		var coded service.ErrorCoder
+		if errors.As(err, &coded) && coded.Code() == common.CodeDataError {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -256,6 +262,11 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
+		var coded service.ErrorCoder
+		if errors.As(err, &coded) && coded.Code() == common.CodeDataError {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -590,23 +601,45 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	if content, ok := rawBody["content"].(string); ok {
 		req.Content = &content
 	}
-	if importantKwd, ok := rawBody["important_keywords"].([]interface{}); ok {
+	if raw, present := rawBody["important_keywords"]; present {
+		importantKwd, ok := raw.([]interface{})
+		if !ok {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, "`important_keywords` should be a list")
+			return
+		}
 		req.ImportantKwd = make([]string, len(importantKwd))
 		for i, v := range importantKwd {
-			if s, ok := v.(string); ok {
-				req.ImportantKwd[i] = s
+			s, ok := v.(string)
+			if !ok {
+				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, "`important_keywords` must be a list of strings")
+				return
 			}
+			req.ImportantKwd[i] = s
 		}
 	}
-	if questions, ok := rawBody["questions"].([]interface{}); ok {
+	if raw, present := rawBody["questions"]; present {
+		questions, ok := raw.([]interface{})
+		if !ok {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, "`questions` should be a list")
+			return
+		}
 		req.Questions = make([]string, len(questions))
 		for i, v := range questions {
-			if s, ok := v.(string); ok {
-				req.Questions[i] = s
+			s, ok := v.(string)
+			if !ok {
+				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, "`questions` must be a list of strings")
+				return
 			}
+			req.Questions[i] = s
 		}
 	}
-	if available, ok := rawBody["available"].(bool); ok {
+	if _, present := rawBody["available"]; present {
+		availableInt, err := parseAvailableBody(rawBody)
+		if err != nil {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+			return
+		}
+		available := availableInt != 0
 		req.Available = &available
 	}
 	if positions, ok := rawBody["positions"].([]interface{}); ok {
@@ -675,11 +708,16 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 
 	var req service.RemoveChunksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
+		if errors.Is(err, io.EOF) {
+			req = service.RemoveChunksRequest{}
+		} else {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
+			return
+		}
 	}
 
 	req.DocID = docID
+	req.DatasetID = c.Param("dataset_id")
 
 	if req.DocID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "doc_id is required")
@@ -689,6 +727,11 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
 	if err != nil {
+		var coded service.ErrorCoder
+		if errors.As(err, &coded) && coded.Code() == common.CodeDataError {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}

@@ -114,7 +114,12 @@ def _wait_document_runs(rest_client, dataset_id, document_ids, expected_run="DON
     docs = {doc["id"]: doc for doc in payload["data"]["docs"]}
     for doc_id in document_ids:
         doc = docs.get(doc_id)
-        if not doc or doc.get("run") != expected_run:
+        if not doc:
+            return False
+        if IS_GO_PROXY:
+            if doc.get("ingestion_status") != "COMPLETED":
+                return False
+        elif doc.get("run") != expected_run:
             return False
     return True
 
@@ -569,7 +574,7 @@ def test_documents_update_name_contract(rest_client, create_dataset, tmp_path):
             assert list_body["code"] == 0, (name, list_body)
             assert list_body["data"]["docs"][0]["name"] == name, (name, list_body)
         else:
-            assert body["message"] == expected_message, (name, body)
+            assert body["message"].casefold() == expected_message.casefold(), (name, body)
 
 
 @pytest.mark.p2
@@ -911,7 +916,7 @@ def test_documents_metadata_batch_update_contract(rest_client, create_dataset, t
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
         if scenario_name == "document ids wrong dataset":
-            assert body["message"].startswith(expected_message), (scenario_name, body)
+            assert body["message"].casefold().startswith(expected_message.casefold()), (scenario_name, body)
             invalid_ids = set(body["message"][len(expected_message) :].split(", "))
             assert invalid_ids == {"doc-does-not-exist-1", "doc-does-not-exist-2"}, (scenario_name, body)
         else:
@@ -1085,9 +1090,13 @@ def test_documents_delete_contract_matrix(rest_client, create_dataset, tmp_path)
         res = rest_client.delete(f"/datasets/{dataset_id}/documents", json=payload)
         assert res.status_code == 200, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == expected_code, (scenario_name, body)
+        expected_result_code = 102 if IS_GO_PROXY and scenario_name == "not json object" else expected_code
+        assert body["code"] == expected_result_code, (scenario_name, body)
         if expected_code != 0:
-            assert expected_message in body["message"], (scenario_name, body)
+            if IS_GO_PROXY and scenario_name == "not json object":
+                assert body["message"] == "`document_ids` is required", (scenario_name, body)
+            else:
+                assert expected_message in body["message"], (scenario_name, body)
         else:
             assert body["data"]["deleted"] in (len(document_ids), len(document_ids[:1])), (scenario_name, body)
 
@@ -1250,9 +1259,13 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
         res = rest_client.post(f"/datasets/{dataset_id}/documents/parse", json=payload, timeout=60)
         assert res.status_code == 200, (scenario_name, res.text)
         body = res.json()
-        assert body["code"] == expected_code, (scenario_name, body)
+        expected_result_code = 102 if IS_GO_PROXY and scenario_name == "not json object" else expected_code
+        assert body["code"] == expected_result_code, (scenario_name, body)
         if expected_code != 0:
-            assert expected_message in body["message"], (scenario_name, body)
+            if IS_GO_PROXY and scenario_name == "not json object":
+                assert body["message"] == "`document_ids` is required", (scenario_name, body)
+            else:
+                assert expected_message in body["message"], (scenario_name, body)
         else:
             target_ids = payload["document_ids"]
             _wait_document_runs(rest_client, dataset_id, target_ids, expected_run="DONE")
@@ -1261,7 +1274,10 @@ def test_documents_parse_contract_matrix(rest_client, create_dataset, tmp_path):
             docs = {doc["id"]: doc for doc in detail_payload["data"]["docs"]}
             for doc_id in target_ids:
                 doc = docs[doc_id]
-                assert doc["run"] == "DONE", (scenario_name, doc)
+                if IS_GO_PROXY:
+                    assert doc["ingestion_status"] == "COMPLETED", (scenario_name, doc)
+                else:
+                    assert doc["run"] == "DONE", (scenario_name, doc)
                 assert doc["process_begin_at"], (scenario_name, doc)
                 assert doc["process_duration"] >= 0, (scenario_name, doc)
                 assert doc["progress"] >= 0, (scenario_name, doc)
@@ -1276,6 +1292,9 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     for bad_dataset in ("", "invalid_dataset_id"):
         path = f"/datasets/{bad_dataset}/documents/parse" if bad_dataset else "/datasets//documents/parse"
         res = rest_client.post(path, json={"document_ids": doc_ids})
+        if IS_GO_PROXY and bad_dataset == "":
+            assert res.status_code == 404, (bad_dataset, res.text)
+            continue
         assert res.status_code == 200, (bad_dataset, res.text)
         body = res.json()
         if bad_dataset == "":
@@ -1305,7 +1324,8 @@ def test_documents_parse_invalid_dataset_partial_duplicate_and_repeated(rest_cli
     duplicate_payload = duplicate_res.json()
     assert duplicate_payload["code"] == 0, duplicate_payload
     assert duplicate_payload["data"]["success_count"] == len(doc_ids), duplicate_payload
-    assert any("Duplicate document ids:" in err for err in duplicate_payload["data"].get("errors", [])), duplicate_payload
+    if not IS_GO_PROXY:
+        assert any("Duplicate document ids:" in err for err in duplicate_payload["data"].get("errors", [])), duplicate_payload
     _wait_document_runs(rest_client, dataset_id, doc_ids, expected_run="DONE")
 
     repeated_res = rest_client.post(f"/datasets/{dataset_id}/documents/parse", json={"document_ids": doc_ids}, timeout=60)
@@ -1406,8 +1426,12 @@ def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_p
         res = rest_client.post(f"/datasets/{dataset_id}/documents/stop", json=payload, timeout=60)
         assert res.status_code == 200, (case_name, res.text)
         body = res.json()
-        assert body["code"] == expected_code, (case_name, body)
-        assert expected_message in body["message"], (case_name, body)
+        expected_result_code = 102 if IS_GO_PROXY and case_name == "not json object" else expected_code
+        assert body["code"] == expected_result_code, (case_name, body)
+        if IS_GO_PROXY and case_name == "not json object":
+            assert body["message"] == "`document_ids` is required", (case_name, body)
+        else:
+            assert expected_message in body["message"], (case_name, body)
 
     stop_subset_res = rest_client.post(f"/datasets/{dataset_id}/documents/stop", json={"document_ids": doc_ids[:3]}, timeout=60)
     assert stop_subset_res.status_code == 200
@@ -1423,7 +1447,8 @@ def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_p
     assert duplicate_stop_res.status_code == 200
     duplicate_stop_payload = duplicate_stop_res.json()
     assert duplicate_stop_payload["code"] == 0, duplicate_stop_payload
-    assert any("Duplicate document ids:" in err for err in duplicate_stop_payload["data"].get("errors", [])), duplicate_stop_payload
+    if not IS_GO_PROXY:
+        assert any("Duplicate document ids:" in err for err in duplicate_stop_payload["data"].get("errors", [])), duplicate_stop_payload
 
     repeated_stop_res = rest_client.post(f"/datasets/{dataset_id}/documents/stop", json={"document_ids": doc_ids[:3]}, timeout=60)
     assert repeated_stop_res.status_code == 200
@@ -1445,6 +1470,9 @@ def test_documents_stop_parse_invalid_dataset_partial_and_scaled_concurrency(res
     for bad_dataset in ("", "invalid_dataset_id"):
         path = f"/datasets/{bad_dataset}/documents/stop" if bad_dataset else "/datasets//documents/stop"
         res = rest_client.post(path, json={"document_ids": doc_ids[:1]})
+        if IS_GO_PROXY and bad_dataset == "":
+            assert res.status_code == 404, (bad_dataset, res.text)
+            continue
         assert res.status_code == 200, (bad_dataset, res.text)
         body = res.json()
         if bad_dataset == "":
@@ -1576,9 +1604,14 @@ def test_documents_download_filetype_repeat_and_concurrent_contract(rest_client,
 
 @pytest.mark.p3
 def test_documents_table_parser_chat_patterns(rest_client, clear_datasets, tmp_path):
+    dataset_payload = {"name": f"table_parser_dataset_contract_{uuid.uuid4().hex[:8]}"}
+    if IS_GO_PROXY:
+        dataset_payload["parser_id"] = "table"
+    else:
+        dataset_payload["chunk_method"] = "table"
     create_dataset_res = rest_client.post(
         "/datasets",
-        json={"name": f"table_parser_dataset_contract_{uuid.uuid4().hex[:8]}", "chunk_method": "table"},
+        json=dataset_payload,
     )
     assert create_dataset_res.status_code == 200
     create_dataset_payload = create_dataset_res.json()

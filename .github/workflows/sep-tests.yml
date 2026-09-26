@@ -814,11 +814,8 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
-          # server container (env_file: .env-go) sees the same TEI bypass
-          # config as the Python container. Only these two affect the
-          # in-process checkModelAvailable logic; other .env keys are
-          # either yml-interpolation-only or already correct in .env-go.
+          # Go reads TEI_BASE_URL directly, unlike Python's service_conf.
+          # Use the container-network endpoint, not the host-published port.
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
@@ -828,6 +825,7 @@ jobs:
                    echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+                 echo "TEI_BASE_URL=http://tei:80"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
                  # v1.0.0-rc1.dev1 database marker. Without the override the Go
@@ -1550,11 +1548,8 @@ jobs:
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
-          # server container (env_file: .env-go) sees the same TEI bypass
-          # config as the Python container. Only these two affect the
-          # in-process checkModelAvailable logic; other .env keys are
-          # either yml-interpolation-only or already correct in .env-go.
+          # Go reads TEI_BASE_URL directly, unlike Python's service_conf.
+          # Use the container-network endpoint, not the host-published port.
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
@@ -1564,6 +1559,7 @@ jobs:
                    echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  fi
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+                 echo "TEI_BASE_URL=http://tei:80"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
                  # v1.0.0-rc1.dev1 database marker. Without the override the Go
