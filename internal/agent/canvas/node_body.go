@@ -35,9 +35,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"strconv"
 	"strings"
-	"time"
 
 	"ragflow/internal/agent/runtime"
 
@@ -195,22 +193,6 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 	}
 }
 
-// componentTimeout returns the per-component Invoke timeout.
-//
-// Reads the COMPONENT_EXEC_TIMEOUT env var (seconds); defaults to 600s
-// (10 min) to match the Python @timeout decorator's default in
-// agent/component/base.py. Invalid / non-positive values fall back to
-// the default — invalid input must never widen the timeout silently.
-func componentTimeout() time.Duration {
-	const def = 600 * time.Second
-	if v := common.GetEnv(common.EnvComponentExecTimeout); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
-	}
-	return def
-}
-
 // realComponentBody returns a body that delegates to the supplied
 // runtime.Component. The component is constructed once at build time
 // (in buildNodeBody) and re-invoked per iteration.
@@ -338,7 +320,7 @@ func placeholderBody(cpnID string) nodeBodyFn {
 func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		originalIn := in
-		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, _ := runtime.GetStateFromContext(ctx)
 		if state != nil {
 			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {

@@ -135,6 +135,75 @@ func TestFilterUnsupportedProviders(t *testing.T) {
 	}
 }
 
+// indexProviderModels keys a merged list by its normalized name.
+func indexProviderModels(t *testing.T, list []map[string]interface{}) map[string]map[string]interface{} {
+	t.Helper()
+	indexed := make(map[string]map[string]interface{}, len(list))
+	for _, m := range list {
+		name, ok := m["name"].(string)
+		if !ok {
+			t.Fatalf("model without name: %v", m)
+		}
+		key := providerModelKey(name)
+		if _, dup := indexed[key]; dup {
+			t.Fatalf("duplicate model %q in merged list", name)
+		}
+		indexed[key] = m
+	}
+	return indexed
+}
+
+func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "gpt-4o", "model_types": []string{"chat"}, "max_tokens": 4096},
+		{"name": "text-embedding", "model_types": []string{"embedding"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "GPT-4o", "model_types": []string{"chat"}, "max_tokens": 128000},
+		{"name": "gpt-4o-mini ", "model_types": []string{"chat"}, "max_tokens": 16384},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if len(got) != 3 {
+		t.Fatalf("merged %d models, want 3: %v", len(got), got)
+	}
+
+	merged := got["gpt-4o"]
+	if name := merged["name"]; name != "gpt-4o" {
+		t.Errorf("name = %v, want the catalog spelling gpt-4o", name)
+	}
+	if maxTokens := merged["max_tokens"]; maxTokens != 4096 {
+		t.Errorf("max_tokens = %v, want the catalog value 4096", maxTokens)
+	}
+
+	trimmed, ok := got["gpt-4o-mini"]
+	if !ok {
+		t.Fatalf("remote-only model not kept: %v", got)
+	}
+	if name := trimmed["name"]; name != "gpt-4o-mini" {
+		t.Errorf("name = %v, want trimmed gpt-4o-mini", name)
+	}
+}
+
+func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
+	}
+	remote := []map[string]interface{}{{"name": "Rerank-1"}}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	merged, ok := got["rerank-1"]
+	if !ok {
+		t.Fatalf("merged = %v, want a single rerank-1 entry", got)
+	}
+	if types := providerModelMapTypes(merged); !reflect.DeepEqual(types, []string{"rerank"}) {
+		t.Errorf("model_types = %v, want [rerank]", types)
+	}
+	if maxTokens := merged["max_tokens"]; maxTokens != 1024 {
+		t.Errorf("max_tokens = %v, want 1024", maxTokens)
+	}
+}
+
 func TestValidateInstanceName(t *testing.T) {
 	tests := []struct {
 		name  string

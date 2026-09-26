@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
@@ -231,6 +232,32 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(materialized),
 	}
+}
+
+// canonicalChunkText returns the normalized text a chunk id is derived
+// from. It folds media context (when present) and strips position tags,
+// matching exactly the text the decorator keys on after
+// finalizeGeneralChunks runs removeTag and chunkOutputs materializes
+// context. Routing every chunk id through this one function — instead of
+// recomputing the text at each consumption point — guarantees the streamed
+// crop-upload key and the decorator's ck["id"] can never diverge, including
+// for image/table chunks whose text still carries position tags when there
+// is no media context.
+func canonicalChunkText(ck schema.ChunkDoc) string {
+	return removeTag(materializeMediaContext(ck).Text)
+}
+
+// canonicalChunkID returns the deterministic chunk id: the single identity
+// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
+// over canonicalChunkText) is centralized here, so the text normalization
+// that feeds the hash lives in exactly one place. The decorator in
+// register.go re-derives ck["id"] from the same already-finalized text as a
+// fallback for chunks that bypassed the streamed crop-upload path; the two
+// routes cannot disagree because a chunk is either stamped by crop-upload
+// (and the decorator reuses that id) or computed by the decorator fallback —
+// never both — and both hash the normalized chunk body.
+func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	return common.ChunkID(docID, canonicalChunkText(ck))
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its

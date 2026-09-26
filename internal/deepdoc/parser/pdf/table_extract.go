@@ -3,7 +3,6 @@ package pdf
 import (
 	"context"
 	"image"
-	"log/slog"
 	"math"
 	"strings"
 
@@ -98,7 +97,7 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 		// TSR call back to the correct Python intermediate table.
 		tctx := context.WithValue(ctx, tableIdxCtxKey, i)
 		item := p.processOneTable(tctx, pageImg, annotated, pg, docAnalyzer, tb, tm, scale)
-		if item.ImageB64 != "" || len(item.Cells) > 0 || len(item.Positions) > 0 {
+		if len(item.Cells) > 0 || len(item.Positions) > 0 {
 			items = append(items, item)
 		}
 	}
@@ -123,10 +122,6 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		angle, rotated, _ := tbl.EvaluateTableOrientation(ctx, cropped, docAnalyzer)
 		bestAngle = angle
 		tsrImg = rotated
-	}
-	imgB64, encErr := util.EncodeImageToBase64PNG(cropped)
-	if encErr != nil {
-		slog.Warn("table PNG encode failed", "page", pageNum, "err", encErr)
 	}
 	// Hand the crop origin to TSR so a replay TableBuilder can map Python
 	// page-space TSR cells into this exact crop frame. Production callers
@@ -212,7 +207,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		}
 	}
 	item := pdf.TableItem{
-		ImageB64: imgB64, Cells: cells, Grid: grid, Positions: positions,
+		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,

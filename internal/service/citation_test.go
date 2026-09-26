@@ -529,3 +529,89 @@ func TestCitationStreamFilter(t *testing.T) {
 		t.Fatalf("filtered answer=%q, want %q", got, want)
 	}
 }
+
+// TestReportsNoAnswer covers the three signals: the dialog's configured
+// empty_response, the shipped not-found line, and a grounded answer that must
+// keep its citations.
+func TestReportsNoAnswer(t *testing.T) {
+	cases := []struct {
+		name          string
+		answer        string
+		emptyResponse string
+		want          bool
+	}{
+		{
+			name:          "configured empty response",
+			answer:        "未在资料库中找到相关内容。",
+			emptyResponse: "未在资料库中找到相关内容。",
+			want:          true,
+		},
+		{
+			name:   "shipped phrase",
+			answer: "知识库中未找到您要的答案！",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase with marker injected mid-sentence",
+			answer: "知识库中未找到您要的答案！因 [ID:3]此无法统计。",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase split by line breaks",
+			answer: "知识库中\n未找到您要的\n答案！",
+			want:   true,
+		},
+		{
+			name:          "grounded answer keeps citations",
+			answer:        "Texas and California agreed in 1924 [ID:0].",
+			emptyResponse: "知识库中未找到您要的答案！",
+			want:          false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := reportsNoAnswer(c.answer, c.emptyResponse); got != c.want {
+				t.Fatalf("reportsNoAnswer(%q, %q) = %v, want %v", c.answer, c.emptyResponse, got, c.want)
+			}
+		})
+	}
+}
+
+// TestDecorateQuote pins that a not-found answer is decorated with quoting off
+// (no markers, no reference), while a grounded one keeps quoting on.
+func TestDecorateQuote(t *testing.T) {
+	if decorateQuote(true, "知识库中未找到您要的答案！", "") {
+		t.Fatal("not-found answer must be decorated without quoting")
+	}
+	if !decorateQuote(true, "California voted for the same nominee [ID:0].", "知识库中未找到您要的答案！") {
+		t.Fatal("grounded answer must keep quoting")
+	}
+	if decorateQuote(false, "California voted for the same nominee [ID:0].", "") {
+		t.Fatal("quote=false must stay off")
+	}
+}
+
+// TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
+// shape of the report: an answer that only says the knowledge base has no answer
+// must come back with neither [ID:n] markers nor a reference, even though the
+// evidence pool and a resolvable marker are present.
+func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, decorateQuote(true, answer, ""))
+
+	if strings.Contains(res.Answer, "[ID:") {
+		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
+	}
+	if len(res.Reference) != 0 {
+		t.Fatalf("not-found answer still carries a reference: %#v", res.Reference)
+	}
+}

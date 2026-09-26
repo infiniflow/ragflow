@@ -31,6 +31,8 @@ import os
 import sys
 import types
 
+import pytest
+
 # Load json_parser by file path so we don't trigger deepdoc/parser/__init__.py
 # (which pulls in heavy parsers). json_parser imports ``decode_text`` from
 # rag.nlp; stub rag.nlp only while loading, then restore sys.modules so later
@@ -93,6 +95,18 @@ def test_top_level_scalars_do_not_crash():
     assert parser._parse_json("true") == ["true"]
     assert parser._parse_json("0") == ["0"]
     assert parser._parse_json("false") == ["false"]
+
+
+@pytest.mark.parametrize("separator", ["\u0085", "\u2028", "\u2029"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_jsonl_preserves_unicode_separators_in_strings(separator, newline):
+    records = [{"text": f"first{separator}second"}, {"text": "next record"}]
+    content = newline.join(json.dumps(record, ensure_ascii=False) for record in records)
+    parser = RAGFlowJsonParser()
+
+    assert parser.is_jsonl_format(content)
+    assert [json.loads(chunk) for chunk in parser._parse_jsonl(content)] == records
+    assert [json.loads(chunk) for chunk in parser(content.encode("utf-8"))] == records
 
 
 def test_top_level_null_yields_no_chunk():

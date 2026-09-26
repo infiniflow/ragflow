@@ -64,6 +64,40 @@ def test_markdownify_options_are_forwarded():
     assert html_to_markdown("<h1>Title</h1>", heading_style="ATX").strip() == "# Title"
 
 
+def _table_lines(markdown):
+    return [line.strip() for line in markdown.splitlines() if line.strip().startswith("|")]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        # What mammoth hands over for a Word table: no <thead>, no <th>.
+        "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        # The same table wrapped in a <tbody>, which is what a browser's DOM has.
+        "<table><tbody><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_without_th_uses_its_first_row_as_the_header(html):
+    assert _table_lines(html_to_markdown(html)) == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><th>Product</th><th>Spec</th></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        "<table><thead><tr><th>Product</th><th>Spec</th></tr></thead><tbody><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_that_marks_its_header_is_unchanged(html):
+    assert _table_lines(html_to_markdown(html)) == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_the_caller_can_still_ask_for_the_empty_header():
+    html = "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>"
+
+    assert _table_lines(html_to_markdown(html, table_infer_header=False))[0] == "|  |  |"
+
+
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)((?:\\\\)*)\|")
 # CommonMark: a backslash escapes ASCII punctuation, and nothing else.
 _ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
@@ -119,3 +153,41 @@ def test_a_pipe_in_a_header_cell_stays_inside_the_cell():
 
 def test_a_pipe_outside_a_table_is_left_alone():
     assert html_to_markdown("<p>stdin | stdout</p>").strip() == "stdin | stdout"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        # A SharePoint or OneDrive hyperlink in a .docx routinely holds spaces.
+        (
+            '<a href="https://company.sharepoint.com/Shared Documents/report.docx">Report</a>',
+            "[Report](<https://company.sharepoint.com/Shared Documents/report.docx>)",
+        ),
+        # A closing parenthesis in a query string closes the destination early.
+        ('<a href="https://example.com/s?q=a)b">result</a>', "[result](<https://example.com/s?q=a)b>)"),
+        ('<img src="https://example.com/a b.png" alt="pic"/>', "![pic](<https://example.com/a b.png>)"),
+    ],
+)
+def test_a_destination_that_would_not_survive_a_reparse_is_delimited(html, expected):
+    """A bare Markdown destination ends at the first space and at an unbalanced `)`.
+
+    The truncated tail is then read as body text, so the link points somewhere else and the
+    remainder of the URL is chunked and embedded as prose.
+    """
+    assert html_to_markdown(html).strip() == expected
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ('<a href="https://example.com/a/b?x=1&amp;y=2">ok</a>', "[ok](https://example.com/a/b?x=1&y=2)"),
+        ('<img src="https://example.com/a.png" alt="pic"/>', "![pic](https://example.com/a.png)"),
+        # A base64 data URI is what the DOCX path inlines images as; it carries no
+        # character that needs delimiting, so it has to come through untouched.
+        ('<img src="data:image/png;base64,iVBORw0KGgo=" alt="inline"/>', "![inline](data:image/png;base64,iVBORw0KGgo=)"),
+        # markdownify renders an anchor with no destination as plain text.
+        ('<a href="">empty</a>', "empty"),
+    ],
+)
+def test_a_destination_that_needs_nothing_is_left_alone(html, expected):
+    assert html_to_markdown(html).strip() == expected

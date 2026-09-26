@@ -2442,10 +2442,6 @@ func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 	}{
 		{"tool-capable model", "model-tools-on", true, "chat"},
 		{"model without tool support", "model-tools-off", false, "chat"},
-		// Enrolled only as image-to-text. The type has to be resolved before the
-		// row is loaded, otherwise the load is rejected as a chat model and the
-		// capability reads as absent while the pipeline runs on this same model.
-		{"image2text-only model", "model-image2text-tools", true, "image2text"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
@@ -2462,24 +2458,17 @@ func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 	}
 }
 
-// TestResolveChatModelTargetAcceptsImage2TextOnlyModel pins the shared entry point
-// the agentic wiring and the generation path both use: it must load a model
-// enrolled only as image-to-text — and report its capability — instead of
-// rejecting it as a chat model, which is what made such a request silently fall
-// back to the regular RAG path.
-func TestResolveChatModelTargetAcceptsImage2TextOnlyModel(t *testing.T) {
+// TestResolveModelConfigRejectsImage2TextOnlyModel ensures that a model
+// enrolled only as image-to-text cannot be used as a chat model.
+func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	target, err := svc.ModelProviderSvc.ResolveChatModelTarget(t.Context(), "tenant-1", "model-image2text-tools")
-	if err != nil {
-		t.Fatalf("ResolveChatModelTarget(image2text-only model) failed: %v", err)
-	}
-	if !target.ModelType.Has(entity.ModelTypeImage2Text) {
-		t.Errorf("resolved type = %v, want image2text", target.ModelType)
-	}
-	if !target.SupportsTools {
-		t.Error("resolved target reported no tool support, want true")
+	_, err := svc.ModelProviderSvc.modelSolver().ResolveModelConfig(
+		t.Context(), "tenant-1", entity.ModelTypeChat, "model-image2text-tools",
+	)
+	if err == nil {
+		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
 	}
 }
 

@@ -31,7 +31,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"log/slog"
 
 	// Import image decoders for common formats.
 	_ "golang.org/x/image/bmp"
@@ -46,6 +45,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -171,8 +173,8 @@ func maybeDispatchImage(
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
 		if err != nil {
-			slog.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
-				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			common.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
+				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 	} else {
@@ -279,8 +281,8 @@ func maybeDispatchAudio(
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
 		if err != nil {
-			slog.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
-				"modelRef", modelRef, "tenant", tenantID, "err", err)
+			common.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
+				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 		}
 	} else {

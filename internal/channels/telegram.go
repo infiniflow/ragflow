@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,7 +29,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -201,7 +203,7 @@ func (c *telegramChannel) Stop(ctx context.Context) error {
 func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	chatID, err := strconv.ParseInt(strings.TrimSpace(msg.ChatID), 10, 64)
 	if err != nil {
-		log.Printf("[telegram:%s] invalid chat_id %q: %v", c.account.AccountID, msg.ChatID, err)
+		common.Warn("telegram: invalid chat_id", zap.String("account_id", c.account.AccountID), zap.String("chat_id", msg.ChatID), zap.Error(err))
 		return nil
 	}
 
@@ -218,7 +220,7 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 		}
 	}
 	if err := c.callAPI(ctx, "sendMessage", payload, nil); err != nil {
-		log.Printf("[telegram:%s] send failed: %v", c.account.AccountID, err)
+		common.Error("telegram: send failed", err, zap.String("account_id", c.account.AccountID))
 	}
 	return nil
 }
@@ -232,7 +234,7 @@ func (c *telegramChannel) run(ctx context.Context) {
 		if err == nil {
 			break
 		}
-		log.Printf("[telegram:%s] failed to start polling: %v", c.account.AccountID, err)
+		common.Error("telegram: failed to start polling", err, zap.String("account_id", c.account.AccountID))
 		if !waitForTelegramRetry(ctx) {
 			return
 		}
@@ -247,7 +249,7 @@ func (c *telegramChannel) run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("[telegram:%s] polling failed: %v", c.account.AccountID, err)
+			common.Error("telegram: polling failed", err, zap.String("account_id", c.account.AccountID))
 			if !waitForTelegramRetry(ctx) {
 				return
 			}
@@ -277,7 +279,7 @@ func (c *telegramChannel) getUpdates(ctx context.Context) ([]telegramUpdate, err
 	for _, raw := range rawUpdates {
 		var update telegramUpdate
 		if err := json.Unmarshal(raw, &update); err != nil {
-			log.Printf("[telegram:%s] ignored invalid update: %v", c.account.AccountID, err)
+			common.Warn("telegram: ignored invalid update", zap.String("account_id", c.account.AccountID), zap.Error(err))
 			continue
 		}
 		_ = json.Unmarshal(raw, &update.Raw)
@@ -326,7 +328,7 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[telegram:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("telegram: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

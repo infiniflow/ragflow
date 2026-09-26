@@ -427,6 +427,10 @@ export function transformTitleChunkerParams(
       'groupRules',
       'hierarchyHierarchy',
       'hierarchyGroup',
+      // Legacy pre-split rules field. The active rules have already been
+      // resolved (with `rules` as fallback) into `levels` above; keep the
+      // serialized params identical to the template's obj.params shape.
+      'rules',
     ]),
     method: params.method,
     hierarchy: Number(hierarchyValue || 0),
@@ -695,6 +699,14 @@ export const buildDslComponentsByGraph = (
 
         case Operator.TitleChunker:
           params = transformTitleChunkerParams(params);
+          break;
+        case Operator.ManualChunker:
+          // These fields are UI-only for the manual chunker and are not read
+          // by the backend ManualChunker component (manual.go pins method=group,
+          // ignores the token cap).
+          params = transformTitleChunkerParams(
+            omit(params, ['include_heading_content', 'chunk_token_cap']) as any,
+          );
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);

@@ -103,4 +103,8 @@ func TestTaskTypesForEntryLegacyFallbacks(t *testing.T) {
 	if !reflect.DeepEqual(got, allDatasetTaskTypes) {
 		t.Fatalf("unknown entry task types = %v, want %v", got, allDatasetTaskTypes)
 	}
+
+	if got = taskTypesForEntry(BacklogEntry{EventType: string(EventTypeDeleted)}); len(got) != 0 {
+		t.Fatalf("unscoped deletion task types = %v, want none", got)
+	}
 }
