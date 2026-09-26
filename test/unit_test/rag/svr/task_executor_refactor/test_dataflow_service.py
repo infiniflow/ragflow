@@ -404,9 +404,7 @@ class TestDataflowServiceEncodeBatch:
             "rag.svr.task_executor_refactor.dataflow_service.EmbeddingUtils.truncate_texts",
             side_effect=lambda texts, max_length: texts,
         ):
-            vts, c = await thread_pool_exec(
-                DataflowService._encode_batch, ["hello"], embedding_model
-            )
+            vts, c = await thread_pool_exec(DataflowService._encode_batch, ["hello"], embedding_model)
 
         assert vts == [[0.1, 0.2]]
         assert c == 7
