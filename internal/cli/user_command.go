@@ -42,7 +42,7 @@ import (
 func (c *CLI) APIShowVersionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/version", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/version", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
@@ -132,7 +132,7 @@ func (c *CLI) RegisterUser(commandCount int, cmd *Command) (ResponseIf, error) {
 		"nickname": nickname,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/users", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/users", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register user: %w", err)
 	}
@@ -162,17 +162,8 @@ func (c *CLI) APIListDatasetsCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, err
 	}
 
-	authKind := "web"
-	if httpClient.useAPIKey {
-		authKind = "api"
-	}
-
-	if httpClient.LoginToken != nil {
-		authKind = "web"
-	}
-
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", "/datasets", authKind, nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/datasets", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -198,7 +189,7 @@ func (c *CLI) APIListDatasetDocumentsCommand(commandCount int, cmd *Command) (Re
 	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
 
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
@@ -239,7 +230,7 @@ func (c *CLI) APIListDatasetFilesCommand(commandCount int, cmd *Command) (Respon
 	url := fmt.Sprintf("/datasets/%s/documents", datasetID)
 
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
@@ -268,17 +259,8 @@ func (c *CLI) APIListAgentsCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, err
 	}
 
-	authKind := "web"
-	if httpClient.useAPIKey {
-		authKind = "api"
-	}
-
-	if httpClient.LoginToken != nil {
-		authKind = "web"
-	}
-
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", "/agents", authKind, nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/agents", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
@@ -307,17 +289,8 @@ func (c *CLI) APIListChatsCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return nil, err
 	}
 
-	authKind := "web"
-	if httpClient.useAPIKey {
-		authKind = "api"
-	}
-
-	if httpClient.LoginToken != nil {
-		authKind = "web"
-	}
-
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", "/chats", authKind, nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/chats", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list chats: %w", err)
 	}
@@ -346,17 +319,8 @@ func (c *CLI) APIListSearchesCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, err
 	}
 
-	authKind := "web"
-	if httpClient.useAPIKey {
-		authKind = "api"
-	}
-
-	if httpClient.LoginToken != nil {
-		authKind = "web"
-	}
-
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", "/searches", authKind, nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/searches", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list searches: %w", err)
 	}
@@ -385,17 +349,8 @@ func (c *CLI) APIListMemoriesCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, err
 	}
 
-	authKind := "web"
-	if httpClient.useAPIKey {
-		authKind = "api"
-	}
-
-	if httpClient.LoginToken != nil {
-		authKind = "web"
-	}
-
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", "/memories", authKind, nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/memories", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list memories: %w", err)
 	}
@@ -436,7 +391,7 @@ func (c *CLI) ListDatasetDocumentUserCommand(commandCount int, cmd *Command) (Re
 	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
 
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
@@ -483,7 +438,7 @@ func (c *CLI) DevGetMetadataCommand(commandCount int, cmd *Command) (ResponseIf,
 	// Build comma-separated dataset_ids for query param
 	datasetIDsStr := strings.Join(datasetIDs, ",")
 
-	resp, err := httpClient.Request(commandCount, "GET", "/datasets/metadata/flattened?dataset_ids="+datasetIDsStr, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/datasets/metadata/flattened?dataset_ids="+datasetIDsStr, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metadata: %w", err)
 	}
@@ -629,7 +584,7 @@ func (c *CLI) SearchOnDatasets(commandCount int, cmd *Command) (ResponseIf, erro
 	}
 
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "POST", "/datasets/search", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/datasets/search", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search on datasets: %w", err)
 	}
@@ -705,7 +660,7 @@ func (c *CLI) APICreateAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/system/keys", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/system/keys", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create key: %w", err)
 	}
@@ -745,7 +700,7 @@ func (c *CLI) APICreateDatasetCommand(commandCount int, cmd *Command) (ResponseI
 		"name": datasetName,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/datasets", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/datasets", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -759,7 +714,7 @@ func (c *CLI) APICreateAgentCommand(commandCount int, cmd *Command) (ResponseIf,
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/agents", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/agents", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
@@ -790,7 +745,7 @@ func (c *CLI) APICreateChatCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/chats", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/chats", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat: %w", err)
 	}
@@ -830,7 +785,7 @@ func (c *CLI) APICreateSearchCommand(commandCount int, cmd *Command) (ResponseIf
 		"name": searchName,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/searches", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/searches", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}
@@ -870,7 +825,7 @@ func (c *CLI) APICreateMemoryCommand(commandCount int, cmd *Command) (ResponseIf
 		"name": memoryName,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/memories", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/memories", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create memory: %w", err)
 	}
@@ -902,7 +857,7 @@ func (c *CLI) APIListAPIKeysCommand(commandCount int, cmd *Command) (ResponseIf,
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/keys", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/keys", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list keys: %w", err)
 	}
@@ -922,7 +877,7 @@ func (c *CLI) APIDeleteAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", fmt.Sprintf("/system/keys/%s", apiKey), "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", fmt.Sprintf("/system/keys/%s", apiKey), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
@@ -1009,7 +964,7 @@ func (c *CLI) APISetVariableCommand(commandCount int, cmd *Command) (ResponseIf,
 		"var_name":  varName,
 		"var_value": varValue,
 	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/variables", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/variables", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set variable: %w", err)
 	}
@@ -1047,7 +1002,7 @@ func (c *CLI) APIShowVariableCommand(commandCount int, cmd *Command) (ResponseIf
 
 	endPoint := fmt.Sprintf("/system/variables/%s", EncodedVarName)
 
-	resp, err := httpClient.Request(commandCount, "GET", endPoint, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get variable: %w", err)
 	}
@@ -1138,7 +1093,7 @@ func (c *CLI) DevCreateChunkStoreCommand(commandCount int, cmd *Command) (Respon
 		"vector_size": vectorSize,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk_store", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chunk store: %w", err)
 	}
@@ -1190,7 +1145,7 @@ func (c *CLI) DevDropChunkStoreCommand(commandCount int, cmd *Command) (Response
 		"kb_id": datasetID,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk_store", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop chunk store: %w", err)
 	}
@@ -1227,7 +1182,7 @@ func (c *CLI) DevCreateMetadataStoreCommand(commandCount int, cmd *Command) (Res
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata_store", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata store: %w", err)
 	}
@@ -1264,7 +1219,7 @@ func (c *CLI) DevDropMetadataStoreCommand(commandCount int, cmd *Command) (Respo
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata_store", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata store: %w", err)
 	}
@@ -1312,7 +1267,7 @@ func (c *CLI) APIAddProviderCommand(commandCount int, cmd *Command) (ResponseIf,
 		"provider_name": providerName,
 	}
 
-	resp, err := httpClient.Request(commandCount, "PUT", "/providers", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/providers", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1327,7 +1282,7 @@ func (c *CLI) APIListProvidersCommand(commandCount int, cmd *Command) (ResponseI
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/providers", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/providers", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -1350,7 +1305,7 @@ func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (Response
 
 	url := fmt.Sprintf("/providers/%s", providerName)
 
-	resp, err := httpClient.Request(commandCount, "DELETE", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
@@ -1380,7 +1335,7 @@ func (c *CLI) APIDropDatasetCommand(commandCount int, cmd *Command) (ResponseIf,
 		"delete_all": true,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
@@ -1410,7 +1365,7 @@ func (c *CLI) APIDropAgentCommand(commandCount int, cmd *Command) (ResponseIf, e
 		"delete_all": true,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/agents", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/agents", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop agent: %w", err)
 	}
@@ -1440,7 +1395,7 @@ func (c *CLI) APIDropChatCommand(commandCount int, cmd *Command) (ResponseIf, er
 		"delete_all": true,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/chats", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/chats", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop chat: %w", err)
 	}
@@ -1467,7 +1422,7 @@ func (c *CLI) APIDropSearchCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	endPoint := fmt.Sprintf("/searches/%s", searchID)
 
-	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop search: %w", err)
 	}
@@ -1494,7 +1449,7 @@ func (c *CLI) APIDropMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	endPoint := fmt.Sprintf("/memories/%s", memoryID)
 
-	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop memory: %w", err)
 	}
@@ -1544,7 +1499,7 @@ func (c *CLI) APIAddProviderInstanceCommand(commandCount int, cmd *Command) (Res
 		"region":        region,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider instance: %w", err)
 	}
@@ -1575,7 +1530,7 @@ func (c *CLI) APIDeleteProviderInstanceCommand(commandCount int, cmd *Command) (
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := httpClient.Request(commandCount, "DELETE", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop provider instance: %w", err)
 	}
@@ -1611,7 +1566,7 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(commandCount int, cmd *Comma
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := httpClient.Request(commandCount, "DELETE", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete model: %w", err)
 	}
@@ -1805,7 +1760,7 @@ func (c *CLI) APIChatToModelCommand(commandCount int, cmd *Command) (ResponseIf,
 	if stream {
 		// Call stream http api
 		startTime := time.Now()
-		reader, err := httpClient.RequestStream("POST", url, "web", nil, payload)
+		reader, err := httpClient.RequestStream("POST", url, httpClient.AuthKind(), nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1874,7 +1829,7 @@ func (c *CLI) APIChatToModelCommand(commandCount int, cmd *Command) (ResponseIf,
 		return result, nil
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, formatRequestError("Chat request", err)
 	}
@@ -1956,7 +1911,7 @@ func (c *CLI) EmbedUserTextCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	url := "/embeddings"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to embed text: %w", err)
 	}
@@ -2041,7 +1996,7 @@ func (c *CLI) APIRerankUserDocumentCommand(commandCount int, cmd *Command) (Resp
 
 	url := "/rerank"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank document: %w", err)
 	}
@@ -2155,7 +2110,7 @@ func (c *CLI) APITTSUserCommand(commandCount int, cmd *Command) (ResponseIf, err
 
 	url := "/audio/speech"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to TTS document: %w", err)
 	}
@@ -2322,7 +2277,7 @@ func (c *CLI) APIASRUserCommand(commandCount int, cmd *Command) (ResponseIf, err
 
 	url := "/audio/transcriptions"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ASR document: %w", err)
 	}
@@ -2426,7 +2381,7 @@ func (c *CLI) APIOCRUserCommand(commandCount int, cmd *Command) (ResponseIf, err
 
 	url := "/file/ocr"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to OCR document: %w", err)
 	}
@@ -2512,7 +2467,7 @@ func (c *CLI) APIModelParseFileCommand(commandCount int, cmd *Command) (Response
 
 	url := "/file/parse"
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to PARSE document: %w", err)
 	}
@@ -2538,7 +2493,7 @@ func (c *CLI) APIListModelInstanceTasksCommand(commandCount int, cmd *Command) (
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
 
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list model parsing tasks: %w", err)
 	}
@@ -2570,7 +2525,7 @@ func (c *CLI) APIShowProviderInstanceTaskCommand(commandCount int, cmd *Command)
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
 
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -2655,7 +2610,7 @@ func (c *CLI) APIAddCustomModelCommand(commandCount int, cmd *Command) (Response
 		"models":        models,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add custom model: %w", err)
 	}
@@ -2707,7 +2662,7 @@ func (c *CLI) DevUpdateChunkCommand(commandCount int, cmd *Command) (ResponseIf,
 	payload["document_id"] = docID
 	payload["chunk_id"] = chunkID
 
-	resp, err := httpClient.Request(commandCount, "POST", "/chunk/update", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/chunk/update", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -2759,7 +2714,7 @@ func (c *CLI) DevGetChunkCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk: %w", err)
 	}
@@ -2803,7 +2758,7 @@ func (c *CLI) DevSetMetaCommand(commandCount int, cmd *Command) (ResponseIf, err
 		"meta":   metaJSON,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/document/dev_set_meta", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/document/dev_set_meta", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set metadata: %w", err)
 	}
@@ -2855,7 +2810,7 @@ func (c *CLI) DevDeleteMetaCommand(commandCount int, cmd *Command) (ResponseIf, 
 		payload["keys"] = keysJSON
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/document/dev_delete_meta", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/document/dev_delete_meta", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete metadata: %w", err)
 	}
@@ -2917,7 +2872,7 @@ func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf
 		payload["chunk_ids"] = chunkIDs
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets/"+datasetID+"/documents/"+docID+"/chunks", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets/"+datasetID+"/documents/"+docID+"/chunks", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove chunks: %w", err)
 	}
@@ -2980,7 +2935,7 @@ func (c *CLI) APIParseDocumentsCommand(commandCount int, cmd *Command) (Response
 	}
 
 	// Normal mode
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse documents: %w", err)
 	}
@@ -3084,7 +3039,7 @@ func (c *CLI) APIListIngestionTasks(commandCount int, cmd *Command) (ResponseIf,
 		"dataset_id": datasetID,
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/datasets/ingestion/tasks", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "GET", "/datasets/ingestion/tasks", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ingestion tasks: %w", err)
 	}
@@ -3137,7 +3092,7 @@ func (c *CLI) APIListSyncLogsCommand(commandCount int, cmd *Command) (ResponseIf
 		url += "?" + encoded
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", url, "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sync logs: %w", err)
 	}
@@ -3166,7 +3121,7 @@ func (c *CLI) APIShowLogLevelCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/config/log", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/config/log", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get log level config: %w", err)
 	}
@@ -3182,7 +3137,7 @@ func (c *CLI) APIListEnvironmentsCommand(commandCount int, cmd *Command) (Respon
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/environments", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/environments", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
@@ -3197,7 +3152,7 @@ func (c *CLI) APIListVariablesCommand(commandCount int, cmd *Command) (ResponseI
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/variables", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/variables", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list variables: %w", err)
 	}
@@ -3228,7 +3183,7 @@ func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (Response
 
 	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
 
-	resp, err := httpClient.Request(commandCount, "POST", url, "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -3250,7 +3205,7 @@ func (c *CLI) APIStopIngestionCommand(commandCount int, cmd *Command) (ResponseI
 		"tasks": tasks,
 	}
 
-	resp, err := httpClient.Request(commandCount, "PUT", "/datasets/ingestion/tasks", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/datasets/ingestion/tasks", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
 	}
@@ -3273,7 +3228,7 @@ func (c *CLI) APIRemoveTaskCommand(commandCount int, cmd *Command) (ResponseIf, 
 		"tasks": tasks,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets/ingestion/tasks", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/datasets/ingestion/tasks", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tasks: %w", err)
 	}
@@ -3564,7 +3519,7 @@ func buildOpenaiChatRequestBody(cmd *Command) (map[string]interface{}, error) {
 // same HTTPClient.Request used by every other CLI command.
 func (c *CLI) oneshotOpenaiChat(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request(1, "POST", url, "web", nil, body)
+	resp, err := httpClient.Request(1, "POST", url, httpClient.AuthKind(), nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("openai_chat request: %w", err)
 	}
@@ -3609,7 +3564,7 @@ func (c *CLI) oneshotOpenaiChat(url string, body map[string]interface{}) (Respon
 // stdout as they arrive
 func (c *CLI) streamOpenaiChat(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request(1, "POST", url, "web", nil, body)
+	resp, err := httpClient.Request(1, "POST", url, httpClient.AuthKind(), nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("openai_chat stream: %w", err)
 	}
@@ -3781,7 +3736,7 @@ func buildChatCompletionsRequestBody(cmd *Command) (map[string]interface{}, erro
 // ChatCompletionsResponse parsed from the RAGFlow-internal JSON envelope.
 func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	resp, err := httpClient.Request(1, "POST", url, "web", nil, body)
+	resp, err := httpClient.Request(1, "POST", url, httpClient.AuthKind(), nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("chat completions request: %w", err)
 	}
@@ -3814,7 +3769,7 @@ func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (R
 // streamChatCompletions performs a streaming POST and collects SSE chunks.
 func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-	reader, err := httpClient.RequestStream("POST", url, "web", nil, body)
+	reader, err := httpClient.RequestStream("POST", url, httpClient.AuthKind(), nil, body)
 	if err != nil {
 		return nil, fmt.Errorf("chat completions stream: %w", err)
 	}
@@ -3870,7 +3825,7 @@ func (c *CLI) APISetCoresCommand(commandCount int, cmd *Command) (ResponseIf, er
 	payload := map[string]interface{}{
 		"cores": cores,
 	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/cores", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/cores", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set CPU cores: %w", err)
 	}
@@ -3906,7 +3861,7 @@ func (c *CLI) APISetMemoryCommand(commandCount int, cmd *Command) (ResponseIf, e
 	payload := map[string]interface{}{
 		"memory_size": memorySize,
 	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/memory", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/memory", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set memory: %w", err)
 	}
@@ -3942,7 +3897,7 @@ func (c *CLI) APISetConcurrencyCommand(commandCount int, cmd *Command) (Response
 	payload := map[string]interface{}{
 		"concurrency": concurrency,
 	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/concurrency", "web", nil, payload)
+	resp, err := httpClient.Request(commandCount, "PUT", "/system/concurrency", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set concurrency: %w", err)
 	}
@@ -3970,7 +3925,7 @@ func (c *CLI) APIShowCoresCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/cores", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/cores", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get CPU cores: %w", err)
 	}
@@ -3984,7 +3939,7 @@ func (c *CLI) APIShowMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/memory", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/memory", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memory: %w", err)
 	}
@@ -3998,7 +3953,7 @@ func (c *CLI) APIShowConcurrencyCommand(commandCount int, cmd *Command) (Respons
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", "/system/concurrency", "web", nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", "/system/concurrency", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get concurrency: %w", err)
 	}
