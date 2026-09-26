@@ -489,16 +489,15 @@ def legacy_ingestion_metadata_config(parser_config: dict) -> tuple[bool, list | 
     Go stores a modular object under ``metadata``. Older datasets still store
     the fields directly; both shapes must yield the same ingestion inputs.
     """
-    metadata = parser_config.get("metadata") or []
-    if isinstance(metadata, dict) and any(
-        key in metadata for key in ("enabled", "metadata", "built_in_metadata")
-    ):
+    metadata = parser_config.get("metadata")
+    if isinstance(metadata, dict) and not _is_json_schema(metadata):
         enabled = metadata.get("enabled")
         return (
             enabled if isinstance(enabled, bool) else False,
             metadata.get("metadata") or [],
             metadata.get("built_in_metadata") or [],
         )
+    metadata = metadata or []
     built_in = parser_config.get("built_in_metadata") or []
     enabled = parser_config.get("enable_metadata")
     if enabled is None and "enable_metadata" not in parser_config:

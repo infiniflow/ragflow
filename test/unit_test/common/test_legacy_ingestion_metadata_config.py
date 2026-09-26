@@ -62,3 +62,20 @@ def test_flat_fields_without_flag_match_go_default_and_explicit_false_wins():
     assert legacy_ingestion_metadata_config({"metadata": fields}) == (True, fields, [])
     assert legacy_ingestion_metadata_config({"built_in_metadata": built_in}) == (True, [], built_in)
     assert legacy_ingestion_metadata_config({"metadata": fields, "enable_metadata": False}) == (False, fields, [])
+
+
+def test_empty_modular_map_overrides_legacy_fields():
+    config = {"metadata": {}, "enable_metadata": True, "built_in_metadata": [{"key": "title"}]}
+    assert legacy_ingestion_metadata_config(config) == (False, [], [])
+    assert ingestion_parser_config(config) == {"metadata": [], "enable_metadata": False, "built_in_metadata": []}
+    assert config["metadata"] == {}
+
+
+def test_partial_modular_map_does_not_inherit_legacy_fields():
+    config = {"metadata": {"metadata": [{"key": "author"}]}, "built_in_metadata": [{"key": "title"}]}
+    assert legacy_ingestion_metadata_config(config) == (False, [{"key": "author"}], [])
+
+
+def test_legacy_json_schema_remains_a_schema():
+    schema = {"type": "object", "properties": {"author": {"type": "string"}}}
+    assert legacy_ingestion_metadata_config({"metadata": schema, "enable_metadata": True}) == (True, schema, [])
