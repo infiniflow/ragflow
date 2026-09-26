@@ -50,65 +50,20 @@ import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
-import { ReferenceImageList } from './reference-image-list';
-import { UploadedMessageFiles } from './uploaded-message-files';
+  const referenceDocuments = useMemo(() => {
+    const docs = reference?.doc_aggs ?? {};
 
-interface IProps
-  extends Partial<IRemoveMessageById>, IRegenerateMessage, PropsWithChildren {
-  item: IMessage;
-  conversationId?: string;
-  currentEventListWithoutMessageById?: (messageId: string) => INodeEvent[];
-  setCurrentMessageId?: (messageId: string) => void;
-  reference?: IReferenceObject;
-  loading?: boolean;
-  sendLoading?: boolean;
-  visibleAvatar?: boolean;
-  nickname?: string;
-  avatar?: string;
-  avatarDialog?: string | null;
-  agentName?: string;
-  clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
-  index: number;
-  showLikeButton?: boolean;
-  showLoudspeaker?: boolean;
-  showLog?: boolean;
-  isShare?: boolean;
-}
-
-function MessageItem({
-  item,
-  conversationId,
-  currentEventListWithoutMessageById,
-  setCurrentMessageId,
-  reference,
-  loading = false,
-  avatar,
-  avatarDialog,
-  agentName,
-  sendLoading = false,
-  clickDocumentButton,
-  removeMessageById,
-  regenerateMessage,
-  showLikeButton = true,
-  showLoudspeaker = true,
-  visibleAvatar = true,
-  children,
-  showLog,
-  isShare,
-  nickname,
-}: IProps) {
-  const { theme } = useTheme();
-  const isAssistant = item.role === MessageType.Assistant;
-  const isUser = item.role === MessageType.User;
-  const [showThinking, setShowThinking] = useState(false);
-  const { setLastSendLoadingFunc } = useContext(AgentChatContext);
-
-  useEffect(() => {
-    if (typeof setLastSendLoadingFunc === 'function') {
-      setLastSendLoadingFunc(loading, item.id);
-    }
-  }, [loading, setLastSendLoadingFunc, item.id]);
-
+    return Object.values(docs);
+  }, [reference?.doc_aggs]);
+  const hasRetrievalReference = useMemo(
+    () =>
+      Boolean(
+        reference?.metadata_filters ||
+          Object.keys(reference?.chunks ?? {}).length ||
+          Object.keys(reference?.doc_aggs ?? {}).length,
+      ),
+    [reference],
+  );
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
     [item.downloads],
@@ -172,6 +127,7 @@ function MessageItem({
     clickDocumentButton,
     isAssistant,
     isShare,
+    isUser,
     item.data,
     loading,
     messageContent,
@@ -304,6 +260,21 @@ function MessageItem({
               ></ReferenceImageList>
             )}
 
+<<<<<<< HEAD
+=======
+            {isAssistant && referenceDocuments.length > 0 && (
+              <ReferenceDocumentList
+                list={referenceDocuments}
+              ></ReferenceDocumentList>
+            )}
+
+            {isAssistant && hasRetrievalReference && (
+              <MetadataFilterDiagnostics
+                diagnostics={reference?.metadata_filters}
+              />
+            )}
+
+>>>>>>> 9ab67cf4e (feat(chat): display metadata filter diagnostics)
             {isUser && (
               <UploadedMessageFiles
                 files={item.files as File[] | UploadResponseDataType[]}
