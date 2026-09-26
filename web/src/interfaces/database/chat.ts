@@ -151,9 +151,27 @@ export interface IReference {
   total: number;
 }
 
+export interface IMetadataFilterCondition {
+  key: string;
+  op: string;
+  value: unknown;
+}
+
+export interface IMetadataFilterDiagnostic {
+  method: string;
+  status: string;
+  conditions: IMetadataFilterCondition[];
+  logic: string;
+  matched_document_count: number;
+  tool_name?: string;
+  query?: string;
+  dataset_ids?: string[];
+}
+
 export interface IReferenceObject {
   chunks: Record<string, IReferenceChunk>;
   doc_aggs: Record<string, Docagg>;
+  metadata_filters?: IMetadataFilterDiagnostic[];
 }
 
 export interface IAnswer {
