@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"regexp"
 	"strings"
@@ -327,7 +328,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	}
 
 	// Find the version folder
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
@@ -371,7 +372,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// If there's a directory path before the file, navigate through it
 	for i := 0; i < len(pathParts)-1; i++ {
-		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
+		subResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", currentFolderID), "auto", nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to navigate path: %w", err)
 		}
@@ -415,7 +416,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// Step 5: Find the file in the current directory
 	fileName := pathParts[len(pathParts)-1]
-	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
+	finalResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", currentFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list directory: %w", err)
 	}
@@ -456,7 +457,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// Step 6: Download the file content
 	// First get file info to get the download URL
-	contentResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files/%s", fileID), "auto", nil, nil)
+	contentResp, err := p.httpClient.Request("GET", utils.APIPath("/files", fileID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
@@ -620,7 +621,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 	common.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
 
 	// List all subfolders in the space folder (each subfolder is a skill)
-	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", spaceFolderID), "auto", nil, nil)
+	skillsResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", spaceFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
@@ -722,7 +723,7 @@ func (p *SkillProvider) getSkillsFolderID(ctx stdctx.Context) (string, error) {
 
 // findFolderID finds a folder by name under a parent folder
 func (p *SkillProvider) findFolderID(ctx stdctx.Context, parentID, folderName string) (string, error) {
-	resp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", parentID), "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", parentID), "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list folders: %w", err)
 	}
@@ -812,7 +813,7 @@ func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, spaceID, skillName
 	}
 
 	// List the skill folder to get versions (subdirectories)
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
@@ -873,7 +874,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 	}
 
 	// List the version folder under the skill folder
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skill versions: %w", err)
 	}
@@ -930,7 +931,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 		isLastPart := (i == len(extraParts)-1)
 
 		// List current folder to find the next part
-		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
+		subResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", currentFolderID), "auto", nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to navigate path: %w", err)
 		}
@@ -1001,7 +1002,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 	}
 
 	// Step 5: List the final folder contents
-	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
+	finalResp, err := p.httpClient.Request("GET", "/files?"+utils.APIQuery("parent_id", currentFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list folder contents: %w", err)
 	}

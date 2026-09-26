@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -302,11 +303,11 @@ func (c *CLI) CommonShowProviderCommand(commandCount int, cmd *Command) (Respons
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s", providerName)
+		endPoint = utils.APIPath("/admin/providers", providerName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s", providerName)
+		endPoint = utils.APIPath("/providers", providerName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -337,11 +338,11 @@ func (c *CLI) CommonShowProviderInstanceCommand(commandCount int, cmd *Command) 
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -373,11 +374,11 @@ func (c *CLI) CommonShowProviderInstanceBalanceCommand(commandCount int, cmd *Co
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/balance", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "balance")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "balance")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -405,11 +406,11 @@ func (c *CLI) CommonListProviderInstancesCommand(commandCount int, cmd *Command)
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances", providerName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances", providerName)
+		endPoint = utils.APIPath("/providers", providerName, "instances")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -453,11 +454,11 @@ func (c *CLI) CommonListInstanceModelsCommand(commandCount int, cmd *Command) (R
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -496,11 +497,11 @@ func (c *CLI) CommonListModelsCommand(commandCount int, cmd *Command) (ResponseI
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/models", providerName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "models")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
+		endPoint = utils.APIPath("/providers", providerName, "models")
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -543,11 +544,11 @@ func (c *CLI) CommonListInstanceModelsSyncCommand(commandCount int, cmd *Command
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models") + "?supported=true"
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models") + "?supported=true"
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -589,11 +590,11 @@ func (c *CLI) CommonShowProviderModelCommand(commandCount int, cmd *Command) (Re
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/models/%s", providerName, modelName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "models", modelName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
+		endPoint = utils.APIPath("/providers", providerName, "models", modelName)
 		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -642,11 +643,11 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(commandCount int, cmd *Command) 
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/connection", providerName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "connection")
 		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/connection", providerName)
+		endPoint = utils.APIPath("/providers", providerName, "connection")
 		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -684,11 +685,11 @@ func (c *CLI) CommonCheckProviderConnectionCommand(commandCount int, cmd *Comman
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/connection", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "connection")
 		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "connection")
 		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -739,11 +740,11 @@ func (c *CLI) CommonAlterProviderInstanceCommand(commandCount int, cmd *Command)
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s", providerName, instanceName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName)
 		resp, err = httpClient.Request(commandCount, "PUT", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName)
 		resp, err = httpClient.Request(commandCount, "PUT", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
@@ -790,11 +791,11 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 	switch c.Config.CLIMode {
 	case AdminMode:
 		httpClient := c.AdminServerClient
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models", modelName)
 		resp, err = httpClient.Request(1, "PATCH", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
 		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models", modelName)
 		resp, err = httpClient.Request(1, "PATCH", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")

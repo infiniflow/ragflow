@@ -16,7 +16,9 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+)
 
 func (c *CLI) apiModeClient() (*HTTPClient, error) {
 	if c.Config.CLIMode != APIMode {
