@@ -490,17 +490,20 @@ def legacy_ingestion_metadata_config(parser_config: dict) -> tuple[bool, list | 
     the fields directly; both shapes must yield the same ingestion inputs.
     """
     metadata = parser_config.get("metadata") or []
-    if isinstance(metadata, dict) and isinstance(metadata.get("enabled"), bool):
+    if isinstance(metadata, dict) and any(
+        key in metadata for key in ("enabled", "metadata", "built_in_metadata")
+    ):
+        enabled = metadata.get("enabled")
         return (
-            metadata["enabled"],
+            enabled if isinstance(enabled, bool) else False,
             metadata.get("metadata") or [],
             metadata.get("built_in_metadata") or [],
         )
-    return (
-        bool(parser_config.get("enable_metadata", False)),
-        metadata,
-        parser_config.get("built_in_metadata") or [],
-    )
+    built_in = parser_config.get("built_in_metadata") or []
+    enabled = parser_config.get("enable_metadata")
+    if enabled is None and "enable_metadata" not in parser_config:
+        enabled = bool(metadata) or bool(built_in)
+    return (bool(enabled), metadata, built_in)
 
 
 def ingestion_parser_config(parser_config: dict) -> dict:

@@ -45,3 +45,20 @@ def test_modular_metadata_regression_on_unpatched_main():
     normalized = ingestion_parser_config(config)
     assert normalized["enable_metadata"] is True
     assert normalized["metadata"] == [{"key": "author"}]
+
+
+def test_modular_fields_without_boolean_enabled_remain_nested():
+    fields = [{"key": "author"}]
+    built_in = [{"key": "title"}]
+    for flag in ({}, {"enabled": "yes"}):
+        config = {"metadata": {**flag, "metadata": fields, "built_in_metadata": built_in}}
+        assert legacy_ingestion_metadata_config(config) == (False, fields, built_in)
+        assert ingestion_parser_config(config)["built_in_metadata"] == built_in
+
+
+def test_flat_fields_without_flag_match_go_default_and_explicit_false_wins():
+    fields = [{"key": "author"}]
+    built_in = [{"key": "title"}]
+    assert legacy_ingestion_metadata_config({"metadata": fields}) == (True, fields, [])
+    assert legacy_ingestion_metadata_config({"built_in_metadata": built_in}) == (True, [], built_in)
+    assert legacy_ingestion_metadata_config({"metadata": fields, "enable_metadata": False}) == (False, fields, [])
