@@ -25,6 +25,10 @@ env:
 
   # The password for Elasticsearch
   ELASTIC_PASSWORD: infini_rag_flow_helm
+  # To use external / cloud-hosted Elasticsearch, set elasticsearch.enabled=false
+  # and configure the following:
+  # ES_HOST_URL: https://your-cluster.elastic-cloud.com:443
+  # ELASTIC_API_KEY: your-base64-encoded-api-key
 
   # The password for OpenSearch.
   # At least one uppercase letter, one lowercase letter, one digit, and one special character
@@ -137,6 +141,7 @@ infinity:
     type: ClusterIP
 
 elasticsearch:
+  enabled: true
   image:
     repository: elasticsearch
     tag: "8.11.3"

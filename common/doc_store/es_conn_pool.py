@@ -15,6 +15,8 @@
 #
 import logging
 import time
+from urllib.parse import urlparse
+
 from elasticsearch import Elasticsearch
 
 from common import settings
@@ -32,6 +34,10 @@ class ElasticSearchConnectionPool:
             self.ES_CONFIG = settings.ES
         else:
             self.ES_CONFIG = settings.get_base_config("es", {})
+
+        # Fail fast on a misconfigured scheme instead of retrying a config error.
+        if self.ES_CONFIG.get("api_key"):
+            self._require_https_hosts()
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -69,16 +75,34 @@ class ElasticSearchConnectionPool:
             raise Exception(msg)
 
     def _connect(self):
-        self.es_conn = Elasticsearch(
-            self.ES_CONFIG["hosts"].split(","),
-            basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG["password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
-            verify_certs=self.ES_CONFIG.get("verify_certs", False),
-            timeout=600,
-        )
+        if self.ES_CONFIG.get("api_key"):
+            self._require_https_hosts()
+            logging.info("Connecting to Elasticsearch using API key authentication")
+            self.es_conn = Elasticsearch(
+                self.ES_CONFIG["hosts"].split(","),
+                api_key=self.ES_CONFIG["api_key"],
+                # API keys must never travel over an unverified or cleartext connection.
+                verify_certs=self.ES_CONFIG.get("verify_certs", True),
+                timeout=600,
+            )
+        else:
+            logging.info("Connecting to Elasticsearch using basic authentication")
+            self.es_conn = Elasticsearch(
+                self.ES_CONFIG["hosts"].split(","),
+                basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG["password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
+                verify_certs=self.ES_CONFIG.get("verify_certs", False),
+                timeout=600,
+            )
         if self.es_conn:
             self.info = self.es_conn.info()
             return True
         return False
+
+    def _require_https_hosts(self):
+        hosts = [h.strip() for h in self.ES_CONFIG["hosts"].split(",")]
+        insecure = [h for h in hosts if urlparse(h).scheme != "https"]
+        if insecure:
+            raise ValueError(f"Elasticsearch API key authentication requires HTTPS hosts, got non-HTTPS host(s): {insecure}. Set ES_HOST_URL to an https:// endpoint when ELASTIC_API_KEY is configured.")
 
     def get_conn(self):
         return self.es_conn
