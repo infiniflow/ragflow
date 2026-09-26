@@ -17,17 +17,25 @@
 package component
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -40,6 +48,116 @@ import (
 type visionEnhanceFakeDriver struct {
 	modelModule.ModelDriver
 }
+
+type failingVisionImageCropper struct{ err error }
+
+func (c failingVisionImageCropper) Crop(context.Context, map[string]any) (*visionImage, error) {
+	return nil, c.err
+}
+
+func (failingVisionImageCropper) Close() error { return nil }
+
+func TestMediaOCRStatus_UsesPerItemMarker(t *testing.T) {
+	tests := []struct {
+		name        string
+		fileType    utility.FileType
+		parseMethod string
+		item        map[string]any
+		want        ocrStatus
+	}{
+		{
+			name:        "pending marker overrides deepdoc table default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "table", "ocr_status_kwd": "pending"},
+			want:        ocrPending,
+		},
+		{
+			name:        "attempted marker overrides external image default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "mineru",
+			item:        map[string]any{"doc_type_kwd": "image", "ocr_status_kwd": "attempted"},
+			want:        ocrAttempted,
+		},
+		{
+			name:        "unknown marker overrides deepdoc image default",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "image", "ocr_status_kwd": "unknown"},
+			want:        ocrUnknown,
+		},
+		{
+			name:        "unrecognized marker falls back to existing policy",
+			fileType:    utility.FileTypePDF,
+			parseMethod: "deepdoc",
+			item:        map[string]any{"doc_type_kwd": "table", "ocr_status_kwd": "later"},
+			want:        ocrAttempted,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mediaOCRStatus(tt.fileType, tt.parseMethod, tt.item); got != tt.want {
+				t.Errorf("mediaOCRStatus() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+type concurrentVisionOCRAnalyzer struct {
+	active atomic.Int32
+	peak   atomic.Int32
+}
+
+type budgetVisionOCRAnalyzer struct {
+	detectCalls atomic.Int32
+}
+
+func (*budgetVisionOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*budgetVisionOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
+func (a *budgetVisionOCRAnalyzer) OCRDetect(ctx context.Context, _ image.Image) ([]deepdoctype.OCRBox, error) {
+	a.detectCalls.Add(1)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (*budgetVisionOCRAnalyzer) OCRRecognize(context.Context, image.Image) ([]deepdoctype.OCRText, error) {
+	return nil, nil
+}
+
+func (*budgetVisionOCRAnalyzer) Health() bool { return true }
+
+func (*concurrentVisionOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
+func (a *concurrentVisionOCRAnalyzer) OCRDetect(context.Context, image.Image) ([]deepdoctype.OCRBox, error) {
+	active := a.active.Add(1)
+	for peak := a.peak.Load(); active > peak; peak = a.peak.Load() {
+		if a.peak.CompareAndSwap(peak, active) {
+			break
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+	a.active.Add(-1)
+	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 19, Y1: 1, X2: 19, Y2: 19, X3: 1, Y3: 19}}, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) OCRRecognize(context.Context, image.Image) ([]deepdoctype.OCRText, error) {
+	return []deepdoctype.OCRText{{Text: "local text"}}, nil
+}
+
+func (*concurrentVisionOCRAnalyzer) Health() bool { return true }
 
 type visionEnhanceCaptureInvoker struct {
 	mu       sync.Mutex
@@ -103,6 +221,377 @@ func fakeResolver(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType) (
 
 func fakePrompt(language string) (string, error) {
 	return "describe the figure in " + language, nil
+}
+
+func visionTestPNGBase64(t *testing.T) string {
+	t.Helper()
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 20, 20))); err != nil {
+		t.Fatalf("encode image: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(encoded.Bytes())
+}
+
+func TestVisionEnhancement_AppendsLocalOCRBeforeVLM(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "Existing caption",
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"}, nil)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	want := "Existing caption\n" + strings.TrimSpace(strings.Repeat("recognized ", 4)) + "\na diagram of a pipeline"
+	if got := res.JSON[0]["text"]; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+	if analyzer.detectCalls != 1 || analyzer.recognizeCalls != 1 {
+		t.Errorf("OCR calls = detect %d, recognize %d; want 1 each", analyzer.detectCalls, analyzer.recognizeCalls)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_CropFailureFallsBackToInlineImage(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	originalFactory := visionImageCropperFactory
+	visionImageCropperFactory = func(context.Context, *gorm.DB, map[string]any) (visionImageCropper, error) {
+		return failingVisionImageCropper{err: errors.New("crop failed")}, nil
+	}
+	t.Cleanup(func() { visionImageCropperFactory = originalFactory })
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want inline VLM fallback")
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+	if !strings.HasPrefix(invoker.images[0], "data:image/png;base64,") {
+		t.Errorf("VLM image URL = %q, want inline PNG data URI", invoker.images[0])
+	}
+	if got, want := result.JSON[0]["text"], "a diagram of a pipeline"; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+}
+
+func TestVisionEnhancement_SkipsOCRForPDFTableSourcesThatAlreadyTriedOrUnknown(t *testing.T) {
+	for _, parseMethod := range []string{"deepdoc", "mineru"} {
+		t.Run(parseMethod, func(t *testing.T) {
+			analyzer := &requestContextAnalyzer{}
+			useRequestContextAnalyzer(t, analyzer)
+			invoker := &visionEnhanceCaptureInvoker{}
+			swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON: []map[string]any{{
+					"text":         "Existing table",
+					"image":        visionTestPNGBase64(t),
+					"doc_type_kwd": "table",
+				}},
+			}
+			res, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+				map[string]any{"tenant_id": "t1"},
+				map[string]schema.ParserSetup{"pdf": {"parse_method": parseMethod}},
+			)
+			if err != nil {
+				t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+			}
+			if !handled {
+				t.Fatal("handled = false, want VLM enhancement")
+			}
+			if analyzer.detectCalls != 0 {
+				t.Errorf("OCR detect calls = %d, want 0 for parse_method %q", analyzer.detectCalls, parseMethod)
+			}
+			if got, want := res.JSON[0]["text"], "Existing table\na diagram of a pipeline"; got != want {
+				t.Errorf("enhanced text = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestVisionEnhancement_TableCellImageUsesItsOwnOCRStatus(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	imagePayload := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "<table><tr><td>figure</td></tr></table>", "image": imagePayload, "doc_type_kwd": "table"},
+			{
+				"text":            "cell alt",
+				"image":           imagePayload,
+				"doc_type_kwd":    "image",
+				"parent_table_id": "html-table-1",
+				"row_index":       1,
+				"column_index":    1,
+				"media_order":     1,
+			},
+		},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want table and cell image VLM processing")
+	}
+	if analyzer.detectCalls != 1 {
+		t.Errorf("OCR detect calls = %d, want only the independent cell image", analyzer.detectCalls)
+	}
+	if got, want := result.JSON[0]["text"], "<table><tr><td>figure</td></tr></table>\na diagram of a pipeline"; got != want {
+		t.Errorf("table text = %q, want %q", got, want)
+	}
+	cellWant := "cell alt\n" + strings.TrimSpace(strings.Repeat("recognized ", 4)) + "\na diagram of a pipeline"
+	if got := result.JSON[1]["text"]; got != cellWant {
+		t.Errorf("cell image text = %q, want %q", got, cellWant)
+	}
+	if len(invoker.images) != 2 {
+		t.Errorf("VLM calls = %d, want table plus cell image", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_UnknownPDFImageRunsVLMWithoutLocalOCR(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON:         []map[string]any{{"text": "existing", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"}},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM enhancement")
+	}
+	if analyzer.detectCalls != 0 {
+		t.Errorf("OCR detect calls = %d, want 0 for unknown parser text source", analyzer.detectCalls)
+	}
+	if got, want := result.JSON[0]["text"], "existing\na diagram of a pipeline"; got != want {
+		t.Errorf("image text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_RunsOCRWithoutTenantForVLM(t *testing.T) {
+	analyzer := &requestContextAnalyzer{}
+	useRequestContextAnalyzer(t, analyzer)
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"text":         "Existing caption",
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched, nil,
+		map[string]schema.ParserSetup{"xlsx": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want local OCR to modify the item")
+	}
+	if analyzer.detectCalls != 1 || analyzer.recognizeCalls != 1 {
+		t.Errorf("OCR calls = detect %d, recognize %d; want 1 each", analyzer.detectCalls, analyzer.recognizeCalls)
+	}
+	if len(invoker.images) != 0 {
+		t.Errorf("VLM calls = %d, want 0 without tenant_id", len(invoker.images))
+	}
+	want := "Existing caption\n" + strings.TrimSpace(strings.Repeat("recognized ", 4))
+	if got := res.JSON[0]["text"]; got != want {
+		t.Errorf("enhanced text = %q, want %q", got, want)
+	}
+}
+
+func TestVisionEnhancement_BoundsConcurrentOCRMediaAcrossInvokes(t *testing.T) {
+	analyzer := &concurrentVisionOCRAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	imagePayload := visionTestPNGBase64(t)
+	limit := deepdocpdf.DeepDocConcurrency()
+	invokes := limit + 2
+	errs := make(chan error, invokes)
+	var wg sync.WaitGroup
+	for range invokes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dispatched := parser.ParseResult{
+				OutputFormat: "json",
+				JSON:         []map[string]any{{"text": "", "image": imagePayload, "doc_type_kwd": "image"}},
+			}
+			_, handled, err := maybeDispatchVisionEnhancement(
+				t.Context(), dao.DB, utility.FileTypeXLSX, dispatched, nil,
+				map[string]schema.ParserSetup{"xlsx": {}},
+			)
+			if err != nil {
+				errs <- err
+			} else if !handled {
+				errs <- fmt.Errorf("enhancement was not handled")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent enhancement: %v", err)
+	}
+	if got := analyzer.peak.Load(); got > int32(limit) {
+		t.Errorf("peak OCR media tasks = %d, want at most configured limit %d", got, limit)
+	}
+}
+
+func TestVisionEnhancement_OCRBudgetBoundsAdmissionWait(t *testing.T) {
+	admission := sharedOCRMediaAdmission()
+	releases := make([]func(), 0, cap(admission.slots))
+	for range cap(admission.slots) {
+		release, err := admission.acquire(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, release)
+	}
+	done := make(chan error, 1)
+	finished := false
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+		if !finished {
+			<-done
+		}
+	}()
+
+	originalInvokeBudget := visionOCRInvokeBudget
+	visionOCRInvokeBudget = 100 * time.Millisecond
+	t.Cleanup(func() { visionOCRInvokeBudget = originalInvokeBudget })
+	result := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"doc_type_kwd": "image",
+			"image":        visionTestPNGBase64(t),
+		}},
+	}
+	go func() {
+		_, _, err := maybeDispatchVisionEnhancement(
+			t.Context(), nil, utility.FileTypeXLSX, result, nil,
+			map[string]schema.ParserSetup{"xlsx": {}},
+		)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		finished = true
+		if err != nil {
+			t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("media admission wait exceeded the 100ms OCR invoke budget")
+	}
+}
+
+func TestVisionEnhancement_OCRInvokeBudgetFallsBackToVLM(t *testing.T) {
+	analyzer := &budgetVisionOCRAnalyzer{}
+	originalFactory := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalFactory })
+
+	originalInvokeBudget, originalItemBudget := visionOCRInvokeBudget, visionOCRItemBudget
+	visionOCRInvokeBudget = 20 * time.Millisecond
+	visionOCRItemBudget = time.Second
+	t.Cleanup(func() {
+		visionOCRInvokeBudget = originalInvokeBudget
+		visionOCRItemBudget = originalItemBudget
+	})
+
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	imagePayload := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "first", "image": imagePayload, "doc_type_kwd": "image"},
+			{"text": "second", "image": imagePayload, "doc_type_kwd": "image"},
+		},
+	}
+
+	result, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"xlsx": {}},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want VLM fallback after the OCR budget expires")
+	}
+	if got := analyzer.detectCalls.Load(); got != 1 {
+		t.Errorf("OCR detect calls = %d, want one before the invoke budget expires", got)
+	}
+	if len(invoker.images) != 2 {
+		t.Errorf("VLM calls = %d, want both images to use the parent context", len(invoker.images))
+	}
+	for i, want := range []string{"first\na diagram of a pipeline", "second\na diagram of a pipeline"} {
+		if got := result.JSON[i]["text"]; got != want {
+			t.Errorf("item %d text = %q, want %q", i, got, want)
+		}
+	}
 }
 
 func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
@@ -274,11 +763,13 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 	}
 }
 
-func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
+func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
-			{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+			{"text": "caption", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		},
 	}
 
@@ -291,11 +782,14 @@ func TestVisionEnhancement_NonAllowedFileTypeSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if handled {
-		t.Error("handled = true, want false for FileTypeOTHER")
+	if !handled {
+		t.Fatal("handled = false, want true for a visual payload in FileTypeOTHER")
 	}
-	if res.JSON[0]["text"] != "" {
-		t.Errorf("text = %q, want empty", res.JSON[0]["text"])
+	if got, want := res.JSON[0]["text"], "caption\na diagram of a pipeline"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
 	}
 }
 

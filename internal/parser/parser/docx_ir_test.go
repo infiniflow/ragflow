@@ -1,8 +1,11 @@
 package parser
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +25,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"type":"list","items":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"item1"}]}]}]}
 	]}]}`
 
-	got := buildDOCXJSONSections(irJSON)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	want := []map[string]any{
 		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
@@ -43,7 +46,7 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"keep"}]},
 		{"type":"table","rows":[]}
 	]}]}`
-	got := buildDOCXJSONSections(irJSON)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(got) != 1 || got[0]["text"] != "keep" {
 		t.Fatalf("expected only the paragraph to survive, got %+v", got)
 	}
@@ -57,7 +60,7 @@ func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
 			{"type":"text","text":"after"}
 		]}
 	]}]}`
-	got := buildDOCXJSONSections(irJSON)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(got) != 3 {
 		t.Fatalf("sections = %+v, want text/image/text sequence", got)
 	}
@@ -69,6 +72,189 @@ func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
 	}
 	if got[2]["text"] != "after" || got[2]["doc_type_kwd"] != "text" {
 		t.Errorf("last item = %+v, want text after", got[2])
+	}
+}
+
+func TestBuildDOCXJSONSections_ExtractsTableCellImages(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"table","rows":[{"cells":[
+			{"content":[{"type":"paragraph","content":[
+				{"type":"text","text":"before"},
+				{"type":"image","data":"aGVsbG8="},
+				{"type":"text","text":"after"}
+			]}]},
+			{"content":[{"type":"image","data":"aW1hZ2U="}]}
+		]}]}
+	]}]}`
+
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	if len(got) != 3 {
+		t.Fatalf("sections = %+v, want table plus two cell image items", got)
+	}
+	if got[0]["doc_type_kwd"] != "table" || got[0]["text"] != "<table><tr><td>beforeafter</td><td></td></tr></table>" || got[0]["source_table_id"] != "docx-table-1" {
+		t.Fatalf("table item = %+v", got[0])
+	}
+	for i, want := range []string{"aGVsbG8=", "aW1hZ2U="} {
+		item := got[i+1]
+		if item["doc_type_kwd"] != "image" || item["image"] != want {
+			t.Errorf("image item %d = %+v, want payload %q", i, item, want)
+		}
+		if item["parent_table_id"] != "docx-table-1" || item["row_index"] != 1 || item["column_index"] != i+1 || item["media_order"] != i+1 {
+			t.Errorf("image item %d metadata = %+v", i, item)
+		}
+	}
+}
+
+func TestBuildDOCXJSONSections_BudgetKeepsInlineTextAroundOmittedImage(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[{"type":"paragraph","content":[
+		{"type":"text","text":"before"},
+		{"type":"image","data":"YWJjZA=="},
+		{"type":"text","text":"after"}
+	]}]}]}`
+	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+
+	items := buildDOCXJSONSections(irJSON, budget)
+	if len(items) != 3 {
+		t.Fatalf("items = %+v, want text/image/text with omitted image metadata", items)
+	}
+	if items[0]["text"] != "before" || items[2]["text"] != "after" {
+		t.Fatalf("inline text was lost around omitted image: %+v", items)
+	}
+	if items[1]["doc_type_kwd"] != "image" || items[1]["image"] != nil || items[1]["media_omitted"] != true {
+		t.Fatalf("omitted inline image item = %+v, want metadata without payload", items[1])
+	}
+	if len(budget.warnings()) == 0 {
+		t.Fatal("omitted image should produce a parser warning")
+	}
+}
+
+func TestBuildDOCXJSONSections_BudgetKeepsTableImageMetadata(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[{"type":"table","rows":[{"cells":[
+		{"content":[{"type":"image","data":"YWJj"}]},
+		{"content":[{"type":"image","data":"ZGVm"}]}
+	]}]}]}]}`
+	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 10}
+
+	items := buildDOCXJSONSections(irJSON, budget)
+	if len(items) != 3 {
+		t.Fatalf("items = %+v, want table and two image metadata items", items)
+	}
+	if items[1]["image"] != "YWJj" || items[1]["media_omitted"] == true {
+		t.Fatalf("first table image = %+v, want accepted payload", items[1])
+	}
+	omitted := items[2]
+	if omitted["image"] != nil || omitted["media_omitted"] != true {
+		t.Fatalf("second table image = %+v, want omitted payload", omitted)
+	}
+	if omitted["parent_table_id"] != items[0]["source_table_id"] || omitted["row_index"] != 1 || omitted["column_index"] != 2 || omitted["media_order"] != 2 {
+		t.Fatalf("omitted table image lost location metadata: %+v", omitted)
+	}
+}
+
+func TestBuildDOCXJSONSections_BudgetCapsMediaCount(t *testing.T) {
+	var ir strings.Builder
+	ir.WriteString(`{"sections":[{"elements":[`)
+	for i := 0; i < 257; i++ {
+		if i > 0 {
+			ir.WriteByte(',')
+		}
+		ir.WriteString(`{"type":"image","data":"YQ=="}`)
+	}
+	ir.WriteString(`]}]}`)
+
+	budget := newEmbeddedMediaBudget()
+	items := buildDOCXJSONSections(ir.String(), budget)
+	imageCount := 0
+	for _, item := range items {
+		if item["doc_type_kwd"] == "image" {
+			imageCount++
+		}
+	}
+	if imageCount != budget.maxItems {
+		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
+	}
+	if len(budget.warnings()) == 0 {
+		t.Fatal("truncated media count should produce a parser warning")
+	}
+}
+
+func TestBuildPPTXJSONSections_BudgetKeepsSlideMetadata(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
+		{"type":"image","data":"YWJjZA=="}
+	]}]}`
+	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+
+	items, err := buildPPTXJSONSections(irJSON, budget)
+	if err != nil {
+		t.Fatalf("buildPPTXJSONSections: %v", err)
+	}
+	if len(items) != 2 || items[0]["text"] != "slide text" {
+		t.Fatalf("items = %+v, want text and omitted image items", items)
+	}
+	omitted := items[1]
+	if omitted["image"] != nil || omitted["media_omitted"] != true || omitted["slide_number"] != 1 || omitted["media_order"] != 1 {
+		t.Fatalf("omitted slide image lost metadata: %+v", omitted)
+	}
+	if itemsAllEmpty([]map[string]any{omitted}) {
+		t.Fatal("an image-only slide with a budget-omitted image must not be replaced by whole-deck fallback")
+	}
+}
+
+func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
+	var ir strings.Builder
+	ir.WriteString(`{"sections":[{"elements":[`)
+	for i := 0; i < 257; i++ {
+		if i > 0 {
+			ir.WriteByte(',')
+		}
+		ir.WriteString(`{"type":"image","data":"YQ=="}`)
+	}
+	ir.WriteString(`]}]}`)
+
+	budget := newEmbeddedMediaBudget()
+	items, err := buildPPTXJSONSections(ir.String(), budget)
+	if err != nil {
+		t.Fatalf("buildPPTXJSONSections: %v", err)
+	}
+	imageCount := 0
+	for _, item := range items {
+		if item["doc_type_kwd"] == "image" {
+			imageCount++
+		}
+	}
+	if imageCount != budget.maxItems {
+		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
+	}
+	if len(budget.warnings()) == 0 {
+		t.Fatal("truncated media count should produce a parser warning")
+	}
+}
+
+func TestEmbeddedMediaBudgetRejectsPerImageAndDocumentByteLimits(t *testing.T) {
+	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 4}
+	if included, keepGoing := budget.include([]byte("abc")); !included || !keepGoing {
+		t.Fatalf("first image admission = (%v, %v), want (true, true)", included, keepGoing)
+	}
+	if included, keepGoing := budget.include([]byte("def")); included || !keepGoing {
+		t.Fatalf("aggregate overflow admission = (%v, %v), want (false, true)", included, keepGoing)
+	}
+	if included, keepGoing := budget.include([]byte("12345")); included || !keepGoing {
+		t.Fatalf("per-image overflow admission = (%v, %v), want (false, true)", included, keepGoing)
+	}
+	if len(budget.warnings()) == 0 {
+		t.Fatal("omitted byte payloads should produce a parser warning")
+	}
+}
+
+func TestBuildDOCXJSONSectionsEncodesOnlyAcceptedImageData(t *testing.T) {
+	data := []byte("text is not a valid image, but the parser preserves it")
+	encoded := base64.StdEncoding.EncodeToString(data)
+	irJSON := fmt.Sprintf(`{"sections":[{"elements":[{"type":"image","data":%q}]}]}`, encoded)
+	budget := &embeddedMediaBudget{maxImageBytes: 8, maxTotalBytes: 8, maxItems: 4}
+	items := buildDOCXJSONSections(irJSON, budget)
+	if len(items) != 1 || items[0]["image"] != nil || items[0]["media_omitted"] != true {
+		t.Fatalf("oversized image items = %+v, want metadata without payload", items)
 	}
 }
 
@@ -111,7 +297,7 @@ func TestExtractDOCXFiguresFromIR(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"after"}]}
 	]}]}`
 
-	figs := extractDOCXFiguresFromIR(irJSON)
+	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
 	if len(figs) != 1 {
 		t.Fatalf("expected 1 figure, got %d", len(figs))
 	}
@@ -135,12 +321,29 @@ func TestExtractDOCXFiguresFromIR_InlineImage(t *testing.T) {
 			{"type":"text","text":"after"}
 		]}
 	]}]}`
-	figs := extractDOCXFiguresFromIR(irJSON)
+	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
 	if len(figs) != 1 {
 		t.Fatalf("expected 1 inline figure, got %d", len(figs))
 	}
 	if figs[0].Image != "aGVsbG8=" || figs[0].ContextAbove != "before" || figs[0].ContextBelow != "after" {
 		t.Fatalf("inline figure = %+v", figs[0])
+	}
+}
+
+func TestExtractDOCXFiguresFromIR_BudgetKeepsContextWithoutPayload(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+		{"type":"image","data":"YWJjZA=="},
+		{"type":"paragraph","content":[{"type":"text","text":"after"}]}
+	]}]}`
+	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+
+	figures := extractDOCXFiguresFromIR(irJSON, budget)
+	if len(figures) != 1 {
+		t.Fatalf("figures = %+v, want one metadata record", figures)
+	}
+	if figures[0].Image != "" || figures[0].ContextAbove != "before" || figures[0].ContextBelow != "after" || figures[0].Marker != "before" {
+		t.Fatalf("budgeted figure = %+v, want context metadata without payload", figures[0])
 	}
 }
 
@@ -150,7 +353,7 @@ func TestExtractDOCXFiguresFromIR_NoImage(t *testing.T) {
 	irJSON := `{"sections":[{"elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"only text"}]}
 	]}]}`
-	if figs := extractDOCXFiguresFromIR(irJSON); figs != nil {
+	if figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget()); figs != nil {
 		t.Fatalf("expected nil, got %+v", figs)
 	}
 }
@@ -158,7 +361,7 @@ func TestExtractDOCXFiguresFromIR_NoImage(t *testing.T) {
 // TestExtractDOCXFiguresFromIR_BadJSON returns nil on unparseable IR,
 // mirroring the json.Unmarshal error guard.
 func TestExtractDOCXFiguresFromIR_BadJSON(t *testing.T) {
-	if figs := extractDOCXFiguresFromIR("{not json"); figs != nil {
+	if figs := extractDOCXFiguresFromIR("{not json", newEmbeddedMediaBudget()); figs != nil {
 		t.Fatalf("expected nil for bad JSON, got %+v", figs)
 	}
 }
@@ -176,7 +379,7 @@ func TestExtractDOCXFiguresFromIR_NonParagraphContext(t *testing.T) {
 		{"type":"list","items":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"list item"}]}]}]},
 		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"text","text":"box text"}]}]}
 	]}]}`
-	figs := extractDOCXFiguresFromIR(irJSON)
+	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
 	if len(figs) != 1 {
 		t.Fatalf("expected 1 figure, got %d", len(figs))
 	}
@@ -203,7 +406,7 @@ func TestCollectDOCXText_BoundedByMaxLen(t *testing.T) {
 		flat = append(flat, flatBlock{text: "x"})
 	}
 	imgIdx := len(flat)
-	flat = append(flat, flatBlock{image: "img"})
+	flat = append(flat, flatBlock{imageData: []byte("img")})
 	for i := 0; i < 600; i++ {
 		flat = append(flat, flatBlock{text: "x"})
 	}
@@ -278,7 +481,7 @@ func TestExtractTextFromListItem_NestedNull(t *testing.T) {
 			{"content":[{"type":"paragraph","content":[{"type":"text","text":"only item"}]}],"nested":null}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON)
+	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(sections) != 1 || sections[0]["text"] != "only item" {
 		t.Fatalf("expected single item \"only item\", got %+v", sections)
 	}
@@ -301,7 +504,7 @@ func TestExtractTextFromListItem_NestedTable(t *testing.T) {
 			]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON)
+	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
 	}
@@ -352,7 +555,7 @@ func TestBuildDOCXJSONSections_TextBoxTable(t *testing.T) {
 			]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON)
+	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
 	}
@@ -373,7 +576,7 @@ func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
 			 ]}}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON)
+	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
 	}

@@ -20,7 +20,9 @@ package component
 
 import (
 	"context"
+	"errors"
 	"image"
+	"math"
 	"sync"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
@@ -53,43 +55,46 @@ func init() {
 // chunker does at index time. The engine is opened lazily and at most once per
 // vision-enhancement call, then released via Close.
 type visionPDFCropper struct {
-	ctx    context.Context
 	db     *gorm.DB
 	inputs map[string]any
 
-	once   sync.Once
-	engine deepdoctype.PDFEngine
-	engErr error
+	mu          sync.Mutex
+	initialized bool
+	engine      deepdoctype.PDFEngine
+	engErr      error
 }
 
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
 // here; the source PDF is re-acquired lazily on the first Crop call that needs
 // it.
-func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
-	return &visionPDFCropper{ctx: ctx, db: db, inputs: inputs}, nil
+func newVisionImageCropper(_ context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
+	return &visionPDFCropper{db: db, inputs: inputs}, nil
 }
 
-func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
+func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Fast path: an inlined image (docx/markdown, or any pre-inlined source)
 	// is used directly — no storage access, no engine.
 	if img, _ := item["image"].(string); img != "" {
-		return img, nil
+		return materializeInlineVisionImage(img)
 	}
 	matrix, ok := parser.ExtractPDFPositions(item)
 	if !ok {
-		return "", nil
+		return nil, nil
 	}
 	positions := util.PositionsFromMatrix(matrix)
 	if len(positions) == 0 {
-		return "", nil
+		return nil, nil
 	}
-	if err := c.ensureEngine(); err != nil {
+	if err := c.ensureEngine(ctx); err != nil {
 		// Best-effort: a missing/unreadable source PDF means no vision
 		// description for this item, not a hard failure.
-		return "", nil
+		return nil, nil
 	}
 	if c.engine == nil {
-		return "", nil
+		return nil, nil
 	}
 	// Render each distinct page the positions span (1-based → 0-based is
 	// handled by PositionsFromMatrix). Reuse the chunker's sliding-window
@@ -100,8 +105,14 @@ func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
 			pages[pn] = struct{}{}
 		}
 	}
+	if !pdfPagesRasterWithinOCRLimits(c.engine, pages) {
+		return nil, nil
+	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		img, rerr := deepdocpdf.RenderPageToImage(c.engine, pn)
 		if rerr != nil || img == nil {
 			continue
@@ -109,50 +120,102 @@ func (c *visionPDFCropper) Crop(item map[string]any) (string, error) {
 		single[pn] = img
 	}
 	if len(single) == 0 {
-		return "", nil
+		return nil, nil
 	}
-	return util.CropSectionPositions(positions, single, deepdoctype.DlaScale), nil
+	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxOCRImagePixels)
+	if raster == nil {
+		return nil, nil
+	}
+	return &visionImage{Raster: raster}, nil
 }
 
-func (c *visionPDFCropper) ensureEngine() error {
-	c.once.Do(func() {
-		data, err := c.acquireSource()
-		if err != nil || len(data) == 0 {
-			c.engErr = err
-			return
-		}
-		// Only PDFs can be cropped. Guard against other binary types so a
-		// docx/markdown item that happens to reach here stays a no-op.
-		if len(data) < 5 || string(data[:5]) != "%PDF-" {
-			return
-		}
-		eng, oerr := visionEngineOpener(data)
-		if oerr != nil {
-			c.engErr = oerr
-			return
-		}
-		c.engine = eng
+func pdfPagesRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
+	sizer, ok := engine.(interface {
+		PageSize(int) (float64, float64, error)
 	})
+	if !ok {
+		return false
+	}
+	var totalPixels int64
+	for pageNum := range pageNums {
+		widthPoints, heightPoints, err := sizer.PageSize(pageNum)
+		if err != nil {
+			return false
+		}
+		widthPixels := math.Ceil(widthPoints * deepdoctype.DlaScale)
+		heightPixels := math.Ceil(heightPoints * deepdoctype.DlaScale)
+		if math.IsNaN(widthPixels) || math.IsInf(widthPixels, 0) ||
+			math.IsNaN(heightPixels) || math.IsInf(heightPixels, 0) ||
+			widthPixels <= 0 || heightPixels <= 0 ||
+			widthPixels > maxOCRImageEdge || heightPixels > maxOCRImageEdge ||
+			widthPixels*heightPixels > float64(maxOCRImagePixels) {
+			return false
+		}
+		pagePixels := int64(widthPixels * heightPixels)
+		if pagePixels > maxOCRImagePixels-totalPixels {
+			return false
+		}
+		totalPixels += pagePixels
+	}
+	return true
+}
+
+func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.initialized {
+		return c.engErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := c.acquireSource(ctx)
+	if err != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		c.initialized = true
+		c.engErr = err
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Empty and non-PDF sources are deterministic no-op results for this
+	// invocation. Context-derived failures above remain retryable for later
+	// items, whose per-image contexts have fresh deadlines.
+	c.initialized = true
+	if len(data) == 0 || len(data) < 5 || string(data[:5]) != "%PDF-" {
+		return nil
+	}
+	eng, err := visionEngineOpener(data)
+	if err != nil {
+		c.engErr = err
+		return err
+	}
+	c.engine = eng
 	return c.engErr
 }
 
-func (c *visionPDFCropper) acquireSource() ([]byte, error) {
+func (c *visionPDFCropper) acquireSource(ctx context.Context) ([]byte, error) {
 	if bucket, _ := getString(c.inputs, "bucket"); bucket != "" {
 		if path, _ := getString(c.inputs, "path"); path != "" {
-			return visionSourceFetcher(c.ctx, bucket, path)
+			return visionSourceFetcher(ctx, bucket, path)
 		}
 	}
 	if docID, _ := getString(c.inputs, "doc_id"); docID != "" {
-		ref, err := ResolveDocumentStorage(c.ctx, c.db, docID)
+		ref, err := ResolveDocumentStorage(ctx, c.db, docID)
 		if err != nil || ref == nil {
 			return nil, err
 		}
-		return visionSourceFetcher(c.ctx, ref.Bucket, ref.Path)
+		return visionSourceFetcher(ctx, ref.Bucket, ref.Path)
 	}
 	return nil, nil
 }
 
 func (c *visionPDFCropper) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.engine != nil {
 		return c.engine.Close()
 	}

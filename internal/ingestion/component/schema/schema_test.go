@@ -279,6 +279,33 @@ func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
 	}
 }
 
+func TestChunkDocVisualParentMetadataRoundTrip(t *testing.T) {
+	imageItem := map[string]any{
+		"text":            "caption",
+		"doc_type_kwd":    "image",
+		"image":           "aGVsbG8=",
+		"parent_table_id": "docx-table-1",
+		"row_index":       2,
+		"column_index":    3,
+		"media_order":     4,
+	}
+	doc, err := ChunkDocFromMap(imageItem)
+	if err != nil {
+		t.Fatalf("ChunkDocFromMap: %v", err)
+	}
+	got := doc.ToMap()
+	for key, want := range map[string]any{
+		"parent_table_id": "docx-table-1",
+		"row_index":       float64(2),
+		"column_index":    float64(3),
+		"media_order":     float64(4),
+	} {
+		if got[key] != want {
+			t.Errorf("metadata %q = %v, want %v", key, got[key], want)
+		}
+	}
+}
+
 func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 	original := ChunkerOutputs{
 		OutputFormat: PayloadFormatChunks,

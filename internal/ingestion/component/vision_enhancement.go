@@ -14,9 +14,9 @@
 // limitations under the License.
 //
 
-// Package component — vision figure enhancement: enriches parsed JSON items
-// (PDF / DOCX / Markdown, OutputFormat=="json") with vision-model descriptions
-// of embedded images/tables. Mirrors Python's enhance_media_sections_with_vision
+// Package component — vision media enhancement: enriches parsed JSON items
+// with local OCR and vision-model descriptions of embedded images/tables.
+// Mirrors Python's enhance_media_sections_with_vision
 // (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
 
 package component
@@ -26,6 +26,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +50,7 @@ import (
 var (
 	figureVisionPromptBuilder func(language string) (string, error) = buildFigureVisionPrompt
 	visionChatInvoker                                               = defaultVisionChatInvoker
+	visionImageCropperFactory                                       = newVisionImageCropper
 )
 
 const (
@@ -57,6 +60,11 @@ const (
 	// occupy one of the concurrency slots indefinitely. Python wraps the
 	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
 	visionChatTimeout = 30 * time.Second
+)
+
+var (
+	visionOCRInvokeBudget = 60 * time.Second
+	visionOCRItemBudget   = 10 * time.Second
 )
 
 var (
@@ -98,60 +106,62 @@ func isUsableVisionImage(raw string) bool {
 	if raw == "" {
 		return false
 	}
+	if len(raw) > maxVLMEncodedBytes+256 {
+		return false
+	}
 	if strings.HasPrefix(raw, "data:image/") {
 		idx := strings.Index(raw, "base64,")
 		if idx < 0 {
 			return false
 		}
-		return isValidBase64(raw[idx+len("base64,"):])
+		return isValidBase64(raw[idx+len("base64,"):], false)
 	}
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return true
 	}
-	cleaned := strings.Map(func(r rune) rune {
-		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
-			return -1
+	if len(raw) > maxVLMEncodedBytes {
+		return false
+	}
+	return isValidBase64(raw, true)
+}
+
+func isValidBase64(s string, stripWhitespace bool) bool {
+	if s == "" || len(s) > maxVLMEncodedBytes {
+		return false
+	}
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		var source io.Reader = strings.NewReader(s)
+		if stripWhitespace {
+			source = &visionPayloadReader{source: s}
 		}
-		return r
-	}, raw)
-	return isValidBase64(cleaned)
+		decoded := base64.NewDecoder(encoding, source)
+		n, err := io.CopyN(io.Discard, decoded, int64(maxVisionImageBytes)+1)
+		if n > int64(maxVisionImageBytes) {
+			return false
+		}
+		if err == io.EOF {
+			return n > 0
+		}
+	}
+	return false
 }
 
-func isValidBase64(s string) bool {
-	if s == "" {
-		return false
-	}
-	if _, err := base64.StdEncoding.DecodeString(s); err == nil {
-		return true
-	}
-	_, err := base64.RawStdEncoding.DecodeString(s)
-	return err == nil
-}
-
-// isVisionEnhancementAllowed mirrors Python's 3 call sites in
-// rag/flow/parser/parser.py:772/978/1115 (PDF/DOCX/Markdown JSON branches).
-func isVisionEnhancementAllowed(fileType utility.FileType) bool {
-	switch fileType {
-	case utility.FileTypePDF, utility.FileTypeDOCX, utility.FileTypeMarkdown:
-		return true
-	default:
-		return false
-	}
-}
-
-// visionImageCropper yields a vision-usable base64 image for a parsed item.
-// Under cgo it crops on demand from the source PDF when the item carries
-// positions but no inlined image; under !cgo it returns the inlined image
-// (the only form available without a native renderer). Close releases any
-// re-acquired engine so native handles are not leaked.
+// visionImageCropper materializes the raster and VLM payload for a parsed
+// item. Under cgo it crops PDF sections on demand; both build variants use
+// inline images directly. Close releases any re-acquired native engine.
 type visionImageCropper interface {
-	Crop(item map[string]any) (string, error)
+	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
 
-// maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
-// descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
-// with non-empty image field).
+type visionImage struct {
+	Raster           image.Image
+	VLMData          string
+	VLMDataValidated bool
+}
+
+// maybeDispatchVisionEnhancement appends local OCR and VLM descriptions to
+// parsed image resources and table regions.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -161,125 +171,166 @@ func maybeDispatchVisionEnhancement(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 ) (parser.ParseResult, bool, error) {
-	// 0. FileType allowlist guard.
-	if !isVisionEnhancementAllowed(fileType) {
-		return dispatched, false, nil
-	}
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return dispatched, false, nil
-	}
-	// Language priority mirrors Python's enhance_media_sections_with_vision
-	// (rag/flow/parser/parser.py:778): the run-level dataset language first
-	// (the Parser pulls it into inputs from Globals), then the family setup's
-	// lang, then English.
 	family := resolveParserFamily(fileType)
 	setup := setups[family]
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// 1. Collect target items (images/tables that can be described). A target
-	// may carry an inlined image (docx/markdown, or any pre-inlined source) or,
-	// under cgo for PDF, only PDF positions — in which case the cropper
-	// re-acquires the source PDF and crops on demand (the parser no longer
-	// inlines PDF media). The cropper transparently handles both forms.
-	type target struct {
-		idx int
-	}
-	var targets []target
+	// Collect visual resources. A table without an inline image or PDF crop
+	// locator is structured text, not an OCR target.
+	var items []int
 	for i, item := range dispatched.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
 		if kd != "image" && kd != "table" {
 			continue
 		}
 		if img, _ := item["image"].(string); img != "" {
-			targets = append(targets, target{idx: i})
+			items = append(items, i)
 			continue
 		}
 		if _, ok := parser.ExtractPDFPositions(item); ok {
-			targets = append(targets, target{idx: i})
+			items = append(items, i)
 		}
 	}
-	if len(targets) == 0 {
+	if len(items) == 0 {
 		return dispatched, false, nil
 	}
+	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
+	defer cancelOCR()
 
-	// Acquire the on-demand cropper (cgo: crops from storage; !cgo: returns
-	// the inlined image). Best-effort: a failure here means no vision
-	// enhancement, matching Python's try/except pass.
-	cropper, cerr := newVisionImageCropper(ctx, db, inputs)
+	// Resolve VLM independently from local OCR. OCR still runs when the tenant
+	// has no configured vision model.
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var prompt string
+	vlmReady := false
+	if tenantID != "" {
+		modelRef := configuredMediaModelID(setup, family)
+		var err error
+		if modelRef != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+			if err != nil {
+				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+					zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			}
+		} else {
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+		if err == nil {
+			prompt, err = figureVisionPromptBuilder(language)
+			vlmReady = err == nil
+		}
+	}
+
+	// Materialize one resource at a time. The VLM semaphore is acquired before
+	// materialization, so at most visionEnhancementConcurrency encoded payloads
+	// remain live while model requests run.
+	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
 		return dispatched, false, nil
 	}
 	defer cropper.Close()
-
-	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
-	// default. Mirror Python's vlm_conf["llm_id"] preference.
-	modelRef := configuredMediaModelID(setup, family)
-	var driver modelModule.ModelDriver
-	var modelName string
-	var apiConfig *modelModule.APIConfig
-	var err error
-	if modelRef != "" {
-		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
-		if err != nil {
-			common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-		}
-	} else {
-		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-	}
-	if err != nil {
-		// Model not available — skip vision enhancement silently, matching Python's try/except pass.
-		return dispatched, false, nil
-	}
-
-	// Hoist prompt once: language is invariant across items.
-	prompt, perr := figureVisionPromptBuilder(language)
-	if perr != nil {
-		//nolint:nilerr // Vision enhancement is best-effort.
-		return dispatched, false, nil
-	}
-
-	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
-	// so live goroutine count is bounded by visionEnhancementConcurrency.
-	// Stop scheduling new VLM calls after cancellation; already-running calls
-	// finish via wg.Wait() and cancellation propagates via ctx through
-	// visionChatInvoker.
-	descriptions := make([]string, len(targets))
+	modified := false
+	parseMethod := getStringOr(setup, "parse_method", "")
+	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
-
-dispatch:
-	for slot, tg := range targets {
-		if ctx.Err() != nil {
-			break dispatch
+	for slot, itemIdx := range items {
+		if err := ctx.Err(); err != nil {
+			break
 		}
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			break dispatch
+		if ocrCtx.Err() != nil && !vlmReady {
+			break
+		}
+		vlmSlot := false
+		if vlmReady {
+			select {
+			case sem <- struct{}{}:
+				vlmSlot = true
+			case <-ctx.Done():
+				break
+			}
+			if !vlmSlot {
+				break
+			}
+		}
+		var resource *visionImage
+		func() {
+			mediaParent := ctx
+			if !vlmReady {
+				mediaParent = ocrCtx
+			}
+			itemCtx, cancelItem := context.WithTimeout(mediaParent, visionOCRItemBudget)
+			defer cancelItem()
+			release, err := sharedOCRMediaAdmission().acquire(itemCtx)
+			if err != nil {
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
+						resource = &visionImage{VLMData: payload}
+					}
+				}
+				return
+			}
+			defer release()
+			item := dispatched.JSON[itemIdx]
+			resource, err = cropper.Crop(itemCtx, item)
+			if err != nil || resource == nil {
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				return
+			}
+			if imageWithinOCRLimits(resource.Raster) && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending && ocrCtx.Err() == nil {
+				ocrItemCtx, cancelOCRItem := context.WithTimeout(ocrCtx, visionOCRItemBudget)
+				text, ocrErr := runLocalImageOCRImage(ocrItemCtx, resource.Raster)
+				cancelOCRItem()
+				if ocrErr == nil && strings.TrimSpace(text) != "" {
+					appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
+					modified = true
+				}
+			}
+			if ctx.Err() == nil && vlmReady && resource.VLMData == "" && resource.Raster != nil {
+				resource.VLMData, err = encodeVisionRaster(resource.Raster)
+				if err != nil {
+					resource.VLMData = ""
+				} else {
+					resource.VLMDataValidated = resource.VLMData != ""
+				}
+			}
+		}()
+		if err := ctx.Err(); err != nil {
+			if vlmSlot {
+				<-sem
+			}
+			break
+		}
+		if resource == nil {
+			if vlmSlot {
+				<-sem
+			}
+			continue
+		}
+		if !vlmSlot || (!resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData)) {
+			if vlmSlot {
+				<-sem
+			}
+			continue
 		}
 		wg.Add(1)
-		go func(slot int, itemIdx int) {
+		go func(slot int, imageData string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			img, ierr := cropper.Crop(dispatched.JSON[itemIdx])
-			if ierr != nil || img == "" {
-				return
-			}
-			if !isUsableVisionImage(img) {
-				common.Warn("vision enhancement: invalid image data skipped",
-					zap.Int("item", itemIdx))
-				return
-			}
-			messages := buildVisionMessages(prompt, img)
+			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
 				return
 			}
@@ -288,30 +339,68 @@ dispatch:
 				return
 			}
 			descriptions[slot] = extractVisionAnswer(resp)
-		}(slot, tg.idx)
+		}(slot, resource.VLMData)
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return dispatched, false, err
+		return dispatched, modified, err
 	}
 
-	// 4. Append descriptions to item text (single newline \n, matching Python).
-	modified := false
-	for slot, tg := range targets {
+	// Append descriptions after any OCR text (single newline \n, matching Python).
+	for slot, itemIdx := range items {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {
 			continue
 		}
-		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
-		if existing != "" {
-			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
-		} else {
-			dispatched.JSON[tg.idx]["text"] = desc
-		}
+		appendItemText(dispatched.JSON[itemIdx], desc)
 		modified = true
 	}
 
 	return dispatched, modified, nil
+}
+
+type ocrStatus int
+
+const (
+	ocrPending ocrStatus = iota
+	ocrAttempted
+	ocrUnknown
+)
+
+func mediaOCRStatus(fileType utility.FileType, parseMethod string, item map[string]any) ocrStatus {
+	if marker, ok := item["ocr_status_kwd"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(marker)) {
+		case "pending":
+			return ocrPending
+		case "attempted":
+			return ocrAttempted
+		case "unknown":
+			return ocrUnknown
+		}
+	}
+	if fileType != utility.FileTypePDF {
+		return ocrPending
+	}
+	method := strings.TrimSpace(parseMethod)
+	if method == "" {
+		method = "deepdoc"
+	}
+	if !strings.EqualFold(method, "deepdoc") {
+		return ocrUnknown
+	}
+	if kind, _ := item["doc_type_kwd"].(string); kind == "table" {
+		return ocrAttempted
+	}
+	return ocrPending
+}
+
+func appendItemText(item map[string]any, text string) {
+	existing, _ := item["text"].(string)
+	if existing == "" {
+		item["text"] = text
+		return
+	}
+	item["text"] = existing + "\n" + text
 }
 
 func buildFigureVisionPrompt(language string) (string, error) {

@@ -12,7 +12,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
-func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if err := p.validateParseMethod(); err != nil {
 		return ParseResult{Err: err}
 	}

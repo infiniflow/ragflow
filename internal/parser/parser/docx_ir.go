@@ -27,6 +27,7 @@ package parser
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"html"
 	"strings"
 )
@@ -204,6 +205,81 @@ func docxIRTableToHTML(el docxIRElement) string {
 	return sb.String()
 }
 
+type docxTableImage struct {
+	data     []byte
+	row      int
+	column   int
+	included bool
+}
+
+func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage) bool) bool {
+	for rowIndex, row := range el.Rows {
+		for columnIndex, cell := range row.Cells {
+			completed := forEachDOCXIRImage(cell.Content, func(data []byte) bool {
+				return visit(docxTableImage{data: data, row: rowIndex + 1, column: columnIndex + 1})
+			})
+			if !completed {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// forEachDOCXIRImage visits image payloads without first collecting a second
+// document-sized slice of image references. Returning false from visit stops
+// traversal as soon as the caller's media budget is exhausted.
+func forEachDOCXIRImage(elements []docxIRElement, visit func([]byte) bool) bool {
+	for _, el := range elements {
+		switch el.Type {
+		case "image":
+			if len(el.Data) > 0 && !visit(el.Data) {
+				return false
+			}
+		case "paragraph", "heading":
+			for _, run := range el.contentRuns() {
+				if run.Type == "image" && len(run.Data) > 0 && !visit(run.Data) {
+					return false
+				}
+				if !forEachDOCXIRImage(run.Content, visit) {
+					return false
+				}
+			}
+		case "table":
+			for _, row := range el.Rows {
+				for _, cell := range row.Cells {
+					if !forEachDOCXIRImage(cell.Content, visit) {
+						return false
+					}
+				}
+			}
+		case "list":
+			if !forEachDOCXIRListImage(docxIRList{Items: el.Items}, visit) {
+				return false
+			}
+		case "text_box":
+			if !forEachDOCXIRImage(el.contentBlocks(), visit) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func forEachDOCXIRListImage(list docxIRList, visit func([]byte) bool) bool {
+	for _, item := range list.Items {
+		if !forEachDOCXIRImage(item.Content, visit) {
+			return false
+		}
+		if item.Nested != nil {
+			if !forEachDOCXIRListImage(*item.Nested, visit) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // docxElementText returns the plain-text rendering of any supported
 // IR element type. Used by buildPPTXJSONSections to flatten one slide
 // section, and by extractDOCXFiguresFromIR so that tables, lists, and
@@ -253,36 +329,62 @@ func docxElementText(el docxIRElement, cellSep string) string {
 // buildDOCXJSONSections converts an office_oxide IR JSON string into a
 // slice of structured items compatible with the chunker's JSON input
 // contract. Each item carries at least text and doc_type_kwd.
-func buildDOCXJSONSections(irJSON string) []map[string]any {
+func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
+	}
 	var sections []map[string]any
+	tableSequence := 0
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {
 			switch el.Type {
 			case "paragraph", "heading":
-				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading")
+				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading", budget)
 
 			case "image":
-				b64 := base64.StdEncoding.EncodeToString(el.Data)
-				sections = append(sections, map[string]any{
-					"text":         "",
-					"image":        b64,
-					"doc_type_kwd": "image",
-				})
+				sections, _ = appendDOCXImageSection(sections, el.Data, budget, nil)
 
 			case "table":
+				tableSequence++
 				html := docxIRTableToHTML(el)
 				if html == "<table></table>" {
 					continue
 				}
-				sections = append(sections, map[string]any{
+				table := map[string]any{
 					"text":         html,
 					"image":        nil,
 					"doc_type_kwd": "table",
+				}
+				tableID := ""
+				foundImage := false
+				var tableImages []docxTableImage
+				forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
+					foundImage = true
+					included, keepWalking := budget.include(tableImage.data)
+					if included || keepWalking {
+						tableImage.included = included
+						tableImages = append(tableImages, tableImage)
+					}
+					return keepWalking
 				})
+				if foundImage {
+					tableID = fmt.Sprintf("docx-table-%d", tableSequence)
+					table["source_table_id"] = tableID
+				}
+				sections = append(sections, table)
+				for mediaOrder, tableImage := range tableImages {
+					metadata := map[string]any{
+						"parent_table_id": tableID,
+						"row_index":       tableImage.row,
+						"column_index":    tableImage.column,
+						"media_order":     mediaOrder + 1,
+					}
+					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata)
+				}
 
 			case "list":
 				for _, item := range el.Items {
@@ -317,7 +419,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 // order. A paragraph is not necessarily a single text unit: office_oxide can
 // place an image between two text runs, and dropping that run would make the
 // downstream DOCX chunker lose both media order and adjacency context.
-func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool) []map[string]any {
+func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool, budget *embeddedMediaBudget) []map[string]any {
 	var text strings.Builder
 	flushText := func() {
 		value := strings.TrimSpace(text.String())
@@ -336,14 +438,7 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 		sections = append(sections, item)
 	}
 	appendImage := func(data []byte) {
-		if len(data) == 0 {
-			return
-		}
-		sections = append(sections, map[string]any{
-			"text":         "",
-			"image":        base64.StdEncoding.EncodeToString(data),
-			"doc_type_kwd": "image",
-		})
+		sections, _ = appendDOCXImageSection(sections, data, budget, nil)
 	}
 	for _, run := range el.contentRuns() {
 		switch run.Type {
@@ -365,28 +460,58 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 	return sections
 }
 
+func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embeddedMediaBudget, metadata map[string]any) ([]map[string]any, bool) {
+	if len(data) == 0 {
+		return sections, true
+	}
+	included, keepWalking := budget.include(data)
+	if !included && !keepWalking {
+		return sections, false
+	}
+	return appendDOCXImagePayload(sections, data, included, metadata), keepWalking
+}
+
+func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any) []map[string]any {
+	item := map[string]any{
+		"text":         "",
+		"image":        nil,
+		"doc_type_kwd": "image",
+	}
+	if included {
+		item["image"] = base64.StdEncoding.EncodeToString(data)
+	} else {
+		item["media_omitted"] = true
+	}
+	for key, value := range metadata {
+		item[key] = value
+	}
+	return append(sections, item)
+}
+
 // --- figure extraction (used by the cgo parser path) ---
 
 // extractDOCXFiguresFromIR parses the office_oxide IR JSON and
-// returns every embedded image block together with the plain text
-// immediately surrounding it. The context matches what Python's
+// returns the images admitted by budget together with the plain text
+// immediately surrounding each image. The context matches what Python's
 // naive_merge_docx attaches as context_above / context_below on
 // each chunk that carries an image.
 //
 // Reuses the IR already obtained from the doc handle in
 // ParseWithResult so the binary is not opened twice.
-func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
+func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCXFigure {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
+	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
 	}
 
 	var flat []flatBlock
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {
 			if el.Type == "image" {
-				b64 := base64.StdEncoding.EncodeToString(el.Data)
-				flat = append(flat, flatBlock{image: b64})
+				flat = append(flat, flatBlock{imageData: el.Data})
 				continue
 			}
 			if el.Type == "paragraph" || el.Type == "heading" {
@@ -400,10 +525,17 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 
 	var figures []DOCXFigure
 	for i, block := range flat {
-		if block.image == "" {
+		if len(block.imageData) == 0 {
 			continue
 		}
-		fig := DOCXFigure{Image: block.image}
+		included, keepWalking := budget.include(block.imageData)
+		if !included && !keepWalking {
+			break
+		}
+		fig := DOCXFigure{}
+		if included {
+			fig.Image = base64.StdEncoding.EncodeToString(block.imageData)
+		}
 
 		// Collect text above (backward scan up to docxContextWindow
 		// chars, or until another image is hit).
@@ -426,6 +558,9 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 		}
 
 		figures = append(figures, fig)
+		if !keepWalking {
+			break
+		}
 	}
 	return figures
 }
@@ -447,7 +582,7 @@ func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
 		if len(data) == 0 {
 			return
 		}
-		blocks = append(blocks, flatBlock{image: base64.StdEncoding.EncodeToString(data)})
+		blocks = append(blocks, flatBlock{imageData: data})
 	}
 	for _, run := range el.contentRuns() {
 		switch run.Type {
@@ -474,8 +609,8 @@ func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
 // flatBlock is a flattened IR element used internally to collect
 // text / image context around embedded figures.
 type flatBlock struct {
-	text  string
-	image string // base64-encoded image data (empty for non-image)
+	text      string
+	imageData []byte
 }
 
 const docxContextWindow = 512
@@ -484,7 +619,7 @@ func collectDOCXPrevText(flat []flatBlock, idx, maxLen int) string {
 	var parts []string
 	remaining := maxLen
 	for i := idx - 1; i >= 0 && remaining > 0; i-- {
-		if flat[i].image != "" {
+		if len(flat[i].imageData) > 0 {
 			break // stop at previous image
 		}
 		if flat[i].text == "" {
@@ -512,7 +647,7 @@ func collectDOCXNextText(flat []flatBlock, idx, maxLen int) string {
 	var parts []string
 	remaining := maxLen
 	for i := idx + 1; i < len(flat) && remaining > 0; i++ {
-		if flat[i].image != "" {
+		if len(flat[i].imageData) > 0 {
 			break // stop at next image
 		}
 		if flat[i].text == "" {

@@ -17,16 +17,17 @@
 package parser
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
 
-// buildPPTXJSONSections converts office_oxide presentation IR JSON into
-// one JSON item per slide. The IR carries exactly one section per slide,
-// so section index + 1 is the slide number. Per-slide text is flattened
-// with the shared IR walker (docxElementText), which covers paragraphs,
-// headings, text boxes, tables, and (nested) lists.
+// buildPPTXJSONSections converts office_oxide presentation IR JSON into one
+// text item per slide followed by that slide's image items. The IR carries
+// exactly one section per slide, so section index + 1 is the slide number.
+// Per-slide text is flattened with the shared IR walker (docxElementText),
+// which covers paragraphs, headings, text boxes, tables, and (nested) lists.
 //
 // A slide without extractable text (blank layout, image-only) still
 // yields an item with an empty text field, so slide_number stays
@@ -34,10 +35,13 @@ import (
 //
 // Pure Go (no cgo) so the IR → items transform is unit-testable without
 // the office_oxide native library.
-func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
+func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[string]any, error) {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil, fmt.Errorf("presentation ir-json decode: %w", err)
+	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
 	}
 	items := make([]map[string]any, 0, len(ir.Sections))
 	for i, sec := range ir.Sections {
@@ -58,17 +62,45 @@ func buildPPTXJSONSections(irJSON string) ([]map[string]any, error) {
 			"doc_type_kwd": "text",
 			"slide_number": i + 1,
 		})
+		mediaOrder := 0
+		forEachDOCXIRImage(sec.Elements, func(data []byte) bool {
+			mediaOrder++
+			imageItem := map[string]any{
+				"text":         "",
+				"image":        nil,
+				"doc_type_kwd": "image",
+				"ck_type":      "image",
+				"slide_number": i + 1,
+				"media_order":  mediaOrder,
+			}
+			included, keepWalking := budget.include(data)
+			if included {
+				imageItem["image"] = base64.StdEncoding.EncodeToString(data)
+			} else if keepWalking {
+				imageItem["media_omitted"] = true
+			} else {
+				return false
+			}
+			items = append(items, imageItem)
+			return keepWalking
+		})
 	}
 	return items, nil
 }
 
-// itemsAllEmpty reports whether every item carries no extractable text.
-// A deck whose IR sections all flatten to "" (e.g. text the IR walker does
-// not yet cover) must fall back to PlainText instead of emitting empty
-// chunks that the Tokenizer later filters, silently yielding 0 chunks.
+// itemsAllEmpty reports whether every item lacks both text and image payloads.
+// A deck whose IR sections all flatten to "" and contain no images must fall
+// back to PlainText instead of emitting empty chunks that the Tokenizer later
+// filters, silently yielding 0 chunks.
 func itemsAllEmpty(items []map[string]any) bool {
 	for _, it := range items {
 		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
+			return false
+		}
+		if image, _ := it["image"].(string); strings.TrimSpace(image) != "" {
+			return false
+		}
+		if omitted, _ := it["media_omitted"].(bool); omitted {
 			return false
 		}
 	}
