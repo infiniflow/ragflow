@@ -47,3 +47,8 @@ def test_text_without_a_renderable_table_is_returned_raw():
 def test_a_table_that_does_not_render_stays_in_the_text():
     empty = "<table><tr><td></td></tr></table>"
     assert render_tables(f"Intro {empty} middle\n{INFOBOX}") == f"Intro {empty} middle\n\nBorn: 1912\nDied: 1954\nChildren: 3"
+
+
+def test_a_table_tag_inside_a_comment_does_not_end_the_table():
+    table = INFOBOX.replace("<tr>", "<!-- </table> --><tr>", 1)
+    assert render_tables(f"Intro\n{table}\nOutro") == "Intro\n\nBorn: 1912\nDied: 1954\nChildren: 3\n\nOutro"

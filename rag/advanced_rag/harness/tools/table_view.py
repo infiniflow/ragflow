@@ -123,16 +123,21 @@ def _render_one(table) -> str | None:
 
 
 _TABLE_TAG = re.compile(r"<(/?)table\b[^>]*>", re.IGNORECASE)
+_HTML_COMMENT = re.compile(r"<!--.*?(?:-->|$)", re.DOTALL)
 
 
 def _table_spans(text: str) -> list[tuple[int, int]]:
     """``(start, end)`` of every outermost ``<table>...</table>`` in ``text``.
 
     A table left open runs to the end of the text, as it does for the HTML parser.
+    A table tag inside an HTML comment is not a tag and is skipped.
     """
+    comments = [(c.start(), c.end()) for c in _HTML_COMMENT.finditer(text)]
     spans: list[tuple[int, int]] = []
     depth, start = 0, 0
     for m in _TABLE_TAG.finditer(text):
+        if any(cs <= m.start() < ce for cs, ce in comments):
+            continue
         if not m.group(1):
             if depth == 0:
                 start = m.start()
