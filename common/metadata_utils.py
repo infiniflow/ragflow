@@ -483,6 +483,42 @@ def _is_metadata_list(obj: list) -> bool:
     return True
 
 
+def legacy_ingestion_metadata_config(parser_config: dict) -> tuple[bool, list | dict, list]:
+    """Read dataset metadata settings in the shape expected by Python ingestion.
+
+    Go stores a modular object under ``metadata``. Older datasets still store
+    the fields directly; both shapes must yield the same ingestion inputs.
+    """
+    metadata = parser_config.get("metadata")
+    if isinstance(metadata, dict) and not _is_json_schema(metadata):
+        enabled = metadata.get("enabled")
+        return (
+            enabled if isinstance(enabled, bool) else False,
+            metadata.get("metadata") or [],
+            metadata.get("built_in_metadata") or [],
+        )
+    metadata = metadata or []
+    built_in = parser_config.get("built_in_metadata") or []
+    enabled = parser_config.get("enable_metadata")
+    if enabled is None and "enable_metadata" not in parser_config:
+        enabled = bool(metadata) or bool(built_in)
+    return (bool(enabled), metadata, built_in)
+
+
+def ingestion_parser_config(parser_config: dict) -> dict:
+    """Normalize modular dataset metadata for Python's document task workers.
+
+    Return a copy: the stored parser config may be shared by a document and
+    dataset, and the Go component-scoped form must remain intact in storage.
+    """
+    config = dict(parser_config)
+    enabled, metadata, built_in = legacy_ingestion_metadata_config(config)
+    config["enable_metadata"] = enabled
+    config["metadata"] = metadata
+    config["built_in_metadata"] = built_in
+    return config
+
+
 def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
     if isinstance(obj, dict) and _is_json_schema(obj):
         return obj

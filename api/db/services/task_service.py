@@ -32,6 +32,7 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from common.llm_request_context import normalize_llm_user_id
+from common.metadata_utils import ingestion_parser_config
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -222,6 +223,12 @@ class TaskService(CommonService):
         for config_key in ("parser_config", "kb_parser_config"):
             if isinstance(doc.get(config_key), dict):
                 doc[config_key] = {key: value for key, value in doc[config_key].items() if key not in ("graphrag", "raptor")}
+
+        # Python ingestion expects the legacy flat shape even when a Go dataset
+        # saved its metadata in the modular component-scoped form. Normalize at
+        # the worker boundary so every document-creation path is covered.
+        if isinstance(doc.get("parser_config"), dict):
+            doc["parser_config"] = ingestion_parser_config(doc["parser_config"])
 
         msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
