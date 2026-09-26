@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/parser/parser"
@@ -231,7 +232,7 @@ func (c *CLI) APIListDatasetFilesCommand(commandCount int, cmd *Command) (Respon
 		return nil, fmt.Errorf("failed to get dataset id: %w", err)
 	}
 
-	url := apiPath("/datasets", datasetID, "documents")
+	url := utils.APIPath("/datasets", datasetID, "documents")
 
 	// Normal mode
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
@@ -840,7 +841,7 @@ func (c *CLI) APIDeleteAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", apiPath("/system/keys", apiKey), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", utils.APIPath("/system/keys", apiKey), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
@@ -1266,7 +1267,7 @@ func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := apiPath("/providers", providerName)
+	url := utils.APIPath("/providers", providerName)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1383,7 +1384,7 @@ func (c *CLI) APIDropSearchCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("failed to get search ID by name %q: %w", searchName, err)
 	}
 
-	endPoint := apiPath("/searches", searchID)
+	endPoint := utils.APIPath("/searches", searchID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1410,7 +1411,7 @@ func (c *CLI) APIDropMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("failed to get memory ID by name %q: %w", memoryName, err)
 	}
 
-	endPoint := apiPath("/memories", memoryID)
+	endPoint := utils.APIPath("/memories", memoryID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1453,7 +1454,7 @@ func (c *CLI) APIAddProviderInstanceCommand(commandCount int, cmd *Command) (Res
 		region = ""
 	}
 
-	url := apiPath("/providers", providerName, "instances")
+	url := utils.APIPath("/providers", providerName, "instances")
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
@@ -1491,7 +1492,7 @@ func (c *CLI) APIDeleteProviderInstanceCommand(commandCount int, cmd *Command) (
 		"instances": []string{instanceName},
 	}
 
-	url := apiPath("/providers", providerName, "instances")
+	url := utils.APIPath("/providers", providerName, "instances")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -1527,7 +1528,7 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(commandCount int, cmd *Comma
 		"models": modelNames,
 	}
 
-	url := apiPath("/providers", providerName, "instances", instanceName, "models")
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "models")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -2454,7 +2455,7 @@ func (c *CLI) APIListModelInstanceTasksCommand(commandCount int, cmd *Command) (
 		return nil, fmt.Errorf("no instance name")
 	}
 
-	url := apiPath("/providers", providerName, "instances", instanceName, "tasks")
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "tasks")
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2486,7 +2487,7 @@ func (c *CLI) APIShowProviderInstanceTaskCommand(commandCount int, cmd *Command)
 		return nil, fmt.Errorf("task id not provided")
 	}
 
-	url := apiPath("/providers", providerName, "instances", instanceName, "tasks", taskID)
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "tasks", taskID)
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2565,7 +2566,7 @@ func (c *CLI) APIAddCustomModelCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("model name not provided")
 	}
 
-	url := apiPath("/providers", providerName, "instances", instanceName, "models")
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "models")
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
@@ -2677,7 +2678,7 @@ func (c *CLI) DevGetChunkCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", apiPath("/datasets", datasetID, "documents", docID, "chunks", chunkID), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", utils.APIPath("/datasets", datasetID, "documents", docID, "chunks", chunkID), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk: %w", err)
 	}
@@ -2891,7 +2892,7 @@ func (c *CLI) APIParseDocumentsCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("documents not provided")
 	}
 
-	url := apiPath("/datasets", datasetID, "documents", "parse")
+	url := utils.APIPath("/datasets", datasetID, "documents", "parse")
 
 	payload := map[string]interface{}{
 		"documents": documents,
@@ -3144,7 +3145,7 @@ func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (Response
 		"dataset_id": datasetID,
 	}
 
-	url := apiPath("/datasets", datasetID, "documents", "parse")
+	url := utils.APIPath("/datasets", datasetID, "documents", "parse")
 
 	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -3294,7 +3295,7 @@ func (c *CLI) APIOpenaiChatCommand(commandCount int, cmd *Command) (ResponseIf, 
 	}
 
 	chatID, _ := cmd.Params["chat_id"].(string)
-	url := apiPath("/openai", chatID, "chat", "completions")
+	url := utils.APIPath("/openai", chatID, "chat", "completions")
 
 	stream, _ := cmd.Params["stream"].(bool)
 	if stream {
