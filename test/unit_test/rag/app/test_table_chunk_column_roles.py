@@ -49,6 +49,11 @@ TEST_PARTIAL_NUMERIC_CSV = b"""row_id,amount,note
 2,N/A,second
 3,300,third
 """
+TEST_LEADING_ZERO_CSV = b"""row_id,city,zip
+1,Cambridge,02139
+2,Boston,02115
+3,Oslo,0150
+"""
 
 FILENAME = "test.csv"
 KB_ID = "test_kb_id"
@@ -393,6 +398,34 @@ def test_column_data_type_keeps_cells_it_cannot_convert(table_module, column, ex
     assert ty == expected_type
     assert converted[-1] == column[-1]
     assert None not in converted
+
+
+@pytest.mark.parametrize(
+    ("column", "expected_type", "expected"),
+    [
+        (["0.5", "0.25", "0.75"], "float", [0.5, 0.25, 0.75]),
+        (["0", "3", "0", "5"], "int", [0, 3, 0, 5]),
+        (["02139", "02115", "0150"], "text", ["02139", "02115", "0150"]),
+        (["007", "012", "003"], "text", ["007", "012", "003"]),
+    ],
+)
+def test_column_data_type_leading_zero_strings(table_module, column, expected_type, expected):
+    converted, ty = table_module.column_data_type(list(column))
+    assert ty == expected_type
+    assert list(converted) == expected
+
+
+def test_chunk_keeps_leading_zero_codes_verbatim(table_module, mock_update_kb: MagicMock):
+    chunks = table_module.chunk(
+        FILENAME,
+        binary=TEST_LEADING_ZERO_CSV,
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    assert "- zip: 02139" in chunks[0]["content_with_weight"]
+    assert "- zip: 0150" in chunks[2]["content_with_weight"]
 
 
 def test_chunk_keeps_unconvertible_cell_in_content(table_module, mock_update_kb: MagicMock):
