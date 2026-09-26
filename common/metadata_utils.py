@@ -159,6 +159,7 @@ async def apply_meta_data_filter(
     manual_value_resolver: Callable[[dict], dict] | None = None,
     kb_ids: list[str] | None = None,
     metas_loader: Callable[[], dict] | None = None,
+    diagnostics: dict | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -181,6 +182,9 @@ async def apply_meta_data_filter(
     push-down path therefore skips the expensive
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
+    When ``diagnostics`` is supplied, it is populated with the method, runtime status,
+    generated conditions, logic, and matched document count without changing the return value.
+
     Returns:
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
@@ -188,11 +192,25 @@ async def apply_meta_data_filter(
     from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
 
     doc_ids = list(base_doc_ids) if base_doc_ids else []
+    method = (meta_data_filter or {}).get("method") or "disabled"
+
+    def _set_diagnostics(status: str, conditions: list[dict] | None = None, logic: str = "and", matched_document_count: int = 0):
+        if diagnostics is None:
+            return
+        diagnostics.clear()
+        diagnostics.update(
+            {
+                "method": method,
+                "status": status,
+                "conditions": conditions or [],
+                "logic": logic,
+                "matched_document_count": matched_document_count,
+            }
+        )
 
     if not meta_data_filter:
+        _set_diagnostics("disabled")
         return doc_ids
-
-    method = meta_data_filter.get("method")
 
     # Memoised metadata loader. ``_get_metas`` materialises the dict at most
     # once per call; downstream branches that never reach an in-memory eval
@@ -239,9 +257,16 @@ async def apply_meta_data_filter(
     if method == "auto":
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
-        doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
-        if not doc_ids:
+        conditions = filters.get("conditions") or []
+        logic = filters.get("logic", "and")
+        if not conditions:
+            _set_diagnostics("not_generated", conditions, logic)
             return None
+        doc_ids = _constrain(_run_metadata_filter(conditions, logic))
+        if not doc_ids:
+            _set_diagnostics("no_matches", conditions, logic)
+            return None
+        _set_diagnostics("applied", conditions, logic, len(doc_ids))
     elif method == "semi_auto":
         selected_keys = []
         constraints = {}
@@ -261,17 +286,36 @@ async def apply_meta_data_filter(
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
-                doc_ids = _constrain(_run_metadata_filter(filters["conditions"], filters.get("logic", "and")))
-                if not doc_ids:
+                conditions = filters.get("conditions") or []
+                logic = filters.get("logic", "and")
+                if not conditions:
+                    _set_diagnostics("not_generated", conditions, logic)
                     return None
+                doc_ids = _constrain(_run_metadata_filter(conditions, logic))
+                if not doc_ids:
+                    _set_diagnostics("no_matches", conditions, logic)
+                    return None
+                _set_diagnostics("applied", conditions, logic, len(doc_ids))
+            else:
+                _set_diagnostics("not_generated")
+        else:
+            _set_diagnostics("not_generated")
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
         logging.debug(f"Metadata filter(manual): {filters}")
-        doc_ids = _constrain(_run_metadata_filter(filters, meta_data_filter.get("logic", "and")))
+        logic = meta_data_filter.get("logic", "and")
+        doc_ids = _constrain(_run_metadata_filter(filters, logic))
         if filters and not doc_ids:
+            _set_diagnostics("no_matches", filters, logic)
             doc_ids = ["-999"]
+        elif filters:
+            _set_diagnostics("applied", filters, logic, len(doc_ids))
+        else:
+            _set_diagnostics("not_generated", filters, logic)
+    else:
+        _set_diagnostics("unsupported")
 
     logging.debug(f"apply_meta_data_filter meta_filter={meta_data_filter}, returning doc_ids={doc_ids}")
     return doc_ids
