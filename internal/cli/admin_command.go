@@ -24,8 +24,7 @@ import (
 	"strconv"
 )
 
-// PingServer pings the server to check if it's alive
-// Returns benchmark result map if iterations > 1, otherwise prints status
+// PingAdmin pings the server to check if it's alive
 func (c *CLI) PingAdmin(commandCount int, cmd *Command) (ResponseIf, error) {
 	// Single mode
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ping", "web", nil, nil)

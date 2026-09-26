@@ -1327,7 +1327,7 @@ func (c *CLI) APIDropDatasetCommand(commandCount int, cmd *Command) (ResponseIf,
 
 	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dataset ID: %w by dataset name: %s", err, datasetName)
+		return nil, fmt.Errorf("failed to get dataset ID by name %q: %w", datasetName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1357,7 +1357,7 @@ func (c *CLI) APIDropAgentCommand(commandCount int, cmd *Command) (ResponseIf, e
 
 	agentID, err := c.getAgentIDByName(agentName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agent ID: %w by agent name: %s", err, agentName)
+		return nil, fmt.Errorf("failed to get agent ID by name %q: %w", agentName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1387,7 +1387,7 @@ func (c *CLI) APIDropChatCommand(commandCount int, cmd *Command) (ResponseIf, er
 
 	chatID, err := c.getChatIDByName(chatName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chat ID: %w by chat name: %s", err, chatName)
+		return nil, fmt.Errorf("failed to get chat ID by name %q: %w", chatName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1417,7 +1417,7 @@ func (c *CLI) APIDropSearchCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	searchID, err := c.getSearchIDByName(searchName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get search ID: %w by search name: %s", err, searchName)
+		return nil, fmt.Errorf("failed to get search ID by name %q: %w", searchName, err)
 	}
 
 	endPoint := fmt.Sprintf("/searches/%s", searchID)
@@ -1444,7 +1444,7 @@ func (c *CLI) APIDropMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	memoryID, err := c.getMemoryIDByName(memoryName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get memory ID: %w by memory name: %s", err, memoryName)
+		return nil, fmt.Errorf("failed to get memory ID by name %q: %w", memoryName, err)
 	}
 
 	endPoint := fmt.Sprintf("/memories/%s", memoryID)
