@@ -107,6 +107,7 @@ dependencies = [
     "ranx==0.3.20",
     "rapidfuzz==3.14.5",
     "readability-lxml>=0.8.4,<1.0.0",
+    "redis-lua-py==0.12.0",
     "regex>=2025.11.3",
     "replicate==0.31.0",
     "reportlab>=4.4.1",
@@ -279,7 +280,7 @@ override-dependencies = [
     # Cap at <2.4: numba (via hyppo/graspologic) requires numpy<=2.3.
     "numpy>=2.1.0,<2.4.0",
 ]
-# trio 0.26+ (Python 3.13 compatible) is not yet on the Aliyun mirror.
+# trio 0.26+ (Python 3.13 compatible) and redis-lua-py 0.12.0 are not yet on the Aliyun mirror.
 # Mark PyPI as explicit so it is used only for packages listed in [tool.uv.sources].
 [[tool.uv.index]]
 name = "pypi"
@@ -291,6 +292,7 @@ url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.uv.sources]
 trio = [{ index = "pypi" }]
+redis-lua-py = [{ index = "pypi" }]
 
 [tool.setuptools]
 packages = [

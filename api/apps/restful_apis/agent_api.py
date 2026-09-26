@@ -1991,11 +1991,7 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         try:
             from rag.utils.redis_conn import REDIS_CONN
 
-            res = REDIS_CONN.lua_token_bucket(
-                keys=[key],
-                args=[capacity, rate, now, cost],
-                client=REDIS_CONN.REDIS,
-            )
+            res = REDIS_CONN.token_bucket(key=key, capacity=capacity, rate=rate, now=now, cost=cost)
 
             allowed = int(res[0])
             if allowed != 1:
