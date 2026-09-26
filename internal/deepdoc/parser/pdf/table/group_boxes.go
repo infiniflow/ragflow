@@ -1,6 +1,7 @@
 package table
 
 import (
+	"math"
 	"sort"
 	"strings"
 
@@ -33,16 +34,101 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	if maxR <= 0 {
 		return GroupBoxesByYX(boxes)
 	}
-	// Sort by R index first (Python: sort_R_firstly), then Y, then X.
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
+	// A box can miss its R annotation even when its vertical band clearly
+	// overlaps an annotated row. Attach those boxes before row sequencing so
+	// they do not create a phantom row between two known R values.
+	type rowBand struct{ top, bottom float64 }
+	bands := make(map[int]rowBand)
+	for _, b := range boxes {
+		if b.R < 0 {
+			continue
 		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
+		top, bottom := b.RTop, b.RBott
+		if bottom <= top {
+			top, bottom = b.Top, b.Bottom
 		}
-		return boxes[i].X0 < boxes[j].X0
-	})
+		band, ok := bands[b.R]
+		if !ok || top < band.top {
+			band.top = top
+		}
+		if !ok || bottom > band.bottom {
+			band.bottom = bottom
+		}
+		bands[b.R] = band
+	}
+	rowIndices := make([]int, 0, len(bands))
+	for r := range bands {
+		rowIndices = append(rowIndices, r)
+	}
+	sort.Ints(rowIndices)
+	for i := range boxes {
+		if boxes[i].R >= 0 {
+			continue
+		}
+		height := boxes[i].Bottom - boxes[i].Top
+		if height <= 0 {
+			continue
+		}
+		bestR, bestOverlap, bestCenterDistance := -1, 0.3, math.MaxFloat64
+		for _, r := range rowIndices {
+			band := bands[r]
+			overlap := math.Min(boxes[i].Bottom, band.bottom) - math.Max(boxes[i].Top, band.top)
+			ratio := overlap / height
+			centerDistance := math.Abs((boxes[i].Top + boxes[i].Bottom - band.top - band.bottom) / 2)
+			if ratio > bestOverlap || (ratio == bestOverlap && centerDistance < bestCenterDistance) {
+				bestR, bestOverlap, bestCenterDistance = r, ratio, centerDistance
+			}
+		}
+		if bestR >= 0 {
+			boxes[i].R = bestR
+			boxes[i].RTop = bands[bestR].top
+			boxes[i].RBott = bands[bestR].bottom
+		}
+	}
+
+	var rowh float64
+	for _, b := range boxes {
+		if b.R >= 0 && b.RBott > b.RTop {
+			h := b.RBott - b.RTop
+			if rowh == 0 || h < rowh {
+				rowh = h
+			}
+		}
+	}
+	SortRFirstly(boxes, rowh/2)
+
+	// Assign row indices using explicit R boundaries and vertical separation
+	// for unassigned boxes. Keep the last known R across unassigned boxes so
+	// they cannot bridge two annotated rows.
+	curR := 0
+	lastKnownR := boxes[0].R
+	btm := boxes[0].Bottom
+	boxes[0].R = curR
+	for i := 1; i < len(boxes); i++ {
+		isNewRow := false
+		origR := boxes[i].R
+		if origR >= 0 && lastKnownR >= 0 {
+			if origR != lastKnownR {
+				isNewRow = true
+			}
+		} else if boxes[i].Top >= btm-3.0 {
+			isNewRow = true
+		}
+		if isNewRow {
+			curR++
+			btm = boxes[i].Bottom
+			if origR >= 0 {
+				lastKnownR = origR
+			}
+			boxes[i].R = curR
+		} else {
+			btm = (btm + boxes[i].Bottom) / 2.0
+			if origR >= 0 {
+				lastKnownR = origR
+			}
+			boxes[i].R = curR
+		}
+	}
 
 	// Compress R indices: Python's sort_R_firstly grouping.
 	rowMap, compressed := compressRowIndices(boxes)
@@ -221,6 +307,44 @@ func cellLabelFromBox(b pdf.TextBox) string {
 	return ""
 }
 
+// SortYFirstlyBoxes groups nearby box tops into rows, then sorts each row by X0.
+func SortYFirstlyBoxes(arr []pdf.TextBox, threshold float64) {
+	sort.SliceStable(arr, func(i, j int) bool {
+		return arr[i].Top < arr[j].Top
+	})
+	if threshold <= 0 {
+		return
+	}
+	for start := 0; start < len(arr); {
+		end := start + 1
+		for end < len(arr) && arr[end].Top-arr[start].Top < threshold {
+			end++
+		}
+		sort.SliceStable(arr[start:end], func(i, j int) bool {
+			return arr[start+i].X0 < arr[start+j].X0
+		})
+		start = end
+	}
+}
+
+// SortRFirstly mirrors Python's Recognizer.sort_R_firstly.
+// It sorts by Y first, then bubbles boxes with valid R so that
+// boxes with R>=0 are in R order, while boxes without R (R<0)
+// stay at their physical Y-ordered positions.
+func SortRFirstly(arr []pdf.TextBox, thr float64) {
+	SortYFirstlyBoxes(arr, thr)
+	for i := 0; i < len(arr)-1; i++ {
+		for j := i; j >= 0; j-- {
+			if arr[j].R < 0 || arr[j+1].R < 0 {
+				continue
+			}
+			if arr[j+1].R < arr[j].R || (arr[j+1].R == arr[j].R && arr[j+1].X0 < arr[j].X0) {
+				arr[j], arr[j+1] = arr[j+1], arr[j]
+			}
+		}
+	}
+}
+
 // compressRowIndices compresses R values into contiguous row indices.
 // Returns rowMap (original R → compressed index) and the maximum compressed index.
 // Boxes must already be sorted by R, Y, X.
@@ -255,6 +379,9 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[in
 		}
 		r := rowMap[b.R]
 		c := b.C
+		if c < 0 {
+			c = 0
+		}
 		if cmap[r] == nil {
 			cmap[r] = make(map[int]*rb)
 		}
@@ -317,6 +444,9 @@ func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int)
 		rank[c] = i
 	}
 	maxCol := len(cs) - 1
+	if maxCol < 0 {
+		maxCol = 0
+	}
 
 	cCompressed := make(map[int]map[int]int) // row → (original C → compressed col)
 	cMaxCol := make(map[int]int)             // every row spans the table-wide column count
@@ -329,8 +459,14 @@ func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int)
 			if strings.TrimSpace(b.Text) == "" && b.H <= 0 && b.SP <= 0 {
 				continue
 			}
-			if cr, ok := rank[b.C]; ok {
-				cMap[b.C] = cr
+			c := b.C
+			if c < 0 {
+				c = 0
+			}
+			if cr, ok := rank[c]; ok {
+				cMap[c] = cr
+			} else {
+				cMap[c] = 0
 			}
 		}
 		cCompressed[ri] = cMap
@@ -359,6 +495,9 @@ func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, cMaxCo
 					// Multiple originals map to same compressed cell — merge deterministically.
 					if v.txt != "" {
 						rows[ri][cci].Text += " " + v.txt
+					}
+					if v.label != "" {
+						rows[ri][cci].Label = v.label
 					}
 					if v.x0 < rows[ri][cci].X0 {
 						rows[ri][cci].X0 = v.x0

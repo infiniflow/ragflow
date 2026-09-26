@@ -618,3 +618,426 @@ func TestMergeTablesAcrossPages_GenuineContinuationMergesWithoutMedianHeights(t 
 		t.Errorf("merged table should record both pages, got %d positions", len(merged[0].Positions))
 	}
 }
+
+// TestStackGrids_StripsRepeatedHeaderRow verifies that continuation pages
+// repeating the header row have that duplicate header row stripped.
+func TestStackGrids_StripsRepeatedHeaderRow(t *testing.T) {
+	grid1 := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号", Label: "table column header"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称", Label: "table column header"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号", Label: "table column header"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "1"},
+			{X0: 50, Y0: 20, X1: 100, Y1: 40, Text: "钢筋"},
+			{X0: 100, Y0: 20, X1: 150, Y1: 40, Text: "HRB400"},
+		},
+	}
+	grid2 := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 20, Text: "序号", Label: "table column header"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 20, Text: "材料名称", Label: "table column header"},
+			{X0: 100, Y0: 0, X1: 150, Y1: 20, Text: "规格型号", Label: "table column header"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 50, Y1: 40, Text: "2"},
+			{X0: 50, Y0: 20, X1: 100, Y1: 40, Text: "水泥"},
+			{X0: 100, Y0: 20, X1: 150, Y1: 40, Text: "P.O 42.5"},
+		},
+	}
+
+	stacked := stackGrids(grid1, grid2)
+	// Expect 3 rows: header, row 1, row 2 (not 4 rows).
+	if len(stacked) != 3 {
+		t.Fatalf("expected 3 rows after stripping repeated header, got %d", len(stacked))
+	}
+	if stacked[1][0].Text != "1" {
+		t.Errorf("row 1 expected '1', got %q", stacked[1][0].Text)
+	}
+	if stacked[2][0].Text != "2" {
+		t.Errorf("row 2 expected '2', got %q", stacked[2][0].Text)
+	}
+}
+
+// TestMergeTablesAcrossPages_DeduplicateCaption verifies that identical or
+// overlapping captions are deduplicated during cross-page merge.
+func TestMergeTablesAcrossPages_DeduplicateCaption(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell1"}},
+		Caption:   "江西省材料价格参考信息",
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell2"}},
+		Caption:   "江西省材料价格参考信息",
+	}
+	pageHeights := map[int]float64{0: 842, 1: 842}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, pageHeights)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	if merged[0].Caption != "江西省材料价格参考信息" {
+		t.Errorf("expected clean deduplicated caption, got %q", merged[0].Caption)
+	}
+}
+
+// TestMergeTablesAcrossPages_MisalignedColumnsAlignByX reproduces a real
+// materials-price-list cross-page case: the anchor page detects all 3 columns
+// while the continuation page misses the first separator, so its first cell
+// carries the merged "number name" text at the first column's position and
+// every later cell sits one grid index to the left of its logical column.
+// Index-based padding would place the last-column value under the middle
+// header; the merged grid must instead re-align by X so each value lands
+// under the anchor column it overlaps.
+func TestMergeTablesAcrossPages_MisalignedColumnsAlignByX(t *testing.T) {
+	cell := func(x0, y0, x1, y1 float64, text string) pdf.TSRCell {
+		return pdf.TSRCell{X0: x0, Y0: y0, X1: x1, Y1: y1, Text: text}
+	}
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 400, Top: 0, Bottom: 90}},
+		Scale:     1.0,
+		Grid: [][]pdf.TSRCell{
+			{cell(0, 0, 100, 30, "序号"), cell(100, 0, 250, 30, "材料名称"), cell(250, 0, 400, 30, "规格")},
+			{cell(0, 30, 100, 60, "1"), cell(100, 30, 250, 60, "闸阀"), cell(250, 30, 400, 60, "Z15")},
+		},
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 400, Top: 0, Bottom: 60}},
+		Scale:     1.0,
+		Grid: [][]pdf.TSRCell{
+			// The first two logical columns merged into one cell; the last
+			// column keeps the anchor's X range but sits at grid index 1.
+			{cell(0, 0, 100, 30, "21 切换模块"), cell(250, 0, 400, 30, "K-30")},
+		},
+	}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, map[int]float64{0: 100})
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	g := merged[0].Grid
+	if len(g) != 3 {
+		t.Fatalf("expected 3 rows (2 anchor + 1 continuation), got %d", len(g))
+	}
+	for r, row := range g {
+		if len(row) != 3 {
+			t.Fatalf("row %d: width must be 3, got %d", r, len(row))
+		}
+	}
+	if g[2][0].Text != "21 切换模块" {
+		t.Errorf("continuation merged 序号/名称 cell must stay in column 0, got %q", g[2][0].Text)
+	}
+	if g[2][1].Text != "" {
+		t.Errorf("column 1 (材料名称) must stay empty on the misaligned page, got %q", g[2][1].Text)
+	}
+	if g[2][2].Text != "K-30" {
+		t.Errorf("规格 value must align to anchor column 2 by X, got %q at cols [%q %q]", g[2][2].Text, g[2][0].Text, g[2][1].Text)
+	}
+}
+
+// TestRebuildMergedGrid_EmptyContinuationGridPreservesAnchor verifies that a
+// degenerate continuation grid does not erase known anchor-page rows before
+// page-aware OCR fallback has proved it can rebuild the complete table.
+func TestRebuildMergedGrid_EmptyContinuationGridPreservesAnchor(t *testing.T) {
+	anchor := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "a"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "b"},
+		}},
+		Rows: [][]string{{"a", "b"}},
+	}
+	emptyCont := [][]pdf.TSRCell{}
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{emptyCont})
+	if len(anchor.Grid) != 1 || anchor.Grid[0][0].Text != "a" || anchor.Grid[0][1].Text != "b" {
+		t.Errorf("empty continuation must not erase known anchor grid: %+v", anchor.Grid)
+	}
+	if len(anchor.Rows) != 1 || anchor.Rows[0][0] != "a" || anchor.Rows[0][1] != "b" {
+		t.Errorf("empty continuation must not erase known anchor rows: %v", anchor.Rows)
+	}
+}
+
+func TestMergeTablesAcrossPages_UsesContinuationCellsWhenGridIsMissing(t *testing.T) {
+	anchor := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "anchor row"},
+		}},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 740, Bottom: 800}},
+		Scale:     1,
+	}
+	continuation := pdf.TableItem{
+		Cells: []pdf.TSRCell{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "continuation row 1"},
+			{X0: 0, Y0: 30, X1: 100, Y1: 50, Text: "continuation row 2"},
+		},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 50, Bottom: 110}},
+		Scale:     1,
+	}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, continuation}, nil, map[int]float64{0: 842, 1: 842})
+	if len(merged) != 1 {
+		t.Fatalf("expected one merged table, got %d", len(merged))
+	}
+	if len(merged[0].Grid) != 3 {
+		t.Fatalf("missing continuation grid must not hide text-bearing continuation cells, got grid=%+v", merged[0].Grid)
+	}
+	if got := RowsToStrings(merged[0].Grid); len(got) != 3 || got[1][0] != "continuation row 1" || got[2][0] != "continuation row 2" {
+		t.Fatalf("continuation cell text was not retained in merged rows: %v", got)
+	}
+}
+
+func TestMergeTablesAcrossPages_DoesNotDeduplicateSamePageNestedValues(t *testing.T) {
+	parent := pdf.TableItem{
+		Grid: [][]pdf.TSRCell{{{Text: "型号 B1234"}}},
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 10},
+			{PageNumbers: []int{0}, Left: 10, Right: 90, Top: 10, Bottom: 20},
+		},
+	}
+	nested := pdf.TableItem{
+		Grid:      [][]pdf.TSRCell{{{Text: "型号 B123"}}},
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 90, Top: 10, Bottom: 20}},
+	}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{parent, nested}, nil, nil)
+	if len(merged) != 2 {
+		t.Fatalf("different values in separate same-page tables must not be deduplicated by text similarity, got %d tables", len(merged))
+	}
+}
+
+// TestGridsHaveUniformWidth pins the per-ROW uniformity guarantee that gates
+// index padding: a row narrower than its page's maximum signals a locally
+// missed separator, and index padding would shift its values left under the
+// wrong headers.
+func TestGridsHaveUniformWidth(t *testing.T) {
+	row := func(n int) []pdf.TSRCell {
+		r := make([]pdf.TSRCell, n)
+		for i := range r {
+			r[i] = pdf.TSRCell{X0: float64(i) * 100, X1: float64(i)*100 + 100, Y1: 30}
+		}
+		return r
+	}
+	cases := []struct {
+		name  string
+		grids [][][]pdf.TSRCell
+		want  bool
+	}{
+		{"all rows equal across pages", [][][]pdf.TSRCell{{row(2), row(2)}, {row(2)}}, true},
+		{"per-page column counts differ", [][][]pdf.TSRCell{{row(2), row(2)}, {row(3)}}, false},
+		{"jagged row within one page (same max width)", [][][]pdf.TSRCell{{row(2), row(1)}}, false},
+	}
+	for _, tc := range cases {
+		if got := gridsHaveUniformWidth(tc.grids); got != tc.want {
+			t.Errorf("%s: gridsHaveUniformWidth = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX covers the mixed
+// continuation page shape: same maximum row width as the anchor, but one row
+// missing an interior separator. Index padding would keep that row's trailing
+// cells left-shifted; the grid must instead go through X-based alignment so
+// every value lands under the anchor column its X range overlaps.
+func TestRebuildMergedGrid_MixedWidthRowsWithSameMaxAlignByX(t *testing.T) {
+	grid := func(rows [][]string) [][]pdf.TSRCell {
+		g := make([][]pdf.TSRCell, len(rows))
+		for r, rowTexts := range rows {
+			g[r] = make([]pdf.TSRCell, len(rowTexts))
+			for c := range rowTexts {
+				g[r][c] = pdf.TSRCell{
+					X0: float64(c) * 100, Y0: float64(r) * 30,
+					X1: float64(c)*100 + 100, Y1: float64(r)*30 + 30,
+					Text: rowTexts[c],
+				}
+			}
+		}
+		return g
+	}
+	anchorGrid := grid([][]string{{"a", "b"}, {"c", "d"}})
+	// Continuation: one full-width row, one row whose separator between the
+	// two columns was missed — its second cell physically spans column 1 only
+	// from X=100, so X alignment must place "z" in column 1, while index
+	// padding of the jagged shape must never be trusted.
+	contGrid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "e"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 30, Text: "f"},
+		},
+		{
+			{X0: 0, Y0: 30, X1: 100, Y1: 60, Text: "y"},
+			{X0: 100, Y0: 30, X1: 200, Y1: 60, Text: "z"},
+		},
+	}
+	// Make contGrid jagged (missed separator merges col 0+1 into one wide cell).
+	contGrid[1] = []pdf.TSRCell{{X0: 0, Y0: 30, X1: 200, Y1: 60, Text: "y"}}
+	anchor := pdf.TableItem{Grid: anchorGrid}
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{contGrid})
+	if len(anchor.Grid) != 4 {
+		t.Fatalf("merged grid must keep every row, got %d", len(anchor.Grid))
+	}
+	if len(anchor.Grid[3]) != 2 {
+		t.Fatalf("X alignment must normalize every row to the canonical 2 columns, got %d cells", len(anchor.Grid[3]))
+	}
+	if anchor.Grid[3][0].Text != "y" {
+		t.Errorf("wide merged cell must map to its best-overlap column 0, got %q", anchor.Grid[3][0].Text)
+	}
+	if anchor.Grid[3][1].Text != "" {
+		t.Errorf("column 1 must stay empty for the merged cell (no invented data), got %q", anchor.Grid[3][1].Text)
+	}
+}
+
+func TestCanonicalColumns_DoesNotMergeColumnsThroughWideCell(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, X1: 100, Text: "a"},
+			{X0: 100, X1: 200, Text: "b"},
+			{X0: 200, X1: 300, Text: "c"},
+		},
+		{
+			// A row-level merged cell overlaps both first columns. It is
+			// intentionally unlabeled, as TSR does not always mark spans.
+			{X0: 0, X1: 200, Text: "merged"},
+			{X0: 200, X1: 300, Text: "c2"},
+		},
+	}
+
+	cols := canonicalColumns(grid)
+	if len(cols) != 3 {
+		t.Fatalf("wide cell must not transitively merge two canonical columns, got %v", cols)
+	}
+	for i, want := range [][2]float64{{0, 100}, {100, 200}, {200, 300}} {
+		if cols[i] != want {
+			t.Errorf("canonical column %d = %v, want %v", i, cols[i], want)
+		}
+	}
+}
+
+func TestCanonicalColumns_IgnoresRowsWithOnlySpanningCellsForConsensus(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, X1: 300, Text: "title", Label: "table spanning"}},
+		{{X0: 0, X1: 300, Text: "note", Label: "table spanning"}},
+		{
+			{X0: 0, X1: 100, Text: "a"},
+			{X0: 100, X1: 200, Text: "b"},
+			{X0: 200, X1: 300, Text: "c"},
+		},
+		{{X0: 0, X1: 300, Text: "footer", Label: "table spanning"}},
+	}
+
+	cols := canonicalColumns(grid)
+	if len(cols) != 3 {
+		t.Fatalf("rows containing only spanning cells must not outvote the body column model, got %v", cols)
+	}
+}
+
+func TestRebuildMergedGrid_DoesNotUseOneOversegmentedRowAsColumnModel(t *testing.T) {
+	row := func(y0 float64, texts ...string) []pdf.TSRCell {
+		cells := make([]pdf.TSRCell, len(texts))
+		width := 300.0 / float64(len(texts))
+		for i, text := range texts {
+			cells[i] = pdf.TSRCell{
+				X0: float64(i) * width, Y0: y0, X1: float64(i+1) * width, Y1: y0 + 20, Text: text,
+			}
+		}
+		return cells
+	}
+	anchor := pdf.TableItem{Grid: [][]pdf.TSRCell{
+		row(0, "a", "b", "c"),
+		row(20, "d", "e", "f"),
+	}}
+	continuation := [][]pdf.TSRCell{
+		row(0, "g", "h", "i"),
+		row(20, "j1", "j2", "k", "l"), // one row was over-segmented by TSR
+	}
+
+	rebuildMergedGrid(&anchor, [][][]pdf.TSRCell{continuation})
+	if len(anchor.Grid) != 4 {
+		t.Fatalf("all rows must remain in the merged grid, got %d", len(anchor.Grid))
+	}
+	for i, got := range anchor.Grid {
+		if len(got) != 3 {
+			t.Fatalf("row %d follows an isolated over-segmented row: got %d columns, want the 3-column consensus", i, len(got))
+		}
+	}
+}
+
+func TestAlignGridColsByX_PreservesSubstringCells(t *testing.T) {
+	grid := [][]pdf.TSRCell{{
+		{X0: 0, X1: 40, Text: "123"},
+		{X0: 30, X1: 70, Text: "12"},
+	}}
+	got := alignGridColsByX(grid, [][2]float64{{0, 100}, {100, 200}})
+	if got[0][0].Text != "123 12" {
+		t.Fatalf("colliding but distinct text must both survive, got %q", got[0][0].Text)
+	}
+}
+
+// TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped pins the
+// Jiangxi price-list shape: every continuation page carries a page-header
+// block that TSR labels as a caption; the merged table keeps only the
+// anchor's caption instead of concatenating every page's section name.
+func TestMergeTablesAcrossPages_UnrelatedContinuationCaptionDropped(t *testing.T) {
+	anchor := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 30, Right: 566, Top: 740, Bottom: 800}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell1"}},
+		Caption:   "全省价格信息汇总表一、阀门类",
+	}
+	cont := pdf.TableItem{
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 30, Right: 566, Top: 50, Bottom: 110}},
+		Scale:     1.0,
+		Cells:     []pdf.TSRCell{{Text: "cell2"}},
+		Caption:   "全省价格信息汇总表八、电管类",
+	}
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, cont}, nil, map[int]float64{0: 842, 1: 842})
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged table, got %d", len(merged))
+	}
+	if merged[0].Caption != "全省价格信息汇总表一、阀门类" {
+		t.Errorf("merged caption = %q, want the anchor caption only (no concatenation)", merged[0].Caption)
+	}
+}
+
+// TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched pins the rune-count
+// guard: a one-character CJK header (3 bytes per len()) must not
+// substring-match data cells that merely contain that character, which would
+// strip real data rows as "repeated headers". Exact matches still count.
+func TestIsRepeatedHeader_SingleCJKHeaderNotSubstringMatched(t *testing.T) {
+	cell := func(txt string) pdf.TSRCell {
+		return pdf.TSRCell{Text: txt, Label: "table column header", X0: 0, X1: 100, Y0: 0, Y1: 10}
+	}
+	header := []pdf.TSRCell{cell("价"), cell("量")}
+	dataRow := []pdf.TSRCell{cell("价格"), cell("数量"), cell("优质")}
+	if isRepeatedHeader(header, dataRow) {
+		t.Error("single-CJK-char header substring-matched an unrelated data row")
+	}
+	repeated := []pdf.TSRCell{cell("价"), cell("量")}
+	if !isRepeatedHeader(header, repeated) {
+		t.Error("exact repeated single-CJK header must still be stripped")
+	}
+}
+
+func TestIsRepeatedHeader_DoesNotDropRowsWithOnlyPartialHeaderWords(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "Name", Label: "table column header"}, {Text: "Price", Label: "table column header"}, {Text: "Unit", Label: "table column header"}}
+	data := []pdf.TSRCell{{Text: "Named item"}, {Text: "Pricey goods"}, {Text: "kg"}}
+	if isRepeatedHeader(header, data) {
+		t.Fatal("a data row with two header words as substrings must not be removed")
+	}
+}
+
+func TestIsRepeatedHeader_DoesNotDropUnlabelledDataMatchingHeader(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "Type", Label: "table column header"}, {Text: "Value", Label: "table column header"}}
+	data := []pdf.TSRCell{{Text: "Type"}, {Text: "Value"}}
+	if isRepeatedHeader(header, data) {
+		t.Fatal("an unlabelled data row with the same text as the header must be retained")
+	}
+}
+
+func TestIsRepeatedHeader_StripsExplicitSingleColumnHeader(t *testing.T) {
+	header := []pdf.TSRCell{{Text: "单位", Label: "table column header"}}
+	candidate := []pdf.TSRCell{{Text: "单位", Label: "table column header"}}
+	if !isRepeatedHeader(header, candidate) {
+		t.Fatal("an exactly repeated, explicitly labeled single-column header must be stripped")
+	}
+}

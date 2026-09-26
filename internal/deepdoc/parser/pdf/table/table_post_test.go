@@ -146,6 +146,72 @@ func TestBuildTableHTMLs_SingleTable(t *testing.T) {
 	}
 }
 
+func TestBuildTableHTMLs_EmptyMergedGridKeepsContinuationRows(t *testing.T) {
+	tables := []pdf.TableItem{{
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 200, Top: 0, Bottom: 60},
+			{PageNumbers: []int{1}, Left: 0, Right: 200, Top: 0, Bottom: 60},
+		},
+		Scale: 1,
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 10, X1: 80, Y1: 20, Text: "stale anchor"},
+		}},
+		NeedsPageGridFallback: true,
+		Cells:                 []pdf.TSRCell{{Text: "anchor", X0: 0, Y0: 10, X1: 80, Y1: 20}},
+	}}
+	var boxes []pdf.TextBox
+	for page, texts := range [][]string{{"A", "B", "C", "D"}, {"E", "F", "G", "H"}} {
+		for i, value := range texts {
+			row, col := i/2, i%2
+			x, y := float64(col*100), float64(row*20+10)
+			boxes = append(boxes, pdf.TextBox{
+				Text: value, LayoutType: pdf.LayoutTypeTable,
+				PageNumber: page, HasPageNumber: true,
+				X0: x, X1: x + 80, Top: y, Bottom: y + 10,
+				R: row, C: col, RTop: y, RBott: y + 10,
+			})
+		}
+	}
+
+	html := buildTableHTMLs(boxes, tables)[0]
+	if rows := strings.Count(html, "<tr>"); rows != 4 {
+		t.Fatalf("rendered %d rows, want 4: %s", rows, html)
+	}
+	for _, value := range []string{"A", "B", "C", "D", "E", "F", "G", "H"} {
+		if !strings.Contains(html, ">"+value+"<") {
+			t.Errorf("missing %q from merged HTML: %s", value, html)
+		}
+	}
+}
+
+func TestBuildTableHTMLs_IncompletePageFallbackKeepsAnchorGrid(t *testing.T) {
+	tables := []pdf.TableItem{{
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 0, Bottom: 40},
+			{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 0, Bottom: 40},
+		},
+		Scale: 1,
+		Grid: [][]pdf.TSRCell{{
+			{X0: 0, Y0: 0, X1: 100, Y1: 20, Text: "known anchor"},
+		}},
+		NeedsPageGridFallback: true,
+		Cells:                 []pdf.TSRCell{{Text: "known anchor", X0: 0, Y0: 0, X1: 100, Y1: 20}},
+	}}
+	boxes := []pdf.TextBox{{
+		Text: "page zero only", LayoutType: pdf.LayoutTypeTable,
+		PageNumber: 0, HasPageNumber: true, X0: 0, X1: 100, Top: 0, Bottom: 20,
+		R: 0, C: 0, RTop: 0, RBott: 20,
+	}}
+
+	html := buildTableHTMLs(boxes, tables)[0]
+	if !strings.Contains(html, ">known anchor<") {
+		t.Fatalf("incomplete page fallback erased the known anchor grid: %s", html)
+	}
+	if strings.Contains(html, "page zero only") {
+		t.Fatalf("partial page fallback must not replace the multi-page grid: %s", html)
+	}
+}
+
 func TestBuildTableHTMLs_NoCells(t *testing.T) {
 	boxes := []pdf.TextBox{}
 	tables := []pdf.TableItem{
@@ -994,5 +1060,17 @@ func TestExtractTableAndReplace_NoReMergeAfterPageAbsoluteRejection(t *testing.T
 	// Fix: ExtractTableAndReplace must preserve the already-split 2 tables.
 	if got := countTableBoxes(out); got != 2 {
 		t.Errorf("ExtractTableAndReplace re-merged the page-absolute-rejected tables: got %d table boxes, want 2 (the two pages-4/5 tables must stay separate)", got)
+	}
+}
+
+// TestBoxOverlapsPositionPageNoPosMetaFallback covers the remaining fallback
+// arm of #20089's helper: a POSITION lacking page numbers must match on pure
+// geometry even when the box carries page metadata (their tests only pin the
+// missing-box-metadata arm).
+func TestBoxOverlapsPositionPageNoPosMetaFallback(t *testing.T) {
+	noPagePos := pdf.Position{Left: 0, Right: 100, Top: 0, Bottom: 100}
+	box := pdf.TextBox{X0: 10, X1: 50, Top: 10, Bottom: 50, PageNumber: 5}
+	if !boxOverlapsPositionPage(box, noPagePos) {
+		t.Error("position without page numbers must fall back to geometry only")
 	}
 }

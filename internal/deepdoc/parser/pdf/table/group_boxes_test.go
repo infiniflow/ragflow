@@ -25,6 +25,26 @@ func TestGroupBoxesByRC_RDiffSplitsRows(t *testing.T) {
 	}
 }
 
+func TestGroupBoxesByRC_MixedAnnotationsKeepUnlabeledBoxWithOverlappingRow(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 40, X1: 60, Top: 0, Bottom: 10, Text: "previous", R: 0, C: 0, RTop: 0, RBott: 10},
+		// This box is in row 1 but missed the row-overlap annotation threshold.
+		{X0: 10, X1: 30, Top: 9, Bottom: 19, Text: "row one left", R: -1, C: 0},
+		{X0: 40, X1: 60, Top: 9, Bottom: 19, Text: "row one right", R: 1, C: 1, RTop: 9, RBott: 19},
+	}
+
+	rows := GroupBoxesByRC(boxes)
+	if len(rows) != 2 {
+		t.Fatalf("an unannotated box overlapping annotated row 1 must not split it into another row, got %d rows: %+v", len(rows), rows)
+	}
+	if len(rows[1]) != 2 {
+		t.Fatalf("row 1 must retain both columns, got %+v", rows[1])
+	}
+	if rows[1][0].Text != "row one left" || rows[1][1].Text != "row one right" {
+		t.Fatalf("mixed R annotations split one physical row: %+v", rows[1])
+	}
+}
+
 func TestGroupBoxesByRC_MergesCloseCols(t *testing.T) {
 	// R=0 has C=0,1. R=1 has C=0,1. C compression → 2 cols each.
 	boxes := []pdf.TextBox{
@@ -132,6 +152,26 @@ func TestGroupBoxesByRC_ColspanMissing(t *testing.T) {
 		t.Log("KNOWN LIMITATION: colspan not computed — cell [0,1] is empty instead of merged")
 	}
 	_ = rows
+}
+
+func TestSortYFirstlyBoxes_FuzzyRowsHaveStableOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{Top: 0, X0: 2, Text: "A"},
+		{Top: 9, X0: 1, Text: "B"},
+		{Top: 18, X0: 0, Text: "C"},
+	}
+	permutations := [][]int{
+		{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+		{1, 2, 0}, {2, 0, 1}, {2, 1, 0},
+	}
+	for _, permutation := range permutations {
+		ordered := []pdf.TextBox{boxes[permutation[0]], boxes[permutation[1]], boxes[permutation[2]]}
+		SortYFirstlyBoxes(ordered, 10)
+		got := []string{ordered[0].Text, ordered[1].Text, ordered[2].Text}
+		if strings.Join(got, "") != "BAC" {
+			t.Errorf("permutation %v sorted to %v, want [B A C]", permutation, got)
+		}
+	}
 }
 
 func TestCompressRowIndices(t *testing.T) {
@@ -351,5 +391,111 @@ func TestBuildGrid(t *testing.T) {
 	}
 	if rows[1][0].Text != "C" || rows[1][1].Text != "D" {
 		t.Errorf("row 1 wrong: %q %q", rows[1][0].Text, rows[1][1].Text)
+	}
+}
+
+// TestSortRFirstly covers the invariants the row-assignment loop relies on:
+// adjacent valid-R boxes bubble into R order, boxes on the same Y row order
+// by X0, and unannotated boxes (R<0) stay at their physical Y position —
+// they also act as a barrier, which is how a plain R sort would not treat
+// them and is what keeps unlabeled boxes from being flung to the front.
+func TestSortRFirstly(t *testing.T) {
+	cases := []struct {
+		name  string
+		boxes []pdf.TextBox
+		want  []string
+	}{
+		{
+			name: "valid R pairs swap into R order",
+			boxes: []pdf.TextBox{
+				{Text: "R1", R: 1, X0: 0, Top: 0, Bottom: 10},
+				{Text: "R0", R: 0, X0: 0, Top: 10, Bottom: 20},
+				{Text: "U", R: -1, X0: 0, Top: 20, Bottom: 30},
+			},
+			want: []string{"R0", "R1", "U"},
+		},
+		{
+			name: "unlabeled box blocks swaps across it",
+			boxes: []pdf.TextBox{
+				{Text: "R1", R: 1, X0: 0, Top: 0, Bottom: 10},
+				{Text: "U", R: -1, X0: 0, Top: 10, Bottom: 20},
+				{Text: "R0", R: 0, X0: 0, Top: 20, Bottom: 30},
+			},
+			want: []string{"R1", "U", "R0"},
+		},
+		{
+			name: "same Y row orders by X0",
+			boxes: []pdf.TextBox{
+				{Text: "right", R: -1, X0: 80, Top: 0, Bottom: 10},
+				{Text: "left", R: -1, X0: 10, Top: 2, Bottom: 12},
+			},
+			want: []string{"left", "right"},
+		},
+	}
+	for _, tc := range cases {
+		SortRFirstly(tc.boxes, 3.0)
+		got := make([]string, len(tc.boxes))
+		for i, b := range tc.boxes {
+			got[i] = b.Text
+		}
+		for i := range tc.want {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: order = %v, want %v", tc.name, got, tc.want)
+				break
+			}
+		}
+	}
+}
+
+// TestGroupBoxesByRC_UnlabeledBoxFormsOwnRow guards the row-assignment fix:
+// an unannotated box below an annotated table must land in its own row
+// instead of leaking into row 0 (which shifted every labeled cell down and
+// garbled the structure).
+func TestGroupBoxesByRC_UnlabeledBoxFormsOwnRow(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 50, Top: 0, Bottom: 10, Text: "H0", R: 0, C: 0},
+		{X0: 50, X1: 100, Top: 0, Bottom: 10, Text: "H1", R: 0, C: 1},
+		{X0: 0, X1: 50, Top: 20, Bottom: 30, Text: "D0", R: 1, C: 0},
+		{X0: 50, X1: 100, Top: 20, Bottom: 30, Text: "D1", R: 1, C: 1},
+		{X0: 0, X1: 50, Top: 40, Bottom: 50, Text: "TAIL", R: -1, C: -1},
+	}
+	grid := GroupBoxesByRC(boxes)
+	if len(grid) != 3 {
+		t.Fatalf("expected 3 rows (2 labeled + 1 unlabeled), got %d: %v", len(grid), RowsToStrings(grid))
+	}
+	if grid[0][0].Text != "H0" || grid[0][1].Text != "H1" {
+		t.Errorf("labeled row 0 garbled: %q %q", grid[0][0].Text, grid[0][1].Text)
+	}
+	if grid[1][0].Text != "D0" || grid[1][1].Text != "D1" {
+		t.Errorf("labeled row 1 garbled: %q %q", grid[1][0].Text, grid[1][1].Text)
+	}
+	if grid[2][0].Text != "TAIL" {
+		t.Errorf("unlabeled box must form its own row, got %q %q", grid[2][0].Text, grid[2][1].Text)
+	}
+	for r := 0; r < 2; r++ {
+		for c, cell := range grid[r] {
+			if strings.Contains(cell.Text, "TAIL") {
+				t.Errorf("TAIL leaked into row %d col %d: %q", r, c, cell.Text)
+			}
+		}
+	}
+}
+
+func TestGroupBoxesByRC_UnlabeledBoxDoesNotBridgeAnnotatedRows(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 40, Top: 0, Bottom: 10, RTop: 0, RBott: 10, Text: "ROW0", R: 0, C: 0},
+		{X0: 45, X1: 60, Top: 0, Bottom: 10, Text: "LOOSE", R: -1, C: -1},
+		{X0: 70, X1: 100, Top: 0, Bottom: 10, RTop: 0, RBott: 10, Text: "ROW1", R: 1, C: 0},
+	}
+
+	grid := GroupBoxesByRC(boxes)
+	if len(grid) != 2 {
+		t.Fatalf("expected the unannotated box not to bridge R=0 and R=1, got %d rows: %v", len(grid), RowsToStrings(grid))
+	}
+	if !strings.Contains(grid[0][0].Text, "ROW0") {
+		t.Fatalf("first row lost R=0 box: %v", RowsToStrings(grid))
+	}
+	if !strings.Contains(grid[1][0].Text, "ROW1") {
+		t.Fatalf("second row lost R=1 box: %v", RowsToStrings(grid))
 	}
 }
