@@ -122,8 +122,44 @@ def _render_one(table) -> str | None:
     return "\n".join(out)[:_MAX_CHARS_PER_TABLE]
 
 
+_TABLE_TAG = re.compile(r"<(/?)table\b[^>]*>", re.IGNORECASE)
+
+
+def _table_spans(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of every outermost ``<table>...</table>`` in ``text``.
+
+    A table left open runs to the end of the text, as it does for the HTML parser.
+    """
+    spans: list[tuple[int, int]] = []
+    depth, start = 0, 0
+    for m in _TABLE_TAG.finditer(text):
+        if not m.group(1):
+            if depth == 0:
+                start = m.start()
+            depth += 1
+        elif depth:
+            depth -= 1
+            if depth == 0:
+                spans.append((start, m.end()))
+    if depth:
+        spans.append((start, len(text)))
+    return spans
+
+
+def _render_span(fragment: str) -> str | None:
+    try:
+        table = BeautifulSoup(fragment, "html.parser").find("table")
+        return _render_one(table) if table is not None else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def render_tables(text: str) -> str | None:
     """Replace every HTML table in ``text`` with a Markdown view.
+
+    The text around the tables (a heading, the context sentences a parser
+    attaches to a table chunk, the prose of a chunk that holds a table) is kept
+    as it is. A table that does not render stays as raw HTML.
 
     Returns ``None`` when ``text`` holds no renderable table, so callers can keep
     their previous behaviour untouched. Never raises: a parse failure falls back
@@ -131,21 +167,23 @@ def render_tables(text: str) -> str | None:
     """
     if not text or "<table" not in text.lower():
         return None
-    try:
-        soup = BeautifulSoup(text, "html.parser")
-    except Exception:  # noqa: BLE001
+    # Each piece is the text between two rendered tables, or a table's view.
+    pieces: list[str] = []
+    last = 0
+    rendered = False
+    for start, end in _table_spans(text):
+        view = _render_span(text[start:end])
+        if not view:
+            continue  # stays in the surrounding text as raw HTML
+        rendered = True
+        pieces += [text[last:start].strip("\n"), view]
+        last = end
+    if not rendered:
         return None
-    views: list[str] = []
-    for table in soup.find_all("table"):
-        try:
-            view = _render_one(table)
-        except Exception:  # noqa: BLE001
-            view = None
-        if view:
-            views.append(view)
-    if not views:
-        return None
-    return "\n\n".join(views)
+    pieces.append(text[last:].strip("\n"))
+    # A blank line around every view keeps it apart from the text and from a
+    # neighbouring table, so two pipe tables never read as one.
+    return "\n\n".join(p for p in pieces if p).strip()
 
 
 def table_view_or_raw(text: str) -> str:
