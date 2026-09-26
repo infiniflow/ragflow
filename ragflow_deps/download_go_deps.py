@@ -180,9 +180,16 @@ def extract_onnxruntime(static_lib_dir, archive_path, version):
         return False
     prune_stale_onnxruntime(static_lib_dir, version)
     version_dir = os.path.join(static_lib_dir, _ort_normalized_dir(version))
+    archive_sha = _sha256_of(archive_path)
+    source_marker = os.path.join(version_dir, ".ragflow-source.sha256")
     if os.path.isdir(version_dir) and has_static_archives(version_dir):
-        print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
-        return True
+        if os.path.isfile(source_marker):
+            with open(source_marker, encoding="utf-8") as marker:
+                if marker.read().strip() == archive_sha:
+                    print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
+                    return True
+        print(f"  Refreshing ONNX Runtime {version} from changed release archive")
+        shutil.rmtree(version_dir)
     os.makedirs(static_lib_dir, exist_ok=True)
     print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
     with zipfile.ZipFile(archive_path) as zf:
@@ -199,6 +206,8 @@ def extract_onnxruntime(static_lib_dir, archive_path, version):
             shutil.rmtree(normalized)
         print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
         os.rename(extracted, normalized)
+    with open(os.path.join(normalized, ".ragflow-source.sha256"), "w", encoding="utf-8") as marker:
+        marker.write(f"{archive_sha}\n")
     return True
 
 
