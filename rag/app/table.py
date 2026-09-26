@@ -387,12 +387,18 @@ def column_data_type(arr):
             continue
         # Fallback to string-based regex matching
         s = str(a)
-        if re.match(r"[+-]?[0-9]+$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+        num = s.replace("%%", "")
+        if re.match(r"0[0-9]+$", num):
+            # A digit string with a leading zero ("007", "02139") is a code, not a
+            # number. It is not a date either, although dateutil reads "02139" as
+            # the year 2139 and "007" as the 7th of the current month.
+            counts["text"] += 1
+        elif re.match(r"[+-]?[0-9]+$", num):
             counts["int"] += 1
-            if int(s) > 2**63 - 1:
+            if int(num) > 2**63 - 1:
                 float_flag = True
                 break
-        elif re.match(r"[+-]?[0-9]+\.[0-9]*$", s.replace("%%", "")) and not s.replace("%%", "").startswith("0"):
+        elif re.match(r"[+-]?[0-9]+\.[0-9]*$", num) and not re.match(r"[+-]?0[0-9]", num):
             counts["float"] += 1
         elif re.match(r"(true|yes|是|\*|✓|✔|☑|✅|√|false|no|否|⍻|×)$", s, flags=re.IGNORECASE):
             counts["bool"] += 1
