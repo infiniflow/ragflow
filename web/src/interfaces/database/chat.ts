@@ -160,9 +160,9 @@ export interface IMetadataFilterCondition {
 export interface IMetadataFilterDiagnostic {
   method: string;
   status: string;
-  conditions: IMetadataFilterCondition[];
-  logic: string;
-  matched_document_count: number;
+  conditions?: IMetadataFilterCondition[];
+  logic?: string;
+  matched_document_count?: number;
   tool_name?: string;
   query?: string;
   dataset_ids?: string[];
