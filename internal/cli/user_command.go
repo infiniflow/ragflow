@@ -182,11 +182,15 @@ func (c *CLI) APIListDatasetDocumentsCommand(commandCount int, cmd *Command) (Re
 		return nil, fmt.Errorf("no dataset id")
 	}
 
-	page := 1
-	pageSize := 10
-	keywords := ""
-	returnEmptyMetadata := "true"
-	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+	// Build the query with url.Values rather than Sprintf: datasetID is
+	// caller-supplied, and string interpolation would let it inject extra
+	// query params or escape the path segment.
+	query := netUrl.Values{}
+	query.Set("page", "1")
+	query.Set("page_size", "10")
+	query.Set("keywords", "")
+	query.Set("return_empty_metadata", "true")
+	url := fmt.Sprintf("/datasets/%s/documents?%s", netUrl.PathEscape(datasetID), query.Encode())
 
 	// Normal mode
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
@@ -362,47 +366,6 @@ func (c *CLI) APIListMemoriesCommand(commandCount int, cmd *Command) (ResponseIf
 	var result ListMemoriesResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list memories failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
-}
-
-// ListDatasetDocumentUserCommand lists dataset documents
-func (c *CLI) ListDatasetDocumentUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	httpClient, err := c.apiModeClient()
-	if err != nil {
-		return nil, err
-	}
-
-	datasetID, ok := cmd.Params["dataset_id"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no dataset id")
-	}
-
-	page := 1
-	pageSize := 10
-	keywords := ""
-	returnEmptyMetadata := "true"
-	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
-
-	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result ListDocumentsResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
