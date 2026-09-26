@@ -395,7 +395,7 @@ def column_data_type(arr):
             counts["text"] += 1
         elif re.match(r"[+-]?[0-9]+$", num):
             counts["int"] += 1
-            if int(s) > 2**63 - 1:
+            if int(num) > 2**63 - 1:
                 float_flag = True
                 break
         elif re.match(r"[+-]?[0-9]+\.[0-9]*$", num) and not re.match(r"[+-]?0[0-9]", num):
