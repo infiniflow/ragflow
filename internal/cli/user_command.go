@@ -231,7 +231,7 @@ func (c *CLI) APIListDatasetFilesCommand(commandCount int, cmd *Command) (Respon
 		return nil, fmt.Errorf("failed to get dataset id: %w", err)
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents", datasetID)
+	url := apiPath("/datasets", datasetID, "documents")
 
 	// Normal mode
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
@@ -840,7 +840,7 @@ func (c *CLI) APIDeleteAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", fmt.Sprintf("/system/keys/%s", apiKey), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", apiPath("/system/keys", apiKey), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
@@ -1266,7 +1266,7 @@ func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s", providerName)
+	url := apiPath("/providers", providerName)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1383,7 +1383,7 @@ func (c *CLI) APIDropSearchCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("failed to get search ID by name %q: %w", searchName, err)
 	}
 
-	endPoint := fmt.Sprintf("/searches/%s", searchID)
+	endPoint := apiPath("/searches", searchID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1410,7 +1410,7 @@ func (c *CLI) APIDropMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("failed to get memory ID by name %q: %w", memoryName, err)
 	}
 
-	endPoint := fmt.Sprintf("/memories/%s", memoryID)
+	endPoint := apiPath("/memories", memoryID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1453,7 +1453,7 @@ func (c *CLI) APIAddProviderInstanceCommand(commandCount int, cmd *Command) (Res
 		region = ""
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances", providerName)
+	url := apiPath("/providers", providerName, "instances")
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
@@ -1491,7 +1491,7 @@ func (c *CLI) APIDeleteProviderInstanceCommand(commandCount int, cmd *Command) (
 		"instances": []string{instanceName},
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances", providerName)
+	url := apiPath("/providers", providerName, "instances")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -1527,7 +1527,7 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(commandCount int, cmd *Comma
 		"models": modelNames,
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+	url := apiPath("/providers", providerName, "instances", instanceName, "models")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -2454,7 +2454,7 @@ func (c *CLI) APIListModelInstanceTasksCommand(commandCount int, cmd *Command) (
 		return nil, fmt.Errorf("no instance name")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
+	url := apiPath("/providers", providerName, "instances", instanceName, "tasks")
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2486,7 +2486,7 @@ func (c *CLI) APIShowProviderInstanceTaskCommand(commandCount int, cmd *Command)
 		return nil, fmt.Errorf("task id not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
+	url := apiPath("/providers", providerName, "instances", instanceName, "tasks", taskID)
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2565,7 +2565,7 @@ func (c *CLI) APIAddCustomModelCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("model name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+	url := apiPath("/providers", providerName, "instances", instanceName, "models")
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
@@ -2677,7 +2677,7 @@ func (c *CLI) DevGetChunkCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", apiPath("/datasets", datasetID, "documents", docID, "chunks", chunkID), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk: %w", err)
 	}
@@ -2891,7 +2891,7 @@ func (c *CLI) APIParseDocumentsCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("documents not provided")
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
+	url := apiPath("/datasets", datasetID, "documents", "parse")
 
 	payload := map[string]interface{}{
 		"documents": documents,
@@ -3144,7 +3144,7 @@ func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (Response
 		"dataset_id": datasetID,
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
+	url := apiPath("/datasets", datasetID, "documents", "parse")
 
 	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -3294,7 +3294,7 @@ func (c *CLI) APIOpenaiChatCommand(commandCount int, cmd *Command) (ResponseIf, 
 	}
 
 	chatID, _ := cmd.Params["chat_id"].(string)
-	url := fmt.Sprintf("/openai/%s/chat/completions", chatID)
+	url := apiPath("/openai", chatID, "chat", "completions")
 
 	stream, _ := cmd.Params["stream"].(bool)
 	if stream {

@@ -16,7 +16,20 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+
+	"ragflow/internal/cli/pathutil"
+)
+
+// apiPath escapes every path segment so a user-supplied name or ID cannot
+// break out of its own segment (e.g. one containing "/" or "?").
+//
+// It forwards to pathutil.APIPath so `cli` and `cli/filesystem` share a single
+// implementation; see that package for the raw-vs-already-encoded caveat.
+func apiPath(prefix string, segments ...string) string {
+	return pathutil.APIPath(prefix, segments...)
+}
 
 func (c *CLI) apiModeClient() (*HTTPClient, error) {
 	if c.Config.CLIMode != APIMode {

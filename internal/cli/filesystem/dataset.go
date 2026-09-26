@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"ragflow/internal/cli/pathutil"
 	"strconv"
 	"strings"
 	"time"
@@ -509,7 +510,7 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 		}
 	}
 
-	path := fmt.Sprintf("/datasets/%s/documents", datasetID)
+	path := pathutil.APIPath("/datasets", datasetID, "documents")
 	resp, err := p.httpClient.Request("GET", path, "auto", params, nil)
 	if err != nil {
 		return nil, err

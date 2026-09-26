@@ -20,6 +20,7 @@ import (
 	stdctx "context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/cli/pathutil"
 	"strings"
 )
 
@@ -520,7 +521,7 @@ func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName stri
 
 // downloadFile downloads file content
 func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, error) {
-	path := fmt.Sprintf("/files/%s", fileID)
+	path := pathutil.APIPath("/files", fileID)
 	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
