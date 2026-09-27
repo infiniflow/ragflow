@@ -1530,6 +1530,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	if enabled, ok := boolFrom(inputs, "topPEnabled"); ok && !enabled {
+		p.TopP = nil
+	}
 	if v, ok := intFrom(inputs, "max_tokens"); ok {
 		f := v
 		p.MaxTokens = &f
@@ -1540,6 +1543,9 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := floatFrom(inputs, "temperature"); ok {
 		f := v
 		p.Temperature = &f
+	}
+	if enabled, ok := boolFrom(inputs, "temperatureEnabled"); ok && !enabled {
+		p.Temperature = nil
 	}
 	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
 		p.Thinking = v
