@@ -223,6 +223,8 @@ const AgentLogPage: React.FC = () => {
     setSearchParams({ ...init, page_size: pagination.pageSize });
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
+    setPagination((pre) => ({ ...pre, current: 1 }));
+    refetch();
   };
 
   const [openModal, setOpenModal] = useState(false);
