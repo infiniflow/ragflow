@@ -146,3 +146,32 @@ def test_es_metadata_pagination_advances_cursor_without_replaying_offsets(monkey
     metas = DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
     assert len(metas["canon"]["1"]) == 2501
     assert store.requests == [(0, None), (0, ["999"]), (0, ["1999"])]
+
+
+def test_es_stalled_cursor_discards_replayed_page_before_offset_fallback(monkeypatch):
+    class StalledStore(_FakeDocStoreConn):
+        def __init__(self):
+            super().__init__(2501, 0)
+            self.requests = []
+
+        def search(self, *args, **kwargs):
+            cursor = kwargs.get("search_after")
+            self.requests.append((kwargs["offset"], cursor))
+            # The cursor is stuck at the first page. Its response repeats that
+            # page, not documents 1000-1999, so it must not count as progress.
+            start = 0 if cursor else kwargs["offset"]
+            end = min(start + kwargs["limit"], len(self._docs))
+            hits = [{**self._docs[i], "sort": [str(i)]} for i in range(start, end)]
+            return {"hits": {"hits": hits, "total": {"value": len(self._docs)}}}
+
+    monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
+    store = StalledStore()
+    monkeypatch.setattr(settings, "docStoreConn", store)
+    monkeypatch.setattr(settings, "DOC_ENGINE", "elasticsearch")
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: SimpleNamespace(tenant_id="tenant-1"))
+
+    metas = DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
+    assert metas["canon"]["1"] == [f"doc-{i}" for i in range(2501)]
+    assert store.requests == [(0, None), (0, ["999"]), (1000, None), (2000, None)]

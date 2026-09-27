@@ -826,6 +826,20 @@ class DocMetadataService:
                 batch_docs = list(cls._iter_search_results(batch))
                 if not batch_docs:
                     break
+                if use_es_cursor:
+                    hits = batch.get("hits", {}).get("hits", [])
+                    next_cursor = hits[-1].get("sort") if hits else None
+                    if cursor is not None and next_cursor == cursor:
+                        # A stalled cursor can replay the preceding page.
+                        # Discard it before falling back to the first unseen
+                        # offset, even if the replay is shorter than a page.
+                        use_es_cursor = False
+                        offset = len(all_results)
+                        continue
+                    if not next_cursor:
+                        # An ES result without sort values can still be
+                        # consumed once, then continue with offset paging.
+                        use_es_cursor = False
                 all_results.extend(batch_docs)
                 logging.debug(
                     "[get_flatted_meta_by_kbs] offset=%d batch=%d total=%d kb_ids=%s",
@@ -837,14 +851,9 @@ class DocMetadataService:
                 if len(batch_docs) < page_size:
                     break
                 if use_es_cursor:
-                    hits = batch.get("hits", {}).get("hits", [])
-                    next_cursor = hits[-1].get("sort") if hits else None
-                    if next_cursor and next_cursor != cursor:
-                        cursor = next_cursor
-                        continue
-                    # If ES omitted sort values, keep the offset fallback.
-                    use_es_cursor = False
-                offset = len(all_results)
+                    cursor = next_cursor
+                else:
+                    offset = len(all_results)
 
             # Aggregate metadata over all retrieved results
             meta = {}
