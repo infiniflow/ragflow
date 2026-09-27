@@ -288,9 +288,15 @@ class ESConnection(ESConnectionBase):
                     order_info = {"order": order, "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
-                elif field == "id":
-                    continue  # id as "text", not a "keyword", order by it will cause error
                 else:
+                    # ``id`` is mapped as ``keyword`` in both the content
+                    # index (via the dynamic ``kwd`` template) and the
+                    # doc-meta index, so it must be sortable here. Silently
+                    # dropping it would let callers that rely on
+                    # ``search_after`` (e.g. ``get_flatted_meta_by_kbs``
+                    # over a KB with > 10k documents) get back only the
+                    # first page and silently lose the rest past
+                    # ``MAX_RESULT_WINDOW``.
                     order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
             s = s.sort(*orders)
