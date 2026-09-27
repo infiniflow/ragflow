@@ -196,3 +196,32 @@ def test_search_after_pagination_with_id_sort_returns_all_documents_beyond_max_r
     # And the second call past the window must actually use search_after.
     saw_search_after = any("search_after" in call for call in calls)
     assert saw_search_after, "search_after must engage past MAX_RESULT_WINDOW"
+
+
+def test_explicit_search_after_cursor_fetches_next_page_without_replaying_prior_pages():
+    conn = _make_es_connection()
+    calls = []
+
+    def search_once(_index_names, query, **_kwargs):
+        calls.append(copy.deepcopy(query))
+        cursor = query.get("search_after")
+        start = int(cursor[0].rsplit("-", 1)[-1]) + 1 if cursor else 0
+        return _build_es_response(start, 1_000, MAX_RESULT_WINDOW + 2_500)
+
+    conn._es_search_once = search_once
+    cursor = None
+    collected = []
+    for _ in range(13):
+        result = conn.search(
+            ["*"], [], {"kb_id": ["kb-1"]}, [], OrderByExpr().asc("id"),
+            0, 1_000, "ragflow_doc_meta_tenant-1", ["kb-1"],
+            search_after=cursor,
+        )
+        hits = result["hits"]["hits"]
+        collected.extend(hit["_id"] for hit in hits)
+        cursor = hits[-1]["sort"]
+    assert len(collected) == MAX_RESULT_WINDOW + 2_500
+    assert collected == [f"doc-{i}" for i in range(MAX_RESULT_WINDOW + 2_500)]
+    assert len(calls) == 13
+    assert all("from" not in query for query in calls[1:])
+    assert calls[11]["search_after"] == ["doc-10999"]

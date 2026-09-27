@@ -117,3 +117,32 @@ def test_get_metadata_for_documents_batches_large_id_filters(monkeypatch):
     assert len(metadata) == total
     assert len(requested_batches) == 3
     assert all(len(condition["id"]) <= METADATA_ID_BATCH_SIZE for condition in filtered_conditions)
+
+
+def test_es_metadata_pagination_advances_cursor_without_replaying_offsets(monkeypatch):
+    class CursorStore(_FakeDocStoreConn):
+        def __init__(self):
+            super().__init__(2501, 0)
+            self.requests = []
+
+        def search(self, *args, **kwargs):
+            self.requests.append((kwargs["offset"], kwargs.get("search_after")))
+            cursor = kwargs.get("search_after")
+            start = int(cursor[0]) + 1 if cursor else kwargs["offset"]
+            end = min(start + kwargs["limit"], len(self._docs))
+            hits = []
+            for i in range(start, end):
+                hits.append({**self._docs[i], "sort": [str(i)]})
+            return {"hits": {"hits": hits, "total": {"value": len(self._docs)}}}
+
+    monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
+    store = CursorStore()
+    monkeypatch.setattr(settings, "docStoreConn", store)
+    monkeypatch.setattr(settings, "DOC_ENGINE", "elasticsearch")
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: SimpleNamespace(tenant_id="tenant-1"))
+
+    metas = DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
+    assert len(metas["canon"]["1"]) == 2501
+    assert store.requests == [(0, None), (0, ["999"]), (0, ["1999"])]

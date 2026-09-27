@@ -189,9 +189,12 @@ class ESConnection(ESConnectionBase):
         knowledgebase_ids: list[str],
         agg_fields: list[str] | None = None,
         rank_feature: dict | None = None,
+        search_after: list | None = None,
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
+
+        search_after is an ES-only cursor for sequential, explicitly sorted pages.
         """
         if isinstance(index_names, str):
             index_names = index_names.split(",")
@@ -306,16 +309,21 @@ class ESConnection(ESConnectionBase):
 
         has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
         has_explicit_sort = bool(order_by and order_by.fields)
-        use_search_after = limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
+        if search_after is not None and (not has_explicit_sort or has_dense or offset != 0 or limit <= 0):
+            raise ValueError("search_after requires an explicit sort, offset=0 and a positive limit without dense matching")
+        use_search_after = search_after is None and limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
 
         if limit > 0 and not use_search_after:
-            s = s[offset : offset + limit]
+            s = s[0:limit] if search_after is not None else s[offset : offset + limit]
         # Filter _source to only requested fields for efficiency, and add vector
         # fields to "fields" param so they appear in hit.fields when ES 9.x
         # exclude_source_vectors is enabled (dense_vector not in _source).
         if select_fields:
             s = s.source(select_fields)
         q = s.to_dict()
+        if search_after is not None:
+            q.pop("from", None)
+            q["search_after"] = search_after
         # ES 9.x: dense_vector fields excluded from _source; request them via fields.
         # Note: knn does NOT have a "fields" parameter - adding it inside the knn
         # object causes BadRequestError on ES 9.x. We add "fields" at top level.

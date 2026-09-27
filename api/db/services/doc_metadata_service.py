@@ -804,8 +804,13 @@ class DocMetadataService:
             # Paginate to support datasets with more than 10,000 documents.
             page_size = 1000
             offset = 0
+            cursor = None
+            # ES can advance a sorted cursor without replaying earlier pages.
+            # Other stores retain their existing offset interface.
+            use_es_cursor = settings.DOC_ENGINE.lower() == "elasticsearch"
             all_results = []
             while True:
+                search_kwargs = {"search_after": cursor} if use_es_cursor and cursor is not None else {}
                 batch = settings.docStoreConn.search(
                     select_fields=["*"],
                     highlight_fields=[],
@@ -816,6 +821,7 @@ class DocMetadataService:
                     limit=page_size,
                     index_names=index_name,
                     knowledgebase_ids=kb_ids,
+                    **search_kwargs,
                 )
                 batch_docs = list(cls._iter_search_results(batch))
                 if not batch_docs:
@@ -830,7 +836,15 @@ class DocMetadataService:
                 )
                 if len(batch_docs) < page_size:
                     break
-                offset += page_size
+                if use_es_cursor:
+                    hits = batch.get("hits", {}).get("hits", [])
+                    next_cursor = hits[-1].get("sort") if hits else None
+                    if next_cursor and next_cursor != cursor:
+                        cursor = next_cursor
+                        continue
+                    # If ES omitted sort values, keep the offset fallback.
+                    use_es_cursor = False
+                offset = len(all_results)
 
             # Aggregate metadata over all retrieved results
             meta = {}
