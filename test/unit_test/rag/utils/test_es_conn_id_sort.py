@@ -48,19 +48,35 @@ class _DummyFulltextQueryer:
 
 
 _fake_query.FulltextQueryer = _DummyFulltextQueryer
-_fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
-sys.modules.setdefault("rag.nlp.query", _fake_query)
-sys.modules.setdefault("rag.nlp.rag_tokenizer", _fake_tokenizer)
-sys.modules.setdefault("common.settings", types.ModuleType("common.settings"))
+_stubs = {
+    "rag.nlp.query": _fake_query,
+    "rag.nlp.rag_tokenizer": types.ModuleType("rag.nlp.rag_tokenizer"),
+    "common.settings": types.ModuleType("common.settings"),
+}
+_previous = {name: sys.modules.get(name) for name in _stubs}
+_previous_es_modules = {
+    name: sys.modules.get(name)
+    for name in ("common.doc_store.es_conn_base", "rag.utils.es_conn")
+}
+for _name, _module in _stubs.items():
+    sys.modules.setdefault(_name, _module)
 
-from common.doc_store.doc_store_base import OrderByExpr
-from rag.utils.es_conn import MAX_RESULT_WINDOW
+try:
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.utils.es_conn import MAX_RESULT_WINDOW, ESConnection as _ESConnection
+finally:
+    # These imports can retain the temporary common.settings module. Remove
+    # only modules loaded here so later tests import their real dependencies.
+    for _name, _prior in _previous_es_modules.items():
+        if _prior is None:
+            sys.modules.pop(_name, None)
+    for _name, _prior in _previous.items():
+        if _prior is None and sys.modules.get(_name) is _stubs[_name]:
+            del sys.modules[_name]
 
 
 def _resolve_es_connection_class():
-    from rag.utils import es_conn
-
-    candidate = es_conn.ESConnection
+    candidate = _ESConnection
     if isinstance(candidate, type):
         return candidate
     closure = getattr(candidate, "__closure__", None) or ()
