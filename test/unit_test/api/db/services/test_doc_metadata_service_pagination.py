@@ -30,7 +30,7 @@ import pytest
 
 from common import settings
 from common.metadata_utils import meta_filter
-from api.db.services.doc_metadata_service import DocMetadataService, METADATA_ID_BATCH_SIZE
+from api.db.services.doc_metadata_service import DocMetadataService, METADATA_ID_BATCH_SIZE, MetadataPaginationError
 from api.db.db_models import DB
 
 pytestmark = pytest.mark.p2
@@ -64,7 +64,7 @@ class _FakeDocStoreConn:
         if condition.get("id"):
             doc_ids = set(condition["id"])
             docs = [doc for doc in docs if doc["_id"] in doc_ids]
-        page = docs[offset : offset + limit]
+        page = [{**hit, "sort": [hit["_id"]]} for hit in docs[offset : offset + limit]]
         return {"hits": {"hits": page, "total": {"value": len(docs)}}}
 
 
@@ -72,6 +72,7 @@ def test_get_flatted_meta_by_kbs_returns_every_document_beyond_pushdown_cap(monk
     monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
     monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
     monkeypatch.setattr(settings, "docStoreConn", _FakeDocStoreConn(TOTAL_DOCS, CANON_ZERO_COUNT))
+    monkeypatch.setattr(settings, "DOC_ENGINE", "oceanbase")
     monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
     fake_kb = SimpleNamespace(tenant_id="tenant-1")
     monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: fake_kb)
@@ -89,6 +90,7 @@ def test_manual_not_in_filter_matches_every_document_beyond_pushdown_cap(monkeyp
     monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
     monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
     monkeypatch.setattr(settings, "docStoreConn", _FakeDocStoreConn(TOTAL_DOCS, CANON_ZERO_COUNT))
+    monkeypatch.setattr(settings, "DOC_ENGINE", "oceanbase")
     monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
     fake_kb = SimpleNamespace(tenant_id="tenant-1")
     monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: fake_kb)
@@ -148,7 +150,7 @@ def test_es_metadata_pagination_advances_cursor_without_replaying_offsets(monkey
     assert store.requests == [(0, None), (0, ["999"]), (0, ["1999"])]
 
 
-def test_es_stalled_cursor_discards_replayed_page_before_offset_fallback(monkeypatch):
+def test_es_stalled_cursor_raises_instead_of_returning_partial_metadata(monkeypatch):
     class StalledStore(_FakeDocStoreConn):
         def __init__(self):
             super().__init__(2501, 0)
@@ -157,8 +159,6 @@ def test_es_stalled_cursor_discards_replayed_page_before_offset_fallback(monkeyp
         def search(self, *args, **kwargs):
             cursor = kwargs.get("search_after")
             self.requests.append((kwargs["offset"], cursor))
-            # The cursor is stuck at the first page. Its response repeats that
-            # page, not documents 1000-1999, so it must not count as progress.
             start = 0 if cursor else kwargs["offset"]
             end = min(start + kwargs["limit"], len(self._docs))
             hits = [{**self._docs[i], "sort": [str(i)]} for i in range(start, end)]
@@ -172,6 +172,48 @@ def test_es_stalled_cursor_discards_replayed_page_before_offset_fallback(monkeyp
     monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
     monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: SimpleNamespace(tenant_id="tenant-1"))
 
-    metas = DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
-    assert metas["canon"]["1"] == [f"doc-{i}" for i in range(2501)]
-    assert store.requests == [(0, None), (0, ["999"]), (1000, None), (2000, None)]
+    with pytest.raises(MetadataPaginationError, match="did not advance"):
+        DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
+    assert store.requests == [(0, None), (0, ["999"])]
+
+
+def test_es_full_page_without_sort_raises_instead_of_silent_truncation(monkeypatch):
+    class MissingSortStore(_FakeDocStoreConn):
+        def search(self, *args, **kwargs):
+            response = super().search(*args, **kwargs)
+            for hit in response["hits"]["hits"]:
+                hit.pop("sort", None)
+            return response
+
+    store = MissingSortStore(12000, 0)
+    monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings, "docStoreConn", store)
+    monkeypatch.setattr(settings, "DOC_ENGINE", "elasticsearch")
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: SimpleNamespace(tenant_id="tenant-1"))
+
+    with pytest.raises(MetadataPaginationError, match="no sort value"):
+        DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
+
+
+def test_es_empty_cursor_page_with_more_total_raises(monkeypatch):
+    class EmptyCursorStore(_FakeDocStoreConn):
+        def search(self, *args, **kwargs):
+            if kwargs.get("search_after"):
+                return {"hits": {"hits": [], "total": {"value": len(self._docs)}}}
+            response = super().search(*args, **kwargs)
+            for i, hit in enumerate(response["hits"]["hits"]):
+                hit["sort"] = [str(i)]
+            return response
+
+    store = EmptyCursorStore(2501, 0)
+    monkeypatch.setattr(DB, "connect", lambda *args, **kwargs: None)
+    monkeypatch.setattr(DB, "close", lambda *args, **kwargs: None)
+    monkeypatch.setattr(settings, "docStoreConn", store)
+    monkeypatch.setattr(settings, "DOC_ENGINE", "elasticsearch")
+    monkeypatch.setattr(settings, "DOC_ENGINE_INFINITY", False)
+    monkeypatch.setattr("api.db.services.doc_metadata_service.Knowledgebase.get_by_id", lambda kb_id: SimpleNamespace(tenant_id="tenant-1"))
+
+    with pytest.raises(MetadataPaginationError, match="ended after 1000 of 2501"):
+        DocMetadataService.get_flatted_meta_by_kbs(["kb-1"])
