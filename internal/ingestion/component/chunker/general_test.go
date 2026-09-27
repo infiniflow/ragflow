@@ -543,6 +543,76 @@ func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText
 	}
 }
 
+func TestGeneralChunkerMarkdownAttachesMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, table, "before<table><tr><td>A</td></tr></table>after")
+}
+
+func TestGeneralChunkerHTMLAttachesMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "page.html",
+		"file_type":     "html",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, table, "before<table><tr><td>A</td></tr></table>after")
+}
+
 func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size":   10,

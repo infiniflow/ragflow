@@ -567,6 +567,7 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitMarkdownUnits(units, primaryPattern)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	units = mergeMarkdownUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
@@ -584,6 +585,9 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 		unit = cloneChunkDoc(unit)
 		unit.Text = strings.TrimSpace(normalizeGeneralNewlines(itemTextOrFallback(unit)))
 		unit.DocType = itemDocType(unit)
+		if unit.DocType == "table" || unit.DocType == "image" {
+			unit.CKType = unit.DocType
+		}
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)
@@ -875,6 +879,7 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	if !hasCustomDelim(c.param.Delimiters) {
 		// Python naive_merge prefixes each delimiter atom with a newline before
 		// counting it. The prefix is a budgeting detail, not emitted content;
