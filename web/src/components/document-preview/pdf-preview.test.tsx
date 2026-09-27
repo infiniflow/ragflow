@@ -149,9 +149,12 @@ describe('PdfPreview', () => {
       jest.advanceTimersByTime(200);
     });
 
-    expect(mockScrollTo).toHaveBeenCalledTimes(2);
+    expect(mockScrollTo).toHaveBeenCalledTimes(1);
     expect(mockScrollTo.mock.calls[0][0]).toBe(highlights[0]);
-    expect(mockScrollTo.mock.calls[1][0]).toBe(highlights[1]);
+    expect(document.querySelector("[data-highlight-count]")).toHaveAttribute(
+      "data-highlight-count",
+      "2",
+    );
   });
 
   it('highlights a single page chunk exactly once', async () => {

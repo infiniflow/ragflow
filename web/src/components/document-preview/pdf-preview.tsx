@@ -72,9 +72,7 @@ const PdfPreview = ({
     let timer: ReturnType<typeof setTimeout> | null = null;
     if (state?.length) {
       timer = setTimeout(() => {
-        state.forEach((highlight) => {
-          ref.current(highlight);
-        });
+        ref.current(state[0]);
       }, 100);
     }
     return () => {
