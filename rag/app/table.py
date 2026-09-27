@@ -641,6 +641,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
                             val = row[col_name]
+                            if isinstance(val, str) and clmn_tys[j] == "int" and val.endswith("%%"):
+                                val = int(val[:-2])
                             # Valid datetime and bool conversions are strings;
                             # other strings in typed columns are failed conversions.
                             valid_typed_string = isinstance(val, str) and (clmn_tys[j] == "datetime" and trans_datatime(val) or clmn_tys[j] == "bool" and trans_bool(val))

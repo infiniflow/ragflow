@@ -437,6 +437,8 @@ def test_chunk_accepts_percent_suffix_cells(table_module, mock_update_kb: MagicM
         lang="Chinese",
     )
     assert len(chunks) == 2
+    assert chunks[0]["rate_long"] == 0
+    assert chunks[1]["rate_long"] == 12
     assert "- rate: 0%%" in chunks[0]["content_with_weight"]
     assert "- rate: 12%%" in chunks[1]["content_with_weight"]
 
