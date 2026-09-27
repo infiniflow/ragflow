@@ -172,6 +172,23 @@ describe('PdfPreview', () => {
     expect(mockScrollTo.mock.calls[0][0]).toBe(highlights[0]);
   });
 
+  it('scrolls to the first highlight after the selection changes', async () => {
+    const first = [makeHighlight(7, 'page-7')] as never;
+    const next = [makeHighlight(42, 'page-42')] as never;
+    const { rerender } = render(
+      <PdfPreview url="http://example.com/doc.pdf" highlights={first} />,
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(200);
+    });
+    rerender(<PdfPreview url="http://example.com/doc.pdf" highlights={next} />);
+    await act(async () => {
+      jest.advanceTimersByTime(200);
+    });
+    expect(mockScrollTo).toHaveBeenCalledTimes(2);
+    expect(mockScrollTo.mock.calls[1][0]).toBe(next[0]);
+  });
+
   it('does not scroll when the chunk has no highlights', async () => {
     render(<PdfPreview url="http://example.com/doc.pdf" highlights={[]} />);
 
