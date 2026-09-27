@@ -117,6 +117,21 @@ describe('AgentLogPage reset button (#17050)', () => {
     expect(mockRefetchAgentLog).not.toHaveBeenCalled();
   });
 
+  it('resets sorting along with the query and table indicator', () => {
+    render(<AgentLogPage />);
+    fireEvent.click(screen.getByText('flow.latestDate', { selector: 'th *' }));
+    expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ orderby: 'update_date' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
+
+    expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ orderby: 'create_time', desc: false }),
+    );
+    expect(mockRefetchAgentLog).not.toHaveBeenCalled();
+  });
+
   it('resets from page 2 to page 1 without refetching the stale query', () => {
     mockUseFetchAgentLog.mockReturnValue({
       data: { sessions: [], total: 20 },
