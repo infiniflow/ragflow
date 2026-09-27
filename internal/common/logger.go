@@ -17,13 +17,18 @@
 package common
 
 import (
-	"errors"
+	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -35,6 +40,9 @@ var (
 	Logger      *zap.Logger
 	Sugar       *zap.SugaredLogger
 	atomicLevel zap.AtomicLevel
+
+	stdLogOnce sync.Once
+	stdLogger  *log.Logger
 )
 
 // FileOutput describes the rotated log file destination.
@@ -43,23 +51,71 @@ var (
 // (stdout only). When Path is set, the file is written under ./logs/<Path>
 // and rotated by lumberjack according to MaxSize / MaxBackups / MaxAge / Compress.
 //
-// Numeric zero values are replaced with defaults (100 MB / 10 / 30 days) inside
-// Init. Compress is left as the caller-provided value; the project default is
-// applied by callers (see resolveCompress) so that "not set" can be distinguished
-// from "explicitly false" via the *bool LogConfig.Compress field.
+// Numeric zero values (MaxSize/MaxBackups/MaxAge) are replaced with defaults
+// (100 MB / 10 / 30 days) inside Init. Compress is a *bool so that "not set"
+// (nil) can be distinguished from "explicitly false"; when nil it defaults to
+// DefaultLogCompress (true).
 type FileOutput struct {
+	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
 	MaxAge     int
-	Compress   bool
+	Compress   *bool
 }
 
 const (
-	defaultMaxSizeMB  = 100
-	defaultMaxBackups = 10
-	defaultMaxAgeDays = 30
+	cyanLogMarker  = "[[RAGFLOW_CYAN_LOG]]"
+	greenLogMarker = "[[RAGFLOW_GREEN_LOG]]"
+	redLogMarker   = "[[RAGFLOW_RED_LOG]]"
+	resetLogMarker = "[[RAGFLOW_RESET_LOG]]"
+	ansiBrightCyan = "\x1b[96m"
+	ansiGreen      = "\x1b[32m"
+	ansiRed        = "\x1b[31m"
+	ansiReset      = "\x1b[0m"
+	// DefaultLogMaxSizeMB is the default rotation threshold (lumberjack
+	// MaxSize is in MB, not bytes).
+	DefaultLogMaxSizeMB = 100
+	// DefaultLogMaxBackups is the default number of rotated files retained.
+	DefaultLogMaxBackups = 10
+	// DefaultLogMaxAgeDays is the default retention window for rotated files.
+	DefaultLogMaxAgeDays = 30
+	// DefaultLogCompress is the project default for gzipping rotated files.
+	DefaultLogCompress = true
 )
+
+type coloredLineWriteSyncer struct {
+	zapcore.WriteSyncer
+	color bool
+}
+
+func (s coloredLineWriteSyncer) Write(p []byte) (int, error) {
+	if !bytes.Contains(p, []byte(cyanLogMarker)) && !bytes.Contains(p, []byte(greenLogMarker)) && !bytes.Contains(p, []byte(redLogMarker)) {
+		return s.WriteSyncer.Write(p)
+	}
+
+	line := bytes.Clone(p)
+	if s.color {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), []byte(ansiBrightCyan))
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), []byte(ansiGreen))
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), []byte(ansiRed))
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), []byte(ansiReset))
+	} else {
+		line = bytes.ReplaceAll(line, []byte(cyanLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(greenLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(redLogMarker), nil)
+		line = bytes.ReplaceAll(line, []byte(resetLogMarker), nil)
+	}
+
+	n, err := s.WriteSyncer.Write(line)
+	if err != nil {
+		return 0, err
+	}
+	if n != len(line) {
+		return 0, io.ErrShortWrite
+	}
+	return len(p), nil
+}
 
 func parseZapLevel(level string) (zapcore.Level, error) {
 	switch strings.ToLower(strings.TrimSpace(level)) {
@@ -80,14 +136,15 @@ func parseZapLevel(level string) (zapcore.Level, error) {
 	}
 }
 
-func logLevelName(level zapcore.Level) string {
-	if level == zapcore.WarnLevel {
-		return "WARNING"
+func LogLevelHigherThanInfo(level string) bool {
+	l, err := parseZapLevel(level)
+	if err != nil {
+		return false
 	}
-	return strings.ToUpper(level.String())
+	return l > zapcore.InfoLevel
 }
 
-// Init initializes the global logger. stdout is always written. If file.Path
+// InitLogger initializes the global logger. stdout is always written. If file.Path
 // is non-empty, a rotated file is also written via lumberjack.
 //
 // Callers should pass a non-empty Path so that file logging is preserved
@@ -96,7 +153,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput) error {
+func InitLogger(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -107,8 +164,8 @@ func Init(level string, file FileOutput) error {
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:       "timestamp",
 		LevelKey:      "level",
-		NameKey:       "logger",
-		CallerKey:     "",
+		NameKey:       "service",
+		CallerKey:     "caller",
 		FunctionKey:   "",
 		MessageKey:    "msg",
 		StacktraceKey: "stacktrace",
@@ -119,69 +176,107 @@ func Init(level string, file FileOutput) error {
 		// / "-HH:MM"). Easier to ingest than the default "2006-01-02
 		// 15:04:05" layout — which had no ms and no zone — and avoids
 		// the variable-width output of RFC3339Nano.
-		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02T15:04:05.000Z07:00"),
+		EncodeTime:     zapcore.TimeEncoderOfLayout("2006-01-02 15:04:05.000-07:00"),
 		EncodeDuration: zapcore.SecondsDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
+		EncodeName:     zapcore.FullNameEncoder,
 	}
 
 	maxSize := file.MaxSize
 	if maxSize <= 0 {
-		maxSize = defaultMaxSizeMB
+		maxSize = DefaultLogMaxSizeMB
 	}
 	maxBackups := file.MaxBackups
 	if maxBackups <= 0 {
-		maxBackups = defaultMaxBackups
+		maxBackups = DefaultLogMaxBackups
 	}
 	maxAge := file.MaxAge
 	if maxAge <= 0 {
-		maxAge = defaultMaxAgeDays
+		maxAge = DefaultLogMaxAgeDays
 	}
 
-	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
-	if file.Path != "" {
+	compress := DefaultLogCompress
+	if file.Compress != nil {
+		compress = *file.Compress
+	}
+	stdoutSyncer := zapcore.AddSync(os.Stdout)
+	syncers := []zapcore.WriteSyncer{stdoutSyncer}
+	// File sink only when a destination is actually configured. The cmd/*
+	// entry points init the logger TWICE: a pre-config temporary logger
+	// (before the port is known, e.g. "api_server" → logs/api_server.log)
+	// and the real one after server.Init renames it (e.g.
+	// "api_server_9384" → logs/api_server_9384.log). The temporary pass now
+	// passes an empty FileOutput and stays stdout-only, so the pre-config
+	// startup window no longer litters a second, orphaned log file next to
+	// the real one (and ragflow-cli no longer drops a lumberjack file into
+	// os.TempDir()).
+	if file.Path != "" && file.Filename != "" {
 		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join("logs", file.Path),
+			Filename:   filepath.Join(file.Path, file.Filename),
 			MaxSize:    maxSize,
 			MaxBackups: maxBackups,
 			MaxAge:     maxAge,
-			Compress:   file.Compress,
+			Compress:   compress,
 			LocalTime:  true,
 		}
 		syncers = append(syncers, zapcore.AddSync(ljLogger))
 	}
 
-	core := zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig),
-		zap.CombineWriteSyncers(syncers...),
-		atomicLevel,
-	)
+	var core zapcore.Core
+	if IsLLMDebugEnabled() {
+		cores := []zapcore.Core{
+			zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: stdoutSyncer, color: true},
+				atomicLevel,
+			),
+		}
+		if len(syncers) > 1 {
+			cores = append(cores, zapcore.NewCore(
+				zapcore.NewConsoleEncoder(encoderConfig),
+				coloredLineWriteSyncer{WriteSyncer: syncers[1]},
+				atomicLevel,
+			))
+		}
+		core = zapcore.NewTee(cores...)
+	} else {
+		core = zapcore.NewCore(
+			zapcore.NewConsoleEncoder(encoderConfig),
+			zap.CombineWriteSyncers(syncers...),
+			atomicLevel,
+		)
+	}
 
-	Logger = zap.New(core, zap.AddCallerSkip(1))
+	if serviceName != "" {
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		).Named(serviceName)
+	} else {
+		Logger = zap.New(core,
+			zap.Fields(zap.Int("pid", os.Getpid())),
+			zap.AddCallerSkip(1),
+		)
+	}
 	Sugar = Logger.Sugar()
 
 	return nil
 }
 
-// Sync flushes any buffered log entries.
-func Sync() {
+// SyncLog flushes any buffered log entries.
+func SyncLog() {
 	if Logger != nil {
 		_ = Logger.Sync()
 	}
 }
 
-// Fatal logs a fatal message using zap with caller info, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
 	}
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
-	}
 	Logger.Fatal(msg, fields...)
 }
 
-// Info logs an info message.
 func Info(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -189,19 +284,32 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// Error logs an error message. err may be nil; if non-nil it is appended as
-// a zap.Error field. Additional fields follow.
+// LogRequestResponseInfo writes the request portion in bright cyan. The
+// response portion is green for success and red for failure on stdout. File
+// output remains uncolored.
+func LogRequestResponseInfo(request, response string, responseSucceeded bool) {
+	if Logger == nil {
+		return
+	}
+	responseMarker := redLogMarker
+	if responseSucceeded {
+		responseMarker = greenLogMarker
+	}
+	Logger.Info(cyanLogMarker + request + responseMarker + " " + response + resetLogMarker)
+}
+
 func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
 	}
-	if err != nil {
-		fields = append(fields, zap.Error(err))
+
+	if IsDebugEnabled() {
+		Logger.Error(fmt.Sprintf("%s, %+v", msg, err), fields...)
+	} else {
+		Logger.Error(fmt.Sprintf("%s, %v", msg, err), fields...)
 	}
-	Logger.Error(msg, fields...)
 }
 
-// Debug logs a debug message.
 func Debug(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -209,7 +317,6 @@ func Debug(msg string, fields ...zap.Field) {
 	Logger.Debug(msg, fields...)
 }
 
-// Warn logs a warning message.
 func Warn(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -217,40 +324,129 @@ func Warn(msg string, fields ...zap.Field) {
 	Logger.Warn(msg, fields...)
 }
 
+// StdLogger returns a *log.Logger that routes writes through the global zap
+// logger, so call sites that keep a *log.Logger facade still land in the
+// project's structured logs. When the project logger has not been initialized
+// yet (e.g. before InitLogger runs or in standalone tests) it falls back to the
+// standard-library default. The returned logger writes at Info level.
+//
+// The returned *log.Logger resolves the write target LAZILY on every write.
+// Package-level variables like `var _LOG = common.StdLogger()` are evaluated
+// during package init, long before InitLogger runs; a logger captured eagerly
+// at that moment would be log.Default() forever and its output would vanish
+// into stderr, never reaching the structured log files.
+func StdLogger() *log.Logger {
+	stdLogOnce.Do(func() {
+		stdLogger = log.New(stdLogRouter{}, "", 0)
+	})
+	return stdLogger
+}
+
+// stdLogRouter dispatches *log.Logger writes to the current global logger on
+// every write (see StdLogger).
+type stdLogRouter struct{}
+
+func (stdLogRouter) Write(p []byte) (int, error) {
+	if Logger == nil {
+		return os.Stderr.Write(p)
+	}
+	Logger.Info(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
+// --- per-request log correlation -------------------------------------------
+//
+// One conversation turn (a chat completion request) fans out into dozens of
+// log lines across packages — agent, delivery gate, auditor, tools, retrieval,
+// token usage — and concurrent benchmark questions interleave them. Attaching
+// the session id to the request context and reading it back in the Ctx-variant
+// log helpers below lets a single `grep session_id=<id>` reconstruct one
+// turn's full trail (the q71 postmortem had to reconstruct it from timestamps).
+
+type ctxKey int
+
+const sessionIDCtxKey ctxKey = iota
+
+// WithSessionID returns a context that tags every Ctx-variant log call with
+// the conversation turn's session id. Empty ids are a no-op so callers do not
+// need to guard.
+func WithSessionID(ctx context.Context, sessionID string) context.Context {
+	if strings.TrimSpace(sessionID) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, sessionIDCtxKey, strings.TrimSpace(sessionID))
+}
+
+// SessionIDFromContext extracts the correlation id ("" when absent).
+func SessionIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(sessionIDCtxKey).(string)
+	return id
+}
+
+func sessionFields(ctx context.Context) []zap.Field {
+	if id := SessionIDFromContext(ctx); id != "" {
+		return []zap.Field{zap.String("session_id", id)}
+	}
+	return nil
+}
+
+// InfoCtx is Info plus the session_id correlation field when ctx carries one.
+func InfoCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Info(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// WarnCtx is Warn plus the session_id correlation field when ctx carries one.
+func WarnCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Warn(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// DebugCtx is Debug plus the session_id correlation field when ctx carries one.
+func DebugCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Debug(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// ErrorCtx is Error plus the session_id correlation field when ctx carries one.
+func ErrorCtx(ctx context.Context, msg string, err error, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	detail := fmt.Sprintf("%s, %v", msg, err)
+	if IsDebugEnabled() {
+		detail = fmt.Sprintf("%s, %+v", msg, err)
+	}
+	Logger.Error(detail, append(sessionFields(ctx), fields...)...)
+}
+
 // IsDebugEnabled returns true if debug logging is enabled.
 func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 
-// GetLevel returns the current log level.
-func GetLevel() string {
+// GetLogLevel returns the current log level.
+func GetLogLevel() string {
 	return atomicLevel.String()
 }
 
-// SetLevel sets the log level at runtime.
-func SetLevel(level string) error {
+// SetLogLevel sets the log level at runtime.
+func SetLogLevel(level string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		return err
 	}
 	atomicLevel.SetLevel(zapLevel)
 	return nil
-}
-
-// ResolveCompress applies the project default (true) when the config-level
-// Compress is nil. When non-nil, the operator's choice is used as-is.
-//
-// The project default is compression on; operators can opt out by setting
-// log.compress: false in service_conf.yaml. Because Go's bool zero value is
-// false and would otherwise be indistinguishable from "not set", the YAML
-// struct uses *bool and this helper resolves the defaulting at the cmd/
-// boundary. The *bool does not live in this file because FileOutput itself
-// takes a plain bool (the caller has already resolved the default by then).
-func ResolveCompress(c *bool) bool {
-	if c == nil {
-		return true
-	}
-	return *c
 }
 
 // GinLogger returns a gin middleware that emits one log line per request
@@ -314,7 +510,7 @@ func GinLogger() gin.HandlerFunc {
 				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
 				// Use a sentinel so the err field is non-empty; operators can
 				// grep for this string in logs.
-				ginErr = errors.New("5xx response with no handler error attached")
+				ginErr = err5xxNoError
 			}
 			Error(msg, ginErr, fields...)
 		case status >= 400:
@@ -324,3 +520,5 @@ func GinLogger() gin.HandlerFunc {
 		}
 	}
 }
+
+var err5xxNoError = errors.New("5xx response with no handler error attached")

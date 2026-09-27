@@ -17,8 +17,8 @@
 // multibranch_test.go — MultiBranch integration tests.
 //
 // The canvas scheduler (scheduler.go) installs an eino MultiBranch on
-// every Switch / Categorize parent that has at least two declared
-// downstream children. This file exercises two layers:
+// every Switch / Categorize parent that has at least one declared
+// downstream child. This file exercises two layers:
 //
 //   1. Pure unit tests for makeSwitchBranchCondition — the closure
 //      that turns outputs["_next"] into an end-node set (map[string]bool).
@@ -39,7 +39,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 
 	"github.com/cloudwego/eino/compose"
@@ -51,7 +50,7 @@ import (
 // no chosen end-nodes and skips routing.
 func TestMakeSwitchBranchCondition_MissingField(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"other": "x"})
+	got, err := cond(t.Context(), map[string]any{"other": "x"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -64,7 +63,7 @@ func TestMakeSwitchBranchCondition_MissingField(t *testing.T) {
 // the same as missing.
 func TestMakeSwitchBranchCondition_EmptyString(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": ""})
+	got, err := cond(t.Context(), map[string]any{"_next": ""})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestMakeSwitchBranchCondition_EmptyString(t *testing.T) {
 // a []any (list of strings).
 func TestMakeSwitchBranchCondition_WrongType(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": 42})
+	got, err := cond(t.Context(), map[string]any{"_next": 42})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -95,7 +94,7 @@ func TestMakeSwitchBranchCondition_WrongType(t *testing.T) {
 // end node" at runtime and crash the run.
 func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": "ghost"})
+	got, err := cond(t.Context(), map[string]any{"_next": "ghost"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -104,11 +103,25 @@ func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 	}
 }
 
+// TestMakeSwitchBranchCondition_SingleChildUnmatched: a one-child Switch
+// must not fall through to its only static edge when the selected target is
+// absent or different.
+func TestMakeSwitchBranchCondition_SingleChildUnmatched(t *testing.T) {
+	cond := makeSwitchBranchCondition(map[string]bool{"if_branch": true})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{"else_branch"}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("cond on unmatched single-child target = %v, want empty map", got)
+	}
+}
+
 // TestMakeSwitchBranchCondition_KnownKey: the happy path — a valid
 // cpn_id is passed through as a single-entry map.
 func TestMakeSwitchBranchCondition_KnownKey(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": "b"})
+	got, err := cond(t.Context(), map[string]any{"_next": "b"})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -123,7 +136,7 @@ func TestMakeSwitchBranchCondition_KnownKey(t *testing.T) {
 // dropped.
 func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
-	got, err := cond(context.Background(), map[string]any{"_next": []any{"a", "b", "ghost"}})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{"a", "b", "ghost"}})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -136,7 +149,7 @@ func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
 // treated as no branch chosen.
 func TestMakeSwitchBranchCondition_EmptyList(t *testing.T) {
 	cond := makeSwitchBranchCondition(map[string]bool{"a": true})
-	got, err := cond(context.Background(), map[string]any{"_next": []any{}})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{}})
 	if err != nil {
 		t.Fatalf("cond: %v", err)
 	}
@@ -186,10 +199,9 @@ func TestWireMultiBranches_NoBranchable(t *testing.T) {
 	}
 }
 
-// TestWireMultiBranches_SingleChildSkipped: a Switch with only one
-// downstream child is degenerate — branch is meaningless. The
-// helper should skip it and the AddInput edge handles invocation.
-func TestWireMultiBranches_SingleChildSkipped(t *testing.T) {
+// TestWireMultiBranches_SingleChild: a Switch with one downstream child
+// still needs a branch so an unmatched condition cannot execute it.
+func TestWireMultiBranches_SingleChild(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"sw": {
@@ -201,8 +213,8 @@ func TestWireMultiBranches_SingleChildSkipped(t *testing.T) {
 	}
 	wf := compose.NewWorkflow[map[string]any, map[string]any]()
 	regs := wireMultiBranches(wf, c, nil)
-	if len(regs) != 0 {
-		t.Errorf("expected no branch for single-child Switch, got %d: %+v", len(regs), regs)
+	if len(regs) != 1 {
+		t.Errorf("expected one branch for single-child Switch, got %d: %+v", len(regs), regs)
 	}
 }
 
@@ -328,7 +340,7 @@ func TestMultiBranch_CompileSucceeds(t *testing.T) {
 			},
 		},
 	}
-	cc, err := Compile(context.Background(), dsl)
+	cc, err := Compile(t.Context(), dsl)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}

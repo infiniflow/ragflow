@@ -14,12 +14,18 @@ import { useParams } from 'react-router';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';
 
-export const useSaveGraph = (showMessage: boolean = true) => {
+export const useSaveGraph = (
+  showMessage: boolean = true,
+  skipInvalidation: boolean = false,
+) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage);
+  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
+  // Saving is always allowed, even with unresolved canvas issues — those live
+  // in the canvas checklist (useCanvasChecklist) which gates the
+  // publish/run/embed/explore entry points instead.
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
@@ -28,6 +34,10 @@ export const useSaveGraph = (showMessage: boolean = true) => {
       },
       release?: boolean,
     ) => {
+      if (!id) {
+        return;
+      }
+
       const params: Record<string, any> = {
         id,
         title: data.title,
@@ -40,7 +50,7 @@ export const useSaveGraph = (showMessage: boolean = true) => {
 
       return setAgent(params);
     },
-    [setAgent, data, id, buildDslData],
+    [id, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };
@@ -68,11 +78,40 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   return { handleRun, loading };
 };
 
+export function shouldAutosaveCanvas({
+  chatDrawerVisible,
+  agentId,
+  agentLoaded,
+  nodeCount,
+  edgeCount,
+}: {
+  chatDrawerVisible: boolean;
+  agentId?: string;
+  agentLoaded: boolean;
+  nodeCount: number;
+  edgeCount: number;
+}): boolean {
+  if (chatDrawerVisible) {
+    return false;
+  }
+  if (!agentId || !agentLoaded) {
+    return false;
+  }
+  // An empty store is the Zustand default and also the fallback when DSL has
+  // not been applied yet. Autosaving it would PUT components:{} over a real
+  // pipeline (#18771). Explicit Save still persists an empty canvas.
+  if (nodeCount === 0 && edgeCount === 0) {
+    return false;
+  }
+  return true;
+}
+
 export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
+  const { id } = useParams();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph(false);
+  const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
 
   const setSaveTime = useCallback((updateTime: number) => {
@@ -84,11 +123,30 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   }, [flowDetail, setSaveTime]);
 
   const saveAgent = useCallback(async () => {
-    if (!chatDrawerVisible) {
-      const ret = await saveGraph();
+    if (
+      !shouldAutosaveCanvas({
+        chatDrawerVisible,
+        agentId: id,
+        agentLoaded: Boolean(flowDetail?.id),
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      })
+    ) {
+      return;
+    }
+    const ret = await saveGraph();
+    if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }
-  }, [chatDrawerVisible, saveGraph, setSaveTime]);
+  }, [
+    chatDrawerVisible,
+    edges.length,
+    flowDetail?.id,
+    id,
+    nodes.length,
+    saveGraph,
+    setSaveTime,
+  ]);
 
   useDebounceEffect(
     () => {

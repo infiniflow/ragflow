@@ -1,0 +1,381 @@
+package structure
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+)
+
+// CompileConfig carries the per-run identity and extraction settings.
+type CompileConfig struct {
+	LLMID        string
+	Type         Type // inferred compile kind (list / set / hypergraph)
+	TenantID     string
+	DocID        string
+	Variant      common.Variant
+	Lang         string
+	ParserConfig map[string]any
+	// TemplateID is mixed into stable row ids so two templates sharing a
+	// compile kind don't collide on identical payloads (mirrors Python's
+	// row_seed_extras in _struct_to_doc_storage_doc).
+	TemplateID string
+}
+
+// extractionTemperature mirrors Python's gen_conf for structure extraction
+// (_struct_extract_hypergraph uses temperature 0.1).
+var extractionTemperature = 0.1
+
+// disableThinking mirrors knowledge_compile_gen_conf's intent: extraction and
+// judging calls must not spend the budget on chain-of-thought. Python disables
+// it per model family (deepseek-v4/minimax via extra_body.thinking, qwen3 via
+// enable_thinking, everything else via reasoning_effort="none"); the Go chat
+// drivers expose a single normalized switch, so every compile call turns it
+// off. The one Python exception — qwen3 -preview endpoints that REQUIRE
+// thinking enabled — would need a model-name branch in the Go driver.
+func chatRequest(llmID, systemPrompt, userPrompt string) common.ChatRequest {
+	return common.ChatRequest{
+		LLMID:           llmID,
+		SystemPrompt:    systemPrompt,
+		UserPrompt:      userPrompt,
+		Temperature:     &extractionTemperature,
+		DisableThinking: true,
+	}
+}
+
+// extractHypergraph mirrors _struct_extract_hypergraph: stage 1 extracts node
+// (entity) items, stage 2 extracts edge (relation) items constrained to the
+// stage-1 entities via the {known_nodes} placeholder. The two stages within
+// one batch are strictly sequential; batches parallelise at the caller.
+func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, nodePrompt, edgePromptTmpl, packedText string) (nodes, edges []map[string]any, err error) {
+	user := UserPrompt(packedText)
+	nodeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, nodePrompt, user))
+	if err != nil {
+		return nil, nil, err
+	}
+	nodes = unwrapItems(nodeRaw)
+
+	// Known entities: unique values of the config's entity id field, in
+	// first-seen order (mirrors _struct_extract_hypergraph's known_keys).
+	idField := EntityIDField(cfg.ParserConfig)
+	var known []string
+	for _, n := range nodes {
+		v := strings.TrimSpace(stringOf(n[idField]))
+		if v == "" || containsString(known, v) {
+			continue
+		}
+		known = append(known, v)
+	}
+
+	if strings.TrimSpace(edgePromptTmpl) == "" {
+		return nodes, nil, nil
+	}
+	edgeRaw, err := common.GenJSON(ctx, deps.Chat, chatRequest(cfg.LLMID, fillKnownNodes(edgePromptTmpl, known), EdgeUserPrompt(packedText)))
+	if err != nil {
+		return nil, nil, err
+	}
+	return nodes, unwrapItems(edgeRaw), nil
+}
+
+// unwrapItems mirrors _struct_unwrap_items: the contract is
+// {"items": [{...}, ...]}; a top-level array is tolerated defensively.
+// GenJSON already guarantees a JSON object, so the list form only appears
+// under "items". Non-object entries are dropped.
+func unwrapItems(raw map[string]any) []map[string]any {
+	if raw == nil {
+		return nil
+	}
+	arr, ok := raw["items"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(arr))
+	for _, e := range arr {
+		if m, ok := e.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// payloadChunkIDs mirrors _struct_payload_chunk_ids: keep only model-selected
+// chunk IDs that belong to the current batch; fall back to all batch ids when
+// the model returned none that qualify.
+func payloadChunkIDs(payload map[string]any, batchIDs []string) []string {
+	var rawIDs []string
+	switch v := payload["source_chunk_ids"].(type) {
+	case string:
+		rawIDs = []string{v}
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				rawIDs = append(rawIDs, s)
+			}
+		}
+	case []string:
+		rawIDs = v
+	}
+	allowed := make(map[string]bool, len(batchIDs))
+	for _, id := range batchIDs {
+		allowed[id] = true
+	}
+	var selected []string
+	seen := map[string]bool{}
+	for _, id := range rawIDs {
+		id = strings.TrimSpace(id)
+		if allowed[id] && !seen[id] {
+			selected = append(selected, id)
+			seen[id] = true
+		}
+	}
+	if len(selected) == 0 {
+		return append([]string{}, batchIDs...)
+	}
+	return selected
+}
+
+// payloadDescription mirrors _struct_payload_description: concat the string
+// values of every field (lists flattened) with single spaces. It delegates to
+// common.PayloadDescription, the shared implementation the tree variant also
+// uses, so the two variants cannot drift apart.
+func payloadDescription(payload map[string]any) string {
+	return common.PayloadDescription(payload, nil)
+}
+
+// IndexText returns the flattened payload description for a compiled row's
+// content JSON — the exact text Python tokenizes into content_ltks /
+// content_sm_ltks (“_tokenize_for_search(_struct_payload_description(payload))“).
+// Non-JSON content yields "", so non-structure variants keep tokenizing their
+// raw content.
+func IndexText(content string) string {
+	payload := parsePayload(content)
+	if payload == nil {
+		return ""
+	}
+	return payloadDescription(payload)
+}
+
+// mentionCountOf mirrors _struct_to_doc_storage_doc's mention_count parsing:
+// the payload's own count when it carries a usable one, else 1.
+func mentionCountOf(payload map[string]any) int {
+	switch v := payload["mention_count"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case int:
+		if v > 0 {
+			return v
+		}
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
+// False) does: Go's json.Marshal escapes <, > and & to < etc., which
+// would corrupt entity names containing those characters, so HTML escaping is
+// disabled. Keys are alphabetically sorted (map marshal), giving a canonical,
+// hash-stable form.
+func payloadJSON(payload map[string]any) string {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(payload); err != nil {
+		return "{}"
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// parsePayload is the inverse of payloadJSON (nil on malformed content).
+func parsePayload(content string) map[string]any {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(content), &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// buildRows converts extracted node/edge payloads into entity/relation
+// products, mirroring _struct_process_batch: embedding input is
+// payloadDescription(payload); content is the payload JSON (Python's
+// content_with_weight); source_chunk_ids are the model's picks filtered to
+// the batch; the stable row id hashes (content, doc_id, template_id).
+func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, edges []map[string]any, batchIDs []string) ([]common.Product, error) {
+	srcField, tgtField := RelationMemberFields(cfg.ParserConfig)
+
+	type spec struct {
+		kind    string // "entity" | "relation"
+		payload map[string]any
+	}
+	specs := make([]spec, 0, len(nodes)+len(edges))
+	for _, p := range nodes {
+		specs = append(specs, spec{kind: "entity", payload: p})
+	}
+	for _, p := range edges {
+		if isSelfLoopRelation(p, srcField, tgtField) {
+			continue
+		}
+		specs = append(specs, spec{kind: "relation", payload: p})
+	}
+	if len(specs) == 0 {
+		return nil, nil
+	}
+
+	texts := make([]string, len(specs))
+	for i, s := range specs {
+		texts[i] = payloadDescription(s.payload)
+	}
+	vectors, err := deps.Embed.Encode(ctx, texts)
+	if err != nil {
+		return nil, err
+	}
+	if len(vectors) != len(specs) {
+		return nil, fmt.Errorf("knowledge_compiler: embedding count mismatch (%d vs %d)", len(vectors), len(specs))
+	}
+
+	rows := make([]common.Product, 0, len(specs))
+	for i, s := range specs {
+		content := payloadJSON(s.payload)
+		idParts := []string{content, cfg.DocID}
+		if cfg.TemplateID != "" {
+			idParts = append(idParts, cfg.TemplateID)
+		}
+		meta := map[string]any{
+			"kind":             s.kind,
+			"source_chunk_ids": payloadChunkIDs(s.payload, batchIDs),
+			// mention_count_int mirrors Python: the payload's own count when it
+			// carries one, else 1 (never a synthesized constant).
+			"mention_count": mentionCountOf(s.payload),
+		}
+		if s.kind == "entity" {
+			if name := entityName(s.payload); name != "" {
+				meta["name"] = name
+			}
+			// entity_type_kwd is only stamped when the payload has a type —
+			// Python omits the column entirely for an untyped entity rather
+			// than writing a synthesized "other".
+			if typ := strings.TrimSpace(stringOf(s.payload["type"])); typ != "" {
+				meta["entity_type"] = typ
+			}
+			if desc := strings.TrimSpace(stringOf(s.payload["description"])); desc != "" {
+				meta["description"] = desc
+			}
+		} else {
+			if from := relationEndpoint(s.payload, srcField, "source", "src", "from"); from != "" {
+				meta["from"] = from
+			}
+			if to := relationEndpoint(s.payload, tgtField, "target", "tgt", "to"); to != "" {
+				meta["to"] = to
+			}
+			if typ := strings.TrimSpace(stringOf(s.payload["type"])); typ != "" {
+				meta["relation_type"] = typ
+			}
+		}
+		rows = append(rows, common.Product{
+			ID:       common.StableRowID(idParts...),
+			DocID:    cfg.DocID,
+			TenantID: cfg.TenantID,
+			Variant:  cfg.Variant,
+			Content:  content,
+			Vector:   vectors[i],
+			Meta:     meta,
+		})
+	}
+	return rows, nil
+}
+
+func isSelfLoopRelation(payload map[string]any, sourceField, targetField string) bool {
+	from := relationEndpoint(payload, sourceField, "source", "src", "from")
+	to := relationEndpoint(payload, targetField, "target", "tgt", "to")
+	return isSelfLoop(from, to)
+}
+
+func isSelfLoop(from, to string) bool {
+	from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+	return from != "" && from == to
+}
+
+func filterSelfLoopRelations(rows []common.Product) []common.Product {
+	filtered := make([]common.Product, 0, len(rows))
+	for _, row := range rows {
+		if kind, _ := row.Meta["kind"].(string); kind == "relation" {
+			from, _ := row.Meta["from"].(string)
+			to, _ := row.Meta["to"].(string)
+			if payload := parsePayload(row.Content); payload != nil {
+				if payloadFrom := relationEndpoint(payload, "", "source", "src", "from"); payloadFrom != "" {
+					from = payloadFrom
+				}
+				if payloadTo := relationEndpoint(payload, "", "target", "tgt", "to"); payloadTo != "" {
+					to = payloadTo
+				}
+			}
+			if isSelfLoop(from, to) {
+				continue
+			}
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
+}
+
+// entityName mirrors _struct_graph_entity's name resolution
+// (name → text → term → title, "-1" sentinel rejected).
+func entityName(payload map[string]any) string {
+	for _, k := range []string{"name", "text", "term", "title"} {
+		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
+			return s
+		}
+	}
+	return ""
+}
+
+// relationEndpoint resolves a relation's endpoint: the config-declared member
+// field first, then the conventional aliases (mirrors _struct_graph_relation
+// combined with _struct_relation_member_fields).
+func relationEndpoint(payload map[string]any, declared string, aliases ...string) string {
+	if declared != "" {
+		if s := strings.TrimSpace(stringOf(payload[declared])); s != "" && s != "-1" {
+			return s
+		}
+	}
+	for _, k := range aliases {
+		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
+			return s
+		}
+	}
+	return ""
+}
+
+// stringOf renders a scalar payload value; maps/slices render as "" (they are
+// not scalar text).
+func stringOf(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case float64:
+		return strings.TrimSuffix(fmt.Sprintf("%v", x), ".0")
+	case bool:
+		return fmt.Sprintf("%v", x)
+	default:
+		return ""
+	}
+}
+
+func containsString(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}

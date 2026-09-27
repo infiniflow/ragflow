@@ -15,7 +15,8 @@
 #
 
 import pytest
-from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 
 
@@ -29,14 +30,34 @@ def test_document_image_invalid_id_contract(rest_client):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/documents/images/not-a-valid-image-id",
+        "/documents/doc-1/images/imagetemps-page-1.png",
+        "/documents/doc-1/thumbnail",
+    ],
+)
+def test_private_document_images_require_auth(rest_client_noauth, path):
+    res = rest_client_noauth.get(path)
+    if IS_GO_PROXY:
+        assert res.status_code == 200, res.text
+        payload = res.json()
+        assert payload["code"] == 102, payload
+        assert payload["message"] == "Authorization is not valid!", payload
+        return
+    assert res.status_code == 401, res.text
+    assert_auth_error(res.json(), "missing token")
+
+
+@pytest.mark.p2
 def test_document_download_by_id_requires_auth(create_document):
     _dataset_id, document_id = create_document("document_raw_download_auth.txt")
     for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
         res = client.get(f"/documents/{document_id}")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -45,7 +66,7 @@ def test_document_download_by_id_invalid_id_contract(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "Document not found!", payload
+    assert payload["message"] == "document not found", payload
 
 
 @pytest.mark.p2
@@ -62,4 +83,4 @@ def test_document_artifact_rejects_unsafe_filename(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert payload["message"] == "Invalid file type.", payload
+    assert payload["message"] == "invalid file type", payload

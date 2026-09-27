@@ -20,6 +20,7 @@ npm start
 
 ## API
 
+- `GET /health`
 - `POST /whatsapp/:sessionKey/start`
 - `GET /whatsapp/:sessionKey/status`
 - `GET /whatsapp/:sessionKey/events/ws?after=<seq>` (WebSocket)

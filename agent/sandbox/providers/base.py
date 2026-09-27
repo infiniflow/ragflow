@@ -171,7 +171,7 @@ class SandboxProvider(ABC):
                     "type": "string",
                     "required": True,
                     "label": "API Endpoint",
-                    "placeholder": "http://localhost:9385"
+                    "placeholder": "http://sandbox-executor-manager:9385"
                 },
                 "timeout": {
                     "type": "integer",

@@ -1,0 +1,18 @@
+{
+  "id": "title__group_simple",
+  "component": "TitleChunker",
+  "notes": "Baseline group mode: two '#' headings collapse into one group. Also locks the trailing newline that joinGroupText appends.",
+  "param": {
+    "method": "group",
+    "levels": [
+      [
+        "#"
+      ]
+    ]
+  },
+  "input": {
+    "name": "t.md",
+    "output_format": "markdown",
+    "markdown": "# Chapter One\nAlpha text.\n# Chapter Two\nBeta text."
+  }
+}

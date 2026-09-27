@@ -149,6 +149,51 @@ def test_invalid_credentials_json_raises():
 
 
 # ---------------------------------------------------------------------------
+# Identifier validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("project_id", "foo` WHERE 1=1 --"),
+        ("dataset_id", "foo` WHERE 1=1 --"),
+        ("table_id", "foo` WHERE 1=1 --"),
+        ("id_column", "foo; DROP TABLE users --"),
+        ("timestamp_column", "ts OR 1=1"),
+        ("content_columns", "name` UNION SELECT password FROM users --"),
+        ("metadata_columns", "status` UNION SELECT password FROM users --"),
+    ],
+)
+def test_rejects_malicious_identifier(field, value):
+    kwargs = dict(
+        project_id="my-proj",
+        dataset_id="ds",
+        table_id="tbl",
+        content_columns="name",
+    )
+    kwargs[field] = value
+    with pytest.raises(ConnectorValidationError):
+        BigQueryConnector(**kwargs)
+
+
+@pytest.mark.p2
+def test_accepts_valid_identifiers():
+    connector = BigQueryConnector(
+        project_id="my-project",
+        dataset_id="my_dataset",
+        table_id="my_table",
+        content_columns="name,description",
+        id_column="id",
+        timestamp_column="created_at",
+    )
+    assert connector.project_id == "my-project"
+    assert connector.id_column == "id"
+    assert connector.timestamp_column == "created_at"
+
+
+# ---------------------------------------------------------------------------
 # Query construction
 # ---------------------------------------------------------------------------
 

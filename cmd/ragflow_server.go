@@ -20,25 +20,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/retrievalbridge"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/channels"
+	native "ragflow/internal/deepdoc/native"
+	pdf "ragflow/internal/deepdoc/parser/pdf"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
+	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	"ragflow/internal/mcp"
+	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 	"ragflow/internal/service/chunk"
+	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
+	"ragflow/internal/service/file"
+	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/service/wikisearch"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -47,43 +62,69 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	_ "ragflow/internal/agent/component"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
+	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 )
 
 type serverArgs struct {
-	mode          *string // admin | api | ingestor | syncer
+	mode          *string // admin | api | ingestor | syncer | deepdoc | migrate
 	helpFlag      bool
 	versionFlag   bool
-	debugLog      bool
-	migrateDB     bool
+	logLevel      *string
 	configPath    *string // Used by admin, api; user defined config path
 	initSuperUser bool    // Used by admin;
 	port          *int    // Used by admin, api
-	adminHost     *string // Used by api, ingestor, syncer for heartbeat
-	adminPort     *int    // Used by api, ingestor, syncer for heartbeat, "ip:port"
+	adminHost     *string // Used by api, ingestor, syncer, deepdoc for heartbeat
+	adminPort     *int    // Used by api, ingestor, syncer, deepdoc for heartbeat, "ip:port"
 	name          *string // server name
+	enablePProf   bool    // enable pprof
+
+	// deepdocInferenceConcurrency, when set, overrides the DeepDoc inference
+	// concurrency from env/config. nil means "unspecified".
+	deepdocInferenceConcurrency *int
 }
 
 func parseArgs() (*serverArgs, error) {
 	args := &serverArgs{}
 
+	// Mode flags share one variable, so the last one passed wins.
 	var serverMode string
 	var configPath string
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
+		if key, value, ok := strings.Cut(arg, "="); ok {
+			switch key {
+			case "--log-level":
+				if err := validateLogLevel(value); err != nil {
+					return nil, err
+				}
+				args.logLevel = &value
+				continue
+			case "--deepdoc-inference-concurrency":
+				n, convErr := strconv.Atoi(value)
+				if convErr != nil {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+				}
+				if n <= 0 {
+					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+				}
+				args.deepdocInferenceConcurrency = &n
+				continue
+			}
+		}
+
 		switch arg {
 		case "--admin":
 			serverMode = "admin"
 			args.mode = &serverMode
-		case "--migrate":
-			args.migrateDB = true
 		case "--ingestor":
 			serverMode = "ingestor"
 			args.mode = &serverMode
@@ -93,12 +134,26 @@ func parseArgs() (*serverArgs, error) {
 		case "--syncer":
 			serverMode = "syncer"
 			args.mode = &serverMode
+		case "--deepdoc":
+			serverMode = "deepdoc"
+			args.mode = &serverMode
+		case "--migrate":
+			serverMode = "migrate"
+			args.mode = &serverMode
 		case "-h", "--help":
 			args.helpFlag = true
 		case "-v", "--version":
 			args.versionFlag = true
-		case "--debug":
-			args.debugLog = true
+		case "--log-level":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--log-level requires a value")
+			}
+			i++
+			level := os.Args[i]
+			if err := validateLogLevel(level); err != nil {
+				return nil, err
+			}
+			args.logLevel = &level
 		case "-f", "--config":
 			if i+1 >= len(os.Args) {
 				return nil, fmt.Errorf("%s requires a value", arg)
@@ -143,30 +198,102 @@ func parseArgs() (*serverArgs, error) {
 			}
 			i++
 			args.name = &os.Args[i]
+		case "--profile":
+			args.enablePProf = true
+		case "--deepdoc-inference-concurrency":
+			if i+1 >= len(os.Args) {
+				return nil, errors.New("--deepdoc-inference-concurrency requires a value")
+			}
+			i++
+			n, convErr := strconv.Atoi(os.Args[i])
+			if convErr != nil {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
+			}
+			if n <= 0 {
+				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
+			}
+			args.deepdocInferenceConcurrency = &n
 		default:
 			return nil, fmt.Errorf("unknown parameter: %s", arg)
 		}
 	}
+
 	return args, nil
+}
+
+func validateLogLevel(level string) error {
+	switch level {
+	case "debug", "info", "warn", "error":
+		return nil
+	default:
+		return fmt.Errorf("invalid --log-level %q: must be debug, info, warn, or error", level)
+	}
+}
+
+func selectedLogLevel(args *serverArgs, configured string) string {
+	if args.logLevel != nil {
+		return *args.logLevel
+	}
+
+	if configured == "" {
+		return "info"
+	}
+
+	return configured
+}
+
+// resolveDeepDocInferenceConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(4) and returns the
+// resolved DeepDoc inference concurrency budget.
+func resolveDeepDocInferenceConcurrency(args *serverArgs, configured int) int {
+	val := 4
+	if configured > 0 {
+		val = configured
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvDeepDocInferenceConcurrency)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			val = n
+		}
+	}
+	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency
+	// up front (see TestParseArgsDeepDocInferenceConcurrency), so the parsed
+	// value is already positive; no extra >0 guard is needed here.
+	if args.deepdocInferenceConcurrency != nil {
+		val = *args.deepdocInferenceConcurrency
+	}
+	return val
 }
 
 func printHelp(args *serverArgs) {
 	switch {
-	case args.mode == nil:
-		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor [OPTIONS]\n\n", os.Args[0])
+	case args.mode == nil || *args.mode == "migrate":
+		fmt.Fprintf(os.Stderr, "Usage: %s --api|--admin|--ingestor|--syncer|--deepdoc [OPTIONS]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "       %s --migrate [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Server - Open-source RAG engine based on deep document understanding\n\n")
 		fmt.Fprintf(os.Stderr, "Mode selection (default: --api):\n")
 		fmt.Fprintf(os.Stderr, "  --api          \tRun as API server\n")
 		fmt.Fprintf(os.Stderr, "  --admin        \tRun as admin server\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor     \tRun as ingestion worker\n")
+		fmt.Fprintf(os.Stderr, "  --syncer       \tRun as file sync service\n")
+		fmt.Fprintf(os.Stderr, "  --deepdoc      \tRun as DeepDoc server\n\n")
+		fmt.Fprintf(os.Stderr, "Standalone action (mutually exclusive with a mode):\n")
+		fmt.Fprintf(os.Stderr, "  --migrate      \tRun database migrations and exit\n\n")
 		fmt.Fprintf(os.Stderr, "Common options:\n")
-		fmt.Fprintf(os.Stderr, "  --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -f, --config string\tPath to configuration file\n")
+		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
+		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \tShow this help message and exit\n\n")
+		fmt.Fprintln(os.Stderr, "MCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 		fmt.Fprintf(os.Stderr, "Run '%s --api --help' for API server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --admin --help' for admin server options.\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Run '%s --ingestor --help' for ingester options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --syncer --help' for syncer options.\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Run '%s --deepdoc --help' for DeepDoc server options.\n", os.Args[0])
 	case *args.mode == "api":
 		fmt.Fprintf(os.Stderr, "Usage: %s --api [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow API Server\n\n")
@@ -174,8 +301,10 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int     	\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to configuration file\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version 	 \tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug       	 \tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile          \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help       	  \tShow this help message and exit\n")
+		fmt.Fprintln(os.Stderr, "\nMCP settings: service_conf.yaml mcp section or RAGFLOW_MCP_* environment variables.")
 	case *args.mode == "admin":
 		fmt.Fprintf(os.Stderr, "Usage: %s --admin [OPTIONS]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "RAGFlow Admin Server\n\n")
@@ -184,7 +313,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --port int    \t\t\tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\t\t\tInitialize superuser account\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\t\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\t\tShow this help message and exit\n")
 	case *args.mode == "ingestor":
 		fmt.Fprintf(os.Stderr, "Usage: %s --ingestor [OPTIONS]\n\n", os.Args[0])
@@ -194,7 +324,8 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	case *args.mode == "syncer":
 		fmt.Fprintf(os.Stderr, "Usage: %s --syncer [OPTIONS]\n\n", os.Args[0])
@@ -204,52 +335,63 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
-		fmt.Fprintf(os.Stderr, "  --debug        \t\tEnable debug-level logging\n")
+		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
+		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
+	case *args.mode == "deepdoc":
+		fmt.Fprintf(os.Stderr, "Usage: %s --deepdoc [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
+		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
 		fmt.Fprintf(os.Stderr, "  -h, --help     \t\tShow this help message and exit\n")
 	}
 }
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer cancel()
+
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.versionFlag {
-		fmt.Printf("RAGFlow version: %s\n", utility.GetRAGFlowVersion())
-		return
+		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
+		os.Exit(1)
 	}
 
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
-
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
 		os.Exit(1)
 	}
 
 	// Temporary logger initialization
-	var logFile string
 	var serverName string
 	if arguments.name != nil {
 		serverName = *arguments.name
 	} else {
 		serverName = fmt.Sprintf("%s_server", *arguments.mode)
 	}
-	logFile = fmt.Sprintf("%s.log", serverName)
 
-	logLevel := "info"
-	if arguments.debugLog {
-		logLevel = "debug"
+	logLevel := selectedLogLevel(arguments, "")
+	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+		logLevel = "info"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -264,24 +406,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	config := server.GetConfig()
+	globalConfig := server.GetConfig()
 
 	// override default port if provided
+	// NOTE: this switch must stay side-effect-free on the LOG (no
+	// registerNativeDeepDoc here): it runs while only the temporary
+	// stdout-only logger exists, so anything it logs is lost from the file.
+	// Side effects that log (DeepDoc registration) move below, after the
+	// real file-backed logger is up.
 	switch *arguments.mode {
 	case "api":
-		port := config.Server.Port
+		apiServerConfig := globalConfig.GetAPIServerConfig()
+		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
-			config.Server.Port = port
+			apiServerConfig.HTTPPort = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
 		}
 	case "admin":
-		port := config.Admin.Port
+		adminServerConfig := globalConfig.GetAdminServerConfig()
+		port := adminServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
-			config.Admin.Port = port
+			adminServerConfig.HTTPPort = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("admin_server_%d", port)
@@ -296,78 +445,100 @@ func main() {
 			uuid := utility.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
+	case "deepdoc":
+		if serverName == "" {
+			uuid := utility.GenerateUUID()
+			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
+		}
+	case "migrate":
+		if arguments.name == nil {
+			serverName = "migrate"
+		}
 	default:
-		common.Error("invalid server mode", errors.New(*arguments.mode))
+		err = errors.New(*arguments.mode)
+		common.Error("invalid server mode", err)
 		os.Exit(1)
 	}
 
 	// set server name and log file path
 	server.SetServerName(serverName)
-	logFile = fmt.Sprintf("%s.log", serverName)
 
-	// Reinitialize logger with configured level if different
-	logLevel = config.Log.Level
-	if logLevel == "" {
-		logLevel = "info"
+	// Wire the in-process DeepDoc backend only after the REAL file-backed
+	// logger exists: its registration lines (and the Fatal abort on a missing
+	// backend) must land in the run's log file, not in the pre-config
+	// stdout-only window.
+	switch *arguments.mode {
+	case "api", "ingestor":
+		registerNativeDeepDoc(arguments)
+	default:
 	}
-
-	if arguments.debugLog {
-		logLevel = "debug"
-	}
-
-	config.Log.Level = logLevel
-
-	fileOut := common.FileOutput{
-		Path:       logFile,
-		MaxSize:    config.Log.MaxSize,
-		MaxBackups: config.Log.MaxBackups,
-		MaxAge:     config.Log.MaxAge,
-		Compress:   common.ResolveCompress(config.Log.Compress),
-	}
-	if config.Log.Path != "" {
-		fileOut.Path = config.Log.Path
-	}
-	if err = common.Init(logLevel, fileOut); err != nil {
-		common.Error("Failed to reinitialize logger with configured level", err)
-	}
-
-	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.Server.Mode))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
-	// Initialize database
-	if err = dao.InitDB(arguments.migrateDB); err != nil {
+	// Start pprof server if requested
+	if arguments.enablePProf {
+		go func() {
+			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
+			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+				common.Error("pprof server failed", pprofErr)
+			}
+		}()
+	}
+
+	// Initialize database. The migrate mode stops here: it needs neither the
+	// downgrade check nor any of the engines started below, so it can run
+	// before any server mode boots (see docker/entrypoint-go.sh and
+	// docker/launch_backend_service.sh).
+	migrate := *arguments.mode == "migrate"
+	if migrate {
+		common.Info("Running database migrations")
+	}
+	if err = dao.InitDB(ctx, migrate); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
+	}
+	if migrate {
+		common.Info("Database migrations completed")
+		return
+	}
+
+	if err = checkDatabaseVersion(ctx); err != nil {
+		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
-	if err = engine.Init(&config.DocEngine); err != nil {
+	if err = engine.InitDocEngine(ctx); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
-	// Initialize Redis cache
-	if err = redis.Init(&config.Redis); err != nil {
-		common.Fatal("Failed to initialize Redis", zap.Error(err))
+	// Initialize Kvrocks cache
+	if err = kvrocks.Init(ctx); err != nil {
+		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
 	}
-	defer redis.Close()
+	defer kvrocks.Close()
 
-	if err = storage.InitStorageFactory(); err != nil {
+	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Error("Failed to initialize message queue engine", err)
+	if err = engine.InitMessageQueue(); err != nil {
+		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
-	if err = server.InitVariables(redis.Get()); err != nil {
+	if err = server.InitVariables(kvrocks.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
+
+	if err = server.StartServer(ctx, cancel, serverName); err != nil {
+		common.Error("Failed to start EE server", err)
+		os.Exit(1)
+	}
+	defer server.ShutdownServer(ctx)
 
 	if arguments.name == nil {
 		arguments.name = &serverName
@@ -375,23 +546,28 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(arguments); err != nil {
+		if err = runAPI(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(arguments); err != nil {
-			fmt.Printf("Failed to start admin server: %v\n", err)
+		if err = runAdmin(ctx, serverName, arguments); err != nil {
+			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(arguments); err != nil {
-			fmt.Printf("Failed to start ingestion worker: %v\n", err)
+		if err = runIngestor(ctx, cancel, serverName, arguments); err != nil {
+			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(arguments); err != nil {
-			fmt.Printf("Failed to start syncer: %v\n", err)
+		if err = runSyncer(ctx, cancel, serverName, arguments); err != nil {
+			fmt.Printf("Failed to start SYNCER: %v\n", err)
+			os.Exit(1)
+		}
+	case "deepdoc":
+		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:
@@ -400,9 +576,97 @@ func main() {
 	}
 }
 
-func runAdmin(args *serverArgs) error {
+func setLogger(serverName string, arguments *serverArgs) {
+	// log filename
+	logFileName := fmt.Sprintf("%s.log", serverName)
+
+	globalConfig := server.GetConfig()
+	logConfig := globalConfig.GetLogConfig()
+
+	// Reinitialize logger with the configured level and CLI overrides.
+	logLevel := selectedLogLevel(arguments, logConfig.Level)
+
+	globalConfig.SetLogLevel(logLevel)
+
+	fileOut := common.FileOutput{
+		Filename:   logFileName,
+		Path:       logConfig.Path,
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
+	}
+
+	common.SyncLog()
+	if err := common.InitLogger(logLevel, fileOut, serverName); err != nil {
+		common.Error("Failed to reinitialize logger with configured level", err)
+	}
+}
+
+// checkDatabaseVersion refuses to run a server when the running code is older
+// than the version recorded in the system_settings migration marker. Migrating
+// the database forward is a one-way operation, so an older binary would read and
+// write a schema it does not understand.
+//
+// A missing marker, or a version on either side that cannot be parsed, never
+// blocks startup: without a usable comparison there is no evidence that the
+// database is ahead of the code.
+//
+// RAGFLOW_DEV_MODE turns the check off entirely. A development build can carry
+// a marker for a release that is not tagged yet, in which case the comparison
+// would reject the build that wrote the marker.
+func checkDatabaseVersion(ctx context.Context) error {
+	if common.DevModeEnabled() {
+		common.Warn("Development mode is enabled, skipping the database downgrade check",
+			zap.String("env", common.EnvRAGFlowDevMode))
+		return nil
+	}
+
+	databaseVersion, err := dao.GetDatabaseMigrationVersion(ctx, dao.DB)
+	if err != nil {
+		return fmt.Errorf("read database version marker: %w", err)
+	}
+	if databaseVersion == "" {
+		return nil
+	}
+
+	codeVersion := common.GetRAGFlowVersion()
+	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparable {
+		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
+			zap.String("code_version", codeVersion),
+			zap.String("database_version", databaseVersion))
+		return nil
+	}
+	if older {
+		return fmt.Errorf("code version %s is older than database version %s: upgrade this deployment to %s or newer before starting",
+			codeVersion, databaseVersion, databaseVersion)
+	}
+
+	common.Info("Database version check passed",
+		zap.String("code_version", codeVersion),
+		zap.String("database_version", databaseVersion))
+	return nil
+}
+
+func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
+
+	globalConfig := server.GetConfig()
+	serverMode := globalConfig.GetMode()
+
+	// Set Gin mode
+	if serverMode == "debug" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
+
+	if err := admin.InitLicense(); err != nil {
+		common.Warn("Failed to initialize license", zap.Error(err))
+	}
 
 	if args.initSuperUser {
 		// Initialize default admin user
@@ -416,6 +680,13 @@ func runAdmin(args *serverArgs) error {
 
 	// Create Gin engine
 	ginEngine := gin.New()
+	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
+	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every peer.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
@@ -424,14 +695,12 @@ func runAdmin(args *serverArgs) error {
 	// Setup routes
 	r.Setup(ginEngine)
 
-	// Create HTTP server
-	config := server.GetConfig()
-	addr := fmt.Sprintf(":%d", config.Admin.Port)
+	adminConfig := globalConfig.GetAdminServerConfig()
+	addr := fmt.Sprintf(":%d", adminConfig.HTTPPort)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: ginEngine,
 	}
-
 	// Print RAGFlow Admin logo
 	common.Info("" +
 		"\n        ____  ___   ______________                 ___       __          _     \n" +
@@ -441,30 +710,31 @@ func runAdmin(args *serverArgs) error {
 		"    /_/ |_/_/  |_\\____/_/   /_/\\____/|__/|__/  /_/  |_\\__,_/_/ /_/ /_/_/_/ /_/ \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
+
+	// Set log level
+	setLogger(serverName, args)
 
 	// Start HTTP server in a goroutine
 	go func() {
-		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", config.Admin.Port))
+		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	sig := <-quit
+	// Wait for shutdown signal from main's signal.NotifyContext
+	<-ctx.Done()
 
-	common.Info("Received signal", zap.String("signal", sig.String()))
+	common.Info("Received shutdown signal")
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	quitCtx, quitCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer quitCancel()
 
 	// Shutdown HTTP server
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(quitCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
@@ -472,32 +742,105 @@ func runAdmin(args *serverArgs) error {
 	return nil
 }
 
-func runIngestor(args *serverArgs) error {
+// startHeartbeat initializes and starts the heartbeat reporter to the admin server.
+// It is shared by API, ingestion, and syncer server modes.
+// The caller must defer the returned *utility.ScheduledTask's Stop() method.
+func startHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	service.AdminServiceClient = service.NewAdminClient(
+		serverType,
+		serverID,
+		localIP,
+		port,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+		return nil
+	}
+
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
+		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+			local.SetAdminStatus(0, "")
+		} else {
+			local.SetAdminStatus(1, err.Error())
+		}
+	})
+	heartbeatReporter.Start()
+	return heartbeatReporter
+}
+
+func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
-	if dictPath == "" {
-		dictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: dictPath,
-	}
-	if err := tokenizer.Init(tokenizerCfg); err != nil {
+	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
+	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
 
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
+	// TrimContentToTokenLimit now panic rather than degrading silently, so this
+	// trades a mid-request panic for a clear startup failure.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
+	logTokenizerCounters()
 
-	go func() {
-		err := ingestor.Start()
-		if err != nil {
-			common.Error("Failed to initialize ingestor", err)
-			return
-		}
-	}()
+	// The dataset-level post-processing consumer cluster (§11) is owned and run by
+	// the Ingestor: it is started inside ingestor.Start() and joined inside
+	// ingestor.Stop(), so its lifecycle matches the ingestor. The configured
+	// default LLM/embedding ids are passed so the LLM deduper is used (instead
+	// of the noop fallback that still emits merged products). Best-effort: a
+	// provisioning error is logged by the Ingestor and the pipeline still
+	// writes available_int=0 compiled chunks; they just won't be merged until
+	// the consumer is available.
+	globalConfig := server.GetConfig()
+	ingestorCfg := globalConfig.GetIngestorConfig()
+	const maxIngestorConcurrency = int32(1<<30 - 1)
+	if ingestorCfg.MaxConcurrentWorkers > int(maxIngestorConcurrency) {
+		return fmt.Errorf("ingestor max_concurrent_workers %d exceeds maximum %d", ingestorCfg.MaxConcurrentWorkers, maxIngestorConcurrency)
+	}
+	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
+	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
+	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
+	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
+	ingestor.SetKnowledgeCompileModelConfig(
+		globalConfig.GetDefaultChatModel().Name,
+		globalConfig.GetDefaultEmbeddingModel().Name,
+	)
+	// The dataset-level knowledge-compile consumer (tree/structure products) upserts
+	// into the dataset-nav tree, so the Ingestor must install the same ES-backed
+	// NavService the API server installs. Without this, nav.GetNavService() returns
+	// nil and tree/structure products are dropped (the consumer logs "nav service
+	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
+	// The embedder resolves the tenant's embedding model on demand, so both
+	// Search and UpsertDoc can embed queries/summaries automatically.
+	navModelService := service.NewModelProviderService()
+	navService := nlp.NewNavService(service.NewNavEmbedder(navModelService, ""))
+	// The cluster namer/merger is the counterpart of Python's
+	// _llm_create_summary / _llm_merge: a new cluster is named after the model's
+	// topic title and an existing cluster's description is fused with the joining
+	// document. Passing an empty model ref resolves each tenant's default chat
+	// model on demand; without one the nav service keeps its deterministic
+	// behaviour.
+	navService.SetNavMergeLLM(service.NewNavMergeLLM(navModelService, ""))
+	nav.SetNavService(navService)
+	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
+	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
+	// so there is no longer a dedicated Redis memory consumer to start.
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	// Start returns immediately (it launches the owned consume/compile
+	// goroutines and joins them via Stop); a provisioning failure here must
+	// fail the server (main's os.Exit(1) path) instead of reporting a
+	// healthy ingestor that can never consume.
+	if err := ingestor.Start(); err != nil {
+		common.Error("Failed to initialize ingestor", err)
+		return err
+	}
 
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
@@ -507,72 +850,51 @@ func runIngestor(args *serverArgs) error {
 		"          /____/\n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
+	// Set log level
+	setLogger(serverName, args)
 
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
-		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		localIP,
-		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		fmt.Sprintf("ingestor-%s", ingestor.ID()[:8]),
+		0,
+		globalConfig.GetHeartbeatInterval(),
+	); hb != nil {
+		defer hb.Stop()
 	}
 
-	// Wait for either an OS signal or a shutdown command from the admin
+	// Wait for either an OS shutdown signal or a shutdown command from the admin
 	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
 		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.name))
 	case <-ingestor.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.name))
+		cancel()
 	}
 
 	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ingestor.Stop()
+	ingestor.Stop(shutdownCtx)
 
 	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", *args.name))
 
 	return nil
 }
 
-func runSyncer(args *serverArgs) error {
-	config := server.GetConfig()
-	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
+func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string, args *serverArgs) error {
+	globalConfig := server.GetConfig()
+	syncerConfig := globalConfig.GetSyncerConfig()
+	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
 
-	go func() {
-		err := fileSyncer.Start()
-		if err != nil {
-			common.Error("Failed to initialize file syncer", err)
-			return
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	if err := fileSyncer.StartContext(ctx); err != nil {
+		common.Error("Failed to initialize file syncer", err)
+		return err
+	}
 
 	common.Info("\n     _______ __        _____\n" +
 		"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
@@ -582,74 +904,56 @@ func runSyncer(args *serverArgs) error {
 		"                           /____/    \n")
 
 	// Print RAGFlow version
-	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", utility.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
+	// Set log level
+	setLogger(serverName, args)
 
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
-		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
-		localIP,
-		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		fmt.Sprintf("syncer-%s", fileSyncer.ID()[:8]),
+		0,
+		globalConfig.GetHeartbeatInterval(),
+	); hb != nil {
+		defer hb.Stop()
 	}
 
-	// Wait for either an OS signal or a shutdown command from the admin
+	// Wait for either an OS shutdown signal or a shutdown command from the admin
 	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
 		common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.name))
 	case <-fileSyncer.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.name))
+		cancel()
 	}
 
-	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	fileSyncer.Stop()
-
 	common.Info(fmt.Sprintf("File syncer %s shutdown complete", *args.name))
 
 	return nil
 }
 
-func runAPI(args *serverArgs) error {
+func runAPI(ctx context.Context, serverName string, args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
-	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
-	if dictPath == "" {
-		dictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: dictPath,
-	}
+	// tokenizer.Init fills DictPath from env var or default, so
+	// tokenizerCfg.DictPath carries the resolved path for downstream use.
+	tokenizerCfg := &tokenizer.PoolConfig{}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
+
+	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
+	// TrimContentToTokenLimit now panic rather than degrading silently, so this
+	// trades a mid-request panic for a clear startup failure.
+	if err := tokenizer.InitCL100KEncoder(); err != nil {
+		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
+	}
 
 	// Initialize global QueryBuilder using tokenizer's DictPath
 	// This ensures the Synonym uses the same wordnet directory as tokenizer
@@ -657,27 +961,30 @@ func runAPI(args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	config := server.GetConfig()
-	startServer(config)
+	if err := startServer(ctx, serverName, args); err != nil {
+		return err
+	}
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(config *server.Config) {
+func startServer(ctx context.Context, serverName string, arguments *serverArgs) error {
 
+	globalConfig := server.GetConfig()
+	serverMode := globalConfig.GetMode()
 	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
+	if serverMode == "debug" {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	// Initialize service layer
 	userService := service.NewUserService()
-	documentService := service.NewDocumentService()
-	datasetsService := service.NewDatasetService()
+	documentService := document.NewDocumentService()
+	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
 	chunkService := chunk.NewChunkService()
 	llmService := service.NewLLMService()
@@ -688,27 +995,70 @@ func startServer(config *server.Config) {
 	chatSessionService := service.NewChatSessionService()
 	openaiChatService := service.NewOpenAIChatService()
 	systemService := service.NewSystemService()
+	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := service.NewFileService()
+	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+	modelSolver := service.NewModelSolver()
+
+	// Wire the real MemorySaver so the Message component can persist
+	// conversation turns to memory stores declared in the canvas DSL.
+	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
-	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(docEngine, documentDAO))
+	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
+	// Keep the concrete adapter: it is both the canvas/agent-tool backend and the
+	// target of the agentic-RAG bridge wired below. The bridge must hold it
+	// directly (not look it up in the registry) because the registry is shared —
+	// agenttool.SetRetrievalService and runtime.SetRetrievalService write the same
+	// singleton, so a bridge that resolved its target per call would find itself.
+	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
+		docEngine,
+		documentDAO,
+		nil,
+		retrievalEnhancer,
+	)
+	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		var target *service.ModelTarget
+		var err error
+		if strings.TrimSpace(modelRef) == "" {
+			target, err = modelSolver.ResolveDefaultModelConfig(ctx, tenantID, modelType)
+		} else {
+			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
+		}
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
+	})
+	agenttool.SetRetrievalService(retrievalAdapter)
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
+
+	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
+	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
+	// model resolved from the caller's ModelID and searches through the adapter
+	// above. Activating the agentic loop here enables the full planner/SCA path for
+	// reasoning chats.
+	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
+	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
+	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelProviderService, metadataService, docEngine))
+	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
-	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
+	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
+	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -725,20 +1075,10 @@ func startServer(config *server.Config) {
 	// MCP server endpoint — exposes RAGFlow capabilities as MCP tools
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
-	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderby, desc)
-		},
-		func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListChats(chatService, userID, page, pageSize, orderby, desc)
-		},
-		func(userID string, req mcp.RetrievalRequest) (string, error) {
-			return handler.MCPRetrieval(datasetsService, userID, req)
-		},
-	)
-	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
+	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
+	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	// Install the agent service's Redis-backed run infrastructure
+	// Install the agent service's Kvrocks-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
 	// the constructors return errors, and we fall through to the
@@ -752,11 +1092,11 @@ func startServer(config *server.Config) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
-	// BotService delegates the agentbot completion to agentService so
+	// BotService delegates the agentBot completion to agentService so
 	// both paths share the same canvas runner. Reuse the llmService
 	// already constructed above (line 222) — do NOT redeclare with
 	// `:=` since the variable is in scope.
@@ -784,38 +1124,46 @@ func startServer(config *server.Config) {
 	searchHandler.SetCompletionDependencies(modelProviderService, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
-	fileCommitHandler := handler.NewFileCommitHandler(service.NewFileCommitService())
+	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
 
 	// Dify retrieval handler
-	docDAO := documentDAO
-	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
+	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
 		modelProviderService,
 		metadataService,
 		retrievalService,
-		docDAO,
+		documentDAO,
 		docEngine,
 	)
-	// Per-tenant canvas-runtime override selector, backed by the
-	// existing Redis client and the global logger. The handler is
-	// ALWAYS constructed, even when Redis is briefly unavailable at
-	// startup, so the POST /api/v1/admin/canvas-runtime/:tenant_id
-	// endpoint stays registered and returns the explicit
-	// ErrSelectorNotConfigured (HTTP 500) path until Redis recovers.
-	// Skipping handler construction when rdb == nil silently removed
-	// the route until the next process restart, so a transient
-	// Redis blip at boot stranded canary operators with a 404 they
-	// could not diagnose from the client side. Keep the route hot.
-	var adminRuntimeSelector *runtime.Selector
-	if redisClient := redis.Get(); redisClient != nil {
-		if rdb := redisClient.GetClient(); rdb != nil {
-			adminRuntimeSelector = runtime.NewSelector(rdb, common.Logger)
-		}
-	}
-	adminRuntimeHandler := handler.NewAdminRuntimeHandler(adminRuntimeSelector)
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
+	pipelineHandler := handler.NewPipelineHandler()
+	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
+	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
+
+	// Install the production eino-based chat invoker as the shared chat default,
+	// so agentic-search runtime LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the runtime falls back gracefully.
+	component.InstallDefaultChatInvoker()
+
+	// Install the dataset-nav ES-backed service (internal/service/nav +
+	// internal/service/nlp). The embedder resolves the tenant's embedding model
+	// on demand so Search/UpsertDoc can embed queries/summaries automatically,
+	// and the cluster namer/merger resolves the tenant's default chat model the
+	// same way (see the ingestor's wrapping of SetNavMergeLLM).
+	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelProviderService, ""))
+	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelProviderService, ""))
+	nav.SetNavService(apiNavService)
+
+	// Install the compiled-wiki search service. It is backed directly by the
+	// document engine: QueryPages filters the tenant-scoped index to
+	// compile_kwd="wiki_page" (+ supported kinds) so ordinary source chunks are
+	// never relabeled as wiki pages, and BackfillChunks fetches original chunks
+	// by id. When the engine is unavailable the service degrades to empty so the
+	// agent falls back to hybrid search (no failing call).
+	wikisearch.SetService(wikisearch.NewEngineService(engine.Get()))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -824,6 +1172,7 @@ func startServer(config *server.Config) {
 		documentHandler,
 		datasetsHandler,
 		systemHandler,
+		statsHandler,
 		chunkHandler,
 		llmHandler,
 		chatHandler,
@@ -844,14 +1193,26 @@ func startServer(config *server.Config) {
 		pluginHandler,
 		modelHandler,
 		fileCommitHandler,
-		adminRuntimeHandler,
 		openaiChatHandler,
 		botHandler,
-		componentsHandler)
+		componentsHandler,
+		pipelineHandler,
+		compilationTemplateHandler,
+		compilationTemplateGroupHandler,
+		datasetArtifactHandler)
 
-	// Create Gin enginegit diff
-
+	// Create Gin engine
 	ginEngine := gin.New()
+	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
+	ginEngine.RemoveExtraSlash = true
+	// Only honour X-Forwarded-For / X-Real-IP from the configured proxies
+	// (default: the loopback nginx bundled in the image), never from every
+	// peer. c.ClientIP() feeds the agent webhook ip_whitelist gate and the
+	// login audit records, so gin's trust-everything default would let any
+	// caller pick its own address.
+	if err := common.ConfigureTrustedProxies(ginEngine, globalConfig.GetAPIServerConfig().TrustedProxies); err != nil {
+		common.Fatal("Failed to configure trusted proxies", zap.Error(err))
+	}
 
 	// Middleware
 	// Note: common.GinLogger() is registered inside router.Setup so the
@@ -863,79 +1224,144 @@ func startServer(config *server.Config) {
 	// Setup routes
 	r.Setup(ginEngine)
 
+	_, err := channels.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("start chat-channel: %w", err)
+	}
+
+	apiServerConfig := globalConfig.GetAPIServerConfig()
+
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
-	addr := fmt.Sprintf(":%d", config.Server.Port)
+	addr := fmt.Sprintf(":%d", apiServerConfig.HTTPPort)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// WriteTimeout spans "request header read → response written", so it is a
+		// ceiling on the WHOLE request, not on a slow client's reads. Measured
+		// (2026-09-15, FRAMES 20q): three multi-hop questions take 150–225s to reach
+		// their response, and at 120s the server closed the connection with no
+		// response at all — the client reports
+		// `RemoteDisconnected('Remote end closed connection without response')` and
+		// the benchmark re-runs the whole question (max_retries: 2), so one slow
+		// question cost three full pipelines. 180s clears the measured distribution's
+		// middle; questions whose composition alone runs past it still need streaming
+		// or a larger budget.
+		WriteTimeout: 180 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
+	apiListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen API server on %s: %w", addr, err)
+	}
+	defer apiListener.Close()
+
+	serveErr := make(chan error, 2)
+	serve := func(name string, srv *http.Server, listener net.Listener) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- fmt.Errorf("%s server failed: %w", name, err)
+		}
+	}
+
+	var mcpSrv *http.Server
+	var mcpCloser interface{ Close() error }
+	var mcpListener net.Listener
+	mcpConfig := apiServerConfig.MCP
+	if mcpConfig.Enabled {
+		mcpHandler, err := mcpServerHandler.NewStandalone(ctx, authHandler, mcpConfig)
+		if err != nil {
+			return err
+		}
+
+		mcpCloser = mcpHandler
+		defer mcpHandler.Close()
+		mcpAddr := net.JoinHostPort(strings.Trim(mcpConfig.Host, "[]"), strconv.Itoa(mcpConfig.Port))
+		mcpListener, err = net.Listen("tcp", mcpAddr)
+		if err != nil {
+			return fmt.Errorf("listen MCP server on %s: %w", mcpAddr, err)
+		}
+		defer mcpListener.Close()
+		mcpSrv = &http.Server{
+			Addr:              mcpAddr,
+			Handler:           mcpHandler,
+			BaseContext:       func(net.Listener) context.Context { return ctx },
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
+			WriteTimeout:      0, // SSE streams outlive individual tool deadlines
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			common.Info(fmt.Sprintf("MCP server starting on %s", mcpSrv.Addr))
+			serve("MCP", mcpSrv, mcpListener)
+		}()
+	}
+
+	common.Info(
+		"\n        ____   ___    ______ ______ __\n" +
+			"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
+			"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
+			"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
+			"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
+	)
+	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
+	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
+
+	// Set log level
+	setLogger(serverName, arguments)
 
 	// Start server in a goroutine
 	go func() {
-		common.Info(
-			"\n        ____   ___    ______ ______ __\n" +
-				"       / __ \\ /   |  / ____// ____// /____  _      __\n" +
-				"      / /_/ // /| | / / __ / /_   / // __ \\| | /| / /\n" +
-				"     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /\n" +
-				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
-		)
-		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", utility.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.Fatal("Failed to start server", zap.Error(err))
-		}
+		serve(serverName, srv, apiListener)
 	}()
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
-		localIP,
-		config.Server.Port,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		fmt.Sprintf("ragflow-server-%s", utility.GenerateUUID()[:8]),
+		apiServerConfig.HTTPPort,
+		globalConfig.GetHeartbeatInterval(),
+	); hb != nil {
+		defer hb.Stop()
 	}
 
-	// Wait for interrupt signal to gracefully shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	sig := <-quit
-
-	common.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
+	// Wait for either shutdown signal or serving failure.
+	var runErr error
+	select {
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
+	case err := <-serveErr:
+		runErr = err
+		common.Error("Server failed; shutting down", err)
+	}
 	common.Info("Shutting down server...")
 
-	// Create context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	// Shutdown server
-	if err = srv.Shutdown(ctx); err != nil {
-		common.Fatal("Server forced to shutdown", zap.Error(err))
+	if mcpCloser != nil {
+		if err = mcpCloser.Close(); err != nil {
+			common.Warn("Failed to close MCP handler", zap.Error(err))
+		}
 	}
+	if err = shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
+		return err
+	}
+	if mcpSrv != nil {
+		if err = shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
+			return err
+		}
+	}
+	return runErr
+}
+
+func shutdownHTTPServer(ctx context.Context, name string, srv *http.Server) error {
+	if err := srv.Shutdown(ctx); err != nil {
+		_ = srv.Close()
+		return fmt.Errorf("shutdown %s server: %w", name, err)
+	}
+	return nil
 }
 
 // agentRunOptions bundles the three optional injection slots the
@@ -951,7 +1377,7 @@ type agentRunOptions struct {
 	runTracker      *canvas.RunTracker
 }
 
-// buildAgentRunOptions installs the Redis-backed run infrastructure
+// buildAgentRunOptions installs the Kvrocks-backed run infrastructure
 // when Redis is available. The Redis client is the one already
 // initialized at the top of main; the TTL is a conservative 24h for
 // both the checkpoint store and the run tracker. On any error
@@ -960,11 +1386,11 @@ type agentRunOptions struct {
 // to the in-memory path transparently.
 func buildAgentRunOptions() agentRunOptions {
 	var out agentRunOptions
-	if !redis.IsEnabled() || redis.Get() == nil {
+	if !kvrocks.IsEnabled() || kvrocks.Get() == nil {
 		common.Info("agent: redis client not initialised; agent run infra in in-memory mode (no checkpoints, no run tracker)")
 		return out
 	}
-	cp := canvas.NewRedisCheckPointStore(24 * time.Hour)
+	cp := canvas.NewKvrocksCheckPointStore(24 * time.Hour)
 	out.checkpointStore = cp
 	// stateSerializer is intentionally left nil. eino's default
 	// InternalSerializer (used when no compose.WithSerializer is
@@ -1005,4 +1431,116 @@ func configureTTSSynthesizer(modelProviderService *service.ModelProviderService)
 	}
 	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelProviderService))
 	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
+}
+
+// registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
+// inference backend. The server is built with -tags cgo and links ONNX Runtime
+// statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
+// running binary — see github.com/infiniflow/onnxruntime_go, the org mirror of
+// yalue/onnxruntime_go), so there is no external
+// DeepDoc HTTP service and no dynamic .so deployment.
+//
+// Fail-fast contract (P0): the in-process backend must be available at startup
+// (ORT + models present). There is NO silent degradation to an empty analyzer:
+// if the backend is not serving, the server aborts.
+func registerNativeDeepDoc(arguments *serverArgs) {
+	modelDir := resolveDeepDocModelDir()
+	dropScore := resolveDeepDocDropScore()
+
+	if err := infnative.Register(modelDir, dropScore); err != nil {
+		common.Warn("in-process DeepDoc backend unavailable",
+			zap.String("reason", err.Error()))
+	}
+
+	// The in-process (Go) DeepDoc backend is the ONLY production backend. Fail
+	// fast rather than silently parsing without layout/table/OCR if the local
+	// backend cannot serve (ORT + models must be present when built with -tags
+	// cgo).
+	if !infnative.Serving() {
+		common.Fatal("no in-process DeepDoc backend serving: provide the local ORT "+
+			"runtime + models and build with -tags cgo",
+			zap.String("model_dir", modelDir),
+			zap.String("ort_lib", "static (libonnxruntime.a via dlopen(NULL))"))
+	}
+	common.Info("in-process DeepDoc backend registered (production backend)",
+		zap.String("model_dir", modelDir))
+
+	// DeepDoc sessions run single-threaded, so the process inference budget is a
+	// plain concurrency cap. Resolve it from CLI > env > config > default(4)
+	// and register it with the native gate every inference call passes through
+	// (internal/deepdoc/native/inference_limit.go); without this the process
+	// would let every page worker call inference at once.
+	budget := resolveDeepDocInferenceConcurrency(arguments, server.GetConfig().GetDeepDocConfig().InferenceConcurrency)
+	pdf.SetDeepDocConcurrency(budget)
+	native.SetInferenceLimit(budget)
+	common.Info("in-process DeepDoc inference limit registered",
+		zap.Int("max_concurrent_inference", budget),
+		zap.Int("gomaxprocs", goruntime.GOMAXPROCS(0)))
+}
+
+// logTokenizerCounters reports, once at startup, which embedding tokenizers this process
+// can count with. An unavailable counter is not fatal here: the process still starts, and
+// untagged models keep counting with the calibrated estimate by design. But the models that
+// declare it cannot be ingested - the embedder refuses to substitute the calibrated count -
+// so this report is what tells an operator which asset to restore before documents fail.
+func logTokenizerCounters() {
+	var available, unavailable []string
+	for _, status := range tokenizer.CounterStatuses() {
+		if status.Available {
+			available = append(available, status.ID)
+			continue
+		}
+		unavailable = append(unavailable, status.ID)
+	}
+	common.Info("embedding tokenizer counters", zap.Strings("available", available))
+	if len(unavailable) > 0 {
+		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
+			zap.Strings("unavailable", unavailable),
+			zap.String("hint", "run `uv run ragflow_deps/download_go_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+	}
+}
+
+// resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
+// env, else the RAGFlow default (rag/res/deepdoc, mirroring deepdoc_server.py),
+// else the snapshot fetched by ragflow_deps/download_deps.py. The first
+// candidate that actually contains the required weights wins.
+func resolveDeepDocModelDir() string {
+	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {
+		return v
+	}
+	wd, _ := os.Getwd()
+	// MODEL_ASSETS_DIR first: the shared model-asset root keeps this layout too, so one
+	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
+	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
+	candidates = append(candidates,
+		filepath.Join(wd, "rag", "res", "deepdoc"),
+		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
+	)
+	for _, c := range candidates {
+		if dirHasModels(c) {
+			return c
+		}
+	}
+	// None verified; return the canonical default so any error message points
+	// at the conventional location.
+	return filepath.Join(wd, "rag", "res", "deepdoc")
+}
+
+// resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the
+// in-process backend's default (infnative.DefaultDropScore, which mirrors
+// the Python inference service's Recognizer.drop_score).
+func resolveDeepDocDropScore() float64 {
+	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocDropScore)); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+		common.Warn("invalid DEEPDOC_DROP_SCORE, using default",
+			zap.String("value", v), zap.Float64("default", infnative.DefaultDropScore))
+	}
+	return infnative.DefaultDropScore
+}
+
+// dirHasModels reports whether dir contains every required model file.
+func dirHasModels(dir string) bool {
+	return common.HasModelFiles(dir)
 }

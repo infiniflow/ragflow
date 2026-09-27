@@ -17,6 +17,8 @@
 package common
 
 import (
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -369,4 +371,282 @@ func toString(v interface{}) string {
 	default:
 		return ""
 	}
+}
+
+// MetadataFieldDef describes one auto-metadata field, mirroring the
+// {key, type, description, enum} shape stored in parser_config.metadata /
+// built_in_metadata and the Python metadata_utils.py field contract.
+type MetadataFieldDef struct {
+	Key         string   `json:"key"`
+	Type        string   `json:"type,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// Turn2JSONSchema converts a metadata field list into a JSON-Schema object,
+// mirroring Python common/metadata_utils.py::turn2jsonschema /
+// metadata_schema. The result is rendered into the auto-metadata extraction
+// prompt (rag/prompts/meta_data.md equivalent) so the LLM knows the exact
+// keys, descriptions and allowed enum values to extract.
+func Turn2JSONSchema(fields []MetadataFieldDef) map[string]any {
+	properties := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if strings.TrimSpace(f.Key) == "" {
+			continue
+		}
+		prop := map[string]any{}
+		if f.Description != "" {
+			prop["description"] = f.Description
+		}
+		if len(f.Enum) > 0 {
+			prop["enum"] = f.Enum
+			prop["type"] = "string"
+		} else if f.Type != "" {
+			prop["type"] = f.Type
+		}
+		properties[f.Key] = prop
+	}
+	if len(properties) == 0 {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"additionalProperties": false,
+	}
+}
+
+// ParserConfigBool coerces a parser_config boolean-like value (bool / number) to bool,
+// mirroring the frontend's metadata enable flag.
+func ParserConfigBool(v any) bool {
+	switch typed := v.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed > 0
+	case int:
+		return typed > 0
+	}
+	return false
+}
+
+// ExtractorMetadataConfig returns the modular metadata config
+// ({"enabled", "metadata", "built_in_metadata"}) of the FIRST Extractor component node, in
+// sorted key order so two extractor nodes resolve deterministically.
+//
+// This is the component-scoped config the ingestion pipeline reads; flat legacy fields
+// (enable_metadata / metadata_config / built_in_metadata at the top level or on the node)
+// are deliberately not supported.
+func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
+	if parserConfig == nil {
+		return nil, false
+	}
+	var extractorKeys []string
+	for k := range parserConfig {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			extractorKeys = append(extractorKeys, k)
+		}
+	}
+	sort.Strings(extractorKeys)
+	for _, k := range extractorKeys {
+		node, ok := parserConfig[k].(map[string]any)
+		if !ok {
+			continue
+		}
+		if metaObj, ok := node["metadata"].(map[string]any); ok {
+			return metaObj, true
+		}
+	}
+	return nil, false
+}
+
+// DatasetMetadataConfig returns the top-level modular metadata config of a dataset
+// (parser_config["metadata"]), which is where the dataset metadata API writes the fields a
+// user declared for extraction.
+func DatasetMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
+	if parserConfig == nil {
+		return nil, false
+	}
+	metaObj, ok := parserConfig["metadata"].(map[string]any)
+	return metaObj, ok
+}
+
+// MetadataRawFieldList normalizes a metadata field list that may arrive as []any (the DB
+// round-trip) or []map[string]any (in-memory construction) into a []any.
+func MetadataRawFieldList(value any) []any {
+	switch list := value.(type) {
+	case []any:
+		return list
+	case []map[string]any:
+		out := make([]any, 0, len(list))
+		for _, item := range list {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
+}
+
+// MetadataFieldDefsFromRaw parses a raw {key, type, description, enum} field list into
+// typed defs. Entries without a key are dropped, so a malformed entry cannot become a
+// field nobody can filter on.
+func MetadataFieldDefsFromRaw(value any) []MetadataFieldDef {
+	if value == nil {
+		return nil
+	}
+	if defs, ok := value.([]MetadataFieldDef); ok {
+		return defs
+	}
+	arr := MetadataRawFieldList(value)
+	if arr == nil {
+		return nil
+	}
+	fields := make([]MetadataFieldDef, 0, len(arr))
+	for _, f := range arr {
+		m, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		key, _ := m["key"].(string)
+		if key = strings.TrimSpace(key); key == "" {
+			continue
+		}
+		def := MetadataFieldDef{Key: key}
+		if t, ok := m["type"].(string); ok {
+			def.Type = t
+		}
+		if d, ok := m["description"].(string); ok {
+			def.Description = d
+		}
+		if e, ok := m["enum"].([]any); ok {
+			for _, ev := range e {
+				if s, ok := ev.(string); ok {
+					def.Enum = append(def.Enum, s)
+				}
+			}
+		}
+		fields = append(fields, def)
+	}
+	return fields
+}
+
+// DeclaredMetadataFieldsFromParserConfig returns the metadata fields a dataset DECLARES for
+// extraction, reading both the dataset-level config (parser_config["metadata"]) and, when
+// that is absent, the first Extractor component node's.
+//
+// This is the DECLARATIVE source of a dataset's metadata: unlike the doc-metadata index it
+// exists BEFORE anything is indexed, and it carries each field's meaning (description) and
+// allowed values (enum) — what a model needs to fill a filter correctly rather than guess.
+// Fields declared in both lists are de-duplicated, first occurrence winning.
+func DeclaredMetadataFieldsFromParserConfig(parserConfig map[string]any) []MetadataFieldDef {
+	metaObj, ok := DatasetMetadataConfig(parserConfig)
+	if !ok {
+		metaObj, ok = ExtractorMetadataConfig(parserConfig)
+	}
+	if !ok {
+		return nil
+	}
+	var out []MetadataFieldDef
+	seen := map[string]bool{}
+	for _, raw := range []any{metaObj["metadata"], metaObj["built_in_metadata"]} {
+		for _, def := range MetadataFieldDefsFromRaw(raw) {
+			if seen[def.Key] {
+				continue
+			}
+			seen[def.Key] = true
+			out = append(out, def)
+		}
+	}
+	return out
+}
+
+// combinedValueDelim splits a single combined metadata value into its parts.
+// Mirrors Python doc_metadata_service.py _split_combined_values regex
+// r"[、,，;；|]+" (Chinese comma 、, ASCII comma ,, full-width comma ，,
+// semicolon ;, full-width semicolon ；, pipe |).
+var combinedValueDelim = regexp.MustCompile(`[、,，;；|]+`)
+
+// SplitCombinedMetadataValues post-processes a metadata map by splitting
+// combined values written to the doc-metadata index, mirroring Python
+// api/db/services/doc_metadata_service.py:_split_combined_values (applied at
+// both insert_document_metadata:383 and update_document_metadata:468).
+//
+// Only list-typed values are split (each string element is split on the
+// delimiter, trimmed, empties dropped, then flattened and de-duplicated);
+// scalar string values are left untouched, matching the Python implementation.
+// Non-string / non-list values pass through unchanged.
+func SplitCombinedMetadataValues(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return meta
+	}
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		switch val := v.(type) {
+		case []string:
+			out[k] = splitCombinedStringList(val)
+		case []any:
+			strs, allStr := toStringSlice(val)
+			if !allStr {
+				out[k] = v
+				continue
+			}
+			out[k] = splitCombinedStringList(strs)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// splitCombinedStringList splits each element on the combined-value delimiter,
+// trims, drops empties, keeps single elements intact, and de-duplicates.
+func splitCombinedStringList(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == "" {
+			continue
+		}
+		parts := combinedValueDelim.Split(strings.TrimSpace(item), -1)
+		got := false
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			out = append(out, p)
+			got = true
+		}
+		if !got {
+			out = append(out, item)
+		}
+	}
+	return dedupeMetaStrings(out)
+}
+
+// toStringSlice converts a []any to []string when every element is a string,
+// reporting allStr=false otherwise.
+func toStringSlice(val []any) ([]string, bool) {
+	strs := make([]string, 0, len(val))
+	for _, e := range val {
+		s, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		strs = append(strs, s)
+	}
+	return strs, true
+}
+
+// dedupeMetaStrings removes duplicates while preserving order.
+func dedupeMetaStrings(input []string) []string {
+	seen := make(map[string]struct{}, len(input))
+	out := make([]string, 0, len(input))
+	for _, s := range input {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
 }

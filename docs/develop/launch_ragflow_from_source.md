@@ -1,15 +1,17 @@
 ---
 sidebar_position: 3
+title: Launch Service from Source
+sidebar_label: Launch Service from Source
 slug: /launch_ragflow_from_source
 sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay
 }
 ---
-# Launch service from source
+# Launch Service from Source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
-## Target audience
+## Target Audience
 
 Developers who have added new features or modified existing code and wish to debug using the source code, *provided that* their machine has the target deployment environment set up.
 
@@ -24,21 +26,21 @@ Developers who have added new features or modified existing code and wish to deb
 If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
 :::
 
-## Launch a service from source
+## Launch a Service from Source
 
 To launch a RAGFlow service from source code:
 
-### Clone the RAGFlow repository
+### Clone the RAGFlow Repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 ```
 
-### Install Python dependencies
+### Install Python Dependencies
 
 1. Install uv:
-   
+
    ```bash
    pipx install uv
    ```
@@ -56,7 +58,18 @@ cd ragflow/
    uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
    ```
 
-### Launch third-party services
+:::note macOS
+On macOS, some Python dependencies link against native libraries that are not installed by default. Install them with Homebrew before launching the backend service:
+
+   ```bash
+   brew install unixodbc jemalloc pkg-config
+   ```
+
+- `unixodbc` provides `libodbc.2.dylib`, which the `pyodbc` package links against. Without it, `import pyodbc` fails with `Library not loaded: .../libodbc.2.dylib` (the full path is `$(brew --prefix unixodbc)/lib/libodbc.2.dylib`; `/opt/homebrew` on Apple Silicon, `/usr/local` on Intel), and the ExeSQL agent tool fails to load (look for `Warning: Failed to import module exesql` at startup).
+- `jemalloc` and `pkg-config` are required by the preload commands used to launch the task executor; see step 5 of [Launch the RAGFlow Backend Service](#launch-the-ragflow-backend-service).
+:::
+
+### Launch Third-Party Services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
@@ -64,7 +77,7 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### Update `host` and `port` Settings for Third-party Services
+### Update `host` and `port` Settings for Third-Party Services
 
 1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
 
@@ -74,7 +87,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-### Launch the RAGFlow backend service
+### Launch the RAGFlow Backend Service
 
 1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 
@@ -96,18 +109,26 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
-   
+
 5. Run the **entrypoint.sh** script to launch the backend service:
 
    ```shell
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
    LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
    ```
+
+   On macOS, use the Homebrew dylib and `DYLD_INSERT_LIBRARIES` instead:
+
+   ```shell
+   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.2.dylib;
+   DYLD_INSERT_LIBRARIES=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
+   ```
+
    ```shell
    python api/ragflow_server.py;
    ```
 
-### Launch the RAGFlow frontend service
+### Launch the RAGFlow Frontend Service
 
 1. Navigate to the `web` directory and install the frontend dependencies:
 
@@ -116,27 +137,23 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
+2. Start the RAGFlow frontend service with the proxy configured for the Python backend:
 
    ```bash
-   vim vite.config.ts
+   API_PROXY_SCHEME=python npm run dev
    ```
 
-3. Start up the RAGFlow frontend service:
+   The `python` proxy scheme routes API requests to the Python backend on port `9380`. Use `go` for the Go backend on port `9384`, or `hybrid` when running both backends.
 
-   ```bash
-   npm run dev 
-   ```
-
-   *The following message appears, showing the IP address and port number of your frontend service:*  
+   *The following message appears, showing the IP address and port number of your frontend service:*
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
-### Access the RAGFlow service
+### Access the RAGFlow Service
 
 In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
 
-### Stop the RAGFlow service when the development is done
+### Stop the RAGFlow Service When the Development Is Done
 
 1. Stop the RAGFlow frontend service:
    ```bash

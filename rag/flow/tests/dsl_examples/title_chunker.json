@@ -13,44 +13,42 @@
         "obj": {
             "component_name": "Parser",
             "params": {
-              "setups": {
-                "pdf": {
-                  "parse_method": "deepdoc",
-                  "vlm_name": "",
-                  "lang": "Chinese",
-                  "suffix": [
-                    "pdf"
-                  ],
-                  "output_format": "json"
-                },
-                "spreadsheet": {
-                  "suffix": [
-                    "xls",
-                    "xlsx",
-                    "csv"
-                  ],
-                  "output_format": "html"
-                },
-                "word": {
-                  "suffix": [
-                    "doc",
-                    "docx"
-                  ],
-                  "output_format": "json"
-                },
-                "markdown": {
-                  "suffix": [
-                    "md",
-                    "markdown"
-                  ],
-                  "output_format": "text"
-                },
-                "text": {
-                  "suffix": ["txt"],
-                  "output_format": "json"
-                }
+              "pdf": {
+                "parse_method": "deepdoc",
+                "vlm_name": "",
+                "lang": "Chinese",
+                "suffix": [
+                  "pdf"
+                ],
+                "output_format": "json"
+              },
+              "spreadsheet": {
+                "suffix": [
+                  "xls",
+                  "xlsx",
+                  "csv"
+                ],
+                "output_format": "html"
+              },
+              "word": {
+                "suffix": [
+                  "doc",
+                  "docx"
+                ],
+                "output_format": "json"
+              },
+              "markdown": {
+                "suffix": [
+                  "md",
+                  "markdown"
+                ],
+                "output_format": "text"
+              },
+              "text": {
+                "suffix": ["txt"],
+                "output_format": "json"
               }
-          }
+            }
         },
         "downstream": ["TokenChunker:0"],
         "upstream": ["File"]

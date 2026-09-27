@@ -1,6 +1,8 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Form } from '@/components/ui/form';
@@ -8,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import {
   useFieldArray,
   useForm,
@@ -22,6 +25,7 @@ import {
   initialTitleChunkerValues,
   TitleChunkerMethod,
 } from '../../constant/pipeline';
+import { useFormChangeCallback } from '../../hooks/use-form-change-callback';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -62,6 +66,7 @@ export const FormSchema = z.object({
   root_chunk_as_heading: z.boolean().optional(),
   hierarchyRules: rulesSchema,
   groupRules: rulesSchema,
+  chunk_token_cap: z.coerce.number().int().min(128).max(8000).optional(),
 });
 
 export enum TitleChunkerRulesField {
@@ -91,6 +96,10 @@ function LevelItem({
 
   const name = `${parentName}.${index}.expression`;
 
+  const handleRemove = useCallback(() => {
+    removeParent(index);
+  }, [removeParent, index]);
+
   return (
     <div className="flex items-center">
       <div className="flex-1">
@@ -108,7 +117,7 @@ function LevelItem({
           type="button"
           variant={'ghost'}
           size="sm"
-          onClick={() => removeParent(index)}
+          onClick={handleRemove}
         >
           <Trash2 className="h-3 w-3" />
         </Button>
@@ -137,6 +146,10 @@ function CardBody({ cardName }: CardBodyProps) {
     control: form.control,
   });
 
+  const handleAppendLevel = useCallback(() => {
+    appendLevel({ expression: '' });
+  }, [appendLevel]);
+
   return (
     <CardContent className="p-4">
       <div className="space-y-4">
@@ -151,10 +164,7 @@ function CardBody({ cardName }: CardBodyProps) {
         ))}
       </div>
 
-      <BlockButton
-        onClick={() => appendLevel({ expression: '' })}
-        className="mt-4"
-      >
+      <BlockButton type="button" onClick={handleAppendLevel} className="mt-4">
         {t('flow.addRegularExpressions')}
       </BlockButton>
     </CardContent>
@@ -173,54 +183,91 @@ function RulesFieldArray({ name }: RulesFieldArrayProps) {
     control: form.control,
   });
 
+  const handleAppendRule = useCallback(() => {
+    append({
+      levels: [{ expression: '' }],
+    });
+  }, [append]);
+
   return (
     <div className="space-y-4">
-      {fields.map((cardField, cardIndex) => (
-        <Card key={cardField.id}>
-          <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">
-                {t('flow.rule', 'Rule')} {cardIndex + 1}
-              </span>
-            </div>
-            {fields.length > 1 && (
-              <Button
-                type="button"
-                variant={'ghost'}
-                size="sm"
-                onClick={() => remove(cardIndex)}
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </CardHeader>
-          <CardBody cardIndex={cardIndex} cardName={`${name}.${cardIndex}`} />
-        </Card>
-      ))}
-      <BlockButton
-        onClick={() =>
-          append({
-            levels: [{ expression: '' }],
-          })
-        }
-        className="mt-4"
-      >
+      {fields.map((cardField, cardIndex) => {
+        const handleRemoveCard = () => remove(cardIndex);
+
+        return (
+          <Card key={cardField.id}>
+            <CardHeader className="flex flex-row justify-between items-center py-3 px-4 border-b bg-muted/20">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm">
+                  {t('flow.rule', 'Rule')} {cardIndex + 1}
+                </span>
+              </div>
+              {fields.length > 1 && (
+                <Button
+                  type="button"
+                  variant={'ghost'}
+                  size="sm"
+                  onClick={handleRemoveCard}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </CardHeader>
+            <CardBody cardIndex={cardIndex} cardName={`${name}.${cardIndex}`} />
+          </Card>
+        );
+      })}
+      <BlockButton type="button" onClick={handleAppendRule} className="mt-4">
         {t('flow.addRule', 'Add Rule')}
       </BlockButton>
     </div>
   );
 }
 
-const TitleChunkerForm = ({ node }: INextOperatorForm) => {
+function RootChunkAsHeadingItem() {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name="root_chunk_as_heading"
+      label={t('flow.rootAsHeading', 'Use root as heading')}
+      tooltip={t(
+        'flow.rootAsHeadingTip',
+        'Treat the root node as a H0 heading when building the hierarchy',
+      )}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch checked={field.value} onCheckedChange={field.onChange} />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
+const TitleChunkerForm = ({
+  node,
+  onValuesChange,
+  hideOutputs,
+  externalErrors,
+  pinMethodGroup,
+}: INextOperatorForm & { pinMethodGroup?: boolean }) => {
   const { t } = useTranslation();
   const initialValues = useFormValues(initialTitleChunkerValues, node);
 
   const form = useForm<TitleChunkerFormSchemaType>({
-    defaultValues: transformApiResponseToForm(initialValues),
+    defaultValues: pinMethodGroup
+      ? {
+          ...transformApiResponseToForm(initialValues),
+          method: TitleChunkerMethod.Group,
+        }
+      : transformApiResponseToForm(initialValues),
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
   const [showAllTip, setShowAllTip] = useState(true);
 
   const method = useWatch({ name: 'method', control: form.control });
@@ -232,32 +279,52 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
 
   const hierarchyOptions = useDynamicHierarchyOptions(form, activeRulesName);
 
+  const handleValuesChange = useCallback(
+    (values: any) => {
+      if (!pinMethodGroup) {
+        onValuesChange?.(values);
+        return;
+      }
+      onValuesChange?.(
+        omit(values, ['include_heading_content', 'chunk_token_cap']),
+      );
+    },
+    [pinMethodGroup, onValuesChange],
+  );
+
   useWatchFormChange(node?.id, form);
+  useFormChangeCallback(form, handleValuesChange);
+
+  const handleToggleShowAllTip = useCallback(() => {
+    setShowAllTip((prev) => !prev);
+  }, []);
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <RenderField
-          field={{
-            name: 'method',
-            type: FormFieldType.Segmented,
-            label: '',
-            options: [
-              {
-                label: t('flow.hierarchy'),
-                value: TitleChunkerMethod.Hierarchy,
-              },
-              // { label: t('flow.tree', 'Tree'), value: 'tree' },
-              {
-                label: t('flow.group', 'Group'),
-                value: TitleChunkerMethod.Group,
-              },
-            ],
-          }}
-        />
+        {!pinMethodGroup && (
+          <RenderField
+            field={{
+              name: 'method',
+              type: FormFieldType.Segmented,
+              label: '',
+              options: [
+                {
+                  label: t('flow.hierarchy'),
+                  value: TitleChunkerMethod.Hierarchy,
+                },
+                // { label: t('flow.tree', 'Tree'), value: 'tree' },
+                {
+                  label: t('flow.group', 'Group'),
+                  value: TitleChunkerMethod.Group,
+                },
+              ],
+            }}
+          />
+        )}
         <div
           className={`text-xs text-text-secondary w-full cursor-pointer `}
-          onClick={() => setShowAllTip(!showAllTip)}
+          onClick={handleToggleShowAllTip}
         >
           <div className={cn('flex justify-start items-start')}>
             <div
@@ -277,6 +344,18 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
             </div>
           </div>
         </div>
+        {!pinMethodGroup && (
+          <SliderInputFormField
+            name="chunk_token_cap"
+            max={8000}
+            min={128}
+            label={t('flow.chunkTokenCap', 'Chunk token cap')}
+            tooltip={t(
+              'flow.chunkTokenCapTip',
+              'Maximum tokens per chunk. Chunks exceeding the cap are re-split on sentence boundaries (Chinese/English period, exclamation mark, question mark, newline). 0 disables the cap.',
+            )}
+          />
+        )}
         <RAGFlowFormItem
           name={'hierarchyHierarchy'}
           label={''}
@@ -306,35 +385,15 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
               {(field) => (
                 <Switch
                   checked={field.value}
-                  onCheckedChange={(checked) => {
-                    field.onChange?.(checked);
-                  }}
+                  onCheckedChange={field.onChange}
                 />
               )}
             </RAGFlowFormItem>
 
-            <RAGFlowFormItem
-              name="root_chunk_as_heading"
-              label={t('flow.rootAsHeading', 'Use root as heading')}
-              tooltip={t(
-                'flow.rootAsHeadingTip',
-                'Treat the root node as a H0 heading when building the hierarchy',
-              )}
-              horizontal={true}
-              labelClassName="w-full"
-              valueClassName="w-8"
-            >
-              {(field) => (
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(checked) => {
-                    field.onChange?.(checked);
-                  }}
-                />
-              )}
-            </RAGFlowFormItem>
+            <RootChunkAsHeadingItem />
           </>
         )}
+        {pinMethodGroup && <RootChunkAsHeadingItem />}
         <div
           className={
             method === TitleChunkerMethod.Hierarchy ? 'block' : 'hidden'
@@ -349,9 +408,11 @@ const TitleChunkerForm = ({ node }: INextOperatorForm) => {
         </div>
         {/* )} */}
       </FormWrapper>
-      <div className="p-5">
-        <Output list={outputList}></Output>
-      </div>
+      {!hideOutputs && (
+        <div className="p-5">
+          <Output list={outputList}></Output>
+        </div>
+      )}
     </Form>
   );
 };

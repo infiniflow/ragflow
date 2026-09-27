@@ -24,7 +24,7 @@ from typing import Dict, Optional
 import requests
 from pydantic import BaseModel
 
-API_URL = os.getenv("SANDBOX_API_URL", "http://localhost:9385/run")
+API_URL = os.getenv("SANDBOX_API_URL", "http://sandbox-executor-manager:9385/run")
 TIMEOUT = 15
 MAX_WORKERS = 5
 

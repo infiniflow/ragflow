@@ -18,41 +18,34 @@
 
 package parser
 
-import (
-	"fmt"
-)
+import "context"
 
+// PPTParser delegates to PPTXParser which handles both OLE binary
+// (.ppt) and OOXML (.pptx) containers uniformly
 type PPTParser struct {
-	libType string
+	pptx PPTXParser
 }
 
-func NewPPTParser(libType string) (*PPTParser, error) {
-	switch libType {
-	case OfficeOxide:
-		return &PPTParser{
-			libType: OfficeOxide,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported PPT library type: %s", libType)
-	}
+func NewPPTParser() *PPTParser {
+	return &PPTParser{pptx: PPTXParser{format: "ppt"}}
 }
 
 func (p *PPTParser) String() string {
 	return "PPTParser"
 }
 
+// ConfigureFromSetup forwards the slides-family setup map to the
+// underlying PPTXParser so both .ppt and .pptx containers share
+// the same TCADP configuration
+func (p *PPTParser) ConfigureFromSetup(setup map[string]any) {
+	p.pptx.ConfigureFromSetup(setup)
+}
+
 // ParseWithResult delegates to PPTXParser's structured output
-// for the legacy PPT format. The two file families differ only
-// in the binary container; the python parser.py:slides branch
-// treats them uniformly.
-func (p *PPTParser) ParseWithResult(filename string, data []byte) ParseResult {
-	delegate, err := NewPPTXParser(OfficeOxide)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("ppt delegate: %w", err)}
-	}
-	res := delegate.ParseWithResult(filename, data)
-	if res.File != nil {
-		res.File["format"] = "ppt"
-	}
-	return res
+// for the legacy PPT format using the "ppt" container format
+// hint (OLE binary). The two file families differ only in the
+// binary container; the python parser.py:slides branch treats
+// them uniformly.
+func (p *PPTParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	return p.pptx.ParseWithResult(ctx, filename, data)
 }

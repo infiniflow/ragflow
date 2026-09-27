@@ -38,6 +38,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -48,19 +49,17 @@ import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
-import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
-import { useSendMessage } from '../../hooks/use-send-chat-message';
 import {
   HandlePressEnterType,
   useSendSingleMessage,
   UseSendSingleMessageParameter,
 } from '../../hooks/use-send-single-message';
 import { useUploadFile } from '../../hooks/use-upload-file';
-import { buildMessageItemReference } from '../../utils';
+import { EmptyReference } from '../../utils';
 import { useAddChatBox } from '../use-add-box';
 import { useShowInternet } from '../use-show-internet';
-import { useSetDefaultModel } from './use-set-default-model';
+import { useMessageReferences } from '../../hooks/use-message-references';
 
 type MultipleChatBoxProps = {
   controller: AbortController;
@@ -105,7 +104,7 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { patchChat } = usePatchChat();
 
-  const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
+  const { derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
       controller,
       value,
@@ -114,11 +113,14 @@ const ChatCard = forwardRef(function ChatCard(
       clearFiles,
     });
 
-  const { regenerateMessage } = useSendMessage(controller);
-
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
   const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
+
+  const messageReferences = useMessageReferences(
+    derivedMessages,
+    conversation.reference,
+  );
 
   const FormSchema = z.object(LlmSettingSchema);
 
@@ -135,7 +137,19 @@ const ChatCard = forwardRef(function ChatCard(
   const { data: currentDialog } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid();
 
-  useSetDefaultModel(form);
+  // Each card must keep its own independently selected model after the initial
+  // sync. Without this guard, clicking "Apply" in one card patches the dialog
+  // (which invalidates [FetchChat] and refetches currentDialog), and the
+  // changed currentDialog.llm_id would then overwrite every other card's
+  // llm_id via this effect. Sync only when dialogId changes (initial load or
+  // conversation switch), not when currentDialog.llm_id changes due to Apply.
+  const syncedDialogIdRef = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (syncedDialogIdRef.current !== dialogId && currentDialog?.llm_id) {
+      form.setValue('llm_id', currentDialog.llm_id);
+      syncedDialogIdRef.current = dialogId;
+    }
+  }, [currentDialog?.llm_id, dialogId, form]);
 
   const isLatestChat = idx === chatBoxIds.length - 1;
 
@@ -151,6 +165,7 @@ const ChatCard = forwardRef(function ChatCard(
       params: {
         ...currentDialog,
         llm_id: llmId,
+        tenant_llm_id: llmId,
         llm_setting: {
           ...omit(values, 'llm_id'),
           model_type: findLlmByUuid(llmId)?.model_type || 'chat',
@@ -161,8 +176,14 @@ const ChatCard = forwardRef(function ChatCard(
 
   useImperativeHandle(
     ref,
-    (): HandlePressEnterType => (params) =>
-      handlePressEnter({ ...params, ...form.getValues() }),
+    (): HandlePressEnterType => (params) => {
+      return handlePressEnter({
+        ...params,
+        ...form.getValues(),
+        storeHistoryMessages: false,
+        omitSessionId: true,
+      });
+    },
   );
 
   useEffect(() => {
@@ -184,6 +205,7 @@ const ChatCard = forwardRef(function ChatCard(
               <LargeModelFormFieldWithoutFilter
                 triggerTestId="chat-detail-multimodel-card-model-select"
                 optionTestIdPrefix="chat-detail-llm-option-"
+                ownerTenantId={currentDialog?.tenant_id}
               ></LargeModelFormFieldWithoutFilter>
             </Form>
           </div>
@@ -205,7 +227,7 @@ const ChatCard = forwardRef(function ChatCard(
                 <p>{t('chat.applyModelConfigs')}</p>
               </TooltipContent>
             </Tooltip>
-            {!isLatestChat || chatBoxIds.length === 3 ? (
+            {chatBoxIds.length > 1 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -215,7 +237,8 @@ const ChatCard = forwardRef(function ChatCard(
               >
                 <Trash2 />
               </Button>
-            ) : (
+            )}
+            {isLatestChat && idx < 2 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -244,19 +267,13 @@ const ChatCard = forwardRef(function ChatCard(
                   nickname={userInfo.nickname}
                   avatar={userInfo.avatar}
                   avatarDialog={currentDialog.icon}
-                  reference={buildMessageItemReference(
-                    {
-                      messages: derivedMessages,
-                      reference: conversation.reference,
-                    },
-                    message,
-                  )}
+                  reference={messageReferences.get(message) ?? EmptyReference}
                   // clickDocumentButton={clickDocumentButton}
                   index={i}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={regenerateMessage}
+                  isLast={i === derivedMessages.length - 1}
                   sendLoading={sendLoading}
                   clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
                 ></MessageItem>
               );
             })}
@@ -276,9 +293,6 @@ export function MultipleChatBox({
   stopOutputMessage,
   conversation,
 }: MultipleChatBoxProps) {
-  const { createConversationBeforeSendMessage } =
-    useCreateConversationBeforeSendMessage();
-
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
@@ -320,21 +334,14 @@ export function MultipleChatBox({
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
-      const data = await createConversationBeforeSendMessage(value);
-
-      if (data === undefined) {
-        return;
-      }
-
       Object.values(boxesRef.current).forEach((box) => {
         box?.({
           enableInternet,
           enableThinking,
-          ...data,
         });
       });
     },
-    [createConversationBeforeSendMessage, value],
+    [value],
   );
 
   return (

@@ -28,7 +28,7 @@ func TestSubAgentNode_Simple(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{
 		"Messages": []interface{}{schema.UserMessage("hello from sub-agent test")},
 	})
 	if err != nil {
@@ -61,7 +61,7 @@ func TestSubAgentNode_SequentialChain(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{
 		"Messages": []interface{}{schema.UserMessage("chain test")},
 	})
 	if err != nil {
@@ -93,7 +93,7 @@ func TestSubAgentNode_WithFieldMapping(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	result, err := cg.Invoke(context.Background(), map[string]interface{}{
+	result, err := cg.Invoke(t.Context(), map[string]interface{}{
 		"query":    "what is go?",
 		"response": "",
 	})
@@ -151,7 +151,7 @@ func TestSubAgentNode_WithSubAgentName(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{
 		"Messages": []interface{}{schema.UserMessage("name test")},
 	})
 	if err != nil {
@@ -185,7 +185,7 @@ func TestSubAgentNode_CustomExtractor(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	_, err = cg.Invoke(context.Background(), map[string]interface{}{
+	_, err = cg.Invoke(t.Context(), map[string]interface{}{
 		"data": "some data",
 	})
 	if err != nil {

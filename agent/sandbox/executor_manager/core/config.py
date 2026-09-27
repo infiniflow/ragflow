@@ -17,6 +17,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from services.auth import log_authentication_startup_state
 from util import format_timeout_duration, parse_timeout_duration
 
 from core.container import init_containers, teardown_containers
@@ -40,4 +41,5 @@ async def _lifespan(app: FastAPI):
 
 def init():
     logger.info(f"Global timeout: {format_timeout_duration(TIMEOUT)}")
+    log_authentication_startup_state()
     return _lifespan

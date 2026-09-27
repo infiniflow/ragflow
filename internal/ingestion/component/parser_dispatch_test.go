@@ -18,10 +18,9 @@
 //
 //   - FileTypeOTHER + missing setups → text-page mode.
 //   - FileTypeMarkdown → JSON payload family on the matching output
-//     key, with the pages slice preserved.
-//   - FileTypePDF + setups["pdf"].output_format set to a value not
-//     in allowed_output_format["pdf"] → component errors with the
-//     format-mismatch message (matches the Python check() behavior).
+//     key.
+//   - Historical output_format values, including PDF Markdown, are accepted
+//     and normalized to the single JSON payload.
 
 package component
 
@@ -29,19 +28,46 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
 
-	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
+
+	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+	"gorm.io/gorm"
 )
+
+// useMockDocAnalyzer installs a test-only MockDocAnalyzer as the in-process
+// DeepDoc backend via the public factory seam. MockDocAnalyzer is test
+// infrastructure and must never sit in the production fallback path; it is
+// injected here so the production parse path can be exercised without a real
+// DeepDoc service or ONNX Runtime models. The factory is reset to nil on
+// cleanup (it is nil in this test binary, which registers no real backend).
+func useMockDocAnalyzer(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
+}
 
 type captureSetupConfigurer struct {
 	setup map[string]any
@@ -51,15 +77,203 @@ func (c *captureSetupConfigurer) ConfigureFromSetup(setup map[string]any) {
 	c.setup = setup
 }
 
-// TestDispatch_OutputFormatValidation_Allowed is the happy-path
-// pin: a Markdown file with output_format=json passes the
-// allowed_output_format check and runs the structured dispatch.
-func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
-	// Defaults already include markdown → {text, json}.
-	c := &ParserComponent{Param: param}
+func requireJSONText(t *testing.T, out map[string]any, want string) {
+	t.Helper()
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	items, ok := out["json"].([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
+	}
+	for _, item := range items {
+		if text, _ := item["text"].(string); strings.Contains(text, want) {
+			return
+		}
+	}
+	t.Fatalf("json payload does not contain %q: %#v", want, items)
+}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		dispatched parser.ParseResult
+		wantText   string
+	}{
+		{
+			name: "markdown",
+			dispatched: parser.ParseResult{
+				OutputFormat: "markdown",
+				Markdown:     "# Title\n\nBody",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "html",
+			dispatched: parser.ParseResult{
+				OutputFormat: "html",
+				HTML:         "<h1>Title</h1><p>Body</p>",
+			},
+			wantText: "Title",
+		},
+		{
+			name: "text",
+			dispatched: parser.ParseResult{
+				OutputFormat: "text",
+				Text:         "plain body",
+			},
+			wantText: "plain body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, nil, "")
+
+			requireJSONText(t, out, tt.wantText)
+			if tt.name == "markdown" {
+				items, ok := out["json"].([]map[string]any)
+				if !ok {
+					t.Fatalf("json = %T, want []map[string]any", out["json"])
+				}
+				if len(items) != 2 {
+					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
+				}
+				if got := items[0]["ck_type"]; got != "heading" {
+					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
+				}
+				if got := items[0]["text"]; got != "# Title" {
+					t.Errorf("markdown item[0].text = %v, want # Title", got)
+				}
+				if got := items[1]["text"]; got != "Body" {
+					t.Errorf("markdown item[1].text = %v, want Body", got)
+				}
+			}
+			for _, key := range []string{"markdown", "html", "text"} {
+				if _, ok := out[key]; ok {
+					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])
+				}
+			}
+		})
+	}
+}
+
+func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
+	out := buildParserOutputs(t.Context(), parser.ParseResult{
+		OutputFormat: "json",
+		JSON:         []map[string]any{},
+		Markdown:     "# Recovered title",
+	}, "sample.md", nil, "")
+
+	requireJSONText(t, out, "Recovered title")
+}
+
+func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
+	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "page_number": 1}}
+	out := buildParserOutputs(t.Context(), parser.ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":    "report.pdf",
+			"outline": wantOutline,
+		},
+		JSON: []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+	}, "report.pdf", nil, "")
+	file, ok := out["file"].(map[string]any)
+	if !ok {
+		t.Fatalf("file = %T/%v, want parser file metadata", out["file"], out["file"])
+	}
+	gotOutline, ok := file["outline"].([]map[string]any)
+	if !ok {
+		t.Fatalf("file.outline = %T/%v, want []map[string]any", file["outline"], file["outline"])
+	}
+	if !reflect.DeepEqual(gotOutline, wantOutline) {
+		t.Fatalf("file.outline = %#v, want %#v", gotOutline, wantOutline)
+	}
+}
+
+func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
+	originalResolver := net.DefaultResolver
+	dnsLookup := make(chan struct{}, 1)
+	net.DefaultResolver = &net.Resolver{
+		PreferGo:     true,
+		StrictErrors: true,
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			select {
+			case dnsLookup <- struct{}{}:
+			default:
+			}
+			return nil, fmt.Errorf("unexpected DNS lookup")
+		},
+	}
+	t.Cleanup(func() { net.DefaultResolver = originalResolver })
+
+	items := parseMarkdownToJSONItems(t.Context(), "ocr.md", "![remote](https://images.example.invalid/figure.png)")
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one Markdown image block", items)
+	}
+	select {
+	case <-dnsLookup:
+		t.Fatal("Markdown-to-JSON normalization performed a remote image DNS lookup")
+	default:
+	}
+}
+
+func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	logParserOutput(parser.ParseResult{
+		OutputFormat: "markdown",
+		Markdown:     "# Title\n\nBody",
+	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
+
+	entries := logs.FilterMessage("parser stage output").All()
+	if len(entries) != 1 {
+		t.Fatalf("parser output log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if _, ok := fields["output_format"]; ok {
+		t.Errorf("output_format must be omitted because it is always json: %v", fields)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["json_items"]; got != int64(2) {
+		t.Errorf("json_items = %v, want 2", got)
+	}
+}
+
+func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	warnParserNormalizationFallback("broken.md", "markdown", fmt.Errorf("parse failed"))
+
+	entries := logs.FilterMessage("parser normalization fell back to text").All()
+	if len(entries) != 1 {
+		t.Fatalf("normalization fallback log count = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	if got := fields["filename"]; got != "broken.md" {
+		t.Errorf("filename = %v, want broken.md", got)
+	}
+	if got := fields["normalized_from"]; got != "markdown" {
+		t.Errorf("normalized_from = %v, want markdown", got)
+	}
+	if got := fields["error"]; got != "parse failed" {
+		t.Errorf("error = %v, want parse failed", got)
+	}
+}
+
+func TestDispatch_JSONOutput(t *testing.T) {
+	setups := defaultSetups()
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n\nbody\n"),
 		"doc_id":    "doc.md",
 		"file_type": "md",
@@ -77,79 +291,59 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	if len(jsonItems) == 0 {
 		t.Errorf("json payload empty; want at least 1 item")
 	}
-	// Pages must still exist for chunker-side consumers.
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Errorf("pages slice missing or empty: %T", out["pages"])
-	}
-	if ok && len(pages) > 0 {
-		if got, _ := pages[0]["text"].(string); !strings.Contains(got, "Title") {
-			t.Errorf("pages[0].text = %q, want content containing Title", got)
-		}
-	}
 	// File metadata is carried through dispatch.
 	if fm, ok := out["file"].(map[string]any); !ok || fm["name"] != "doc.md" {
 		t.Errorf("file metadata missing or wrong: %+v", out["file"])
 	}
 }
 
-// TestDispatch_OutputFormatValidation_Rejection pins the
-// whitelist enforcement: a request for output_format=html on the
-// markdown family is rejected because markdown's allowed list is
-// {text, json}. The component must surface this as a hard error
-// before any fallback so a misconfigured template cannot silently
-// degrade.
-func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
-	// Override the markdown setup to ask for an unsupported format.
-	// The key is "markdown" (the python-side family identifier),
-	// NOT "md" — utility.FileTypeMarkdown happens to be the string
-	// "md" but the setup key is the family name. resolveOutputFormat
-	// looks up setups[string(fileType)], so the fileType passed in
-	// here must match the setup key.
-	param.Setups["markdown"] = schema.ParserSetup{"output_format": "html"}
-	// inputs["file_type"] must also be "markdown" so fileTypeFromInputs
-	// returns a FileType whose string form matches the setup key.
-	c := &ParserComponent{Param: param}
+func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
+	setups := defaultSetups()
+	setups["email"]["output_format"] = "text"
+	c := &ParserComponent{setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
-		"binary":    []byte("# Title\n"),
-		"file_type": "md",
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("From: sender@example.com\r\nTo: receiver@example.com\r\nSubject: Hello\r\n\r\nBody\r\n"),
+		"name":      "mail.eml",
+		"file_type": "eml",
 	})
-	if err == nil {
-		t.Fatal("Invoke: want error for unsupported output_format, got nil")
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(err.Error(), "output_format") {
-		t.Errorf("error %q must mention output_format", err.Error())
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	if !strings.Contains(err.Error(), "markdown") && !strings.Contains(err.Error(), "md") {
-		t.Errorf("error %q must mention the family", err.Error())
+	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
 
 // TestDispatch_TextPageMode_NoFileType pins the no-dispatch
 // path. When the upstream inputs supply neither file_type nor
 // file.name, the component degrades to text-page mode and
-// emits output_format=text. This is the documented behavior for
+// emits structured JSON items. This is the documented behavior for
 // canvas-bound invocations that wire the binary directly without
 // a family hint.
 func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("plain content\n"),
 		"doc_id": "unknown",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "text"; got != want {
-		t.Errorf("output_format = %v, want %v (text-page mode)", got, want)
+	if got, want := out["output_format"], "json"; got != want {
+		t.Errorf("output_format = %v, want %v (raw-text mode)", got, want)
 	}
-	pages, ok := out["pages"].([]schema.Page)
-	if !ok || len(pages) == 0 {
-		t.Fatalf("pages slice missing or empty: %T", out["pages"])
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok || len(jsonItems) == 0 {
+		t.Fatalf("json items missing or empty: %T", out["json"])
+	}
+	if _, ok := out["text"]; ok {
+		t.Fatalf("output contains obsolete text payload: %#v", out["text"])
 	}
 }
 
@@ -158,10 +352,10 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 // resolution/execution failures must surface as errors instead of
 // silently degrading to text-page mode.
 func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	c := &ParserComponent{setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
 		"file_type": "pdf",
 	})
@@ -177,8 +371,8 @@ func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 // rules documented on parser_dispatch.go:fileTypeFromInputs:
 //
 //  1. inputs["file_type"]  (explicit family hint)
-//  2. inputs["file"].name  (filename in the file descriptor)
-//  3. inputs["name"]       (last-resort filename)
+//  2. inputs["name"]       (the resolved source filename)
+//  3. inputs["file"].name  (filename in the file descriptor)
 //  4. FileTypeOTHER        (text-page mode)
 func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	cases := []struct {
@@ -187,7 +381,14 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 		want string
 	}{
 		{"explicit pdf", map[string]any{"file_type": "pdf"}, "pdf"},
+		{"explicit xls (binary)", map[string]any{"file_type": "xls"}, "xls"},
+		{"explicit xlsx (OOXML)", map[string]any{"file_type": "xlsx"}, "xlsx"},
+		{"explicit ppt (binary)", map[string]any{"file_type": "ppt"}, "ppt"},
+		{"explicit pptx (OOXML)", map[string]any{"file_type": "pptx"}, "pptx"},
+		{"explicit slides (family name)", map[string]any{"file_type": "slides"}, "pptx"},
+		{"explicit spreadsheet (family name)", map[string]any{"file_type": "spreadsheet"}, "xlsx"},
 		{"explicit markdown (family form)", map[string]any{"file_type": "markdown"}, "md"},
+		{"name wins over conflicting file.name", map[string]any{"name": "report.txt", "file": map[string]any{"name": "report.pdf"}}, "txt"},
 		{"file.name docx", map[string]any{"file": map[string]any{"name": "report.docx"}}, "docx"},
 		{"name fallback md", map[string]any{"name": "notes.md"}, "md"},
 		{"unrelated inputs", map[string]any{"binary": []byte("x"), "doc_id": "abc"}, "other"},
@@ -204,80 +405,37 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	}
 }
 
-// TestResolveOutputFormat_DefaultsAndWhitelist pins the two-layer
-// behavior of resolveOutputFormat: it returns the setup's
-// output_format when present (or "text" when absent), and
-// rejects values not in the allowed_output_format list.
-func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
-	allowed := map[string][]string{
-		"pdf":      {"json", "markdown"},
-		"markdown": {"text", "json"},
+func TestDefaultSetups_DOCX_OutputFormatJSON(t *testing.T) {
+	setups := defaultSetups()
+	docx, ok := setups["docx"]
+	if !ok {
+		t.Fatal("defaultSetups: docx key missing")
 	}
-	cases := []struct {
-		name    string
-		setups  map[string]schema.ParserSetup
-		family  string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:   "no setup → empty (text-page mode)",
-			setups: nil,
-			family: "pdf",
-			want:   "",
-		},
-		{
-			name:   "setup with output_format=json → json",
-			setups: map[string]schema.ParserSetup{"pdf": {"output_format": "json"}},
-			family: "pdf",
-			want:   "json",
-		},
-		{
-			name:   "setup with output_format=markdown → markdown",
-			setups: map[string]schema.ParserSetup{"pdf": {"output_format": "markdown"}},
-			family: "pdf",
-			want:   "markdown",
-		},
-		{
-			name:   "setup without output_format → default text",
-			setups: map[string]schema.ParserSetup{"markdown": {}},
-			family: "markdown",
-			want:   "text",
-		},
-		{
-			name:    "pdf asking for html (not allowed) → reject",
-			setups:  map[string]schema.ParserSetup{"pdf": {"output_format": "html"}},
-			family:  "pdf",
-			wantErr: true,
-		},
-		{
-			name:   "family with no whitelist → accept setup value",
-			setups: map[string]schema.ParserSetup{"video": {"output_format": "json"}},
-			family: "video",
-			want:   "json",
-		},
+	got, ok := docx["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: docx.output_format missing or not a string")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := resolveOutputFormat(tc.family, tc.setups, allowed)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("want error, got nil (value=%q)", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q, want %q", got, tc.want)
-			}
-		})
+	if got != "json" {
+		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+func TestDefaultSetups_Audio_OutputFormatJSON(t *testing.T) {
+	setups := defaultSetups()
+	audio, ok := setups["audio"]
+	if !ok {
+		t.Fatal("defaultSetups: audio key missing")
+	}
+	got, ok := audio["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: audio.output_format missing or not a string")
+	}
+	if got != "json" {
+		t.Errorf("audio.output_format = %q, want %q", got, "json")
 	}
 }
 
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
-	setups := schema.ParserParam{}.Defaults().Setups
+	setups := defaultSetups()
 	got := &captureSetupConfigurer{}
 
 	configureParserFromSetups(got, utility.FileTypePDF, setups)
@@ -288,9 +446,8 @@ func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	}
 }
 
-func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
+func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
+	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -298,11 +455,11 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",
@@ -310,18 +467,19 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || md == "" {
-		t.Fatalf("markdown payload missing or empty: %T", out["markdown"])
-	}
-	if _, ok := out["json"]; ok {
-		t.Fatalf("json payload must be absent for markdown output: %+v", out["json"])
+	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
 
+// TestDispatch_PDFPlainText_UsesConfiguredBackend pins the plain-text
+// dispatch for every spelling the dataset configuration UI can persist.
+// The UI option is labelled "Naive" and stores "Plain Text"; treating that
+// spelling as a custom VLM model name made the run fail with
+// `provider name missing in model name: Plain Text`.
 func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -329,34 +487,38 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "plain_text"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	for _, method := range []string{"plain_text", "plaintext", "Plain Text"} {
+		t.Run(method, func(t *testing.T) {
+			setups := defaultSetups()
+			setups["pdf"]["parse_method"] = method
+			setups["pdf"]["output_format"] = "json"
+			c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"binary":    data,
-		"file_type": "pdf",
-		"name":      "Doc1.pdf",
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	jsonItems, ok := out["json"].([]map[string]any)
-	if !ok || len(jsonItems) == 0 {
-		t.Fatalf("json payload missing or empty: %T", out["json"])
-	}
-	if got, _ := jsonItems[0]["text"].(string); strings.TrimSpace(got) == "" {
-		t.Fatalf("json first item text = %q, want non-empty", got)
+			out, err := c.Invoke(t.Context(), nil, map[string]any{
+				"binary":    data,
+				"file_type": "pdf",
+				"name":      "Doc1.pdf",
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			jsonItems, ok := out["json"].([]map[string]any)
+			if !ok || len(jsonItems) == 0 {
+				t.Fatalf("json payload missing or empty: %T", out["json"])
+			}
+			if got, _ := jsonItems[0]["text"].(string); strings.TrimSpace(got) == "" {
+				t.Fatalf("json first item text = %q, want non-empty", got)
+			}
+		})
 	}
 }
 
 func TestDispatch_PDFUnsupportedParseMethod_HardErrors(t *testing.T) {
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	c := &ParserComponent{setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "bad.pdf",
@@ -394,13 +556,13 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		if tenantID != "tenant-1" || modelID != "CustomVLM" {
 			return nil, "", nil, fmt.Errorf("resolver got tenant/model %q/%q", tenantID, modelID)
 		}
 		return nil, "resolved-vlm", nil, nil
 	}
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ models.ModelDriver, modelName string, messages []models.Message, _ *models.APIConfig) (*models.ChatResponse, error) {
 		if modelName != "resolved-vlm" {
 			return nil, fmt.Errorf("modelName = %q, want resolved-vlm", modelName)
 		}
@@ -418,15 +580,15 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		prompt, _ := block["text"].(string)
 		prompts = append(prompts, prompt)
 		answer := "Transcribed " + prompt
-		return &modelModule.ChatResponse{Answer: &answer}, nil
+		return &models.ChatResponse{Answer: &answer}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -473,25 +635,25 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		return nil, "resolved-vlm", nil, nil
 	}
 	call := 0
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ models.ModelDriver, _ string, _ []models.Message, _ *models.APIConfig) (*models.ChatResponse, error) {
 		call++
 		answer := ""
 		if call == 1 {
 			answer = "First page"
 		}
-		return &modelModule.ChatResponse{Answer: &answer}, nil
+		return &models.ChatResponse{Answer: &answer}, nil
 	}
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -510,44 +672,214 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 }
 
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"task_id":"task-3"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-3/result":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Title\n\nBody\n"}}}`))
-		default:
-			http.NotFound(w, r)
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "MinerU"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["mineru_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	// Mock the MinerU provider resolver to return a driver pointing at the test server.
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "MinerU"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	requireJSONText(t, out, "Title")
+}
+
+func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody paragraph\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "MinerU"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["output_format"], "json"; got != want {
 		t.Fatalf("output_format = %v, want %v", got, want)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Title") {
-		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
+	items, ok := out["json"].([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("json payload = %#v, want non-empty structured items", out["json"])
 	}
 }
 
-func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if r.FormValue("start_page_id") != "0" || r.FormValue("end_page_id") != "99999" {
+			t.Fatalf("page range = %q:%q", r.FormValue("start_page_id"), r.FormValue("end_page_id"))
+		}
+		file, _, err := r.FormFile("files")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = file.Close()
+
+		var output bytes.Buffer
+		archive := zip.NewWriter(&output)
+		entry, _ := archive.Create("sample/jsons/sample.json")
+		_, _ = entry.Write([]byte(`[{"label":"Title","content":"MonkeyOCRv2 title"}]`))
+		_ = archive.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(output.Bytes())
+	}))
+	defer server.Close()
+
+	original := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = original })
+	resolveTenantOCRModelByProvider = func(_ context.Context, _ *gorm.DB, tenantID, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if tenantID != "test-tenant" || providerName != "MonkeyOCRv2" {
+			t.Fatalf("tenant=%q provider=%q", tenantID, providerName)
+		}
+		return &monkeyOCRv2FakeDriver{}, "MonkeyOCRv2-Parsing", &models.APIConfig{BaseURL: &server.URL}, 0, nil
+	}
+
+	component, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"parse_method": "monkeyocrv2", "output_format": "markdown"},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "MonkeyOCRv2 title")
+}
+
+// mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
+type mineruTestDriver struct{}
+
+func (d *mineruTestDriver) NewInstance(baseURL map[string]string) models.ModelDriver { return d }
+func (d *mineruTestDriver) Name() string                                             { return "mineru" }
+func (d *mineruTestDriver) ChatWithMessages(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, chatModelConfig *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []models.Message, apiConfig *models.APIConfig, modelConfig *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Embed(ctx context.Context, modelName *string, request models.EmbedRequest, apiConfig *models.APIConfig, embeddingConfig *models.EmbeddingConfig, usage *common.ModelUsage) ([]models.EmbeddingData, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (d *mineruTestDriver) Rerank(ctx context.Context, modelName *string, request models.RerankRequest, apiConfig *models.APIConfig, rerankConfig *models.RerankConfig, usage *common.ModelUsage) (*models.RerankResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage) (*models.ASRResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *models.APIConfig, asrConfig *models.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage) (*models.TTSResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *models.APIConfig, ttsConfig *models.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, ocrConfig *models.OCRConfig, usage *common.ModelUsage) (*models.OCRFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *models.APIConfig, parseFileConfig *models.ParseFileConfig, usage *common.ModelUsage) (*models.ParseFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListModels(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListModelResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Balance(ctx context.Context, apiConfig *models.APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) CheckConnection(ctx context.Context, apiConfig *models.APIConfig) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig) ([]models.ListTaskStatus, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
 			http.NotFound(w, r)
@@ -562,31 +894,706 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "PaddleOCR"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["paddleocr_base_url"] = server.URL
-	param.Setups["pdf"]["paddleocr_api_key"] = "paddle-secret"
-	c := &ParserComponent{Param: param}
+	// Mock resolveTenantOCRModelByProvider to return a PaddleOCR driver
+	// pointing at the test server.
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	baseURL := server.URL
+	apiKey := "paddle-secret"
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "PaddleOCR"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "PaddleOCR"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Paddle Title") {
-		t.Fatalf("markdown payload = %#v, want Paddle Title content", out["markdown"])
+	requireJSONText(t, out, "Paddle Title")
+}
+
+// TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload pins the cloud
+// PaddleOCR configuration contract: the tenant api_key is a JSON payload
+// (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm) and the
+// instance base_url field stays empty, mirroring Python's PaddleOCROcrModel.
+// The driver, not the dispatch layer, unwraps that payload into the wire
+// bearer token and server endpoint.
+func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("Authorization = %q, want %q (driver must unwrap api_key payload)", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("poll Authorization = %q, want %q", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"state":"done","resultUrl":{"jsonUrl":"http://` + r.Host + `/result"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			_, _ = w.Write([]byte(`[{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped Title\n\nUnwrapped body.\n"}}]}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	apiKey := fmt.Sprintf(
+		`{"paddleocr_api_url":%q,"paddleocr_access_token":"tok-123","paddleocr_algorithm":"PaddleOCR-VL"}`,
+		server.URL+"/api")
+	emptyBaseURL := ""
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if got, want := providerName, "PaddleOCR"; got != want {
+			t.Fatalf("providerName = %q, want %q", got, want)
+		}
+		return models.NewPaddleOCRModel(nil, models.URLSuffix{OCR: "v2/ocr/jobs"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "PaddleOCR"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Unwrapped Title")
+}
+
+func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
+	withSSRFBypass(t)
+	origResolver := resolveTenantOCRModelByProvider
+	defer func() { resolveTenantOCRModelByProvider = origResolver }()
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		return nil, "", nil, 0, fmt.Errorf("no active PaddleOCR OCR model")
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "paddleocr"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err == nil || !strings.Contains(err.Error(), "parser: PaddleOCR model") {
+		t.Fatalf("Invoke error = %v, want PaddleOCR model error", err)
+	}
+}
+
+// TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel pins the routing of
+// a bare tenant model UUID in layout_recognizer — the value the web UI writes
+// when a user picks an OCR model for PDF parsing — to the PaddleOCR dispatch
+// path. The raw UUID carries no "@provider" hint in the string, so it must be
+// resolved first (mirroring Python's get_composite_model_name_by_id before
+// normalize_layout_recognizer). Previously the UUID fell through to the
+// image2text VLM path and failed with "cannot be used as image2text model"
+// for OCR-typed models such as the cloud "PaddleOCR" provider's.
+func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
+			http.NotFound(w, r)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer paddle-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Cloud Paddle Title\n\nCloud body.\n"}}]}}`))
+	}))
+	defer server.Close()
+
+	origIsLayout := isPaddleOCRLayoutModelID
+	origResolve := resolvePaddleOCRModelForDispatch
+	defer func() {
+		isPaddleOCRLayoutModelID = origIsLayout
+		resolvePaddleOCRModelForDispatch = origResolve
+	}()
+
+	modelID := "d13ffec6c1e34b1abc30e540b692d83d"
+	isPaddleOCRLayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, layout string) bool {
+		if got, want := layout, modelID; got != want {
+			t.Fatalf("layout = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "paddle-secret"
+	resolvePaddleOCRModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["layout_recognizer"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	requireJSONText(t, out, "Cloud Paddle Title")
+}
+
+// TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod pins the routing of a
+// bare tenant model UUID carried in parse_method (with layout_recognizer
+// empty) to the PaddleOCR dispatch path. Previously only layout_recognizer
+// was probed for a UUID, so a UUID in parse_method fell through to the
+// image2text VLM path and failed with "cannot be used as image2text model".
+func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
+			http.NotFound(w, r)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer paddle-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Cloud Paddle Title\n\nCloud body.\n"}}]}}`))
+	}))
+	defer server.Close()
+
+	origIsLayout := isPaddleOCRLayoutModelID
+	origResolve := resolvePaddleOCRModelForDispatch
+	defer func() {
+		isPaddleOCRLayoutModelID = origIsLayout
+		resolvePaddleOCRModelForDispatch = origResolve
+	}()
+
+	modelID := "d13ffec6c1e34b1abc30e540b692d83d"
+	isPaddleOCRLayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "paddle-secret"
+	resolvePaddleOCRModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	requireJSONText(t, out, "Cloud Paddle Title")
+}
+
+// TestDispatch_PDFMinerU_BareModelUUID_InParseMethod pins the routing of a
+// bare tenant model UUID in parse_method — the value stored when a user picks
+// an OCR model for PDF parsing — to the MinerU dispatch path using that exact
+// model. The UUID carries no "@provider" hint, so it must be resolved before
+// the dispatch path is chosen instead of falling through to the image2text
+// VLM path.
+func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer mineru-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Cloud MinerU Title")
+}
+
+// TestDispatch_PDFMinerU_LanguageChain pins the lang_list chain
+// (mineru_lang → setup lang → "English"), mirroring Python's
+// mineru_parser.py:1181. The pdf setup's default lang ("Chinese") keeps the
+// unconfigured form value on Python's ch code.
+func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
+	tests := []struct {
+		name      string
+		overrides map[string]any
+		wantLang  string
+	}{
+		{name: "default setup lang maps to ch", overrides: nil, wantLang: "ch"},
+		{name: "mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
+		{name: "setup lang used when mineru_lang unset", overrides: map[string]any{"lang": "Japanese"}, wantLang: "japan"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			withSSRFBypass(t)
+			var gotLang string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+					http.NotFound(w, r)
+					return
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Errorf("parse form: %v", err)
+					return
+				}
+				gotLang = r.FormValue("lang_list")
+				buf := new(bytes.Buffer)
+				zw := zip.NewWriter(buf)
+				f, _ := zw.Create("content_list.json")
+				_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody.\n"}]`))
+				_ = zw.Close()
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(buf.Bytes())
+			}))
+			defer server.Close()
+
+			origResolve := resolveMinerUModelForDispatch
+			defer func() { resolveMinerUModelForDispatch = origResolve }()
+			baseURL := server.URL
+			apiKey := "mineru-secret"
+			resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+				return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+			}
+
+			setups := defaultSetups()
+			setups["pdf"]["parse_method"] = "mineru"
+			setups["pdf"]["output_format"] = "markdown"
+			for k, v := range tc.overrides {
+				setups["pdf"][k] = v
+			}
+			c := &ParserComponent{setups: setups}
+
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{
+				"binary":    []byte("%PDF-1.4"),
+				"file_type": "pdf",
+				"name":      "scansmpl.pdf",
+				"tenant_id": "test-tenant",
+			}); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if gotLang != tc.wantLang {
+				t.Errorf("lang_list = %q, want %q", gotLang, tc.wantLang)
+			}
+		})
+	}
+}
+
+// TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer pins the same
+// bare-UUID routing when the model id lands in layout_recognizer while
+// parse_method stays a named method: the layout selector drives the probe and
+// the named parse method never reaches the MinerU API form.
+func TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# Cloud MinerU Title\n\nCloud body.\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	origProbe := isMinerULayoutModelID
+	origResolve := resolveMinerUModelForDispatch
+	defer func() {
+		isMinerULayoutModelID = origProbe
+		resolveMinerUModelForDispatch = origResolve
+	}()
+	isMinerULayoutModelID = func(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+		if got, want := selector, modelID; got != want {
+			t.Fatalf("selector = %q, want %q", got, want)
+		}
+		return true
+	}
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, modelID; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "vlm", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "deepdoc"
+	setups["pdf"]["layout_recognizer"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "scansmpl.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "Cloud MinerU Title")
+}
+
+func writeMinerUZipResponse(w http.ResponseWriter, markdown string) {
+	payload, _ := json.Marshal([]map[string]string{{"type": "text", "text": markdown}})
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	f, _ := zw.Create("content_list.json")
+	_, _ = f.Write(payload)
+	_ = zw.Close()
+	w.Header().Set("Content-Type", "application/zip")
+	_, _ = w.Write(buf.Bytes())
+}
+
+// setupMinerUVisionDispatchDB seeds an in-memory provider -> instance -> OCR
+// model chain for the MinerU provider so the production dispatch probe and
+// resolver run against tenant data instead of stubs.
+func setupMinerUVisionDispatchDB(t *testing.T, baseURL string) (*gorm.DB, string) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate model tables: %v", err)
+	}
+	modelID := "061436bbd8474d54be5bba3efbeac109"
+	rows := []any{
+		&entity.TenantModelProvider{ID: "provider-mineru-1", TenantID: "test-tenant", ProviderName: "MinerU"},
+		&entity.TenantModelInstance{ID: "instance-mineru-1", ProviderID: "provider-mineru-1", InstanceName: "default", APIKey: "mineru-secret", Status: "active", Extra: `{"base_url":"` + baseURL + `"}`},
+		&entity.TenantModel{ID: modelID, ProviderID: "provider-mineru-1", InstanceID: "instance-mineru-1", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+	return db, modelID
+}
+
+// newMinerUVisionTestServer serves the MinerU /file_parse endpoint, asserting
+// the tenant instance credentials and API parse method posted by the
+// dispatch.
+func newMinerUVisionTestServer(t *testing.T, wantParseMethod string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer mineru-secret"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		if wantParseMethod != "" {
+			if got := r.FormValue("parse_method"); got != wantParseMethod {
+				t.Errorf("parse_method form value = %q, want %q", got, wantParseMethod)
+			}
+		}
+		writeMinerUZipResponse(w, "# Real Resolver Title\n\nReal body.\n")
+	}))
+}
+
+func invokeMinerUDispatch(t *testing.T, db *gorm.DB, setups map[string]schema.ParserSetup) map[string]any {
+	t.Helper()
+	c := &ParserComponent{setups: setups}
+	out, err := c.Invoke(t.Context(), db, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	return out
+}
+
+// TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption pins the dedicated
+// mineru_parse_method parser option flowing to the MinerU /file_parse form:
+// parse_method stays the dispatch selector while the API method comes from
+// mineru_parse_method, mirroring Python's mineru_parser.py.
+func TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "ocr")
+	defer server.Close()
+
+	origResolve := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolve }()
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if mid != "" {
+			t.Fatalf("modelID = %q, want empty for the named selector", mid)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["mineru_parse_method"] = "ocr"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, nil, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestDispatch_PDFMinerU_CompositeSelectorInParseMethod pins composite
+// model@instance@provider selectors naming MinerU in parse_method: the
+// dispatch matches the provider suffix and forwards the full selector to
+// the model resolver.
+func TestDispatch_PDFMinerU_CompositeSelectorInParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+
+	selector := "MinerU-model@default@MinerU"
+	origResolve := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolve }()
+	baseURL := server.URL
+	apiKey := "mineru-secret"
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, mid string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := mid, selector; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = selector
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, nil, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel runs the
+// named "mineru" dispatch with the production probe and resolver against a
+// seeded tenant MinerU provider, pinning provider -> instance -> model
+// resolution and the instance credentials reaching the MinerU API.
+func TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, _ := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver
+// runs the bare model UUID dispatch with the production probe and resolver:
+// the UUID resolves to the seeded MinerU OCR model and the exact instance
+// credentials reach the MinerU API.
+func TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, modelID := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = modelID
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver runs
+// the composite model@instance@provider dispatch (layout_recognizer from the
+// web model picker, parse_method untouched) with the production resolver
+// against the seeded tenant model chain.
+func TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver(t *testing.T) {
+	withSSRFBypass(t)
+	server := newMinerUVisionTestServer(t, "auto")
+	defer server.Close()
+	db, _ := setupMinerUVisionDispatchDB(t, server.URL)
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "deepdoc"
+	setups["pdf"]["layout_recognizer"] = "MinerU-model@default@MinerU"
+	setups["pdf"]["output_format"] = "markdown"
+
+	out := invokeMinerUDispatch(t, db, setups)
+	requireJSONText(t, out, "Real Resolver Title")
+}
+
+// TestResolveTenantOCRModelByProvider_MinerUProviderAlias pins the sibling
+// provider spelling tolerance: a tenant that configured only the remote
+// "MinerU.Net" provider still resolves through the canonical "MinerU" name.
+func TestResolveTenantOCRModelByProvider_MinerUProviderAlias(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate model tables: %v", err)
+	}
+	rows := []any{
+		&entity.TenantModelProvider{ID: "provider-minerunet-1", TenantID: "test-tenant", ProviderName: "MinerU.Net"},
+		&entity.TenantModelInstance{ID: "instance-minerunet-1", ProviderID: "provider-minerunet-1", InstanceName: "default", APIKey: "mineru-secret", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-minerunet-1", ProviderID: "provider-minerunet-1", InstanceID: "instance-minerunet-1", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	driver, modelName, _, _, err := resolveTenantOCRModelByProvider(t.Context(), db, "test-tenant", "MinerU")
+	if err != nil {
+		t.Fatalf("resolveTenantOCRModelByProvider: %v", err)
+	}
+	if got, want := modelName, "MinerU-model"; got != want {
+		t.Fatalf("modelName = %q, want %q", got, want)
+	}
+	if driver == nil || !isMinerUDriver(driver) {
+		t.Fatalf("driver = %v, want a MinerU driver", driver)
+	}
+}
+
+func TestIsPaddleOCRDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		d    models.ModelDriver
+		want bool
+	}{
+		{"local", &models.PaddleOCRLocalModel{}, true},
+		{"remote", &models.PaddleOCRModel{}, true},
+		{"dummy", &models.DummyModel{}, false},
+	} {
+		if got := isPaddleOCRDriver(tc.d); got != tc.want {
+			t.Errorf("isPaddleOCRDriver(%s) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
 func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
+	withSSRFBypass(t)
 	var requestCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
@@ -610,14 +1617,14 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "Docling"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["docling_server_url"] = server.URL
-	param.Setups["pdf"]["docling_api_key"] = "doc-secret"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "Docling"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["docling_server_url"] = server.URL
+	setups["pdf"]["docling_api_key"] = "doc-secret"
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -625,19 +1632,17 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, want := out["output_format"], "markdown"; got != want {
-		t.Fatalf("output_format = %v, want %v", got, want)
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Docling Title") {
-		t.Fatalf("markdown payload = %#v, want Docling Title content", out["markdown"])
-	}
+	requireJSONText(t, out, "Docling Title")
 	if got, want := requestCount, 3; got != want {
 		t.Fatalf("requestCount = %d, want %d", got, want)
 	}
 }
 
-func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFOpenDataLoaderLegacyMarkdownEmitsJSON(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)
@@ -648,13 +1653,13 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "OpenDataLoader"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["opendataloader_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "OpenDataLoader"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["opendataloader_apiserver"] = server.URL
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -662,13 +1667,11 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "ODL Title") {
-		t.Fatalf("markdown payload = %#v, want ODL Title", out["markdown"])
-	}
+	requireJSONText(t, out, "ODL Title")
 }
 
-func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFSoMarkLegacyMarkdownEmitsJSON(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/parse/async":
@@ -681,13 +1684,13 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "SoMark"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["somark_base_url"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "SoMark"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["somark_base_url"] = server.URL
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -695,13 +1698,11 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "SoMark Title") {
-		t.Fatalf("markdown payload = %#v, want SoMark Title", out["markdown"])
-	}
+	requireJSONText(t, out, "SoMark Title")
 }
 
-func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
+func TestDispatch_PDFTCADPLegacyMarkdownEmitsJSON(t *testing.T) {
+	withSSRFBypass(t)
 	zipPayload := tcadpZipFixtureForComponent(t)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -716,13 +1717,13 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "TCADP parser"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["tcadp_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "TCADP parser"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["tcadp_apiserver"] = server.URL
+	c := &ParserComponent{setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -730,10 +1731,7 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	md, ok := out["markdown"].(string)
-	if !ok || !strings.Contains(md, "Hello TCADP") {
-		t.Fatalf("markdown payload = %#v, want Hello TCADP", out["markdown"])
-	}
+	requireJSONText(t, out, "Hello TCADP")
 }
 
 func tcadpZipFixtureForComponent(t *testing.T) []byte {
@@ -751,39 +1749,77 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-func TestResolveLibType_UsesOwningFamilySetup(t *testing.T) {
-	setups := schema.ParserParam{}.Defaults().Setups
-	setups["slides"]["lib_type"] = "office_oxide"
-	setups["slides"]["parse_method"] = "deepdoc"
-	setups["spreadsheet"]["lib_type"] = "office_oxide"
-	setups["spreadsheet"]["parse_method"] = "deepdoc"
-
+// TestPythonFamilyName_FileTypeConstants pins the contract that every
+// utility.FileType semantic constant resolves to the setups key used by
+// defaultSetups. Before the fix, FileTypeVISUAL mapped
+// to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
+// no case at all (returning ""), so output_format validation and
+// configureParserFromSetups were silently skipped for image/audio files.
+func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 	cases := []struct {
-		name            string
-		fileType        utility.FileType
-		wantLibType     string
-		wantParseMethod string
+		ft   utility.FileType
+		want string
 	}{
-		{
-			name:            "pptx resolves from slides family",
-			fileType:        utility.FileTypePPTX,
-			wantLibType:     "office_oxide",
-			wantParseMethod: "deepdoc",
-		},
-		{
-			name:            "xlsx resolves from spreadsheet family",
-			fileType:        utility.FileTypeXLSX,
-			wantLibType:     "office_oxide",
-			wantParseMethod: "deepdoc",
-		},
+		{utility.FileTypePDF, "pdf"},
+		{utility.FileTypeDOC, "doc"},
+		{utility.FileTypeDOCX, "docx"},
+		{utility.FileTypePPT, "slides"},
+		{utility.FileTypePPTX, "slides"},
+		{utility.FileTypeXLS, "spreadsheet"},
+		{utility.FileTypeXLSX, "spreadsheet"},
+		{utility.FileTypeCSV, "spreadsheet"},
+		{utility.FileTypeHTML, "html"},
+		{utility.FileTypeMarkdown, "markdown"},
+		{utility.FileTypeTXT, "text&code"},
+		{utility.FileTypeEPUB, "epub"},
+		{utility.FileTypeJSON, "json"},
+		{utility.FileTypeVISUAL, "image"},
+		{utility.FileTypeAURAL, "audio"},
+		{utility.FileTypeVIDEO, "video"},
+		{utility.FileTypeEMAIL, "email"},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			gotLibType, gotParseMethod := resolveLibType(tc.fileType, setups)
-			if gotLibType != tc.wantLibType || gotParseMethod != tc.wantParseMethod {
-				t.Fatalf("resolveLibType(%q) = (%q, %q), want (%q, %q)",
-					tc.fileType, gotLibType, gotParseMethod, tc.wantLibType, tc.wantParseMethod)
-			}
-		})
+	for _, c := range cases {
+		got := pythonFamilyName(string(c.ft))
+		if got != c.want {
+			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
+		}
+		// Every mapped family must have a matching setup so its parser receives
+		// the canonical output format and family-specific configuration.
+		if _, ok := defaultSetups()[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
+		}
 	}
+}
+
+// TestConfigureParserFromSetups_VisualAural pins that image and audio
+// files pick up their setup (parse_method / lang / vlm) via the family
+// mapping. Before the fix, configureParserFromSetups silently skipped
+// configuration because resolveParserFamily returned "picture" / "aural",
+// neither of which existed in defaultSetups.
+func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+	setups := defaultSetups()
+
+	t.Run("visual resolves to image setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeVISUAL, setups)
+		want := map[string]any(setups["image"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeVISUAL")
+		}
+		if v, _ := got.setup["parse_method"].(string); v != want["parse_method"] {
+			t.Errorf("FileTypeVISUAL parse_method = %v, want %v", v, want["parse_method"])
+		}
+	})
+
+	t.Run("aural resolves to audio setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
+		want := map[string]any(setups["audio"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
+		}
+		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
+			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
+		}
+	})
 }

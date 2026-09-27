@@ -28,7 +28,7 @@ from elasticsearch.client import IndicesClient
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
 from common.doc_store.doc_store_base import DocStoreConnection, OrderByExpr, MatchExpr
-from rag.nlp import is_english, rag_tokenizer
+from rag.nlp import rag_tokenizer
 from common import settings
 
 ATTEMPT_TIME = 2
@@ -323,25 +323,10 @@ class ESConnectionBase(DocStoreConnection):
 
     def get_highlight(self, res, keywords: list[str], field_name: str):
         ans = {}
+        pattern = re.compile("|".join(re.escape(w) for w in sorted(filter(None, keywords), key=len, reverse=True)), re.IGNORECASE) if any(keywords) else None
         for d in res["hits"]["hits"]:
-            highlights = d.get("highlight")
-            if not highlights:
-                continue
-            txt = "...".join([a for a in list(highlights.items())[0][1]])
-            if not is_english(txt.split()):
-                ans[d["_id"]] = txt
-                continue
-
             txt = d["_source"][field_name]
-            txt = re.sub(r"[\r\n]", " ", txt, flags=re.IGNORECASE | re.MULTILINE)
-            txt_list = []
-            for t in re.split(r"[.?!;\n]", txt):
-                for w in keywords:
-                    t = re.sub(r"(^|[ .?/'\"\(\)!,:;-])(%s)([ .?/'\"\(\)!,:;-])" % re.escape(w), r"\1<em>\2</em>\3", t, flags=re.IGNORECASE | re.MULTILINE)
-                if not re.search(r"<em>[^<>]+</em>", t, flags=re.IGNORECASE | re.MULTILINE):
-                    continue
-                txt_list.append(t)
-            ans[d["_id"]] = "...".join(txt_list) if txt_list else "...".join([a for a in list(highlights.items())[0][1]])
+            ans[d["_id"]] = pattern.sub(lambda match: f"<em>{match.group(0)}</em>", txt) if pattern else txt
 
         return ans
 

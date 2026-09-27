@@ -17,8 +17,95 @@
 package common
 
 import (
+	"reflect"
 	"testing"
 )
+
+func TestTurn2JSONSchema(t *testing.T) {
+	fields := []MetadataFieldDef{
+		{Key: "author", Description: "doc author", Enum: []string{"Alice", "Bob"}},
+		{Key: "year", Type: "number"},
+		{Key: "", Type: "string"}, // blank key must be dropped
+	}
+	schema := Turn2JSONSchema(fields)
+	if schema["type"] != "object" {
+		t.Fatalf("expected object type, got %v", schema["type"])
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("expected additionalProperties false, got %v", schema["additionalProperties"])
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("expected properties map")
+	}
+	if len(props) != 2 {
+		t.Fatalf("expected 2 properties (blank key dropped), got %d", len(props))
+	}
+	author, ok := props["author"].(map[string]any)
+	if !ok {
+		t.Fatal("author property missing")
+	}
+	if author["type"] != "string" {
+		t.Fatalf("enum field should be typed string, got %v", author["type"])
+	}
+	if _, ok := author["enum"]; !ok {
+		t.Fatal("author should carry enum")
+	}
+	if _, ok := author["description"]; !ok {
+		t.Fatal("author should carry description")
+	}
+}
+
+func TestTurn2JSONSchema_Empty(t *testing.T) {
+	if len(Turn2JSONSchema(nil)) != 0 {
+		t.Fatal("expected empty schema for nil fields")
+	}
+}
+
+func TestSplitCombinedMetadataValues(t *testing.T) {
+	in := map[string]any{
+		"people": []string{"关羽、孙权", "张辽", "刘备、关羽"},
+		"level":  "high",            // scalar string is NOT split
+		"score":  float64(0.9),      // non-string passes through
+		"tags":   []any{"a|b", "c"}, // []any of strings is split
+	}
+	out := SplitCombinedMetadataValues(in)
+	people, ok := out["people"].([]string)
+	if !ok {
+		t.Fatalf("people should be []string, got %T", out["people"])
+	}
+	// 关羽、孙权 -> 关羽,孙权 ; 张辽 ; 刘备、关羽 -> 刘备,关羽 ; dedupe 关羽
+	want := []string{"关羽", "孙权", "张辽", "刘备"}
+	if len(people) != len(want) {
+		t.Fatalf("people=%v, want %v", people, want)
+	}
+	for i := range want {
+		if people[i] != want[i] {
+			t.Fatalf("people[%d]=%q, want %q", i, people[i], want[i])
+		}
+	}
+	if out["level"] != "high" {
+		t.Fatalf("scalar string must be preserved unchanged, got %v", out["level"])
+	}
+	if out["score"] != float64(0.9) {
+		t.Fatalf("non-string passes through, got %v", out["score"])
+	}
+	tags, ok := out["tags"].([]string)
+	if !ok || len(tags) != 3 {
+		t.Fatalf("tags=%v, want [a b c]", out["tags"])
+	}
+}
+
+func TestSplitCombinedMetadataValues_Noop(t *testing.T) {
+	var nilMap map[string]any
+	if SplitCombinedMetadataValues(nilMap) != nil {
+		t.Fatal("nil map must be returned as nil")
+	}
+	empty := map[string]any{}
+	if len(SplitCombinedMetadataValues(empty)) != 0 {
+		t.Fatal("empty map must stay empty")
+	}
+}
 
 func TestParseAndConvert_OperatorMapping(t *testing.T) {
 	input := map[string]interface{}{
@@ -525,5 +612,70 @@ func TestMetaFilter_NotEquals(t *testing.T) {
 	result := MetaFilter(metas, input)
 	if len(result) != 1 || result[0] != "doc2" {
 		t.Errorf("expected [doc2] for ≠, got %v", result)
+	}
+}
+
+// --- DeclaredMetadataFieldsFromParserConfig ---
+
+// TestDeclaredMetadataFieldsFromDatasetConfig pins the declarative read: the dataset-level
+// config's fields, with their meaning and allowed values, and a field declared in both lists
+// resolved once (first definition wins, so the richer entry is the one kept).
+func TestDeclaredMetadataFieldsFromDatasetConfig(t *testing.T) {
+	pc := map[string]any{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string", "description": "who wrote it"},
+				map[string]any{"key": "doc_type", "type": "string", "enum": []any{"report", "paper"}},
+				map[string]any{"key": "", "type": "string"}, // blank key dropped
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "author", "type": "string"}, // duplicate: dropped
+				map[string]any{"key": "file_name", "type": "string"},
+			},
+		},
+	}
+	got := DeclaredMetadataFieldsFromParserConfig(pc)
+	want := []MetadataFieldDef{
+		{Key: "author", Type: "string", Description: "who wrote it"},
+		{Key: "doc_type", Type: "string", Enum: []string{"report", "paper"}},
+		{Key: "file_name", Type: "string"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fields = %#v, want %#v", got, want)
+	}
+}
+
+// TestDeclaredMetadataFieldsFallsBackToExtractorNode pins the second location: a config that
+// lives on the Extractor component node is read when the dataset level declares nothing.
+func TestDeclaredMetadataFieldsFallsBackToExtractorNode(t *testing.T) {
+	pc := map[string]any{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled": true,
+				"metadata": []any{
+					map[string]any{"key": "topic", "description": "subject area"},
+				},
+			},
+		},
+	}
+	got := DeclaredMetadataFieldsFromParserConfig(pc)
+	if len(got) != 1 || got[0].Key != "topic" || got[0].Description != "subject area" {
+		t.Errorf("fields = %#v, want the extractor node's topic field", got)
+	}
+}
+
+// TestDeclaredMetadataFieldsEmptyWhenNothingDeclared pins the degradation: absent or
+// malformed config declares nothing and must not panic.
+func TestDeclaredMetadataFieldsEmptyWhenNothingDeclared(t *testing.T) {
+	for name, pc := range map[string]map[string]any{
+		"nil":             nil,
+		"empty":           {},
+		"malformed":       {"metadata": "nonsense"},
+		"enabled-no-list": {"metadata": map[string]any{"enabled": true}},
+	} {
+		if got := DeclaredMetadataFieldsFromParserConfig(pc); len(got) != 0 {
+			t.Errorf("%s: fields = %#v, want none", name, got)
+		}
 	}
 }

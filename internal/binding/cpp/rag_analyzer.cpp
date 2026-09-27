@@ -28,6 +28,8 @@
 #include <iostream>
 #include <cmath>
 #include <fstream>
+#include <algorithm>
+#include <unordered_set>
 // import :term;
 // import :stemmer;
 // import :analyzer;
@@ -46,6 +48,28 @@ static const std::string TRIE_PATH = "rag/huqie.trie";
 static const std::string WORDNET_PATH = "wordnet";
 
 static const std::string OPENCC_PATH = "opencc";
+
+// Map language names (lowercase) to Stemmer Language enum.
+// Used by SetLanguage() to configure language-specific stemming.
+static const std::pair<std::string, Language> SNOWBALL_LANGUAGE_MAP[] = {
+    {"english", STEM_LANG_ENGLISH},
+    {"dutch", STEM_LANG_DUTCH},
+    {"german", STEM_LANG_GERMAN},
+    {"french", STEM_LANG_FRENCH},
+    {"spanish", STEM_LANG_SPANISH},
+    {"italian", STEM_LANG_ITALIAN},
+    {"portuguese", STEM_LANG_PORTUGUESE},
+    {"portuguese br", STEM_LANG_PORTUGUESE},
+    {"russian", STEM_LANG_RUSSIAN},
+    {"arabic", STEM_LANG_UNKNOWN},
+    {"danish", STEM_LANG_DANISH},
+    {"finnish", STEM_LANG_FINNISH},
+    {"hungarian", STEM_LANG_HUNGARIAN},
+    {"norwegian", STEM_LANG_NORWEGIAN},
+    {"romanian", STEM_LANG_ROMANIAN},
+    {"swedish", STEM_LANG_SWEDISH},
+    {"turkish", STEM_LANG_TURKISH},
+};
 
 static const std::string REGEX_SPLIT_CHAR =
     R"#(([ ,\.<>/?;'\[\]\`!@#$%^&*$$\{\}\|_+=《》，。？、；‘’：“”【】~！￥%……（）——-]+|[a-zA-Z\.-]+|[0-9,\.-]+))#";
@@ -77,11 +101,6 @@ static inline int32_t DecodeFreq(int32_t value) {
         v1 = static_cast<int32_t>(v1);
     }
     return v1;
-}
-
-static inline int32_t DecodePOSIndex(int32_t value) {
-    // POS index is stored in the high 8 bits (bits 24-31)
-    return static_cast<int32_t>(static_cast<uint32_t>(value) >> 24);
 }
 
 void Split(const std::string &input, const std::string &split_pattern, std::vector<std::string> &result, bool keep_delim = false) {
@@ -364,16 +383,15 @@ struct CompiledRegex {
 class NLTKWordTokenizer {
     MacIntyreContractions contractions_;
 
-    // Static singleton instance
-    static std::unique_ptr<NLTKWordTokenizer> instance_;
-    static std::once_flag init_flag_;
-
 public:
-    // Static method to get the singleton instance
+    // Magic Static singleton
     static NLTKWordTokenizer &GetInstance() {
-        std::call_once(init_flag_, []() { instance_ = std::make_unique<NLTKWordTokenizer>(); });
-        return *instance_;
+        static NLTKWordTokenizer instance;
+        return instance;
     }
+
+    NLTKWordTokenizer(const NLTKWordTokenizer &) = delete;
+    NLTKWordTokenizer &operator=(const NLTKWordTokenizer &) = delete;
 
     // Starting quotes.
     std::vector<std::pair<std::string, std::string>> STARTING_QUOTES = {
@@ -618,10 +636,6 @@ private:
     }
 };
 
-// Static member definitions for NLTKWordTokenizer singleton
-std::unique_ptr<NLTKWordTokenizer> NLTKWordTokenizer::instance_ = nullptr;
-std::once_flag NLTKWordTokenizer::init_flag_;
-
 void SentenceSplitter(const std::string &text, std::vector<std::string> &result) {
     int error_code;
     PCRE2_SIZE error_offset;
@@ -679,6 +693,31 @@ RAGAnalyzer::~RAGAnalyzer() {
         delete pos_table_;
         delete wordnet_lemma_;
         delete opencc_;
+    }
+}
+
+void RAGAnalyzer::InitStemmer(Language language) {
+    stemmer_->Init(language);
+    use_lemmatizer_ = (language == STEM_LANG_ENGLISH);
+}
+
+void RAGAnalyzer::SetLanguage(const std::string &language) {
+    std::string lang_key = language;
+    std::transform(lang_key.begin(), lang_key.end(), lang_key.begin(), [](unsigned char c) { return std::tolower(c); });
+    lang_key.erase(lang_key.find_last_not_of(" \t") + 1);
+    lang_key.erase(0, lang_key.find_first_not_of(" \t"));
+
+    Language stem_lang = STEM_LANG_UNKNOWN;
+    for (const auto &pair : SNOWBALL_LANGUAGE_MAP) {
+        if (pair.first == lang_key) {
+            stem_lang = pair.second;
+            break;
+        }
+    }
+
+    if (stem_lang != STEM_LANG_UNKNOWN) {
+        stemmer_->Init(stem_lang);
+        use_lemmatizer_ = (stem_lang == STEM_LANG_ENGLISH);
     }
 }
 
@@ -854,17 +893,14 @@ int32_t RAGAnalyzer::Freq(const std::string_view key) const {
     return static_cast<int32_t>(std::exp(v) * DENOMINATOR + 0.5);
 }
 
-std::string RAGAnalyzer::Tag(std::string_view key) const {
-    std::string lower_key = Key(std::string(key));
-    int32_t encoded_value = trie_->Get(lower_key);
-    if (encoded_value == -1) {
-        return "";
-    }
-    int32_t pos_idx = DecodePOSIndex(encoded_value);
-    if (pos_table_ == nullptr) {
-        return "";
-    }
-    const char* pos_tag = pos_table_->GetPOS(pos_idx);
+std::string RAGAnalyzer::Tag(const std::string_view key) const {
+    std::string lower_key = Key(key);
+    int32_t v = trie_->Get(lower_key);
+    if (v == -1) return "";
+    uint32_t pos_idx = (static_cast<uint32_t>(v) >> 24) & 0xFF;
+    if (pos_idx == 0) return "";
+    if (pos_table_ == nullptr) return "";
+    const char *pos_tag = pos_table_->GetPOS(static_cast<int32_t>(pos_idx));
     return pos_tag ? std::string(pos_tag) : "";
 }
 
@@ -1341,7 +1377,7 @@ std::string RAGAnalyzer::Merge(const std::string &tks_str) const {
 void RAGAnalyzer::MergeWithPosition(const std::vector<std::string> &tokens,
                                     const std::vector<std::pair<unsigned, unsigned>> &positions,
                                     std::vector<std::string> &merged_tokens,
-                                    std::vector<std::pair<unsigned, unsigned>> &merged_positions) const {
+                                    std::vector<std::pair<unsigned, unsigned>> &merged_positions) {
     // Filter out empty tokens first (like spaces) to match Merge behavior
     std::vector<std::string> filtered_tokens;
     std::vector<std::pair<unsigned, unsigned>> filtered_positions;
@@ -1385,15 +1421,19 @@ void RAGAnalyzer::MergeWithPosition(const std::vector<std::string> &tokens,
     merged_positions = std::move(res_positions);
 }
 
-void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::vector<std::string> &res) const {
+void RAGAnalyzer::EnglishNormalize(const std::vector<std::string> &tokens, std::vector<std::string> &res) {
     for (auto &t : tokens) {
         if (re2::RE2::PartialMatch(t, pattern1_)) { //"[a-zA-Z_-]+$"
-            // Apply lowercase before lemmatization to match Python NLTK behavior
             char *lowercase_term = lowercase_string_buffer_.data();
             ToLower(t.c_str(), t.size(), lowercase_term, term_string_buffer_limit_);
-            std::string lemma_term = wordnet_lemma_->Lemmatize(lowercase_term);
+            std::string term_to_stem;
+            if (use_lemmatizer_) {
+                term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);
+            } else {
+                term_to_stem = lowercase_term;
+            }
             std::string stem_term;
-            stemmer_->Stem(lemma_term, stem_term);
+            stemmer_->Stem(term_to_stem, stem_term);
             res.push_back(stem_term);
         } else {
             res.push_back(t);
@@ -1660,10 +1700,16 @@ PCRE2GlobalReplaceWithPosition(const std::string &text, const std::string &patte
 
     PCRE2_SIZE current_pos = 0;
     PCRE2_SIZE last_match_end = 0;
+    bool subject_validated = false;
 
     // Process the string match by match
     while (current_pos < text.length()) {
-        int rc = pcre2_match(re, pcre2_subject, text.length(), current_pos, 0, match_data, nullptr);
+        // The first successful match validates the entire unchanged subject. Rechecking
+        // the remaining suffix for every match makes dense inputs (e.g. HTML) quadratic.
+        // Keep offset validation if an empty match or \C advanced into a UTF-8 character.
+        const bool at_character_boundary = (static_cast<unsigned char>(text[current_pos]) & 0xc0) != 0x80;
+        const uint32_t match_options = subject_validated && at_character_boundary ? PCRE2_NO_UTF_CHECK : 0;
+        int rc = pcre2_match(re, pcre2_subject, text.length(), current_pos, match_options, match_data, nullptr);
 
         if (rc < 0) {
             // No more matches, copy remaining text
@@ -1679,6 +1725,7 @@ PCRE2GlobalReplaceWithPosition(const std::string &text, const std::string &patte
             break;
         }
 
+        subject_validated = true;
         PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
         PCRE2_SIZE match_start = ovector[0];
         PCRE2_SIZE match_end = ovector[1];
@@ -1727,7 +1774,7 @@ std::string PCRE2GlobalReplace(const std::string &text, const std::string &patte
     return result;
 }
 
-std::string RAGAnalyzer::Tokenize(const std::string &line) const {
+std::string RAGAnalyzer::Tokenize(const std::string &line) {
     // Python-style simple tokenization: re.sub(r"\\W+", " ", line)
     std::string processed_line = PCRE2GlobalReplace(line, R"#(\W+)#", " ");
     std::string str1 = StrQ2B(processed_line);
@@ -1750,12 +1797,16 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) const {
                 NLTKWordTokenizer::GetInstance().Tokenize(sentence, term_list);
             }
             for (unsigned i = 0; i < term_list.size(); ++i) {
-                // Apply lowercase before lemmatization to match Python NLTK behavior
                 char *lowercase_term = lowercase_string_buffer_.data();
                 ToLower(term_list[i].c_str(), term_list[i].size(), lowercase_term, term_string_buffer_limit_);
-                std::string lemma_term = wordnet_lemma_->Lemmatize(lowercase_term);
+                std::string term_to_stem;
+                if (use_lemmatizer_) {
+                    term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);
+                } else {
+                    term_to_stem = lowercase_term;
+                }
                 std::string stem_term;
-                stemmer_->Stem(lemma_term, stem_term);
+                stemmer_->Stem(term_to_stem, stem_term);
                 res.push_back(stem_term);
             }
             continue;
@@ -1787,7 +1838,7 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) const {
     return ret;
 }
 
-std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> RAGAnalyzer::TokenizeWithPosition(const std::string &line) const {
+std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> RAGAnalyzer::TokenizeWithPosition(const std::string &line) {
     // Python-style simple tokenization: re.sub(r"\W+", " ", line)
     // Get processed line and position mapping from PCRE2GlobalReplace
     auto [processed_line, pcre2_pos_mapping] = PCRE2GlobalReplaceWithPosition(line, R"#(\W+)#", " ");
@@ -1871,9 +1922,14 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                         // Apply lowercase before lemmatization to match Python NLTK behavior
                         char *lowercase_term = lowercase_string_buffer_.data();
                         ToLower(term.c_str(), term.size(), lowercase_term, term_string_buffer_limit_);
-                        std::string lemma_term = wordnet_lemma_->Lemmatize(lowercase_term);
+                        std::string term_to_stem;
+                        if (use_lemmatizer_) {
+                            term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);
+                        } else {
+                            term_to_stem = lowercase_term;
+                        }
                         std::string stem_term;
-                        stemmer_->Stem(lemma_term, stem_term);
+                        stemmer_->Stem(term_to_stem, stem_term);
 
                         tokens.push_back(stem_term);
 
@@ -1937,7 +1993,7 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
     return {std::move(tokens), std::move(positions)};
 }
 
-unsigned RAGAnalyzer::MapToOriginalPosition(unsigned processed_pos, const std::vector<std::pair<unsigned, unsigned>> &mapping) const {
+unsigned RAGAnalyzer::MapToOriginalPosition(unsigned processed_pos, const std::vector<std::pair<unsigned, unsigned>> &mapping) {
     for (const auto &[orig, proc] : mapping) {
         if (proc == processed_pos) {
             return orig;
@@ -1958,7 +2014,7 @@ void RAGAnalyzer::TokenizeInnerWithPosition(const std::string &L,
                                             std::vector<std::string> &tokens,
                                             std::vector<std::pair<unsigned, unsigned>> &positions,
                                             unsigned base_pos,
-                                            const std::vector<unsigned> *pos_mapping) const {
+                                            const std::vector<unsigned> *pos_mapping) {
     auto [tks, s] = MaxForward(L);
     auto [tks1, s1] = MaxBackward(L);
 
@@ -2187,18 +2243,22 @@ void RAGAnalyzer::TokenizeInnerWithPosition(const std::string &L,
 void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &tokens,
                                                const std::vector<std::pair<unsigned, unsigned>> &positions,
                                                std::vector<std::string> &normalize_tokens,
-                                               std::vector<std::pair<unsigned, unsigned>> &normalize_positions) const {
+                                               std::vector<std::pair<unsigned, unsigned>> &normalize_positions) {
     for (size_t i = 0; i < tokens.size(); ++i) {
         const auto &token = tokens[i];
         const auto &[start_pos, end_pos] = positions[i];
 
         if (re2::RE2::PartialMatch(token, pattern1_)) { //"[a-zA-Z_-]+$"
-            // Apply lowercase before lemmatization to match Python NLTK behavior
             char *lowercase_term = lowercase_string_buffer_.data();
             ToLower(token.c_str(), token.size(), lowercase_term, term_string_buffer_limit_);
-            std::string lemma_term = wordnet_lemma_->Lemmatize(lowercase_term);
+            std::string term_to_stem;
+            if (use_lemmatizer_) {
+                term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);
+            } else {
+                term_to_stem = lowercase_term;
+            }
             std::string stem_term;
-            stemmer_->Stem(lemma_term, stem_term);
+            stemmer_->Stem(term_to_stem, stem_term);
 
             normalize_tokens.push_back(stem_term);
             normalize_positions.emplace_back(start_pos, end_pos);
@@ -2212,7 +2272,7 @@ void RAGAnalyzer::EnglishNormalizeWithPosition(const std::vector<std::string> &t
 void RAGAnalyzer::FineGrainedTokenizeWithPosition(const std::string &tokens_str,
                                                   const std::vector<std::pair<unsigned, unsigned>> &positions,
                                                   std::vector<std::string> &fine_tokens,
-                                                  std::vector<std::pair<unsigned, unsigned>> &fine_positions) const {
+                                                  std::vector<std::pair<unsigned, unsigned>> &fine_positions) {
     std::vector<std::string> tks;
     Split(tokens_str, blank_pattern_, tks);
 
@@ -2325,7 +2385,7 @@ void RAGAnalyzer::FineGrainedTokenizeWithPosition(const std::string &tokens_str,
     // fine_tokens already contains the correct Chinese tokens
 }
 
-void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std::string> &result) const {
+void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std::string> &result) {
     std::vector<std::string> tks;
     Split(tokens, blank_pattern_, tks);
     std::vector<std::string> res;
@@ -2416,11 +2476,11 @@ void RAGAnalyzer::FineGrainedTokenize(const std::string &tokens, std::vector<std
     // return ret;
 }
 
-int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, bool enable_position, HookType func) const {
-    if (enable_position) {
+int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, HookType func) {
+    if (enable_position_) {
         auto [tokens, positions] = TokenizeWithPosition(input.text_);
 
-        if (fine_grained) {
+        if (fine_grained_) {
             std::vector<std::string> fine_tokens;
             std::vector<std::pair<unsigned, unsigned>> fine_positions;
             FineGrainedTokenizeWithPosition(Join(tokens, 0), positions, fine_tokens, fine_positions);
@@ -2431,13 +2491,15 @@ int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, b
         for (size_t i = 0; i < tokens.size(); ++i) {
             if (tokens[i].empty())
                 continue;
+            if (IsStopword(tokens[i]))
+                continue;
             const auto &[start_pos, end_pos] = positions[i];
             func(data, tokens[i].c_str(), tokens[i].size(), start_pos, end_pos, false, 0);
         }
     } else {
         std::string result = Tokenize(input.text_);
         std::vector<std::string> tokens;
-        if (fine_grained) {
+        if (fine_grained_) {
             FineGrainedTokenize(result, tokens);
         } else {
             Split(result, blank_pattern_, tokens);
@@ -2446,8 +2508,20 @@ int RAGAnalyzer::AnalyzeImpl(const Term &input, void *data, bool fine_grained, b
         for (auto &t : tokens) {
             if (t.empty())
                 continue;
+            if (IsStopword(t))
+                continue;
             func(data, t.c_str(), t.size(), offset++, 0, false, 0);
         }
     }
     return 0;
+}
+
+bool RAGAnalyzer::IsStopword(const std::string &term) {
+    // Mirrors rag/nlp/term_weight.py Dealer.stop_words in RAGFlow.
+    // Kept hard-coded (not loaded from a resource file) for parity with RAGFlow.
+    static const std::unordered_set<std::string> kStopwords = {
+        "请问", "您", "你", "我", "他", "是", "的", "就", "有", "于",   "及",   "即",   "在",   "为", "最",
+        "从",   "以", "了", "将", "与", "吗", "吧", "中", "#",  "什么", "怎么", "哪个", "哪些", "啥", "相关",
+    };
+    return kStopwords.find(term) != kStopwords.end();
 }

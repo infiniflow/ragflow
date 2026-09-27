@@ -45,6 +45,8 @@ const (
 	TokenServer
 	TokenAPI
 	TokenAdd
+	TokenLive
+	TokenHealth
 	TokenHost
 	TokenDelete
 	TokenPassword
@@ -104,8 +106,11 @@ const (
 	TokenAgent
 	TokenMemories
 	TokenMemory
+	TokenCores
+	TokenConcurrency
 	TokenRetrieve
 	TokenCurrent
+	TokenSoft
 	TokenFingerprint
 	TokenLicense
 	TokenVision
@@ -126,6 +131,7 @@ const (
 	TokenDimension
 	TokenAsync
 	TokenSync
+	TokenSyncLogs
 	TokenBenchmark
 	TokenPing
 	TokenToken
@@ -155,7 +161,6 @@ const (
 	TokenMax
 	TokenLS
 	TokenCat
-	TokenInsert
 	TokenFile
 	TokenMetadata
 	TokenTable
@@ -167,7 +172,6 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenDocuments
-	TokenTag
 	TokenRegion
 	TokenURL
 	TokenTask
@@ -185,19 +189,25 @@ const (
 	TokenNoACK
 	TokenAnalyze
 	TokenSummary
+	TokenStats
 	TokenStorage
 	TokenQuota
 	TokenTree
 	TokenOrphan
+	TokenHour
+	TokenDay
+	TokenMonth
 	TokenDays
 	TokenWindow
 	TokenActivity
+	TokenHardware
 	TokenData
 	TokenPurge
 	TokenPlan
 	TokenPreview
 	TokenOpenaiChat
 	TokenLog
+	TokenLogs
 	TokenLevel
 	TokenDebug
 	TokenInfo

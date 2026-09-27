@@ -1606,7 +1606,7 @@ func readSkillFiles(skillPath string) ([]*SkillFile, error) {
 	return files, err
 }
 
-// parseFrontmatter extracts YAML frontmatter from markdown content
+// parseFrontmatter extracts YAML frontmatter from Markdown content
 func parseFrontmatter(content string) (*SkillMetadata, error) {
 	lines := strings.Split(content, "\n")
 

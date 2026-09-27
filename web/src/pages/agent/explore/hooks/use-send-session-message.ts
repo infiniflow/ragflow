@@ -1,4 +1,3 @@
-import sonnerMessage from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateAgentSession,
@@ -63,6 +62,9 @@ export const useSendSessionMessage = () => {
     ...chatLogic
   } = useSendAgentMessage({
     beginParams,
+    // Gate streamed output so a stream started in another session never
+    // renders into the session the user switched to.
+    activeSessionId: sessionId ?? '',
   });
 
   const handleParametersOk = useCallback(
@@ -113,7 +115,6 @@ export const useSendSessionMessage = () => {
         }, 100);
       } catch (error) {
         isCreatingSession.current = false;
-        sonnerMessage.error('Failed to create session');
         console.error('Failed to create session:', error);
         return;
       }

@@ -9,6 +9,7 @@ import { useParams, useSearchParams } from 'react-router';
 // import Text from './text';
 
 import { DocPreviewer } from '@/components/document-preview/doc-preview';
+import { EpubPreviewer } from '@/components/document-preview/epub-preview';
 import { ExcelCsvPreviewer } from '@/components/document-preview/excel-preview';
 import { ImagePreviewer } from '@/components/document-preview/image-preview';
 import Md from '@/components/document-preview/md';
@@ -16,6 +17,7 @@ import PdfPreview from '@/components/document-preview/pdf-preview';
 import { PptPreviewer } from '@/components/document-preview/ppt-preview';
 import { TxtPreviewer } from '@/components/document-preview/txt-preview';
 import { previewHtmlFile } from '@/utils/file-util';
+import CSVFileViewer from '@/components/document-preview/csv-preview';
 // import styles from './index.less';
 
 // TODO: The interface returns an incorrect content-type for the SVG.
@@ -50,11 +52,20 @@ const DocumentViewer = () => {
       )}
       {ext === 'txt' && <TxtPreviewer url={api}></TxtPreviewer>}
 
+      {ext === 'epub' && (
+        <EpubPreviewer url={api} className="!h-dvh p-5"></EpubPreviewer>
+      )}
+
       {ext === 'pdf' && (
         <PdfPreview url={api} className="!h-dvh p-5"></PdfPreview>
       )}
       {(ext === 'xlsx' || ext === 'xls') && (
         <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
+      )}
+      {ext === 'csv' && (
+        <section className="m-1">
+          <CSVFileViewer url={api} />
+        </section>
       )}
 
       {ext === 'docx' && <DocPreviewer url={api}></DocPreviewer>}

@@ -64,6 +64,18 @@ def markdown_parser_module(monkeypatch):
 
 @pytest.mark.p2
 class TestMarkdownElementExtractorFences:
+    @pytest.mark.parametrize("marker", ["`", "~"])
+    @pytest.mark.parametrize("table", ["| Product | Price |\n| --- | --- |\n| Widget | 10 |\n", '<table border="1"><tr><td>Widget</td></tr></table>\n'])
+    def test_table_after_longer_closing_fence(self, markdown_parser_module, marker, table):
+        fenced = f"{marker * 3}text\nexample\n{marker * 4}\n"
+
+        remainder, tables = markdown_parser_module.RAGFlowMarkdownParser().extract_tables_and_remainder(fenced + "\n" + table)
+
+        assert len(tables) == 1
+        assert "Widget" in tables[0]
+        assert fenced in remainder
+        assert "Widget" not in remainder
+
     def test_custom_delimiter_preserves_backtick_fence(self, markdown_element_extractor):
         text = "# Title\n```python\nprint('a')\nprint('b')\n```\nAfter"
 
@@ -193,6 +205,55 @@ class TestMarkdownTableDedup:
         assert "Before" in sections[0]
         assert "After" in sections[0]
         assert "| Name | Value |" not in sections[0]
+
+    def test_pipe_table_inside_code_fence_is_not_extracted(self, markdown_parser_module):
+        """A pipe table shown as an example inside a fenced code block must stay put;
+        extracting it would hollow out the fence and emit a bogus table chunk."""
+        text = "# Guide\n\nWrite a table like this:\n\n```markdown\n| Name | Value |\n| --- | --- |\n| A | 1 |\n```\n\nDone.\n"
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert tables == []
+        assert "| Name | Value |" in remainder
+        assert "```markdown" in remainder
+
+    def test_html_table_inside_code_fence_is_left_intact(self, markdown_parser_module):
+        """An HTML example inside a fence must keep its attributes and its body:
+        the tag-stripping and html-table passes have to respect fences too."""
+        text = '# Guide\n\nEmbed a table like this:\n\n```html\n<table border="1">\n<tr><td>A</td></tr>\n</table>\n```\n\nDone.\n'
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert tables == []
+        assert 'border="1"' in remainder
+        assert "<td>A</td>" in remainder
+
+    def test_bare_html_table_inside_code_fence_is_not_extracted(self, markdown_parser_module):
+        """A bare <table> (no attributes) inside a fence hits the html-table
+        extraction pass (the `<table>` fast-path guard fires); that pass must
+        skip fenced matches too, not just the tag-stripping pass."""
+        text = "# Guide\n\n```html\n<table>\n<tr><td>A</td></tr>\n</table>\n```\n\nDone.\n"
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert tables == []
+        assert "<table>" in remainder
+        assert "<td>A</td>" in remainder
+
+    def test_real_table_still_extracted_alongside_a_fenced_example(self, markdown_parser_module):
+        """Shielding fences must not stop genuine tables outside them from being split."""
+        text = "```markdown\n| Name | Value |\n| --- | --- |\n| A | 1 |\n```\n\n| X | Y |\n| --- | --- |\n| 9 | 8 |\n\ntail\n"
+
+        parser = markdown_parser_module.RAGFlowMarkdownParser()
+        remainder, tables = parser.extract_tables_and_remainder(text, separate_tables=True)
+
+        assert len(tables) == 1
+        assert "| X | Y |" in tables[0]
+        assert "| X | Y |" not in remainder
+        assert "| Name | Value |" in remainder
 
 
 class TestMarkdownElementExtractorDelimiterHeaders:

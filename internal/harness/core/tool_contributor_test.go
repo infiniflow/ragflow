@@ -152,7 +152,7 @@ func TestToolContributor_Basic(t *testing.T) {
 		Middlewares: []ReActMiddleware{mw},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("use tool")})
 
@@ -184,7 +184,7 @@ func TestToolContributor_MultipleContributors(t *testing.T) {
 		Middlewares: []ReActMiddleware{mwA, mwB},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("use both")})
 
@@ -218,7 +218,7 @@ func TestToolContributor_WithConfigTools(t *testing.T) {
 		Middlewares: []ReActMiddleware{mw},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("use both types")})
 
@@ -251,7 +251,7 @@ func TestToolContributor_ReturnDirectly(t *testing.T) {
 		Middlewares: []ReActMiddleware{mw},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("return directly")})
 
@@ -283,12 +283,12 @@ func TestToolContributor_WithSubAgent(t *testing.T) {
 		Tools: []Tool{
 			&agentTool{
 				name: "helper", desc: "Helper agent",
-				agent: subAgent, baseCtx: context.Background(),
+				agent: subAgent, baseCtx: t.Context(),
 			},
 		},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("use helper")})
 
@@ -312,7 +312,7 @@ func TestToolContributor_BeforeAgentStillWorks(t *testing.T) {
 		Middlewares: []ReActMiddleware{tracker},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("test")})
 
@@ -342,12 +342,12 @@ func TestToolContributor_NoInitNeeded(t *testing.T) {
 		Tools: []Tool{
 			&agentTool{
 				name: "auto_helper", desc: "Auto helper",
-				agent: subAgent, baseCtx: context.Background(),
+				agent: subAgent, baseCtx: t.Context(),
 			},
 		},
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("auto")})
 

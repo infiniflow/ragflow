@@ -5,7 +5,7 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './button';
@@ -23,8 +23,13 @@ export type TreeNodeType = {
 type AsyncTreeSelectProps = {
   treeData: TreeNodeType[];
   value?: TreeId;
+  // Cleared is reported as '' (same convention as SelectWithSearch), never
+  // undefined — RHF falls back to defaultValues when a field gets undefined.
   onChange?(value: TreeId): void;
   loadData?(node: TreeNodeType): Promise<any>;
+  canSelect?(node: TreeNodeType): boolean;
+  // When false, hides the clear button and disables re-click deselection.
+  allowClear?: boolean;
 };
 
 function getNodeText(node: ReactNode): string {
@@ -39,6 +44,8 @@ export function AsyncTreeSelect({
   value,
   loadData,
   onChange,
+  canSelect,
+  allowClear = true,
 }: AsyncTreeSelectProps) {
   const [open, setOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -50,6 +57,8 @@ export function AsyncTreeSelect({
   const selectedTitle = useMemo(() => {
     return treeData.find((x) => x.id === value)?.title;
   }, [treeData, value]);
+
+  const hasSelection = value !== undefined && value !== '';
 
   const visibleNodeIds = useMemo(() => {
     const trimmed = searchText.trim().toLowerCase();
@@ -106,19 +115,8 @@ export function AsyncTreeSelect({
     [expandedKeys, searchText, treeData, visibleNodeIds],
   );
 
-  const handleNodeClick = useCallback(
-    (id: TreeId) => (e: React.MouseEvent<HTMLLIElement>) => {
-      e.stopPropagation();
-      onChange?.(id);
-      setOpen(false);
-      setSearchText('');
-    },
-    [onChange],
-  );
-
-  const handleArrowClick = useCallback(
-    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
+  const toggleNode = useCallback(
+    async (node: TreeNodeType) => {
       const { id } = node;
       if (isExpanded(id)) {
         setExpandedKeys((keys) => {
@@ -138,6 +136,41 @@ export function AsyncTreeSelect({
       }
     },
     [isExpanded, loadData, treeData],
+  );
+
+  const handleNodeClick = useCallback(
+    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLLIElement>) => {
+      e.stopPropagation();
+      if (canSelect && !canSelect(node)) {
+        await toggleNode(node);
+        return;
+      }
+      // Clicking the selected node again clears the selection.
+      if (value !== node.id) {
+        onChange?.(node.id);
+      } else if (allowClear) {
+        onChange?.('');
+      }
+      setOpen(false);
+      setSearchText('');
+    },
+    [allowClear, canSelect, onChange, toggleNode, value],
+  );
+
+  const handleClear = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      onChange?.('');
+    },
+    [onChange],
+  );
+
+  const handleArrowClick = useCallback(
+    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      await toggleNode(node);
+    },
+    [toggleNode],
   );
 
   const handleOpenChange = useCallback((open: boolean) => {
@@ -166,13 +199,13 @@ export function AsyncTreeSelect({
           {currentLevelList.map((x) => (
             <li
               key={x.id}
-              onClick={handleNodeClick(x.id)}
+              onClick={handleNodeClick(x)}
               className="cursor-pointer"
             >
               <div
                 className={cn(
                   'flex justify-between items-center hover:bg-accent py-0.5 px-1 rounded-md',
-                  { 'bg-cyan-50': value === x.id },
+                  { 'bg-bg-card': value === x.id },
                 )}
               >
                 <span className="flex-1">{x.title}</span>
@@ -223,7 +256,19 @@ export function AsyncTreeSelect({
           {selectedTitle || (
             <span className="text-slate-400">{t('common.pleaseSelect')}</span>
           )}
-          <ChevronDown className="size-5" />
+          <span className="flex items-center gap-1">
+            {allowClear && hasSelection && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="size-5"
+                onClick={handleClear}
+              >
+                <X />
+              </Button>
+            )}
+            <ChevronDown className="size-5" />
+          </span>
         </div>
       </PopoverTrigger>
       <PopoverContent className="p-1 min-w-[var(--radix-popover-trigger-width)]">

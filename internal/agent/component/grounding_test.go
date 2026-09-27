@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
@@ -45,7 +46,27 @@ type groundingTestInvoker struct {
 	calls     int
 }
 
-func (g *groundingTestInvoker) Invoke(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+type groundingStreamingInvoker struct {
+	groundingTestInvoker
+	streamCalls int
+}
+
+func (g *groundingStreamingInvoker) Stream(ctx context.Context, db *gorm.DB, req ChatInvokeRequest, onDelta func(string, bool) error) (*ChatInvokeResponse, error) {
+	g.streamCalls++
+	resp, err := g.Invoke(ctx, db, req)
+	if err != nil {
+		return nil, err
+	}
+	mid := len(resp.Content) / 2
+	for _, delta := range []string{resp.Content[:mid], resp.Content[mid:]} {
+		if err := onDelta(delta, false); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
+func (g *groundingTestInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.lastReq = req
@@ -63,7 +84,7 @@ func (g *groundingTestInvoker) Invoke(_ context.Context, req ChatInvokeRequest) 
 // TestGrounding_Applied: Cite=true + state has chunks → second
 // LLM call is made and the grounded content replaces the original.
 func TestGrounding_Applied(t *testing.T) {
-	inv := &groundingTestInvoker{responses: []string{"grounded answer [ID:0]"}}
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"grounded answer [ID:0]"}}}
 	prev := getDefaultChatInvoker()
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
@@ -76,10 +97,16 @@ func TestGrounding_Applied(t *testing.T) {
 	state.SetRetrievalChunks([]map[string]any{
 		{"id": "0", "content": "the source content"},
 	})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
+	var streamed string
+	var deltas int
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		streamed += content
+		deltas++
+	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	out, err := c.Invoke(ctx, map[string]any{"user_prompt": "q"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -91,6 +118,9 @@ func TestGrounding_Applied(t *testing.T) {
 	}
 	if inv.calls != 1 {
 		t.Errorf("expected 1 chat call, got %d", inv.calls)
+	}
+	if inv.streamCalls != 1 || deltas != 2 || streamed != "grounded answer [ID:0]" {
+		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 2 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
 	}
 	// System message should contain the citation prompt + sources block.
 	if got := inv.lastReq.Messages[0].Role; got != schema.System {
@@ -115,10 +145,10 @@ func TestGrounding_NoChunks(t *testing.T) {
 
 	state := canvas.NewCanvasState("r1", "t1")
 	// No SetRetrievalChunks — state has no chunks recorded.
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	out, err := c.Invoke(ctx, map[string]any{"user_prompt": "q"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -146,7 +176,7 @@ func TestGrounding_CiteFalse(t *testing.T) {
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: false})
-	out, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "q"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "q"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -172,10 +202,10 @@ func TestGrounding_LLMError(t *testing.T) {
 
 	state := canvas.NewCanvasState("r1", "t1")
 	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "x"}})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	out, err := c.Invoke(ctx, map[string]any{"user_prompt": "q"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -202,10 +232,10 @@ func TestGrounding_EmptyContent(t *testing.T) {
 
 	state := canvas.NewCanvasState("r1", "t1")
 	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "x"}})
-	ctx := runtime.WithState(context.Background(), state)
+	ctx := runtime.WithState(t.Context(), state)
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	out, err := c.Invoke(ctx, map[string]any{"user_prompt": "q"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -218,7 +248,7 @@ type errInvoker struct {
 	err error
 }
 
-func (e *errInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (e *errInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	return nil, e.err
 }
 

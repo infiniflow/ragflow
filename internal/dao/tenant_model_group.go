@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelGroupDAO tenant model group data access object
@@ -29,9 +32,9 @@ func NewTenantModelGroupDAO() *TenantModelGroupDAO {
 }
 
 // GetByID get tenant model group by primary key (id)
-func (dao *TenantModelGroupDAO) GetByID(id string) (*entity.TenantModelGroup, error) {
+func (dao *TenantModelGroupDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelGroup, error) {
 	var group entity.TenantModelGroup
-	err := DB.Where("id = ?", id).First(&group).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&group).Error
 	if err != nil {
 		return nil, err
 	}

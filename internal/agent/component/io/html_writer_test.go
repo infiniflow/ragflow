@@ -136,7 +136,7 @@ func TestWriteHTML_HTMLStructure(t *testing.T) {
 
 // TestWriteHTML_ContentNotEscaped: the writer does NOT HTML-escape
 // the body — callers are expected to pass already-clean content.
-// This test pins the no-escape contract.
+// This test pins the no-escape
 func TestWriteHTML_ContentNotEscaped(t *testing.T) {
 	out := string(WriteHTML("<b>bold</b>", HTMLOptions{}))
 	if !strings.Contains(out, "<b>bold</b>") {

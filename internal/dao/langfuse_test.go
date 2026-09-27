@@ -45,8 +45,9 @@ func TestLangfuseDAO_GetByTenantID_NotFound(t *testing.T) {
 	db := setupLangfuseTestDB(t)
 	pushDB(t, db)
 	dao := NewLangfuse()
+	ctx := t.Context()
 
-	row, err := dao.GetByTenantID("missing")
+	row, err := dao.GetByTenantID(ctx, db, "missing")
 	if err != nil {
 		t.Fatalf("expected nil error for missing row, got %v", err)
 	}
@@ -59,6 +60,7 @@ func TestLangfuseDAO_CRUD(t *testing.T) {
 	db := setupLangfuseTestDB(t)
 	pushDB(t, db)
 	dao := NewLangfuse()
+	ctx := t.Context()
 
 	// 1. Create
 	row := &entity.TenantLangfuse{
@@ -67,12 +69,12 @@ func TestLangfuseDAO_CRUD(t *testing.T) {
 		PublicKey: "pk-1",
 		Host:      "https://cloud.langfuse.com",
 	}
-	if err := dao.Create(row); err != nil {
+	if err := dao.Create(ctx, db, row); err != nil {
 		t.Fatalf("failed to create: %v", err)
 	}
 
 	// 2. GetByTenantID
-	got, err := dao.GetByTenantID("tenant-1")
+	got, err := dao.GetByTenantID(ctx, db, "tenant-1")
 	if err != nil {
 		t.Fatalf("failed to get: %v", err)
 	}
@@ -93,10 +95,10 @@ func TestLangfuseDAO_CRUD(t *testing.T) {
 		"public_key": "pk-2",
 		"host":       "https://eu.langfuse.com",
 	}
-	if err := dao.UpdateByTenantID("tenant-1", updates); err != nil {
+	if err = dao.UpdateByTenantID(ctx, db, "tenant-1", updates); err != nil {
 		t.Fatalf("failed to update: %v", err)
 	}
-	got, err = dao.GetByTenantID("tenant-1")
+	got, err = dao.GetByTenantID(ctx, db, "tenant-1")
 	if err != nil {
 		t.Fatalf("failed to get after update: %v", err)
 	}
@@ -105,10 +107,10 @@ func TestLangfuseDAO_CRUD(t *testing.T) {
 	}
 
 	// 4. DeleteByTenantID
-	if err := dao.DeleteByTenantID("tenant-1"); err != nil {
+	if err = dao.DeleteByTenantID(ctx, db, "tenant-1"); err != nil {
 		t.Fatalf("failed to delete: %v", err)
 	}
-	got, err = dao.GetByTenantID("tenant-1")
+	got, err = dao.GetByTenantID(ctx, db, "tenant-1")
 	if err != nil {
 		t.Fatalf("expected nil error after delete, got %v", err)
 	}

@@ -16,6 +16,8 @@
 
 import pytest
 
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
+
 
 @pytest.mark.p1
 def test_system_ping(rest_client):
@@ -38,8 +40,7 @@ def test_system_status_requires_auth(rest_client_noauth):
     res = rest_client_noauth.get("/system/status")
     assert res.status_code == 401
     payload = res.json()
-    assert payload["code"] == 401, payload
-    assert "Unauthorized" in payload["message"], payload
+    assert_auth_error(payload, "missing token")
 
 
 @pytest.mark.p2

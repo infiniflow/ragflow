@@ -17,7 +17,6 @@
 package canvas
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -28,9 +27,9 @@ import (
 // newTestStore spins up a miniredis-backed store for table-driven tests.
 // Returns the store, the miniredis handle (caller must Close()), and a
 // cleanup function. We construct the struct directly so we can inject the
-// *redis.Client — NewRedisCheckPointStore reads from the global cache
+// *redis.Client — NewKvrocksCheckPointStore reads from the global cache
 // which is nil in unit tests.
-func newTestStore(t *testing.T, ttl time.Duration) (*RedisCheckPointStore, *miniredis.Miniredis) {
+func newTestStore(t *testing.T, ttl time.Duration) (*KvrocksCheckPointStore, *miniredis.Miniredis) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -41,12 +40,12 @@ func newTestStore(t *testing.T, ttl time.Duration) (*RedisCheckPointStore, *mini
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 
-	return &RedisCheckPointStore{client: client, ttl: ttl}, mr
+	return &KvrocksCheckPointStore{client: client, ttl: ttl}, mr
 }
 
 func TestRedisCheckPointStore_RoundTrip(t *testing.T) {
 	store, _ := newTestStore(t, 30*24*time.Hour)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// missing key → (nil, false, nil)
 	got, ok, err := store.Get(ctx, "absent")
@@ -83,7 +82,7 @@ func TestRedisCheckPointStore_RoundTrip(t *testing.T) {
 
 func TestRedisCheckPointStore_TTL(t *testing.T) {
 	store, mr := newTestStore(t, 2*time.Second)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := store.Set(ctx, "cpn_ttl", []byte("x")); err != nil {
 		t.Fatalf("Set: %v", err)
@@ -105,13 +104,13 @@ func TestRedisCheckPointStore_TTL(t *testing.T) {
 
 func TestRedisCheckPointStore_Delete(t *testing.T) {
 	store, _ := newTestStore(t, time.Minute)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Delete on missing key is a no-op (no error).
 	if err := store.Delete(ctx, "absent"); err != nil {
 		t.Fatalf("Delete absent: %v", err)
 	}
-	// Set then Delete then Get → missing.
+	// Set then Delete Get → missing.
 	if err := store.Set(ctx, "cpn_del", []byte("payload")); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
@@ -124,10 +123,10 @@ func TestRedisCheckPointStore_Delete(t *testing.T) {
 }
 
 func TestRedisCheckPointStore_NilClient(t *testing.T) {
-	// Cache uninitialized → NewRedisCheckPointStore returns a store with
+	// Cache uninitialized → NewKvrocksCheckPointStore returns a store with
 	// nil client. Operations must error rather than panic.
-	store := &RedisCheckPointStore{client: nil, ttl: time.Minute}
-	ctx := context.Background()
+	store := &KvrocksCheckPointStore{client: nil, ttl: time.Minute}
+	ctx := t.Context()
 
 	if _, _, err := store.Get(ctx, "x"); err == nil {
 		t.Fatal("Get with nil client: err = nil, want error")

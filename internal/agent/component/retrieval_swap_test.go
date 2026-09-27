@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -33,8 +32,8 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 	t.Parallel()
 
 	// Install the synthetic service that returns 3 deterministic
-	// chunks per query. Restore the stub on cleanup so the rest of
-	// the suite stays unaffected.
+	// chunks per query. Restore the service on cleanup so the rest
+	// of the suite stays unaffected.
 	prev := agenttool.GetRetrievalService()
 	agenttool.SetSimpleRetrievalService()
 	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
@@ -55,7 +54,7 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("Retrieval c.Name() = %q, want %q", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{"query": "ragflow"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval Invoke errored: %v", err)
 	}
@@ -76,7 +75,9 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 	agenttool.SetSimpleRetrievalService()
 	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
 
-	c, err := New("SearchMyDataset", nil)
+	c, err := New("SearchMyDataset", map[string]any{
+		"kb_ids": []any{"kb-1"},
+	})
 	if err != nil {
 		t.Fatalf("New(SearchMyDataset) errored: %v", err)
 	}
@@ -87,35 +88,11 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("SearchMyDataset alias c.Name() = %q, want %q (canonical)", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{"query": "kb"})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"query": "kb"})
 	if err != nil {
 		t.Fatalf("SearchMyDataset Invoke errored: %v", err)
 	}
 	if fc, _ := out["formalized_content"].(string); fc == "" {
 		t.Fatalf("expected non-empty formalized_content from real wrapper; got empty (out=%v)", out)
-	}
-}
-
-// TestRetrieval_InputsSurfaceMatchesStub guards against accidental
-// regression in the Inputs() description surface when swapping from
-// the stub to the wrapper. The v1 DSL fixture set uses these keys
-// (kb_ids, similarity_threshold, keywords_similarity_weight, top_n,
-// top_k, rerank_id, empty_response) for type checking and form
-// rendering; removing or renaming one would break the fixture.
-func TestRetrieval_InputsSurfaceMatchesStub(t *testing.T) {
-	t.Parallel()
-
-	stub, err := NewRetrievalStub(nil)
-	if err != nil {
-		t.Fatalf("NewRetrievalStub: %v", err)
-	}
-	inputs := stub.Inputs()
-	for _, key := range []string{
-		"kb_ids", "similarity_threshold", "keywords_similarity_weight",
-		"top_n", "top_k", "rerank_id", "empty_response",
-	} {
-		if _, ok := inputs[key]; !ok {
-			t.Errorf("Inputs() missing key %q (v1 fixture compatibility)", key)
-		}
 	}
 }

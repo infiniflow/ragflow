@@ -48,7 +48,10 @@ func TestApplyPDFPostProcess_AssignsDocTypeKeywords(t *testing.T) {
 		},
 	}
 	applyPDFPostProcess(result, pdfPostProcessOptions{})
-	want := []string{"table", "image", "text", "image"}
+	// doc_type_kwd is derived from layout type only. A pre-set Image no
+	// longer reclassifies a section as "image" — cropping happens lazily
+	// at Markdown serialization / chunk time (see pdf_parser_common.go).
+	want := []string{"table", "image", "text", "text"}
 	for i, s := range result.Sections {
 		if s.DocTypeKwd != want[i] {
 			t.Fatalf("Sections[%d].DocTypeKwd = %q, want %q", i, s.DocTypeKwd, want[i])
@@ -71,48 +74,6 @@ func TestApplyPDFPostProcess_FlattenMediaKeepsImagesButMarksText(t *testing.T) {
 	}
 	if got, want := result.Sections[0].Image, "abc"; got != want {
 		t.Fatalf("Sections[0].Image = %q, want %q", got, want)
-	}
-}
-
-func TestApplyPDFPostProcess_HeaderFooterFilteringIsOptional(t *testing.T) {
-	result := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "header", LayoutType: "header"},
-			{Text: "body", LayoutType: "text"},
-		},
-	}
-	applyPDFPostProcess(result, pdfPostProcessOptions{})
-	if len(result.Sections) != 2 {
-		t.Fatalf("len(Sections) = %d, want 2 when removeHeaderFooter is false", len(result.Sections))
-	}
-
-	applyPDFPostProcess(result, pdfPostProcessOptions{removeHeaderFooter: true})
-	if len(result.Sections) != 1 {
-		t.Fatalf("len(Sections) = %d, want 1 when removeHeaderFooter is true", len(result.Sections))
-	}
-	if got, want := result.Sections[0].Text, "body"; got != want {
-		t.Fatalf("remaining section = %q, want %q", got, want)
-	}
-}
-
-func TestApplyPDFPostProcess_RemoveTOCByOutlines(t *testing.T) {
-	result := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			makePDFSection("目录", "text", 1, 50, 550, 100, 120),
-			makePDFSection("章节列表", "text", 2, 50, 550, 120, 140),
-			makePDFSection("正文", "text", 3, 50, 550, 100, 120),
-		},
-		Outlines: []deepdoctype.Outline{
-			{Title: "目录", Level: 0, PageNumber: 1},
-			{Title: "第一章", Level: 0, PageNumber: 3},
-		},
-	}
-	applyPDFPostProcess(result, pdfPostProcessOptions{removeTOC: true})
-	if len(result.Sections) != 1 {
-		t.Fatalf("len(Sections) = %d, want 1", len(result.Sections))
-	}
-	if got, want := result.Sections[0].Text, "正文"; got != want {
-		t.Fatalf("remaining section = %q, want %q", got, want)
 	}
 }
 

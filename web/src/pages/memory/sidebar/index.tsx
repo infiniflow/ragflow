@@ -13,7 +13,6 @@ import { useHandleMenuClick } from './hooks';
 export function SideBar() {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
-  // refreshCount: be for avatar img sync update on top left
   const { data } = useFetchMemoryBaseConfiguration();
   const { t } = useTranslation();
 

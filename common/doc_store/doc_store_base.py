@@ -65,7 +65,7 @@ class MatchTextExpr:
     ):
         self.fields = fields
         self.matching_text = matching_text
-        self.topn = topn
+        self.topn = topn  # Not used in ES, but used in Infinity
         self.extra_options = extra_options
 
 

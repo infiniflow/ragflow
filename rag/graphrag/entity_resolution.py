@@ -16,22 +16,23 @@
 import asyncio
 import logging
 import itertools
-import os
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import networkx as nx
 
+from rapidfuzz.distance import Levenshtein
+
 from rag.graphrag.general.extractor import Extractor
 from rag.nlp import is_english
-import editdistance
 from rag.graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.graphrag.checkpoints import resolution_checkpoint_key
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
+from common.misc_utils import env_flag
 
 
 DEFAULT_RECORD_DELIMITER = "##"
@@ -126,7 +127,7 @@ class EntityResolution(Extractor):
                         remain_candidates_to_resolve -= len(candidate_batch[1])
                         callback(msg=f"Replayed {len(candidate_batch[1])} resolved pairs from checkpoint, {remain_candidates_to_resolve} remain.")
                         return
-                    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+                    enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
                     timeout_sec = 280 if enable_timeout_assertion else 1_000_000_000
 
                     try:
@@ -213,7 +214,7 @@ class EntityResolution(Extractor):
         text = perform_variable_replacements(self._resolution_prompt, variables=variables)
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
-            timeout_seconds = 280 if os.environ.get("ENABLE_TIMEOUT_ASSERTION") else 1000000000
+            timeout_seconds = 280 if env_flag("ENABLE_TIMEOUT_ASSERTION", False) else 1000000000
             try:
                 response = await asyncio.wait_for(
                     self._async_chat(text, [{"role": "user", "content": "Output:"}], {}, task_id),
@@ -276,7 +277,7 @@ class EntityResolution(Extractor):
             return False
 
         if is_english(a) and is_english(b):
-            if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
+            if Levenshtein.distance(a, b) <= min(len(a), len(b)) // 2:
                 return True
             return False
 

@@ -49,26 +49,26 @@ type capturedRequest struct {
 // incoming request and replies with the given body / status.
 func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
-	cap := &capturedRequest{}
+	capRequest := &capturedRequest{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		cap.mu.Lock()
-		cap.method = r.Method
-		cap.path = r.URL.Path
-		cap.body = string(body)
-		cap.mu.Unlock()
+		capRequest.mu.Lock()
+		capRequest.method = r.Method
+		capRequest.path = r.URL.Path
+		capRequest.body = string(body)
+		capRequest.mu.Unlock()
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.WriteHeader(replyStatus)
 		_, _ = w.Write([]byte(replyBody))
 	}))
 	t.Cleanup(srv.Close)
-	return srv, cap
+	return srv, capRequest
 }
 
-// newTestEngine constructs an elasticsearchEngine pointing at the given
+// newTestEngine constructs an Engine pointing at the given
 // test server. Bypasses NewEngine (which calls ES Info to verify
 // connectivity) — the test server is a stub, not a real ES cluster.
-func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
+func newTestEngine(t *testing.T, srvURL string) *Engine {
 	t.Helper()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{srvURL},
@@ -76,7 +76,7 @@ func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
 	if err != nil {
 		t.Fatalf("elasticsearch.NewClient: %v", err)
 	}
-	return &elasticsearchEngine{client: client}
+	return &Engine{client: client}
 }
 
 const sampleESResponse = `{
@@ -98,8 +98,9 @@ const sampleESResponse = `{
 func TestRunSQL_NoFilterAdded(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -130,10 +131,11 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
+	ctx := t.Context()
 
 	// Input SQL has multiple backticks/spaces and trailing % characters.
 	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", in, nil, "json")
+	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -186,7 +188,7 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	// the retry loop or the timeout is broken; the test will report
 	// a clear "did not return within 15s" message rather than a
 	// fragile absolute wall-clock assertion.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
 	type result struct {
@@ -252,7 +254,8 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 	})
 
 	e := newTestEngine(t, srv.URL)
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -286,7 +289,8 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	e := newTestEngine(t, srv.URL)
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT bad", nil, "json")
+	ctx := t.Context()
+	_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT bad", nil, "json")
 	if err == nil {
 		t.Fatalf("RunSQL: got nil error, want error")
 	}
@@ -311,7 +315,8 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -339,7 +344,8 @@ func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
 	srv, _ := newCapturingServer(t, http.StatusOK, empty)
 	e := newTestEngine(t, srv.URL)
 
-	rows, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	ctx := t.Context()
+	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -358,7 +364,8 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
 
-	if _, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	ctx := t.Context()
+	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -374,7 +381,7 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 // as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
 // substitution without depending on a real tokenizer pool.
 func TestMain(m *testing.M) {
-	tokenizer.RegisterEngineType(func() string { return "infinity" })
+	tokenizer.SetEngineType("infinity")
 	m.Run()
 }
 

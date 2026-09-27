@@ -14,20 +14,22 @@
 #  limitations under the License.
 #
 
-import logging
 import copy
+import logging
 import re
-
-from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from io import BytesIO
-from deepdoc.parser.utils import extract_pdf_outlines
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
-from common.token_utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, DocxParser
-from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
+
 from docx import Document
-from rag.app.naive import by_plaintext, PARSERS
+
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
+from common.constants import MAXIMUM_PAGE_NUMBER, ParserType
 from common.parser_config_utils import normalize_layout_recognizer
+from common.token_utils import num_tokens_from_string
+from deepdoc.parser import DocxParser, PdfParser
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper, vision_figure_parser_pdf_wrapper
+from deepdoc.parser.utils import extract_pdf_outlines
+from rag.app.naive import PARSERS, by_plaintext
+from rag.nlp import DEFAULT_DELIMITER, attach_media_context, bullets_category, concat_img, docx_question_level, rag_tokenizer, title_frequency, tokenize, tokenize_chunks, tokenize_table
 
 
 class Pdf(PdfParser):
@@ -40,25 +42,25 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.debug("OCR: {}".format(timer() - start))
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
+        logging.debug(f"OCR: {timer() - start}")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.65, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts: {}".format(timer() - start))
+        callback(0.65, f"Layout analysis ({timer() - start:.2f}s)")
+        logging.debug(f"layouts: {timer() - start}")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.67, "Table analysis ({:.2f}s)".format(timer() - start))
+        callback(0.67, f"Table analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
-        callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
+        callback(0.68, f"Text merged ({timer() - start:.2f}s)")
 
         # clean mess
         for b in self.boxes:
@@ -72,7 +74,7 @@ class Docx(DocxParser):
         pass
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -100,6 +102,11 @@ class Docx(DocxParser):
                     level_stack.pop()
                 question_stack.append(p_text)
                 level_stack.append(question_level)
+            if from_page <= pn < to_page:
+                # A text box keeps its text out of `Paragraph.text` and is never a
+                # heading, so it belongs to the answer of the enclosing section.
+                for box_text in self.extract_text_boxes(p):
+                    last_answer = f"{last_answer}\n{box_text}"
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
@@ -138,7 +145,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     """
     Only pdf is supported.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     pdf_parser = None
     doc = {"docnm_kwd": filename}
     doc["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
@@ -146,7 +153,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -167,6 +181,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
             parse_method="manual",
             **kwargs,
@@ -231,15 +246,20 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sec_ids.append(sid)
 
         sections = [(txt, sec_ids[i], poss) for i, (txt, _, poss) in enumerate(sections)]
-        for (img, rows), poss in tbls:
-            if not rows:
-                continue
-            sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
+        if name != "mineru":
+            for (img, rows), poss in tbls:
+                if not rows:
+                    continue
+                sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 
         def tag(pn, left, right, top, bottom):
             if pn + left + right + top + bottom == 0:
                 return ""
-            return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, left, right, top, bottom)
+            if name == "mineru":
+                # MinerU tags stay local and one-based for crop(); crop() adds
+                # the task's page offset when it emits final positions.
+                pn += 1
+            return f"@@{pn}\t{left:.1f}\t{right:.1f}\t{top:.1f}\t{bottom:.1f}##"
 
         chunks = []
         last_sid = -2
@@ -255,12 +275,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-        tbls = vision_figure_parser_pdf_wrapper(
-            tbls=tbls,
-            sections=sections,
-            callback=callback,
-            **kwargs,
-        )
+        if name != "mineru":
+            tbls = vision_figure_parser_pdf_wrapper(
+                tbls=tbls,
+                sections=sections,
+                callback=callback,
+                lang=lang,
+                **kwargs,
+            )
         res = tokenize_table(tbls, doc, eng, language=lang)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser, language=lang))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
@@ -271,10 +293,19 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             res[0]["__outline__"] = [{"title": title, "depth": depth} for title, depth, *_ in pdf_parser.outlines]
         return res
 
-    elif re.search(r"\.docx?$", filename, re.IGNORECASE):
+    elif re.search(r"\.doc$", filename, re.IGNORECASE):
+        raise NotImplementedError("Legacy .doc files are not supported by the Manual parser. Please convert the file to .docx or PDF and try again.")
+
+    elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
-        tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
+        tbls = vision_figure_parser_docx_wrapper(
+            sections=ti_list,
+            tbls=tbls,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
         res = tokenize_table(tbls, doc, eng, language=lang)
         for text, image in ti_list:
             d = copy.deepcopy(doc)

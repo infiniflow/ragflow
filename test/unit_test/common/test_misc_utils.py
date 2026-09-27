@@ -17,6 +17,7 @@ import asyncio
 import contextvars
 import hashlib
 import sys
+import threading
 import types
 import uuid
 from contextlib import contextmanager
@@ -25,7 +26,7 @@ from unittest.mock import patch
 import pytest
 
 from common import ssrf_guard
-from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, thread_pool_exec
+from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int, once, thread_pool_exec
 
 
 class _Hdr:
@@ -180,7 +181,7 @@ class TestGetUuid:
     def test_hex_format(self):
         """Test that returned string is in hex format"""
         result = get_uuid()
-        # UUID v1 hex should be 32 characters (without dashes)
+        # UUID hex should be 32 characters (without dashes)
         assert len(result) == 32
         # Should only contain hexadecimal characters
         assert all(c in "0123456789abcdef" for c in result)
@@ -213,15 +214,11 @@ class TestGetUuid:
         # The hex representation should match the original
         assert reconstructed_uuid.hex == result
 
-    def test_uuid1_specific_characteristics(self):
-        """Test that UUID v1 characteristics are present"""
+    def test_uuid1_characteristics(self):
+        """Generated identifiers are RFC 4122 UUIDv1 values."""
         result = get_uuid()
         uuid_obj = uuid.UUID(hex=result)
-
-        # UUID v1 should have version 1
         assert uuid_obj.version == 1
-
-        # Variant should be RFC 4122
         assert uuid_obj.variant == "specified in RFC 4122"
 
     def test_result_length_consistency(self):
@@ -234,8 +231,8 @@ class TestGetUuid:
         """Test that only valid hex characters are used"""
         for _ in range(100):
             result = get_uuid()
-            # Should only contain lowercase hex characters (UUID hex is lowercase)
-            assert result.islower()
+            # Should only contain lowercase hexadecimal characters
+            assert result == result.lower()
             assert all(c in "0123456789abcdef" for c in result)
 
 
@@ -539,3 +536,74 @@ class TestConvertBytes:
         # Ensure we don't exceed available units
         huge_value = 100 * 1125899906842624  # 100 PB (still within PB range)
         assert "PB" in convert_bytes(huge_value)
+
+
+@pytest.mark.p2
+class TestOnce:
+    """Test cases for the once() run-exactly-once decorator."""
+
+    def test_runs_only_once_on_success(self):
+        """A successful function body runs once; later calls return the cached result."""
+        calls = {"n": 0}
+
+        @once
+        def init():
+            calls["n"] += 1
+            return calls["n"]
+
+        assert init() == 1
+        assert init() == 1  # cached, not re-executed
+        assert calls["n"] == 1
+
+    def test_exception_allows_retry(self):
+        """A first-call exception must not permanently disable the function.
+
+        Previously ``executed`` was set to True before the wrapped function ran,
+        so a raising first call left the decorator stuck returning None forever.
+        After a failure the body should run again on the next call.
+        """
+        calls = {"n": 0}
+
+        @once
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("boom")
+            return "ok"
+
+        with pytest.raises(RuntimeError):
+            flaky()
+
+        # The first call failed, so the second call must retry and succeed.
+        assert flaky() == "ok"
+        assert calls["n"] == 2
+
+    def test_thread_safe_single_execution(self):
+        """Concurrent callers must trigger exactly one successful execution."""
+        calls = {"n": 0}
+        counter_lock = threading.Lock()
+        barrier = threading.Barrier(8)
+
+        @once
+        def init():
+            with counter_lock:
+                calls["n"] += 1
+            return 42
+
+        results = []
+        results_lock = threading.Lock()
+
+        def worker():
+            barrier.wait()
+            value = init()
+            with results_lock:
+                results.append(value)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert calls["n"] == 1
+        assert results == [42] * 8

@@ -11,6 +11,7 @@ import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
+import { isSingleInstanceOperator } from '../../utils/pipeline-connection';
 
 function IconWrapper({ children, className, ...props }: ButtonProps) {
   return (
@@ -63,6 +64,10 @@ export function ToolBar({
 
   const duplicateNode = useDuplicateNode();
 
+  // A single-instance operator can never be duplicated: a copy would
+  // immediately exceed the one-instance limit.
+  const duplicateDisabled = isSingleInstanceOperator(label as Operator);
+
   const handleDuplicate: MouseEventHandler<HTMLButtonElement> = useCallback(
     (e) => {
       e.stopPropagation();
@@ -83,7 +88,7 @@ export function ToolBar({
             </IconWrapper>
           )}
           {showCopy && (
-            <IconWrapper onClick={handleDuplicate}>
+            <IconWrapper onClick={handleDuplicate} disabled={duplicateDisabled}>
               <Copy className="size-3.5" />
             </IconWrapper>
           )}

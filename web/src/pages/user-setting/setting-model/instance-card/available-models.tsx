@@ -18,9 +18,10 @@
 import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
-import { APIMapUrl } from '@/constants/llm';
+import { APIMapUrl, LLMFactory } from '@/constants/llm';
 import { useFetchAvailableProviders } from '@/hooks/use-llm-request';
-import { ArrowUpRight, Plus } from 'lucide-react';
+import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
+import { ArrowUpRight, Plus, Star } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -82,12 +83,16 @@ export const AvailableModels: FC<{
   }, [factoryList, searchTerm]);
 
   const filteredModels = useMemo(() => {
-    if (selectedTag === null) {
-      return searchedModels;
-    }
-    return searchedModels.filter((model) =>
-      model.model_types.some((type) => type === selectedTag),
-    );
+    const filtered =
+      selectedTag === null
+        ? searchedModels
+        : searchedModels.filter((model) =>
+            model.model_types.some((type) => type === selectedTag),
+          );
+    // AIMLAPI first (then RAGFlow's curated order) in the available list
+    return sortLLmFactoryListBySpecifiedOrder(
+      filtered as any,
+    ) as unknown as typeof filtered;
   }, [searchedModels, selectedTag]);
 
   // Number of providers matching each tag, respecting the current search term so
@@ -172,7 +177,7 @@ export const AvailableModels: FC<{
       </header>
 
       {/* Models List */}
-      <div className="p-4 pt-0 flex flex-col gap-4 overflow-auto h-full scrollbar-auto">
+      <div className="@container p-4 pt-0 flex flex-col gap-4 overflow-auto h-full scrollbar-auto">
         {filteredModels.map((model) => (
           <div
             key={model.name}
@@ -181,9 +186,12 @@ export const AvailableModels: FC<{
             className="group border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors"
             onClick={() => handleAddModel(model.name)}
           >
-            <div className="flex items-center space-x-3 mb-3">
-              <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
-              <div className="flex flex-1 gap-1.5 items-center">
+            <div className="flex items-center gap-3 mb-3">
+              <LlmIcon
+                name={model.name}
+                imgClass="h-8 w-8 shrink-0 text-text-primary"
+              />
+              <div className="flex flex-1 min-w-0 gap-1.5 items-center">
                 <div className="font-normal text-base truncate">
                   {model.name}
                 </div>
@@ -192,7 +200,7 @@ export const AvailableModels: FC<{
                     asLink
                     variant="ghost"
                     size="icon-xs"
-                    className="size-4"
+                    className="size-4 shrink-0"
                     to={APIMapUrl[model.name as keyof typeof APIMapUrl]}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -203,11 +211,27 @@ export const AvailableModels: FC<{
                     <ArrowUpRight size={16} />
                   </Button>
                 )}
+                {model.name === LLMFactory.AIMLAPI && (
+                  // Recommended badge: the star always shows; the label appears
+                  // only when the card (container) is wide enough to fit it
+                  // alongside the Add button — otherwise it collapses to just
+                  // the star.
+                  <span
+                    className="shrink-0 inline-flex items-center gap-1 text-state-success"
+                    title={t('setting.recommended')}
+                    aria-label={t('setting.recommended')}
+                  >
+                    <Star size={14} className="shrink-0 fill-current" />
+                    <span className="hidden @[20rem]:inline text-xs font-medium whitespace-nowrap">
+                      {t('setting.recommended')}
+                    </span>
+                  </span>
+                )}
               </div>
 
               <Button
                 size="xs"
-                className="px-2 opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
+                className="shrink-0 px-2 opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
               >
                 <Plus size={12} />
                 {t('setting.addTheModel')}

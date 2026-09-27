@@ -40,7 +40,7 @@ type SkillSpace struct {
 }
 
 // TableName returns the table name for SkillSpace model
-func (SkillSpace) TableName() string {
+func (s *SkillSpace) TableName() string {
 	return "skill_spaces"
 }
 

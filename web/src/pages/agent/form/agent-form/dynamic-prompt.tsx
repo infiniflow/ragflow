@@ -6,7 +6,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { X } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -43,10 +43,10 @@ const DynamicPrompt = () => {
                   <FormItem className="w-1/3">
                     <FormLabel />
                     <FormControl>
-                      <RAGFlowSelect
+                      <SelectWithSearch
                         {...field}
                         options={options}
-                      ></RAGFlowSelect>
+                      ></SelectWithSearch>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

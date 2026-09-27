@@ -14,7 +14,9 @@
  *  limitations under the License.
  */
 
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Minus, Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ModelRowProps } from '../interface';
 import { ModelTypeBadges } from './model-type-badges';
 import { ModelVerifyButton } from './model-verify-button';
@@ -31,6 +33,23 @@ export function ModelRow({
   onEdit,
   editLabel,
 }: ModelRowProps) {
+  const { t } = useTranslation();
+
+  // Add / remove toggle. When the model is already attached the click is
+  // intercepted by `ConfirmDeleteDialog` (which acts as the trigger), so
+  // the button itself must not carry the remove handler - removal runs
+  // from the dialog's confirm action instead.
+  const toggleButton = (
+    <button
+      type="button"
+      className="size-6 flex items-center justify-center rounded-md transition-colors text-text-secondary"
+      onClick={isAdded ? undefined : onAdd}
+      aria-label={isAdded ? `Remove ${model.name}` : `Add ${model.name}`}
+    >
+      {isAdded ? <Minus className="size-4" /> : <Plus className="size-4" />}
+    </button>
+  );
+
   return (
     <li
       key={model.name}
@@ -62,18 +81,15 @@ export function ModelRow({
         />
 
         {!hideActions && (
-          <button
-            type="button"
-            className="size-6 flex items-center justify-center rounded-md transition-colors text-text-secondary"
-            onClick={() => (isAdded ? onRemove() : onAdd())}
-            aria-label={isAdded ? `Remove ${model.name}` : `Add ${model.name}`}
+          <ConfirmDeleteDialog
+            hidden={!isAdded}
+            onOk={onRemove}
+            title={t('common.removeModalTitle')}
+            okButtonText={t('common.remove')}
+            content={{ title: model.name }}
           >
-            {isAdded ? (
-              <Minus className="size-4" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-          </button>
+            {toggleButton}
+          </ConfirmDeleteDialog>
         )}
       </div>
     </li>

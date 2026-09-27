@@ -20,6 +20,7 @@ import re
 import threading
 import time
 from abc import abstractmethod
+from collections.abc import Iterable
 from typing import Any
 
 from pymysql.converters import escape_string
@@ -36,7 +37,7 @@ index_name_template = "ix_%s_%s"
 fulltext_index_name_template = "fts_idx_%s"
 fulltext_search_template = "MATCH (%s) AGAINST ('%s' IN NATURAL LANGUAGE MODE)"
 vector_search_template = "cosine_distance(%s, '%s')"
-vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec")
+vector_column_pattern = re.compile(r"q_(?P<vector_size>\d+)_vec$")
 
 # Document metadata table columns
 doc_meta_columns = [
@@ -63,6 +64,15 @@ def get_value_str(value: Any) -> str:
         return f"'{escape_string(json_str)}'"
     else:
         return str(value)
+
+
+def validate_column_name(column_name: Any, valid_columns: Iterable[str] | None = None, pattern: re.Pattern | None = None) -> str:
+    """Validate a dynamic SQL identifier before it is interpolated into a query."""
+    if not isinstance(column_name, str) or not column_name.isidentifier():
+        raise ValueError(f"Invalid column name: {column_name!r}")
+    if valid_columns is not None and column_name not in valid_columns and not (pattern and pattern.match(column_name)):
+        raise ValueError(f"Invalid column name: {column_name!r}")
+    return column_name
 
 
 def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None):
@@ -581,10 +591,18 @@ class OBConnectionBase(DocStoreConnection):
         return "kb_id"
 
     def _get_filters(self, condition: dict) -> list[str]:
+        """Build SQL WHERE-clause fragments from a condition dict, validating every dynamic column name first."""
         filters: list[str] = []
         for k, v in condition.items():
             if not v:
                 continue
+            if k == "exists":
+                column_name = v
+            elif k == "must_not" and isinstance(v, dict) and "exists" in v:
+                column_name = v.get("exists")
+            else:
+                column_name = k
+            validate_column_name(column_name)
             if k == "exists":
                 filters.append(f"{v} IS NOT NULL")
             elif k == "must_not" and isinstance(v, dict) and "exists" in v:

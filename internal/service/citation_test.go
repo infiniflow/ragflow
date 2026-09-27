@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -211,11 +212,13 @@ func TestInsertCitationsWithVectors_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatal("expected citations")
 	}
-	if !strings.Contains(answer, "[ID:abc123]") {
-		t.Errorf("answer should contain [ID:abc123]: %q", answer)
+	// Markers carry the chunk's position in `chunks` (the list the caller returns
+	// as the reference), not its chunk id.
+	if !strings.Contains(answer, "[ID:0]") {
+		t.Errorf("answer should contain [ID:0]: %q", answer)
 	}
-	if !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("answer should contain [ID:def456]: %q", answer)
+	if !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("answer should contain [ID:1]: %q", answer)
 	}
 }
 
@@ -230,7 +233,7 @@ func TestApplyCitations(t *testing.T) {
 	chunks := []SourcedChunk{{ID: "c1"}}
 	cites := map[int][]int{0: {0}}
 	answer, cited := applyCitations("Hello world.", []string{"Hello world."}, []int{0}, cites, chunks)
-	if answer != "Hello world. [ID:c1]" {
+	if answer != "Hello world. [ID:0]" {
 		t.Errorf("got %q", answer)
 	}
 	if len(cited) != 1 || cited[0] != 0 {
@@ -244,7 +247,7 @@ type fakeEmbedder struct {
 	err  error
 }
 
-func (f *fakeEmbedder) Encode(texts []string) ([][]float64, error) {
+func (f *fakeEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -252,41 +255,46 @@ func (f *fakeEmbedder) Encode(texts []string) ([][]float64, error) {
 }
 
 func TestInsertCitations_Happy(t *testing.T) {
+	ctx := t.Context()
 	chunks := []SourcedChunk{{ID: "abc123"}, {ID: "def456"}}
 	chunkVectors := [][]float64{{1, 0, 0}, {0, 1, 0}}
 	embedder := &fakeEmbedder{vecs: [][]float64{{1, 0, 0}, {0, 1, 0}}}
-	answer, cited := InsertCitations("First sentence. Second sentence here.", chunks, embedder, chunkVectors)
+	answer, cited := InsertCitations(ctx, "First sentence. Second sentence here.", chunks, embedder, chunkVectors)
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
-	if !strings.Contains(answer, "[ID:abc123]") || !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("missing [ID:*] markers: %q", answer)
+	if !strings.Contains(answer, "[ID:0]") || !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("missing positional [ID:*] markers: %q", answer)
 	}
 }
 
 func TestInsertCitations_EmptyAnswer(t *testing.T) {
-	c, _ := InsertCitations("", nil, &fakeEmbedder{}, nil)
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "", nil, &fakeEmbedder{}, nil)
 	if c != "" {
 		t.Errorf("empty answer: %q", c)
 	}
 }
 
 func TestInsertCitations_NoChunks(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", nil, &fakeEmbedder{}, [][]float64{})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", nil, &fakeEmbedder{}, [][]float64{})
 	if c != "Hello world." {
 		t.Errorf("no chunks should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeError(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{err: fmt.Errorf("offline")}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("encode error should return original: %q", c)
 	}
 }
 
 func TestInsertCitations_EncodeEmpty(t *testing.T) {
-	c, _ := InsertCitations("Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
+	ctx := t.Context()
+	c, _ := InsertCitations(ctx, "Hello world.", []SourcedChunk{{ID: "c1"}}, &fakeEmbedder{vecs: [][]float64{}}, [][]float64{{1, 0}})
 	if c != "Hello world." {
 		t.Errorf("empty encode result should return original: %q", c)
 	}
@@ -305,5 +313,305 @@ func TestMaxRow(t *testing.T) {
 	}
 	if maxRow(nil) != 0 {
 		t.Error("max of nil should be 0")
+	}
+}
+
+// TestRepairBadCitationFormats covers the malformed-citation shapes
+// RepairBadCitationFormats rewrites to "[ID:N]", including the
+// markdown-asterisk-wrapped parenthetical form (**ID:5**) that mirrors Python
+// agentic_rag.py:885's re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...).
+func TestRepairBadCitationFormats(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"(**ID:5**)", "[ID:5]"}, // Python deep-research asterisk form
+		{"(*ID: 5*)", "[ID:5]"},  // single star, spaced
+		{"(ID:12)", "[ID:12]"},   // plain parenthetical (existing pattern)
+		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
+		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
+		{"plain text no cites", "plain text no cites"},
+	}
+	for _, c := range cases {
+		if got := RepairBadCitationFormats(c.in); got != c.want {
+			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// -----------------------------------------------------------------------
+// RepairSlotCitations — leaked "[ID:Slot N]" markers (Bug: slot-table
+// citations in the final answer, unlocatable by the user).
+// -----------------------------------------------------------------------
+
+func TestRepairSlotCitations_MapsSlotToEvidenceChunk(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"chunk_id": "c1", "content": "one"},
+		{"chunk_id": "c2", "content": "two"},
+		{"id": "c9", "content": "slot evidence"},
+	}
+	answer := "Gustave Eiffel designed it [ID:Slot 0]. It opened in 1889."
+	got := RepairSlotCitations(answer, map[string][]string{"0": {"c9", "missing"}}, chunks)
+	if strings.Contains(got, "Slot") {
+		t.Fatalf("slot marker leaked: %q", got)
+	}
+	if !strings.Contains(got, "[ID:2]") {
+		t.Fatalf("slot marker not mapped to the evidence chunk position: %q", got)
+	}
+	if got != "Gustave Eiffel designed it [ID:2]. It opened in 1889." {
+		t.Fatalf("unexpected rewrite: %q", got)
+	}
+}
+
+func TestRepairSlotCitations_DropsUnresolvable(t *testing.T) {
+	chunks := []map[string]interface{}{{"chunk_id": "c1", "content": "one"}}
+	answer := "Fact one [ID:Slot 0]. Fact two [Slot 1]."
+	got := RepairSlotCitations(answer, map[string][]string{"0": {"not-in-pool"}, "1": {"also-missing"}}, chunks)
+	if strings.Contains(strings.ToLower(got), "slot") {
+		t.Fatalf("unresolvable slot markers must be dropped, got %q", got)
+	}
+	if got != "Fact one . Fact two ." {
+		t.Fatalf("unexpected rewrite: %q", got)
+	}
+}
+
+func TestRepairSlotCitations_MarkerVariants(t *testing.T) {
+	chunks := []map[string]interface{}{{"chunk_id": "a"}, {"id": "b"}}
+	cases := []struct {
+		marker string
+		want   string
+	}{
+		{"[ID:Slot 1]", "[ID:1]"},
+		{"[ID: slot 1]", "[ID:1]"},
+		{"[Slot 1]", "[ID:1]"},
+		{"[slot 1]", "[ID:1]"},
+	}
+	for _, c := range cases {
+		got := RepairSlotCitations("x "+c.marker+" y", map[string][]string{"1": {"b"}}, chunks)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("marker %q: got %q, want it rewritten to %q", c.marker, got, c.want)
+		}
+	}
+}
+
+func TestRepairSlotCitations_NoopWithoutSlotMarkersOrMap(t *testing.T) {
+	answer := "Plain answer [ID:0]."
+	if got := RepairSlotCitations(answer, nil, nil); got != answer {
+		t.Fatalf("nil map must be a no-op, got %q", got)
+	}
+	if got := RepairSlotCitations(answer, map[string][]string{"0": {"c"}}, nil); got != answer {
+		t.Fatalf("no slot markers must be a no-op, got %q", got)
+	}
+}
+
+// -----------------------------------------------------------------------
+// ExpandRangeCitations — range-merged citations ("[ID:1-3]") the model
+// produces on its own (no code path emits them).
+// -----------------------------------------------------------------------
+
+func TestExpandRangeCitations(t *testing.T) {
+	cases := []struct {
+		name     string
+		answer   string
+		poolSize int
+		want     string
+	}{
+		{
+			"plain range",
+			"Fact [ID:1-3].",
+			5,
+			"Fact [ID:1][ID:2][ID:3].",
+		},
+		{
+			"spaced dash variant",
+			"Fact [ID: 1 - 3].",
+			5,
+			"Fact [ID:1][ID:2][ID:3].",
+		},
+		{
+			"tilde variant",
+			"Fact [ID:1~3].",
+			5,
+			"Fact [ID:1][ID:2][ID:3].",
+		},
+		{
+			"reversed bounds swap",
+			"Fact [ID:3-1].",
+			5,
+			"Fact [ID:1][ID:2][ID:3].",
+		},
+		{
+			"single-bound range",
+			"Fact [ID:2-2].",
+			5,
+			"Fact [ID:2].",
+		},
+		{
+			"out of bounds dropped",
+			"Fact [ID:99-102].",
+			5,
+			"Fact .",
+		},
+		{
+			"partially out of bounds dropped",
+			"Fact [ID:2-99].",
+			5,
+			"Fact .",
+		},
+		{
+			"empty pool dropped",
+			"Fact [ID:1-3].",
+			0,
+			"Fact .",
+		},
+		{
+			"no ranges untouched",
+			"Fact [ID:1] and [ID:2].",
+			5,
+			"Fact [ID:1] and [ID:2].",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ExpandRangeCitations(c.answer, c.poolSize); got != c.want {
+				t.Fatalf("ExpandRangeCitations(%q, %d) = %q, want %q", c.answer, c.poolSize, got, c.want)
+			}
+		})
+	}
+}
+
+// TestDecorateHarnessAnswerExpandsRangeCitations pins the end-to-end fix for
+// the [ID:1-3] report: the final answer carries only individual citations,
+// each resolving to a pooled chunk, and only the cited doc reaches the
+// reference.
+func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c1", "content_with_weight": "b", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c2", "content_with_weight": "c", "doc_id": "d1", "docnm_kwd": "Doc One"},
+			{"chunk_id": "c3", "content_with_weight": "d", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
+		},
+	}
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
+
+	if strings.Contains(res.Answer, "1-3") {
+		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
+	}
+	// Expanded markers keep the 0-based indexes the client resolves against
+	// reference.chunks.
+	for _, want := range []string{"[ID:1]", "[ID:2]", "[ID:3]"} {
+		if !strings.Contains(res.Answer, want) {
+			t.Fatalf("final answer missing expanded citation %s: %q", want, res.Answer)
+		}
+	}
+	// Every cited chunk belongs to Doc One, so the uncited Doc Two must be
+	// filtered out of the reference (recall_docs = cited docs).
+	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
+		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
+	}
+}
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
+	}
+}
+
+// TestReportsNoAnswer covers the three signals: the dialog's configured
+// empty_response, the shipped not-found line, and a grounded answer that must
+// keep its citations.
+func TestReportsNoAnswer(t *testing.T) {
+	cases := []struct {
+		name          string
+		answer        string
+		emptyResponse string
+		want          bool
+	}{
+		{
+			name:          "configured empty response",
+			answer:        "未在资料库中找到相关内容。",
+			emptyResponse: "未在资料库中找到相关内容。",
+			want:          true,
+		},
+		{
+			name:   "shipped phrase",
+			answer: "知识库中未找到您要的答案！",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase with marker injected mid-sentence",
+			answer: "知识库中未找到您要的答案！因 [ID:3]此无法统计。",
+			want:   true,
+		},
+		{
+			name:   "shipped phrase split by line breaks",
+			answer: "知识库中\n未找到您要的\n答案！",
+			want:   true,
+		},
+		{
+			name:          "grounded answer keeps citations",
+			answer:        "Texas and California agreed in 1924 [ID:0].",
+			emptyResponse: "知识库中未找到您要的答案！",
+			want:          false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := reportsNoAnswer(c.answer, c.emptyResponse); got != c.want {
+				t.Fatalf("reportsNoAnswer(%q, %q) = %v, want %v", c.answer, c.emptyResponse, got, c.want)
+			}
+		})
+	}
+}
+
+// TestDecorateQuote pins that a not-found answer is decorated with quoting off
+// (no markers, no reference), while a grounded one keeps quoting on.
+func TestDecorateQuote(t *testing.T) {
+	if decorateQuote(true, "知识库中未找到您要的答案！", "") {
+		t.Fatal("not-found answer must be decorated without quoting")
+	}
+	if !decorateQuote(true, "California voted for the same nominee [ID:0].", "知识库中未找到您要的答案！") {
+		t.Fatal("grounded answer must keep quoting")
+	}
+	if decorateQuote(false, "California voted for the same nominee [ID:0].", "") {
+		t.Fatal("quote=false must stay off")
+	}
+}
+
+// TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
+// shape of the report: an answer that only says the knowledge base has no answer
+// must come back with neither [ID:n] markers nor a reference, even though the
+// evidence pool and a resolvable marker are present.
+func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, decorateQuote(true, answer, ""))
+
+	if strings.Contains(res.Answer, "[ID:") {
+		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
+	}
+	if len(res.Reference) != 0 {
+		t.Fatalf("not-found answer still carries a reference: %#v", res.Reference)
 	}
 }

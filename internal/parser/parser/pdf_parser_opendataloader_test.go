@@ -10,6 +10,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)
@@ -70,7 +71,8 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 		"sanitize":                 sanitize,
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -83,6 +85,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/file_parse" {
 			http.NotFound(w, r)
@@ -99,7 +102,8 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 		"output_format":            "markdown",
 		"opendataloader_apiserver": server.URL,
 	})
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -111,7 +115,8 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 func TestPDFParser_ParseWithResult_OpenDataLoaderRequiresAPIServer(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "OpenDataLoader"})
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "opendataloader_apiserver") {
 		t.Fatalf("error = %v, want opendataloader_apiserver context", res.Err)
 	}
@@ -129,8 +134,8 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
-	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "a | b") {
-		t.Fatalf("item = %s, want row text", string(got))
+	if got, want := items[0]["text"], "<table><tr><th >a</th><th >b</th></tr></table>"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
 }
 

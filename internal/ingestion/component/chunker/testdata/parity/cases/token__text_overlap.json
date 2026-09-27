@@ -1,0 +1,17 @@
+{
+ "id": "token__text_overlap",
+ "component": "TokenChunker",
+ "notes": "overlapped_percent on the text path: locks that the overlap carried into each following chunk is byte-identical on both sides.",
+ "param": {
+  "chunk_token_size": 64,
+  "delimiters": [
+   "\n"
+  ],
+  "overlapped_percent": 0.1
+ },
+ "input": {
+  "name": "t",
+  "output_format": "text",
+  "text": "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha \nbeta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta beta \ngamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma gamma "
+ }
+}

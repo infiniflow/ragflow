@@ -324,7 +324,7 @@ def create_patch_embedding_model(vectors=None, vector_size=128):
 
     return (
         patch(
-            "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
+            "rag.svr.task_executor_refactor.task_handler.resolve_model_config",
             return_value=MagicMock(),
         ),
         patch(
@@ -579,7 +579,7 @@ def mock_raptor_context():
 class patch_embedding_binding:
     """Context manager that patches embedding model binding at the external boundary.
 
-    Patches ``LLMBundle``, ``get_model_config_from_provider_instance``, and
+    Patches ``LLMBundle``, ``resolve_model_config``, and
     ``get_tenant_default_model_by_type`` so that ``TaskHandler._bind_embedding_model``
     executes its real logic without making actual API calls.
 
@@ -609,7 +609,7 @@ class patch_embedding_binding:
 
         self._patches = [
             patch(
-                "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
+                "rag.svr.task_executor_refactor.task_handler.resolve_model_config",
                 return_value=MagicMock(),
             ),
             patch(
@@ -711,7 +711,7 @@ class patch_pipeline_mocks:
     Usage::
 
         with patch_pipeline_mocks() as m:
-            m.get_model_config_from_provider_instance.return_value = MagicMock()
+            m.resolve_model_config.return_value = MagicMock()
             handler = TaskHandler(ctx)
             await handler.handle()
     """
@@ -723,7 +723,7 @@ class patch_pipeline_mocks:
 
     # (module_key, attr_name, use_AsyncMock)
     _COMMON = [
-        ("task_handler", "get_model_config_from_provider_instance", False),
+        ("task_handler", "resolve_model_config", False),
         ("task_handler", "LLMBundle", False),
         ("task_handler", "get_tenant_default_model_by_type", False),
         ("task_handler", "search.index_name", False),

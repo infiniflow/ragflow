@@ -1,51 +1,7 @@
 import { CustomTimeline, TimelineNode } from '@/components/originui/timeline';
-import {
-  LucideBlocks,
-  LucideFile,
-  LucideFilePlay,
-  LucideFileStack,
-  LucideHeading,
-  LucideListPlus,
-} from 'lucide-react';
 import { useMemo } from 'react';
-import { TimelineNodeType } from '../../constant';
 import { IPipelineFileLogDetail } from '../../interface';
 
-export type ITimelineNodeObj = {
-  title: string;
-  icon: JSX.Element;
-  clickable?: boolean;
-  type: TimelineNodeType;
-};
-
-export const TimelineNodeObj = {
-  [TimelineNodeType.begin]: {
-    title: 'File',
-    icon: <LucideFile className="size-[1em]" />,
-    clickable: false,
-  },
-  [TimelineNodeType.parser]: {
-    title: 'Parser',
-    icon: <LucideFilePlay className="size-[1em]" />,
-  },
-  [TimelineNodeType.contextGenerator]: {
-    title: 'Context Generator',
-    icon: <LucideFileStack className="size-[1em]" />,
-  },
-  [TimelineNodeType.titleChunker]: {
-    title: 'Title Chunker',
-    icon: <LucideHeading className="size-[1em]" />,
-  },
-  [TimelineNodeType.tokenChunker]: {
-    title: 'Token Chunker',
-    icon: <LucideBlocks className="size-[1em]" />,
-  },
-  [TimelineNodeType.tokenizer]: {
-    title: 'Tokenizer',
-    icon: <LucideListPlus className="size-[1em]" />,
-    clickable: false,
-  },
-};
 export interface TimelineDataFlowProps {
   activeId: number | string;
   activeFunc: (id: number | string, step: TimelineNode) => void;

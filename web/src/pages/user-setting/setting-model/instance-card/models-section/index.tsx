@@ -14,13 +14,22 @@
  *  limitations under the License.
  */
 
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
-import { ListMinus, ListPlus, Loader2, Plus, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { IProviderModelItem } from '@/interfaces/request/llm';
+import { Loader2, Plus, Search, ShieldCheck } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
+import { modelNameKey } from '@/utils/llm-util';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
 import { ModelRow } from './components/model-row';
@@ -49,9 +58,12 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions = false,
     hideIfEmpty = false,
     getFormValues,
+    verifyTransform,
+    instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
+    onInstanceModelsStatusChange,
   } = props;
 
   const isDraftInstance =
@@ -60,16 +72,72 @@ export function ModelsSection(props: ModelsSectionProps) {
   // 1. Credentials for catalog / verify / batch calls.
   const { resolveCreds } = useResolveCreds(instance, getFormValues);
 
+  // Snapshot of the current api_key so `useModelsCatalog` can gate the
+  // auto-fetch for VolcEngine on the user actually having typed one.
+  // Recomputed on every render so the effect re-runs as soon as the
+  // form value lands.
+  const currentCreds = resolveCreds();
+
   // 2. Per-instance saved models (shared by catalog, derived, verify).
-  const { data: instanceModels } = useFetchInstanceModels(
-    providerName,
-    instanceName,
-  );
+  const {
+    data: instanceModels,
+    loading: instanceModelsLoading,
+    isSuccess: instanceModelsSucceeded,
+  } = useFetchInstanceModels(providerName, instanceName);
+
+  useLayoutEffect(() => {
+    if (
+      !isDraftInstance &&
+      (instanceModelsLoading || !instanceModelsSucceeded)
+    ) {
+      onInstanceModelsStatusChange?.(false);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
+
+  // 3a. Draft-only: locally-tracked "added models" list.
+  // The backend has no per-instance models yet, so per-model add /
+  // remove / batch-toggle on a draft mutates this array instead of
+  // firing a mutation. The host save handler then flushes the latest
+  // snapshot through `model_info` on save. Reset when the provider
+  // or instance changes (rare in practice since the host remounts
+  // the section on draft switch, but kept as a safety net).
+  const [draftModels, setDraftModels] = useState<IProviderModelItem[]>([]);
+  // Names of catalog models the user has manually removed for this draft.
+  // Every catalog fetch (mount auto-fetch and "List models" clicks)
+  // auto-adds incoming models EXCEPT the names in this set, so removed
+  // models stay removed while newly listed models are added by default.
+  const removedDraftModelsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    setDraftModels([]);
+    removedDraftModelsRef.current = new Set();
+  }, [providerName, instanceName]);
+
+  // Merge a freshly fetched catalog batch into the draft list, skipping
+  // already-added models and ones the user has previously removed.
+  const mergeCatalogIntoDraft = useCallback((items: IProviderModelItem[]) => {
+    const removed = removedDraftModelsRef.current;
+    setDraftModels((prev) => {
+      const existing = new Set(prev.map((m) => modelNameKey(m.name)));
+      const incoming = items.filter(
+        (m) =>
+          !existing.has(modelNameKey(m.name)) &&
+          !removed.has(modelNameKey(m.name)),
+      );
+      return incoming.length === 0 ? prev : [...prev, ...incoming];
+    });
+  }, []);
 
   // 3. Upstream catalog + auto-fetch on mount.
   const {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -77,29 +145,95 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerName,
     instanceName,
     hideActions,
-    isDraftInstance,
     resolveCreds,
     instanceModels,
+    apiKeyValue: currentCreds.apiKey,
+    baseUrlValue: currentCreds.baseUrl,
+    instanceDetailsLoaded,
+    onCatalogFetched: isDraftInstance ? mergeCatalogIntoDraft : undefined,
   });
 
+  const addDraftModel = useCallback((model: IProviderModelItem) => {
+    removedDraftModelsRef.current.delete(modelNameKey(model.name));
+    setDraftModels((prev) =>
+      prev.some((m) => modelNameKey(m.name) === modelNameKey(model.name))
+        ? prev
+        : [...prev, model],
+    );
+  }, []);
+  const removeDraftModel = useCallback((name: string) => {
+    removedDraftModelsRef.current.add(modelNameKey(name));
+    setDraftModels((prev) =>
+      prev.filter((m) => modelNameKey(m.name) !== modelNameKey(name)),
+    );
+  }, []);
+  const updateDraftModel = useCallback((item: IProviderModelItem) => {
+    setDraftModels((prev) =>
+      prev.map((m) =>
+        modelNameKey(m.name) === modelNameKey(item.name)
+          ? { ...m, ...item }
+          : m,
+      ),
+    );
+  }, []);
+  // Batch toggle replaces the whole list. Diff the next list against the
+  // current one so batch-removed names stay excluded from future catalog
+  // merges and batch-added names are eligible again.
+  const applyDraftModelsList = useCallback((next: IProviderModelItem[]) => {
+    const removed = removedDraftModelsRef.current;
+    setDraftModels((prev) => {
+      const nextNames = new Set(next.map((m) => modelNameKey(m.name)));
+      prev.forEach((m) => {
+        if (!nextNames.has(modelNameKey(m.name))) {
+          removed.add(modelNameKey(m.name));
+        }
+      });
+      next.forEach((m) => removed.delete(modelNameKey(m.name)));
+      return next;
+    });
+  }, []);
+
   // 4. Derived union list (instance ∪ catalog) + push to host.
-  const { instanceItems, models, addedSet } = useModelsDerived({
+  const { instanceItems, models, isModelAdded } = useModelsDerived({
     catalog,
     instanceModels,
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    draftModels,
+    isDraftInstance,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
+
+  useEffect(() => {
+    if (!isDraftInstance && !instanceModelsLoading && instanceModelsSucceeded) {
+      onInstanceModelsStatusChange?.(true);
+    }
+  }, [
+    instanceModelsLoading,
+    instanceModelsSucceeded,
+    isDraftInstance,
+    onInstanceModelsStatusChange,
+  ]);
 
   // 5. Search + tag filter.
   const { search, tag, setSearch, setTag, filteredModels, allTags } =
     useModelsFilter(models);
 
-  // 6. Per-model verify state.
-  const { verify, handleVerify } = useModelVerify({
-    providerName,
-    resolveCreds,
-    instanceModels,
-  });
+  // 6. Per-model verify state + batch verify.
+  const { verify, handleVerify, batchVerifying, handleBatchVerify } =
+    useModelVerify({
+      providerName,
+      resolveCreds,
+      instanceModels,
+      instance,
+      getFormValues,
+      verifyTransform,
+    });
+
+  const handleBatchVerifyClick = useCallback(() => {
+    handleBatchVerify(filteredModels);
+  }, [filteredModels, handleBatchVerify]);
 
   // 7. Add / remove / batch toggle / custom add.
   const {
@@ -118,8 +252,12 @@ export function ModelsSection(props: ModelsSectionProps) {
     instance,
     instanceItems,
     filteredModels,
-    addedSet,
+    isModelAdded,
     setCatalog,
+    clearCatalogOverride,
+    addDraftModel,
+    removeDraftModel,
+    setDraftModelsList: applyDraftModelsList,
   });
 
   // 8. Edit dialog state + submit.
@@ -131,10 +269,15 @@ export function ModelsSection(props: ModelsSectionProps) {
     handleEditSubmit,
     editLoading,
     customModelDialogFields,
+    providerFeatureKeys,
   } = useModelEdit({
     providerName,
     instanceName,
-    setCatalog,
+    isModelAdded,
+    isDraftInstance,
+    updateCatalogModel,
+    clearCatalogOverride,
+    updateDraftModel,
   });
 
   // Add-custom-model dialog open state (local UI state).
@@ -196,33 +339,6 @@ export function ModelsSection(props: ModelsSectionProps) {
               placeholder={t('setting.search')}
               rootClassName="flex-1"
             />
-            {!hideActions && (
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={handleBatchToggleModels}
-                disabled={batchLoading || filteredModels.length === 0}
-                data-testid="models-batch-toggle"
-                aria-label={
-                  allFilteredAdded
-                    ? tSetting('batchRemoveModels')
-                    : tSetting('batchAddModels')
-                }
-                title={
-                  allFilteredAdded
-                    ? tSetting('batchRemoveModels')
-                    : tSetting('batchAddModels')
-                }
-              >
-                {batchLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : allFilteredAdded ? (
-                  <ListMinus className="size-4" />
-                ) : (
-                  <ListPlus className="size-4" />
-                )}
-              </Button>
-            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             <TagFilterButton
@@ -245,6 +361,48 @@ export function ModelsSection(props: ModelsSectionProps) {
           </div>
         </div>
 
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBatchVerifyClick}
+            disabled={batchVerifying || filteredModels.length === 0}
+            data-testid="models-batch-verify"
+            className="ml-auto"
+          >
+            {batchVerifying ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <ShieldCheck className="size-3" />
+            )}
+            {tSetting('batchVerifyModels')}
+          </Button>
+          {!hideActions && (
+            // When the toggle is in "remove all" mode the click opens a
+            // confirmation dialog instead of mutating directly; the button
+            // acts as the dialog trigger, so the handler moves to `onOk`.
+            <ConfirmDeleteDialog
+              hidden={!allFilteredAdded}
+              onOk={handleBatchToggleModels}
+              title={t('common.removeModalTitle')}
+              okButtonText={t('common.remove')}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={allFilteredAdded ? undefined : handleBatchToggleModels}
+                disabled={batchLoading || filteredModels.length === 0}
+                data-testid="models-batch-toggle"
+              >
+                {batchLoading && <Loader2 className="size-3 animate-spin" />}
+                {allFilteredAdded
+                  ? tSetting('batchRemoveModels')
+                  : tSetting('batchAddModels')}
+              </Button>
+            </ConfirmDeleteDialog>
+          )}
+        </div>
+
         <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">
           {filteredModels.length === 0 ? (
             <div className="flex items-center justify-center text-text-secondary text-sm py-6 gap-2">
@@ -257,7 +415,7 @@ export function ModelsSection(props: ModelsSectionProps) {
                 <ModelRow
                   key={model.name}
                   model={model}
-                  isAdded={addedSet.has(model.name)}
+                  isAdded={isModelAdded(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
                   hideActions={hideActions}
                   onVerify={() => handleVerify(model)}
@@ -278,6 +436,7 @@ export function ModelsSection(props: ModelsSectionProps) {
         title={tSetting('addCustomModelTitle')}
         fields={customModelDialogFields}
         existingNames={models.map((m) => m.name)}
+        providerFeatureKeys={providerFeatureKeys}
         onSubmit={async (item) => {
           await handleAddCustom(item);
           setDialogOpen(false);
@@ -294,8 +453,13 @@ export function ModelsSection(props: ModelsSectionProps) {
         title={tSetting('editModel')}
         fields={editModelDialogFields}
         existingNames={models
-          .filter((m) => m.name !== editingModel?.name)
+          .filter(
+            (m) =>
+              editingModel === null ||
+              modelNameKey(m.name) !== modelNameKey(editingModel.name),
+          )
           .map((m) => m.name)}
+        providerFeatureKeys={providerFeatureKeys}
         defaultValues={editDefaultValues}
         loading={editLoading}
         onSubmit={async (item) => {

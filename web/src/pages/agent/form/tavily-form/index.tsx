@@ -8,7 +8,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -77,7 +77,7 @@ function TavilyForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.searchDepth')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     placeholder="shadcn"
                     {...field}
                     options={buildOptions(TavilySearchDepth, t, 'flow')}
@@ -94,7 +94,7 @@ function TavilyForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.tavilyTopic')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     placeholder="shadcn"
                     {...field}
                     options={buildOptions(TavilyTopic, t, 'flow')}

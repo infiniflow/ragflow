@@ -227,7 +227,7 @@ class TestChatAssistantsList:
         "chat_assistant_id, expected_code, expected_message",
         [
             (lambda r: r[0], 0, ""),
-            ("unknown", 109, "No authorization."),
+            ("unknown", 109, "no authorization"),
         ],
     )
     def test_get_chat_assistant(

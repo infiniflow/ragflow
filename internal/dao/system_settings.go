@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"ragflow/internal/entity"
 
@@ -33,9 +34,9 @@ func NewSystemSettingsDAO() *SystemSettingsDAO {
 
 // GetAll get all system settings
 // Returns all system settings records from database
-func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
+func (d *SystemSettingsDAO) GetAll(ctx context.Context, db *gorm.DB) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Order("name ASC").Find(&settings).Error
+	err := db.WithContext(ctx).Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -44,9 +45,9 @@ func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
 
 // GetByName get system settings by name
 // Returns settings records that match the given name
-func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, error) {
+func (d *SystemSettingsDAO) GetByName(ctx context.Context, db *gorm.DB, name string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("name = ?", name).Order("name ASC").Find(&settings).Error
+	err := db.WithContext(ctx).Where("name = ?", name).Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -55,9 +56,9 @@ func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, err
 
 // GetByNamePrefix get system settings by name prefix
 // Returns settings records whose names start with the given prefix.
-func (d *SystemSettingsDAO) GetByNamePrefix(namePrefix string) ([]entity.SystemSettings, error) {
+func (d *SystemSettingsDAO) GetByNamePrefix(ctx context.Context, db *gorm.DB, namePrefix string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("name LIKE ?", namePrefix+"%").Order("name ASC").Find(&settings).Error
+	err := db.WithContext(ctx).Where("name LIKE ?", namePrefix+"%").Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +67,8 @@ func (d *SystemSettingsDAO) GetByNamePrefix(namePrefix string) ([]entity.SystemS
 
 // UpdateByName update system settings by name
 // Updates the setting with the given name using the provided data
-func (d *SystemSettingsDAO) UpdateByName(name string, setting *entity.SystemSettings) error {
-	return DB.Model(&entity.SystemSettings{}).
+func (d *SystemSettingsDAO) UpdateByName(ctx context.Context, db *gorm.DB, name string, setting *entity.SystemSettings) error {
+	return db.WithContext(ctx).Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
 			"value":     setting.Value,
@@ -76,16 +77,16 @@ func (d *SystemSettingsDAO) UpdateByName(name string, setting *entity.SystemSett
 		}).Error
 }
 
-// Create create a new system setting
+// Create a new system setting
 // Inserts a new system setting record into database
-func (d *SystemSettingsDAO) Create(setting *entity.SystemSettings) error {
-	return DB.Create(setting).Error
+func (d *SystemSettingsDAO) Create(ctx context.Context, db *gorm.DB, setting *entity.SystemSettings) error {
+	return db.WithContext(ctx).Create(setting).Error
 }
 
 // SaveOrCreate update existing setting or create new one
 // If setting exists, updates it; otherwise creates a new record
-func (d *SystemSettingsDAO) SaveOrCreate(name string, value string, source string, dataType string) error {
-	settings, err := d.GetByName(name)
+func (d *SystemSettingsDAO) SaveOrCreate(ctx context.Context, db *gorm.DB, name string, value string, source string, dataType string) error {
+	settings, err := d.GetByName(ctx, db, name)
 	if err != nil {
 		return err
 	}
@@ -95,7 +96,7 @@ func (d *SystemSettingsDAO) SaveOrCreate(name string, value string, source strin
 		setting.Value = value
 		setting.Source = source
 		setting.DataType = dataType
-		return d.UpdateByName(name, setting)
+		return d.UpdateByName(ctx, db, name, setting)
 	} else if len(settings) > 1 {
 		return errors.New("can't update more than 1 setting: " + name)
 	}
@@ -106,25 +107,25 @@ func (d *SystemSettingsDAO) SaveOrCreate(name string, value string, source strin
 		Source:   source,
 		DataType: dataType,
 	}
-	return d.Create(newSetting)
+	return d.Create(ctx, db, newSetting)
 }
 
 // Count get total count of system settings
-func (d *SystemSettingsDAO) Count() (int64, error) {
+func (d *SystemSettingsDAO) Count(ctx context.Context, db *gorm.DB) (int64, error) {
 	var count int64
-	err := DB.Model(&entity.SystemSettings{}).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.SystemSettings{}).Count(&count).Error
 	return count, err
 }
 
 // DeleteByName delete system setting by name
-func (d *SystemSettingsDAO) DeleteByName(name string) error {
-	return DB.Where("name = ?", name).Delete(&entity.SystemSettings{}).Error
+func (d *SystemSettingsDAO) DeleteByName(ctx context.Context, db *gorm.DB, name string) error {
+	return db.WithContext(ctx).Where("name = ?", name).Delete(&entity.SystemSettings{}).Error
 }
 
 // Exists check if setting exists by name
-func (d *SystemSettingsDAO) Exists(name string) (bool, error) {
+func (d *SystemSettingsDAO) Exists(ctx context.Context, db *gorm.DB, name string) (bool, error) {
 	var count int64
-	err := DB.Model(&entity.SystemSettings{}).Where("name = ?", name).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.SystemSettings{}).Where("name = ?", name).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -132,9 +133,9 @@ func (d *SystemSettingsDAO) Exists(name string) (bool, error) {
 }
 
 // GetBySource get system settings by source
-func (d *SystemSettingsDAO) GetBySource(source string) ([]entity.SystemSettings, error) {
+func (d *SystemSettingsDAO) GetBySource(ctx context.Context, db *gorm.DB, source string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("source = ?", source).Find(&settings).Error
+	err := db.WithContext(ctx).Where("source = ?", source).Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +143,9 @@ func (d *SystemSettingsDAO) GetBySource(source string) ([]entity.SystemSettings,
 }
 
 // GetByDataType get system settings by data type
-func (d *SystemSettingsDAO) GetByDataType(dataType string) ([]entity.SystemSettings, error) {
+func (d *SystemSettingsDAO) GetByDataType(ctx context.Context, db *gorm.DB, dataType string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("data_type = ?", dataType).Find(&settings).Error
+	err := db.WithContext(ctx).Where("data_type = ?", dataType).Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -152,18 +153,18 @@ func (d *SystemSettingsDAO) GetByDataType(dataType string) ([]entity.SystemSetti
 }
 
 // Transaction execute operations in a transaction
-func (d *SystemSettingsDAO) Transaction(fn func(tx *gorm.DB) error) error {
-	return DB.Transaction(fn)
+func (d *SystemSettingsDAO) Transaction(ctx context.Context, db *gorm.DB, fn func(tx *gorm.DB) error) error {
+	return db.WithContext(ctx).Transaction(fn)
 }
 
 // CreateWithTx create setting within transaction
-func (d *SystemSettingsDAO) CreateWithTx(tx *gorm.DB, setting *entity.SystemSettings) error {
-	return tx.Create(setting).Error
+func (d *SystemSettingsDAO) CreateWithTx(ctx context.Context, tx *gorm.DB, setting *entity.SystemSettings) error {
+	return tx.WithContext(ctx).Create(setting).Error
 }
 
 // UpdateByNameWithTx update setting within transaction
-func (d *SystemSettingsDAO) UpdateByNameWithTx(tx *gorm.DB, name string, setting *entity.SystemSettings) error {
-	return tx.Model(&entity.SystemSettings{}).
+func (d *SystemSettingsDAO) UpdateByNameWithTx(ctx context.Context, tx *gorm.DB, name string, setting *entity.SystemSettings) error {
+	return tx.WithContext(ctx).Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
 			"value":     setting.Value,

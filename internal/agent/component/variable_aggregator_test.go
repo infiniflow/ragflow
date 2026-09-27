@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/agent/canvas"
@@ -31,7 +30,7 @@ func TestVariableAggregator_FirstNonEmpty(t *testing.T) {
 	state.Outputs["cpn_1"] = map[string]any{"y": "second-a"}
 	state.Outputs["cpn_2"] = map[string]any{"y": "second-b"}
 	state.Outputs["cpn_3"] = map[string]any{"y": "second-c"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -60,7 +59,7 @@ func TestVariableAggregator_FirstNonEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -84,7 +83,7 @@ func TestVariableAggregator_SkipsEmptyString(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	state.Outputs["cpn_0"] = map[string]any{"x": ""}
 	state.Outputs["cpn_1"] = map[string]any{"y": "picked"}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -99,7 +98,7 @@ func TestVariableAggregator_SkipsEmptyString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -115,7 +114,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 	state.Sys["a"] = "alpha"
 	state.Sys["b"] = ""
 	state.Env["c"] = "gamma"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -143,7 +142,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -163,7 +162,7 @@ func TestVariableAggregator_MultipleGroups(t *testing.T) {
 func TestVariableAggregator_AllEmpty(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	state.Outputs["cpn_0"] = map[string]any{}
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	groups := []map[string]any{
 		{
@@ -177,7 +176,7 @@ func TestVariableAggregator_AllEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAggregatorComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -210,5 +209,38 @@ func TestVariableAggregator_Registered(t *testing.T) {
 	}
 	if c.Name() != "VariableAggregator" {
 		t.Errorf("Name()=%q, want VariableAggregator", c.Name())
+	}
+}
+
+func TestVariableAggregator_StringSelectors(t *testing.T) {
+	state := canvas.NewCanvasState("run-str", "task-str")
+	state.Outputs["cpn_1"] = map[string]any{"y": "from-string"}
+	ctx := canvas.WithState(t.Context(), state)
+	groups := []map[string]any{{"group_name": "g", "variables": []any{"cpn_1@y"}}}
+	c, err := NewVariableAggregatorComponent(map[string]any{"groups": groups})
+	if err != nil {
+		t.Fatalf("NewVariableAggregatorComponent: %v", err)
+	}
+	out, err := c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["g"], "from-string"; got != want {
+		t.Errorf("g: got %v, want %v", got, want)
+	}
+}
+
+func TestNormalizeSelectorRef(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+	}{
+		{"a@x", "a@x"}, {"  a@x  ", "a@x"}, {"{a@x}", "a@x"}, {" {a@x} ", "a@x"},
+		{map[string]any{"value": "a@x"}, "a@x"}, {"", ""}, {map[string]any{"value": ""}, ""}, {map[string]any{}, ""}, {nil, ""}, {42, ""},
+	}
+	for _, tc := range cases {
+		if got := normalizeSelectorRef(tc.in); got != tc.want {
+			t.Errorf("normalizeSelectorRef(%v)=%q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

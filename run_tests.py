@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import List
 import platform
 from enum import Enum
+
+
 class Colors(Enum):
     """ANSI color codes for terminal output"""
 
@@ -29,11 +31,12 @@ class Colors(Enum):
     GREEN = "\033[0;32m"
     YELLOW = "\033[1;33m"
     BLUE = "\033[0;34m"
-    BLACK = '\033[30m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
+    BLACK = "\033[30m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
     NC = "\033[0m"  # No Color
+
 
 def _is_color_supported() -> bool:
     """
@@ -44,10 +47,10 @@ def _is_color_supported() -> bool:
     Returns:
         result(bool): Whether color output is supported
     """
-     # Non-interactive terminals do not support color output
+    # Non-interactive terminals do not support color output
     if not sys.stdout.isatty():
         return False
-    
+
     # Handle Windows systems
     if sys.platform.startswith("win"):
         try:
@@ -57,10 +60,11 @@ def _is_color_supported() -> bool:
             if not (major >= 10 and build >= 10586):
                 return False
             from ctypes import windll
+
             # Actively enable ANSI support for Windows terminal
             INVALID_HANDLE_VALUE = -1
             kernel32 = windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE       
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
             if handle == INVALID_HANDLE_VALUE:
                 return False
             success = kernel32.SetConsoleMode(handle, 7)
@@ -73,21 +77,18 @@ def _is_color_supported() -> bool:
     else:
         try:
             # Detect color support
-            result = subprocess.check_output(
-                ["tput", "colors"], 
-                stderr=subprocess.DEVNULL,
-                text=True
-            )
+            result = subprocess.check_output(["tput", "colors"], stderr=subprocess.DEVNULL, text=True)
             color_count = int(result.strip())
             return color_count >= 8
         # Explicitly catch tput-related exceptions
         except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            return False 
-        
+            return False
+
+
 COLOR_SUPPORT = _is_color_supported()
 
-def set_color(s: str,
-              color: str) -> str:
+
+def set_color(s: str, color: str) -> str:
     """
     Wrap input string with specified ANSI terminal color escape sequence.
     Color name argument is case-insensitive. If color is unsupported or invalid,
@@ -103,10 +104,11 @@ def set_color(s: str,
         >>> set_color(s="hello world",color="red")
 
     """
-    
+
     if COLOR_SUPPORT:
         return f"{getattr(Colors, color.strip().upper()).value}{s}{Colors.NC.value}"
     return f"{s}"  # pragma: no cover
+
 
 class TestRunner:
     """RAGFlow Unit Test Runner"""
@@ -122,6 +124,7 @@ class TestRunner:
         self.markers = ""
         self.test_path = ""
         self.keyword = ""
+        self.durations = 100
 
         # Python interpreter path
         self.python = sys.executable
@@ -129,12 +132,12 @@ class TestRunner:
     @staticmethod
     def print_info(message: str) -> None:
         """Print informational message"""
-        print(f"{set_color(s="[INFO]",color="blue")} {message}")
+        print(f"{set_color(s='[INFO]', color='blue')} {message}")
 
     @staticmethod
     def print_error(message: str) -> None:
         """Print error message"""
-        print(f"{set_color(s="[ERROR]",color="red")} {message}")
+        print(f"{set_color(s='[ERROR]', color='red')} {message}")
 
     @staticmethod
     def show_usage() -> None:
@@ -151,6 +154,7 @@ OPTIONS:
     -v, --verbose           Verbose output
     -t, --test FILE         Run specific test file or directory
     -m, --markers MARKERS   Run tests with specific markers (e.g., "unit", "integration")
+    -d, --durations N       Show the N slowest test durations (default: 100)
 
 EXAMPLES:
     # Run all tests
@@ -179,7 +183,10 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest"]
+        # Use the current interpreter (the venv python) to run pytest as a
+        # module so the run works even when the `pytest` console script is not
+        # on PATH (e.g. the venv was not explicitly activated).
+        cmd = [self.python, "-m", "pytest"]
         if self.test_path:
             test_target = Path(self.test_path)
             if not test_target.is_absolute():
@@ -222,6 +229,9 @@ EXAMPLES:
         if self.ignore_syntax_warning:
             cmd.extend(["-W", "ignore::SyntaxWarning"])
 
+        # Add slow test durations report (top N slowest tests)
+        cmd.extend(["--durations", str(self.durations)])
+
         # Add default options from pyproject.toml if it exists
         pyproject_path = self.project_root / "pyproject.toml"
         if pyproject_path.exists():
@@ -251,21 +261,23 @@ EXAMPLES:
             self.print_info(f"Markers: {self.markers}")
         if self.keyword:
             self.print_info(f"Keyword: {self.keyword}")
+        if self.durations:
+            self.print_info(f"Durations: top {self.durations} slowest tests")
 
-        print(f"\n{set_color(s="[EXECUTING]",color='blue')} {' '.join(cmd)}\n")
+        print(f"\n{set_color(s='[EXECUTING]', color='blue')} {' '.join(cmd)}\n")
 
         # Run pytest
         try:
             result = subprocess.run(cmd, check=False)
 
             if result.returncode == 0:
-                print(f"\n{set_color(s="[SUCCESS]",color="green")} All tests passed!")
+                print(f"\n{set_color(s='[SUCCESS]', color='green')} All tests passed!")
 
                 if self.coverage:
                     coverage_dir = self.ut_dir / "htmlcov"
                     if coverage_dir.exists():
                         index_file = coverage_dir / "index.html"
-                        print(f"\n{set_color(s="[INFO]",color="blue")} Coverage report generated:")
+                        print(f"\n{set_color(s='[INFO]', color='blue')} Coverage report generated:")
                         print(f"    {index_file}")
                         print("\nOpen with:")
                         print(f"    - Windows: start {index_file}")
@@ -274,11 +286,11 @@ EXAMPLES:
 
                 return True
             else:
-                print(f"\n{set_color(s="[FAILURE]",color="red")} Some tests failed!")
+                print(f"\n{set_color(s='[FAILURE]', color='red')} Some tests failed!")
                 return False
 
         except KeyboardInterrupt:
-            print(f"\n{set_color(s="[INTERRUPTED]",color="yellow")} Test execution interrupted by user")
+            print(f"\n{set_color(s='[INTERRUPTED]', color='yellow')} Test execution interrupted by user")
             return False
         except Exception as e:
             self.print_error(f"Failed to execute tests: {e}")
@@ -297,6 +309,7 @@ Examples:
   python run_tests.py --test services/test_dialog_service.py  # Run specific test
   python run_tests.py --markers "unit"   # Run only unit tests
   python run_tests.py --ignore           # Run with "-W ignore::SyntaxWarning" option
+  python run_tests.py --durations 50     # Show the 50 slowest tests
 """,
         )
 
@@ -314,6 +327,8 @@ Examples:
 
         parser.add_argument("-m", "--markers", type=str, default="", help="Run tests with specific markers (e.g., 'unit', 'integration')")
 
+        parser.add_argument("-d", "--durations", type=int, default=100, help="Show the N slowest test durations in the summary (0 to disable)")
+
         try:
             args = parser.parse_args()
 
@@ -325,12 +340,15 @@ Examples:
             self.ignore_syntax_warning = args.ignore
             self.test_path = args.test
             self.keyword = args.keyword
+            self.durations = args.durations
 
             return True
 
         except SystemExit:
-            # argparse already printed help, just exit
-            return False
+            # argparse already printed help or the error and chose a status:
+            # 0 for --help, 2 for a bad argument. Let it through instead of
+            # collapsing both into a failure.
+            raise
         except Exception as e:
             self.print_error(f"Error parsing arguments: {e}")
             return False

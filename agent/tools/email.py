@@ -19,6 +19,7 @@ from abc import ABC
 import json
 import smtplib
 import logging
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -39,7 +40,7 @@ class EmailParam(ToolParamBase):
             "description": "The email is a method of electronic communication for sending and receiving information through the Internet. This tool helps users to send emails to one person or to multiple recipients with support for CC, BCC, file attachments, and markdown-to-HTML conversion.",
             "parameters": {
                 "to_email": {"type": "string", "description": "The target email address.", "default": "{sys.query}", "required": True},
-                "cc_email": {"type": "string", "description": "The other email addresses needs to be send to. Comma splited.", "default": "", "required": False},
+                "cc_email": {"type": "string", "description": "The other email addresses need to be sent to, comma-separated.", "default": "", "required": False},
                 "content": {"type": "string", "description": "The content of the email.", "default": "", "required": False},
                 "subject": {"type": "string", "description": "The subject/title of the email.", "default": "", "required": False},
             },
@@ -116,11 +117,17 @@ class Email(ToolBase, ABC):
                 if self.check_if_canceled("Email processing"):
                     return
 
-                context = smtplib.ssl.create_default_context()
-                with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
+                context = ssl.create_default_context()
+                if int(self._param.smtp_port) == 465:
+                    server = smtplib.SMTP_SSL(self._param.smtp_server, self._param.smtp_port, timeout=10, context=context)
+                else:
+                    server = smtplib.SMTP(self._param.smtp_server, self._param.smtp_port, timeout=10)
+
+                with server:
                     server.ehlo()
-                    server.starttls(context=context)
-                    server.ehlo()
+                    if int(self._param.smtp_port) != 465:
+                        server.starttls(context=context)
+                        server.ehlo()
 
                     # Login
                     smtp_username = self._param.smtp_username or self._param.email

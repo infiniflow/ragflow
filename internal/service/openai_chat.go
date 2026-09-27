@@ -124,6 +124,8 @@ func NewOpenAIChatService() *OpenAIChatService {
 // OpenAIChatRequest mirrors the OpenAI Chat Completions request body.
 // `stop` and `user` are omitted intentionally — JSON unmarshal silently drops them.
 type OpenAIChatRequest struct {
+	Question  string                   `json:"question,omitempty"`
+	Query     string                   `json:"query,omitempty"`
 	Model     string                   `json:"model"`
 	Messages  []map[string]interface{} `json:"messages"`
 	Stream    *bool                    `json:"stream,omitempty"`
@@ -142,6 +144,17 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		s.writeArgError(c, err.Error())
 		return
 	}
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		s.writeDataError(c, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
+	}
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 
 	normalizedMessages, err := normalizeOpenAIMessages(req.Messages)
@@ -151,6 +164,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	}
 	if len(normalizedMessages) == 0 {
 		s.writeDataError(c, "You have to provide messages.")
+		return
+	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		s.writeArgError(c, "`max_tokens` must be greater than 0.")
 		return
 	}
 
@@ -217,7 +234,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	dialogResp, err := s.chatSvc.GetChat(userID, chatID)
+	ctx := c.Request.Context()
+	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
 		s.writeDataError(c, err.Error())
 		return
@@ -231,11 +249,15 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(dialog.TenantID, resolvedModel); mErr != nil {
+		modelType := entity.ModelTypeChat
+		if s.pipeline.ModelProviderSvc.isImage2TextLLM(ctx, dialog.TenantID, resolvedModel) {
+			modelType = entity.ModelTypeImage2Text
+		}
+		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, modelType, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(dialog.TenantID, req.Model)
+		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
 		if apiErr != nil || apiKey == "" {
 			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
@@ -263,12 +285,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	ctx := c.Request.Context()
 	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			_ = lfClient.Shutdown(shutdownCtx)
 		}()
@@ -286,7 +307,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				kbIDs = append(kbIDs, id)
 			}
 		}
-		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
 			s.writeDataError(c, fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
 			return
@@ -318,7 +339,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if docIDsStr != "" {
 		chatKwargs["doc_ids"] = docIDsStr
 	}
-
 	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
@@ -347,23 +367,24 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			for result := range asyncResults {
 				lastResult = result
 
-				if result.StartToThink || result.EndToThink {
-					// Think markers only toggle routing state; no SSE event
-					// emitted. Matches Python's _stream_chat_completion_sse
-					// which ignores start_to_think/end_to_think flags and
-					// never emits "<think>" or "</think>" as content.
-					continue
-				}
+				// Think markers only toggle routing state — Python never emits
+				// "<think>"/"</think>" as content — but the result carrying a
+				// marker can also carry the first delta of the text it delimits
+				// (the first content delta after a think block IS the EndToThink
+				// result). The event must therefore fall through to the emission
+				// below instead of being dropped: dropping it loses that text,
+				// which is what left an answer opening mid-sentence.
 
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)
 					fullContent = finalContent
+					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
 						if chunks, ok := ref.([]map[string]interface{}); ok {
 							finalReference = formatChunks(chunks)
 						}
 					}
-					s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 					completionTok = tokenizer.NumTokensFromString(result.Answer)
 					events <- OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
@@ -397,13 +418,14 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			}
 
 			if finalReference == nil && openaiReq.NeedReference {
+				finalReference = []FormattedChunk{}
 				if ref, ok := lastResult.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
 						finalReference = formatChunks(chunks)
 					}
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 			events <- OpenAIStreamEvent{
 				Kind:             OpenAIEventFinal,
 				FinalAnswer:      strings.TrimSpace(fullContent),
@@ -441,12 +463,13 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			TotalTokens:      promptTokens + completionTokens,
 		}
 		if openaiReq.NeedReference {
+			resp.Reference = []FormattedChunk{}
 			if ref, ok := finalResult.Reference["chunks"]; ok {
 				if chunks, ok := ref.([]map[string]interface{}); ok {
 					resp.Reference = formatChunks(chunks)
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
+			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 		}
 
 		contextUsed := 0
@@ -560,8 +583,9 @@ func extractGenerationConfig(req *OpenAIChatRequest) map[string]interface{} {
 	return cfg
 }
 
-// normalizeMessageContent coerces content to string (drops non-text parts).
-func normalizeMessageContent(content interface{}) (string, error) {
+// NormalizeOpenAIMessageContent coerces OpenAI message content to text and
+// drops unsupported non-text parts.
+func NormalizeOpenAIMessageContent(content interface{}) (string, error) {
 	if content == nil {
 		return "", nil
 	}
@@ -594,7 +618,7 @@ func normalizeOpenAIMessages(messages []map[string]interface{}) ([]map[string]in
 		for k, v := range m {
 			normalized[k] = v
 		}
-		c, err := normalizeMessageContent(m["content"])
+		c, err := NormalizeOpenAIMessageContent(m["content"])
 		if err != nil {
 			return nil, err
 		}
@@ -643,7 +667,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
+			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),
@@ -666,7 +690,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 // api/utils/reference_metadata_utils.py.
 // When fields is a non-nil empty slice (explicitly provided as []), enrichment
 // is skipped — matching Python's behavior for {"fields": []}.
-func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedChunk, tenantID string, include bool, fields []string) {
+func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context, chunks []FormattedChunk, tenantID string, include bool, fields []string) {
 	if !include || len(chunks) == 0 || s == nil || s.pipeline.MetadataSvc == nil {
 		return
 	}
@@ -681,7 +705,7 @@ func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(chunks []FormattedC
 			"document_metadata": ch.DocumentMetadata,
 		}
 	}
-	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(maps, tenantID, fields)
+	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
 	for i, m := range maps {
 		if md, ok := m["document_metadata"]; ok {
 			chunks[i].DocumentMetadata = md

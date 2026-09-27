@@ -1,9 +1,10 @@
 {
-  "name": "lmstudio",
+  "name": "LM-Studio",
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
     "embedding": "embeddings"
   },
+  "url_hint": "http://host.docker.internal:1234/v1",
   "class": "local"
 }

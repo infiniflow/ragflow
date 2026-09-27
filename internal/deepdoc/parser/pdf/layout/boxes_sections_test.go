@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -252,6 +253,17 @@ func TestSectionsToMarkdown_FigureWithImage(t *testing.T) {
 	}
 }
 
+func TestSectionsToMarkdown_FigureWithDataURLImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "data:image/png;base64,abc123"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,abc123)"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
 	sections := []pdf.Section{
 		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: ""},
@@ -260,6 +272,17 @@ func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
 	want := "图1\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_FigureWithWhitespaceImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "   \t\n"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "图1\n"
+	if got != want {
+		t.Errorf("got %q, want %q (whitespace image should not emit empty image tag or drop text)", got, want)
 	}
 }
 
@@ -282,6 +305,61 @@ func TestSectionsToMarkdown_Table(t *testing.T) {
 	want := "表格内容\n"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_TableWithImageAndText(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "<table><tr><td>1</td></tr></table>", Image: "dGFibGVpbWc="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "<table><tr><td>1</td></tr></table>\n"
+	if got != want {
+		t.Errorf("got %q, want %q (table with text should render table text)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_TableFallbackWhenEmptyText(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "dGFibGVpbWc="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,dGFibGVpbWc=)"
+	if got != want {
+		t.Errorf("got %q, want %q (table with empty text should fallback to image)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_TableFallbackWhitespaceImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "   \t\n"},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n"
+	if got != want {
+		t.Errorf("got %q, want %q (table with empty text and whitespace image should render empty text newline, no empty tag)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_DocTypeKwdImage(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "aGVsbG8="},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "\n![Image](data:image/png;base64,aGVsbG8=)"
+	if got != want {
+		t.Errorf("got %q, want %q (DocTypeKwd == 'image' should render image)", got, want)
+	}
+}
+
+func TestSectionsToMarkdown_DocTypeKwdImage_Whitespace(t *testing.T) {
+	sections := []pdf.Section{
+		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "   "},
+	}
+	got := SectionsToMarkdown(sections)
+	want := "caption\n"
+	if got != want {
+		t.Errorf("got %q, want %q (DocTypeKwd == 'image' with whitespace image should keep text)", got, want)
 	}
 }
 
@@ -386,7 +464,78 @@ func TestSectionsToJSON_NilSlice(t *testing.T) {
 	}
 }
 
-// TestCrossPageTableMerge verifies that mergeTablesAcrossPages merges
-// two TableItems on consecutive pages with overlapping X positions.
-// Python: _extract_table_figure merges cross-page tables by matching layoutno.
-// Spanning cells should be annotated with colspan/rowspan in the HTML output.
+func TestInlinePNGDataURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantURL string
+	}{
+		{
+			name:    "empty string returns empty",
+			input:   "",
+			wantURL: "",
+		},
+		{
+			name:    "whitespace string returns empty",
+			input:   "   ",
+			wantURL: "",
+		},
+		{
+			name:    "raw base64 gets png data URI prefix",
+			input:   "aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "raw base64 with surrounding whitespace gets trimmed and prefixed",
+			input:   "  aGVsbG8=  \n",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already png data uri is preserved as is",
+			input:   "data:image/png;base64,aGVsbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "already jpeg data uri is preserved as is",
+			input:   "data:image/jpeg;base64,/9j/4AAQ",
+			wantURL: "data:image/jpeg;base64,/9j/4AAQ",
+		},
+		{
+			name:    "http url is preserved as is",
+			input:   "http://example.com/img.png",
+			wantURL: "http://example.com/img.png",
+		},
+		{
+			name:    "https url is preserved as is",
+			input:   "https://example.com/img.png",
+			wantURL: "https://example.com/img.png",
+		},
+		{
+			name:    "line-wrapped base64 with CRLF is normalized without CRLF",
+			input:   "aGVs\r\nbG8=",
+			wantURL: "data:image/png;base64,aGVsbG8=",
+		},
+		{
+			name:    "multi-line wrapped base64 with LF is normalized without LF",
+			input:   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk\n+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			wantURL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+		},
+		{
+			name:    "non-base64 invalid string is returned without mangling",
+			input:   "invalid!@#base64",
+			wantURL: "invalid!@#base64",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := InlinePNGDataURL(tc.input)
+			if got != tc.wantURL {
+				t.Errorf("InlinePNGDataURL(%q) = %q, want %q", tc.input, got, tc.wantURL)
+			}
+			if strings.HasPrefix(got, "data:image/png;base64,") && strings.ContainsAny(got, "\r\n") {
+				t.Errorf("InlinePNGDataURL(%q) contains CR/LF characters: %q", tc.input, got)
+			}
+		})
+	}
+}

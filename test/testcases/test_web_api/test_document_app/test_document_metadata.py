@@ -256,7 +256,7 @@ class TestDocumentMetadataNegative:
         # Now try to update metadata setting for the deleted document
         res = document_update_metadata_setting(WebApiAuth, dataset_id, doc_id, {"metadata": {"author": "test"}})
         assert res["code"] == 102, res
-        assert f"Document {doc_id} not found in dataset {dataset_id}" in res["message"], res
+        assert f"document {doc_id} not found in dataset {dataset_id}" in res["message"], res
 
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):
@@ -335,7 +335,7 @@ class TestDocumentMetadataUnit:
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         # Stub get_by_id to a valid document so the test can only pass via the
         # accessible() early return; if that check ever regresses, the route would
         # proceed and the assertions below would no longer match.
@@ -353,7 +353,7 @@ class TestDocumentMetadataUnit:
         )
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("doc1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -362,7 +362,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"blob-data"
@@ -396,7 +396,7 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module, "request", _DummyRequest(args={"ext": "abc"}))
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         accessible_calls = []
 
         def fake_accessible_denied(doc_id, user_id):
@@ -406,7 +406,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
         res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("att1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -447,7 +447,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download_document("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
     def test_dataset_document_download_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
@@ -456,83 +456,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download("kb1", "doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
-
-    @pytest.mark.p2
-    def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
-
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
-
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
-            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return png_bytes
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        res = _run(module.get_document_image("kb1-object.png"))
-        assert isinstance(res, _ImageResponse)
-        assert res.headers["Content-Type"] == "image/png"
-
-    @pytest.mark.p2
-    def test_get_document_image_content_type_from_magic_bytes_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
-
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
-
-        png_bytes = (
-            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
-            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-        )
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return png_bytes
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        res = _run(module.get_document_image("kb1-a1b2c3d4e5f6"))
-        assert isinstance(res, _ImageResponse)
-        assert res.headers["Content-Type"] == "image/png"
-
-    @pytest.mark.p2
-    def test_get_document_image_missing_blob_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return None
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        res = _run(module.get_document_image("kb1-object-key"))
-        assert res["code"] == RetCode.DATA_ERROR
-        assert res["message"] == "Image not found."
+        assert "document not found" in res["message"]
 
     @pytest.mark.p2
     def test_get_preview_missing_blob_unit(self, document_app_module, monkeypatch):
@@ -552,85 +476,6 @@ class TestDocumentMetadataUnit:
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "This file is empty."
-
-    @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
-    def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
-
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
-
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return b"image-bytes"
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"image-bytes"))
-        res = _run(module.get_image("bucket-name"))
-        assert isinstance(res, _ImageResponse)
-        assert res.data == b"image-bytes"
-        assert res.headers["Content-Type"] == "image/JPEG"
-
-        async def raise_error(*_args, **_kwargs):
-            raise RuntimeError("image boom")
-
-        monkeypatch.setattr(module, "thread_pool_exec", raise_error)
-        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.get_image("bucket-name"))
-        assert res["code"] == 500
-        assert "image boom" in res["message"]
-
-    def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
-        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
-        module = document_app_module
-
-        class _Headers(dict):
-            def set(self, key, value):
-                self[key] = value
-
-        class _ImageResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = _Headers()
-
-        storage_calls = []
-
-        def _storage_get(bkt, nm):
-            storage_calls.append((bkt, nm))
-            return b"png-bytes"
-
-        async def fake_thread_pool_exec(fn, *args, **kwargs):
-            return fn(*args, **kwargs)
-
-        async def fake_make_response(data):
-            return _ImageResponse(data)
-
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        monkeypatch.setattr(module, "make_response", fake_make_response)
-        monkeypatch.setattr(
-            module.settings,
-            "STORAGE_IMPL",
-            SimpleNamespace(get=_storage_get),
-        )
-
-        image_id = "kb12345678901234567890123456789012-page-1.png"
-        res = _run(module.get_document_image(image_id))
-        assert isinstance(res, _ImageResponse)
-        assert storage_calls == [("kb12345678901234567890123456789012", "page-1.png")]
-        assert res.headers["Content-Type"] == "image/png"
-
-        res = _run(module.get_document_image("only-one-part"))
-        assert res["code"] == RetCode.DATA_ERROR
-        assert "Image not found" in res["message"]
 
     @pytest.mark.p2
     def test_get_artifact_denied_without_session_reference_unit(self, document_app_module, monkeypatch):

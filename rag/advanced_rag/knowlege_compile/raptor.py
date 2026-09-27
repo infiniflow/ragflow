@@ -14,19 +14,18 @@
 #  limitations under the License.
 #
 import asyncio
-from dataclasses import dataclass, field
 import logging
+import os
 import re
 
 import numpy as np
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.mixture import GaussianMixture
 
 from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
 from common.exceptions import TaskCanceledException
 from common.token_utils import truncate
 from rag.graphrag.utils import (
+    LoopLocalSemaphore,
     chat_limiter,
     get_embed_cache,
     get_llm_cache,
@@ -34,132 +33,361 @@ from rag.graphrag.utils import (
     set_llm_cache,
 )
 from common.misc_utils import thread_pool_exec
-from rag.utils.raptor_utils import (
-    AHC_CLUSTERING_METHOD,
-    GMM_CLUSTERING_METHOD,
-    PSI_TREE_BUILDER,
-    RAPTOR_TREE_BUILDER,
-    SUPPORTED_CLUSTERING_METHODS,
-    SUPPORTED_TREE_BUILDERS,
+
+from ._common import knowledge_compile_gen_conf
+
+# Claim extraction has its own concurrency budget, decoupled from the global
+# chat_limiter (which also serves clustering and embedding). MiniMax's API only
+# tolerates ~4 concurrent requests, so default to 4 and let it be overridden via
+# MAX_CONCURRENT_CLAIM_CHATS. On rate-limit errors each call backs off and retries
+# instead of letting the limiter itself scale up and hammer the API.
+_claim_limiter = LoopLocalSemaphore(int(os.environ.get("MAX_CONCURRENT_CLAIM_CHATS", 4)))
+
+# Claim extraction runs before clustering so the cluster summaries can be built
+# from the claims of their member chunks instead of the raw chunk text (see
+# ``build_doc_tree`` and rag/advanced_rag/knowlege_compile/claim_evidence.md
+# §7). Claims are the atoms the tree is later read through; the raw text is only
+# used as a fallback when a chunk yields none.
+#
+# Claims are extracted in small fixed-size batches (2-4 chunks per call, see
+# ``_pack_claim_batches``) run in parallel under a dedicated concurrency budget
+# (``_claim_limiter``). Each chunk in a batch is marked as a TARGET,
+# and every claim is attributed to the chunk it was quoted from; the validation
+# gate then drops any quote that cannot be located in that chunk. One chunk per
+# call trades LLM-call count for per-target recall and exact quote validation.
+
+# The claim-extraction system prompt. ``extract_claims_for_chunks`` renders one
+# or more ``<TARGET>`` chunks; each is a chunk the model must harvest claims
+# from. Every claim carries the id of the chunk it was taken from, so quotes are
+# validated against the right text and cross-chunk contamination is caught by
+# the gate.
+_CLAIM_EXTRACTION_PROMPT = """## Task
+You are a high-recall claim harvester for the TARGET chunks below. For EACH
+TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
+assertions AND explicitly expressed opinions, beliefs, judgments, assessments,
+recommendations, preferences, intentions, predictions, and hypotheses. Do not
+rank claims, summarize, merge claims, or omit a claim because it seems minor.
+
+A claim must be:
+- Self-contained: readable without the surrounding text, with named subjects.
+  Never write "the article", "the document", "it says", or a bare pronoun.
+  Resolve the referent to its name when attribution makes the claim clearer.
+- Faithful: stated only if that TARGET chunk supports it. Never invent,
+  strengthen, or infer. Preserve modality, uncertainty, negation, and
+  attribution exactly.
+- Atomic: exactly one fact. Split compound sentences.
+
+## Response Format
+Reply with a single JSON object: {"items": [{"type": "claim", "name": "<the claim, one sentence>", "description": "<optional restatement for retrieval>", "source_chunk_ids": ["<CHUNK_ID it was taken from>"], "evidence": [{"quote": "<the verbatim source sentence>", "chunk_id": "<CHUNK_ID it was taken from>"}]}, ...]}.
+
+Rules:
+- `evidence.quote` MUST be a CONTIGUOUS verbatim substring of the chunk cited
+  by `evidence.chunk_id`: same words, same order, no paraphrase, no truncation,
+  no added words. A quote that cannot be found verbatim is rejected downstream,
+  so never restate.
+- `evidence.chunk_id` and `source_chunk_ids` MUST identify the exact chunk the
+  claim and quote came from. Never cross-attribute a quote to a different chunk.
+- Keep each quote concise and under 240 characters.
+- For tables, infoboxes and bullet lists, the quote MUST be the raw cell/row
+  text exactly as it appears — keep its separators and order. Do NOT turn a
+  table row like "Starring | Penn Badgley | Elizabeth Lail" into a sentence
+  like "Starring Penn Badgley Elizabeth Lail"; that is a paraphrase and will
+  be rejected.
+- Preserve numbers, units, dates, names and qualifiers exactly.
+- Distribute claims across all TARGET chunks; do not skip a chunk because you
+  reached the cap — the cap is per chunk, not per batch.
+- If a TARGET chunk contains no extractable assertion, emit no claim for it.
+- Keep claims in the same language as the source.
+Return JSON only, no commentary."""
+
+
+def _render_claim_source(batch: list[tuple]) -> str:
+    """Render the user prompt body for one claim-extraction call.
+
+    Every chunk in the batch is marked as a TARGET, so the model harvests claims
+    for all of them in one call. Each chunk carries its own id, which both pins
+    the claim attribution and lets the validation gate check the quote against
+    the right text.
+    """
+    lines = ["## Source Text"]
+    for cid, text in batch:
+        lines.append(f"[CHUNK_ID: {cid} (TARGET)]")
+        lines.append(text)
+        lines.append("[END_CHUNK]")
+    lines.append("\n## Output (JSON only):")
+    return "\n".join(lines)
+
+
+# Chunks per claim-extraction call. Empirically 2-4 is the sweet spot: a single
+# chunk under-utilises the call (one clean target but ~75s), while packing too
+# many raises latency superlinearly and makes the model drop trailing chunks.
+# 4 * ~512 tok = ~2k tok/call, which stays inside the attention window.
+_CLAIM_BATCH_SIZE = 4
+
+
+def _pack_claim_batches(entries: list[tuple]) -> list[list[tuple]]:
+    """Group chunks into fixed-size batches (``_CLAIM_BATCH_SIZE``).
+
+    ``entries`` is ``(chunk_id, text)``. Batches of 2-4 chunks cut the LLM-call
+    count several-fold versus one chunk per call while keeping each call small
+    enough that the model still covers every target (see _CLAIM_BATCH_SIZE).
+    """
+    bs = max(1, int(_CLAIM_BATCH_SIZE))
+    return [entries[i : i + bs] for i in range(0, len(entries), bs)]
+
+
+async def extract_claims_for_chunks(
+    chunks: list[tuple],
+    llm_model,
+    *,
+    task_id: str = "",
+    callback=None,
+    claim_prompt: str | None = None,
+) -> dict[str, list[dict]]:
+    """Extract claim/evidence pairs for RAPTOR's layer-0 chunks.
+
+    ``chunks`` is the ``(text, vec, source_chunk_ids)`` list handed to the tree
+    builder. Returns ``{chunk_id: [claim_payload, ...]}`` keyed by the chunk the
+    claim came from, so the builder can look up a cluster's claims by its
+    members' ids.
+
+    ``claim_prompt`` comes from the tree compilation template's ``raptor``
+    section so the extraction contract is editable per template; ``None`` falls
+    back to the built-in contract.
+
+    Chunks are grouped into fixed-size batches (see ``_pack_claim_batches``) and
+    all batches run in parallel, gated by the shared ``chat_limiter`` so the
+    LLM-call concurrency stays bounded. Each claim is attributed to the chunk it
+    was quoted from (model-provided ``source_chunk_ids`` filtered to the batch,
+    then the evidence gate validates the quote against that chunk's text).
+
+    Best-effort: extraction never fails the build. On error a batch simply
+    contributes no claims and the tree falls back to raw text for it.
+    """
+
+    if not chunks or llm_model is None:
+        return {}
+
+    entries = []
+    for c in chunks:
+        text = c[0]
+        ids = c[2] if len(c) > 2 and isinstance(c[2], (list, tuple)) else []
+        cid = next((str(s) for s in ids if s), "")
+        if text and cid:
+            entries.append((cid, text))
+    if not entries:
+        return {}
+
+    batches = _pack_claim_batches(entries)
+    if callback:
+        callback(msg=f"tree-template: claim extraction start: {len(entries)} chunk(s) -> {len(batches)} batch(es)")
+
+    claims_by_chunk: dict[str, list[dict]] = {}
+
+    total_chunks = len(entries)
+    if not total_chunks:
+        return claims_by_chunk
+
+    # Fan every batch's claim extraction out in parallel. Each task is gated by
+    # its own concurrency budget (_claim_limiter, default 4) so we never exceed
+    # the LLM API's limit even though we launch one task per batch. This turns
+    # the old serial loop into ~ceil(batches / concurrency) rounds.
+    tasks = []
+    batch_size_of: dict = {}
+    for batch in batches:
+        # Hand each batch only its own text. The gate falls back to scanning
+        # every chunk it is given when a quote cites none, so passing the whole
+        # document would let a quote match an unrelated chunk that merely
+        # happens to contain the same sentence — and would silently attribute
+        # the claim to the wrong source.
+        batch_text_by_id = {cid: text for cid, text in batch}
+        t = asyncio.create_task(_extract_claim_for_chunk(batch, llm_model, batch_text_by_id, claim_prompt))
+        tasks.append(t)
+        batch_size_of[t] = len(batch)
+    processed = 0
+    try:
+        # asyncio.as_completed returns an ASYNC iterator (3.10+); a plain ``for``
+        # would never await ``_wait_for_one`` and silently break extraction.
+        async for coro in asyncio.as_completed(tasks):
+            # Progress counts chunks (the user-visible unit), not batches — a
+            # batch holds _CLAIM_BATCH_SIZE chunks, so show the real figure.
+            processed += batch_size_of[coro]
+            if callback:
+                callback(prog=processed / total_chunks, msg=f"tree-template: extracting claims for chunk {processed}/{total_chunks}")
+            try:
+                result = await coro
+            except TaskCanceledException:
+                for t in tasks:
+                    t.cancel()
+                raise
+            except Exception as exc:
+                logging.warning(f"[RAPTOR] claim extraction failed for a chunk: {exc}")
+                continue
+            if result:
+                _, claims = result
+                # A batch covers several chunks, so group each claim under its
+                # own source chunk id (validated in _extract_claim_for_chunk).
+                for cl in claims:
+                    cid = (cl.get("source_chunk_ids") or [None])[0]
+                    if cid:
+                        claims_by_chunk.setdefault(cid, []).append(cl)
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+
+    if callback:
+        callback(prog=1.0, msg=f"Extracted claims for {len(claims_by_chunk)} chunk(s)")
+    return claims_by_chunk
+
+
+# Substrings that mean "slow down and retry" rather than "permanent failure".
+_RETRYABLE_LLM_ERR = (
+    "rate limit",
+    "429",
+    "tpm limit",
+    "too many requests",
+    "requests per minute",
+    "server",
+    "503",
+    "502",
+    "504",
+    "500",
+    "unavailable",
+    "timeout",
+    "timed out",
 )
 
-# Regularization added to GMM covariance diagonals; keeps components
-# from collapsing on singleton/near-identical reduced points.
-_GMM_REG_COVAR = 1e-4
 
+async def _extract_claim_for_chunk(batch, llm_model, text_by_id, claim_prompt: str | None = None):
+    """Run claim extraction for one batch of chunks (``_CLAIM_BATCH_SIZE`` of them).
 
-@dataclass
-class _PsiTreeNode:
-    """Node used to represent the in-memory Psi merge tree."""
+    One LLM call, gated by the shared ``chat_limiter`` so total concurrency stays
+    bounded. On a rate-limit / server / timeout error the call backs off with
+    exponential delay and retries, then gives up and returns ``None`` so the
+    tree falls back to raw text for those chunks.
 
-    index: int
-    text: str = ""
-    embedding: np.ndarray | None = None
-    children: list["_PsiTreeNode"] = field(default_factory=list)
-    parent: "_PsiTreeNode | None" = None
-    # Original (leaf-level) chunk ids that contributed to this node. On
-    # a leaf this is a single-element list with the leaf's own id; on an
-    # internal node it's the order-preserving deduped union of its
-    # children's lists. Carried up through the merge tree so each
-    # produced summary knows which source chunks it covers.
-    source_chunk_ids: list[str] = field(default_factory=list)
+    ``claim_prompt`` is the template-declared system prompt (tree.yaml's
+    ``raptor.claim_prompt``); ``None`` uses the built-in contract.
 
+    Returns ``(label, [claim_payload, ...])`` when the batch yields claims (each
+    claim carries its own validated ``source_chunk_ids``), else ``None``.
+    """
+    from rag.prompts.generator import gen_json
+    from .structure import _struct_apply_evidence_gate
 
-class _PsiUnionFind:
-    """Build parent links for the Psi merge tree from ranked leaf pairs."""
+    user = _render_claim_source(batch)
+    batch_ids = {cid for cid, _ in batch}
 
-    def __init__(self, n: int):
-        """Initialize the union-find state for n leaf nodes."""
-        self._rank = [0 for _ in range(n)]
-        self._parent_chains = [[] for _ in range(n)]
-        self._node_ids = [[i] for i in range(n)]
-        self._tree = [-1 for _ in range(max(1, 2 * n - 1))]
-        self._next_id = n
-
-    @staticmethod
-    def _ordered_extend(target: list[int], values: list[int]):
-        """Append unseen values while preserving their original order."""
-        for value in values:
-            if value not in target:
-                target.append(value)
-
-    def _find(self, i: int) -> list[int]:
-        """Return the parent chain for a leaf, extending it lazily."""
-        chain = self._parent_chains[i]
-        if not chain or (len(chain) == 1 and chain[0] == i):
-            return [i]
-        if chain[0] == i:
-            self._ordered_extend(chain, self._find(chain[1]))
-        else:
-            self._ordered_extend(chain, self._find(chain[0]))
-        return chain
-
-    def _rank_bisect_right(self, chain: list[int], rank: int) -> int:
-        """Return the first chain index whose rank is greater than rank."""
-        idx = 0
-        while idx < len(chain) and self._rank[chain[idx]] <= rank:
-            idx += 1
-        return idx
-
-    def _build(self, i: int, j: int, insert_point: int | None = None):
-        """Record a merge edge in the compact parent array."""
-        if insert_point is not None:
-            parent_ids = self._node_ids[insert_point]
-            parent_rank_idx = self._rank[i] + 1
-            if parent_rank_idx >= len(parent_ids):
-                logging.warning(
-                    "RAPTOR Psi union fallback: rank index %d is out of bounds for node %d with %d parent ids",
-                    parent_rank_idx,
-                    insert_point,
-                    len(parent_ids),
+    ans = None
+    attempt = 0
+    while True:
+        try:
+            async with _claim_limiter:
+                ans = await gen_json(
+                    claim_prompt or _CLAIM_EXTRACTION_PROMPT,
+                    user,
+                    llm_model,
+                    knowledge_compile_gen_conf(llm_model),
                 )
-                parent_rank_idx = len(parent_ids) - 1
-            self._tree[self._node_ids[i][-1]] = parent_ids[parent_rank_idx]
-            return
-        self._tree[self._node_ids[i][-1]] = self._next_id
-        self._tree[self._node_ids[j][-1]] = self._next_id
-        self._node_ids[i].append(self._next_id)
-        self._next_id += 1
+            break
+        except TaskCanceledException:
+            raise
+        except Exception as exc:
+            es = str(exc).lower()
+            retryable = any(k in es for k in _RETRYABLE_LLM_ERR)
+            attempt += 1
+            if not retryable or attempt >= 3:
+                logging.warning(f"[RAPTOR] claim extraction gave up for batch of {len(batch)}: {exc}")
+                return None
+            # Exponential back-off + jitter: slow down so the API stops
+            # rejecting us, rather than hammering it while it recovers.
+            delay = 2.0 * (2 ** (attempt - 1)) * (0.7 + 0.6 * ((attempt * 13) % 10) / 10)
+            logging.warning(f"[RAPTOR] claim extraction retry {attempt}/3 after {delay:.1f}s: {exc}")
+            await asyncio.sleep(delay)
 
-    def union(self, i: int, j: int) -> bool:
-        """Merge two ranked leaves and return whether a new edge was added."""
-        root_i = self._find(i)[-1]
-        root_j = self._find(j)[-1]
-        if root_i == root_j:
-            return False
+    items = (ans or {}).get("items") if isinstance(ans, dict) else None
+    if not isinstance(items, list):
+        return None
 
-        if self._rank[root_i] < self._rank[root_j]:
-            if not self._parent_chains[root_j]:
-                self._parent_chains[root_j].append(root_j)
-            chain = self._parent_chains[j]
-            higher_rank_idx = self._rank_bisect_right(chain, self._rank[root_i])
-            if higher_rank_idx >= len(chain):
-                higher_rank_idx = len(chain) - 1
-            insert_point = chain[higher_rank_idx]
-            self._ordered_extend(self._parent_chains[root_i], chain[higher_rank_idx:])
-            self._build(root_i, root_j, insert_point=insert_point)
-        elif self._rank[root_i] > self._rank[root_j]:
-            if not self._parent_chains[root_i]:
-                self._parent_chains[root_i].append(root_i)
-            chain = self._parent_chains[i]
-            higher_rank_idx = self._rank_bisect_right(chain, self._rank[root_j])
-            if higher_rank_idx >= len(chain):
-                higher_rank_idx = len(chain) - 1
-            insert_point = chain[higher_rank_idx]
-            self._ordered_extend(self._parent_chains[root_j], chain[higher_rank_idx:])
-            self._build(root_j, root_i, insert_point=insert_point)
+    claims = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        # A batch holds several chunks, so the model must say which chunk a claim
+        # came from. Keep only ids that are actually in this batch (a hallucinated
+        # id pointing at text the model never saw cannot be validated). Missing
+        # attribution is recovered from the verified evidence below; a claim that
+        # neither the model nor its evidence can place is dropped.
+        src = [str(s) for s in (it.get("source_chunk_ids") or []) if s]
+        it["name"] = name
+        it["type"] = "claim"
+        it["source_chunk_ids"] = [s for s in src if s in batch_ids]
+        if not it.get("description"):
+            it["description"] = name
+        claims.append(it)
+
+    if not claims:
+        return None
+    # Split "the model gave us no quote" from "the gate rejected the quote", so
+    # a low evidence yield can be attributed correctly.
+    emitted = sum(1 for cl in claims if cl.get("evidence"))
+    verified, rejected = _struct_apply_evidence_gate(claims, text_by_id, "soft")
+    logging.info(
+        "[RAPTOR] claim extraction batch=%s chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
+        ",".join(batch_ids),
+        len(batch),
+        len(claims),
+        emitted,
+        verified,
+        rejected,
+    )
+
+    # Recover attribution from the evidence that survived the gate: the chunk a
+    # quote was located in IS where the claim came from. Falling back to
+    # batch[0][0] instead would file every unattributed claim under an arbitrary
+    # chunk — and after rechunking, under one that no longer exists.
+    attributed: list[dict] = []
+    for cl in claims:
+        if cl.get("source_chunk_ids"):
+            attributed.append(cl)
+            continue
+        derived = next(
+            (e.get("chunk_id") for e in cl.get("evidence") or [] if isinstance(e, dict) and e.get("chunk_id") in batch_ids),
+            None,
+        )
+        if derived is None:
+            logging.info("[RAPTOR] dropped claim with no attributable source: %s", cl.get("name"))
+            continue
+        cl["source_chunk_ids"] = [derived]
+        attributed.append(cl)
+
+    if not attributed:
+        return None
+    return batch[0][0], attributed
+
+
+def format_claims_for_summary(claims: list[dict]) -> str:
+    """Render a chunk's claims as the summary input for its cluster.
+
+    Each claim is rendered with the verbatim quote that backs it, so the
+    abstraction above sees the facts *and* their grounding rather than a
+    reflowed paraphrase.
+    """
+    lines = []
+    for c in claims:
+        name = (c.get("name") or "").strip()
+        if not name:
+            continue
+        quotes = [(e or {}).get("quote", "") for e in (c.get("evidence") or []) if isinstance(e, dict) and e.get("quote")]
+        if quotes:
+            lines.append(f'- {name}\n  Evidence: "{quotes[0]}"')
         else:
-            if not self._parent_chains[root_i]:
-                self._parent_chains[root_i].append(root_i)
-            self._ordered_extend(self._parent_chains[root_j], self._parent_chains[i][-1:])
-            self._rank[root_i] += 1
-            self._build(root_i, root_j)
-        return True
-
-    @property
-    def tree(self) -> list[int]:
-        """Return the compact child-to-parent array for constructed nodes."""
-        return self._tree[: self._next_id]
+            lines.append(f"- {name}")
+    return "\n".join(lines)
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -172,32 +400,33 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         embd_model,
         prompt,
         max_token=512,
-        threshold=0.1,
         small_layer_collapse=8,
         max_errors=3,
-        tree_builder=RAPTOR_TREE_BUILDER,
-        clustering_method=GMM_CLUSTERING_METHOD,
-        psi_exact_max_leaves=4096,
-        psi_bucket_size=1024,
+        clustering_threshold=0.3,
+        clustering_ratio=0.5,
     ):
-        """Configure RAPTOR summarization, clustering, and Psi limits."""
+        """Configure RAPTOR summarization and clustering.
+
+        Args:
+            clustering_threshold: Adjacent chunks with cosine similarity
+                below this value become cluster boundaries.  Default 0.3.
+            clustering_ratio: Maximum number of clusters as a fraction of
+                chunk count (e.g. 0.5 means at most 50% of chunks become
+                cluster representatives).  If the threshold-based watershed
+                produces more clusters than this cap, the threshold is
+                lowered using the distribution of recorded adjacent
+                similarities.
+        """
         self._max_cluster = max_cluster
         self._small_layer_collapse = small_layer_collapse
+        self._clustering_threshold = clustering_threshold
+        self._clustering_ratio = clustering_ratio
         self._llm_model = llm_model
         self._embd_model = embd_model
-        self._threshold = threshold
         self._prompt = prompt
-        self._max_token = max_token
+        self._max_token = min(max(int(max_token or 512), 512), 2048)
         self._max_errors = max(1, max_errors)
         self._error_count = 0
-        self._tree_builder = tree_builder or RAPTOR_TREE_BUILDER
-        if self._tree_builder not in SUPPORTED_TREE_BUILDERS:
-            raise ValueError(f"Unsupported RAPTOR tree builder: {self._tree_builder}")
-        self._clustering_method = clustering_method or GMM_CLUSTERING_METHOD
-        if self._clustering_method not in SUPPORTED_CLUSTERING_METHODS:
-            raise ValueError(f"Unsupported RAPTOR clustering method: {self._clustering_method}")
-        self._psi_exact_max_leaves = max(2, int(psi_exact_max_leaves or 4096))
-        self._psi_bucket_size = min(max(2, int(psi_bucket_size or 1024)), self._psi_exact_max_leaves)
 
     def _check_task_canceled(self, task_id: str, message: str = ""):
         """Raise if the current document task was canceled."""
@@ -243,118 +472,80 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
 
-    def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
-        """Choose the GMM cluster count with the lowest BIC score."""
-        max_clusters = min(self._max_cluster, len(embeddings))
-        if max_clusters <= 1:
-            logging.info(
-                "RAPTOR GMM: _get_optimal_clusters returning 1 (max_clusters=%s, embeddings=%d)",
-                max_clusters,
-                len(embeddings),
-            )
-            return 1
-        n_clusters = np.arange(1, max_clusters + 1)
-        bics = []
-        for n in n_clusters:
-            self._check_task_canceled(task_id, "get optimal clusters")
-
-            gm = GaussianMixture(n_components=n, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
-            gm.fit(embeddings)
-            bics.append(gm.bic(embeddings))
-        optimal_clusters = n_clusters[np.argmin(bics)]
-        return int(optimal_clusters)
-
     def _get_clusters_ahc(self, embeddings: np.ndarray, task_id: str = "") -> np.ndarray:
-        """Cluster embeddings with Ward-linkage AHC and a dendrogram gap heuristic."""
+        """1D-watershed segmentation over adjacent cosine similarities.
+
+        Only adjacent embeddings are compared (O(N) instead of O(N²)).
+
+        The split threshold is taken from the ``clustering_threshold``
+        percentile of the adjacent-similarity distribution.  If the resulting
+        cluster count exceeds the ``clustering_ratio`` cap, the threshold is
+        further lowered.
+        """
         n = len(embeddings)
         if n <= 1:
             return np.zeros(n, dtype=int)
-        if n == 2:
-            return np.arange(n)
 
-        self._check_task_canceled(task_id, "_get_clusters_ahc dendrogram")
-        full_clust = AgglomerativeClustering(
-            n_clusters=None,
-            distance_threshold=0,
-            compute_distances=True,
-            linkage="ward",
+        self._check_task_canceled(task_id, "_get_clusters_ahc")
+
+        # L2-normalize
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1.0, norms)
+        normalized = embeddings / norms
+
+        # Adjacent cosine similarities (n-1 pairs)
+        adj_sims = np.sum(normalized[:-1] * normalized[1:], axis=1)
+        sorted_sims = np.sort(adj_sims)  # ascending
+
+        # Max clusters allowed by the ratio cap
+        max_clusters = max(1, int(round(n * self._clustering_ratio)))
+
+        def _watershed(th: float) -> np.ndarray:
+            lbl = np.zeros(n, dtype=int)
+            cid = 0
+            for i in range(1, n):
+                if adj_sims[i - 1] >= th:
+                    lbl[i] = cid
+                else:
+                    cid += 1
+                    lbl[i] = cid
+            return lbl
+
+        # ---- Phase 1: watershed at percentile-based threshold ----
+        # clustering_threshold (e.g. 0.3) denotes the percentile of the
+        # adjacent-similarity distribution to use as the split threshold.
+        # This adapts to each layer's similarity range automatically.
+        pct = max(1, min(99, int(round(self._clustering_threshold * 100))))
+        threshold = float(np.percentile(adj_sims, pct))
+        labels = _watershed(threshold)
+        n_clusters = int(np.unique(labels).size)
+
+        # ---- Phase 2: adjust threshold if we still exceed the cap ----
+        if n_clusters > max_clusters and len(sorted_sims) >= max_clusters:
+            adjusted = float(sorted_sims[min(max_clusters - 1, len(sorted_sims) - 1)])
+            if adjusted < threshold:
+                threshold = adjusted
+                labels = _watershed(threshold)
+                n_clusters = int(np.unique(labels).size)
+
+        logging.info(
+            "RAPTOR seq-clus: pct=%d threshold=%.4f n_clusters=%d/%d (%d chunks) cluster_ratio=%.2f",
+            pct,
+            threshold,
+            n_clusters,
+            max_clusters,
+            n,
+            self._clustering_ratio,
         )
-        full_clust.fit(embeddings)
-
-        distances = full_clust.distances_
-        if len(distances) > 1:
-            gaps = np.diff(distances)
-            max_gap_idx = int(np.argmax(gaps))
-            n_clusters = max(1, min(n - max_gap_idx - 1, self._max_cluster))
-        else:
-            n_clusters = max(1, min(n, self._max_cluster))
-        if n_clusters <= 1:
-            logging.info("RAPTOR AHC: _get_clusters_ahc selected one cluster for %d embeddings", n)
-            return np.zeros(n, dtype=int)
-
-        logging.info("RAPTOR AHC: _get_clusters_ahc selected n_clusters=%d for %d embeddings", n_clusters, n)
-        self._check_task_canceled(task_id, "_get_clusters_ahc fit")
-        clustering = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward")
-        return clustering.fit_predict(embeddings)
-
-    def _adjust_tree_nodes(self, embeddings: np.ndarray, labels: np.ndarray, max_iter: int = 5) -> np.ndarray:
-        """Refine AHC assignments by reassigning nodes to nearest centroids."""
-        labels = labels.copy()
-        for _ in range(max_iter):
-            unique_labels = np.unique(labels)
-            if len(unique_labels) <= 1:
-                return labels
-            centroids = np.stack([embeddings[labels == lbl].mean(axis=0) for lbl in unique_labels])
-            diffs = embeddings[:, np.newaxis, :] - centroids[np.newaxis, :, :]
-            sq_dists = (diffs**2).sum(axis=2)
-            new_label_indices = np.argmin(sq_dists, axis=1)
-            new_labels = unique_labels[new_label_indices]
-            if np.array_equal(new_labels, labels):
-                break
-            unique_new = np.unique(new_labels)
-            remap = {old: new for new, old in enumerate(unique_new)}
-            labels = np.array([remap[int(lbl)] for lbl in new_labels])
         return labels
 
     def clustering(self, embeddings, random_state: int, task_id: str = "") -> tuple[int, list[int]]:
-        """Cluster one RAPTOR layer and return contiguous labels."""
-        reduced_embeddings = np.asarray(embeddings, dtype=np.float64)
-        if len(reduced_embeddings) == 0:
+        """Cluster one RAPTOR layer using 1D-watershed and return contiguous labels."""
+        if len(embeddings) == 0:
             return 0, []
 
-        # Degrade too much ??
-        n_neighbors = min(int((len(embeddings) - 1) ** 0.8), 100)
-        import umap
-
-        reduced_embeddings = umap.UMAP(
-            n_neighbors=max(2, n_neighbors),
-            n_components=min(12, len(embeddings) - 2),
-            metric="cosine",
-        ).fit_transform(embeddings)
-        if self._clustering_method == AHC_CLUSTERING_METHOD:
-            logging.info("RAPTOR: using clustering_method=%s before _get_clusters_ahc", self._clustering_method)
-            raw_labels = self._get_clusters_ahc(reduced_embeddings, task_id=task_id)
-            raw_cluster_count = np.unique(raw_labels).size
-            logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
-            if raw_cluster_count > 1:
-                labels = self._adjust_tree_nodes(reduced_embeddings, raw_labels)
-                adjusted_cluster_count = np.unique(labels).size
-                logging.info("RAPTOR AHC: _adjust_tree_nodes adjusted n_clusters=%d", adjusted_cluster_count)
-            else:
-                labels = raw_labels
-                logging.warning("RAPTOR AHC: _adjust_tree_nodes skipped because _get_clusters_ahc returned one cluster")
-        else:
-            n_clusters = int(self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id))
-            if n_clusters <= 1:
-                labels = [0 for _ in range(len(reduced_embeddings))]
-            else:
-                gm = GaussianMixture(n_components=n_clusters, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
-                gm.fit(reduced_embeddings)
-                probs = gm.predict_proba(reduced_embeddings)
-                labels = []
-                for prob in probs:
-                    candidates = np.where(prob > self._threshold)[0]
-                    labels.append(int(candidates[0]) if len(candidates) else int(np.argmax(prob)))
+        asarray = np.asarray(embeddings, dtype=np.float64)
+        labels = self._get_clusters_ahc(asarray, task_id=task_id)
 
         normalized_labels: list[int] = []
         for label in labels:
@@ -387,22 +578,32 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     [
                         {
                             "role": "user",
-                            "content": "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs.",
+                            "content": (
+                                "Beside the summarization, give a title at the first line of your summarization. "
+                                "Must be in the same language as the paragraphs. "
+                                f"Keep the summary concise and target approximately {self._max_token} tokens."
+                            ),
                         }
                     ],
-                    {"max_tokens": max(self._max_token, 512)},  # fix issue:  #10235
+                    # ``max_token`` is the target size of the generated node,
+                    # not the provider's per-request output ceiling. Keep the
+                    # provider budget independent so reasoning tokens cannot
+                    # consume the node-size setting and truncate the summary.
+                    knowledge_compile_gen_conf(self._llm_model),
                 )
                 cnt = re.sub(
                     "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
                     "",
                     cnt,
                 )
+                cnt = str(cnt or "").strip()
                 logging.debug(f"SUM: {cnt}")
 
                 self._check_task_canceled(task_id, "before embedding")
 
                 embds = await self._embedding_encode(cnt)
-                return cnt.split("\n")[0], cnt, embds
+                title = cnt.splitlines()[0].strip() if cnt else ""
+                return title, cnt, embds
         except TaskCanceledException:
             raise
         except Exception as exc:
@@ -416,326 +617,33 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return None
 
     @staticmethod
-    def _root(node: _PsiTreeNode) -> _PsiTreeNode:
-        """Return the current root for a Psi tree node."""
-        while node.parent is not None:
-            node = node.parent
-        return node
+    def _cluster_input_texts(
+        ck_idx: list[int],
+        chunks: list,
+        claims_by_chunk: dict[str, list[dict]] | None,
+        n_originals: int,
+    ) -> list[str]:
+        """Build the summary input for one cluster.
 
-    def _rank_leaf_pairs(self, leaves: list[_PsiTreeNode]) -> np.ndarray:
-        """Rank all leaf pairs by original embedding-space cosine similarity."""
-        node_embeddings = np.asarray([leaf.embedding for leaf in leaves], dtype=np.float64)
-        node_embeddings = self._normalize_embeddings(node_embeddings)
-        similarities = node_embeddings @ node_embeddings.T
-        lower = np.tril_indices(len(leaves), -1)
-        ordered = np.argsort(similarities[lower], axis=0)[::-1]
-        return np.stack([lower[0][ordered], lower[1][ordered]], axis=-1)
-
-    @staticmethod
-    def _normalize_embeddings(node_embeddings: np.ndarray) -> np.ndarray:
-        """Normalize embeddings for cosine operations while tolerating zero vectors."""
-        node_embeddings = np.asarray(node_embeddings, dtype=np.float64)
-        norms = np.linalg.norm(node_embeddings, axis=1, keepdims=True)
-        return node_embeddings / np.maximum(norms, 1e-12)
-
-    def _split_psi_buckets(self, nodes: list[_PsiTreeNode]) -> list[list[_PsiTreeNode]]:
-        """Split large Psi inputs so exact pair ranking is bounded per bucket."""
-        if len(nodes) <= self._psi_bucket_size:
-            return [nodes]
-
-        node_embeddings = self._normalize_embeddings(np.asarray([node.embedding for node in nodes], dtype=np.float64))
-        groups = [np.arange(len(nodes), dtype=int)]
-        buckets = []
-
-        while groups:
-            group = np.asarray(groups.pop(), dtype=int)
-            if len(group) <= self._psi_bucket_size:
-                buckets.append(group.tolist())
-                continue
-
-            fanout = min(max(2, int(np.ceil(len(group) / self._psi_bucket_size))), len(group), 32)
-            group_embeddings = node_embeddings[group]
-            center_idx = np.linspace(0, len(group_embeddings) - 1, num=fanout, dtype=int)
-            centers = group_embeddings[center_idx].copy()
-
-            for _ in range(5):
-                labels = np.argmax(group_embeddings @ centers.T, axis=1)
-                for center_id in range(fanout):
-                    mask = labels == center_id
-                    if not np.any(mask):
-                        continue
-                    center = group_embeddings[mask].mean(axis=0)
-                    norm = np.linalg.norm(center)
-                    centers[center_id] = center / norm if norm > 0 else center
-
-            labels = np.argmax(group_embeddings @ centers.T, axis=1)
-            split_groups = [group[labels == center_id].tolist() for center_id in range(fanout)]
-            split_groups = [bucket for bucket in split_groups if bucket]
-            if len(split_groups) <= 1:
-                split_groups = [group[start : start + self._psi_bucket_size].tolist() for start in range(0, len(group), self._psi_bucket_size)]
-            groups.extend(split_groups)
-
-        buckets = [bucket for bucket in buckets if bucket]
-        buckets.sort(key=lambda bucket: (len(bucket), bucket[0]))
-        return [[nodes[idx] for idx in bucket] for bucket in buckets]
-
-    def _assign_prototype_embeddings(self, node: _PsiTreeNode) -> np.ndarray:
-        """Assign mean child embeddings to internal Psi nodes for bucket-level ranking."""
-        if not node.children:
-            return np.asarray(node.embedding, dtype=np.float64)
-        embeddings = np.asarray([self._assign_prototype_embeddings(child) for child in node.children], dtype=np.float64)
-        node.embedding = embeddings.mean(axis=0)
-        return node.embedding
-
-    @staticmethod
-    def _iter_nodes(root: _PsiTreeNode):
-        """Yield nodes in a Psi tree using a stack traversal."""
-        stack = [root]
-        while stack:
-            node = stack.pop()
-            yield node
-            stack.extend(node.children)
-
-    def _create_psi_parent(self, index: int, children: list[_PsiTreeNode]) -> _PsiTreeNode:
-        """Create a parent node and attach the provided children to it."""
-        parent = _PsiTreeNode(index=index, children=children)
-        for child in children:
-            child.parent = parent
-        return parent
-
-    def _rebalance_psi_tree(self, root: _PsiTreeNode, next_index: int) -> tuple[_PsiTreeNode, int]:
-        """Group oversized Psi tree nodes so fanout stays within max_cluster."""
-        max_children = max(2, int(self._max_cluster or 2))
-
-        def rebalance(node: _PsiTreeNode):
-            """Recursively group children when a Psi node exceeds fanout."""
-            nonlocal next_index
-
-            for child in list(node.children):
-                rebalance(child)
-
-            while len(node.children) > max_children:
-                original_children = len(node.children)
-                grouped_children = []
-                for start in range(0, len(node.children), max_children):
-                    batch = node.children[start : start + max_children]
-                    if len(batch) == 1:
-                        grouped_children.append(batch[0])
-                        batch[0].parent = node
-                    else:
-                        grouped_children.append(self._create_psi_parent(next_index, batch))
-                        grouped_children[-1].parent = node
-                        next_index += 1
-                node.children = grouped_children
-                logging.info(
-                    "RAPTOR Psi rebalance: node=%s children=%d grouped_to=%d max_cluster=%d",
-                    node.index,
-                    original_children,
-                    len(grouped_children),
-                    max_children,
-                )
-
-        rebalance(root)
-        return self._root(root), next_index
-
-    def _build_exact_psi_structure(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build an exact Psi subtree for a bounded node set."""
-        if len(nodes) == 1:
-            return nodes[0], next_index, 0
-
-        ranked_pairs = self._rank_leaf_pairs(nodes)
-        union_find = _PsiUnionFind(len(nodes))
-        merges = 0
-        for left_idx, right_idx in ranked_pairs:
-            self._check_task_canceled(task_id, "Psi tree construction")
-            if union_find.union(int(left_idx), int(right_idx)):
-                merges += 1
-            if merges == len(nodes) - 1:
-                break
-
-        local_nodes = {idx: node for idx, node in enumerate(nodes)}
-        tree = union_find.tree
-        children_by_parent = {}
-        for child_idx, parent_idx in enumerate(tree):
-            if child_idx not in local_nodes:
-                local_nodes[child_idx] = _PsiTreeNode(index=next_index)
-                next_index += 1
-            if parent_idx == -1:
-                continue
-            children_by_parent.setdefault(parent_idx, []).append(child_idx)
-            if parent_idx not in local_nodes:
-                local_nodes[parent_idx] = _PsiTreeNode(index=next_index)
-                next_index += 1
-
-        for parent_idx, child_indices in children_by_parent.items():
-            parent = local_nodes[parent_idx]
-            parent.children = [local_nodes[child_idx] for child_idx in child_indices]
-            for child in parent.children:
-                child.parent = parent
-
-        roots = [local_nodes[idx] for idx, parent_idx in enumerate(tree) if parent_idx == -1 and idx in local_nodes]
-        root = max(roots, key=lambda node: node.index)
-        return root, next_index, merges
-
-    def _build_bucketed_psi_structure(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build large Psi trees by exact-ranking bounded buckets, then bucket roots."""
-        buckets = self._split_psi_buckets(nodes)
-        logging.info(
-            "RAPTOR Psi bucketed build: nodes=%d buckets=%d bucket_size=%d exact_max_leaves=%d",
-            len(nodes),
-            len(buckets),
-            self._psi_bucket_size,
-            self._psi_exact_max_leaves,
-        )
-
-        bucket_roots = []
-        merges = 0
-        for bucket in buckets:
-            bucket_root, next_index, bucket_merges = self._build_psi_structure_from_nodes(bucket, next_index, task_id)
-            self._assign_prototype_embeddings(bucket_root)
-            bucket_roots.append(bucket_root)
-            merges += bucket_merges
-
-        if len(bucket_roots) == 1:
-            return bucket_roots[0], next_index, merges
-
-        root, next_index, root_merges = self._build_psi_structure_from_nodes(bucket_roots, next_index, task_id)
-        return root, next_index, merges + root_merges
-
-    def _build_psi_structure_from_nodes(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build Psi structure exactly for small sets and bucket large sets."""
-        if len(nodes) <= self._psi_exact_max_leaves:
-            return self._build_exact_psi_structure(nodes, next_index, task_id)
-        return self._build_bucketed_psi_structure(nodes, next_index, task_id)
-
-    def _build_psi_structure(self, chunks, task_id: str = "") -> tuple[_PsiTreeNode, list[_PsiTreeNode]]:
-        """Build the Psi merge tree from original chunk embeddings.
-
-        ``chunks`` is expected in the normalized 3-tuple shape
-        ``(text, vec, source_chunk_ids)`` — leaves are seeded with
-        their own source ids, internal nodes get their ids set during
-        layer materialization in ``_build_psi_layers``.
+        Layer-0 chunks (``i < n_originals``) that yielded claims contribute
+        their rendered claims; anything else — upper-layer summaries, and
+        chunks with no claims — contributes its text. So only the bottom of the
+        tree is claim-fed, and the abstraction layers above keep summarizing
+        the (now claim-derived) summaries beneath them.
         """
-        leaves = [
-            _PsiTreeNode(
-                index=i,
-                text=item[0],
-                embedding=np.asarray(item[1]),
-                source_chunk_ids=list(item[2] if len(item) > 2 else []),
-            )
-            for i, item in enumerate(chunks)
-        ]
-        if len(leaves) == 1:
-            return leaves[0], leaves
-
-        root, next_index, merges = self._build_psi_structure_from_nodes(leaves, len(leaves), task_id)
-        root, _ = self._rebalance_psi_tree(root, next_index)
-        logging.info(
-            "RAPTOR Psi tree built: leaves=%d merges=%d root_fanout=%d",
-            len(leaves),
-            merges,
-            len(root.children),
-        )
-        return root, leaves
-
-    @staticmethod
-    def _psi_layers(root: _PsiTreeNode) -> dict[int, list[_PsiTreeNode]]:
-        """Collect non-leaf Psi nodes by height for bottom-up summarization."""
-        layers = {}
-
-        def height(node: _PsiTreeNode) -> int:
-            """Return node height while collecting internal nodes by layer."""
-            if not node.children:
-                return 0
-            node_height = max(height(child) for child in node.children) + 1
-            layers.setdefault(node_height, []).append(node)
-            return node_height
-
-        height(root)
-        return layers
-
-    async def _build_psi_layers(self, chunks, callback=None, task_id: str = ""):
-        """Materialize Psi tree layers as summary chunks."""
-        layers = [(0, len(chunks))]
-        root, _ = self._build_psi_structure(chunks, task_id=task_id)
-
-        for layer_idx, (_, nodes) in enumerate(sorted(self._psi_layers(root).items()), start=1):
-            layer_start = len(chunks)
-
-            async def summarize_node(node: _PsiTreeNode):
-                """Summarize one Psi internal node if its children have text.
-
-                Also propagates leaf provenance: the node's
-                ``source_chunk_ids`` becomes the order-preserving deduped
-                union of every child's ``source_chunk_ids``. Because
-                children at this layer have already been processed (leaves
-                first, then bottom-up), each child carries the full set
-                of leaf ids underneath it — so the union here is the
-                complete leaf set this summary covers.
-                """
-                texts = [child.text for child in node.children if child.text]
-                if not texts:
-                    logging.warning("RAPTOR Psi node %s skipped because it has no child text to summarize", node.index)
-                    return None
-                result = await self._summarize_texts(texts, callback, task_id)
-                if result is None:
-                    logging.warning("RAPTOR Psi node %s skipped because summarization failed", node.index)
-                    return None
-                _, node.text, node.embedding = result
-                merged_ids: list[str] = []
-                seen: set[str] = set()
-                for child in node.children:
-                    for src in child.source_chunk_ids:
-                        if src and src not in seen:
-                            seen.add(src)
-                            merged_ids.append(src)
-                node.source_chunk_ids = merged_ids
-                return node
-
-            tasks = [asyncio.create_task(summarize_node(node)) for node in nodes]
-            try:
-                summarized_nodes = await asyncio.gather(*tasks, return_exceptions=False)
-            except Exception as e:
-                logging.error(f"Error in RAPTOR Psi tree processing: {e}")
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-
-            summarized_nodes = [node for node in summarized_nodes if node is not None]
-            for node in summarized_nodes:
-                chunks.append((node.text, node.embedding, list(node.source_chunk_ids)))
-
-            if len(chunks) > layer_start:
-                layers.append((layer_start, len(chunks)))
-                logging.info(
-                    "RAPTOR Psi layer materialized: layer=%d nodes=%d summaries=%d",
-                    layer_idx,
-                    len(nodes),
-                    len(chunks) - layer_start,
-                )
-                if callback:
-                    callback(msg="Build one Psi-RAG layer: {} -> {}".format(len(nodes), len(chunks) - layer_start))
-            else:
-                logging.warning("RAPTOR Psi layer %d produced no summaries; stopping materialization", layer_idx)
-                break
-
-        return chunks, layers
+        if not claims_by_chunk:
+            return [chunks[i][0] for i in ck_idx]
+        texts = []
+        for i in ck_idx:
+            rendered = ""
+            if i < n_originals:
+                ids = chunks[i][2] if len(chunks[i]) > 2 else []
+                cid = next((str(s) for s in ids if s), "")
+                claims = claims_by_chunk.get(cid) if cid else None
+                if claims:
+                    rendered = format_claims_for_summary(claims)
+            texts.append(rendered or chunks[i][0])
+        return texts
 
     async def __call__(
         self,
@@ -744,8 +652,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         callback=None,
         task_id: str = "",
         is_tree: bool = False,
+        claims_by_chunk: dict[str, list[dict]] | None = None,
     ):
         """Build summary chunks and layer boundaries for RAPTOR retrieval.
+
+        ``claims_by_chunk`` maps a layer-0 chunk id to the claims extracted from
+        it (see ``extract_claims_for_chunks``). When supplied, a cluster's
+        summary input is built from its members' claims instead of their raw
+        text — claims are far more compact than the source, so the per-chunk
+        truncation in ``_summarize_texts`` no longer discards content, and the
+        resulting abstraction is guaranteed to agree with the claims attached to
+        the         same cluster. Chunks with no claims fall back to their raw text.
 
         ``chunks`` accepts either the legacy 2-tuple shape
         ``(text, vec)`` or the provenance-carrying 3-tuple shape
@@ -768,7 +685,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             to materialize.
         """
         if len(chunks) <= 1:
-            return None if is_tree else ([], [])
+            return (None, None) if is_tree else ([], [])
 
         # Normalize input to the 3-tuple shape. Reject empties / bad
         # vectors at the same time the legacy path used to.
@@ -790,16 +707,8 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         normalized = [t for t in (_normalize(c) for c in chunks) if t is not None]
         if len(normalized) <= 1:
-            return None if is_tree else (normalized, [(0, len(normalized))])
+            return (None, None) if is_tree else (normalized, [(0, len(normalized))])
         chunks = normalized
-
-        if self._tree_builder == PSI_TREE_BUILDER:
-            if is_tree:
-                raise NotImplementedError(
-                    "is_tree=True is not supported for PSI_TREE_BUILDER",
-                )
-            logging.info("RAPTOR: using %s tree builder for %d chunks", self._tree_builder, len(chunks))
-            return await self._build_psi_layers(chunks, callback, task_id)
 
         # ``parent_child_map`` records each summary's immediate
         # children so ``_materialize_tree`` can walk back into a tree
@@ -823,7 +732,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             """
             nonlocal chunks
 
-            texts = [chunks[i][0] for i in ck_idx]
+            texts = self._cluster_input_texts(ck_idx, chunks, claims_by_chunk, n_originals)
             result = await self._summarize_texts(texts, callback, task_id)
             if result is not None:
                 # ``dict.fromkeys`` is the cheapest way to de-dup a
@@ -863,7 +772,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     break
                 logging.info(
                     "RAPTOR small-N collapse: layer of %d node(s) [%d:%d] collapsed into %d summary; stopping at tree top",
-                    end - start, start, end, produced,
+                    end - start,
+                    start,
+                    end,
+                    produced,
                 )
                 layers.append((end, len(chunks)))
                 if callback:
@@ -959,18 +871,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         def _build_node(idx: int) -> dict:
             children_idx = parent_child_map.get(idx, [])
-            # If every immediate child is a layer-0 original, this
-            # node is a "leaf" in the tree contract — collapse to
-            # source_chunk_ids.
+            # If every immediate child is a layer-0 original, collapse the
+            # cluster into one leaf node and retain all source chunk IDs.
             if children_idx and all(c < n_originals for c in children_idx):
-                ids: list[str] = []
+                source_chunk_ids: list[str] = []
                 seen: set[str] = set()
                 for c in children_idx:
                     for s in chunks[c][2]:
                         if s and s not in seen:
                             seen.add(s)
-                            ids.append(s)
-                return {"title": _title_at(idx), "source_chunk_ids": ids, "description": _desc_at(idx)}
+                            source_chunk_ids.append(s)
+                return {"title": _title_at(idx), "source_chunk_ids": source_chunk_ids, "description": _desc_at(idx)}
             return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
 
         top_nodes = [_build_node(i) for i in range(top_start, top_end)]

@@ -1,11 +1,28 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
+import { getAvailableDataSourceKeys } from './backend-adapter';
 import { AddedSourceCard } from './component/added-source-card';
-import { DataSourceKey, useDataSourceInfo } from './constant';
+import { useDataSourceInfo } from './constant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
@@ -60,7 +77,7 @@ const AvailableSourceCard = ({
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
+  const dataSourceTemplates = getAvailableDataSourceKeys().map((id) => {
     return {
       id,
       name: dataSourceInfo[id].name,
@@ -137,8 +154,7 @@ const DataSource = () => {
           loading={addLoading}
           hideModal={hideAddingModal}
           onOk={(data) => {
-            console.log(data);
-            handleAddOk(data);
+            return handleAddOk(data);
           }}
           sourceData={addSource}
         />

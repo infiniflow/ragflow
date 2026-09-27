@@ -34,6 +34,13 @@ class RSSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.credentials = credentials or {}
         return None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "RSSConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(feed_url=config["feed_url"], batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def validate_connector_settings(self) -> None:
         self._validate_feed_url()
         if self.batch_size < 1:

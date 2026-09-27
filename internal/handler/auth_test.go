@@ -49,18 +49,20 @@ func TestBetaAuthMiddleware_MissingHeader(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	// jsonError writes 200 with a CodeUnauthorized body. Confirm the
-	// body shape matches the wire contract used by the rest of the
-	// bot handlers by decoding the JSON envelope and asserting the
-	// code field rather than just checking for a non-empty body.
+	// Beta endpoints follow Python's login_required(auth_types=AUTH_BETA):
+	// auth failures are business errors (code 102), not HTTP 401.
 	var resp struct {
-		Code common.ErrorCode `json:"code"`
+		Code    common.ErrorCode `json:"code"`
+		Message string           `json:"message"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response: %v; body = %s", err, rec.Body.String())
 	}
-	if resp.Code != common.CodeUnauthorized {
+	if resp.Code != common.CodeDataError {
 		t.Errorf("code = %d, want %d; body = %s",
-			resp.Code, common.CodeUnauthorized, rec.Body.String())
+			resp.Code, common.CodeDataError, rec.Body.String())
+	}
+	if resp.Message != "Authorization is not valid!" {
+		t.Errorf("message = %q; body = %s", resp.Message, rec.Body.String())
 	}
 }

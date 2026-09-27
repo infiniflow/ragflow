@@ -17,18 +17,49 @@
 package common
 
 const (
-	TaskTypeIngestionTask    = "ingestion_task"
-	TaskTypeIngestionTasklet = "ingestion_tasklet"
-	TaskTypeIngestionTest    = "ingestion_test"
+	// TaskSubject is the NATS subject on which ingestion and memory tasks are
+	// published and consumed. Producer and consumer must reference this single
+	// symbol so the routing contract cannot diverge (mirrors the RAGFLOW_TASKS
+	// JetStream subject in internal/engine/nats).
+	TaskSubject = "tasks.RAGFLOW"
+	// MaxManualPullMessages is the largest task batch the administrative queue
+	// pull endpoint accepts.
+	MaxManualPullMessages = 100
+
+	TaskTypeIngestionTask = "ingestion_task"
+	TaskTypeIngestionTest = "ingestion_test"
+	// TaskTypeSyncer is the NATS wake-up message type for datasource sync_logs tasks.
+	TaskTypeSyncer = "syncer"
+	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
+	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
+	// pool with ingestion tasks; handleAndExecute dispatches them by TaskType.
+	// Their TaskMessage is only a wake-up; input lives in memory_task.
+	TaskTypeMemory = "memory"
 )
 
+// TaskMessage is a broker wake-up that identifies one durable task.
 type TaskMessage struct {
 	TaskID   string `json:"task_id" binding:"required"`
 	TaskType string `json:"task_type" binding:"required"`
 }
 
+// TaskHandle controls settlement and heartbeat for a received task message.
 type TaskHandle interface {
 	GetMessage() TaskMessage
 	Ack() error
 	Nack() error
+
+	// InProgress resets the AckWait timer without acknowledging the message,
+	// signalling the broker that the worker is still processing. Call
+	// periodically during long tasks to avoid in-flight redelivery.
+	InProgress() error
+}
+
+// RawMessage is a broker message carrying opaque bytes (used by the dataset-level
+// compile consumer, which publishes arbitrary JSON payloads rather than the
+// TaskMessage shape). The NATS engine returns RawMessage from FetchKnowledgeCompileMessages.
+type RawMessage interface {
+	Data() []byte
+	Ack() error
+	Nak() error
 }

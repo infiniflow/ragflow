@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Cross-cutting helpers that replace Python's `rag/flow/base.py:ProcessBase`
+// Package runtime implements Cross-cutting helpers that replace Python's `rag/flow/base.py:ProcessBase`
 // wrapper (lines 33-63). Three call-site concerns are extracted into plain
 // higher-order functions:
 //
@@ -45,40 +45,101 @@ import (
 	"time"
 )
 
+// ProgressPhase classifies a component lifecycle event emitted by
+// TrackProgress. The integer values are stable and persisted in the
+// ingestion_task_log.phase column, so they are part of the data contract
+// (see internal/ingestion/pipeline PROGRESS_LOG_RESUME_PLAN §5.1):
+//
+//	PhaseEnter = 0  component just started
+//	PhaseExit  = 1  component finished cleanly
+//	PhaseError = 2  component errored (Err carries the error)
+type ProgressPhase int
+
+const (
+	PhaseEnter ProgressPhase = iota
+	PhaseExit
+	PhaseError
+)
+
+// ProgressEvent is a structured progress notification emitted by
+// TrackProgress for every component lifecycle event.
+//
+// Component is the node id (cpnID) — the unique identifier of the node in
+// the DSL graph, NOT the component class name. Class names cannot
+// disambiguate multiple instances of the same class, so sinks must key on
+// Component for attribution, ordering, and GROUP BY (plan §5.1).
+//
+// Err is non-nil only when Phase == PhaseError.
+//
+// ProgressEvent deliberately does NOT carry the component's output:
+// resume is owned by the framework's eino checkpoint, so progress is
+// purely observational (plan §5.1 / §5.3). Keeping the event free of
+// output also avoids serializing large payloads on every event.
+//
+// Concrete sinks (ingestion task-log writer, in-memory test recorder)
+// implement ProgressCallback. nil is a valid value: TrackProgress treats a
+// nil cb as "no observer" and simply runs fn.
+type ProgressEvent struct {
+	Phase     ProgressPhase
+	Component string
+	Err       error
+}
+
 // ProgressCallback receives progress notifications from TrackProgress.
-// The numeric progress values follow the convention used by the Python
-// pipeline canvas callback:
-//
-//	progress=0  before fn runs       (component just started)
-//	progress=1  on success           (component finished cleanly)
-//	progress=-1 on failure           (component errored; message is the error)
-//
-// Concrete sinks (Redis log writer, in-memory test recorder) implement
-// this signature. nil is a valid value: TrackProgress treats a nil cb as
-// "no observer" and simply runs fn.
-type ProgressCallback func(progress int, message string)
+type ProgressCallback func(event ProgressEvent)
+
+// ProgressMessageCallback receives detailed messages emitted by a component
+// while it is running. Unlike ProgressCallback, these messages do not change
+// the component lifecycle counters; they are supplemental observability for
+// stages such as a compiler's MAP/REDUCE/PLAN/REFINE pipeline.
+type ProgressMessageCallback func(component, message string)
+
+type progressMessageCallbackKey struct{}
+
+// WithProgressMessageCallback attaches a detailed component-message sink to a
+// run context. A nil callback is valid and keeps components DB-independent.
+func WithProgressMessageCallback(ctx context.Context, cb ProgressMessageCallback) context.Context {
+	return context.WithValue(ctx, progressMessageCallbackKey{}, cb)
+}
+
+// ReportProgressMessage forwards a detailed component message when a sink is
+// attached. Components can call this without depending on the persistence
+// layer or changing the lifecycle progress
+func ReportProgressMessage(ctx context.Context, component, message string) {
+	if cb, ok := ctx.Value(progressMessageCallbackKey{}).(ProgressMessageCallback); ok && cb != nil {
+		cb(component, message)
+	}
+}
 
 // TrackProgress wraps fn with progress notifications. The callback is
-// invoked at most twice per call (once at start, once at end).
+// invoked at most twice per call (once at start, once at end):
 //
-// On success: cb(1, "<compName> Done") and nil error.
-// On failure: cb(-1, "<compName>: <err>") and the original error.
+//	enter: cb(ProgressEvent{Phase: PhaseEnter, Component: cpnID})
+//	exit:  cb(ProgressEvent{Phase: PhaseExit,  Component: cpnID})
+//	error: cb(ProgressEvent{Phase: PhaseError, Component: cpnID, Err: err})
 //
-// A nil callback is permitted: fn runs to completion and its return
-// value (including error) is passed through untouched.
-func TrackProgress(compName string, cb ProgressCallback, fn func() error) error {
+// A nil callback is permitted: fn runs to completion and its return value
+// (including error) is passed through untouched.
+//
+// cpnID is the node id from the DSL graph. The canvas framework
+// (internal/agent/canvas realComponentBody) is the single chokepoint that
+// calls TrackProgress, so individual components must NOT call it
+// themselves — that keeps the observer injection point in one place.
+// realComponentBody pulls the callback from ctx via
+// ProgressCallbackFromContext.
+func TrackProgress(cpnID string, cb ProgressCallback, fn func() error) error {
 	if cb != nil {
-		cb(0, compName+" Started")
+		cb(ProgressEvent{Phase: PhaseEnter, Component: cpnID})
 	}
 	err := fn()
 	if cb == nil {
 		return err
 	}
 	if err != nil {
-		cb(-1, fmt.Sprintf("%s: %s", compName, err.Error()))
+		cb(ProgressEvent{Phase: PhaseError, Component: cpnID, Err: err})
 		return err
 	}
-	cb(1, compName+" Done")
+	cb(ProgressEvent{Phase: PhaseExit, Component: cpnID})
 	return nil
 }
 
@@ -160,4 +221,83 @@ func TrackElapsed(name string, fn func() (map[string]any, error)) (map[string]an
 		out["_elapsed_time"] = elapsed.Seconds()
 	}
 	return out, nil
+}
+
+// progressCBKey is the context key under which a ProgressCallback is
+// carried so the canvas framework can fan progress out to an observer
+// without every component knowing about it. The framework owns the
+// callback; components only see their own work.
+type progressCBKey struct{}
+
+// WithProgressCallback attaches a ProgressCallback to ctx. The canvas
+// framework reads it inside realComponentBody and forwards it to
+// TrackProgress when a component runs, so progress reporting is a
+// framework-level concern. A run that wants progress fan-out (e.g. the
+// ingestion pipeline's task log writer) injects one; when none is set,
+// ProgressCallbackFromContext returns nil and TrackProgress is a no-op.
+func WithProgressCallback(ctx context.Context, cb ProgressCallback) context.Context {
+	return context.WithValue(ctx, progressCBKey{}, cb)
+}
+
+// ProgressCallbackFromContext returns the ProgressCallback attached to
+// ctx, or nil if none was set. TrackProgress treats a nil callback as
+// "no observer" and simply runs fn.
+func ProgressCallbackFromContext(ctx context.Context) ProgressCallback {
+	if ctx == nil {
+		return nil
+	}
+	if cb, ok := ctx.Value(progressCBKey{}).(ProgressCallback); ok {
+		return cb
+	}
+	return nil
+}
+
+// ProgressFractionCallback receives an in-flight component's completion
+// fraction (0..1) — pages parsed, chunks embedded. Unlike lifecycle events,
+// fractions are high-frequency and purely observational: they refine the
+// progress percentage between two lifecycle events and carry no persistence
+// contract. component is the node id (cpnID), the same identity
+// ProgressEvent.Component carries, so sinks key both channels identically.
+type ProgressFractionCallback func(component string, fraction float64)
+
+// progressFractionCBKey carries the run-level ProgressFractionCallback.
+type progressFractionCBKey struct{}
+
+// componentFractionReporterKey carries the per-node closure that
+// ReportComponentFraction invokes. It is pre-bound with the cpnID by
+// BindComponentFraction so components report a bare fraction and can never
+// misattribute progress to another node.
+type componentFractionReporterKey struct{}
+
+// WithProgressFractionCallback attaches a run-level fraction sink to ctx.
+// A nil callback is valid and keeps components observer-independent.
+func WithProgressFractionCallback(ctx context.Context, cb ProgressFractionCallback) context.Context {
+	return context.WithValue(ctx, progressFractionCBKey{}, cb)
+}
+
+// BindComponentFraction derives a context whose ReportComponentFraction calls
+// carry the given component id. The canvas framework (realComponentBody) is
+// the single caller, mirroring how it owns TrackProgress; when no run-level
+// callback is attached it returns ctx unchanged so headless runs pay nothing.
+func BindComponentFraction(ctx context.Context, component string) context.Context {
+	cb, _ := ctx.Value(progressFractionCBKey{}).(ProgressFractionCallback)
+	if cb == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, componentFractionReporterKey{}, func(fraction float64) {
+		cb(component, fraction)
+	})
+}
+
+// ReportComponentFraction forwards a component's in-flight completion
+// fraction to the run-level sink. Components call it from their progress
+// loops without knowing their own node id; the framework-bound closure
+// supplies the attribution. No-op when no sink is attached.
+func ReportComponentFraction(ctx context.Context, fraction float64) {
+	if ctx == nil {
+		return
+	}
+	if report, ok := ctx.Value(componentFractionReporterKey{}).(func(float64)); ok && report != nil {
+		report(fraction)
+	}
 }

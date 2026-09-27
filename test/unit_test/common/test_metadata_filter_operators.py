@@ -164,3 +164,84 @@ def test_or_logic_still_unions_after_empty_first_condition():
     ]
 
     assert set(meta_filter(metas, filters, logic="or")) == {"doc2"}
+
+
+def test_equal_is_case_insensitive_for_python_keyword_literals():
+    # "None" is a metadata cell that happens to be a Python literal keyword; the
+    # query value "none" (lowercase) is not a valid literal on its own. Coercing
+    # one side (input -> None) while leaving the other as the string "none" would
+    # compare mismatched types and silently fail the case-insensitive match.
+    metas = {"status": {"None": ["doc1"], "Active": ["doc2"]}}
+    filters = [{"key": "status", "op": "=", "value": "none"}]
+
+    assert meta_filter(metas, filters) == ["doc1"]
+
+
+def test_not_equal_is_case_insensitive_for_python_keyword_literals():
+    metas = {"status": {"None": ["doc1"], "Active": ["doc2"]}}
+    filters = [{"key": "status", "op": "≠", "value": "none"}]
+
+    assert meta_filter(metas, filters) == ["doc2"]
+
+
+def test_greater_than_unaffected_by_prior_dict_entry_coercing_the_query_value():
+    # The query value must be re-read fresh for every metadata entry -- if an
+    # earlier entry coerces it in place (e.g. "5" -> 5), a later entry must not
+    # compare against that already-coerced leftover instead of the original "5".
+    metas = {"score": {"5": ["doc1"], "10": ["doc2"]}}
+    filters = [{"key": "score", "op": ">", "value": "5"}]
+
+    assert meta_filter(metas, filters) == ["doc2"]
+
+
+class TestApplyMetaDataFilterBaseScope:
+    """apply_meta_data_filter must narrow the caller-scoped base doc ids,
+    never widen them (parity with Go constrainDocIDs)."""
+
+    @staticmethod
+    def _run(filter_def, metas, base):
+        import asyncio
+        import sys
+        import types
+        from unittest.mock import patch
+
+        stub = types.ModuleType("rag.prompts.generator")
+
+        async def gen_meta_filter(*a, **k):  # pragma: no cover - manual mode never calls the LLM
+            raise RuntimeError("unexpected LLM call in manual mode")
+
+        stub.gen_meta_filter = gen_meta_filter
+
+        from common.metadata_utils import apply_meta_data_filter
+
+        with patch.dict(sys.modules, {"rag.prompts.generator": stub}):
+            return asyncio.run(apply_meta_data_filter(filter_def, metas, base_doc_ids=base, kb_ids=None))
+
+    def test_filter_excludes_base_doc_that_does_not_match(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run(flt, metas, ["docA"]) == ["-999"]
+
+    def test_filter_intersects_with_base_scope(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA", "docB"]}}
+        assert self._run(flt, metas, ["docA"]) == ["docA"]
+
+    def test_empty_base_keeps_filter_hits_deduped(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA", "docA", "docB"]}}
+        result = self._run(flt, metas, [])
+        assert set(result) == {"docA", "docB"}
+        assert len(result) == 2
+
+    def test_duplicate_base_doc_ids_are_deduped(self):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docA"]}}
+        assert self._run(flt, metas, ["docA", "docA"]) == ["docA"]
+
+    def test_scope_constraint_logs_counts_and_full_removal(self, caplog):
+        flt = {"method": "manual", "logic": "and", "manual": [{"key": "color", "op": "=", "value": "red"}]}
+        metas = {"color": {"red": ["docB"]}}
+        with caplog.at_level("DEBUG"):
+            assert self._run(flt, metas, ["docA"]) == ["-999"]
+        assert "base_count=1, filter_hit_count=1, constrained_count=0, removed_all_filter_hits=True" in caplog.text

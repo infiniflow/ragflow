@@ -53,7 +53,7 @@ func makeWorkflowGraphAgents(n int, prefix string) ([]Agent, []Tool) {
 // runGraphAndCollect drains all events from a graph execution.
 func runGraphAndCollect(t testing.TB, wfg *WorkflowGraph, input *AgentInput) (msgCount int, err error) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	s, invokeErr := wfg.Invoke(ctx, input)
 	if invokeErr != nil {
 		return 0, invokeErr
@@ -111,7 +111,7 @@ func TestProduction_MassiveConcurrentGraphs(t *testing.T) {
 				return
 			}
 
-			stateIf, invokeErr := compiled.Invoke(context.Background(), &dagState{})
+			stateIf, invokeErr := compiled.Invoke(t.Context(), &dagState{})
 			if invokeErr != nil {
 				errCh <- fmt.Errorf("graph %d invoke: %w", id, invokeErr)
 				return
@@ -165,7 +165,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				}
 			}()
 			agents, _ := makeWorkflowGraphAgents(5, fmt.Sprintf("seq_%d", id))
-			wfg, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+			wfg, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 				Name: fmt.Sprintf("seq_%d", id), Description: "sequential", SubAgents: agents,
 			}, nil)
 			if err != nil {
@@ -194,7 +194,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				}
 			}()
 			agents, _ := makeWorkflowGraphAgents(3, fmt.Sprintf("par_%d", id))
-			wfg, err := NewParallelGraph(context.Background(), &ParallelConfig{
+			wfg, err := NewParallelGraph(t.Context(), &ParallelConfig{
 				Name: fmt.Sprintf("par_%d", id), Description: "parallel", SubAgents: agents,
 			}, nil)
 			if err != nil {
@@ -223,7 +223,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				}
 			}()
 			agents, _ := makeWorkflowGraphAgents(3, fmt.Sprintf("loop_%d", id))
-			wfg, err := NewLoopGraph(context.Background(), &LoopConfig{
+			wfg, err := NewLoopGraph(t.Context(), &LoopConfig{
 				Name: fmt.Sprintf("loop_%d", id), Description: "loop", SubAgents: agents,
 			}, nil)
 			if err != nil {
@@ -287,7 +287,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 				results <- result{fmt.Sprintf("dag_%d", id), err, 0}
 				return
 			}
-			_, invokeErr := compiled.Invoke(context.Background(), &dagState{})
+			_, invokeErr := compiled.Invoke(t.Context(), &dagState{})
 			if invokeErr != nil {
 				results <- result{fmt.Sprintf("dag_%d", id), invokeErr, 0}
 				return
@@ -321,7 +321,7 @@ func TestProduction_MixedWorkloadHighConcurrency(t *testing.T) {
 
 func TestProduction_Soak_1000Executions(t *testing.T) {
 	agents, _ := makeWorkflowGraphAgents(5, "soak")
-	wfg, err := NewSequentialGraph(context.Background(), &SequentialConfig{
+	wfg, err := NewSequentialGraph(t.Context(), &SequentialConfig{
 		Name: "soak", Description: "soak test", SubAgents: agents,
 	}, nil)
 	if err != nil {
@@ -407,7 +407,7 @@ func TestProduction_ErrorRecoveryUnderLoad(t *testing.T) {
 				results <- graphResult{id: id, hasErr: true}
 				return
 			}
-			_, invokeErr := compiled.Invoke(context.Background(), &dagState{})
+			_, invokeErr := compiled.Invoke(t.Context(), &dagState{})
 			results <- graphResult{id: id, hasErr: invokeErr != nil, panic: false}
 		}(i)
 	}
@@ -516,7 +516,7 @@ func TestProduction_LargeStateGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stateIf, err := compiled.Invoke(context.Background(), &dagState{})
+	stateIf, err := compiled.Invoke(t.Context(), &dagState{})
 	if err != nil {
 		t.Fatalf("Large state graph failed: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestProduction_CheckpointPressure(t *testing.T) {
 				return
 			}
 
-			_, invokeErr := compiled.Invoke(context.Background(), &dagState{})
+			_, invokeErr := compiled.Invoke(t.Context(), &dagState{})
 			if invokeErr != nil {
 				errCh <- fmt.Errorf("graph %d invoke: %w", id, invokeErr)
 				return
@@ -614,7 +614,7 @@ func TestProduction_RapidSequential(t *testing.T) {
 		if err != nil {
 			t.Fatalf("iter %d compile: %v", i, err)
 		}
-		_, err = compiled.Invoke(context.Background(), &dagState{})
+		_, err = compiled.Invoke(t.Context(), &dagState{})
 		if err != nil {
 			t.Fatalf("iter %d invoke: %v", i, err)
 		}

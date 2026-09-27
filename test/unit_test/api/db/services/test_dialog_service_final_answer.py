@@ -224,7 +224,7 @@ def test_async_ask_final_event_carries_decorated_answer(monkeypatch):
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _name: _LLM_CONFIG,
     )
     monkeypatch.setattr(dialog_service, "LLMBundle", lambda _tid, _cfg: chat_mdl)
@@ -269,7 +269,7 @@ def test_async_ask_delta_events_carry_incremental_text_only(monkeypatch):
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _name: _LLM_CONFIG,
     )
     monkeypatch.setattr(dialog_service, "LLMBundle", lambda _tid, _cfg: chat_mdl)
@@ -346,6 +346,91 @@ def test_async_ask_stale_kb_ids_yields_error_final_event(monkeypatch):
     assert events[0]["reference"] == {}
 
 
+class _RecordingChatModel(_StreamingChatModel):
+    """Records the gen_conf handed to async_chat_streamly_delta."""
+
+    def __init__(self, answer: str = "Answer"):
+        super().__init__(answer)
+        self.gen_conf = None
+
+    async def async_chat_streamly_delta(self, system_prompt, messages, gen_conf, **_kwargs):
+        self.gen_conf = dict(gen_conf)
+        yield self.answer
+
+
+def _drive_async_ask_with_config(monkeypatch, search_config):
+    chat_mdl = _RecordingChatModel()
+    retriever = _StubRetriever()
+    monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB])
+    monkeypatch.setattr(
+        dialog_service,
+        "resolve_model_config",
+        lambda _tid, _type, _name: _LLM_CONFIG,
+    )
+    monkeypatch.setattr(dialog_service, "LLMBundle", lambda _tid, _cfg: chat_mdl)
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service.settings, "kg_retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service.DocMetadataService, "get_flatted_meta_by_kbs", lambda _ids: {})
+    monkeypatch.setattr(dialog_service, "label_question", lambda _q, _kbs: "")
+    monkeypatch.setattr(
+        dialog_service,
+        "kb_prompt",
+        lambda _kbinfos, _max_tokens, **_kw: ["RAGFlow is a RAG engine."],
+    )
+
+    events = _collect(
+        dialog_service.async_ask(
+            question="What is RAGFlow?",
+            kb_ids=["kb-1"],
+            tenant_id="tenant-1",
+            search_config=search_config,
+        )
+    )
+    assert events, "async_ask must yield at least one event"
+    return chat_mdl
+
+
+@pytest.mark.p2
+def test_async_ask_forwards_llm_setting_temperature(monkeypatch):
+    """AI summary must honor the temperature configured in search_config.llm_setting."""
+    chat_mdl = _drive_async_ask_with_config(
+        monkeypatch,
+        search_config={
+            "llm_setting": {
+                "temperature": 1.0,
+                "temperature_enabled": True,
+                "top_p": 0.3,
+                "top_p_enabled": False,
+                "frequency_penalty": 0.7,
+                "frequency_penalty_enabled": False,
+                "presence_penalty": 0.4,
+                "presence_penalty_enabled": False,
+            }
+        },
+    )
+
+    assert chat_mdl.gen_conf is not None, "model must be invoked with a gen_conf"
+    assert chat_mdl.gen_conf["temperature"] == 1.0
+    assert not any(k.endswith("_enabled") for k in chat_mdl.gen_conf), "enable flags must not reach the model"
+
+
+@pytest.mark.p2
+def test_async_ask_falls_back_to_default_temperature_when_disabled(monkeypatch):
+    """Disabled temperature falls back to the LLM_SETTING_DEFAULTS value (0.1)."""
+    chat_mdl = _drive_async_ask_with_config(
+        monkeypatch,
+        search_config={
+            "llm_setting": {
+                "temperature": 1.0,
+                "temperature_enabled": False,
+            }
+        },
+    )
+
+    assert chat_mdl.gen_conf is not None, "model must be invoked with a gen_conf"
+    assert chat_mdl.gen_conf["temperature"] == 0.1
+
+
 # ---------------------------------------------------------------------------
 # Tests for async_chat  (production code path)
 # ---------------------------------------------------------------------------
@@ -381,7 +466,7 @@ def _make_dialog(chat_mdl_stub):
         top_n=6,
         top_k=1024,
         rerank_id="",
-        tenant_rerank_id=None
+        tenant_rerank_id=None,
     )
 
 
@@ -400,10 +485,10 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
     retriever = _StubRetriever()
 
     # Stub out the heavy service/model calls
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(
@@ -452,10 +537,10 @@ def test_async_chat_langfuse_uses_start_observation(monkeypatch):
     chat_mdl = _StreamingChatModel(llm_answer)
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(
@@ -515,10 +600,10 @@ def test_async_chat_langfuse_observation_includes_session_id(monkeypatch):
     chat_mdl = _StreamingChatModel("Session traces should be grouped.")
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(
@@ -573,7 +658,7 @@ def test_get_models_passes_langfuse_trace_context_to_llm_bundles(monkeypatch):
     monkeypatch.setattr(dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tenant_id, model_type, _model_id: {**_LLM_CONFIG, "model_type": model_type},
     )
     monkeypatch.setattr(
@@ -614,10 +699,10 @@ def test_async_chat_continues_when_langfuse_observation_start_fails(monkeypatch)
     chat_mdl = _StreamingChatModel(llm_answer)
     retriever = _StubRetriever()
 
-    monkeypatch.setattr(dialog_service, "get_model_type_by_name", lambda _tid, _llm_id: ["chat"])
+    monkeypatch.setattr(dialog_service, "resolve_model_type", lambda _tid, _llm_id: ["chat"])
     monkeypatch.setattr(
         dialog_service,
-        "get_model_config_from_provider_instance",
+        "resolve_model_config",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(

@@ -85,6 +85,16 @@ PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {
     PipelineTaskType.MINDMAP.lower(),
     PipelineTaskType.ARTIFACT.lower(),
     PipelineTaskType.SKILL.lower(),
+    # Structure-graph merge fan-out task types. These are the raw task_type
+    # strings (== the index type), which — unlike the types above — do not equal
+    # their PipelineTaskType value lowercased (e.g. "structure_graph" vs
+    # "structuregraph"), so they are listed literally.
+    "structure_graph",
+    "structure_mindmap",
+    "timeline",
+    "session_graph",
+    "session_essence",
+    "structure",
 }
 
 

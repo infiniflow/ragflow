@@ -18,9 +18,7 @@
 //
 // Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
 // an eino BaseTool so it can be invoked from inside the Agent's
-// ReAct loop. The MCP tool list is fetched via utility/mcpclient
-// (which currently only implements tools/list discovery; tools/call
-// invocation is the next step on the MCP client).
+// ReAct loop. Discovery and invocation use the utility MCP client.
 package tool
 
 import (
@@ -30,10 +28,11 @@ import (
 	"net/http"
 	"time"
 
+	mcpclient "ragflow/internal/utility"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	mcpclient "ragflow/internal/utility"
+	"github.com/eino-contrib/jsonschema"
 )
 
 // MCPToolAdapter wraps a single MCP-discovered tool descriptor as an
@@ -49,11 +48,14 @@ import (
 // a URL (legacy callers) fall back to the "not yet wired"
 // sentinel so existing call sites don't break.
 type MCPToolAdapter struct {
-	mcpTool    mcpclient.Tool
-	serverURL  string
-	headers    map[string]string
-	timeout    time.Duration
-	httpClient *http.Client
+	mcpTool     mcpclient.Tool
+	visibleName string
+	serverType  string
+	variables   map[string]string
+	serverURL   string
+	headers     map[string]string
+	timeout     time.Duration
+	httpClient  *http.Client
 }
 
 // NewMCPToolAdapter constructs a wrapper for a single MCP tool.
@@ -90,29 +92,46 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 	}
 }
 
-// Name returns the underlying MCP tool name.
-func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
+// NewMCPToolAdapterWithOptions preserves the server transport and header variables.
+func NewMCPToolAdapterWithOptions(t mcpclient.Tool, opts mcpclient.CallOptions) *MCPToolAdapter {
+	return &MCPToolAdapter{mcpTool: t, serverURL: opts.URL, serverType: opts.ServerType, headers: opts.Headers, variables: opts.Variables, timeout: opts.Timeout, httpClient: opts.HTTPClient}
+}
 
-// Info returns eino-compatible tool metadata. InputSchema is
-// translated from the MCP tool's JSON Schema.
-func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
-	// eino's schema.ParameterInfo shape: name → description.
-	// We translate the MCP tool's inputSchema.properties into a
-	// best-effort ParameterInfo map. For tools without a JSON schema
-	// the params map is empty — eino falls back to free-form args.
-	params := make(map[string]*schema.ParameterInfo, len(m.mcpTool.InputSchema))
-	for name := range m.mcpTool.InputSchema {
-		params[name] = &schema.ParameterInfo{
-			Type:     schema.String, // conservative default
-			Desc:     fmt.Sprintf("MCP tool parameter: %s", name),
-			Required: false, // MCP doesn't surface required; we err permissive
-		}
+// Name returns the underlying MCP tool name.
+func (m *MCPToolAdapter) Name() string {
+	if m.visibleName != "" {
+		return m.visibleName
 	}
-	return &schema.ToolInfo{
-		Name:        m.mcpTool.Name,
-		Desc:        m.mcpTool.Description,
-		ParamsOneOf: schema.NewParamsOneOfByParams(params),
-	}, nil
+	return m.mcpTool.Name
+}
+
+// Info returns eino-compatible tool metadata. The MCP client stores the
+// full inputSchema object ({"type":"object","properties":{...},"required":
+// [...]}) on mcpTool.InputSchema, so we pass it through to eino's
+// JSON Schema channel untouched. That keeps the real parameter names under
+// "properties" (never the schema's top-level keys like "type"/"properties"/
+// "required") together with each property's type/description/required flag
+// and any richer keywords (enum, default, items, nested objects, anyOf/oneOf,
+// ...). A tool with no inputSchema takes no parameters: ParamsOneOf is left
+// nil so callers emit an empty object schema instead of an invalid schema.
+func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
+	info := &schema.ToolInfo{
+		Name: m.Name(),
+		Desc: m.mcpTool.Description,
+	}
+	if len(m.mcpTool.InputSchema) == 0 {
+		return info, nil
+	}
+	var js jsonschema.Schema
+	raw, err := json.Marshal(m.mcpTool.InputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	if err := json.Unmarshal(raw, &js); err != nil {
+		return nil, fmt.Errorf("parse MCP tool %q inputSchema: %w", m.mcpTool.Name, err)
+	}
+	info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(&js)
+	return info, nil
 }
 
 // InvokableRun is the eino entry point. When the adapter was
@@ -130,7 +149,8 @@ func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	res, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
 		URL:        m.serverURL,
-		ServerType: mcpclient.TransportStreamableHTTP,
+		ServerType: m.serverType,
+		Variables:  m.variables,
 		Headers:    m.headers,
 		ToolName:   m.mcpTool.Name,
 		Arguments:  argsJSON,
@@ -190,3 +210,6 @@ func marshalArguments(argumentsInJSON string) (json.RawMessage, error) {
 	}
 	return json.RawMessage(argumentsInJSON), nil
 }
+
+// SetVisibleName disambiguates the model-facing name while retaining wire name.
+func (m *MCPToolAdapter) SetVisibleName(name string) { m.visibleName = name }

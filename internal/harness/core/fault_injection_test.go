@@ -55,7 +55,7 @@ func TestFault_LLMRetryThenSuccess(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3}
 	wrapped := WithModelRetry(inner, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("expected success after retry: %v", err)
@@ -78,7 +78,7 @@ func TestFault_LLMRetryExhausted(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 3}
 	wrapped := WithModelRetry(inner, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err == nil {
 		t.Fatal("expected error after retries exhausted")
@@ -99,7 +99,7 @@ func TestFault_LLMNoRetryOnSuccess(t *testing.T) {
 	cfg := &ModelRetryConfig{MaxRetries: 5}
 	wrapped := WithModelRetry(inner, cfg)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	resp, err := wrapped.Generate(ctx, []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -125,7 +125,7 @@ func TestFault_ToolAllFail(t *testing.T) {
 		Tools: []Tool{&alwaysFailTool{}},
 	}).WithName("fault_agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{
 		Messages: []Message{schema.UserMessage("analyze this")},
 	})
@@ -159,7 +159,7 @@ func TestFault_ReActToolErrorDoesNotCrash(t *testing.T) {
 		Tools: []Tool{&alwaysFailTool{}},
 	}).WithName("crash_test")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{
 		Messages: []Message{schema.UserMessage("trigger")},
 	})
@@ -192,7 +192,7 @@ func TestFault_ConcurrentModelCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
 		wg.Go(func() {
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err := model.Generate(ctx, []Message{schema.UserMessage("conc")})
 			if err != nil {
 				t.Errorf("concurrent call: %v", err)
@@ -211,7 +211,7 @@ func TestFault_ReActAgent_ModelError(t *testing.T) {
 		Model: model,
 	}).WithName("recovery_agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	iter := agent.Run(ctx, &AgentInput{
 		Messages: []Message{schema.UserMessage("do something")},
 	})

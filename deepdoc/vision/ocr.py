@@ -15,7 +15,6 @@
 #
 import gc
 import logging
-import copy
 import time
 import os
 
@@ -34,6 +33,11 @@ import onnxruntime as ort
 from .postprocess import build_post_process
 
 loaded_models = {}
+
+# OpenCV remap (used by cv2.warpPerspective) asserts src/dst width and height
+# are strictly less than SHRT_MAX (32767). Oversized PDF page renders can
+# exceed that and crash chunking.
+_OPENCV_REMAP_MAX_DIM = 32766
 
 
 def transform(data, ops=None):
@@ -162,7 +166,6 @@ class TextRecognizer:
         return padding_im
 
     def resize_norm_img_vl(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         img = img[:, :, ::-1]  # bgr2rgb
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -197,7 +200,6 @@ class TextRecognizer:
         return np.reshape(img_black, (c, row, col)).astype(np.float32)
 
     def srn_other_inputs(self, image_shape, num_heads, max_text_length):
-
         imgC, imgH, imgW = image_shape
         feature_dim = int((imgH / 8) * (imgW / 8))
 
@@ -281,7 +283,6 @@ class TextRecognizer:
         return img
 
     def resize_norm_img_svtr(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
         resized_image = resized_image.astype("float32")
@@ -291,7 +292,6 @@ class TextRecognizer:
         return resized_image
 
     def resize_norm_img_abinet(self, img, image_shape):
-
         imgC, imgH, imgW = image_shape
 
         resized_image = cv2.resize(img, (imgW, imgH), interpolation=cv2.INTER_LINEAR)
@@ -307,7 +307,6 @@ class TextRecognizer:
         return resized_image
 
     def norm_img_can(self, img, image_shape):
-
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # CAN only predict gray scale image
 
         if self.rec_image_shape[0] == 1:
@@ -382,11 +381,29 @@ class TextRecognizer:
 
 
 class TextDetector:
-    def __init__(self, model_dir, device_id: int | None = None):
+    def __init__(self, model_dir, device_id: int | None = None, *, limit_side_len: int = 2048):
+        """Initialize the text detector.
+
+        Args:
+            model_dir: Path to the ONNX model directory.
+            device_id: GPU device id; None / 0 = CPU. Kept as the 2nd positional
+                arg for backwards compatibility with the four internal call sites
+                in :class:`OCR` and any external callers.
+            limit_side_len: Upper bound on the longer image side after the
+                ``DetResizeForTest`` downscale. Only used for dynamic-input models
+                (when ``self.input_tensor.shape[2:]`` is symbolic); for
+                fixed-shape models the pre-process list is replaced with
+                ``image_shape`` and ``limit_side_len`` is ignored — see the
+                comment near the ``pre_process_list[0] = ...`` assignment below.
+
+        ``limit_side_len`` is keyword-only so a future caller writing
+        ``TextDetector(model_dir, 2048)`` cannot silently bind ``2048`` to
+        ``device_id``. (See PR #18888 review comment from xugangqiang.)
+        """
         pre_process_list = [
             {
                 "DetResizeForTest": {
-                    "limit_side_len": 960,
+                    "limit_side_len": limit_side_len,
                     "limit_type": "max",
                 }
             },
@@ -402,8 +419,16 @@ class TextDetector:
 
         img_h, img_w = self.input_tensor.shape[2:]
         if isinstance(img_h, str) or isinstance(img_w, str):
+            # Dynamic-shape model: ``limit_side_len`` is the resize cap; keep
+            # the first pre-process entry as built above.
             pass
         elif img_h is not None and img_w is not None and img_h > 0 and img_w > 0:
+            # Fixed-shape ONNX model: the model forces a concrete input size,
+            # so ``limit_side_len`` is ignored and we resize to the model's
+            # own shape. This is intentional — overriding ``image_shape``
+            # with ``limit_side_len`` would crash the model. See PR #18888
+            # review (xugangqiang) — fixed-shape models silently ignore
+            # ``limit_side_len`` and the contract is now documented here.
             pre_process_list[0] = {"DetResizeForTest": {"image_shape": [img_h, img_w]}}
         self.preprocess_op = create_operators(pre_process_list)
 
@@ -537,7 +562,19 @@ class OCR:
         self.drop_score = 0.5
         self.crop_image_res_index = 0
 
-    def get_rotate_crop_image(self, img, points):
+    @staticmethod
+    def _prepare_crop_source(img):
+        img_h, img_w = img.shape[:2]
+        max_src_side = max(img_w, img_h)
+        if max_src_side <= _OPENCV_REMAP_MAX_DIM:
+            return img, 1.0
+
+        scale = _OPENCV_REMAP_MAX_DIM / max_src_side
+        new_w = max(1, int(img_w * scale))
+        new_h = max(1, int(img_h * scale))
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA), scale
+
+    def _get_rotate_crop_image(self, img, points, scale=1.0):
         """
         img_height, img_width = img.shape[0:2]
         left = int(np.min(points[:, 0]))
@@ -549,8 +586,23 @@ class OCR:
         points[:, 1] = points[:, 1] - top
         """
         assert len(points) == 4, "shape of points must be 4*2"
+        points = np.asarray(points, dtype=np.float32).copy()
+        points *= scale
+        img_h, img_w = img.shape[:2]
+        if img_h <= 0 or img_w <= 0:
+            channels = img.shape[2] if img.ndim == 3 else 1
+            return np.zeros((1, 1, channels), dtype=img.dtype) if img.ndim == 3 else np.zeros((1, 1), dtype=img.dtype)
+
+        # Clamp detector quads to the source image so out-of-range coordinates
+        # cannot inflate the warp destination.
+        points[:, 0] = np.clip(points[:, 0], 0, max(img_w - 1, 0))
+        points[:, 1] = np.clip(points[:, 1], 0, max(img_h - 1, 0))
+
         img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
         img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
+        img_crop_width = max(img_crop_width, 1)
+        img_crop_height = max(img_crop_height, 1)
+
         pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
         M = cv2.getPerspectiveTransform(points, pts_std)
         dst_img = cv2.warpPerspective(img, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
@@ -580,6 +632,14 @@ class OCR:
             # Use the best image
             dst_img = best_img
         return dst_img
+
+    def get_rotate_crop_image(self, img, points):
+        src, scale = self._prepare_crop_source(img)
+        return self._get_rotate_crop_image(src, points, scale)
+
+    def get_rotate_crop_images(self, img, boxes):
+        src, scale = self._prepare_crop_source(img)
+        return [self._get_rotate_crop_image(src, points, scale) for points in boxes]
 
     def sorted_boxes(self, dt_boxes):
         """
@@ -641,6 +701,27 @@ class OCR:
             texts.append(text)
         return texts
 
+    def recognize_batch_with_score(self, img_list, device_id: int | None = None):
+        """Like recognize_batch but keeps the per-item recognition score.
+
+        Returns a list of (text, score) tuples. Text below drop_score is
+        blanked, matching recognize_batch, but the score is preserved so the
+        caller (the OCR HTTP adapter) can surface it for score-based layer-2
+        rotation selection. Adding this method instead of changing
+        recognize_batch keeps the in-process __ocr path (pdf_parser.py) on the
+        original text-only contract.
+        """
+        if device_id is None:
+            device_id = 0
+        rec_res, elapse = self.text_recognizer[device_id](img_list)
+        out = []
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if score < self.drop_score:
+                text = ""
+            out.append((text, score))
+        return out
+
     def __call__(self, img, device_id=0, cls=True):
         time_dict = {"det": 0, "rec": 0, "cls": 0, "all": 0}
         if device_id is None:
@@ -659,14 +740,8 @@ class OCR:
             time_dict["all"] = end - start
             return None, None, time_dict
 
-        img_crop_list = []
-
         dt_boxes = self.sorted_boxes(dt_boxes)
-
-        for bno in range(len(dt_boxes)):
-            tmp_box = copy.deepcopy(dt_boxes[bno])
-            img_crop = self.get_rotate_crop_image(ori_im, tmp_box)
-            img_crop_list.append(img_crop)
+        img_crop_list = self.get_rotate_crop_images(ori_im, dt_boxes)
 
         rec_res, elapse = self.text_recognizer[device_id](img_crop_list)
 

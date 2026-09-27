@@ -1,0 +1,25 @@
+{
+ "id": "token__json_backtick",
+ "component": "TokenChunker",
+ "notes": "Backtick-wrapped newline is the only delimiter form Python honours (_compile_delimiter_pattern, token_chunker.py:70-76). Locks the custom-delimiter branch on the json path, where chunk_token_size is bypassed and each segment becomes its own chunk.",
+ "param": {
+  "chunk_token_size": 128,
+  "delimiters": [
+   "`\n`"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "json",
+  "json": [
+   {
+    "text": "first segment line one\nfirst segment line two",
+    "doc_type_kwd": "text"
+   },
+   {
+    "text": "second segment line one\nsecond segment line two",
+    "doc_type_kwd": "text"
+   }
+  ]
+ }
+}

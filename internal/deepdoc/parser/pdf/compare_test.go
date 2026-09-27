@@ -3,33 +3,33 @@
 package pdf
 
 import (
-	"log/slog"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"ragflow/internal/common"
 
 	"ragflow/internal/deepdoc/parser/pdf/tool"
 )
 
 // TestBatchCompareWithPython compares Go output against Python reference
 // across 4 dimensions (text, tables, DLA, TSR raw).  It is read-only —
-// no generation, no CGO/DeepDoc dependency.  Use BATCH_SKIP_OCR=1 to
-// compare the noocr variant; PY_OCR_SUFFIX to override the Python variant.
+// no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
+// the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
-	level := slog.LevelInfo
-	if os.Getenv("BATCH_LOG_LEVEL") == "debug" {
-		level = slog.LevelDebug
+	restoreLoggerGlobals(t)
+	level := "info"
+	switch common.GetEnv(common.EnvBatchLogLevel) {
+	case "debug":
+		level = "debug"
+	case "warn":
+		level = "warn"
 	}
-	if os.Getenv("BATCH_LOG_LEVEL") == "warn" {
-		level = slog.LevelWarn
+	if err := common.InitLogger(level, common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
 	goVariant := "ocr"
-	if os.Getenv("BATCH_SKIP_OCR") == "1" {
-		goVariant = "noocr"
-	}
-	pyVariant := os.Getenv("PY_OCR_SUFFIX")
+	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)
 	if pyVariant == "" {
 		pyVariant = goVariant
 	}

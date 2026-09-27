@@ -149,6 +149,10 @@ CREATE DATASET 'my_dataset' WITH EMBEDDING 'text-embedding-ada-002' PARSER 'naiv
 LIST DATASETS;
 DROP DATASET 'my_dataset';
 
+-- Data sync logs
+LIST SYNC_LOGS;
+LIST DATASET 'my_dataset' SYNC_LOGS;
+
 -- Model configuration
 SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';

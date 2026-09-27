@@ -37,6 +37,12 @@ class _DummyBase:
     def __init__(self, *a, **k):
         pass
 
+    @staticmethod
+    def extract_text_boxes(paragraph):
+        # These tests are about tables; text boxes have their own suite in
+        # test_docx_text_boxes.py, which loads the real DocxParser.
+        return []
+
 
 @pytest.fixture(scope="module")
 def docx_chunker():
@@ -55,6 +61,7 @@ def docx_chunker():
         _stub("deepdoc.parser.utils", get_text=lambda *a, **k: "")
         _stub("rag.app.naive", by_plaintext=lambda *a, **k: ([], [], None), PARSERS={})
         _stub("common.parser_config_utils", normalize_layout_recognizer=lambda x: (x, None))
+        _stub("api.db.joint_services.tenant_model_service", get_composite_model_name_by_id=lambda x: x)
         module = import_module("rag.app.laws")
         module = reload(module)
         yield module.Docx

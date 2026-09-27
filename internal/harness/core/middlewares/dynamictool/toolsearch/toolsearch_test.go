@@ -37,7 +37,7 @@ func TestNew_SmallToolset(t *testing.T) {
 		SearchThreshold: 10,
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
-	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	_, newRc, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestNew_LargeToolset(t *testing.T) {
 		SearchThreshold: 10,
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
-	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	_, newRc, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestBeforeModelRewrite_DeferredMode(t *testing.T) {
 		UseDeferred:     true,
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
-	_, _, err := mw.BeforeAgent(context.Background(), rc)
+	_, _, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Logf("deferred mode error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestToolNames(t *testing.T) {
 		MaxResults:      5,
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
-	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
+	_, newRc, err := mw.BeforeAgent(t.Context(), rc)
 	if err != nil {
 		t.Fatalf("BeforeAgent: %v", err)
 	}

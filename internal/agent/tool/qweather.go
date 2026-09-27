@@ -39,7 +39,7 @@ var qweatherEndpoint = "https://devapi.qweather.com/v7/weather/now"
 
 // qweatherParams is the JSON shape the model sends into InvokableRun.
 //
-//   - APIKey (required): the QWeather API key (Console → 项目 → 凭据).
+//   - APIKey (required): the QWeather API key (Console → Project → Credentials).
 //   - Location (required): the location code, e.g. "101010100" (Beijing)
 //     or a lat,lon string "39.904,116.405".
 //   - Lang (optional): language code for `text` and `windDir`. Defaults
@@ -79,7 +79,7 @@ type qweatherEnvelope struct {
 
 // QWeatherTool is the 和风天气
 // (QWeather) current-conditions tool (
-// 第 4 批). It performs a GET against devapi.qweather.com/v7/weather/now
+// batch 4). It performs a GET against devapi.qweather.com/v7/weather/now
 // and returns the parsed now.{temp, feelsLike, text, windDir, humidity}.
 //
 // QWeatherTool uses the shared HTTPHelper for retry/timeout/OTel
@@ -178,8 +178,8 @@ func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 			fmt.Errorf("qweather: decode response: %w", err)
 	}
 	// QWeather uses "200" string code for OK; anything else is a
-	// business-level error. Code "404" = 城市不存在, "401" = 认证失败,
-	// "429" = 超过访问次数, "402" = 超过访问速度.
+	// business-level error. Code "404" = city not found, "401" = authentication failed,
+	// "429" = exceeded access count, "402" = exceeded access rate.
 	if raw.Code != "200" {
 		return qweatherErrJSON(fmt.Errorf("qweather: upstream returned code %q", raw.Code)),
 			fmt.Errorf("qweather: upstream returned code %q", raw.Code)

@@ -17,6 +17,7 @@
 package tool
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -46,6 +47,7 @@ func TestNewExeSQLConnParams_RequiredFields(t *testing.T) {
 // TestNewExeSQLConnParams_AllFields: full params map decodes correctly.
 func TestNewExeSQLConnParams_AllFields(t *testing.T) {
 	conn, err := NewExeSQLConnParams(map[string]any{
+		"sql":         "SELECT 1",
 		"db_type":     "postgres",
 		"host":        "db.example.com",
 		"port":        5432,
@@ -56,6 +58,9 @@ func TestNewExeSQLConnParams_AllFields(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("NewExeSQLConnParams: %v", err)
+	}
+	if conn.SQL != "SELECT 1" {
+		t.Errorf("SQL=%q, want SELECT 1", conn.SQL)
 	}
 	if conn.DBType != "postgres" {
 		t.Errorf("DBType=%q, want postgres", conn.DBType)
@@ -77,6 +82,61 @@ func TestNewExeSQLConnParams_AllFields(t *testing.T) {
 	}
 	if conn.MaxRecords != 100 {
 		t.Errorf("MaxRecords=%d, want 100", conn.MaxRecords)
+	}
+}
+
+func TestNewExeSQLConnParams_PythonDefaults(t *testing.T) {
+	conn, err := NewExeSQLConnParams(map[string]any{
+		"host":     "db.example.com",
+		"database": "demo",
+		"username": "ragflow",
+	})
+	if err != nil {
+		t.Fatalf("NewExeSQLConnParams: %v", err)
+	}
+	if conn.SQL != "{sys.query}" {
+		t.Errorf("SQL=%q, want {sys.query}", conn.SQL)
+	}
+	if conn.DBType != "mysql" {
+		t.Errorf("DBType=%q, want mysql", conn.DBType)
+	}
+	if conn.Port != 3306 {
+		t.Errorf("Port=%d, want 3306", conn.Port)
+	}
+	if conn.MaxRecords != 1024 {
+		t.Errorf("MaxRecords=%d, want 1024", conn.MaxRecords)
+	}
+	if conn.Database != "demo" || conn.Username != "ragflow" || conn.Host != "db.example.com" || conn.Password != "" {
+		t.Errorf("unexpected connection fields: %+v", conn)
+	}
+}
+
+func TestExeSQLConnParams_JSONTags(t *testing.T) {
+	raw, err := json.Marshal(exesqlConnParams{
+		SQL:        "SELECT 1",
+		DBType:     "mysql",
+		Database:   "demo",
+		Username:   "ragflow",
+		Host:       "db.example.com",
+		Port:       3306,
+		Password:   "secret",
+		MaxRecords: 1024,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	want := []string{"sql", "db_type", "database", "username", "host", "port", "password", "max_records"}
+	if len(fields) != len(want) {
+		t.Fatalf("JSON fields = %v", fields)
+	}
+	for _, field := range want {
+		if _, ok := fields[field]; !ok {
+			t.Errorf("JSON missing field %q: %s", field, raw)
+		}
 	}
 }
 

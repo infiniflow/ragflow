@@ -26,6 +26,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         base_url: str,
         remote_path: str = "/",
         batch_size: int = INDEX_BATCH_SIZE,
+        ca_cert_path: str | None = None,
     ) -> None:
         """Initialize WebDAV connector
 
@@ -33,6 +34,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             base_url: Base URL of the WebDAV server (e.g., "https://webdav.example.com")
             remote_path: Remote path to sync from (default: "/")
             batch_size: Number of documents per batch
+            ca_cert_path: Optional path to a custom CA certificate bundle inside the container
         """
         self.base_url = base_url.rstrip("/")
         if not remote_path:
@@ -43,6 +45,9 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             remote_path = remote_path.rstrip("/")
         self.remote_path = remote_path
         self.batch_size = batch_size
+        if ca_cert_path is not None and not isinstance(ca_cert_path, str):
+            raise ConnectorValidationError("WebDAV CA certificate path must be a string.")
+        self.ca_cert_path = ca_cert_path.strip() if ca_cert_path else None
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
@@ -105,6 +110,19 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         logging.info(f"Setting allow_images to {allow_images}.")
         self._allow_images = allow_images
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "WebDAVConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            base_url=config["base_url"],
+            remote_path=config.get("remote_path", "/"),
+            batch_size=batch_size,
+            ca_cert_path=config.get("ca_cert_path"),
+        )
+        connector.set_allow_images(config.get("allow_images", False))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials and initialize WebDAV client
 
@@ -116,6 +134,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         Raises:
             ConnectorMissingCredentialError: If required credentials are missing
+            ConnectorValidationError: If TLS verification cannot be configured
         """
         logging.debug(f"Loading credentials for WebDAV server {self.base_url}")
 
@@ -126,11 +145,20 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise ConnectorMissingCredentialError("WebDAV requires 'username' and 'password' credentials")
 
         try:
-            # Initialize WebDAV client
-            self.client = WebDAVClient(base_url=self.base_url, auth=(username, password))
-        except Exception as e:
-            logging.error(f"Failed to connect to WebDAV server: {e}")
-            raise ConnectorMissingCredentialError(f"Failed to authenticate with WebDAV server: {e}")
+            # Omit `verify` unless a custom CA is configured so webdav4 keeps its secure default.
+            client_options: dict[str, Any] = {}
+            if self.ca_cert_path:
+                client_options["verify"] = self.ca_cert_path
+                logging.debug(f"Enabled custom TLS verification for WebDAV server {self.base_url}")
+
+            self.client = WebDAVClient(
+                base_url=self.base_url,
+                auth=(username, password),
+                **client_options,
+            )
+        except OSError as e:
+            logging.error(f"Failed to configure TLS verification for WebDAV server: {e}")
+            raise ConnectorValidationError(f"Failed to configure WebDAV TLS verification: {e}") from e
 
         return None
 
@@ -158,71 +186,67 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         files = []
 
-        try:
-            logging.debug(f"Listing directory: {path}")
-            for item in self.client.ls(path, detail=True):
-                item_path = item["name"]
+        logging.debug(f"Listing directory: {path}")
+        for item in self.client.ls(path, detail=True):
+            item_path = item["name"]
 
-                if item_path == path or item_path == path + "/":
-                    continue
+            if item_path == path or item_path == path + "/":
+                continue
 
-                logging.debug(f"Found item: {item_path}, type: {item.get('type')}")
+            logging.debug(f"Found item: {item_path}, type: {item.get('type')}")
 
-                if item.get("type") == "directory":
-                    try:
-                        files.extend(
-                            self._list_files_recursive(
-                                item_path,
-                                start,
-                                end,
-                                filter_by_mtime=filter_by_mtime,
-                            )
+            if item.get("type") == "directory":
+                try:
+                    files.extend(
+                        self._list_files_recursive(
+                            item_path,
+                            start,
+                            end,
+                            filter_by_mtime=filter_by_mtime,
                         )
-                    except Exception as e:
-                        logging.error(f"Error recursing into directory {item_path}: {e}")
+                    )
+                except Exception as e:
+                    logging.error(f"Error recursing into directory {item_path}: {e}")
+                    continue
+            else:
+                try:
+                    file_name = os.path.basename(item_path)
+                    if not self._is_supported_file(file_name):
+                        logging.debug(f"Skipping file {item_path} due to unsupported extension.")
                         continue
-                else:
-                    try:
-                        file_name = os.path.basename(item_path)
-                        if not self._is_supported_file(file_name):
-                            logging.debug(f"Skipping file {item_path} due to unsupported extension.")
-                            continue
 
-                        modified_time = item.get("modified")
-                        if modified_time:
-                            if isinstance(modified_time, datetime):
-                                modified = modified_time
-                                if modified.tzinfo is None:
-                                    modified = modified.replace(tzinfo=timezone.utc)
-                            elif isinstance(modified_time, str):
+                    modified_time = item.get("modified")
+                    if modified_time:
+                        if isinstance(modified_time, datetime):
+                            modified = modified_time
+                            if modified.tzinfo is None:
+                                modified = modified.replace(tzinfo=timezone.utc)
+                        elif isinstance(modified_time, str):
+                            try:
+                                modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
+                                modified = modified.replace(tzinfo=timezone.utc)
+                            except (ValueError, TypeError):
                                 try:
-                                    modified = datetime.strptime(modified_time, "%a, %d %b %Y %H:%M:%S %Z")
-                                    modified = modified.replace(tzinfo=timezone.utc)
+                                    modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
                                 except (ValueError, TypeError):
-                                    try:
-                                        modified = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
-                                    except (ValueError, TypeError):
-                                        logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
-                                        modified = datetime.now(timezone.utc)
-                            else:
-                                modified = datetime.now(timezone.utc)
+                                    logging.warning(f"Could not parse modified time for {item_path}: {modified_time}")
+                                    modified = datetime.now(timezone.utc)
                         else:
                             modified = datetime.now(timezone.utc)
+                    else:
+                        modified = datetime.now(timezone.utc)
 
-                        logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
-                        if filter_by_mtime:
-                            if start < modified <= end:
-                                files.append((item_path, item))
-                            else:
-                                logging.debug(f"File {item_path} filtered out by time range")
-                        else:
+                    logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
+                    if filter_by_mtime:
+                        if start < modified <= end:
                             files.append((item_path, item))
-                    except Exception as e:
-                        logging.error(f"Error processing file {item_path}: {e}")
-                        continue
-
-        except Exception as e:
-            logging.error(f"Error listing directory {path}: {e}")
+                        else:
+                            logging.debug(f"File {item_path} filtered out by time range")
+                    else:
+                        files.append((item_path, item))
+                except Exception as e:
+                    logging.error(f"Error processing file {item_path}: {e}")
+                    continue
 
         return files
 

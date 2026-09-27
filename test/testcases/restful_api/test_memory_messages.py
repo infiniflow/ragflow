@@ -23,8 +23,8 @@ def _memory_payload(name: str) -> dict:
     return {
         "name": name,
         "memory_type": ["raw"],
-        "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-        "llm_id": "glm-4-flash@ZHIPU-AI",
+        "embd_id": "BAAI/bge-small-en-v1.5@Local@Builtin",
+        "llm_id": "glm-4-flash@CI@ZHIPU-AI",
     }
 
 

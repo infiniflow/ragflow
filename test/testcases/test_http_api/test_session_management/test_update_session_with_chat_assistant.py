@@ -44,7 +44,7 @@ class TestSessionWithChatAssistantUpdate:
             pytest.param({"name": "valid_name"}, 0, "", marks=pytest.mark.p1),
             pytest.param({"name": "a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, 102, "`name` can not be empty.", marks=pytest.mark.p3),
+            pytest.param({"name": ""}, 102, "`name` can not be empty", marks=pytest.mark.p3),
             pytest.param({"name": "duplicated_name"}, 0, "", marks=pytest.mark.p3),
             pytest.param({"name": "case insensitive"}, 0, "", marks=pytest.mark.p3),
         ],
@@ -68,7 +68,7 @@ class TestSessionWithChatAssistantUpdate:
     @pytest.mark.parametrize(
         "chat_assistant_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 109, "No authorization."),
+            (INVALID_ID_32, 109, "no authorization"),
         ],
     )
     def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
@@ -142,4 +142,4 @@ class TestSessionWithChatAssistantUpdate:
         delete_chat_assistants(HttpApiAuth, {"ids": [chat_assistant_id]})
         res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
         assert res["code"] == 109
-        assert res["message"] == "No authorization."
+        assert res["message"] == "no authorization"

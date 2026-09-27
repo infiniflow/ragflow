@@ -32,6 +32,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// KeywordDelimiter separates the original question from the keywords appended
+// by keyword extraction. Without it the question's last token merges with the
+// first keyword during tokenization, which silently degrades lexical matching.
+// Every question-augmentation callsite uses this one delimiter.
+const KeywordDelimiter = ","
+
+// AppendKeywords joins question with the keywords extracted from it, separated
+// by KeywordDelimiter. An empty keywords string (failed or empty extraction)
+// leaves question untouched, so a dangling delimiter is never appended.
+func AppendKeywords(question, keywords string) string {
+	if keywords == "" {
+		return question
+	}
+	return question + KeywordDelimiter + keywords
+}
+
 // KeywordExtraction extracts keywords from content using LLM.
 //
 // Uses ChatModel to call the LLM with a keyword extraction prompt.
@@ -73,7 +89,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, modelConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract keywords: %w", err)
 	}
@@ -86,7 +102,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 
 	// Clean up response - remove thinking tags if present
 	result := strings.TrimSpace(*response.Answer)
-	result = thinkBlockRE.ReplaceAllString(result, "")
+	result = common.StripThinkTrailing(result)
 	result = strings.TrimSpace(result)
 
 	if strings.Contains(result, "**ERROR**") {
@@ -106,12 +122,12 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 		zap.String("llmID", llmID),
 		zap.Strings("languages", languages))
 
-	modelProviderSvc := NewModelProviderService()
+	modelSolver := NewModelSolver()
 	var chatModel *modelModule.ChatModel
 	var err error
 
 	if llmID != "" {
-		modelTypes, err := modelProviderSvc.GetModelTypeByName(tenantID, llmID)
+		modelTypes, err := modelSolver.ResolveModelType(ctx, tenantID, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get model type: %w", err)
 		}
@@ -122,17 +138,17 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 				break
 			}
 		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantID, resolvedType, llmID)
+		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	} else {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	}
 	if chatModel == nil {
 		return query, fmt.Errorf("failed to get chat model: nil chat model")
@@ -176,7 +192,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, modelConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
 	if err != nil {
 		return query, fmt.Errorf("failed to translate question: %w", err)
 	}
@@ -188,7 +204,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	result := *response.Answer
 
 	// Clean up response - remove think tags and trim
-	result = thinkBlockRE.ReplaceAllString(result, "")
+	result = common.StripThinkTrailing(result)
 
 	if strings.Contains(result, "**ERROR**") {
 		return query, nil
@@ -341,7 +357,7 @@ func FullQuestion(
 		{Role: "user", Content: "Output: "},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, nil,
+		ctx, modelName, msgs, chatModel.APIConfig, nil, nil,
 	)
 	if err != nil {
 		return fallbackToLatestUser(messages), err
@@ -350,7 +366,7 @@ func FullQuestion(
 		return fallbackToLatestUser(messages), fmt.Errorf("FullQuestion: empty response")
 	}
 	cleaned := strings.TrimSpace(*resp.Answer)
-	cleaned = thinkBlockRE.ReplaceAllString(cleaned, "")
+	cleaned = common.StripThinkTrailing(cleaned)
 	cleaned = strings.TrimSpace(cleaned)
 	if errorMarkerRE.MatchString(cleaned) {
 		return fallbackToLatestUser(messages), nil

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	"ragflow/internal/harness/core/schema"
@@ -17,7 +16,7 @@ func TestAgentTool_BasicInvocation(t *testing.T) {
 		Model: innerM,
 	}).WithName("inner").WithDescription("inner echo agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	// Parent agent: uses the agent tool.
@@ -68,7 +67,7 @@ func TestAgentTool_NestedWithCheckpoint(t *testing.T) {
 		Model: innerM,
 	}).WithName("nested").WithDescription("nested agent for checkpoint test")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{
@@ -114,7 +113,7 @@ func TestAgentTool_EventForwarding(t *testing.T) {
 		Model: innerM,
 	}).WithName("forward_inner").WithDescription("inner with event forwarding")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent, WithEmitInternalEvents())
 
 	parentM := &forcedToolModel{
@@ -165,7 +164,7 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 		MaxIterations: 3,
 	}).WithName("resume_inner").WithDescription("interruptible inner agent")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	agentTool := NewAgentTool(ctx, innerAgent)
 
 	parentM := &forcedToolModel{

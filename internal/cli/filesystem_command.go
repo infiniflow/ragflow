@@ -29,7 +29,7 @@ import (
 )
 
 // ExecuteFilesystemCommand ExecuteFilesystem executes a Filesystem command and returns a ResponseIf.
-func (c *CLI) ExecuteFilesystemCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ExecuteFilesystemCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -165,6 +165,7 @@ func (c *CLI) executeFilesystemInner(input string) error {
 			Path: searchPath,
 			Params: map[string]interface{}{
 				"query":     searchOpts.Query,
+				"limit":     searchOpts.TopK,
 				"top_k":     searchOpts.TopK,
 				"threshold": searchOpts.Threshold,
 				"dirs":      searchOpts.Dirs,

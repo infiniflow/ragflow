@@ -56,12 +56,13 @@ func pushDB(t *testing.T, testDB *gorm.DB) {
 
 func testFile2Document(t *testing.T, fileID, docID string) *entity.File2Document {
 	t.Helper()
+	ctx := t.Context()
 	f2d := &entity.File2Document{
 		ID:         fileID + "_" + docID,
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}
-	if err := DB.Create(f2d).Error; err != nil {
+	if err := DB.WithContext(ctx).Create(f2d).Error; err != nil {
 		t.Fatalf("failed to create test record: %v", err)
 	}
 	return f2d
@@ -74,7 +75,8 @@ func TestFile2DocumentDAO_GetByDocumentID(t *testing.T) {
 
 	f2d := testFile2Document(t, "file-1", "doc-1")
 
-	results, err := dao.GetByDocumentID("doc-1")
+	ctx := t.Context()
+	results, err := dao.GetByDocumentID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("GetByDocumentID failed: %v", err)
 	}
@@ -94,7 +96,8 @@ func TestFile2DocumentDAO_GetByDocumentID_NotFound(t *testing.T) {
 	pushDB(t, db)
 	dao := NewFile2DocumentDAO()
 
-	results, err := dao.GetByDocumentID("nonexistent")
+	ctx := t.Context()
+	results, err := dao.GetByDocumentID(ctx, db, "nonexistent")
 	if err != nil {
 		t.Fatalf("GetByDocumentID failed: %v", err)
 	}
@@ -111,7 +114,8 @@ func TestFile2DocumentDAO_GetByDocumentID_MultipleResults(t *testing.T) {
 	testFile2Document(t, "file-1", "doc-shared")
 	testFile2Document(t, "file-2", "doc-shared")
 
-	results, err := dao.GetByDocumentID("doc-shared")
+	ctx := t.Context()
+	results, err := dao.GetByDocumentID(ctx, db, "doc-shared")
 	if err != nil {
 		t.Fatalf("GetByDocumentID failed: %v", err)
 	}
@@ -129,13 +133,14 @@ func TestFile2DocumentDAO_DeleteByDocumentID(t *testing.T) {
 	testFile2Document(t, "file-2", "doc-del")
 	testFile2Document(t, "file-3", "doc-keep")
 
-	err := dao.DeleteByDocumentID("doc-del")
+	ctx := t.Context()
+	err := dao.DeleteByDocumentID(ctx, db, "doc-del")
 	if err != nil {
 		t.Fatalf("DeleteByDocumentID failed: %v", err)
 	}
 
 	// Verify deleted records are gone
-	results, err := dao.GetByDocumentID("doc-del")
+	results, err := dao.GetByDocumentID(ctx, db, "doc-del")
 	if err != nil {
 		t.Fatalf("GetByDocumentID failed: %v", err)
 	}
@@ -144,7 +149,7 @@ func TestFile2DocumentDAO_DeleteByDocumentID(t *testing.T) {
 	}
 
 	// Verify other document's records are untouched
-	results, err = dao.GetByDocumentID("doc-keep")
+	results, err = dao.GetByDocumentID(ctx, db, "doc-keep")
 	if err != nil {
 		t.Fatalf("GetByDocumentID failed: %v", err)
 	}
@@ -158,7 +163,8 @@ func TestFile2DocumentDAO_DeleteByDocumentID_Noop(t *testing.T) {
 	pushDB(t, db)
 	dao := NewFile2DocumentDAO()
 
-	err := dao.DeleteByDocumentID("nonexistent")
+	ctx := t.Context()
+	err := dao.DeleteByDocumentID(ctx, db, "nonexistent")
 	if err != nil {
 		t.Fatalf("DeleteByDocumentID should not error on missing: %v", err)
 	}

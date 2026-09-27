@@ -9,6 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ListDeletionKey } from '@/constants/list-deletion';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
@@ -52,6 +55,7 @@ export default function Files() {
     loading,
     setPagination,
     searchString,
+    setSearchString,
     handleInputChange,
   } = useFetchFileList();
 
@@ -62,6 +66,14 @@ export default function Files() {
     clearRowSelection,
     selectedCount,
   } = useRowSelection();
+
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
+
+  useGoToPreviousPageOnEmpty(files?.length, loading, {
+    deletionKey: ListDeletionKey.FileList,
+    searchString,
+    setSearchString,
+  });
 
   const {
     showMoveFileModal,

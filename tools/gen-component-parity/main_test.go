@@ -17,7 +17,7 @@ import (
 	"testing"
 )
 
-// TestWriteMarkdown_SpotCheck pins the markdown output contract: it
+// TestWriteMarkdown_SpotCheck pins the Markdown output contract: it
 // must enumerate both universes and surface at least one entry per
 // universe. The exhaustive list is owned by RegisteredNames() and
 // tool/registry.go — this test just guards against the structural

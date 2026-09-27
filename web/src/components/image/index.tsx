@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Authorization } from '@/constants/authorization';
 import { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
@@ -7,12 +23,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   id: string;
+  documentId?: string;
   t?: string | number;
   label?: string;
 }
 
 type ImageCacheItem = {
   count: number;
+  // The URL the bytes belong to, without the cache-busting `_t` query, so an
+  // entry can be found again no matter which `_t` fetched it.
+  baseUrl: string;
   objectUrl?: string;
   promise?: Promise<string>;
   timer?: ReturnType<typeof setTimeout>;
@@ -20,7 +40,11 @@ type ImageCacheItem = {
 
 const imageCache = new Map<string, ImageCacheItem>();
 
-export const buildDocumentImageUrl = (id: string, t?: string | number) => {
+export const buildDocumentImageUrl = (
+  id: string,
+  documentId?: string,
+  t?: string | number,
+) => {
   const params = new URLSearchParams();
 
   if (t) {
@@ -28,7 +52,30 @@ export const buildDocumentImageUrl = (id: string, t?: string | number) => {
   }
 
   const query = params.toString();
-  return `${restAPIv1}/documents/images/${id}${query ? `?${query}` : ''}`;
+  const path = documentId
+    ? `/documents/${encodeURIComponent(documentId)}/images/${encodeURIComponent(id)}`
+    : `/documents/images/${encodeURIComponent(id)}`;
+  return `${restAPIv1}${path}${query ? `?${query}` : ''}`;
+};
+
+// Drop the cached bytes of one document image. A chunk keeps its img_id when
+// its image is updated in place, so mounted <Image>s would otherwise keep
+// rendering the previously fetched picture.
+export const evictDocumentImage = (id: string, documentId?: string) => {
+  const baseUrl = buildDocumentImageUrl(id, documentId);
+
+  imageCache.forEach((item, cacheKey) => {
+    if (item.baseUrl !== baseUrl) {
+      return;
+    }
+    if (item.timer) {
+      clearTimeout(item.timer);
+    }
+    if (item.objectUrl) {
+      URL.revokeObjectURL(item.objectUrl);
+    }
+    imageCache.delete(cacheKey);
+  });
 };
 
 const fetchDocumentImage = (url: string, authorization: string) => {
@@ -36,7 +83,7 @@ const fetchDocumentImage = (url: string, authorization: string) => {
   let item = imageCache.get(cacheKey);
 
   if (!item) {
-    item = { count: 0 };
+    item = { count: 0, baseUrl: url.split('?')[0] };
     imageCache.set(cacheKey, item);
   }
   if (item.timer) {
@@ -58,7 +105,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
         return item.objectUrl;
       })
       .catch((error) => {
-        imageCache.delete(cacheKey);
+        // A re-fetch may have installed a newer entry under this key.
+        if (imageCache.get(cacheKey) === item) {
+          imageCache.delete(cacheKey);
+        }
         throw error;
       });
   }
@@ -73,7 +123,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
             if (item.objectUrl) {
               URL.revokeObjectURL(item.objectUrl);
             }
-            imageCache.delete(cacheKey);
+            // Eviction or a re-fetch may have replaced this entry meanwhile.
+            if (imageCache.get(cacheKey) === item) {
+              imageCache.delete(cacheKey);
+            }
           }
         }, 30000);
       }
@@ -98,8 +151,15 @@ const isAuthRequiredUrl = (url: string): boolean => {
   }
 };
 
-export const useDocumentImageUrl = (id: string, t?: string | number) => {
-  const directUrl = useMemo(() => buildDocumentImageUrl(id, t), [id, t]);
+export const useDocumentImageUrl = (
+  id: string,
+  documentId?: string,
+  t?: string | number,
+) => {
+  const directUrl = useMemo(
+    () => buildDocumentImageUrl(id, documentId, t),
+    [documentId, id, t],
+  );
   const [imageUrl, setImageUrl] = useState<string>('');
 
   useEffect(() => {
@@ -136,33 +196,42 @@ export const useDocumentImageUrl = (id: string, t?: string | number) => {
   return imageUrl;
 };
 
+export type AuthenticatedImageUrlStatus = 'loading' | 'ready' | 'error';
+
 /**
  * Hook to convert any authenticated URL to a blob URL for use in <img> tags.
  * Use this for thumbnail URLs or any other API URLs that require authentication.
+ * The status distinguishes an in-flight fetch from a failed one, which the
+ * empty src alone cannot express.
  */
-export const useAuthenticatedImageUrl = (url: string | undefined | null) => {
-  const [imageUrl, setImageUrl] = useState<string>('');
+export const useAuthenticatedImageUrl = (
+  url: string | undefined | null,
+): { src: string; status: AuthenticatedImageUrlStatus } => {
+  const [state, setState] = useState<{
+    src: string;
+    status: AuthenticatedImageUrlStatus;
+  }>({ src: '', status: 'loading' });
 
   useEffect(() => {
     if (!url || !isAuthRequiredUrl(url)) {
-      setImageUrl(url || '');
+      setState({ src: url || '', status: 'ready' });
       return;
     }
 
     const authorization = getAuthorization();
     let cancelled = false;
-    setImageUrl('');
+    setState({ src: '', status: 'loading' });
 
     const { promise, release } = fetchDocumentImage(url, authorization);
     promise
       .then((blobUrl) => {
         if (!cancelled) {
-          setImageUrl(blobUrl);
+          setState({ src: blobUrl, status: 'ready' });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setImageUrl('');
+          setState({ src: '', status: 'error' });
         }
       });
 
@@ -172,7 +241,7 @@ export const useAuthenticatedImageUrl = (url: string | undefined | null) => {
     };
   }, [url]);
 
-  return imageUrl;
+  return state;
 };
 
 /**
@@ -188,25 +257,24 @@ export const AuthenticatedImg = ({
 }: React.ImgHTMLAttributes<HTMLImageElement> & {
   fallback?: React.ReactNode;
 }) => {
-  const authenticatedSrc = useAuthenticatedImageUrl(src);
+  const { src: authenticatedSrc } = useAuthenticatedImageUrl(src);
 
   if (!authenticatedSrc) return fallback ?? null;
 
   return (
-    <img
-      src={authenticatedSrc}
-      alt={alt}
-      className={className}
-      {...props}
-    />
+    <img src={authenticatedSrc} alt={alt} className={className} {...props} />
   );
 };
 
-const Image = ({ id, t, label, className, ...props }: IImage) => {
-  const src = useDocumentImageUrl(id, t);
+const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
+  { id, documentId, t, label, className, ...props },
+  ref,
+) {
+  const src = useDocumentImageUrl(id, documentId, t);
   const imageElement = (
     <img
       {...props}
+      ref={ref}
       src={src || undefined}
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
@@ -224,18 +292,32 @@ const Image = ({ id, t, label, className, ...props }: IImage) => {
       </div>
     </div>
   );
-};
+});
 
 export default Image;
 
-export const ImageWithPopover = ({ id }: { id: string }) => {
+export const ImageWithPopover = ({
+  id,
+  documentId,
+}: {
+  id: string;
+  documentId?: string;
+}) => {
   return (
     <Popover>
       <PopoverTrigger>
-        <Image id={id} className="max-h-[100px] inline-block"></Image>
+        <Image
+          id={id}
+          documentId={documentId}
+          className="max-h-[100px] inline-block"
+        ></Image>
       </PopoverTrigger>
       <PopoverContent>
-        <Image id={id} className="max-w-[100px] object-contain"></Image>
+        <Image
+          id={id}
+          documentId={documentId}
+          className="max-w-[100px] object-contain"
+        ></Image>
       </PopoverContent>
     </Popover>
   );

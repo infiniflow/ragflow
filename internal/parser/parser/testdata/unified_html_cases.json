@@ -1,0 +1,12 @@
+[
+  {"name": "br_basic", "html": "<p>line1<br>line2</p>", "want": "line1\nline2"},
+  {"name": "br_surrounding_space", "html": "<p>Hello <br> World</p>", "want": "Hello\nWorld"},
+  {"name": "br_double", "html": "<p>A<br><br>B</p>", "want": "A\n\nB"},
+  {"name": "br_before_inline", "html": "<p>Line1<br><span>Line2</span></p>", "want": "Line1\nLine2"},
+  {"name": "inline_no_space_latin", "html": "<p>Hello<b>World</b></p>", "want": "HelloWorld"},
+  {"name": "inline_no_space_cjk", "html": "<p>你好<b>世界</b></p>", "want": "你好世界"},
+  {"name": "inline_with_space", "html": "<p>Hello <b>World</b></p>", "want": "Hello World"},
+  {"name": "inline_three", "html": "<p>First<b>Second</b>Third</p>", "want": "FirstSecondThird"},
+  {"name": "whitespace_collapse", "html": "<p>\n  Hello\n  <b>World</b>\n</p>", "want": "Hello World"},
+  {"name": "pre_preserved", "html": "<pre>  code\n  block</pre>", "want": "  code\n  block"}
+]

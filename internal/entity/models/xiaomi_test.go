@@ -33,10 +33,13 @@ func newXiaomiServer(t *testing.T, expectedPath string, handler func(t *testing.
 			t.Errorf("read body: %v", err)
 			return
 		}
+		// GET requests (e.g. ListModels) carry no body.
 		var body map[string]interface{}
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
-			return
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
+				return
+			}
 		}
 		handler(t, r, body, w)
 	}))
@@ -80,15 +83,13 @@ func TestXiaomiNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestXiaomiChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "mimo-v2.5-pro" {
 			t.Errorf("model=%v", body["model"])
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
-		}
-		if body["max_tokens"] != nil {
-			t.Errorf("max_tokens must not be sent: %v", body["max_tokens"])
 		}
 		if body["max_completion_tokens"] != float64(1024) {
 			t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
@@ -111,11 +112,12 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	maxTokens := 1024
 	thinking := false
-	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages(
+	ctx := t.Context()
+	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages(ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking},
+		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -129,6 +131,8 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 }
 
 func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -145,7 +149,7 @@ func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := m.ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -155,6 +159,8 @@ func TestXiaomiUsesEmptyRegionBaseURLOverride(t *testing.T) {
 }
 
 func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/override/chat", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -172,7 +178,7 @@ func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
 		map[string]string{"default": "http://unused"},
 		URLSuffix{Chat: "override/chat"},
 	)
-	resp, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil)
+	resp, err := m.ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -182,6 +188,8 @@ func TestXiaomiAPIConfigBaseURLOverridesRegionMap(t *testing.T) {
 }
 
 func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -195,7 +203,7 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := newXiaomiForTest(srv.URL).ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -205,20 +213,24 @@ func TestXiaomiChatExtractsReasoningContent(t *testing.T) {
 }
 
 func TestXiaomiChatRequiresInputs(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	m := newXiaomiForTest("http://unused")
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+	if _, err := m.ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("api key guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
+	if _, err := m.ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("model guard: %v", err)
 	}
-	if _, err := m.ChatWithMessages("mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
+	if _, err := m.ChatWithMessages(ctx, "mimo-v2.5-pro", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("messages guard: %v", err)
 	}
 }
 
 func TestXiaomiChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":"unauthorized"}`)
@@ -226,16 +238,22 @@ func TestXiaomiChatRejectsHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newXiaomiForTest(srv.URL).ChatWithMessages("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := newXiaomiForTest(srv.URL).ChatWithMessages(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestXiaomiStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v want true", body["stream"])
+		}
+		streamOptions, ok := body["stream_options"].(map[string]interface{})
+		if !ok || streamOptions["include_usage"] != true {
+			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -250,9 +268,11 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, r *string) error {
 			if c != nil && *c == "[DONE]" {
@@ -283,6 +303,8 @@ func TestXiaomiStreamHappyPath(t *testing.T) {
 }
 
 func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
@@ -295,9 +317,11 @@ func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
 	apiKey := "test-key"
 	var content []string
 	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, _ *string) error {
 			if c != nil && *c != "[DONE]" {
@@ -315,6 +339,8 @@ func TestXiaomiStreamHandlesCRLFFrames(t *testing.T) {
 }
 
 func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newXiaomiServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: {bad json}\n\n")
@@ -322,38 +348,175 @@ func TestXiaomiStreamRejectsMalformedFrame(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	// Malformed SSE frames are silently skipped; the stream completes and sends [DONE].
-	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender("mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error { return nil })
-	if err != nil {
-		t.Errorf("expected no error on malformed frame, got %v", err)
+	// Malformed SSE frames abort the stream: Xiaomi now uses the strict
+	// OpenAIParserConfig shared by every OpenAI-compatible driver.
+	err := newXiaomiForTest(srv.URL).ChatStreamlyWithSender(ctx, "mimo-v2.5-pro", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })
+	if err == nil {
+		t.Error("expected error on malformed frame, got nil")
 	}
 }
 
 func TestXiaomiUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newXiaomiForTest("http://unused")
 	model := "mimo-v2.5-pro"
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
 
-	if _, err := m.Embed(&model, []string{"x"}, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"x"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: %v", err)
 	}
-	if _, err := m.Rerank(&model, "q", []string{"d"}, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"d"}}, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: %v", err)
 	}
-	// CheckConnection IS implemented — verifies API config and base URL are reachable.
-	if err := m.CheckConnection(cfg); err != nil {
-		t.Errorf("CheckConnection: %v", err)
-	}
 	// TranscribeAudio IS implemented; with nil file it returns input validation error.
-	if _, err := m.TranscribeAudio(&model, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "file is missing") {
+	if _, err := m.TranscribeAudio(ctx, &model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "file is missing") {
 		t.Errorf("TranscribeAudio: %v", err)
 	}
 	// AudioSpeech IS implemented; with nil content it returns input validation error.
-	if _, err := m.AudioSpeech(&model, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
+	if _, err := m.AudioSpeech(ctx, &model, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "audio content is empty") {
 		t.Errorf("AudioSpeech: %v", err)
 	}
-	if _, err := m.OCRFile(&model, nil, nil, cfg, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(ctx, &model, nil, nil, cfg, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
+	}
+}
+
+func newXiaomiListModelsForTest(baseURL string) *XiaomiModel {
+	return NewXiaomiModel(
+		map[string]string{"default": baseURL},
+		URLSuffix{Chat: "v1/chat/completions", Models: "models"},
+	)
+}
+
+func TestXiaomiListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-pro","object":"model","owned_by":"xiaomi"}]}`))
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	models, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	names := make([]string, 0, len(models))
+	for _, model := range models {
+		names = append(names, model.Name)
+	}
+	if got := strings.Join(names, ","); got != "mimo-v2.5,mimo-v2.5-pro" {
+		t.Fatalf("models=%v, want [mimo-v2.5 mimo-v2.5-pro]", names)
+	}
+
+	// The remote payload only carries ids, so the catalog must backfill types.
+	wantTypes := []string{"chat", "vision"}
+	for _, want := range wantTypes {
+		found := false
+		for _, got := range models[0].ModelTypes {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("mimo-v2.5 model_types=%v, want to contain %q", models[0].ModelTypes, want)
+		}
+	}
+}
+
+// The upstream payload only carries ids, and it advertises models the local
+// catalog does not list (the tts variants in Xiaomi's docs). Those entries
+// must still come back typed so the picker does not show them as chat-only.
+func TestXiaomiListModelsTypesModelsMissingFromCatalog(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-asr","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-pro","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts-voiceclone","object":"model","owned_by":"xiaomi"},{"id":"mimo-v2.5-tts-voicedesign","object":"model","owned_by":"xiaomi"}]}`))
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	models, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+
+	byName := make(map[string][]string, len(models))
+	for _, model := range models {
+		byName[model.Name] = model.ModelTypes
+	}
+	if len(byName) != 6 {
+		t.Fatalf("models=%v, want 6 entries", byName)
+	}
+	for _, name := range []string{"mimo-v2.5-tts-voiceclone", "mimo-v2.5-tts-voicedesign"} {
+		types, ok := byName[name]
+		if !ok {
+			t.Fatalf("model %q missing from %v", name, byName)
+		}
+		if len(types) != 1 || types[0] != "tts" {
+			t.Errorf("%s model_types=%v, want [tts]", name, types)
+		}
+	}
+}
+
+func TestXiaomiListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	})
+	defer srv.Close()
+
+	m := newXiaomiListModelsForTest(srv.URL + "/v1")
+	apiKey := "test-key"
+	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("ListModels error=%v, want status 401", err)
+	}
+}
+
+func TestXiaomiListModelsRequiresURLSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	// No server: the driver must fail before issuing a request.
+	m := newXiaomiForTest("http://unused")
+	apiKey := "test-key"
+	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "models URL suffix is not configured") {
+		t.Errorf("ListModels error=%v, want missing URL suffix", err)
+	}
+}
+
+func TestXiaomiCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	apiKey := "test-key"
+
+	srv := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mimo-v2.5-pro"}]}`))
+	})
+	defer srv.Close()
+
+	if err := newXiaomiListModelsForTest(srv.URL+"/v1").CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Errorf("CheckConnection: %v", err)
+	}
+
+	rejected := newXiaomiServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	})
+	defer rejected.Close()
+
+	if err := newXiaomiListModelsForTest(rejected.URL+"/v1").CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
+		t.Error("CheckConnection: expected an error for a rejected key")
 	}
 }

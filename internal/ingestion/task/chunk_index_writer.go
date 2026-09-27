@@ -1,0 +1,127 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package task
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"ragflow/internal/common"
+
+	"go.uber.org/zap"
+)
+
+const (
+	chunkInsertAttempts       = 3
+	chunkInsertRetryBaseDelay = 100 * time.Millisecond
+)
+
+// InsertFunc is the signature of the chunk insertion backend (e.g. engine.InsertChunks).
+type InsertFunc func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error)
+
+// chunkIndexWriter batches chunks and writes them to the search engine in
+// bulkSize-sized batches. Progress is reported every 128 batches.
+type chunkIndexWriter struct {
+	insertFunc      InsertFunc
+	finalInsertFunc InsertFunc
+	baseName        string
+	datasetID       string
+	bulkSize        int
+}
+
+// newChunkIndexWriter creates a chunkIndexWriter. When bulkSize is <= 0 the
+// entire chunk slice is sent in one call.
+func newChunkIndexWriter(
+	insertFunc InsertFunc,
+	baseName string,
+	datasetID string,
+	bulkSize int,
+) *chunkIndexWriter {
+	return &chunkIndexWriter{
+		insertFunc:      insertFunc,
+		finalInsertFunc: insertFunc,
+		baseName:        baseName,
+		datasetID:       datasetID,
+		bulkSize:        bulkSize,
+	}
+}
+
+func (w *chunkIndexWriter) withFinalInsertFunc(insertFunc InsertFunc) *chunkIndexWriter {
+	w.finalInsertFunc = insertFunc
+	return w
+}
+
+// Write inserts chunks in batches. An empty or nil slice is forwarded to the
+// backend as-is.
+func (w *chunkIndexWriter) Write(ctx context.Context, chunks []map[string]any) error {
+	if len(chunks) == 0 {
+		_, err := w.insertFunc(ctx, chunks, w.baseName, w.datasetID)
+		return err
+	}
+	bulkSize := w.bulkSize
+	if bulkSize <= 0 {
+		bulkSize = len(chunks)
+	}
+	for b := 0; b < len(chunks); b += bulkSize {
+		end := b + bulkSize
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		insert := w.insertFunc
+		if end == len(chunks) && w.finalInsertFunc != nil {
+			insert = w.finalInsertFunc
+		}
+		var err error
+		for attempt := 1; attempt <= chunkInsertAttempts; attempt++ {
+			_, err = insert(ctx, chunks[b:end], w.baseName, w.datasetID)
+			if err == nil {
+				break
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			if attempt == chunkInsertAttempts {
+				continue
+			}
+
+			delay := chunkInsertRetryBaseDelay << (attempt - 1)
+			common.Warn("retrying chunk index write",
+				zap.Int("batch_start", b),
+				zap.Int("batch_end", end),
+				zap.Int("attempt", attempt+1),
+				zap.Int("max_attempts", chunkInsertAttempts),
+				zap.Duration("delay", delay),
+				zap.Error(err),
+			)
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("insert chunk batch %d-%d after %d attempts: %w", b, end, chunkInsertAttempts, err)
+		}
+	}
+	return nil
+}

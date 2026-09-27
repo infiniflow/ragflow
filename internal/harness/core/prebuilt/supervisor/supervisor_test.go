@@ -16,7 +16,7 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNew_RequiresModel(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := New(ctx, &Config{})
 	if err == nil {
 		t.Error("expected error when Model is nil")
@@ -24,7 +24,7 @@ func TestNew_RequiresModel(t *testing.T) {
 }
 
 func TestNew_WithModelAndAgents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
@@ -72,7 +72,7 @@ func TestSystemPrompt(t *testing.T) {
 }
 
 func TestNewWithRouter(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{Model: model}).WithName("sub")
 
@@ -86,7 +86,7 @@ func TestNewWithRouter(t *testing.T) {
 }
 
 func TestDeterministicTransfer(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{Model: model}).WithName("coder")
 
@@ -155,7 +155,7 @@ func contains(s, sub string) bool {
 }
 
 func TestDeterministicTransferConstraint(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	model := &mockSupervisorModel{}
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
 		Model:       model,

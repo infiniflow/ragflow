@@ -56,6 +56,17 @@ def _request(method: str, public_path: str, keyed_path: str, api_key: str, *, pa
     return resp.json()
 
 
+def _result_content(result: dict) -> str:
+    """Pull a result's text out of the Keenable response.
+
+    Keenable returns both ``snippet`` and ``description``: ``snippet`` carries
+    the page text and ``description`` is frequently empty, so prefer whichever
+    has content. The chunks built from this feed retrieval, so the text is kept
+    whole; only the newlines it arrives with are normalized.
+    """
+    return " ".join(str(result.get("snippet") or result.get("description") or "").split())
+
+
 class KeenableSearchParam(ToolParamBase):
     """
     Define the Keenable search component parameters.
@@ -149,7 +160,7 @@ class KeenableSearch(ToolBase, ABC):
                     results,
                     get_title=lambda r: r.get("title"),
                     get_url=lambda r: r.get("url"),
-                    get_content=lambda r: r.get("description"),
+                    get_content=_result_content,
                 )
                 self.set_output("json", results)
                 logging.info(f"KeenableSearch: returned {len(results)} results")

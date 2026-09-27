@@ -1,3 +1,18 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
 // src/pages/dataset/file-logs/file-status-badge.tsx
 import {
   RunningStatus,
@@ -16,46 +31,55 @@ interface StatusBadgeProps {
 
 const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
   const getStatusColor = () => {
+    // Aligned with RunningStatusMap colors in src/pages/dataset/dataset/constant.ts
+    // so the badge matches the status dot in the document list.
     // #3ba05c  → rgb(59, 160, 92)   // state-success
     // #d8494b  → rgb(216, 73, 75)   // state-error
     // #00beb4  → rgb(0, 190, 180)   // accent-primary
     // #faad14  → rgb(250, 173, 20)  // state-warning
+    // #5c96c8  → rgb(92, 150, 200)  // team-member
     switch (status) {
       case RunningStatus.DONE:
       case RunningStatusOld.DONE:
-        return `bg-[rgba(59,160,92,0.1)] text-state-success`;
+        return `bg-state-success/10 text-state-success`;
       case RunningStatus.FAIL:
       case RunningStatusOld.FAIL:
-        return `bg-[rgba(216,73,75,0.1)] text-state-error`;
+        return `bg-state-error/10 text-state-error`;
       case RunningStatus.RUNNING:
       case RunningStatusOld.RUNNING:
-        return `bg-[rgba(0,190,180,0.1)] text-accent-primary`;
+        return `bg-[rgba(92,150,200,0.1)] text-team-member`;
       case RunningStatus.UNSTART:
       case RunningStatusOld.UNSTART:
-        return `bg-[rgba(250,173,20,0.1)] text-state-warning`;
+        return `bg-accent-primary/10 text-accent-primary`;
+      case RunningStatus.CANCEL:
+      case RunningStatusOld.CANCEL:
+      case RunningStatus.QUEUED:
+        return `bg-state-warning/10 text-state-warning`;
       default:
         return 'bg-gray-500/10 text-text-secondary';
     }
   };
 
   const getBgStatusColor = () => {
-    // #3ba05c  → rgb(59, 160, 92)   // state-success
-    // #d8494b  → rgb(216, 73, 75)   // state-error
-    // #00beb4  → rgb(0, 190, 180)   // accent-primary
-    // #faad14  → rgb(250, 173, 20)  // state-warning
+    // Aligned with RunningStatusMap colors in src/pages/dataset/dataset/constant.ts
+    // so the badge matches the status dot in the document list.
     switch (status) {
       case RunningStatus.DONE:
       case RunningStatusOld.DONE:
-        return `bg-[rgba(59,160,92,1)] text-state-success`;
+        return `bg-state-success text-state-success`;
       case RunningStatus.FAIL:
       case RunningStatusOld.FAIL:
-        return `bg-[rgba(216,73,75,1)] text-state-error`;
+        return `bg-state-error text-state-error`;
       case RunningStatus.RUNNING:
       case RunningStatusOld.RUNNING:
-        return `bg-[rgba(0,190,180,1)] text-accent-primary`;
+        return `bg-team-member text-team-member`;
       case RunningStatus.UNSTART:
       case RunningStatusOld.UNSTART:
-        return `bg-[rgba(250,173,20,1)] text-state-warning`;
+        return `bg-accent-primary text-accent-primary`;
+      case RunningStatus.CANCEL:
+      case RunningStatusOld.CANCEL:
+      case RunningStatus.QUEUED:
+        return `bg-state-warning text-state-warning`;
       default:
         return `bg-[rgba(117,120,122,1)] text-text-secondary`;
     }

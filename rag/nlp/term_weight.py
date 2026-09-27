@@ -14,14 +14,43 @@
 #  limitations under the License.
 #
 
+import json
 import logging
 import math
-import json
-import re
 import os
+import re
+import unicodedata
+
 import numpy as np
-from rag.nlp import rag_tokenizer
+
 from common.file_utils import get_project_base_directory
+from rag.nlp import rag_tokenizer
+
+
+def _alphabetic_oov_frequency(term):
+    """Estimate frequency for a Latin, Greek, or Cyrillic OOV term."""
+    letter_count = 0
+    for char in term:
+        if char.isascii():
+            if char.isalpha():
+                letter_count += 1
+            elif char not in " .-":
+                return None
+            continue
+        script_name = unicodedata.name(char, "").split(" ", 1)[0]
+        if char.isalpha() and script_name in {"LATIN", "GREEK", "CYRILLIC"}:
+            letter_count += 1
+        elif char not in " .-":
+            return None
+    if not letter_count:
+        return None
+
+    # Preserve the old frequency (300) for short words, then halve it every
+    # two letters. This is a bounded, language-neutral prior: longer unknown
+    # words are usually more informative, without outranking known terms by an
+    # unbounded amount.
+    exponent = max(0, letter_count - 3) / 2
+    return max(10, round(300 / (2**exponent)))
 
 
 class Dealer:
@@ -64,7 +93,7 @@ class Dealer:
 
         def load_dict(fnm):
             res = {}
-            with open(fnm, "r") as f:
+            with open(fnm, "r", encoding="utf-8") as f:
                 while True:
                     line = f.readline()
                     if not line:
@@ -85,14 +114,17 @@ class Dealer:
         fnm = os.path.join(get_project_base_directory(), "rag/res")
         self.ne, self.df = {}, {}
         try:
-            with open(os.path.join(fnm, "ner.json"), "r") as f:
+            with open(os.path.join(fnm, "ner.json"), "r", encoding="utf-8") as f:
                 self.ne = json.load(f)
         except Exception:
             logging.warning("Load ner.json FAIL!")
+        freq_path = os.path.join(fnm, "term.freq")
         try:
-            self.df = load_dict(os.path.join(fnm, "term.freq"))
-        except Exception:
-            logging.warning("Load term.freq FAIL!")
+            self.df = load_dict(freq_path)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            logging.warning("Load term.freq FAIL!", exc_info=True)
 
     def pretoken(self, txt, num=False, stpwd=True):
         patt = [r"[~—\t @#%!<>,\.\?\":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×`&\\/「」\\]"]
@@ -161,7 +193,6 @@ class Dealer:
         num_pattern = re.compile(r"[0-9,.]{2,}$")
         short_letter_pattern = re.compile(r"[a-z]{1,2}$")
         num_space_pattern = re.compile(r"[0-9. -]{2,}$")
-        letter_pattern = re.compile(r"[a-z. -]+$")
 
         def ner(t):
             if num_pattern.match(t):
@@ -189,8 +220,10 @@ class Dealer:
             if num_space_pattern.match(t):
                 return 3
             s = rag_tokenizer.freq(t)
-            if not s and letter_pattern.match(t):
-                return 300
+            if not s:
+                oov_frequency = _alphabetic_oov_frequency(t)
+                if oov_frequency is not None:
+                    return oov_frequency
             if not s:
                 s = 0
 
@@ -208,9 +241,10 @@ class Dealer:
                 return 5
             if t in self.df:
                 return self.df[t] + 3
-            elif letter_pattern.match(t):
-                return 300
-            elif len(t) >= 4:
+            oov_frequency = _alphabetic_oov_frequency(t)
+            if oov_frequency is not None:
+                return oov_frequency
+            if len(t) >= 4:
                 s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]
                 if len(s) > 1:
                     return max(3, np.min([df(tt) for tt in s]) / 6.0)

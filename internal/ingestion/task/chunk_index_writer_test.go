@@ -1,0 +1,182 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package task
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"testing"
+	"time"
+)
+
+func TestChunkIndexWriter_EmptyChunks(t *testing.T) {
+	called := false
+	w := newChunkIndexWriter(
+		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			called = true
+			if len(chunks) != 0 {
+				t.Errorf("expected empty chunks, got %d", len(chunks))
+			}
+			return nil, nil
+		},
+		"test-base",
+		"kb-1",
+		10,
+	)
+	if err := w.Write(t.Context(), nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("insertFunc was not called for empty chunks")
+	}
+}
+
+func TestChunkIndexWriter_SingleBatch(t *testing.T) {
+	var batchSizes []int
+	w := newChunkIndexWriter(
+		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			batchSizes = append(batchSizes, len(chunks))
+			if baseName != "test-base" {
+				t.Errorf("baseName = %q, want test-base", baseName)
+			}
+			if datasetID != "kb-1" {
+				t.Errorf("datasetID = %q, want kb-1", datasetID)
+			}
+			return nil, nil
+		},
+		"test-base",
+		"kb-1",
+		10,
+	)
+	chunks := make([]map[string]any, 5)
+	if err := w.Write(t.Context(), chunks); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(batchSizes) != 1 {
+		t.Fatalf("expected 1 batch, got %d: %v", len(batchSizes), batchSizes)
+	}
+	if batchSizes[0] != 5 {
+		t.Fatalf("batch size = %d, want 5", batchSizes[0])
+	}
+}
+
+func TestChunkIndexWriter_MultipleBatches(t *testing.T) {
+	var batchSizes []int
+	w := newChunkIndexWriter(
+		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			batchSizes = append(batchSizes, len(chunks))
+			return nil, nil
+		},
+		"base",
+		"kb-1",
+		3,
+	)
+	chunks := make([]map[string]any, 7)
+	if err := w.Write(t.Context(), chunks); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(batchSizes) != 3 {
+		t.Fatalf("expected 3 batches for 7 chunks with bulkSize=3, got %d: %v", len(batchSizes), batchSizes)
+	}
+	if batchSizes[0] != 3 || batchSizes[1] != 3 || batchSizes[2] != 1 {
+		t.Fatalf("batch sizes = %v, want [3,3,1]", batchSizes)
+	}
+}
+
+func TestChunkIndexWriter_UsesFinalInserterForLastBatch(t *testing.T) {
+	var calls []string
+	w := newChunkIndexWriter(
+		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			calls = append(calls, fmt.Sprintf("regular:%d", len(chunks)))
+			return nil, nil
+		},
+		"base",
+		"kb-1",
+		3,
+	).withFinalInsertFunc(func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+		calls = append(calls, fmt.Sprintf("final:%d", len(chunks)))
+		return nil, nil
+	})
+
+	if err := w.Write(t.Context(), make([]map[string]any, 7)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []string{"regular:3", "regular:3", "final:1"}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("insert calls = %v, want %v", calls, want)
+	}
+}
+
+func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
+	var lastBatchSize int
+	w := newChunkIndexWriter(
+		func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
+			lastBatchSize = len(chunks)
+			return nil, nil
+		},
+		"base",
+		"kb-1",
+		0, // bulkSize=0 → should use len(chunks)
+	)
+	chunks := make([]map[string]any, 20)
+	if err := w.Write(t.Context(), chunks); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lastBatchSize != 20 {
+		t.Fatalf("batch size = %d, want 20 (bulkSize=0 should degrade to len(chunks))", lastBatchSize)
+	}
+}
+
+func TestChunkIndexWriterRetriesFailedBatch(t *testing.T) {
+	attempts := 0
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("temporary parent write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "child"}, {"id": "parent", "available_int": 0}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("insert attempts = %d, want 2", attempts)
+	}
+}
+
+func TestChunkIndexWriterWaitsBeforeRetryingFailedBatch(t *testing.T) {
+	attempts := make([]time.Time, 0, 2)
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts = append(attempts, time.Now())
+		if len(attempts) == 1 {
+			return nil, errors.New("temporary write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "chunk"}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("insert attempts = %d, want 2", len(attempts))
+	}
+	if delay := attempts[1].Sub(attempts[0]); delay < 50*time.Millisecond {
+		t.Fatalf("retry delay = %s, want at least 50ms", delay)
+	}
+}

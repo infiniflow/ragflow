@@ -7,26 +7,25 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"strings"
-
-	models "ragflow/internal/entity/models"
 )
 
-func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
 	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("OPENDATALOADER_APISERVER"))
+		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIServer))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.OpenDataLoaderAPIKey)
 	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENDATALOADER_API_KEY"))
+		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIKey))
 	}
 
 	bodyReader, contentType, err := openDataLoaderMultipart(filename, data, parser)
@@ -41,7 +40,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := common.GetSSRFHTTPClient().Do(req)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader submit: %w", err)}
 	}
@@ -57,7 +56,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 		JSONDoc any    `json:"json_doc"`
 		MDText  string `json:"md_text"`
 	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err = json.Unmarshal(raw, &payload); err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader decode: %w", err)}
 	}
 	if payload.JSONDoc != nil {
@@ -67,7 +66,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return parseMinerUMarkdownResult(filename, payload.MDText, parser.OutputFormat, 1)
+		return parseMinerUMarkdownResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }
@@ -79,7 +78,7 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 	if err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader create form file: %w", err)
 	}
-	if _, err := part.Write(data); err != nil {
+	if _, err = part.Write(data); err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader write PDF: %w", err)
 	}
 	if parser.OpenDataLoaderHybrid != "" {
@@ -95,7 +94,7 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 			_ = writer.WriteField("sanitize", "false")
 		}
 	}
-	if err := writer.Close(); err != nil {
+	if err = writer.Close(); err != nil {
 		return nil, "", fmt.Errorf("parser: OpenDataLoader finalize form: %w", err)
 	}
 	return strings.NewReader(body.String()), writer.FormDataContentType(), nil
@@ -139,16 +138,18 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 		if html == "" {
 			html = strings.TrimSpace(stringValue(el["html_content"]))
 		}
+		if html == "" {
+			if rows := openDataLoaderCellRows(el["cells"]); rowsHaveText(rows) {
+				html = table.SimpleRowsToHTML(rows)
+			}
+		}
 		if html != "" {
 			text = html
 		}
 		if text == "" {
-			text = openDataLoaderCellsText(el["cells"])
-		}
-		if text == "" {
 			return nil
 		}
-		return map[string]any{"text": text, "doc_type_kwd": "table", "layout": "table"}
+		return map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
 	case "image", "picture", "figure":
 		if text == "" {
 			text = "[Image]"
@@ -171,10 +172,10 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 	}
 }
 
-func openDataLoaderCellsText(raw any) string {
+func openDataLoaderCellRows(raw any) [][]string {
 	cells, ok := raw.([]any)
 	if !ok {
-		return ""
+		return nil
 	}
 	rows := make(map[int][]string)
 	maxRow := -1
@@ -193,15 +194,15 @@ func openDataLoaderCellsText(raw any) string {
 		}
 	}
 	if len(rows) == 0 || maxRow < 0 {
-		return ""
+		return nil
 	}
-	parts := make([]string, 0, len(rows))
+	ordered := make([][]string, 0, len(rows))
 	for i := 0; i <= maxRow; i++ {
 		if cols, ok := rows[i]; ok {
-			parts = append(parts, strings.Join(cols, " | "))
+			ordered = append(ordered, cols)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return ordered
 }
 
 func openDataLoaderPageCount(root any) int {

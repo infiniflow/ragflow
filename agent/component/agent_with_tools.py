@@ -27,7 +27,7 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_type
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
 from common.connection_utils import timeout
@@ -69,6 +69,7 @@ class AgentParam(LLMParam, ToolParamBase):
         self.max_rounds = 5
         self.description = ""
         self.custom_header = {}
+        self.tool_timeout = 10
 
 
 class Agent(LLM, ToolBase):
@@ -82,9 +83,9 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        model_types = get_model_type_by_name(self._canvas.get_tenant_id(), self._param.llm_id)
+        model_types = resolve_model_type(self._canvas.get_tenant_id(), self._param.llm_id)
         model_type = "chat" if "chat" in model_types else model_types[0]
-        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
+        chat_model_config = resolve_model_config(self._canvas.get_tenant_id(), model_type, self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,
@@ -111,7 +112,7 @@ class Agent(LLM, ToolBase):
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
-        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
+        self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback, default_timeout=self._param.tool_timeout)
         if self.tool_meta:
             self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
 
@@ -236,7 +237,18 @@ class Agent(LLM, ToolBase):
         component = self._canvas.get_component(self._id)
         downstreams = component["downstream"] if component else []
         ex = self.exception_handler()
-        has_message_downstream = any(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
+        # Defer to an unconsumed partial ONLY when every downstream consumer is
+        # a Message: Message knows how to consume the partial (it streams it).
+        # Any other consumer (Agent/LLM, Fillup, Invoke, ...) would receive the
+        # opaque partial object instead of the semantic answer -- e.g. LLM
+        # prompt normalization stringifies it into "functools.partial(...)",
+        # leaking the bound system prompt/message state. A mixed graph therefore
+        # takes the eager path so every consumer sees the same answer string.
+        # (An empty downstream list keeps the previous eager behavior. A
+        # dangling downstream ID -- retained by the canvas/DSL but missing
+        # from the loaded components -- must not raise here: it is simply
+        # ineligible for streaming, so the eager path runs instead.)
+        has_message_downstream = bool(downstreams) and all((component := self._canvas.get_component(cid)) is not None and component["obj"].component_name.lower() == "message" for cid in downstreams)
         if has_message_downstream and not (ex and ex["goto"]) and not output_schema:
             _logger.debug("[Agent] Entering streaming mode (has message downstream)")
             self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
@@ -304,7 +316,10 @@ class Agent(LLM, ToolBase):
                 yield fit_error
             return
 
-        need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+        # Snapshot as bool: `and` would keep the live chunks dict, which tool
+        # calls mutate mid-stream, flipping this condition after the opening
+        # <think> marker was already emitted and swallowing the closing one.
+        need2cite = bool(self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0)
         cited = False
         if need2cite and len(msg) < 7:
             self._append_system_prompt(msg, citation_prompt())

@@ -3,9 +3,11 @@ package chunk
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	"image/png"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -13,8 +15,10 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +48,7 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 		{"id": "c2", "vector": []float64{4, 5, 6}},
 	}
 	// No zero vectors → nothing to hydrate.
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	if !reflect.DeepEqual(chunks[0]["vector"], []float64{1, 2, 3}) {
 		t.Error("non-zero vector should not be changed")
 	}
@@ -55,15 +59,15 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 
 func TestHydrateChunkVectors_EmptyChunks(t *testing.T) {
 	// Should not panic on empty or nil.
-	hydrateChunkVectors(context.Background(), nil, nil, nil, nil)
-	hydrateChunkVectors(context.Background(), nil, []map[string]interface{}{}, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, nil, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, []map[string]interface{}{}, nil, nil)
 }
 
 func TestHydrateChunkVectors_MissingIDs(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"vector": []float64{1.0}}, // no id — skipped
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	// Should not change anything when engine is nil (FetchChunkVectors returns zero vectors).
 	// The function doesn't panic — it just can't hydrate because dim is 0.
 	// With nil engine, FetchChunkVectors returns zero vectors, so the zero stays zero.
@@ -73,12 +77,13 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"id": "c1", "vector": []float64{}},
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, []string{"kb1"}, []string{"t1"})
+	hydrateChunkVectors(t.Context(), nil, chunks, []string{"kb1"}, []string{"t1"})
 	// Empty vectors have dim=0 → early return. No crash.
 }
 
 func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 	tenantEmbdID := "42"
+	staleTenantEmbdID := "stale-id"
 
 	tests := []struct {
 		name     string
@@ -87,12 +92,20 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "uses tenant embedding id before embd id",
+			name: "resolves tenant embedding id to base model name",
 			kb: &entity.Knowledgebase{
 				EmbdID:       "shared-model",
 				TenantEmbdID: &tenantEmbdID,
 			},
-			want: "tenant:42",
+			want: "embd:BAAI/bge-m3",
+		},
+		{
+			name: "stale tenant embedding id falls back to composite base name",
+			kb: &entity.Knowledgebase{
+				EmbdID:       "BAAI/bge-m3@1@SILICONFLOW",
+				TenantEmbdID: &staleTenantEmbdID,
+			},
+			want: "embd:BAAI/bge-m3",
 		},
 		{
 			name: "uses embd id without tenant embedding id",
@@ -115,11 +128,29 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 			},
 			want: "embd:shared-model",
 		},
+		{
+			name: "legacy composite reduces to base model name",
+			kb: &entity.Knowledgebase{
+				EmbdID: "BAAI/bge-m3@2@SILICONFLOW",
+			},
+			want: "embd:BAAI/bge-m3",
+		},
+	}
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+		t.Fatalf("failed to migrate test schema: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{ID: "42", ModelName: "BAAI/bge-m3"}).Error; err != nil {
+		t.Fatalf("failed to seed tenant_model: %v", err)
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(tt.kb, tt.tenantID); got != tt.want {
+			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, map[string]string{}); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
@@ -144,7 +175,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "missing-doc", "doc-2"},
 	})
 	if err == nil {
@@ -158,19 +190,16 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	}
 
 	var taskCount int64
-	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
+	if err = db.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount != 1 {
 		t.Fatalf("expected existing task to remain, got %d tasks", taskCount)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
-	}
-	if doc.Run != nil {
-		t.Fatalf("expected doc run to remain nil, got %q", *doc.Run)
 	}
 	if doc.ChunkNum != 7 {
 		t.Fatalf("expected chunk_num to remain 7, got %d", doc.ChunkNum)
@@ -180,8 +209,8 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 func TestParseRejectsInaccessibleDataset(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return false }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -196,9 +225,9 @@ func TestParseRejectsInaccessibleDataset(t *testing.T) {
 func TestParseRequiresDocumentIDs(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
-
+	ctx := t.Context()
 	for _, req := range []*service.ParseFileRequest{nil, {DocumentIDs: nil}, {DocumentIDs: []string{}}} {
-		_, code, err := svc.Parse("user-1", "kb-1", req)
+		_, code, err := svc.Parse(ctx, "user-1", "kb-1", req)
 		if err == nil {
 			t.Fatal("expected parse to fail")
 		}
@@ -215,8 +244,8 @@ func TestParseReturnsDataErrorWhenDatasetMissing(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.accessibleFunc = func(string, string) bool { return true }
 	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) { return nil, nil }
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
@@ -238,8 +267,8 @@ func TestParseReturnsServerErrorWhenDocumentsQueryFails(t *testing.T) {
 	svc.getDocumentsByIDsFunc = func([]string) ([]*entity.Document, error) {
 		return nil, queryErr
 	}
-
-	_, code, err := svc.Parse("user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if !errors.Is(err, queryErr) {
 		t.Fatalf("expected query error, got %v", err)
 	}
@@ -256,219 +285,724 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	datasetID := "kb-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, "doc-1", datasetID)
-	running := string(entity.TaskStatusRunning)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
-		t.Fatalf("mark doc running: %v", err)
-	}
+	insertChunkTestIngestionTask(t, "task-1", userID, "doc-1", datasetID, common.RUNNING)
 
 	svc := newParseTestService(t)
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "currently being processed") {
+	if !strings.Contains(err.Error(), "ingestion task is RUNNING") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestParseReturnsServerErrorWhenDeleteChunksFails(t *testing.T) {
+func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
 
-	deleteErr := errors.New("delete chunks failed")
-	engine := &parseTestDocEngine{deleteChunksErr: deleteErr}
-	svc := newParseTestService(t)
-	svc.docEngine = engine
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
-	if !errors.Is(err, deleteErr) {
-		t.Fatalf("expected delete chunks error, got %v", err)
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
 	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected CodeServerError, got %v", code)
+
+	ctx := t.Context()
+	page := 1
+	size := 30
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
 	}
-	if engine.deleteChunksCalls != 1 {
-		t.Fatalf("expected DeleteChunks once, got %d", engine.deleteChunksCalls)
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if !engine.searchReq.IncludeUnavailable {
+		t.Fatal("management chunk list must include disabled parent chunks")
+	}
+	if engine.searchReq.OrderBy == nil {
+		t.Fatal("expected OrderBy to be set")
+	}
+	want := []types.OrderByField{
+		{Field: "chunk_order_int", Type: types.SortAsc},
+		{Field: "page_num_int", Type: types.SortAsc},
+		{Field: "top_int", Type: types.SortAsc},
+		{Field: "create_timestamp_flt", Type: types.SortDesc},
+	}
+	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
+		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
 	}
 }
 
-func TestParseReturnsServerErrorWhenDeleteTasksFails(t *testing.T) {
+// TestListScopesSearchToDocumentDataset pins the dataset scope of the
+// management chunk list: only the document's own KB may be searched. Passing
+// every KB of the tenant made a document of dataset A list chunks that were
+// written under dataset B's KB context (chunk rows carry img_id
+// "<kb_id>-<chunk_id>"), which the UI surfaced as "occasionally seeing another
+// dataset's chunks".
+func TestListScopesSearchToDocumentDataset(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
 
-	deleteErr := errors.New("delete tasks failed")
-	svc := newParseTestService(t)
-	svc.deleteTasksByDocIDsFunc = func([]string) (int64, error) { return 0, deleteErr }
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
-	if !errors.Is(err, deleteErr) {
-		t.Fatalf("expected delete tasks error, got %v", err)
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
 	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected CodeServerError, got %v", code)
+
+	ctx := t.Context()
+	page := 1
+	size := 30
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want the document's dataset only (%q)", engine.searchReq.KbIDs, datasetID)
 	}
 }
 
-func TestParseReturnsServerErrorWhenStorageAddressFails(t *testing.T) {
+// TestGetScopesChunkLookupToDocumentDataset pins the detail endpoint's scope:
+// the chunk is read from the dataset named in the route only, never from every
+// KB of the tenant.
+func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
 
-	storageErr := errors.New("storage address failed")
-	svc := newParseTestService(t)
-	svc.getDocumentStorageAddressFunc = func(*entity.Document) (string, string, error) {
-		return "", "", storageErr
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"id":                  "chunk-1",
+		"doc_id":              documentID,
+		"kb_id":               datasetID,
+		"docnm_kwd":           "doc.txt",
+		"content_with_weight": "invoice body",
+		"content_ltks":        []string{"invoice", "body"},
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
-	if !errors.Is(err, storageErr) {
-		t.Fatalf("expected storage error, got %v", err)
+	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
 	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected CodeServerError, got %v", code)
+	if !reflect.DeepEqual(engine.datasetIDs, []string{datasetID}) {
+		t.Fatalf("datasetIDs = %#v, want the route's dataset only (%q)", engine.datasetIDs, datasetID)
+	}
+	if engine.chunkID != "chunk-1" {
+		t.Fatalf("chunkID = %q, want chunk-1", engine.chunkID)
+	}
+	if engine.indexName != "ragflow_"+tenantID {
+		t.Fatalf("indexName = %q, want ragflow_%s", engine.indexName, tenantID)
+	}
+	if got := resp.Chunk["content_with_weight"]; got != "invoice body" {
+		t.Fatalf("content_with_weight = %#v, want invoice body", got)
+	}
+	// Python returns the stored row (minus runtime fields), so the row identity
+	// fields survive the round trip.
+	if got := resp.Chunk["id"]; got != "chunk-1" {
+		t.Fatalf("id = %#v, want chunk-1", got)
+	}
+	if got := resp.Chunk["docnm_kwd"]; got != "doc.txt" {
+		t.Fatalf("docnm_kwd = %#v, want doc.txt", got)
+	}
+	if _, ok := resp.Chunk["content_ltks"]; ok {
+		t.Fatal("content_ltks should be stripped like Python's _strip_chunk_runtime_fields")
 	}
 }
 
-func TestParseReturnsServerErrorWhenQueueFails(t *testing.T) {
+// TestGetRejectsChunkOfAnotherDocument pins the doc_id guard: holding a chunk id
+// is not authority to read it through a different document.
+func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
 
-	queueErr := errors.New("queue failed")
-	svc := newParseTestService(t)
-	svc.queueParseTasksFunc = func(*entity.Document, string, string, int64) error {
-		return queueErr
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
-	if !errors.Is(err, queueErr) {
-		t.Fatalf("expected queue error, got %v", err)
-	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected CodeServerError, got %v", code)
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("Get() error = %v, want chunk not found", err)
 	}
 }
 
-func TestParseCleansTasksWhenBeginParseFails(t *testing.T) {
+// TestGetRequiresDocumentInRouteDataset pins the document guard: the chunk is
+// only readable through a document that exists in the route's dataset,
+// mirroring Python's DocumentService.query(id=document_id, kb_id=dataset_id).
+func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
 
-	beginErr := errors.New("begin parse failed")
-	deleteCalls := 0
-	svc := newParseTestService(t)
-	svc.beginParseDocumentFunc = func(string) error { return beginErr }
-	svc.deleteTasksByDocIDsFunc = func([]string) (int64, error) {
-		deleteCalls++
-		return 1, nil
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, "doc-2", otherDatasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other dataset document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	_, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
-	if !errors.Is(err, beginErr) {
-		t.Fatalf("expected begin error, got %v", err)
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-missing",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document not found") {
+		t.Fatalf("Get() error = %v, want document not found", err)
 	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected CodeServerError, got %v", code)
-	}
-	if deleteCalls != 2 {
-		t.Fatalf("expected initial delete and cleanup delete, got %d calls", deleteCalls)
+
+	_, err = svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-2",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document does not belong to this dataset") {
+		t.Fatalf("Get() error = %v, want document does not belong to this dataset", err)
 	}
 }
 
-func TestParseReturnsPartialSuccessForDuplicateDocumentIDs(t *testing.T) {
-	db := setupChunkTestDB(t)
-	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
-
-	svc := newParseTestService(t)
-	result, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{
-		DocumentIDs: []string{"doc-1", "doc-1"},
-	})
-	if err == nil {
-		t.Fatal("expected duplicate warning error")
+// TestIsChunkRuntimeField pins the strip rule's Python-parity semantics
+// (_vec$|_sm_|_tks|_ltks — only _vec is end-anchored): tokenized/vector runtime
+// fields are dropped, stored fields survive.
+func TestIsChunkRuntimeField(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"content_ltks", true},
+		{"content_sm_ltks", true},
+		{"tokenized_content_ltks", true},
+		{"title_tks", true},
+		{"title_sm_tks", true},
+		{"authors_sm_tks", true},
+		{"important_tks", true},
+		{"question_tks", true},
+		{"name_tks", true},
+		{"tags_tks", true},
+		{"q_1024_vec", true},
+		{"q_2_vec", true},
+		// Only _vec is anchored at the end, so an index-shaped name is kept.
+		{"q_2_vec_idx", false},
+		{"content_with_weight", false},
+		{"content", false},
+		{"docnm_kwd", false},
+		{"doc_id", false},
+		{"kb_id", false},
+		{"important_kwd", false},
+		{"question_kwd", false},
+		{"compile_kwd", false},
+		{"tag_kwd", false},
+		{"tag_feas", false},
+		{"mom_id", false},
+		{"position_int", false},
+		{"img_id", false},
+		{"available_int", false},
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected CodeSuccess, got %v", code)
-	}
-	if result["success_count"] != 1 {
-		t.Fatalf("expected one successful parse, got %v", result["success_count"])
-	}
-	errorsValue, ok := result["errors"].([]string)
-	if !ok || len(errorsValue) != 1 || !strings.Contains(errorsValue[0], "Duplicate document ids: doc-1") {
-		t.Fatalf("unexpected duplicate errors: %#v", result["errors"])
-	}
-}
-
-func TestParseQueuesAndBeginsDocument(t *testing.T) {
-	db := setupChunkTestDB(t)
-	pushChunkTestDB(t, db)
-	userID, datasetID := "user-1", "kb-1"
-	insertChunkTestKB(t, datasetID, userID)
-	insertChunkTestDoc(t, "doc-1", datasetID)
-	insertChunkTestTask(t, "task-1", "doc-1")
-
-	queueCalls := 0
-	svc := newParseTestService(t)
-	svc.queueParseTasksFunc = func(doc *entity.Document, bucket, objectName string, priority int64) error {
-		queueCalls++
-		if doc.ID != "doc-1" || bucket != datasetID || objectName != "doc-1.txt" || priority != 0 {
-			t.Fatalf("unexpected queue args: doc=%s bucket=%s object=%s priority=%d", doc.ID, bucket, objectName, priority)
+	for _, tc := range cases {
+		if got := isChunkRuntimeField(tc.name); got != tc.want {
+			t.Errorf("isChunkRuntimeField(%q) = %v, want %v", tc.name, got, tc.want)
 		}
-		return nil
 	}
+}
 
-	result, code, err := svc.Parse(userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+	ctx := t.Context()
+
+	page := 2
+	size := 5
+	resp, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
+		Page:      &page,
+		Size:      &size,
+		Keywords:  "  invoice terms  ",
+	}, userID)
 	if err != nil {
-		t.Fatalf("expected parse success, got %v", err)
+		t.Fatalf("List() error = %v", err)
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected CodeSuccess, got %v", code)
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want 1", resp.Total)
 	}
-	if result != nil {
-		t.Fatalf("expected nil result, got %#v", result)
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
 	}
-	if queueCalls != 1 {
-		t.Fatalf("expected queue once, got %d", queueCalls)
+	if engine.searchReq.Offset != 5 || engine.searchReq.Limit != 5 {
+		t.Fatalf("pagination = offset %d limit %d, want offset 5 limit 5", engine.searchReq.Offset, engine.searchReq.Limit)
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want %#v", engine.searchReq.KbIDs, []string{datasetID})
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if got := engine.searchReq.Filter["id"]; !reflect.DeepEqual(got, []string{"chunk-1", "chunk-2"}) {
+		t.Fatalf("id filter = %#v, want %#v", got, []string{"chunk-1", "chunk-2"})
+	}
+	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
+	if !ok || mustNot["exists"] != "compile_kwd" {
+		t.Fatalf("must_not filter = %#v, want compile_kwd existence exclusion", engine.searchReq.Filter["must_not"])
+	}
+	if slices.Contains(engine.searchReq.SelectFields, "content") {
+		t.Fatalf("SelectFields = %#v, should not request content with content_with_weight", engine.searchReq.SelectFields)
+	}
+	for _, field := range []string{"content_with_weight", "img_id", "position_int"} {
+		if !slices.Contains(engine.searchReq.SelectFields, field) {
+			t.Fatalf("SelectFields = %#v, missing %q", engine.searchReq.SelectFields, field)
+		}
+	}
+	if got := resp.Chunks[0]["content_with_weight"]; got != "weighted invoice terms body" {
+		t.Fatalf("formatted content_with_weight = %#v, want %q", got, "weighted invoice terms body")
+	}
+	if len(engine.searchReq.MatchExprs) != 1 {
+		t.Fatalf("MatchExprs length = %d, want 1", len(engine.searchReq.MatchExprs))
+	}
+	matchText, ok := engine.searchReq.MatchExprs[0].(*types.MatchTextExpr)
+	if !ok {
+		t.Fatalf("MatchExprs[0] = %T, want *types.MatchTextExpr", engine.searchReq.MatchExprs[0])
+	}
+	if matchText.MatchingText == "invoice terms" || !strings.Contains(matchText.MatchingText, "invoice") || !strings.Contains(matchText.MatchingText, "terms") {
+		t.Fatalf("MatchingText = %q, want a tokenized query containing invoice and terms", matchText.MatchingText)
+	}
+	if matchText.TopN != 100 {
+		t.Fatalf("TopN = %d, want 100", matchText.TopN)
+	}
+	if got := matchText.ExtraOptions["original_query"]; got != "invoice terms" {
+		t.Fatalf("original_query = %#v, want %q", got, "invoice terms")
+	}
+	if got := matchText.ExtraOptions["minimum_should_match"]; got != 0.3 {
+		t.Fatalf("minimum_should_match = %#v, want 0.3", got)
+	}
+}
+
+func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	insertChunkTestDoc(t, "doc-b", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	var taskCount int64
-	if err := dao.DB.Model(&entity.Task{}).Where("doc_id = ?", "doc-1").Count(&taskCount).Error; err != nil {
-		t.Fatalf("count tasks: %v", err)
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err == nil {
+		t.Fatal("expected UpdateChunk to reject a chunk from another document")
 	}
-	if taskCount != 0 {
-		t.Fatalf("expected old tasks to be deleted, got %d", taskCount)
+	if !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("UpdateChunk error = %q, want chunk not found", err)
+	}
+	if len(engine.updateCalls) != 0 {
+		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+	}
+}
+
+func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
 	if err != nil {
-		t.Fatalf("get doc: %v", err)
+		t.Fatalf("UpdateChunk() error = %v", err)
 	}
-	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
-		t.Fatalf("expected document to be running, got %v", doc.Run)
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
 	}
-	if doc.ChunkNum != 0 {
-		t.Fatalf("expected chunk_num reset to 0, got %d", doc.ChunkNum)
+	call := engine.updateCalls[0]
+	if !reflect.DeepEqual(call.condition, map[string]interface{}{
+		"id":     "chunk-1",
+		"doc_id": "doc-a",
+	}) {
+		t.Fatalf("UpdateChunks condition = %#v", call.condition)
 	}
+	if call.indexName != "ragflow_tenant-1" || call.datasetID != "kb-1" {
+		t.Fatalf("UpdateChunks target index=%q dataset=%q", call.indexName, call.datasetID)
+	}
+}
+
+func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     *string
+		wantMode string
+	}{
+		{"mode defaults to append", nil, imageUpdateModeAppend},
+		{"mode is normalized", strPtr(" REPLACE "), imageUpdateModeReplace},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			var storedBucket, storedChunkID, storedMode string
+			var storedBinary []byte
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
+					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
+					return nil
+				},
+			}
+
+			imageBase64 := base64.StdEncoding.EncodeToString([]byte("image-bytes"))
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     &imageBase64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err != nil {
+				t.Fatalf("UpdateChunk() error = %v", err)
+			}
+
+			if storedBucket != "kb-1" || storedChunkID != "chunk-1" || storedMode != tc.wantMode {
+				t.Fatalf("store args = %q/%q/%q, want kb-1/chunk-1/%s", storedBucket, storedChunkID, storedMode, tc.wantMode)
+			}
+			if string(storedBinary) != "image-bytes" {
+				t.Fatalf("stored binary = %q, want image-bytes", storedBinary)
+			}
+
+			if len(engine.updateCalls) != 1 {
+				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+			}
+			updated := engine.updateCalls[0].newValue
+			if updated["img_id"] != "kb-1-chunk-1" {
+				t.Fatalf("img_id = %#v, want kb-1-chunk-1", updated["img_id"])
+			}
+			if updated["doc_type_kwd"] != "image" {
+				t.Fatalf("doc_type_kwd = %#v, want image", updated["doc_type_kwd"])
+			}
+		})
+	}
+}
+
+func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	order := &[]string{}
+	engine := &orderedUpdateChunkTestEngine{
+		updateChunkTestEngine: updateChunkTestEngine{
+			existingChunk: map[string]interface{}{
+				"doc_id":              "doc-a",
+				"content_with_weight": "existing content",
+			},
+		},
+		order: order,
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		storeChunkImageFunc: func(string, string, []byte, string) error {
+			t.Fatal("remove mode must not store an image")
+			return nil
+		},
+		removeChunkImageFunc: func(bucket, chunkID string) error {
+			*order = append(*order, "storage")
+			if bucket != "kb-1" || chunkID != "chunk-1" {
+				t.Fatalf("remove args = %q/%q, want kb-1/chunk-1", bucket, chunkID)
+			}
+			return nil
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	updated := engine.updateCalls[0].newValue
+	if imgID, ok := updated["img_id"]; !ok || imgID != "" {
+		t.Fatalf("img_id = %#v, want empty string", updated["img_id"])
+	}
+	if updated["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", updated["doc_type_kwd"])
+	}
+	if !reflect.DeepEqual(*order, []string{"index", "storage"}) {
+		t.Fatalf("call order = %#v, want index before storage removal", *order)
+	}
+}
+
+// A request that changes content and drops the image must still schedule the
+// Wiki refresh when the stored object cannot be deleted: the index update has
+// already committed by then.
+func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	wikiCalls := 0
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		removeChunkImageFunc: func(string, string) error {
+			return errors.New("storage unavailable")
+		},
+		markWikiDirtyFunc: func(tenantID, datasetID, documentID string, chunkIDs []string) {
+			wikiCalls++
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	content := "updated content"
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		Content:         &content,
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err == nil || !strings.Contains(err.Error(), "Failed to remove chunk image") {
+		t.Fatalf("UpdateChunk() error = %v, want the removal failure", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	if wikiCalls != 1 {
+		t.Fatalf("markWikiDirty calls = %d, want 1 (the index update already committed)", wikiCalls)
+	}
+}
+
+func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
+	cases := []struct {
+		name      string
+		imageB64  *string
+		mode      *string
+		wantError string
+	}{
+		{"undecodable base64", strPtr("not base64!!"), nil, "invalid `image_base64`"},
+		{"empty base64", strPtr(""), nil, "`image_base64` must be a non-empty string"},
+		{"unknown mode", strPtr("aGVsbG8="), strPtr("grow"), "`image_update_mode` must be one of: append, replace, remove"},
+		{"empty mode", strPtr("aGVsbG8="), strPtr(""), "`image_update_mode` must be one of: append, replace, remove"},
+		{"append without base64", nil, strPtr(imageUpdateModeAppend), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+		{"replace without base64", nil, strPtr(imageUpdateModeReplace), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(string, string, []byte, string) error {
+					t.Fatal("invalid input must not reach storage")
+					return nil
+				},
+			}
+
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     tc.imageB64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("UpdateChunk() error = %v, want %q", err, tc.wantError)
+			}
+			var coded interface {
+				Code() common.ErrorCode
+			}
+			if !errors.As(err, &coded) || coded.Code() != common.CodeDataError {
+				t.Fatalf("error code = %v, want %d (Python: DATA_ERROR)", err, common.CodeDataError)
+			}
+			if len(engine.updateCalls) != 0 {
+				t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+			}
+		})
+	}
+}
+
+type orderedUpdateChunkTestEngine struct {
+	updateChunkTestEngine
+	order *[]string
+}
+
+func (e *orderedUpdateChunkTestEngine) UpdateChunks(ctx context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	*e.order = append(*e.order, "index")
+	return e.updateChunkTestEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
 }
 
 func TestAddChunkSuccess(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -510,13 +1044,12 @@ func TestAddChunkSuccess(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:         datasetID,
 		DocumentID:        documentID,
 		Content:           "chunk body",
 		ImportantKeywords: []string{"k1"},
 		Questions:         []string{" q1 ", ""},
-		TagKwd:            []string{"tag1"},
 		TagFeas:           map[string]interface{}{"tag1": float64(0.5)},
 	}, userID)
 	if err != nil {
@@ -560,6 +1093,7 @@ func TestAddChunkSuccess(t *testing.T) {
 }
 
 func TestAddChunkValidationErrors(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1")
@@ -600,7 +1134,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(svc)
 			}
-			_, err := svc.AddChunk(tt.req, "user-1")
+			_, err := svc.AddChunk(ctx, tt.req, "user-1")
 			if err == nil || !strings.Contains(err.Error(), tt.wantMsg) {
 				t.Fatalf("error = %v, want substring %q", err, tt.wantMsg)
 			}
@@ -609,6 +1143,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 }
 
 func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -638,28 +1173,31 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
 			storeCalls++
 			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
 				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
+			}
+			if mode != imageUpdateModeAppend {
+				t.Fatalf("store mode = %q, want %q", mode, imageUpdateModeAppend)
 			}
 			return nil
 		},
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
 		ImageBase64: strPtr("not-base64"),
 	}, userID)
-	if err == nil || !strings.Contains(err.Error(), "Invalid `image_base64`") {
+	if err == nil || !strings.Contains(err.Error(), "invalid `image_base64`") {
 		t.Fatalf("expected invalid image error, got %v", err)
 	}
 
 	validJPEG := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pRZ0AAAAASUVORK5CYII="
 
-	resp, err := svc.AddChunk(&service.AddChunkRequest{
+	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -669,7 +1207,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		t.Fatalf("expected tag_feas validation error, got resp=%#v err=%v", resp, err)
 	}
 
-	resp, err = svc.AddChunk(&service.AddChunkRequest{
+	resp, err = svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:   datasetID,
 		DocumentID:  documentID,
 		Content:     "chunk body",
@@ -688,6 +1226,7 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 }
 
 func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
+	ctx := t.Context()
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
 	userID, datasetID, documentID := "user-1", "kb-1", "doc-1"
@@ -723,7 +1262,7 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
-	_, err := svc.AddChunk(&service.AddChunkRequest{
+	_, err := svc.AddChunk(ctx, &service.AddChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		Content:    "chunk body",
@@ -750,6 +1289,7 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 		exists:    true,
 		oldBinary: oldImage,
 	}
+	ctx := t.Context()
 
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
@@ -759,11 +1299,140 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage("kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeAppend); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	merged, format, err := image.Decode(bytes.NewReader(mockStorage.lastPut))
+	if err != nil {
+		t.Fatalf("decode stored image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("stored format = %q, want jpeg", format)
+	}
+	// Append stacks the new image below the old one.
+	if got, want := merged.Bounds().Dy(), 3; got != want {
+		t.Fatalf("merged height = %d, want %d", got, want)
+	}
+}
+
+func TestStoreChunkImageReplaceOverwritesExistingImage(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: oldImage,
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeReplace); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
+	}
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if !bytes.Equal(mockStorage.lastPut, newImage) {
+		t.Fatalf("replace stored %d bytes, want the new image verbatim (%d bytes)", len(mockStorage.lastPut), len(newImage))
+	}
+}
+
+func TestRemoveChunkImageSkipsMissingObject(t *testing.T) {
+	mockStorage := &chunkImageStorage{exists: false}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0 for a missing object", mockStorage.removeCalls)
+	}
+
+	mockStorage.exists = true
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", mockStorage.removeCalls)
+	}
+}
+
+// Every image mode has to serialize on the chunk's per-chunk lock: without it a
+// replace (or a remove) can land between an append's read and write and be
+// overwritten by the merged image.
+func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
+	chunkID := "chunk-locked"
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: mustEncodePNG(t, image.Rect(0, 0, 2, 2)),
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	lockKey := "kb-1/" + chunkID
+	lock := acquireChunkImageLock(lockKey)
+	lock.mu.Lock()
+	defer releaseChunkImageLock(lockKey)
+
+	type result struct {
+		op  string
+		err error
+	}
+	svc := &ChunkService{}
+	ctx := t.Context()
+	appendedImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	replacedImage := mustEncodePNG(t, image.Rect(0, 0, 3, 3))
+
+	done := make(chan result, 3)
+	run := func(op string, fn func() error) {
+		go func() { done <- result{op: op, err: fn()} }()
+	}
+	run("append", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, appendedImage, imageUpdateModeAppend)
+	})
+	run("replace", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, replacedImage, imageUpdateModeReplace)
+	})
+	run("remove", func() error {
+		return svc.removeChunkImage(ctx, "kb-1", chunkID)
+	})
+
+	select {
+	case got := <-done:
+		lock.mu.Unlock()
+		t.Fatalf("%s finished while the chunk's image lock was held", got.op)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	lock.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		select {
+		case got := <-done:
+			if got.err != nil {
+				t.Fatalf("%s: %v", got.op, got.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("an image operation did not finish after the lock was released")
+		}
 	}
 }
 
@@ -781,8 +1450,8 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
 	}, "user-1")
@@ -805,7 +1474,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		t.Fatalf("delete id condition = %#v", engine.deleteChunksCondition["id"])
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -816,7 +1485,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		t.Fatalf("document chunk_num = %d, want 4", doc.ChunkNum)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
@@ -846,8 +1515,8 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 			return nil
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:     "doc-1",
 		DeleteAll: true,
 	}, "user-1")
@@ -880,8 +1549,8 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 			return errors.New("stats update failed")
 		},
 	}
-
-	deletedCount, err := svc.RemoveChunks(&service.RemoveChunksRequest{
+	ctx := t.Context()
+	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DocID:    "doc-1",
 		ChunkIDs: []string{"chunk-1", "chunk-2"},
 	}, "user-1")
@@ -909,8 +1578,8 @@ func TestDecrementChunkStatsClampsCounters(t *testing.T) {
 	if err := svc.decrementChunkStats("doc-1", "kb-1", 5, 7, -1); err != nil {
 		t.Fatalf("decrementChunkStats() error = %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -918,7 +1587,7 @@ func TestDecrementChunkStatsClampsCounters(t *testing.T) {
 		t.Fatalf("document stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
@@ -937,8 +1606,8 @@ func TestDecrementChunkStatsRollsBackWhenKnowledgebaseMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "knowledgebase not found") {
 		t.Fatalf("expected missing knowledgebase error, got %v", err)
 	}
-
-	doc, err := dao.NewDocumentDAO().GetByID("doc-1")
+	ctx := t.Context()
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
@@ -961,6 +1630,7 @@ func setupChunkTestDB(t *testing.T) *gorm.DB {
 		&entity.Knowledgebase{},
 		&entity.Document{},
 		&entity.Task{},
+		&entity.IngestionTask{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -984,15 +1654,6 @@ func newParseTestService(t *testing.T) *ChunkService {
 		docEngine:   nil,
 		kbDAO:       dao.NewKnowledgebaseDAO(),
 		documentDAO: dao.NewDocumentDAO(),
-		getDocumentStorageAddressFunc: func(doc *entity.Document) (string, string, error) {
-			if doc.Location == nil {
-				return doc.KbID, "", nil
-			}
-			return doc.KbID, *doc.Location, nil
-		},
-		queueParseTasksFunc: func(*entity.Document, string, string, int64) error {
-			return nil
-		},
 	}
 }
 
@@ -1057,6 +1718,21 @@ func insertChunkTestDoc(t *testing.T, id, kbID string) {
 	}
 }
 
+func insertChunkTestIngestionTask(t *testing.T, id, userID, docID, datasetID, status string) {
+	t.Helper()
+	task := &entity.IngestionTask{
+		ID:         id,
+		UserID:     userID,
+		DocumentID: docID,
+		DatasetID:  datasetID,
+		Schema:     entity.JSONMap{},
+		Status:     status,
+	}
+	if err := dao.DB.Create(task).Error; err != nil {
+		t.Fatalf("insert ingestion task: %v", err)
+	}
+}
+
 func setChunkTestStats(t *testing.T, docID, kbID string, docTokenNum, docChunkNum, kbTokenNum, kbChunkNum int64) {
 	t.Helper()
 
@@ -1093,6 +1769,7 @@ type parseTestDocEngine struct {
 	deleteChunksCondition map[string]interface{}
 	deleteIndexName       string
 	deleteDatasetID       string
+	chunkStoreExists      bool // if true, ChunkStoreExists returns true
 }
 
 func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
@@ -1128,7 +1805,7 @@ func (e *parseTestDocEngine) DropChunkStore(context.Context, string, string) err
 }
 
 func (e *parseTestDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
-	return false, nil
+	return e.chunkStoreExists, nil
 }
 
 func (e *parseTestDocEngine) CreateMetadataStore(context.Context, string) error {
@@ -1210,35 +1887,117 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	return nil, e.insertErr
 }
 
-type chunkImageStorage struct {
-	exists    bool
-	oldBinary []byte
-	putCalls  int
+type listChunksSearchEngine struct {
+	parseTestDocEngine
+	searchReq *types.SearchRequest
 }
 
-func (s *chunkImageStorage) Health() bool { return true }
-func (s *chunkImageStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
-	s.putCalls++
+type getChunkTestEngine struct {
+	parseTestDocEngine
+	chunk      map[string]interface{}
+	err        error
+	indexName  string
+	chunkID    string
+	datasetIDs []string
+}
+
+func (e *getChunkTestEngine) GetChunk(_ context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+	e.indexName = baseName
+	e.chunkID = chunkID
+	e.datasetIDs = datasetIDs
+	if e.err != nil {
+		return nil, e.err
+	}
+	if e.chunk == nil {
+		return nil, nil
+	}
+	return e.chunk, nil
+}
+
+func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return &types.SearchResult{
+		Chunks: []map[string]interface{}{
+			{
+				"id":                  "chunk-1",
+				"content":             "plain invoice terms body",
+				"content_with_weight": "weighted invoice terms body",
+				"doc_id":              "doc-1",
+			},
+		},
+		Total: 1,
+	}, nil
+}
+
+type updateChunkTestEngine struct {
+	parseTestDocEngine
+	existingChunk interface{}
+	updateCalls   []updateChunksCall
+}
+
+func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.existingChunk, nil
+}
+
+func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	e.updateCalls = append(e.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
 	return nil
 }
-func (s *chunkImageStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+
+type chunkImageStorage struct {
+	exists      bool
+	oldBinary   []byte
+	putCalls    int
+	removeCalls int
+	lastPut     []byte
+}
+
+func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
+func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
+func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
+	s.putCalls++
+	s.lastPut = binary
+	return nil
+}
+func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
-func (s *chunkImageStorage) Remove(bucket, fnm string, tenantID ...string) error  { return nil }
-func (s *chunkImageStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return s.exists }
+func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	s.removeCalls++
+	return nil
+}
+func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
+	return s.exists
+}
 
 // ListObjects lists all objects in a bucket
-func (s *chunkImageStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	return []string{}, nil
 }
-func (s *chunkImageStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(bucket string) bool                           { return true }
-func (s *chunkImageStorage) RemoveBucket(bucket string) error                          { return nil }
-func (s *chunkImageStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Close() error                                              { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (s *chunkImageStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return s.exists, nil
+}
+func (s *chunkImageStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
+func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Close() error { return nil }
 
 func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
 	t.Helper()
@@ -1264,47 +2023,47 @@ type stubEmbeddingDriver struct {
 
 func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
 func (d *stubEmbeddingDriver) Name() string                                     { return "stub" }
-func (d *stubEmbeddingDriver) ChatWithMessages(string, []models.Message, *models.APIConfig, *models.ChatConfig) (*models.ChatResponse, error) {
+func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage) (*models.ChatResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ChatStreamlyWithSender(string, []models.Message, *models.APIConfig, *models.ChatConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(*string, []string, *models.APIConfig, *models.EmbeddingConfig) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
 	return d.embeddings, d.embedErr
 }
-func (d *stubEmbeddingDriver) Rerank(*string, string, []string, *models.APIConfig, *models.RerankConfig) (*models.RerankResponse, error) {
+func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudio(*string, *string, *models.APIConfig, *models.ASRConfig) (*models.ASRResponse, error) {
+func (d *stubEmbeddingDriver) TranscribeAudio(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage) (*models.ASRResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) TranscribeAudioWithSender(*string, *string, *models.APIConfig, *models.ASRConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) TranscribeAudioWithSender(context.Context, *string, *string, *models.APIConfig, *models.ASRConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) AudioSpeech(*string, *string, *models.APIConfig, *models.TTSConfig) (*models.TTSResponse, error) {
+func (d *stubEmbeddingDriver) AudioSpeech(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage) (*models.TTSResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) AudioSpeechWithSender(*string, *string, *models.APIConfig, *models.TTSConfig, func(*string, *string) error) error {
+func (d *stubEmbeddingDriver) AudioSpeechWithSender(context.Context, *string, *string, *models.APIConfig, *models.TTSConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) OCRFile(*string, []byte, *string, *models.APIConfig, *models.OCRConfig) (*models.OCRFileResponse, error) {
+func (d *stubEmbeddingDriver) OCRFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.OCRConfig, *common.ModelUsage) (*models.OCRFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ParseFile(*string, []byte, *string, *models.APIConfig, *models.ParseFileConfig) (*models.ParseFileResponse, error) {
+func (d *stubEmbeddingDriver) ParseFile(context.Context, *string, []byte, *string, *models.APIConfig, *models.ParseFileConfig, *common.ModelUsage) (*models.ParseFileResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ListModels(*models.APIConfig) ([]models.ListModelResponse, error) {
+func (d *stubEmbeddingDriver) ListModels(context.Context, *models.APIConfig) ([]models.ListModelResponse, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) Balance(*models.APIConfig) (map[string]interface{}, error) {
+func (d *stubEmbeddingDriver) Balance(context.Context, *models.APIConfig) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) CheckConnection(*models.APIConfig) error { return nil }
-func (d *stubEmbeddingDriver) ListTasks(*models.APIConfig) ([]models.ListTaskStatus, error) {
+func (d *stubEmbeddingDriver) CheckConnection(context.Context, *models.APIConfig) error { return nil }
+func (d *stubEmbeddingDriver) ListTasks(context.Context, *models.APIConfig) ([]models.ListTaskStatus, error) {
 	return nil, nil
 }
-func (d *stubEmbeddingDriver) ShowTask(string, *models.APIConfig) (*models.TaskResponse, error) {
+func (d *stubEmbeddingDriver) ShowTask(context.Context, string, *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
 
@@ -1331,8 +2090,9 @@ func (e *parseTestDocEngine) Close() error {
 func (e *parseTestDocEngine) GetType() string {
 	return "test"
 }
+func (e *parseTestDocEngine) SupportsPageRank() bool { return false }
 
-func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 
@@ -1391,7 +2151,8 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 
-	if err := svc.SwitchChunks("user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
+	ctx := t.Context()
+	if err = svc.SwitchChunks(ctx, "user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
 		t.Fatalf("SwitchChunks() error = %v", err)
 	}
 
@@ -1504,7 +2265,8 @@ func (m *switchChunksEngineMock) GetScores(map[string]interface{}) map[string]fl
 func (m *switchChunksEngineMock) Ping(context.Context) error                          { return nil }
 func (m *switchChunksEngineMock) Close() error                                        { return nil }
 func (m *switchChunksEngineMock) GetType() string                                     { return "elasticsearch" }
-func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (m *switchChunksEngineMock) SupportsPageRank() bool                              { return true }
+func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 
@@ -1514,4 +2276,178 @@ func copyMap(in map[string]interface{}) map[string]interface{} {
 		out[k] = v
 	}
 	return out
+}
+
+func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	insertChunkTestDoc(t, "doc-2", "kb-1")
+	insertChunkTestIngestionTask(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
+
+	svc := newParseTestService(t)
+	svc.accessibleFunc = func(string, string) bool { return true }
+	ctx := t.Context()
+	_, _, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
+	if err == nil {
+		t.Fatal("expected error for RUNNING ingestion task, got nil")
+	}
+}
+
+func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+
+	svc := newParseTestService(t)
+	svc.accessibleFunc = func(string, string) bool { return true }
+	var calledOpts document.StartParseOptions
+	var calledDocID string
+	svc.startParseDocumentsFunc = func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {
+		calledOpts = opts
+		calledDocID = doc.ID
+		return nil
+	}
+	ctx := t.Context()
+	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %d, want success", code)
+	}
+	if calledDocID != "doc-1" {
+		t.Fatalf("startParseDocuments called with doc %s, want doc-1", calledDocID)
+	}
+	if !calledOpts.RerunWithDelete {
+		t.Fatal("expected RerunWithDelete=true")
+	}
+}
+
+func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	userID, datasetID := "user-1", "kb-1"
+	insertChunkTestKB(t, datasetID, userID)
+	insertChunkTestDoc(t, "doc-1", datasetID)
+
+	svc := newParseTestService(t)
+	svc.startParseDocumentsFunc = func(context.Context, *entity.Document, *entity.Knowledgebase, string, document.StartParseOptions) error {
+		return nil
+	}
+
+	ctx := t.Context()
+	result, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
+		DocumentIDs: []string{"doc-1", "doc-1"},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate warning error")
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected CodeSuccess, got %v", code)
+	}
+	if result["success_count"] != 1 {
+		t.Fatalf("expected one successful parse, got %v", result["success_count"])
+	}
+	errorsValue, ok := result["errors"].([]string)
+	if !ok || len(errorsValue) != 1 || !strings.Contains(errorsValue[0], "Duplicate document ids: doc-1") {
+		t.Fatalf("unexpected duplicate errors: %#v", result["errors"])
+	}
+}
+
+func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1") // owner = user-1, Accessible passes
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	// StopParsing checks the IngestionTask status.
+	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := newParseTestService(t)
+	var calledDocID string
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
+		calledDocID = doc.ID
+		return nil
+	}
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	if err != nil {
+		t.Fatalf("StopParsing: %v", err)
+	}
+	if calledDocID != "doc-1" {
+		t.Fatalf("cancelIngestionTaskFunc called with doc %s, want doc-1", calledDocID)
+	}
+}
+
+func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	// No IngestionTask — should be rejected (nothing to stop).
+
+	svc := newParseTestService(t)
+	var called bool
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error { called = true; return nil }
+	ctx := t.Context()
+	_, code, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	if err == nil {
+		t.Fatal("expected error for document without ingestion task")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("expected CodeDataError, got %v", code)
+	}
+	if called {
+		t.Fatal("cancel should not be called for doc without ingestion task")
+	}
+}
+
+func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	// Pre-set counters on the doc so we can verify they are NOT reset.
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"token_num": int64(10),
+		"chunk_num": int64(5),
+	}).Error; err != nil {
+		t.Fatalf("set counters: %v", err)
+	}
+	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	svc := newParseTestService(t)
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
+		// Simulate CancelDocParse: stop task.
+		return dao.DB.Model(&entity.IngestionTask{}).Where("document_id = ?", doc.ID).
+			Update("status", common.STOPPED).Error
+	}
+	engine := &parseTestDocEngine{chunkStoreExists: true}
+	svc.docEngine = engine
+	ctx := t.Context()
+	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
+	if err != nil {
+		t.Fatalf("StopParsing: %v", err)
+	}
+
+	// Counters must NOT be reset.
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if doc.TokenNum != 10 {
+		t.Fatalf("token_num = %d, want 10 (not reset)", doc.TokenNum)
+	}
+	if doc.ChunkNum != 5 {
+		t.Fatalf("chunk_num = %d, want 5 (not reset)", doc.ChunkNum)
+	}
+
+	// Chunks must NOT be deleted during cancel.
+	if engine.deleteChunksCalls != 0 {
+		t.Fatalf("DeleteChunks called %d times, want 0", engine.deleteChunksCalls)
+	}
 }

@@ -62,6 +62,7 @@ class SupportedLiteLLMProvider(StrEnum):
     Astraflow = "Astraflow"
     Astraflow_CN = "Astraflow-CN"
     FuturMix = "FuturMix"
+    AIMLAPI = "aimlapi.com"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -94,6 +95,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Astraflow: "https://api-us-ca.umodelverse.ai/v1",
     SupportedLiteLLMProvider.Astraflow_CN: "https://api.modelverse.cn/v1",
     SupportedLiteLLMProvider.FuturMix: "https://futurmix.ai/v1",
+    SupportedLiteLLMProvider.AIMLAPI: "https://api.aimlapi.com/v1",
 }
 
 
@@ -137,6 +139,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Astraflow: "openai/",
     SupportedLiteLLMProvider.Astraflow_CN: "openai/",
     SupportedLiteLLMProvider.FuturMix: "openai/",
+    SupportedLiteLLMProvider.AIMLAPI: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})

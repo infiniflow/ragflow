@@ -34,6 +34,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -74,7 +75,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// (103) with the python permission message so existing clients can
 	// still pattern-match the text.
 	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID); err != nil {
-		if err == dao.ErrUserCanvasNotFound {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
 			return
 		}
@@ -116,17 +117,14 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// into the normal UploadInfos path. We replicate that with a
 	// guard that dispatches to UploadFromURL only when both
 	// conditions are met.
+	ctx := c.Request.Context()
 	if url := c.Query("url"); url != "" && len(files) == 1 {
-		uploaded, err := h.fileService.UploadFromURL(user.ID, url)
+		uploaded, err := h.fileService.UploadFromURL(ctx, user.ID, url)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 			return
 		}
-		c.JSON(200, gin.H{
-			"code":    common.CodeSuccess,
-			"data":    uploaded,
-			"message": "success",
-		})
+		common.SuccessWithData(c, uploaded, "success")
 		return
 	}
 
@@ -136,7 +134,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
-	results, err := h.fileService.UploadInfos(user.ID, files)
+	results, err := h.fileService.UploadInfos(ctx, user.ID, files)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -149,9 +147,5 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	} else {
 		payload = results
 	}
-	c.JSON(200, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    payload,
-		"message": "success",
-	})
+	common.SuccessWithData(c, payload, "success")
 }

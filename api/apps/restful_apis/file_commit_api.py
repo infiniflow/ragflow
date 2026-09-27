@@ -19,7 +19,10 @@ from functools import wraps
 from quart import request
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_json_result, get_data_error_result, get_request_json, server_error_response, validate_request
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
+from api.common.check_team_permission import check_file_team_permission
 from api.db.services.file_commit_service import FileCommitService
+from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 
 logger = logging.getLogger(__name__)
@@ -74,8 +77,10 @@ def _resolve_dataset_folder(dataset_id):
     missing KB drives ``_resolve`` to reject the request before it hits
     a query.
     """
-    success, _kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not success:
+    # Authorize, not just existence: the commit surface exposes artifact
+    # contents and history, so it needs the same access check the artifact
+    # routes in dataset_api.py apply.
+    if not KnowledgebaseService.accessible(dataset_id, current_user.id):
         return None
     return dataset_id
 
@@ -97,7 +102,14 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 
     def _resolve(entity_id):
         if resolver_type is None:
-            return entity_id  # already a folder_id
+            # entity_id IS the folder_id. Every folder is a File row owned by
+            # a tenant, so authorize it the same way file_api does - a logged-in
+            # user must not read or write another tenant's commit history just
+            # by guessing a folder id.
+            e, folder = FileService.get_by_id(entity_id)
+            if not e or not check_file_team_permission(folder, current_user.id):
+                raise ValueError(f"Could not resolve folder '{entity_id}'")
+            return entity_id
         folder_id = _resolve_folder_id(resolver_type, entity_id)
         if folder_id is None:
             raise ValueError(f"Could not resolve {resolver_type} '{entity_id}' to a folder")
@@ -142,8 +154,8 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
     async def list_commits(entity_id):
         folder_id = _resolve(entity_id)
         try:
-            page = int(request.args.get("page", 1))
-            page_size = int(request.args.get("page_size", 15))
+            page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+            page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
             order_by = request.args.get("order_by", "create_time")
             desc = request.args.get("desc", "true").lower() != "false"
             slug = request.args.get("slug") or ""
@@ -361,16 +373,18 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # Register datasets first, workspace second, folders last —
 # the last call's handlers overwrite module-level names for test access.
 _register_commit_routes("/datasets/<entity_id>", "entity_id", resolver_type="datasets")
-_register_commit_routes("/workspace/<entity_id>", "entity_id")  # alias — workspace_id == folder_id
-_register_commit_routes("/folders/<entity_id>", "entity_id")  # direct — entity_id == folder_id (wins)
+_register_commit_routes("/workspaces/<entity_id>", "entity_id")
 # /memories and /skills routes are not mounted until resolvers are implemented.
 
 
 # ── File version history (shared across all entity types) ─────────────────
-@manager.route("/files/<file_id>/versions", methods=["GET"])  # noqa: F821
+@manager.route("/workspace-files/<file_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 async def get_file_version_history(file_id):
     try:
+        e, file = FileService.get_by_id(file_id)
+        if not e or not check_file_team_permission(file, current_user.id):
+            return get_data_error_result("File not found")
         versions = FileCommitService.get_file_version_history(file_id)
         return get_json_result(data=versions)
     except Exception as e:

@@ -20,7 +20,7 @@ import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import { INextOperatorForm } from '../../interface';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-nodes';
 import { ToolPopover } from './tool-popover';
@@ -39,25 +39,21 @@ export function ToolCard({
   isNodeTool = true,
   ...props
 }: ToolCardProps) {
-  const element = useMemo(() => {
-    return (
-      <LabelCard
-        {...props}
-        className={cn(
-          'flex justify-between ',
-          { 'p-2.5 text-text-primary text-sm': !isNodeTool },
-          className,
-        )}
-      >
-        {children}
-      </LabelCard>
-    );
-  }, [children, className, isNodeTool, props]);
-
   if (children === Operator.Code) {
     return (
       <Tooltip>
-        <TooltipTrigger asChild>{element}</TooltipTrigger>
+        <TooltipTrigger asChild>
+          <LabelCard
+            {...props}
+            className={cn(
+              'flex justify-between ',
+              { 'p-2.5 text-text-primary text-sm': !isNodeTool },
+              className,
+            )}
+          >
+            {children}
+          </LabelCard>
+        </TooltipTrigger>
         <TooltipContent>
           <p>It doesn't have any config.</p>
         </TooltipContent>
@@ -65,13 +61,24 @@ export function ToolCard({
     );
   }
 
-  return element;
+  return (
+    <LabelCard
+      {...props}
+      className={cn(
+        'flex justify-between ',
+        { 'p-2.5 text-text-primary text-sm': !isNodeTool },
+        className,
+      )}
+    >
+      {children}
+    </LabelCard>
+  );
 }
 
 type ActionButtonProps<T> = {
   record: T;
   deleteRecord(record: T): void;
-  edit: MouseEventHandler<HTMLOrSVGElement>;
+  edit?: MouseEventHandler<HTMLOrSVGElement>;
 };
 
 function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
@@ -82,15 +89,17 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
   // Wrapping into buttons to solve the issue that clicking icon occasionally not jumping to corresponding form
   return (
     <div className="flex items-center gap-4 text-text-secondary">
-      <Button
-        variant="transparent"
-        size="icon"
-        className="size-3.5 !bg-transparent !border-none"
-        data-tool={record}
-        onClick={edit}
-      >
-        <PencilLine className="size-full" />
-      </Button>
+      {edit && (
+        <Button
+          variant="transparent"
+          size="icon"
+          className="size-3.5 !bg-transparent !border-none"
+          data-tool={record}
+          onClick={edit}
+        >
+          <PencilLine className="size-full" />
+        </Button>
+      )}
 
       <Button
         variant="transparent"
@@ -131,22 +140,26 @@ export function AgentTools() {
     <section className="space-y-2.5">
       <span className="text-text-secondary text-sm">{t('flow.tools')}</span>
       <ul className="space-y-2.5">
-        {tools.map(({ id, component_name, name }) => (
-          <ToolCard key={id} isNodeTool={false}>
+        {tools.map(({ id, component_name, name }, idx) => (
+          <ToolCard key={id || `tool-${idx}`} isNodeTool={false}>
             <div className="flex gap-2 items-center">
               <OperatorIcon name={component_name as Operator}></OperatorIcon>
               {component_name === Operator.Retrieval ? name : component_name}
             </div>
             <ActionButton
-              record={id}
+              record={id || component_name}
               deleteRecord={deleteNodeTool(id)}
-              edit={handleEdit}
+              edit={
+                component_name === Operator.Code
+                  ? undefined // Code has no config form to edit
+                  : handleEdit
+              }
             />
           </ToolCard>
         ))}
 
-        {mcpIds.map((id) => (
-          <ToolCard key={id} isNodeTool={false}>
+        {mcpIds.map((id, idx) => (
+          <ToolCard key={id || `mcp-${idx}`} isNodeTool={false}>
             {findMcpById(id)?.name}
             <ActionButton
               record={id}

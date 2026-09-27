@@ -1,0 +1,16 @@
+{
+ "id": "token__html_long",
+ "component": "TokenChunker",
+ "notes": "html counterpart of token__text_long_paragraph.",
+ "param": {
+  "chunk_token_size": 32,
+  "delimiters": [
+   "\n"
+  ]
+ },
+ "input": {
+  "name": "t",
+  "output_format": "html",
+  "html": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+ }
+}

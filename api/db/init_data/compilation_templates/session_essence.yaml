@@ -2,6 +2,12 @@ kind: session_essence
 display_name: Session Essence — Cross-source entity synopses from conversations
 config:
   kind: knowledge_graph
+  rechunk_rules: |
+    - Group only adjacent source chunks that discuss the same conversation topic or entity.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Split when the speaker, topic, intent, or semantic focus changes.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal structure.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
       You are a robust entity and fact extractor for conversational data.

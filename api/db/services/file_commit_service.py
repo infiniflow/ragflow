@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Optional
 
+from api.db import FileType
 from api.db.db_models import DB, FileCommit, FileCommitItem, File, User
 from api.db.services.common_service import CommonService
 from api.db.services.file_service import FileService
@@ -53,12 +54,12 @@ logger = logging.getLogger(__name__)
 # Content storage for ``content_after`` is switched by a module-level
 # constant so ops can move blobs between MinIO and the doc-store index
 # without touching the schema.
-ARTIFACT_CONTENT_STORAGE = "minio"  # one of {"minio", "es"}
-_ARTIFACT_COMMIT_BUCKET_PREFIX = ".artifact_commits"
-_ARTIFACT_ES_KWD = "artifact_commit_content"
+WIKI_CONTENT_STORAGE = "minio"  # one of {"minio", "es"}
+_WIKI_COMMIT_BUCKET_PREFIX = ".wiki_commits"
+_WIKI_ES_KWD = "wiki_commit_content"
 
 
-def _artifact_file_id(kb_id: str, slug: str) -> str:
+def _wiki_file_id(kb_id: str, slug: str) -> str:
     """Deterministic 32-char id for the artifact-page 'file' identity.
 
     Not a real File row — just an index key that groups all commits for
@@ -83,7 +84,7 @@ def _unified_diff(before: str, after: str, slug: str) -> str:
 
 
 def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
-    """Persist ``content`` per :data:`ARTIFACT_CONTENT_STORAGE`. Returns
+    """Persist ``content`` per :data:`WIKI_CONTENT_STORAGE`. Returns
     ``(storage_kind, location)`` for the row's persistence columns.
 
     Content-addressed by SHA-256 so re-saves with identical bodies share
@@ -92,8 +93,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
     content_bytes = (content or "").encode("utf-8")
     content_hash = hashlib.sha256(content_bytes).hexdigest()
 
-    if ARTIFACT_CONTENT_STORAGE == "minio":
-        location = f"{_ARTIFACT_COMMIT_BUCKET_PREFIX}/{content_hash}"
+    if WIKI_CONTENT_STORAGE == "minio":
+        location = f"{_WIKI_COMMIT_BUCKET_PREFIX}/{content_hash}"
         try:
             storage = settings.STORAGE_IMPL
             if storage is not None:
@@ -106,7 +107,7 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
             )
         return "minio", location
 
-    if ARTIFACT_CONTENT_STORAGE == "es":
+    if WIKI_CONTENT_STORAGE == "es":
         # Store as a single doc-store row so the same connector serves
         # reads. The row is not retrievable (available_int=0).
         from rag.nlp import search as _rag_search
@@ -116,7 +117,7 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
             "id": content_hash,
             "kb_id": kb_id,
             "doc_id": kb_id,
-            "compile_kwd": _ARTIFACT_ES_KWD,
+            "compile_kwd": _WIKI_ES_KWD,
             "content_with_weight": content or "",
             "available_int": 0,
         }
@@ -133,8 +134,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
     # Unknown storage kind — fall through with empty location; the
     # detail path treats missing location as "content not recoverable".
     logging.warning(
-        "record_page_edit: unknown ARTIFACT_CONTENT_STORAGE=%r; content not persisted",
-        ARTIFACT_CONTENT_STORAGE,
+        "record_page_edit: unknown WIKI_CONTENT_STORAGE=%r; content not persisted",
+        WIKI_CONTENT_STORAGE,
     )
     return "", ""
 
@@ -370,8 +371,26 @@ class FileCommitService(CommonService):
                         item["old_hash"] = old_hash
                         item["old_location"] = old_location
 
-                    # Soft-delete the file record
-                    File.update(status="0", update_time=current_timestamp()).where(File.id == file_id).execute()
+                    # Remove the file record. The blob stays in the content-addressed object
+                    # store, and history keeps its metadata in the tree_state tombstone below
+                    # rather than in the File row.
+                    #
+                    # Folders are exempt: _build_hierarchical_tree resolves sub-folder parentage
+                    # from live File rows, so dropping one makes every historical entry beneath it
+                    # unreachable. File entries are read from tree_state, so they are unaffected.
+                    row = File.get_or_none(File.id == file_id)
+                    if row is not None and row.type == FileType.FOLDER.value:
+                        # Drop the whole change, not just the delete: recording the tombstone and
+                        # the commit item below would leave history calling the folder deleted
+                        # while its row is still there.
+                        logging.warning(
+                            "create_commit: refusing to delete folder %s in commit for %s",
+                            file_id,
+                            folder_id,
+                        )
+                        continue
+                    if row is not None:
+                        File.delete().where(File.id == file_id).execute()
 
                     # Remove from tree state (mark deleted)
                     if file_id in tree_state:
@@ -732,7 +751,7 @@ class FileCommitService(CommonService):
         final_title = f"{(title or '').strip() or f'{title_ts} {slug}'} "
         commit_id = get_uuid()
         item_id = get_uuid()
-        file_id = _artifact_file_id(kb_id, slug)
+        file_id = _wiki_file_id(kb_id, slug)
         now_ts = current_timestamp()
         now_dt = datetime_format(date_time=datetime.datetime.now())
 
@@ -803,6 +822,49 @@ class FileCommitService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def delete_page_history(cls, kb_id: str, page_type: str, slug: str) -> int:
+        """Delete all stored versions for one Wiki page.
+
+        Wiki versions are represented by a ``FileCommit`` plus its single
+        ``FileCommitItem``.  They are not workspace commits, so removing the
+        page must remove both rows instead of leaving an orphaned history
+        that can reappear when the same slug is generated again.
+        """
+        file_id = _wiki_file_id(kb_id, slug)
+        commit_ids = [
+            row.commit_id
+            for row in FileCommitItem.select(FileCommitItem.commit_id).where((FileCommitItem.file_id == file_id) & (FileCommitItem.slug_kwd == slug) & (FileCommitItem.page_type_kwd == page_type))
+        ]
+        if not commit_ids:
+            return 0
+
+        with DB.atomic():
+            FileCommitItem.delete().where(FileCommitItem.commit_id.in_(commit_ids)).execute()
+            deleted = FileCommit.delete().where((FileCommit.folder_id == kb_id) & FileCommit.id.in_(commit_ids)).execute()
+        return deleted
+
+    @classmethod
+    @DB.connection_context()
+    def delete_all_page_history(cls, kb_id: str) -> int:
+        """Delete all Wiki page versions belonging to a knowledge base."""
+        commit_ids = [
+            row.commit_id
+            for row in (
+                FileCommitItem.select(FileCommitItem.commit_id)
+                .join(FileCommit, on=(FileCommit.id == FileCommitItem.commit_id))
+                .where((FileCommit.folder_id == kb_id) & FileCommitItem.slug_kwd.is_null(False) & FileCommitItem.page_type_kwd.is_null(False))
+            )
+        ]
+        if not commit_ids:
+            return 0
+
+        with DB.atomic():
+            FileCommitItem.delete().where(FileCommitItem.commit_id.in_(commit_ids)).execute()
+            deleted = FileCommit.delete().where((FileCommit.folder_id == kb_id) & FileCommit.id.in_(commit_ids)).execute()
+        return deleted
+
+    @classmethod
+    @DB.connection_context()
     def list_page_commits(
         cls,
         tenant_id: str,
@@ -819,7 +881,7 @@ class FileCommitService(CommonService):
         """
         page = max(int(page or 1), 1)
         page_size = max(min(int(page_size or 50), 200), 1)
-        file_id = _artifact_file_id(kb_id, slug)
+        file_id = _wiki_file_id(kb_id, slug)
 
         base = (
             FileCommit.select(

@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -88,6 +87,7 @@ func TestTushare_BuildRequest(t *testing.T) {
 
 func TestTushare_ParseResponse(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var (
 		gotMethod  string
@@ -122,7 +122,7 @@ func TestTushare_ParseResponse(t *testing.T) {
 	})
 	tool := NewTushareToolWith(helper)
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, err := tool.InvokableRun(ctx,
 		`{"token":"T-test","api_name":"stock_basic","params":{"list_status":"L"}}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -169,9 +169,10 @@ func TestTushare_ParseResponse(t *testing.T) {
 
 func TestTushare_RejectsMissingToken(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTushareTool()
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"api_name":"stock_basic"}`)
 	if err == nil {
 		t.Fatal("expected error for missing token")
@@ -183,9 +184,10 @@ func TestTushare_RejectsMissingToken(t *testing.T) {
 
 func TestTushare_RejectsMissingAPIName(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTushareTool()
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"token":"T-abc"}`)
 	if err == nil {
 		t.Fatal("expected error for missing api_name")
@@ -197,6 +199,7 @@ func TestTushare_RejectsMissingAPIName(t *testing.T) {
 
 func TestTushare_UpstreamErrorCode(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -213,7 +216,7 @@ func TestTushare_UpstreamErrorCode(t *testing.T) {
 	})
 	tool := NewTushareToolWith(helper)
 
-	_, err := tool.InvokableRun(context.Background(),
+	_, err := tool.InvokableRun(ctx,
 		`{"token":"T-abc","api_name":"premium_only"}`)
 	if err == nil {
 		t.Fatal("expected error for non-zero code, got nil")
@@ -225,9 +228,10 @@ func TestTushare_UpstreamErrorCode(t *testing.T) {
 
 func TestTushare_Info(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	tool := NewTushareTool()
-	info, err := tool.Info(context.Background())
+	info, err := tool.Info(ctx)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}

@@ -159,7 +159,7 @@ func runLoop(
 		if snap.CurrentInput != nil {
 			var decoded interface{}
 			if err := json.Unmarshal(snap.CurrentInput, &decoded); err != nil {
-				return nil, fmt.Errorf("%w: decode current input: %v", ErrLoopResumeStateInvalid, err)
+				return nil, fmt.Errorf("%w: decode current input: %w", ErrLoopResumeStateInvalid, err)
 			}
 			current = decoded
 		} else {

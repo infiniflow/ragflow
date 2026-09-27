@@ -16,11 +16,19 @@
 
 import base64
 import os
-import sys
 from pathlib import Path
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from common.file_utils import get_project_base_directory
+
+
+class CryptPayloadError(ValueError):
+    """Raised when a client-supplied ciphertext payload is malformed.
+
+    Distinguished from server-side faults (missing or invalid private-key
+    file, key import failures), which propagate unchanged so callers can
+    treat them as server errors rather than bad credentials.
+    """
 
 
 def crypt(line):
@@ -37,30 +45,27 @@ def crypt(line):
 
 def decrypt(line):
     file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")
+    # Key-file read/import failures are server faults and propagate as-is.
     rsa_key = RSA.importKey(Path(file_path).read_text(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode("utf-8")
-
-
-def decrypt2(crypt_text):
-    from base64 import b64decode, b16decode
-    from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
-    from Crypto.PublicKey import RSA
-
-    decode_data = b64decode(crypt_text)
-    if len(decode_data) == 127:
-        hex_fixed = "00" + decode_data.hex()
-        decode_data = b16decode(hex_fixed.upper())
-
-    file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")
-    pem = Path(file_path).read_text()
-    rsa_key = RSA.importKey(pem, "Welcome")
-    cipher = Cipher_PKCS1_v1_5.new(rsa_key)
-    decrypt_text = cipher.decrypt(decode_data, None)
-    return (b64decode(decrypt_text)).decode()
-
-
-if __name__ == "__main__":
-    passwd = crypt(sys.argv[1])
-    print(passwd)
-    print(decrypt(passwd))
+    # Everything below concerns the client-supplied payload. Strip internal
+    # whitespace first: line-wrapped base64 (as test fixtures and PEM-style
+    # senders produce) is legal base64, but b64decode(validate=True) would
+    # reject the embedded newlines. After the strip, validate=True still
+    # catches genuinely malformed payloads (non-alphabet characters).
+    try:
+        ciphertext = base64.b64decode("".join(line.split()), validate=True)
+    except ValueError as e:
+        raise CryptPayloadError("password payload is not valid base64") from e
+    try:
+        plaintext = cipher.decrypt(ciphertext, None)
+    except ValueError as e:
+        # e.g. pycryptodome's "Ciphertext with incorrect length" for
+        # well-formed base64 that is not a valid ciphertext block.
+        raise CryptPayloadError("password payload failed RSA decryption") from e
+    if plaintext is None:
+        raise CryptPayloadError("password payload failed RSA decryption")
+    try:
+        return plaintext.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise CryptPayloadError("decrypted password payload is not valid UTF-8") from e

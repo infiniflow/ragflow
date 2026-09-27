@@ -49,6 +49,7 @@ func newTestHelper(maxAttempts int, base, max time.Duration) *HTTPHelper {
 // attempt with no retry, and the body / content-type round-trip cleanly.
 func TestHTTPHelper_HappyPath(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -58,7 +59,7 @@ func TestHTTPHelper_HappyPath(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -80,6 +81,7 @@ func TestHTTPHelper_HappyPath(t *testing.T) {
 // returns the first 2xx response. Server returns 503 twice, then 200.
 func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +96,7 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -116,6 +118,7 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 // no retry — the caller is responsible for fixing 4xx, retrying won't help.
 func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +129,7 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	resp, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err != nil {
 		t.Fatalf("Do returned error: %v", err)
 	}
@@ -158,6 +161,7 @@ func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
 // and flaked under load.
 func TestHTTPHelper_Timeout(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +180,7 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	})
 	// Tight 50ms deadline. The server takes 500ms, so this call must
 	// abort due to the context, not the server finishing.
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 	defer cancel()
 
 	_, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
@@ -196,6 +200,7 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 // 5xx error is returned.
 func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +210,7 @@ func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(3, 1*time.Millisecond, 5*time.Millisecond)
-	_, err := h.Do(context.Background(), http.MethodGet, srv.URL, "", "", nil)
+	_, err := h.Do(ctx, http.MethodGet, srv.URL, "", "", nil)
 	if err == nil {
 		t.Fatal("expected error after 5xx exhaustion, got nil")
 	}
@@ -218,6 +223,7 @@ func TestHTTPHelper_5xxExhaustion(t *testing.T) {
 // custom headers and a non-empty content-type on POST bodies.
 func TestHTTPHelper_HeadersAndContentType(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-Token"); got != "abc" {
@@ -234,7 +240,7 @@ func TestHTTPHelper_HeadersAndContentType(t *testing.T) {
 	defer srv.Close()
 
 	h := newTestHelper(1, 1*time.Millisecond, 5*time.Millisecond)
-	resp, err := h.Do(context.Background(), http.MethodPost, srv.URL, `{"k":1}`, "application/json", map[string]string{"X-Token": "abc"})
+	resp, err := h.Do(ctx, http.MethodPost, srv.URL, `{"k":1}`, "application/json", map[string]string{"X-Token": "abc"})
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -251,20 +257,20 @@ func TestBackoffExponential(t *testing.T) {
 	t.Parallel()
 
 	base := 50 * time.Millisecond
-	max := 300 * time.Millisecond
+	maxDuration := 300 * time.Millisecond
 
-	got1 := backoff(base, max, 1)
+	got1 := backoff(base, maxDuration, 1)
 	if got1 < 0 || got1 > base {
 		t.Fatalf("backoff(attempt=1) = %s, want [0, %s]", got1, base)
 	}
-	got3 := backoff(base, max, 3)
-	if got3 < 0 || got3 > max {
-		t.Fatalf("backoff(attempt=3) = %s, want [0, %s] (capped)", got3, max)
+	got3 := backoff(base, maxDuration, 3)
+	if got3 < 0 || got3 > maxDuration {
+		t.Fatalf("backoff(attempt=3) = %s, want [0, %s] (capped)", got3, maxDuration)
 	}
 	// With base=50ms, attempt=10 should be capped at 300ms.
-	got10 := backoff(base, max, 10)
-	if got10 > max {
-		t.Fatalf("backoff(attempt=10) = %s, want <= %s (cap)", got10, max)
+	got10 := backoff(base, maxDuration, 10)
+	if got10 > maxDuration {
+		t.Fatalf("backoff(attempt=10) = %s, want <= %s (cap)", got10, maxDuration)
 	}
 }
 
@@ -289,7 +295,7 @@ func TestRetryConfigDefaults(t *testing.T) {
 // test for the M1-rebinding fix as hardened by the post-Phase-7
 // review: DNS pinning MUST happen at the transport layer, not by
 // rewriting the request URL. If the URL host were rewritten to the IP,
-// the TLS ServerName (auto-populated by Go from req.URL.Host) would
+// the TLS ServerName (autopopulated by Go from req.URL.Host) would
 // become the IP, the SNI would send the IP, and cert verification
 // would target the IP — which is not what real HTTPS sites have, and
 // would manifest as x509 errors against any host-cert-only target.
@@ -297,12 +303,13 @@ func TestRetryConfigDefaults(t *testing.T) {
 // This test stands up a real TLS server with a cert whose DNS SAN is
 // "example.test" and whose IP SAN covers the loopback address. The
 // pinned dialer connects to 127.0.0.1, but the request URL host stays
-// as "example.test". The server observes the SNI the client sent and
+// as "example.test". The server observes the SNI the client sent, and
 // we assert it equals "example.test" (not the IP), and the request
 // completes successfully (cert verification passes because the URL
 // host matches the SAN).
 func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// Cert valid for "example.test" (DNS SAN) and 127.0.0.1, ::1
 	// (IP SANs, just so the test environment itself can resolve).
@@ -353,7 +360,7 @@ func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 	h := NewHTTPHelper()
 	h.baseTransport.TLSClientConfig = &tls.Config{RootCAs: pool}
 
-	resp, err := h.DoPinned(context.Background(),
+	resp, err := h.DoPinned(ctx,
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
 		t.Fatalf("DoPinned: %v", err)
@@ -378,9 +385,10 @@ func TestHTTPHelper_DoPinnedHTTPS_PreservesSNIAndCert(t *testing.T) {
 // refuse rather than silently deliver a broken connection.
 func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	h := NewHTTPHelper()
-	_, err := h.DoPinned(context.Background(),
+	_, err := h.DoPinned(ctx,
 		http.MethodGet,
 		"https://attacker.example/foo",
 		"", "", nil,
@@ -414,6 +422,7 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 // bypasses the proxy, the direct dial to 127.0.0.1 succeeds.
 func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	cert := generateTestCert(t, "example.test")
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -467,7 +476,7 @@ func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 	}
 	h.baseTransport.Proxy = http.ProxyURL(closedProxy)
 
-	resp, err := h.DoPinned(context.Background(),
+	resp, err := h.DoPinned(ctx,
 		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
 	if err != nil {
 		t.Fatalf("DoPinned: %v (proxy may not have been bypassed)", err)
@@ -486,6 +495,7 @@ func TestHTTPHelper_DoPinnedBypassesProxy(t *testing.T) {
 // transport-layer primitive that DoPinned uses.
 func TestPinnedDialer_RewritesAddress(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
 
 	// Stand up a TCP server on 127.0.0.1:<random> and capture the
 	// accepted conn to confirm the pinned dialer actually dialed it.
@@ -511,7 +521,7 @@ func TestPinnedDialer_RewritesAddress(t *testing.T) {
 	// Pass a deliberately misleading host in the addr — the dialer
 	// must ignore it and dial 127.0.0.1:<ln port> instead.
 	misleading := net.JoinHostPort("203.0.113.99", fmt.Sprint(ln.Addr().(*net.TCPAddr).Port))
-	conn, derr := d.DialContext(context.Background(), "tcp", misleading)
+	conn, derr := d.DialContext(ctx, "tcp", misleading)
 	if derr != nil {
 		t.Fatalf("DialContext: %v", derr)
 	}

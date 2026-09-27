@@ -1,8 +1,8 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { Handle, HandleProps, Position } from '@xyflow/react';
-import { Plus } from 'lucide-react';
-import { useMemo } from 'react';
+import { Plus, ChevronDown } from 'lucide-react';
+import { useMemo, type MouseEvent } from 'react';
 import { NodeHandleId } from '../../constant';
 import { HandleContext } from '../../context';
 import { useIsPipeline } from '../../hooks/use-is-pipeline';
@@ -87,16 +87,66 @@ export function CommonHandle({
 
 export function LeftEndHandle({
   isConnectable,
+  className,
   ...props
 }: Omit<HandleProps, 'type' | 'position'>) {
   return (
     <Handle
       isConnectable={isConnectable}
-      className="!bg-accent-primary !size-2"
+      className={cn('!bg-accent-primary !size-2', className)}
       id={NodeHandleId.End}
       type="target"
       position={Position.Left}
       {...props}
     ></Handle>
+  );
+}
+
+export function BottomHandle({
+  id,
+  left,
+  visible,
+  nodeId,
+}: {
+  id: NodeHandleId;
+  left: number;
+  visible: boolean;
+  nodeId: string;
+}) {
+  const toggleBottomCollapse = useGraphStore(
+    (state) => state.toggleBottomCollapse,
+  );
+  const collapsed = useGraphStore(
+    (state) => state.collapsedBottomHandles[nodeId]?.includes(id) ?? false,
+  );
+
+  const handleClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    toggleBottomCollapse(nodeId, id);
+  };
+
+  return (
+    <Handle
+      type="source"
+      position={Position.Bottom}
+      isConnectable={false}
+      // With pointer events re-enabled above, keep pointerdown on the handle
+      // from starting a connection drag
+      isConnectableStart={false}
+      id={id}
+      style={{ left }}
+      onClick={handleClick}
+      className={cn(
+        '!size-3.5 !bg-text-disabled !border-border-button inline-flex items-center justify-center invisible !pointer-events-auto cursor-pointer',
+        { visible },
+      )}
+    >
+      <ChevronDown
+        className={cn(
+          'size-2.5 text-bg-base pointer-events-none transition-transform',
+          { '-rotate-90': collapsed },
+        )}
+      />
+    </Handle>
   );
 }

@@ -8,9 +8,9 @@ import {
 } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { IChunk } from '@/interfaces/database/dataset';
+import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from './index.module.less';
@@ -77,7 +77,11 @@ const ChunkCard = ({
               onMouseLeave={() => setOpen(false)}
             >
               <div>
-                <Image id={item.image_id} className={styles.image}></Image>
+                <Image
+                  id={item.image_id}
+                  documentId={item.doc_id}
+                  className={styles.image}
+                ></Image>
               </div>
             </PopoverTrigger>
             <PopoverContent
@@ -89,6 +93,7 @@ const ChunkCard = ({
               <div>
                 <Image
                   id={item.image_id}
+                  documentId={item.doc_id}
                   className={styles.imagePreview}
                 ></Image>
               </div>
@@ -102,7 +107,7 @@ const ChunkCard = ({
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight),
+              __html: sanitizeHtmlWithImagesAsText(item.content_with_weight),
             }}
             className={classNames(styles.contentText, {
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,

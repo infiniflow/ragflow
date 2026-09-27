@@ -17,6 +17,8 @@
 package testutil
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -45,17 +47,24 @@ func StrPtr(s string) *string {
 // It auto-migrates the given tables (or all common tables if none provided).
 func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	if len(tables) == 0 {
 		tables = []any{
 			&entity.IngestionTask{},
 			&entity.IngestionTaskLog{},
+			&entity.PipelineOperationLog{},
 			&entity.Task{},
 			&entity.Document{},
 			&entity.Knowledgebase{},
@@ -65,7 +74,7 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 		}
 	}
 
-	if err := db.AutoMigrate(tables...); err != nil {
+	if err = db.AutoMigrate(tables...); err != nil {
 		t.Fatalf("auto-migrate: %v", err)
 	}
 	return db
@@ -200,12 +209,27 @@ func SeedTestData(t *testing.T, db *gorm.DB, opts ...TestDataOption) (string, st
 	}
 
 	// Create IngestionTask
+	runCount := 1
+	runID := "run-" + cfg.taskID
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              runID,
+		DocumentID:      cfg.docID,
+		RunCount:        &runCount,
+		TenantID:        cfg.tenantID,
+		KbID:            cfg.kbID,
+		ParserID:        doc.ParserID,
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("create pipeline operation log: %v", err)
+	}
 	if err := db.Create(&entity.IngestionTask{
-		ID:         cfg.taskID,
-		UserID:     "u1",
-		DocumentID: cfg.docID,
-		DatasetID:  cfg.kbID,
-		Status:     common.RUNNING,
+		ID:            cfg.taskID,
+		UserID:        "u1",
+		DocumentID:    cfg.docID,
+		DatasetID:     cfg.kbID,
+		Status:        common.RUNNING,
+		PipelineLogID: &runID,
 	}).Error; err != nil {
 		t.Fatalf("create ingestion task: %v", err)
 	}

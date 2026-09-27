@@ -198,7 +198,7 @@ class TestChunksList:
             (
                 INVALID_ID_32,
                 102,
-                f"You don't own the document {INVALID_ID_32}.",
+                f"you don't own the document {INVALID_ID_32}",
             ),
         ],
     )

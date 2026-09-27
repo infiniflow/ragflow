@@ -58,7 +58,7 @@ func newSearchbotDetailRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	h := NewSearchBotHandler(service.NewSearchService(), nil, nil, nil)
 	r := gin.New()
-	r.GET("/api/v1/searchbots/detail", h.SearchbotDetail)
+	r.GET("/api/v1/searchbots/detail", h.SearchBotDetail)
 	return r
 }
 

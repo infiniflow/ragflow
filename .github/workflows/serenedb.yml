@@ -1,0 +1,92 @@
+name: serenedb
+
+# SereneDB has no dedicated CI capacity upstream, so this workflow never runs on
+# push or pull_request - it only runs when triggered by hand, from the Actions
+# tab (workflow_dispatch) or locally with the nektos/act emulator.
+#
+# It brings up a real SereneDB and runs the Go engine's integration tier against
+# it (the unit tier and the Python connector unit tests already run in the normal
+# test workflows; those need no live SereneDB).
+#
+# The steps use docker-in-docker plus the repo's CGO toolchain, so run act in
+# host mode - map the self-hosted labels to act's "-self-hosted" so the steps run
+# on your host (which has the toolchain + docker), and let act check out into its
+# own workspace (do not pass --bind, or the nested build container mounts an empty
+# dir). Override host_port if 7890 is taken locally. Verified with:
+#
+#   act workflow_dispatch -W .github/workflows/serenedb.yml \
+#     -P self-hosted=-self-hosted -P ragflow-test=-self-hosted \
+#     --input host_port=17890
+
+on:
+  workflow_dispatch:
+    inputs:
+      serenedb_image:
+        description: SereneDB image to test against
+        required: false
+        default: serenedb/serenedb:26.07.5
+      host_port:
+        description: Host port to publish SereneDB on (override to avoid a local clash)
+        required: false
+        default: "7890"
+
+permissions:
+  contents: read
+
+jobs:
+  serenedb_go_integration:
+    name: serenedb_go_integration
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    env:
+      SERENEDB_IMAGE: ${{ github.event.inputs.serenedb_image || 'serenedb/serenedb:26.07.5' }}
+      SERENEDB_CONTAINER: serenedb-ci-${{ github.run_id }}
+      SERENEDB_HOST_PORT: ${{ github.event.inputs.host_port || '7890' }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Start SereneDB
+        run: |
+          set -euo pipefail
+          docker rm -f "${SERENEDB_CONTAINER}" >/dev/null 2>&1 || true
+          docker run -d --name "${SERENEDB_CONTAINER}" \
+            -p "127.0.0.1:${SERENEDB_HOST_PORT}:7890" \
+            -e POSTGRES_PASSWORD=infini_rag_flow \
+            "${SERENEDB_IMAGE}"
+          for i in $(seq 1 60); do
+            if docker exec "${SERENEDB_CONTAINER}" pg_isready -h 127.0.0.1 -p 7890 -U postgres >/dev/null 2>&1; then
+              echo "SereneDB is accepting connections"
+              break
+            fi
+            echo "Waiting for SereneDB... ($i/60)"
+            sleep 5
+          done
+
+      - name: Build native tokenizer library
+        run: |
+          set -euo pipefail
+          BUILDER_CONTAINER=serenedb_build_${GITHUB_RUN_ID}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          cleanup_builder() {
+            docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+          }
+          trap cleanup_builder EXIT
+          docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          # The builder runs as root; hand the emitted artifacts back to the runner
+          # user so the workspace stays cleanable on the next checkout/cleanup.
+          docker exec "${BUILDER_CONTAINER}" chown -R "$(id -u):$(id -g)" /ragflow/internal/binding/cpp
+
+      - name: Run Go integration tests against SereneDB
+        run: |
+          set -euo pipefail
+          export SERENEDB_TEST_DSN="host=127.0.0.1 port=${SERENEDB_HOST_PORT} user=postgres password=infini_rag_flow dbname=postgres sslmode=disable"
+          ./build.sh --test-integration ./internal/engine/serenedb/...
+
+      - name: Stop SereneDB
+        if: always()
+        run: docker rm -f "${SERENEDB_CONTAINER}" >/dev/null 2>&1 || true

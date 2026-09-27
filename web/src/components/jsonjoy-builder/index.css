@@ -51,9 +51,10 @@
   --animate-scale-out: jsonjoy-scale-out 0.2s ease-out;
   --animate-float: jsonjoy-float 3s ease-in-out infinite;
   --animate-pulse-subtle: pulse-subtle 3s ease-in-out infinite;
-  --animate-enter: jsonjoy-fade-in 0.4s ease-out, jsonjoy-scale-in 0.3s ease-out;
-  --animate-exit: jsonjoy-fade-out 0.3s ease-out,
-    jsonjoy-scale-out 0.2s ease-out;
+  --animate-enter:
+    jsonjoy-fade-in 0.4s ease-out, jsonjoy-scale-in 0.3s ease-out;
+  --animate-exit:
+    jsonjoy-fade-out 0.3s ease-out, jsonjoy-scale-out 0.2s ease-out;
 
   --font-sans: var(--font-sans), system-ui, sans-serif;
 
@@ -219,8 +220,9 @@
 
     --radius: 0.8rem;
 
-    --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
-      'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-sans:
+      'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, sans-serif;
   }
 
   .jsonjoy.dark {

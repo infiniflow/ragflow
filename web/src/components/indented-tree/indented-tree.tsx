@@ -1,4 +1,21 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { Graph as G6Graph, treeToGraphData } from '@antv/g6';
+import { useSize } from 'ahooks';
 import { useEffect, useMemo, useRef } from 'react';
 
 const assignIds = (node: any, parentId: string = '', index = 0) => {
@@ -30,6 +47,9 @@ export const IndentedTree = (props: GraphProps) => {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<G6Graph>();
+  const size = useSize(containerRef);
+  const width = size?.width;
+  const height = size?.height;
 
   const options = useMemo(
     () => ({
@@ -106,6 +126,20 @@ export const IndentedTree = (props: GraphProps) => {
       .then(() => onRender?.(graph))
       .catch((error) => console.debug(error));
   }, [options, data, onRender]);
+
+  // G6 sizes its canvas at creation time, so the graph must be resized and
+  // re-fitted whenever the container (window / sheet) changes size.
+  useEffect(() => {
+    const graph = graphRef.current;
+
+    if (!graph || graph.destroyed || !width || !height) return;
+
+    const [canvasWidth, canvasHeight] = graph.getSize();
+    if (canvasWidth === width && canvasHeight === height) return;
+
+    graph.resize(width, height);
+    graph.fitView().catch((error: unknown) => console.debug(error));
+  }, [width, height]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 };

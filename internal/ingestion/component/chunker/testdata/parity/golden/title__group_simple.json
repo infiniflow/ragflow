@@ -1,0 +1,8 @@
+{
+ "case_id": "title__group_simple",
+ "chunks": [
+  {
+   "text": "# Chapter One\nAlpha text.\n# Chapter Two\nBeta text.\n"
+  }
+ ]
+}

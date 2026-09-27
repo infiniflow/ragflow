@@ -1,8 +1,8 @@
 # RAGFlow Instructions
 
-Use this file as the local operating guide for the current codebase. Prefer the code and the current CLAUDE.md over any older convention or remembered project shape.
+Use this file as the local operating guide for the current codebase. Prefer the code and the current AGENTS.md over any older convention or remembered project shape.
 
-## Core stance
+## Core Stance
 - Treat legacy code as liability, not as a compatibility target.
 - Prefer deletion over shims, deprecated branches, wrapper APIs, and dual-track migration notes.
 - If old and new implementations coexist, converge to one path unless an external contract forces compatibility.
@@ -12,11 +12,11 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 
 ## Current stack
 - Backend: Python 3.13+, Quart-based API server, Peewee ORM, async workers.
-- Frontend: React + TypeScript + Vite in `web/`.
+- Frontend: React + TypeScript + Vite in `web/`. When working under `web/`, read and follow `web/AGENTS.md` — it holds the frontend conventions (dual-backend Go/Python variants, test placement, styling, data fetching).
 - Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
-## Code layout to expect
+## Code Layout to Expect
 - `api/`: Python API server entrypoints, blueprints, services, and database code.
 - `rag/`: ingestion, retrieval, LLM integration, and graph RAG logic.
 - `deepdoc/`: parsing and OCR.
@@ -45,19 +45,60 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `docker/`: local and production compose files.
 - `sdk/` and `test/`: SDK and automated tests.
 
-## Go-specific rules
+## Go-Specific Rules
 - Treat `internal/ingestion`, `internal/parser`, and `internal/deepdoc` as actively refactored code. Prefer collapsing duplicate paths over preserving transitional wrappers.
 - Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
-## Working rules
+## Shared database schema (Go + Python)
+The Go services and the Python API write to the same MySQL/PostgreSQL schema, and both own parts of it. Neither is authoritative over the whole.
+
+Each ORM derives index names differently:
+- Go (`internal/entity/`): GORM derives `idx_<table>_<column>` for indexes and `uni_<table>_<column>` for unique constraints. Tags in this repo name unique indexes explicitly, e.g. `uniqueIndex:idx_commit_file`.
+- Python (`api/db/db_models.py`): Peewee derives `<db_table>_<col1>_<col2>` (truncated with an md5 suffix past 64 chars, see `playhouse.migrate.make_index_name`). There is no `idx_` prefix.
+
+Both sides reconcile by **column set, not by name**: Go's `hasUniqueIndex` (`internal/dao/migration.go`) accepts an existing index only when its full column set equals the requested one, and Python's `ensure_model_indexes` (`api/db/db_models.py`) keys `DB.get_indexes()` on the column tuple. Consequences:
+
+- Divergent names covering the same columns are expected, not a defect. Whichever runtime reaches the database first decides the name. Do not "fix" this by renaming inside a migration; it rewrites live databases for no functional gain.
+- Add a shared unique index to **both** sides (Go tag + Peewee `Meta.indexes` or `unique=True`), so each runtime recreates it when absent. Do not add a second index over a column set an existing one already covers.
+- In Go, declare single-column uniqueness with a named `uniqueIndex:`, not a bare `unique` tag. A bare `unique` becomes a table-level constraint in DDL, which SQLite materializes as an implicit index that cannot be dropped by name, and which GORM's `MigrateColumnUnique` then tries to drop under its own `uni_<table>_<column>` name — MySQL answers 1091 every startup. `namedIndexMigrator` (`internal/dao/database.go`) suppresses exactly that phantom drop; see `TestNamedIndexMigratorSkipsPhantomUniqueDrop`.
+- A Python model existing does not mean Python owns that table's constraints. `pipeline_operation_log` has no `run_count` column and no unique index in `db_models.py`; both are added only by `internal/dao/migration.go`.
+
+## Go Test Tiers
+Go tests are classified by build tag so the default `go test ./...` run stays self-contained. Tag a test file with `//go:build <tier>` placed before the `package` clause.
+
+| Tier | Build tag | Runs by default? | Needs |
+|---|---|---|---|
+| Unit | (none) | Yes (`go test ./...`) | Native CGO static libs (wired by `build.sh --test`); no external services — uses in-memory SQLite, miniredis, or `httptest` stubs. |
+| Integration | `integration` | No (`-tags integration`) | A real service: MySQL/MinIO/Elasticsearch/Infinity/LLM. Single component, reasonably fast. |
+| E2E | `e2e` | No (`-tags e2e`) | Full cross-component pipeline (ingest → index → retrieve) against real services; heavy/slow. |
+| Manual | `manual` | No (`-tags manual`) | Very slow/expensive (deepdoc render/parity/snapshot/bench). **Local opt-in ONLY — never run in CI.** |
+| Native (orthogonal) | `cgo` / `!cgo` | `cgo` auto-satisfies under CGO_ENABLED=1 | Native static libs (`office_oxide`/`pdfium`/`pdf_oxide`). Combine with tiers, e.g. `//go:build cgo && integration`. |
+
+Run tiers locally via `build.sh`:
+```bash
+bash build.sh --test                      # unit tier (no tags)
+bash build.sh --test-integration ./...    # integration tier
+bash build.sh --test-e2e                  # e2e tier
+bash build.sh --test-manual               # manual tier (very slow)
+bash build.sh --test-all                  # integration + e2e (never includes manual)
+```
+Rules:
+- New tests that touch a real external service MUST carry `integration`/`e2e`/`manual` — do not rely on `t.Skip` + env vars to soft-isolate them in the default unit run. Keep an env guard as a harmless secondary safety net if desired.
+- `manual` is never wired into CI or any automated pipeline.
+- `unit` (no tag) must stay free of external-service dependencies so `go test ./...` passes without MySQL/MinIO/ES/Infinity/LLM. The native CGO static libraries (`office_oxide`/`pdfium`/`pdf_oxide`) are still required at build time and are wired automatically by `build.sh --test`; that is expected, not an external service.
+
+## Working Rules
+- When reviewing documentation or code, inspect the full affected path and report all verifiable findings in one review; do not return after only a few findings and expose further issues in later rounds.
+- When handling review comments, independently verify each substantive claim against the current code or tests before accepting, rejecting, or acting on it.
 - Before editing, inspect the nearest code path that actually owns the behavior.
 - Keep changes small and local unless the task is explicitly a broader refactor.
 - Prefer one implementation path instead of preserving old and new versions side by side.
 - Preserve behavior with focused tests when the behavior is still valid; do not keep tests that protect obsolete behavior.
 - If a surface is only there for compatibility, remove it unless the user asks to keep it.
 - Do not add new compatibility wording in comments or docs.
+- When a maintainer takes over a community PR, a new commit generated by rewriting history (e.g. `merge`, `rebase -i`) must preserve the original author and add the maintainer as co-author (via a `Co-authored-by:` trailer) instead of overwriting the author with the maintainer alone.
 
 ## Commands
 ### Backend
@@ -93,7 +134,7 @@ bash build.sh --go
 bash build.sh --all
 ```
 
-## Validation preference
+## Validation Preference
 - Run the narrowest relevant test, lint, or build command after a change.
 - For backend changes, prefer targeted pytest or ruff checks over full-suite runs.
 - For frontend changes, prefer the touched-package lint, type-check, or test command.

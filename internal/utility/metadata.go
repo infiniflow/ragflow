@@ -45,22 +45,24 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			continue
 		}
 
-		// Merge with existing value
-		existStr, existIsStr := existing.(string)
-		newStr, newIsStr := normVal.(string)
-		existList, existIsList := existing.([]string)
-		newList, newIsList := normVal.([]string)
-
-		if existIsStr && newIsStr {
-			// Both strings: convert to list, append
-			target[k] = dedupeStrings(append([]string{existStr}, newStr))
-		} else if existIsStr && newIsList {
-			target[k] = dedupeStrings(append([]string{existStr}, newList...))
-		} else if existIsList && newIsStr {
-			target[k] = dedupeStrings(append(existList, newStr))
-		} else if existIsList && newIsList {
-			target[k] = dedupeStrings(append(existList, newList...))
+		// Merge with existing value, mirroring Python
+		// common.metadata_utils.update_metadata_to exactly:
+		//   - both lists: extend + dedupe
+		//   - target is list, incoming is scalar: append + dedupe
+		//   - target is scalar (or any non-list): overwrite with the
+		//     incoming value (the stored/merged-in side wins), NOT a list.
+		targetList, targetIsList := existing.([]string)
+		normList, normIsList := normVal.([]string)
+		if targetIsList {
+			if normIsList {
+				target[k] = dedupeStrings(append(targetList, normList...))
+			} else if s, ok := normVal.(string); ok {
+				target[k] = dedupeStrings(append(targetList, s))
+			}
+			continue
 		}
+		// target is a scalar: overwrite with the incoming value.
+		target[k] = normVal
 	}
 
 	return target

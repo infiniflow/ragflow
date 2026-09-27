@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +41,7 @@ type mockChunkService struct {
 	LastUserID      string
 }
 
-func (m *mockChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (m *mockChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	m.LastReq = req
 	m.LastUserID = userID
 	if m.retrievalTestFn != nil {
@@ -175,20 +176,18 @@ func TestSearchBotsRetrieval_ServiceError(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	code, _ := resp["code"].(float64)
-	if code == 0 {
-		t.Errorf("expected non-zero error code, got %v", code)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Errorf("expected code %d, got %v", common.CodeDataError, resp["code"])
 	}
-	msg, _ := resp["message"].(string)
-	if msg == "" || msg == "success" {
-		t.Errorf("expected error message, got %q", msg)
+	if resp["message"] != "db error" {
+		t.Errorf("expected message %q, got %v", "db error", resp["message"])
 	}
 }
 
@@ -466,7 +465,7 @@ type fakeChunkRetriever struct {
 	err    error
 }
 
-func (f *fakeChunkRetriever) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (f *fakeChunkRetriever) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -581,6 +580,47 @@ func TestParseMindMapMarkdown_ListUnderHeading(t *testing.T) {
 	}
 	if len(got.Children[0].Children) != 1 || got.Children[0].Children[0].ID != "Search" {
 		t.Fatalf("nested children = %+v, want Search under Features", got.Children[0].Children)
+	}
+}
+
+func TestParseMindMapMarkdown_CodeFence(t *testing.T) {
+	input := "```markdown\n# Title\n## Section\n- Item\n```"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "Title" {
+		t.Fatalf("root = %q, want Title", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Section" {
+		t.Fatalf("children = %+v, want Section", got.Children)
+	}
+}
+
+func TestParseMindMapMarkdown_ThinkTag(t *testing.T) {
+	input := "<think>reasoning here</think>\n# Title\n- Item"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "Title" {
+		t.Fatalf("root = %q, want Title", got.ID)
+	}
+	if len(got.Children) != 1 || got.Children[0].ID != "Item" {
+		t.Fatalf("children = %+v, want Item", got.Children)
+	}
+}
+
+func TestParseMindMapMarkdown_ThinkTagMultiple(t *testing.T) {
+	input := "<think>first</think>\n# A\n- x\n<think>second</think>\n# B\n- y"
+	got := parseMindMapMarkdown(input)
+	if got.ID != "root" {
+		t.Fatalf("root = %q, want root (two top-level headings)", got.ID)
+	}
+	if len(got.Children) != 2 || got.Children[0].ID != "A" || got.Children[1].ID != "B" {
+		t.Fatalf("children = %+v, want [A, B]", got.Children)
+	}
+}
+
+func TestParseMindMapMarkdown_ThinkTagUnclosed(t *testing.T) {
+	input := "<think>reasoning that gets cut off by max tokens without a close tag"
+	got := parseMindMapMarkdown(input)
+	if len(got.Children) != 0 {
+		t.Fatalf("children = %+v, want empty root for unclosed think block", got.Children)
 	}
 }
 

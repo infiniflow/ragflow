@@ -128,9 +128,13 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
           <FormField
             control={form.control}
             name="content_with_weight"
+            rules={{
+              validate: (value: string) =>
+                value?.trim() ? true : t('chunk.chunkMessage'),
+            }}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('chunk.chunk')}</FormLabel>
+                <FormLabel required>{t('chunk.chunk')}</FormLabel>
                 <FormControl>
                   <Textarea
                     {...field}
@@ -181,6 +185,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                     {data?.data?.img_id && (
                       <Image
                         id={data?.data?.img_id}
+                        documentId={doc_id}
                         className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
                       />
                     )}
@@ -198,6 +203,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                           }}
                           maxFileCount={1}
                           hideDropzoneOnMaxFileCount
+                          showFolderTab={false}
                           title={t('chunk.imageUploaderTitle')}
                           description={<></>}
                         />

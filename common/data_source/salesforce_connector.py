@@ -124,6 +124,20 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         self._instance_url: str | None = None
         self._access_token: str | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "SalesforceConnector":
+        objects = config.get("objects")
+        if isinstance(objects, str):
+            objects = [item.strip() for item in objects.split(",") if item.strip()]
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            batch_size=batch_size,
+            objects=objects,
+            api_version=config.get("api_version") or _DEFAULT_API_VERSION,
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------

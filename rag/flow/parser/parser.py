@@ -20,7 +20,8 @@ import random
 import re
 from functools import partial
 
-from litellm import logging
+import logging
+
 import numpy as np
 from PIL import Image
 
@@ -32,9 +33,13 @@ from api.db.joint_services.tenant_model_service import (
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_first_provider_model_name,
-    get_model_config_from_provider_instance,
+    resolve_model_config,
     get_tenant_default_model_by_type,
 )
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from rag.nlp.delim import DEFAULT_DELIMITER
+from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -50,6 +55,7 @@ from rag.flow.parser.pdf_chunk_metadata import (
     reorder_multi_column_bboxes,
 )
 from rag.flow.parser.schema import ParserFromUpstream
+from rag.flow.parser.spreadsheet_positions import TCADP_POSITION_TAG_RE, tcadp_spreadsheet_json_items
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
@@ -62,6 +68,14 @@ from rag.flow.parser.utils import (
 )
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
+
+# Row ceiling passed to ``ExcelParser.html`` for a spreadsheet sheet. It is
+# deliberately far beyond any real sheet: a sheet is emitted as ONE
+# self-contained <table> and is never split by row count or token budget.
+# Any split would cut inside ``<td>`` content or, worse, drop the delimiter
+# characters it cut on — the bug this typed parser output exists to prevent.
+# The TCADP path applies the same rule and emits one item per returned table.
+TABLE_NO_SPLIT_ROWS = 1 << 30
 
 
 class ParserParam(ProcessParamBase):
@@ -132,7 +146,7 @@ class ParserParam(ProcessParamBase):
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "flatten_media_to_text": False,
-                "output_format": "html",
+                "output_format": "json",
                 "suffix": [
                     "xls",
                     "xlsx",
@@ -254,7 +268,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -301,15 +315,6 @@ class ParserParam(ProcessParamBase):
             html_output_format = html_config.get("output_format", "")
             self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
-        audio_config = self.setups.get("audio", "")
-        if audio_config:
-            audio_vlm = audio_config.get("vlm") or {}
-            self.check_empty(audio_vlm.get("llm_id"), "Audio VLM")
-
-        video_config = self.setups.get("video", "")
-        if video_config:
-            video_vlm = video_config.get("vlm") or {}
-            self.check_empty(video_vlm.get("llm_id"), "Video VLM")
         email_config = self.setups.get("email", "")
         if email_config:
             email_output_format = email_config.get("output_format", "")
@@ -337,6 +342,17 @@ class Parser(ProcessBase):
 
         # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
+        # If raw_parse_method is a tenant_model ID, resolve it to
+        # model_name@instance_name@provider_name so the provider-specific
+        # branches below can match the per-provider suffix.
+        if isinstance(raw_parse_method, str) and raw_parse_method:
+            exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
+            if exist:
+                provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+                instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+                if provider_ok and instance_ok:
+                    raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
         parser_model_name = None
         parse_method = raw_parse_method
         parse_method = parse_method or ""
@@ -351,10 +367,13 @@ class Parser(ProcessBase):
             elif lowered.endswith("@somark"):
                 # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
                 # form produced by the new Tenant LLM Provider UI (#14595);
-                # ``get_model_config_from_provider_instance`` -> ``split_model_name``
+                # ``resolve_model_config`` -> ``split_model_name``
                 # downstream requires all three segments.
                 parser_model_name = raw_parse_method
                 parse_method = "SoMark"
+            elif lowered.endswith("@mistral ocr"):
+                parser_model_name = raw_parse_method
+                parse_method = "Mistral OCR"
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
@@ -389,7 +408,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
@@ -462,7 +481,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("OpenDataLoader model not configured. Please add OpenDataLoader in Model Providers.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -523,14 +542,53 @@ class Parser(ProcessBase):
                 raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
 
             tenant_id = self._canvas._tenant_id
-            try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
-            except Exception:
-                if "@" in parser_model_name:
-                    raise
-                from api.db.services.tenant_llm_service import TenantLLMService
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            pdf_parser = ocr_model.mdl
 
-                ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, parser_model_name)
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method="pipeline",
+            )
+            bboxes = []
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
+                    continue
+                text, layout_type, poss = item[0], item[1], item[2]
+                box = {
+                    "text": text,
+                    "layout_type": layout_type or "text",
+                }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
+                bboxes.append(box)
+
+        elif parse_method.lower() == "mistral ocr":
+
+            def resolve_mistral_ocr_llm_name():
+                configured = parser_model_name or conf.get("mistral_ocr_llm_name")
+                if configured:
+                    return configured
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+                from api.db.joint_services.tenant_model_service import ensure_mistral_ocr_from_env
+
+                return ensure_mistral_ocr_from_env(tenant_id)
+
+            parser_model_name = resolve_mistral_ocr_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("Mistral OCR model not configured. Please add Mistral OCR in Model Providers or set MISTRAL_OCR_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -577,7 +635,7 @@ class Parser(ProcessBase):
             bboxes = []
             for section, position_tag in sections:
                 if position_tag:
-                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    match = TCADP_POSITION_TAG_RE.match(position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
                         bboxes.append(
@@ -614,7 +672,7 @@ class Parser(ProcessBase):
                 raise RuntimeError("PaddleOCR model not configured. Please add PaddleOCR in Model Providers or set PADDLEOCR_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -644,9 +702,9 @@ class Parser(ProcessBase):
         # Vision parser treats each page as a large image block.
         else:
             if conf.get("parse_method"):
-                vision_model_config = get_model_config_from_provider_instance(self._canvas._tenant_id, LLMType.IMAGE2TEXT, conf["parse_method"])
+                vision_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.VISION, conf["parse_method"])
             else:
-                vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.IMAGE2TEXT)
+                vision_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.VISION)
             vision_model = LLMBundle(self._canvas._tenant_id, vision_model_config, lang=self._param.setups["pdf"].get("lang"))
             pdf_parser = VisionParser(vision_model=vision_model)
             lines, _ = pdf_parser(blob, callback=self.callback)
@@ -717,6 +775,7 @@ class Parser(ProcessBase):
             self._canvas._tenant_id,
             conf.get("vlm"),
             callback=self.callback,
+            lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
         )
 
         # Emit the requested final PDF output format.
@@ -728,7 +787,9 @@ class Parser(ProcessBase):
             for b in bboxes:
                 if b.get("layout_type", "") == "title":
                     mkdn += "\n## "
-                if b.get("layout_type", "") == "figure":
+                # The current frontend uses JSON for PDF output. Keep this
+                # defensive guard for imported or API-authored Markdown flows.
+                if b.get("layout_type", "") == "figure" and b.get("image") is not None:
                     mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
                     continue
                 mkdn += b.get("text", "") + "\n"
@@ -786,23 +847,7 @@ class Parser(ProcessBase):
                 self.set_output("html", html_content)
 
             elif output_format == "json":
-                # For JSON output, create a list of text items
-                result = []
-                # Add sections as text
-                for section, position_tag in sections:
-                    if section:
-                        result.append({"text": section, "doc_type_kwd": "text"})
-                # Add tables as text
-                for table in tables:
-                    if table:
-                        result.append(
-                            {
-                                "text": table,
-                                "doc_type_kwd": "text" if flatten_media_to_text else "table",
-                            }
-                        )
-
-                self.set_output("json", result)
+                self.set_output("json", tcadp_spreadsheet_json_items(sections, tables, flatten_media_to_text))
 
             elif output_format == "markdown":
                 # For markdown output, combine into markdown
@@ -820,9 +865,25 @@ class Parser(ProcessBase):
             spreadsheet_parser = ExcelParser()
             if conf.get("output_format") == "html":
                 htmls = spreadsheet_parser.html(blob, 1000000000)
-                self.set_output("html", htmls[0])
+                self.set_output("html", htmls[0][0] if htmls else "")
             elif conf.get("output_format") == "json":
-                self.set_output("json", [{"text": txt, "doc_type_kwd": "text"} for txt in spreadsheet_parser(blob) if txt])
+                # One self-contained <table> item per sheet, never split, so the
+                # downstream TokenChunker keeps every table whole instead of
+                # cutting it on a delimiter.
+                self.set_output(
+                    "json",
+                    [
+                        {
+                            "text": tb,
+                            "doc_type_kwd": "text" if flatten_media_to_text else "table",
+                            # 0-based sheet. TaskExecutor and dataflow_service
+                            # call add_positions, which stores pn+1 (1-based).
+                            "positions": [[sheet, r1, r2, c1, c2]],
+                        }
+                        for tb, (sheet, r1, r2, c1, c2) in spreadsheet_parser.html(blob, TABLE_NO_SPLIT_ROWS)
+                        if tb
+                    ],
+                )
             elif conf.get("output_format") == "markdown":
                 self.set_output("markdown", spreadsheet_parser.markdown(blob))
 
@@ -920,6 +981,7 @@ class Parser(ProcessBase):
                 self._canvas._tenant_id,
                 conf.get("vlm"),
                 callback=self.callback,
+                lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
             )
 
             self.set_output("json", sections)
@@ -1018,7 +1080,7 @@ class Parser(ProcessBase):
         sections, tables, section_images = markdown_parser(
             name,
             blob,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=conf.get("delimiter"),
             return_section_images=True,
         )
@@ -1056,6 +1118,7 @@ class Parser(ProcessBase):
                 self._canvas._tenant_id,
                 conf.get("vlm"),
                 callback=self.callback,
+                lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
             )
             self.set_output("json", json_results)
         else:
@@ -1073,7 +1136,8 @@ class Parser(ProcessBase):
             name,
             blob,
             conf.get("chunk_token_num", 128),
-            conf.get("delimiter", "\n!?;。；！？"),
+            conf.get("delimiter", DEFAULT_DELIMITER),
+            keep_delimiters=True,
         )
         if conf.get("output_format") == "json":
             self.set_output("json", [{"text": section[0], "doc_type_kwd": "text"} for section in sections if section[0]])
@@ -1117,7 +1181,7 @@ class Parser(ProcessBase):
         else:
             lang = conf["lang"]
             # use VLM to describe the picture
-            cv_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, conf["parse_method"])
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, conf["parse_method"])
             cv_model = LLMBundle(self._canvas.get_tenant_id(), cv_model_config, lang=lang)
             img_binary = io.BytesIO()
             img.save(img_binary, format="JPEG")
@@ -1146,14 +1210,17 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an audio.")
 
         conf = self._param.setups["audio"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
         _, ext = os.path.splitext(name)
         with tempfile.NamedTemporaryFile(suffix=ext) as tmpf:
             tmpf.write(blob)
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
-            seq2txt_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, vlm["llm_id"])
+            if vlm.get("llm_id"):
+                seq2txt_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.ASR, vlm["llm_id"])
+            else:
+                seq2txt_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.ASR)
             seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), seq2txt_model_config)
             txt = seq2txt_mdl.transcription(tmp_path)
 
@@ -1164,9 +1231,12 @@ class Parser(ProcessBase):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an video.")
 
         conf = self._param.setups["video"]
-        vlm = conf.get("vlm")
+        vlm = conf.get("vlm") or {}
         self.set_output("output_format", conf["output_format"])
-        cv_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, vlm["llm_id"])
+        if vlm.get("llm_id"):
+            cv_model_config = resolve_model_config(self._canvas.get_tenant_id(), LLMType.VISION, vlm["llm_id"])
+        else:
+            cv_model_config = get_tenant_default_model_by_type(self._canvas.get_tenant_id(), LLMType.VISION)
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
@@ -1181,6 +1251,20 @@ class Parser(ProcessBase):
         conf = self._param.setups["email"]
         self.set_output("output_format", conf["output_format"])
         target_fields = conf["fields"]
+
+        def _decode_payload(payload, charset):
+            """Decode a MIME payload, falling back through the encodings mislabelled
+            mail actually uses. Empty or absent payloads decode to an empty string."""
+            if not payload:
+                return ""
+            for enc in [charset, "utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                if not enc:
+                    continue
+                try:
+                    return payload.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return payload.decode("utf-8", errors="ignore")
 
         _, ext = os.path.splitext(name)
         if ext == ".eml":
@@ -1203,31 +1287,16 @@ class Parser(ProcessBase):
                 body_text, body_html = [], []
 
                 def _add_content(m, content_type):
-                    def _decode_payload(payload, charset, target_list):
-                        try:
-                            target_list.append(payload.decode(charset))
-                        except (UnicodeDecodeError, LookupError):
-                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
-                                try:
-                                    target_list.append(payload.decode(enc))
-                                    break
-                                except UnicodeDecodeError:
-                                    continue
-                            else:
-                                target_list.append(payload.decode("utf-8", errors="ignore"))
-
+                    # Read the part that was handed in, not the top-level message:
+                    # get_payload(decode=True) on a multipart container returns None,
+                    # so any message with an attachment used to fail here.
                     if content_type == "text/plain":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_text)
+                        body_text.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
                     elif content_type == "text/html":
-                        payload = msg.get_payload(decode=True)
-                        charset = msg.get_content_charset() or "utf-8"
-                        _decode_payload(payload, charset, body_html)
-                    elif "multipart" in content_type:
-                        if m.is_multipart():
-                            for part in m.iter_parts():
-                                _add_content(part, part.get_content_type())
+                        body_html.append(_decode_payload(m.get_payload(decode=True), m.get_content_charset()))
+                    elif "multipart" in content_type and m.is_multipart():
+                        for part in m.iter_parts():
+                            _add_content(part, part.get_content_type())
 
                 _add_content(msg, msg.get_content_type())
 
@@ -1242,7 +1311,12 @@ class Parser(ProcessBase):
                         dispositions = content_disposition.strip().split(";")
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
-                            payload = part.get_payload(decode=True).decode(part.get_content_charset())
+                            # A binary attachment carries no charset, so decoding its
+                            # bytes as text would only push mojibake into the indexed
+                            # content. Keep the name and leave the payload empty.
+                            payload = ""
+                            if part.get_content_maintype() == "text":
+                                payload = _decode_payload(part.get_payload(decode=True), part.get_content_charset())
                             attachments.append(
                                 {
                                     "filename": filename,
@@ -1279,10 +1353,18 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
+                    # extract_msg exposes no charset for an attachment, so treat only
+                    # payloads that are valid UTF-8 as text and skip the rest.
+                    payload = ""
+                    if isinstance(t.data, bytes):
+                        try:
+                            payload = t.data.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
                     attachments.append(
                         {
                             "filename": t.name,
-                            "payload": t.data.decode("utf-8"),
+                            "payload": payload,
                         }
                     )
                 email_content["attachments"] = attachments

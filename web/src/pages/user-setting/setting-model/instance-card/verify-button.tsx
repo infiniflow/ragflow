@@ -62,9 +62,9 @@ const VerifyButton: React.FC<IVerifyButton> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const contextForm = useFormContext();
-  const form = formRef?.current ?? contextForm;
 
   const onHandleVerify = useCallback(async () => {
+    const form = formRef?.current ?? contextForm;
     const formValid = await form?.trigger();
     if (!formValid) {
       return;
@@ -99,7 +99,7 @@ const VerifyButton: React.FC<IVerifyButton> = ({
     } finally {
       // setVerifyLoading(false);
     }
-  }, [form, onVerify, params, verifyCallback]);
+  }, [formRef, contextForm, onVerify, params, verifyCallback]);
   const handleVerify = useCallback(async () => {
     setVerifyResult({
       isValid: null,
@@ -157,13 +157,11 @@ const VerifyButton: React.FC<IVerifyButton> = ({
           </div>
         )}
       </div>
-      {verifyResult && verifyResult.isValid !== null && (
+      {verifyResult && verifyResult.isValid === false && verifyResult.logs && (
         <div className="space-y-2">
-          {verifyResult.logs && (
-            <div className="w-full  whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[250px] overflow-y-auto scrollbar-auto p-2.5">
-              {replaceText(verifyResult.logs)}
-            </div>
-          )}
+          <div className="w-full  whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[250px] overflow-y-auto scrollbar-auto p-2.5">
+            {replaceText(verifyResult.logs)}
+          </div>
         </div>
       )}
     </div>

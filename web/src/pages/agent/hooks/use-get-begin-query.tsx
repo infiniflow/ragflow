@@ -26,7 +26,7 @@ import {
 import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 import {
   useFindAgentStructuredOutputLabelByValue,

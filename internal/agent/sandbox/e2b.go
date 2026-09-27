@@ -43,18 +43,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"ragflow/internal/common"
+	"strings"
 	"sync"
 	"time"
 
 	e2bsdk "github.com/eric642/e2b-go-sdk"
 )
 
-// e2bDefaultTemplate is the e2b sandbox template the operator
-// expects to be on PATH. The e2b "base" template ships with
-// python3 and node pre-installed; the provider does not need a
-// custom template for the common case. Operators can override
-// with E2B_TEMPLATE.
+// e2bDefaultTemplate is the default E2B template.
 const e2bDefaultTemplate = "base"
 
 // e2bDefaultSandboxTimeout is the sandbox lifetime for a single
@@ -73,6 +70,11 @@ type E2BProvider struct {
 	client         *e2bsdk.Client
 	template       string
 	sandboxTimeout time.Duration
+	apiKey         string
+	accessToken    string
+	region         string
+	domain         string
+	requestTimeout time.Duration
 
 	mu          sync.Mutex
 	initialized bool
@@ -87,28 +89,36 @@ func newE2BProviderFromEnv() *E2BProvider {
 }
 
 // e2bConfigFromEnv builds a config map from the E2B_* env vars,
-// mirroring the admin-panel settings JSON shape. Note: E2B_API_KEY
-// and E2B_ACCESS_TOKEN are intentionally read directly by
-// Initialize (the SDK requires env or Config{}), so they are NOT
-// part of the JSON config map.
+// mirroring the admin-panel settings JSON shape.
 func e2bConfigFromEnv() map[string]any {
 	return map[string]any{
-		"TEMPLATE": os.Getenv("E2B_TEMPLATE"),
-		"TIMEOUT":  os.Getenv("E2B_TIMEOUT"),
+		"template":     common.GetEnv(common.EnvE2BTemplate),
+		"timeout":      common.GetEnv(common.EnvE2BTimeout),
+		"api_key":      common.GetEnv(common.EnvE2BAPIKey),
+		"region":       common.GetEnv("E2B_REGION"),
+		"domain":       common.GetEnv(common.EnvE2BDomain),
+		"access_token": common.GetEnv(common.EnvE2BAccessToken),
 	}
 }
 
-// newE2BProviderFromConfig builds the provider from a JSON config
-// map. API key / access token are read by Initialize directly
-// from env (the e2b SDK requires it).
+// newE2BProviderFromConfig builds the provider from a JSON config map.
 func newE2BProviderFromConfig(cfg map[string]any) *E2BProvider {
 	p := &E2BProvider{
-		template: configString(cfg, "TEMPLATE"),
+		template:       configString(cfg, "template"),
+		apiKey:         configString(cfg, "api_key"),
+		accessToken:    configString(cfg, "access_token"),
+		region:         configString(cfg, "region"),
+		domain:         configString(cfg, "domain"),
+		requestTimeout: time.Duration(configInt(cfg, "timeout", 30)) * time.Second,
 	}
 	if p.template == "" {
 		p.template = e2bDefaultTemplate
 	}
-	timeoutSec := configInt(cfg, "TIMEOUT", int(e2bDefaultSandboxTimeout.Seconds()))
+	if p.region == "" {
+		p.region = "us"
+	}
+	p.region = strings.ToLower(strings.TrimSpace(p.region))
+	timeoutSec := configInt(cfg, "sandbox_timeout", int(e2bDefaultSandboxTimeout.Seconds()))
 	if timeoutSec > 0 {
 		p.sandboxTimeout = time.Duration(timeoutSec) * time.Second
 	} else {
@@ -120,24 +130,35 @@ func newE2BProviderFromConfig(cfg map[string]any) *E2BProvider {
 // ProviderType returns ProviderE2B.
 func (p *E2BProvider) ProviderType() ProviderType { return ProviderE2B }
 
-// Initialize builds the e2b SDK client. The SDK reads E2B_API_KEY
-// or E2B_ACCESS_TOKEN from the Config struct, which it also
-// resolves from the same env vars. We return an error if neither
-// is set so the manager does not register a broken provider.
+// Initialize builds the E2B SDK client.
 func (p *E2BProvider) Initialize(ctx context.Context) error {
-	apiKey := os.Getenv("E2B_API_KEY")
-	accessToken := os.Getenv("E2B_ACCESS_TOKEN")
+	if p.region != "us" && p.region != "eu" {
+		return fmt.Errorf("e2b: unsupported region %q (must be us or eu)", p.region)
+	}
+	apiKey := p.apiKey
+	if apiKey == "" {
+		apiKey = common.GetEnv(common.EnvE2BAPIKey)
+	}
+	accessToken := p.accessToken
+	if accessToken == "" {
+		accessToken = common.GetEnv(common.EnvE2BAccessToken)
+	}
 	if apiKey == "" && accessToken == "" {
-		return errors.New(
-			"e2b: E2B_API_KEY or E2B_ACCESS_TOKEN env var is required " +
-				"(see §17.4 of docs/develop/agent-go-port-design.md for the risk register entry on the community e2b SDK)",
-		)
+		return errors.New("e2b: api_key or E2B_API_KEY/E2B_ACCESS_TOKEN is required")
+	}
+	domain := p.domain
+	if domain == "" {
+		domain = common.GetEnv(common.EnvE2BDomain)
+	}
+	if strings.EqualFold(p.region, "eu") && domain == "" {
+		return errors.New("e2b: domain is required for the eu region")
 	}
 	cfg := e2bsdk.Config{
-		APIKey:      apiKey,
-		AccessToken: accessToken,
-		Domain:      os.Getenv("E2B_DOMAIN"),
-		APIURL:      os.Getenv("E2B_API_URL"),
+		APIKey:         apiKey,
+		AccessToken:    accessToken,
+		Domain:         domain,
+		APIURL:         common.GetEnv(common.EnvE2BAPIURL),
+		RequestTimeout: p.requestTimeout,
 	}
 	c, err := e2bsdk.NewClient(cfg)
 	if err != nil {
@@ -162,20 +183,16 @@ func (p *E2BProvider) CreateInstance(ctx context.Context, template string) (*San
 	if !p.isInitialized() {
 		return nil, fmt.Errorf("e2b: provider not initialized")
 	}
-	// Use the per-call template if the caller passed one; otherwise
-	// fall back to the configured default.
-	tpl := template
-	if tpl == "" {
-		tpl = p.template
-	}
-	// Validate the language to fail fast on unsupported calls.
+	// The manager passes a language here; the configured template is the
+	// actual E2B template identifier.
 	lang := normalizeLanguage(template)
+	if lang == "" && template == "" {
+		lang = "python"
+	}
 	if lang == "" {
 		return nil, fmt.Errorf("e2b: unsupported language %q", template)
 	}
-	// CreateOptions.Template is the template id; e2b ignores the
-	// language hint at create time and dispatches to the right
-	// runtime based on the command at execute time.
+	tpl := p.template
 	opts := e2bsdk.CreateOptions{
 		Template: tpl,
 		Timeout:  p.sandboxTimeout,
@@ -257,7 +274,7 @@ func (p *E2BProvider) ExecuteCode(
 		TimeoutMs: timeout * 1000,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("e2b: %s %v: %w", cmd, runArgs, err)
+		return nil, fmt.Errorf("e2b: run %s: %w", cmd, err)
 	}
 	result, err := handle.Wait(ctx)
 	if err != nil {

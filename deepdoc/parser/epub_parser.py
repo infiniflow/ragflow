@@ -56,14 +56,24 @@ class RAGFlowEpubParser:
             for item_path in content_items:
                 try:
                     html_bytes = zf.read(item_path)
-                except KeyError:
+                except (KeyError, RuntimeError, zipfile.BadZipFile, NotImplementedError, EOFError) as e:
+                    # A spine item can be missing, encrypted, damaged, or stored with a
+                    # compression method zipfile does not implement. Only that chapter is
+                    # unreadable; the rest of the book still parses.
+                    logger.warning("Skipping unreadable EPUB content item '%s': %s", item_path, e)
                     continue
                 if not html_bytes:
                     logger.debug("Skipping empty EPUB content item: %s", item_path)
                     continue
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=UserWarning)
-                    sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
+                try:
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=UserWarning)
+                        sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
+                except Exception as e:
+                    # decode_text refuses a weak codec guess, and a chapter can be
+                    # mislabelled XHTML. Same reasoning as above.
+                    logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
+                    continue
                 all_sections.extend(sections)
 
             return all_sections

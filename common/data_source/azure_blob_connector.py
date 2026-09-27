@@ -105,6 +105,18 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         self.auth_mode = (auth_mode or "").strip().lower()
         self._container_client = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "AzureBlobConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            batch_size=batch_size,
+            prefix=config.get("prefix") or None,
+            allow_images=bool(config.get("allow_images", False)),
+            auth_mode=config.get("auth_mode") or None,
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------

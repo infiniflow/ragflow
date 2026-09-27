@@ -16,11 +16,9 @@ import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
-import RerunButton from './components/rerun-button';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
-  useHandleChunkCardClick,
   useUpdateChunk,
 } from './hooks';
 import styles from './index.module.less';
@@ -31,7 +29,7 @@ interface IProps {
   step?: TimelineNode;
 }
 const ChunkerContainer = (props: IProps) => {
-  const { isChange, setIsChange, step } = props;
+  const { setIsChange } = props;
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
 
   const { t } = useTranslation();
@@ -39,12 +37,11 @@ const ChunkerContainer = (props: IProps) => {
     data: { documentInfo, data = [], total },
     pagination,
     loading,
-    searchString,
-    handleInputChange,
-    available,
-    handleSetAvailable,
   } = useFetchNextChunkList();
-  const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
+  const [selectedChunkId, setSelectedChunkId] = useState<string>('');
+  const handleChunkCardClick = useCallback((chunkId: string) => {
+    setSelectedChunkId(chunkId);
+  }, []);
   const isPdf = documentInfo?.type === 'pdf';
   const {
     chunkUpdatingLoading,
@@ -144,16 +141,8 @@ const ChunkerContainer = (props: IProps) => {
     onChunkUpdatingOk(e);
   };
 
-  const handleReRunFunc = () => {
-    setIsChange(false);
-  };
   return (
     <div className="w-full h-full">
-      {isChange && (
-        <div className=" absolute top-2 right-6">
-          <RerunButton step={step} onRerun={handleReRunFunc} />
-        </div>
-      )}
       <div className={classNames('flex flex-col w-full')}>
         <Spin spinning={loading} className={styles.spin} size="large">
           <div className="h-[50px] flex flex-row justify-between items-end pb-[5px]">
@@ -164,20 +153,15 @@ const ChunkerContainer = (props: IProps) => {
               </div>
             </div>
             <ChunkResultBar
-              handleInputChange={handleInputChange}
-              searchString={searchString}
+              isReadonly={false}
               changeChunkTextMode={changeChunkTextMode}
               createChunk={showChunkUpdatingModal}
-              available={available}
-              selectAllChunk={selectAllChunk}
-              handleSetAvailable={handleSetAvailable}
             />
           </div>
           <div className=" rounded-[16px] box-border	mb-2">
             <div className="pt-[5px] pb-[5px]">
               <CheckboxSets
                 selectAllChunk={selectAllChunk}
-                switchChunk={handleSwitchChunk}
                 removeChunk={handleRemoveChunk}
                 checked={selectedChunkIds.length === data.length}
                 selectedChunkIds={selectedChunkIds}

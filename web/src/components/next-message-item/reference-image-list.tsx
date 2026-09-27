@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import Image, { useDocumentImageUrl } from '@/components/image';
 import {
   Carousel,
@@ -12,7 +28,6 @@ import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import { extractNumbersFromMessageContent } from './utils';
-
 type IProps = {
   referenceChunks?: IReferenceChunk[] | Record<string, IReferenceChunk>;
   messageContent: string;
@@ -20,6 +35,7 @@ type IProps = {
 
 type ImageItem = {
   id: string;
+  documentId: string;
   index: number;
 };
 
@@ -34,18 +50,34 @@ const getButtonVisibilityClass = (imageCount: number) => {
   return map[imageCount] || (imageCount >= 6 ? '@2xl:hidden' : '');
 };
 
-function ImagePhotoView({ id, index }: ImageItem) {
-  const src = useDocumentImageUrl(id);
+/**
+ * ImagePhotoView renders an image with PhotoView preview wrapper.
+ * Only wraps with PhotoView when the image URL is ready to prevent
+ * PhotoView from registering an empty src which causes blank preview.
+ *
+ * @param id - The image identifier used to fetch the image
+ * @param documentId - The document identifier for the image
+ * @param index - The display index of the image in the list
+ */
+function ImagePhotoView({ id, documentId, index }: ImageItem) {
+  const src = useDocumentImageUrl(id, documentId);
 
-  return (
-    <PhotoView src={src}>
-      <Image
-        id={id}
-        className="h-40 w-full"
-        label={`Fig. ${(index + 1).toString()}`}
-      />
-    </PhotoView>
+  const imageElement = (
+    <Image
+      id={id}
+      documentId={documentId}
+      className="h-40 w-full"
+      label={`[${index + 1}]`}
+    />
   );
+
+  // When src is not yet available, render image without PhotoView
+  // to avoid PhotoView caching an empty src that would show blank preview
+  if (!src) {
+    return imageElement;
+  }
+
+  return <PhotoView src={src}>{imageElement}</PhotoView>;
 }
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {
@@ -81,7 +113,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
         }}
       >
         <CarouselContent>
-          {images.map(({ id, index }) => (
+          {images.map(({ id, documentId, index }) => (
             <CarouselItem
               key={index}
               className="
@@ -92,7 +124,11 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               @2xl:basis-1/6
               "
             >
-              <ImagePhotoView id={id} index={index}></ImagePhotoView>
+              <ImagePhotoView
+                id={id}
+                documentId={documentId}
+                index={index}
+              ></ImagePhotoView>
             </CarouselItem>
           ))}
         </CarouselContent>
@@ -111,15 +147,26 @@ export function ReferenceImageList({
   const images = useMemo(() => {
     if (Array.isArray(referenceChunks)) {
       return referenceChunks
-        .map((chunk, idx) => ({ id: chunk.image_id, index: idx }))
-        .filter((item, idx) => allChunkIndexes.includes(idx) && item.id);
+        .map((chunk, idx) => ({
+          id: chunk.image_id,
+          documentId: chunk.document_id,
+          index: idx,
+        }))
+        .filter(
+          (item, idx) =>
+            allChunkIndexes.includes(idx) && item.id && item.documentId,
+        );
     }
 
     if (isPlainObject(referenceChunks)) {
       return Object.entries(referenceChunks || {}).reduce<ImageItem[]>(
         (pre, [idx, chunk]) => {
           if (allChunkIndexes.includes(Number(idx)) && chunk.image_id) {
-            return pre.concat({ id: chunk.image_id, index: Number(idx) });
+            return pre.concat({
+              id: chunk.image_id,
+              documentId: chunk.document_id,
+              index: Number(idx),
+            });
           }
           return pre;
         },

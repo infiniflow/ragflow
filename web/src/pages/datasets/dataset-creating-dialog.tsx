@@ -1,4 +1,6 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -30,16 +32,18 @@ import { z } from 'zod';
 import {
   ChunkMethodItem,
   EmbeddingModelItem,
-  ParseTypeItem,
-} from '../dataset/dataset-setting/configuration/common-item';
+} from '../dataset/setting/python/configuration/common-item';
+import { BackendVariant, pickByBackend } from '@/utils/backend-variant';
 
 const FormId = 'dataset-creating-form';
 
-const ChunkMethodName = 'chunk_method';
-
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-  const defaultModelDictionary = useFetchDefaultModelDictionary();
+  const defaultModelDictionary = useFetchDefaultModelDictionary(true);
+  const ChunkMethodName = pickByBackend<'parser_id' | 'chunk_method'>({
+    go: 'parser_id',
+    python: 'chunk_method',
+  });
 
   const FormSchema = z
     .object({
@@ -56,15 +60,16 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
-      [ChunkMethodName]: z.string().optional(),
+      // Go registers parser_id, Python registers chunk_method; only the
+      // active key is set at runtime (see ChunkMethodName).
+      parser_id: z.string().optional(),
+      chunk_method: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
+      const chunkMethod = data[ChunkMethodName];
       // When parseType === BuiltIn, chunk_method is required
-      if (
-        data.parseType === ParseType.BuiltIn &&
-        (!data[ChunkMethodName] || data[ChunkMethodName].trim() === '')
-      ) {
+      if (data.parseType === ParseType.BuiltIn && !chunkMethod?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
@@ -98,7 +103,9 @@ export function InputForm({ onOk }: IModalProps<any>) {
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const nextData =
-      parseType === ParseType.BuiltIn ? data : omit(data, ChunkMethodName);
+      parseType === ParseType.BuiltIn
+        ? omit(data, ['pipeline_id'])
+        : omit(data, [ChunkMethodName]);
     onOk?.(nextData);
   }
 
@@ -106,10 +113,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-    if (defaultModelDictionary?.embd_id) {
-      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
+  }, [parseType, form]);
+
+  // Backfill the default embedding model once the async query resolves, but
+  // never overwrite a model the user has already picked.
+  useEffect(() => {
+    if (defaultModelDictionary?.embd_id && !form.getValues('embedding_model')) {
+      form.setValue('embedding_model', defaultModelDictionary.embd_id);
     }
-  }, [parseType, form, defaultModelDictionary]);
+  }, [defaultModelDictionary, form]);
 
   return (
     <Form {...form}>
@@ -138,9 +150,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
         />
 
         <EmbeddingModelItem line={2} isEdit={false} />
-        <ParseTypeItem />
+        <ParseTypeItem
+          builtInLabelKey="knowledgeList.builtInTemplate"
+          pipelineLabelKey="knowledgeList.ingestionPipeline"
+        />
         {parseType === ParseType.BuiltIn && (
-          <ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>
+          <BackendVariant
+            go={<BuiltinPipelineItem name={ChunkMethodName} />}
+            python={<ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>}
+          />
         )}
         {parseType === ParseType.Pipeline && (
           <DataFlowSelect
@@ -167,7 +185,7 @@ export function DatasetCreatingDialog({
       <DialogContent
         className="sm:max-w-[425px] focus-visible:!outline-none flex flex-col"
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             const form = document.getElementById(FormId) as HTMLFormElement;
             form?.requestSubmit();

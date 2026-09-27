@@ -17,7 +17,7 @@ func TestBuildModelWrapperChain_NoConfig(t *testing.T) {
 	if model == nil {
 		t.Fatal("nil model")
 	}
-	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestBuildModelWrapperChain_WithRetry(t *testing.T) {
 	if model == nil {
 		t.Fatal("nil model")
 	}
-	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestBuildModelWrapperChain_WithFailover(t *testing.T) {
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.FailoverConfig = &FailoverConfigMsg{Models: []Model[*schema.Message]{fallback}}
 	model := BuildModelWrapperChain(primary, nil, cfg, nil)
-	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestBuildModelWrapperChain_WithMiddleware(t *testing.T) {
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.Middlewares = []ReActMiddleware{mw}
 	model := BuildModelWrapperChain(base, nil, cfg, nil)
-	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBuildModelWrapperChain_WithFullChain(t *testing.T) {
 	cfg.Middlewares = []ReActMiddleware{mw}
 
 	model := BuildModelWrapperChain(primary, nil, cfg, nil)
-	resp, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestBuildModelWrapperChain_NilMiddleware(t *testing.T) {
 	cfg := DefaultReActConfig[*schema.Message]()
 	cfg.Middlewares = []ReActMiddleware{nil, nil}
 	model := BuildModelWrapperChain(base, nil, cfg, nil)
-	_, err := model.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	_, err := model.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestEventSenderModelWrapper_GenerateSendsEvent(t *testing.T) {
 
 	go func() {
 		defer gen.Close()
-		resp, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+		resp, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 		if err != nil {
 			t.Errorf("Generate: %v", err)
 		}
@@ -163,7 +163,7 @@ func TestEventSenderModelWrapper_StreamSendsEvent(t *testing.T) {
 
 	go func() {
 		defer gen.Close()
-		s, err := wrapped.Stream(context.Background(), []Message{schema.UserMessage("hi")})
+		s, err := wrapped.Stream(t.Context(), []Message{schema.UserMessage("hi")})
 		if err != nil {
 			t.Errorf("Stream: %v", err)
 		}
@@ -199,7 +199,7 @@ func TestEventSenderModelWrapper_SuppressEventSend(t *testing.T) {
 	go func() {
 		defer close(done)
 		defer gen.Close()
-		_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+		_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 		if err != nil {
 			t.Errorf("Generate: %v", err)
 		}
@@ -220,7 +220,7 @@ func TestEventSenderModelWrapper_NilExecCtx(t *testing.T) {
 	base := &mockModel{}
 	base.addResp("nil-ec")
 	wrapped := wrapModelWithEventSender(base, nil)
-	resp, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestEventSenderModelWrapper_NilGenerator(t *testing.T) {
 	base.addResp("nil-gen")
 	ec := &reActExecCtx{generator: nil}
 	wrapped := wrapModelWithEventSender(base, ec)
-	resp, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestEventSenderModelWrapper_IsNilMessage(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer gen.Close()
-		_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+		_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 		if err != nil {
 			t.Errorf("Generate: %v", err)
 		}
@@ -284,7 +284,7 @@ func TestCallbackModelWrapper_Basic(t *testing.T) {
 	inner := &mockModel{}
 	inner.addResp("cb-ok")
 	wrapped := &callbackModelWrapper[*schema.Message]{inner: inner}
-	resp, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+	resp, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestCallbackModelWrapper_Stream(t *testing.T) {
 	inner := &mockModel{}
 	inner.addResp("cb-stream")
 	wrapped := &callbackModelWrapper[*schema.Message]{inner: inner}
-	s, err := wrapped.Stream(context.Background(), []Message{schema.UserMessage("hi")})
+	s, err := wrapped.Stream(t.Context(), []Message{schema.UserMessage("hi")})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestEventSenderModelWrapper_WithExecCtxGenerator(t *testing.T) {
 
 	go func() {
 		defer gen.Close()
-		_, err := wrapped.Generate(context.Background(), []Message{schema.UserMessage("hi")})
+		_, err := wrapped.Generate(t.Context(), []Message{schema.UserMessage("hi")})
 		if err != nil {
 			t.Errorf("Generate: %v", err)
 		}

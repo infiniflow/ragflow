@@ -14,6 +14,18 @@
 .content {
   flex: 1;
   .chunkText;
+  overflow-x: auto;
+
+  table {
+    border-collapse: collapse;
+
+    th,
+    td {
+      white-space: nowrap;
+      padding: 4px 8px;
+      border: 1px solid @gray11;
+    }
+  }
 }
 
 .contentEllipsis {
