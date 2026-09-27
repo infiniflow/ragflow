@@ -111,6 +111,31 @@ describe('AgentLogPage reset button (#17050)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
 
     expect(searchInput.value).toBe('');
-    expect(mockRefetchAgentLog).toHaveBeenCalledTimes(1);
+    expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keywords: '' }),
+    );
+    expect(mockRefetchAgentLog).not.toHaveBeenCalled();
   });
+
+  it('resets from page 2 to page 1 without refetching the stale query', () => {
+    mockUseFetchAgentLog.mockReturnValue({
+      data: { sessions: [], total: 20 },
+      loading: false,
+      refetch: mockRefetchAgentLog,
+    });
+    render(<AgentLogPage />);
+
+    fireEvent.click(screen.getByRole('link', { name: '2' }));
+    expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2 }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
+
+    expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1 }),
+    );
+    expect(mockRefetchAgentLog).not.toHaveBeenCalled();
+  });
+
 });
