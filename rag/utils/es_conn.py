@@ -309,8 +309,15 @@ class ESConnection(ESConnectionBase):
 
         has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
         has_explicit_sort = bool(order_by and order_by.fields)
-        if search_after is not None and (not has_explicit_sort or has_dense or offset != 0 or limit <= 0):
-            raise ValueError("search_after requires an explicit sort, offset=0 and a positive limit without dense matching")
+        if search_after is not None:
+            if not has_explicit_sort or has_dense or offset != 0 or limit <= 0:
+                raise ValueError("search_after requires an explicit sort, offset=0 and a positive limit without dense matching")
+            # Without a point-in-time search, the final sort field needs to
+            # distinguish documents tied on every preceding field.
+            if order_by.fields[-1][0] != "id":
+                raise ValueError("search_after requires id as the final unique sort field")
+            if not isinstance(search_after, (list, tuple)) or len(search_after) != len(order_by.fields):
+                raise ValueError("search_after must contain every returned sort value")
         use_search_after = search_after is None and limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
 
         if limit > 0 and not use_search_after:

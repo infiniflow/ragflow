@@ -99,12 +99,12 @@ def _build_es_response(start: int, batch_size: int, total: int):
     for i in range(start, min(start + batch_size, total)):
         hits.append(
             {
-                "_id": f"doc-{i}",
-                "_source": {"id": f"doc-{i}", "kb_id": "kb-1", "meta_fields": {"canon": "1"}},
+                "_id": f"doc-{i:05d}",
+                "_source": {"id": f"doc-{i:05d}", "kb_id": "kb-1", "meta_fields": {"canon": "1"}},
                 # ES populates ``sort`` only when the request asked for one.
                 # Including it here is what makes ``_search_with_search_after``
                 # advance instead of breaking on its first iteration.
-                "sort": [f"doc-{i}"],
+                "sort": [f"doc-{i:05d}"],
             }
         )
     return {"timed_out": False, "hits": {"total": {"value": total}, "hits": hits}}
@@ -192,7 +192,7 @@ def test_search_after_pagination_with_id_sort_returns_all_documents_beyond_max_r
 
     # Every document must be observed, not just the first ~10k.
     assert len(collected) == total
-    assert collected == [f"doc-{i}" for i in range(total)]
+    assert collected == [f"doc-{i:05d}" for i in range(total)]
     # And the second call past the window must actually use search_after.
     saw_search_after = any("search_after" in call for call in calls)
     assert saw_search_after, "search_after must engage past MAX_RESULT_WINDOW"
@@ -221,7 +221,22 @@ def test_explicit_search_after_cursor_fetches_next_page_without_replaying_prior_
         collected.extend(hit["_id"] for hit in hits)
         cursor = hits[-1]["sort"]
     assert len(collected) == MAX_RESULT_WINDOW + 2_500
-    assert collected == [f"doc-{i}" for i in range(MAX_RESULT_WINDOW + 2_500)]
+    assert collected == [f"doc-{i:05d}" for i in range(MAX_RESULT_WINDOW + 2_500)]
     assert len(calls) == 13
     assert all("from" not in query for query in calls[1:])
     assert calls[11]["search_after"] == ["doc-10999"]
+
+
+def test_explicit_cursor_requires_unique_final_id_and_full_sort_tuple():
+    conn = _make_es_connection()
+    from pytest import raises
+
+    with raises(ValueError, match="final unique sort field"):
+        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [],
+                    OrderByExpr().asc("available_int"), 0, 100,
+                    "ragflow_doc_meta_tenant-1", ["kb-1"], search_after=[1])
+    order_by = OrderByExpr().asc("available_int").asc("id")
+    with raises(ValueError, match="every returned sort value"):
+        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [],
+                    order_by, 0, 100, "ragflow_doc_meta_tenant-1", ["kb-1"],
+                    search_after=[1])
