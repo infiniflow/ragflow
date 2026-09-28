@@ -24,7 +24,10 @@ import (
 	"image"
 	"math"
 	"sync"
+	"time"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -42,6 +45,8 @@ var (
 	visionEngineOpener  func(data []byte) (deepdoctype.PDFEngine, error)
 )
 
+const visionPDFSourceBudget = 90 * time.Second
+
 func init() {
 	visionSourceFetcher = FetchBinary
 	visionEngineOpener = deepdocpdf.NewEngine
@@ -55,20 +60,34 @@ func init() {
 // chunker does at index time. The engine is opened lazily and at most once per
 // vision-enhancement call, then released via Close.
 type visionPDFCropper struct {
-	db     *gorm.DB
-	inputs map[string]any
+	invocationCtx context.Context
+	sourceCtx     context.Context
+	cancelSource  context.CancelFunc
+	db            *gorm.DB
+	inputs        map[string]any
 
 	mu          sync.Mutex
 	initialized bool
 	engine      deepdoctype.PDFEngine
 	engErr      error
+	sourceErr   error
 }
 
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
 // here; the source PDF is re-acquired lazily on the first Crop call that needs
 // it.
-func newVisionImageCropper(_ context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
-	return &visionPDFCropper{db: db, inputs: inputs}, nil
+func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	sourceCtx, cancelSource := context.WithTimeout(ctx, visionPDFSourceBudget)
+	return &visionPDFCropper{
+		invocationCtx: ctx,
+		sourceCtx:     sourceCtx,
+		cancelSource:  cancelSource,
+		db:            db,
+		inputs:        inputs,
+	}, nil
 }
 
 func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {
@@ -88,11 +107,23 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if len(positions) == 0 {
 		return nil, nil
 	}
-	if err := c.ensureEngine(ctx); err != nil {
+	if err := c.ensureEngine(); err != nil {
 		// Best-effort: a missing/unreadable source PDF means no vision
 		// description for this item, not a hard failure.
 		return nil, nil
 	}
+	if err := c.invocationCtx.Err(); err != nil {
+		return nil, err
+	}
+	// Source acquisition has its own invocation-level budget and can outlive
+	// this item's materialization deadline. Once the shared source is ready,
+	// give rendering a fresh per-item budget while still honoring invocation
+	// cancellation.
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+	renderCtx, cancelRender := context.WithTimeout(c.invocationCtx, visionMediaItemBudget)
+	defer cancelRender()
 	if c.engine == nil {
 		return nil, nil
 	}
@@ -110,7 +141,7 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
-		if err := ctx.Err(); err != nil {
+		if err := renderCtx.Err(); err != nil {
 			return nil, err
 		}
 		img, rerr := deepdocpdf.RenderPageToImage(c.engine, pn)
@@ -160,30 +191,40 @@ func pdfPagesRasterWithinVisionLimits(engine deepdoctype.PDFEngine, pageNums map
 	return true
 }
 
-func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
+func (c *visionPDFCropper) ensureEngine() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.initialized {
 		return c.engErr
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	data, err := c.acquireSource(ctx)
-	if err != nil {
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
+	if err := c.sourceCtx.Err(); err != nil {
 		c.initialized = true
 		c.engErr = err
+		c.sourceErr = err
 		return err
 	}
-	if err := ctx.Err(); err != nil {
+	data, err := c.acquireSource(c.sourceCtx)
+	if err != nil {
+		c.sourceErr = err
+		if c.sourceCtx.Err() != nil {
+			c.initialized = true
+			c.engErr = err
+		} else if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			c.initialized = true
+			c.engErr = err
+		}
 		return err
 	}
+	if err := c.sourceCtx.Err(); err != nil {
+		c.initialized = true
+		c.engErr = err
+		c.sourceErr = err
+		return err
+	}
+	c.sourceErr = nil
 	// Empty and non-PDF sources are deterministic no-op results for this
-	// invocation. Context-derived failures above remain retryable for later
-	// items, whose per-image contexts have fresh deadlines.
+	// invocation. A transient fetch error can be retried by a later item while
+	// the shared source context remains active.
 	c.initialized = true
 	if len(data) == 0 || len(data) < 5 || string(data[:5]) != "%PDF-" {
 		return nil
@@ -191,6 +232,7 @@ func (c *visionPDFCropper) ensureEngine(ctx context.Context) error {
 	eng, err := visionEngineOpener(data)
 	if err != nil {
 		c.engErr = err
+		c.sourceErr = err
 		return err
 	}
 	c.engine = eng
@@ -216,6 +258,11 @@ func (c *visionPDFCropper) acquireSource(ctx context.Context) ([]byte, error) {
 func (c *visionPDFCropper) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.cancelSource()
+	if c.sourceErr != nil && c.invocationCtx.Err() == nil {
+		common.Warn("vision enhancement: source PDF unavailable for VLM crop", zap.Error(c.sourceErr))
+		c.sourceErr = nil
+	}
 	if c.engine != nil {
 		return c.engine.Close()
 	}

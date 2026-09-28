@@ -251,6 +251,10 @@ func maybeDispatchVisionEnhancement(
 		if !vlmSlot {
 			break
 		}
+		var releaseSlotOnce sync.Once
+		releaseSlot := func() {
+			releaseSlotOnce.Do(func() { <-sem })
+		}
 		var resource *visionImage
 		func() {
 			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
@@ -285,27 +289,21 @@ func maybeDispatchVisionEnhancement(
 			}
 		}()
 		if err := ctx.Err(); err != nil {
-			if vlmSlot {
-				<-sem
-			}
+			releaseSlot()
 			break
 		}
 		if resource == nil {
-			if vlmSlot {
-				<-sem
-			}
+			releaseSlot()
 			continue
 		}
-		if !vlmSlot || (!resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData)) {
-			if vlmSlot {
-				<-sem
-			}
+		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
+			releaseSlot()
 			continue
 		}
 		wg.Add(1)
 		go func(slot int, imageData string) {
 			defer wg.Done()
-			defer func() { <-sem }()
+			defer releaseSlot()
 
 			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {

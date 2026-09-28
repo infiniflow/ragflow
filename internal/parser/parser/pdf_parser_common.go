@@ -326,10 +326,6 @@ func normalizePDFParseMethod(raw string) string {
 	return method
 }
 
-func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	return p.parseWithResult(ctx, filename, data)
-}
-
 func (p *PDFParser) validateParseMethod() error {
 	method := normalizePDFParseMethod(p.ParseMethod)
 	if _, ok := supportedPDFParseMethods[method]; ok {

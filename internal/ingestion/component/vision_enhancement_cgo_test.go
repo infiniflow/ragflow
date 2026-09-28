@@ -6,6 +6,7 @@ import (
 	"context"
 	"image"
 	"testing"
+	"time"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
@@ -334,6 +335,80 @@ func TestVisionCropImage_RetriesAfterTransientSourceFailure(t *testing.T) {
 	}
 }
 
+func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
+	oldFetcher := visionSourceFetcher
+	oldOpener := visionEngineOpener
+	t.Cleanup(func() {
+		visionSourceFetcher = oldFetcher
+		visionEngineOpener = oldOpener
+	})
+
+	fetchStarted := make(chan struct{})
+	finishFetch := make(chan struct{})
+	fetchCalls := 0
+	visionSourceFetcher = func(ctx context.Context, bucket, path string) ([]byte, error) {
+		fetchCalls++
+		select {
+		case fetchStarted <- struct{}{}:
+		default:
+		}
+		select {
+		case <-finishFetch:
+			return []byte("%PDF-fake-engine-bytes"), nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	visionEngineOpener = func([]byte) (deepdoctype.PDFEngine, error) {
+		return mockVisionEngine{}, nil
+	}
+
+	invocationCtx, cancelInvocation := context.WithCancel(context.Background())
+	defer cancelInvocation()
+	cropper, err := newVisionImageCropper(invocationCtx, nil, map[string]any{"bucket": "b", "path": "p"})
+	if err != nil {
+		t.Fatalf("newVisionImageCropper: %v", err)
+	}
+	t.Cleanup(func() { _ = cropper.Close() })
+
+	firstItemCtx, cancelFirstItem := context.WithTimeout(invocationCtx, 20*time.Millisecond)
+	defer cancelFirstItem()
+	firstResult := make(chan struct {
+		img *visionImage
+		err error
+	}, 1)
+	go func() {
+		img, err := cropper.Crop(firstItemCtx, cgoPositions())
+		firstResult <- struct {
+			img *visionImage
+			err error
+		}{img: img, err: err}
+	}()
+	<-fetchStarted
+	<-firstItemCtx.Done()
+	close(finishFetch)
+	first := <-firstResult
+	if first.err != nil {
+		t.Fatalf("first Crop: %v", first.err)
+	}
+	if first.img == nil || first.img.Raster == nil {
+		t.Fatal("first Crop returned no raster after the shared source fetch completed")
+	}
+
+	secondItemCtx, cancelSecondItem := context.WithCancel(invocationCtx)
+	defer cancelSecondItem()
+	second, err := cropper.Crop(secondItemCtx, cgoPositions())
+	if err != nil {
+		t.Fatalf("second Crop: %v", err)
+	}
+	if second == nil || second.Raster == nil {
+		t.Fatal("second Crop returned no raster after the shared source fetch completed")
+	}
+	if fetchCalls != 1 {
+		t.Fatalf("source fetch calls = %d, want 1 across item contexts", fetchCalls)
+	}
+}
+
 func TestVisionCropImage_CanceledParentDoesNotRetrySource(t *testing.T) {
 	oldFetcher := visionSourceFetcher
 	t.Cleanup(func() { visionSourceFetcher = oldFetcher })
@@ -346,7 +421,7 @@ func TestVisionCropImage_CanceledParentDoesNotRetrySource(t *testing.T) {
 		return nil, context.Canceled
 	}
 
-	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
+	cropper, err := newVisionImageCropper(ctx, nil, map[string]any{"bucket": "b", "path": "p"})
 	if err != nil {
 		t.Fatalf("newVisionImageCropper: %v", err)
 	}

@@ -132,6 +132,28 @@ func TestChunker_PassesPDFPositionsThrough(t *testing.T) {
 	}
 }
 
+func TestChunker_PreservesVisualParentMetadata(t *testing.T) {
+	items := []map[string]any{
+		{
+			"text":            "OCR text from a table image",
+			"doc_type_kwd":    "image",
+			"parent_table_id": "docx-table-1",
+			"media_order":     2,
+		},
+	}
+	out := invokeAsTokenChunker(t, items)
+	chunks := chunksFromOutput(t, out)
+	if len(chunks) == 0 {
+		t.Fatal("no chunks emitted")
+	}
+	if got, want := chunks[0]["parent_table_id"], "docx-table-1"; got != want {
+		t.Errorf("chunks[0].parent_table_id = %v, want %v", got, want)
+	}
+	if got, want := chunks[0]["media_order"], float64(2); got != want {
+		t.Errorf("chunks[0].media_order = %v, want %v", got, want)
+	}
+}
+
 // TestChunker_DropsContentWithWeightOnlyItems enforces the pre-index wire
 // contract: chunkers consume canonical "text" only.
 func TestChunker_DropsContentWithWeightOnlyItems(t *testing.T) {
