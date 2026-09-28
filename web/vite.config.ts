@@ -42,103 +42,24 @@ export default defineConfig(({ mode }) => {
   // Load env from .env file (also loads .env.local, .env.[mode], .env.[mode].local)
   const env = loadEnv(mode, process.cwd(), '');
 
-  // Try to load from .env file explicitly if API_PROXY_SCHEME not found
-  let proxyScheme = env.API_PROXY_SCHEME;
-  if (!proxyScheme) {
-    try {
-      const envLocal = loadEnv('', process.cwd(), '');
-      proxyScheme = envLocal.API_PROXY_SCHEME;
-    } catch {
-      // ignore
-    }
-  }
-  proxyScheme = proxyScheme || 'python';
-
-  console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
-
-  const proxySchemes = {
-    python: {
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
+  // The frontend serves only the Go backend.
+  const proxy = {
+    '/api/v1/admin': {
+      target: 'http://127.0.0.1:9381/',
+      changeOrigin: true,
+      ws: true,
     },
-    hybrid: {
-      '^(/v1/document)|^(/v1/llm/list)|^(/api/v1/datasets)|^(/api/v1/documents/ingest)|^(/api/v1/memories)|^(/v1/user)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
-        {
-          target: 'http://127.0.0.1:9380/',
-          changeOrigin: true,
-          ws: true,
-        },
-      '^(/api/v1/admin/sandbox)|^(/api/v1/admin/roles)|^(/api/v1/admin/roles/owner/permission)|^(/api/v1/admin/roles_with_permission)|^(/api/v1/admin/whitelist)|^(/api/v1/admin/variables)':
-        {
-          target: 'http://127.0.0.1:9381/',
-          changeOrigin: true,
-          ws: true,
-        },
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/users/me/models': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '^(/api/v1/users)|^(/api/v1/auth)|^(/api/v1/system/config)|^(/api/v1/system/version)|^(/api/v1/tenants)|^(/api/v1/chats)|^(/api/v1/searches)|^(/api/v1/files)|^(/api/v1/agents)':
-        {
-          target: 'http://127.0.0.1:9380/',
-          changeOrigin: true,
-          ws: true,
-        },
-      '^(/api/v1/chat/completions)': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
+    '/api': {
+      target: 'http://127.0.0.1:9380/',
+      changeOrigin: true,
+      ws: true,
     },
-    go: {
-      '/api/v1/admin': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1': {
-        target: 'http://127.0.0.1:9380/',
-        changeOrigin: true,
-        ws: true,
-      },
+    '/v1': {
+      target: 'http://127.0.0.1:9380/',
+      changeOrigin: true,
+      ws: true,
     },
   };
-
-  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
     plugins: [
