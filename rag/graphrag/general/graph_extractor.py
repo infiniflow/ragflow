@@ -23,6 +23,52 @@ DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_COMPLETION_DELIMITER = "<|COMPLETE|>"
 
 
+# ---------------------------------------------------------------------------
+# Loop-argument constants
+# ---------------------------------------------------------------------------
+# GraphRAG's continuation prompt is "Y"/"N" and RAGFlow uses cl100k_base's
+# first tokens for both as a logit_bias to force the LLM's next-token choice.
+# Yes, that is a constant: the BPE table and the strings are fixed for the
+# lifetime of the process. Computing the encodings on every GraphExtractor
+# instantiation loads the rank table and re-runs encode() for no semantic
+# change. Cache at module scope; populate lazily on first use so optional /
+# unusual-tiktoken environments can still import this module.
+_LOOP_LOGIT_BIAS: dict[int, int] | None = None
+_EXTRACTION_PROMPT_TOKEN_COUNT: int | None = None
+
+
+def _build_loop_logit_bias() -> dict[int, int]:
+    """Return the YES/NO logit_bias keyed on cl100k_base first tokens."""
+    global _LOOP_LOGIT_BIAS
+    if _LOOP_LOGIT_BIAS is None:
+        encoding = tiktoken.get_encoding("cl100k_base")
+        _LOOP_LOGIT_BIAS = {
+            encoding.encode("YES")[0]: 100,
+            encoding.encode("NO")[0]: 100,
+        }
+    return _LOOP_LOGIT_BIAS
+
+
+def _loop_args() -> dict[str, Any]:
+    return {"logit_bias": _build_loop_logit_bias(), "max_tokens": 1}
+
+
+def _extraction_prompt_token_count(prompt: str) -> int:
+    """Return the cl100k_base token count for ``prompt``.
+
+    For the default extraction prompt the prompt is a module constant, so we
+    cache the first computed value; for any other prompt (e.g. a custom one
+    passed at construction) we always recompute.
+    """
+    global _EXTRACTION_PROMPT_TOKEN_COUNT
+    if prompt is GRAPH_EXTRACTION_PROMPT and _EXTRACTION_PROMPT_TOKEN_COUNT is not None:
+        return _EXTRACTION_PROMPT_TOKEN_COUNT
+    count = num_tokens_from_string(prompt)
+    if prompt is GRAPH_EXTRACTION_PROMPT:
+        _EXTRACTION_PROMPT_TOKEN_COUNT = count
+    return count
+
+
 @dataclass
 class GraphExtractionResult:
     """Unipartite graph extraction result class definition."""
@@ -75,13 +121,10 @@ class GraphExtractor(Extractor):
         self._extraction_prompt = GRAPH_EXTRACTION_PROMPT
         self._max_gleanings = max_gleanings if max_gleanings is not None else ENTITY_EXTRACTION_MAX_GLEANINGS
         self._on_error = on_error or (lambda _e, _s, _d: None)
-        self.prompt_token_count = num_tokens_from_string(self._extraction_prompt)
+        self.prompt_token_count = _extraction_prompt_token_count(self._extraction_prompt)
 
         # Construct the looping arguments
-        encoding = tiktoken.get_encoding("cl100k_base")
-        yes = encoding.encode("YES")
-        no = encoding.encode("NO")
-        self._loop_args = {"logit_bias": {yes[0]: 100, no[0]: 100}, "max_tokens": 1}
+        self._loop_args = _loop_args()
 
         # Wire defaults into the prompt variables
         self._prompt_variables = {
