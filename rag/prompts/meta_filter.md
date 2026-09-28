@@ -139,4 +139,10 @@ You are a metadata filtering condition generator. Analyze the user's question an
 {% if constraints %}
 - Operator constraints: {{ constraints }}
 {% endif %}
+{% if key_descriptions %}
+9. **What the keys mean** (follow these rules when choosing values — they override the raw value list):
+{% for kd in key_descriptions %}
+   - **{{ kd.key }}**: {{ kd.description }}
+{% endfor %}
+{% endif %}
 
