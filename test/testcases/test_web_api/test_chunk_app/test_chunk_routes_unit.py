@@ -19,6 +19,7 @@ import contextlib
 import inspect
 import importlib.util
 import sys
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -224,14 +225,7 @@ def _load_chunk_module(monkeypatch):
     constants_mod.LLMType = _DummyLLMType
     constants_mod.ParserType = _DummyParserType
     constants_mod.PAGERANK_FLD = "pagerank_flt"
-    constants_mod.TaskStatus = SimpleNamespace(
-        UNSTART=SimpleNamespace(value="0"),
-        RUNNING=SimpleNamespace(value="1"),
-        CANCEL=SimpleNamespace(value="2"),
-        DONE=SimpleNamespace(value="3"),
-        FAIL=SimpleNamespace(value="4"),
-        SCHEDULE=SimpleNamespace(value="5"),
-    )
+    constants_mod.TaskStatus = StrEnum("TaskStatus", {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4", "SCHEDULE": "5"})
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     string_utils_mod = ModuleType("common.string_utils")
@@ -243,6 +237,7 @@ def _load_chunk_module(monkeypatch):
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
     metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
     metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.filter_doc_ids_by_metadata = lambda *_args, **_kwargs: []
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
@@ -255,7 +250,11 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     pagination_utils_mod = ModuleType("api.utils.pagination_utils")
-    pagination_utils_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: (1, 30)
+    pagination_utils_mod.DEFAULT_PAGE = 1
+    pagination_utils_mod.DEFAULT_PAGE_SIZE = 30
+    pagination_utils_mod.validate_rest_api_page = lambda page: int(page)
+    pagination_utils_mod.validate_rest_api_page_size = lambda page_size: int(page_size)
+    pagination_utils_mod.validate_rest_api_ids = lambda ids, *_args, **_kwargs: ids
     monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
@@ -500,6 +499,7 @@ def _load_chunk_module(monkeypatch):
             return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
@@ -835,7 +835,7 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     module.request = SimpleNamespace(args={}, headers={})
     module.settings.docStoreConn.inserted.clear()
     store_calls = []
-    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary: store_calls.append((bucket, name, binary)))
+    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary, **_kwargs: store_calls.append((bucket, name, binary)))
 
     valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     monkeypatch.setattr(
