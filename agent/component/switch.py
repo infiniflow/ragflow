@@ -77,7 +77,12 @@ class Switch(ComponentBase, ABC):
                 self.set_input_value(item["cpn_id"], cpn_v)
                 operatee = item.get("value", "")
                 if item["operator"] in ("=", "≠", "==", "!=", "<>") and isinstance(cpn_v, numbers.Number):
-                    operatee = float(operatee)
+                    try:
+                        operatee = float(operatee)
+                    except (TypeError, ValueError):
+                        # An unparseable comparison value is a non-match, not a crash.
+                        res.append(False)
+                        continue
                 res.append(self.process_operator(cpn_v, item["operator"], operatee))
                 if cond["logical_operator"] != "and" and any(res):
                     self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
