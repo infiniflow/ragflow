@@ -229,7 +229,8 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if kind, _ := cm["kc_kind"].(string); kind == "graph" {
+		// knowledge_graph_kwd discriminates the graph row.
+		if kind, _ := cm["knowledge_graph_kwd"].(string); kind == "graph" {
 			graphChunks++
 		}
 	}
@@ -349,10 +350,10 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	installProseDeps(t)
 	chunks := runVariant(t, "wiki", nil)
-	// wiki produces a "page" chunk (kind stored as kc_kind).
+	// wiki produces a "page" chunk (kind carried by compile_kwd=wiki_page).
 	foundPage := false
 	for _, c := range chunks {
-		if kind, _ := c["kc_kind"].(string); kind == "page" {
+		if kind, _ := c["compile_kwd"].(string); kind == "wiki_page" {
 			foundPage = true
 		}
 	}
@@ -430,7 +431,7 @@ func invokeWikiCompiler(t *testing.T, inputs map[string]any) []map[string]any {
 
 func hasWikiPageChunk(chunks []map[string]any) bool {
 	for _, cm := range chunks {
-		if kind, _ := cm["kc_kind"].(string); kind == "page" {
+		if kind, _ := cm["compile_kwd"].(string); kind == "wiki_page" {
 			return true
 		}
 	}
@@ -535,7 +536,7 @@ func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	chunks := runVariant(t, "tree", nil)
 	foundRoot := false
 	for _, c := range chunks {
-		if kind, _ := c["kc_kind"].(string); kind == "root" {
+		if kind, _ := c["raptor_kwd"].(string); kind == "root" {
 			foundRoot = true
 		}
 	}
@@ -551,7 +552,7 @@ func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	}
 	foundRootCoarse := false
 	for _, c := range chunksCoarse {
-		if kind, _ := c["kc_kind"].(string); kind == "root" {
+		if kind, _ := c["raptor_kwd"].(string); kind == "root" {
 			foundRootCoarse = true
 		}
 	}
@@ -570,7 +571,7 @@ func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 	chunks := runVariant(t, "mindmap", nil)
 	entityCount := 0
 	for _, c := range chunks {
-		kind, _ := c["kc_kind"].(string)
+		kind, _ := c["knowledge_graph_kwd"].(string)
 		if kind == "entity" {
 			entityCount++
 			if _, ok := c["name_kwd"]; !ok {
@@ -764,7 +765,7 @@ func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 	foundRoot := false
 	for _, r := range raw {
 		if cm, ok := r.(map[string]any); ok {
-			if k, _ := cm["kc_kind"].(string); k == "root" {
+			if k, _ := cm["raptor_kwd"].(string); k == "root" {
 				foundRoot = true
 			}
 		}
@@ -876,7 +877,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if cm["compile_kwd"] == "wiki_page" && cm["kc_kind"] == "page" && cm["slug_kwd"] == "entity/person/alpha" {
+		if cm["compile_kwd"] == "wiki_page" && cm["slug_kwd"] == "entity/person/alpha" {
 			page = cm
 			break
 		}
@@ -1441,9 +1442,8 @@ func TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks(t *testing.T) {
 }
 
 // TestProductsToChunkDocs_PageVsSectionCompileKWD locks the page/section
-// discriminator: a wiki page product is stamped compile_kwd="wiki_page" and a
-// wiki section product compile_kwd="wiki_section", so a page search on
-// compile_kwd="wiki_page" (engine_service / kcWikiPageStore) returns pages only.
+// discriminator (compile_kwd) and the schema-column contract: the page body goes
+// to md_with_weight and no Go-only field (kc_*, tenant_id) is emitted.
 func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 	page := common.Product{
 		ID: "page-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
@@ -1460,17 +1460,33 @@ func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 		t.Fatalf("productsToChunkDocs: %v", err)
 	}
 	var pageKWD, sectionKWD string
-	var sectionParent string
+	var sectionParent, pageBody, sectionBody string
 	for _, d := range docs {
-		// Product.Meta is preserved under the kc_* round-trip keys; the page/
-		// section kind lives at "kc_kind".
-		kind, _ := d.GetExtraString("kc_kind")
-		if kind == "page" {
-			pageKWD, _ = d.GetExtraString("compile_kwd")
+		// compile_kwd IS the page/section discriminator (wiki_page /
+		// wiki_section); there is no separate kind column.
+		kind, _ := d.GetExtraString("compile_kwd")
+		if kind == "wiki_page" {
+			pageKWD = kind
+			pageBody, _ = d.GetExtraString("md_with_weight")
+			// Python's page row has only title_tks; the Infinity writer folds
+			// title_sm_tks into docnm.
+			if _, ok := d.ToMap()["title_sm_tks"]; ok {
+				t.Errorf("page row must not carry title_sm_tks (docnm would become map-order dependent)")
+			}
 		}
-		if kind == "section" {
-			sectionKWD, _ = d.GetExtraString("compile_kwd")
+		if kind == "wiki_section" {
+			sectionKWD = kind
 			sectionParent, _ = d.GetExtraString("parent_kwd")
+			sectionBody, _ = d.GetExtraString("md_with_weight")
+		}
+		// No Go-only field: Infinity rejects an unknown column.
+		for k := range d.Extra {
+			if strings.HasPrefix(k, "kc_") {
+				t.Errorf("compiled row carries the non-schema field %q", k)
+			}
+		}
+		if _, ok := d.GetExtraString("tenant_id"); ok {
+			t.Errorf("compiled row must not carry tenant_id (not a chunk column)")
 		}
 	}
 	if pageKWD != "wiki_page" {
@@ -1481,6 +1497,12 @@ func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 	}
 	if sectionParent != "page-id" {
 		t.Errorf("section parent_kwd = %q, want page-id", sectionParent)
+	}
+	if pageBody != "# Alpha\n\nBody" {
+		t.Errorf("page md_with_weight = %q, want the rendered page body", pageBody)
+	}
+	if sectionBody != "" {
+		t.Errorf("section md_with_weight = %q, want empty (only page rows carry the page body)", sectionBody)
 	}
 }
 
