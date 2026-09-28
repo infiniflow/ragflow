@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -115,7 +112,7 @@
 
 ### 🍭 **"الجودة في الداخل، الجودة في الخارج"**
 
-- [الفهم العميق للمستندات](./deepdoc/README.md) لاستخراج المعرفة من البيانات غير المنظمة
+- الفهم العميق للمستندات لاستخراج المعرفة من البيانات غير المنظمة
   ذات التنسيقات المعقدة.
 - يجد "إبرة في كومة قش بيانات" من الرموز غير المحدودة حرفيًا.
 
@@ -169,7 +166,7 @@
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): مطلوب فقط عند استخدام Sandbox للحاويات Self-Managed.
 
-لا يتطلب نشر Docker تثبيت Go على المضيف. ويتطلب نشر GPU أيضًا NVIDIA Container Toolkit. يتطلب Self-Managed container Sandbox تثبيت gVisor وإعداده؛ أما موفرو Sandbox الآخرون فلا يتطلبون تثبيت gVisor على مضيف RAGFlow.
+لا يتطلب نشر Docker تثبيت Go على المضيف. يتطلب Self-Managed container Sandbox تثبيت gVisor وإعداده؛ أما موفرو Sandbox الآخرون فلا يتطلبون تثبيت gVisor على مضيف RAGFlow.
 
 > [!TIP]
 > إذا لم تقم بتثبيت Docker على جهازك المحلي (Windows أو Mac أو Linux)، راجع [تثبيت Docker Engine](https://docs.docker.com/engine/install/).
@@ -209,36 +206,25 @@
 > جميع الصور Docker مصممة لمنصات x86. لا نعرض حاليًا صور Docker لـ ARM64.
 > إذا كنت تستخدم نظامًا أساسيًا ARM64، فاتبع [هذا الدليل](https://ragflow.io/docs/dev/build_docker_image) لإنشاء صورة Docker متوافقة مع نظامك.
 
-> يقوم الأمر أدناه بتنزيل إصدار `v0.27.2` من الصورة RAGFlow Docker. راجع الجدول التالي للحصول على أوصاف لإصدارات RAGFlow المختلفة. لتنزيل إصدار RAGFlow مختلف عن `v0.27.2`، قم بتحديث المتغير `RAGFLOW_IMAGE` وفقًا لذلك في **docker/.env** قبل استخدام `docker compose` لبدء تشغيل الخادم.
+> اكتب `RAGFLOW_IMAGE=ragflow:go-local` في **docker/.env** قبل التشغيل. هدف البناء الرسمي لصورة Go هو `linux/amd64`.
 
 ```bash
    cd ragflow/docker
 
-   git checkout v0.27.2
+   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
-   # Use CPU for DeepDoc tasks:
-   docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-> ملاحظة: قبل `v0.22.0`، قدمنا ​​كلتا الصورتين بنماذج embedding وصورًا رفيعة بدون نماذج embedding. التفاصيل على النحو التالي:
-
-| RAGFlow علامة الصورة | حجم الصورة (جيجابايت) | هل لديه نماذج embedding؟ | مستقر؟        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1 | &approx;9 | ✔️ | إصدار مستقر |
-| v0.21.1-slim | &approx;2 | ❌ | إصدار مستقر |
-
-> بدءًا من `v0.22.0`، نقوم بشحن الإصدار النحيف فقط ولم نعد نلحق اللاحقة **-slim** بعلامة الصورة.
+> يستخدم DeepDoc في الإصدار مفتوح المصدر 1.0 استدلال CPU لتحليل التخطيط وOCR والتعرف على الجداول، حتى عند تحديد ملف تعريف GPU.
 
 4. التحقق من حالة الخادم بعد تشغيل الخادم:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose --env-file .env -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
    _النتيجة التالية تؤكد الإطلاق الناجح للنظام:_
@@ -262,78 +248,14 @@
    > باستخدام الإعدادات الافتراضية، ما عليك سوى إدخال `http://IP_OF_YOUR_MACHINE` (**من دون** رقم المنفذ) كإعداد افتراضي
    > HTTP يمكن حذف منفذ العرض `80` عند استخدام التكوينات الافتراضية.
    >
-6. في [service_conf.yaml.template](./docker/service_conf.yaml.template)، حدد المصنع LLM المطلوب في `user_default_llm` وقم بالتحديث
-   الحقل `API_KEY` مع مفتاح API المقابل.
+6. بعد تسجيل الدخول، أضف LLM ونموذج embedding ونموذج reranker من صفحة موفري النماذج، ثم أدخل اسم النموذج وعنوان الخدمة ومفتاح API.
 
    > راجع [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) لمزيد من المعلومات.
    >
 
    _العرض بدأ!_
 
-## 🔧 التكوينات
-
-عندما يتعلق الأمر بتكوينات النظام، ستحتاج إلى إدارة الملفات التالية:
-
-- [.env](./docker/.env): يحتفظ بالإعدادات الأساسية للنظام، مثل `SVR_HTTP_PORT`، `MYSQL_PASSWORD`، و
-  `MINIO_PASSWORD`.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): تكوين الخدمات الخلفية. سيتم ملء متغيرات البيئة في هذا الملف تلقائيًا عند بدء تشغيل الحاوية Docker. ستكون أي متغيرات بيئة تم تعيينها داخل حاوية Docker متاحة للاستخدام، مما يسمح لك بتخصيص سلوك الخدمة استنادًا إلى بيئة النشر.
-- [docker-compose.yml](./docker/docker-compose.yml): يعتمد النظام على [docker-compose.yml](./docker/docker-compose.yml) لبدء التشغيل.
-
-> يوفر الملف [./docker/README](./docker/README.md) وصفًا تفصيليًا لإعدادات البيئة والخدمة
-> التكوينات التي يمكن استخدامها كـ `${ENV_VARS}` في ملف [service_conf.yaml.template](./docker/service_conf.yaml.template).
-
-لتحديث منفذ العرض الافتراضي HTTP (80)، انتقل إلى [docker-compose.yml](./docker/docker-compose.yml) وقم بتغيير `80:80`
-إلى `<YOUR_SERVING_PORT>:80`.
-
-تتطلب تحديثات التكوينات المذكورة أعلاه إعادة تشغيل جميع الحاويات لتصبح سارية المفعول:
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### تبديل محرك المستندات من Elasticsearch إلى Infinity
-
-RAGFlow يستخدم Elasticsearch بشكل افتراضي لتخزين النص الكامل والمتجهات. للتبديل إلى [Infinity](https://github.com/infiniflow/infinity/)، اتبع الخطوات التالية:
-
-1. إيقاف كافة الحاويات قيد التشغيل:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> `-v` سوف يحذف docker وحدات تخزين الحاوية، وسيتم مسح البيانات الموجودة.
-
-2. اضبط `DOC_ENGINE` في **docker/.env** على `infinity`.
-3. ابدأ الحاويات:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> التبديل إلى Infinity على جهاز Linux/arm64 غير مدعوم رسميًا بعد.
-
-## 🔧 أنشئ صورة Docker
-
-يبلغ حجم هذه الصورة حوالي 2 غيغابايت وتعتمد على خدمات LLM وembedding الخارجية.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-أو إذا كنت خلف وكيل، فيمكنك تمرير وسيطات الوكيل:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 إطلاق الخدمة من المصدر للتطوير
+### 🔨 إطلاق الخدمة من المصدر للتطوير
 
 1. ثبّت إصدار Go المحدد في `go.mod` (حاليًا Go 1.27)، وClang 20 وLLD 20 وCMake 4.0 أو أحدث وملفات تطوير PCRE2. تعتمد خدمات Go على CGO والمكتبات الأصلية؛ ويضبط [build.sh](./build.sh) خيارات البناء اللازمة.
 2. استنسخ المستودع وجهّز المكتبات الأصلية وملفات النماذج المطلوبة للبناء، ثم ابنِ خدمات Go:
@@ -353,11 +275,8 @@ docker build --platform linux/amd64 \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   أضف السطر التالي إلى `/etc/hosts` لحل أسماء المضيفين المحددة في **conf/service_conf.yaml** إلى `127.0.0.1`:
+   تتصل خدمات Go التي تعمل من المصدر بـ Kvrocks عبر `localhost:6379`، ولا يتطلب التكوين المرفق تعديل `/etc/hosts`.
 
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
 4. بعد اكتمال ترحيل قاعدة البيانات، شغّل الخدمات بالترتيب. نفّذ كل أمر في نافذة طرفية مستقلة ومن جذر المستودع، واترك نوافذ الخدمات الأربع مفتوحة:
 
    ```bash
@@ -373,7 +292,7 @@ docker build --platform linux/amd64 \
    cd web
    npm install
    ```
-8. إطلاق خدمة الواجهة الأمامية:
+5. إطلاق خدمة الواجهة الأمامية:
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
@@ -382,7 +301,7 @@ docker build --platform linux/amd64 \
    _النتيجة التالية تؤكد الإطلاق الناجح للنظام:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. أوقف خدمة الواجهة الأمامية والخلفية RAGFlow بعد اكتمال التطوير:
+بعد اكتمال التطوير، أوقف خدمات RAGFlow:
 
    ```bash
    # اضغط Ctrl+C في نافذة كل خدمة لإيقافها.

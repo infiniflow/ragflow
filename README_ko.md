@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -97,7 +94,7 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- [심층 문서 이해](./deepdoc/README.md)를 기반으로 복잡한 형식의 비정형 데이터에서 지식을 추출합니다.
+- 심층 문서 이해를 기반으로 복잡한 형식의 비정형 데이터에서 지식을 추출합니다.
 - 문자 그대로 무한한 토큰에서 "데이터 속의 바늘"을 찾아냅니다.
 
 ### 🍱 **템플릿 기반의 chunking**
@@ -150,7 +147,7 @@
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-Managed 컨테이너 Sandbox를 사용하는 경우에만 필요합니다.
 
-Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. GPU 배포에는 NVIDIA Container Toolkit도 필요합니다. Self-Managed 컨테이너 Sandbox는 gVisor 설치와 설정이 필요하지만, 다른 Sandbox 공급자는 RAGFlow 호스트에 gVisor를 설치할 필요가 없습니다.
+Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Managed 컨테이너 Sandbox는 gVisor 설치와 설정이 필요하지만, 다른 Sandbox 공급자는 RAGFlow 호스트에 gVisor를 설치할 필요가 없습니다.
 
 > [!TIP]
 > 로컬 머신(Windows, Mac, Linux)에 Docker가 설치되지 않은 경우, [Docker 엔진 설치](https://docs.docker.com/engine/install/)를 참조하세요.
@@ -190,36 +187,25 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. GPU 배
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.27.2 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.27.2와 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오.
+   > 시작하기 전에 **docker/.env**에 `RAGFLOW_IMAGE=ragflow:go-local`을 설정하세요. Go 이미지의 공식 빌드 대상은 `linux/amd64`입니다.
 
    ```bash
    cd ragflow/docker
 
-   git checkout v0.27.2
+   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
    # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
 
-   # Use CPU for DeepDoc tasks:
-   docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-> 참고: `v0.22.0` 이전 버전에서는 embedding 모델이 포함된 이미지와 embedding 모델이 포함되지 않은 slim 이미지를 모두 제공했습니다. 자세한 내용은 다음과 같습니다:
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
+> RAGFlow 오픈 소스 1.0의 DeepDoc은 레이아웃 분석, OCR, 표 인식에 CPU 추론을 사용합니다.
 
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose --env-file .env -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
    _다음 출력 결과로 시스템이 성공적으로 시작되었음을 확인합니다:_
@@ -238,69 +224,13 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. GPU 배
 
 2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
-3. [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일에서 원하는 LLM 팩토리를 `user_default_llm`에 선택하고, `API_KEY` 필드를 해당 API 키로 업데이트하세요.
+3. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
 
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
    _이제 쇼가 시작됩니다!_
 
-## 🔧 설정
-
-시스템 설정과 관련하여 다음 파일들을 관리해야 합니다:
-
-- [.env](./docker/.env): `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, `MINIO_PASSWORD`와 같은 시스템의 기본 설정을 포함합니다.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): 백엔드 서비스를 구성합니다.
-- [docker-compose.yml](./docker/docker-compose.yml): 시스템은 [docker-compose.yml](./docker/docker-compose.yml)을 사용하여 시작됩니다.
-
-[.env](./docker/.env) 파일의 변경 사항이 [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일의 내용과 일치하도록 해야 합니다.
-
-> [./docker/README](./docker/README.md) 파일 ./docker/README은 service_conf.yaml.template 파일에서 ${ENV_VARS}로 사용할 수 있는 환경 설정과 서비스 구성에 대한 자세한 설명을 제공합니다.
-
-기본 HTTP 서비스 포트(80)를 업데이트하려면 [docker-compose.yml](./docker/docker-compose.yml) 파일에서 `80:80`을 `<YOUR_SERVING_PORT>:80`으로 변경하세요.
-
-> 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
->
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Elasticsearch 에서 Infinity 로 문서 엔진 전환
-
-RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 벡터를 저장합니다. [Infinity]로 전환(https://github.com/infiniflow/infinity/), 다음 절차를 따르십시오.
-
-1. 실행 중인 모든 컨테이너를 중지합니다.
-   ```bash
-   $docker compose-f docker/docker-compose.yml down -v
-   ```
-   Note: `-v` 는 docker 컨테이너의 볼륨을 삭제하고 기존 데이터를 지우며, 이 작업은 컨테이너를 중지하는 것과 동일합니다.
-2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
-3. 컨테이너 부팅:
-   ```bash
-   $docker compose-f docker/docker-compose.yml up -d
-   ```
-   > [!WARNING]
-   > Linux/arm64 시스템에서 Infinity로 전환하는 것은 공식적으로 지원되지 않습니다.
-
-## 🔧 소스 코드로 Docker 이미지를 컴파일합니다
-
-이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-프록시 환경인 경우, 프록시 인수를 전달할 수 있습니다：
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 소스 코드로 서비스를 시작합니다.
+### 🔨 소스 코드로 서비스를 시작합니다.
 
 1. `go.mod`에 지정된 Go 버전(현재 Go 1.27), Clang 20, LLD 20, CMake 4.0 이상, PCRE2 개발 파일을 설치합니다. Go 서비스는 CGO와 네이티브 라이브러리에 의존하며 [build.sh](./build.sh)가 필요한 빌드 매개변수를 설정합니다.
 
@@ -322,11 +252,8 @@ docker build --platform linux/amd64 \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   `/etc/hosts` 에 다음 줄을 추가하여 **conf/service_conf.yaml** 에 지정된 모든 호스트를 `127.0.0.1` 로 해결합니다:
+   소스에서 실행하는 Go 서비스는 `localhost:6379`로 Kvrocks에 연결하므로 제공된 구성에서는 `/etc/hosts`를 수정할 필요가 없습니다.
 
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
 
 4. 데이터베이스 마이그레이션 후 서비스를 순서대로 시작합니다. 각 명령은 저장소 루트에서 별도의 터미널로 실행하고, 네 개의 서비스 터미널을 계속 열어 둡니다:
 
@@ -344,7 +271,7 @@ docker build --platform linux/amd64 \
    npm install
    ```
 
-8. 프론트엔드 서비스를 시작합니다:
+5. 프론트엔드 서비스를 시작합니다:
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
@@ -355,7 +282,7 @@ docker build --platform linux/amd64 \
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 
-9. 개발을 마치면 각 서비스 터미널에서 Ctrl+C를 눌러 서비스를 중지합니다.
+개발을 마치면 각 서비스 터미널에서 Ctrl+C를 눌러 서비스를 중지합니다.
 
    ```bash
    # 각 서비스 터미널에서 Ctrl+C를 눌러 프로세스를 중지하세요.

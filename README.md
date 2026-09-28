@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -112,7 +109,7 @@ releases! 🌟
 
 ### 🍭 **"Quality in, quality out"**
 
-- [Deep document understanding](./deepdoc/README.md)-based knowledge extraction from unstructured data with complicated
+- Deep document understanding-based knowledge extraction from unstructured data with complicated
   formats.
 - Finds "needle in a data haystack" of literally unlimited tokens.
 
@@ -170,7 +167,7 @@ releases! 🌟
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only when using the Self-Managed container Sandbox.
 
-Docker deployment does not require Go on the host. GPU deployment also requires NVIDIA Container Toolkit. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
+Docker deployment does not require Go on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
 
 > [!TIP]
 > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -206,7 +203,7 @@ Docker deployment does not require Go on the host. GPU deployment also requires 
 3. Build the Go image and start the server with the Go Compose configuration:
 
 > [!NOTE]
-> The official Go image build target is `linux/amd64`. CPU is the default deployment mode. GPU deployment requires NVIDIA Container Toolkit. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) for platform, resource, and macOS requirements.
+> The official Go image build target is `linux/amd64`. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) for platform, resource, and macOS requirements.
 
 > Build the Go image before the first deployment. Build time depends on network and machine performance.
 
@@ -219,7 +216,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
 
 In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
 
-> To use the GPU Compose profile, set `DEVICE=gpu` in **docker/.env** and ensure the host has the NVIDIA container runtime configured. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition. The GPU configuration is for other GPU-capable components or external model services.
+> In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 
 4. Check service status and API readiness after startup:
 

@@ -69,7 +69,7 @@ Actual resource usage depends on the selected document engine, parser, model pro
 
 ### Which architectures or devices does RAGFlow support?
 
-The documented Go image build targets Linux AMD64 and supports CPU deployments and NVIDIA GPU deployments. Building on another architecture requires a matching dependency image and native libraries, and the selected document engine must support that architecture. The commands in the [quickstart guide](./quickstart.mdx#start-up-the-server) target AMD64.
+The documented Go image build targets Linux AMD64. Building on another architecture requires a matching dependency image and native libraries, and the selected document engine must support that architecture. The commands in the [quickstart guide](./quickstart.mdx#start-up-the-server) target AMD64.
 
 ---
 
@@ -118,7 +118,7 @@ The Go API and ingestor initialize the in-process DeepDoc backend. Check their l
 
 ### Does the open-source 1.0 Go DeepDoc backend support GPU inference?
 
-No. The RAGFlow open-source 1.0 Go DeepDoc backend runs layout analysis, OCR, and table recognition on CPU. Starting the `ragflow-gpu` Compose service or installing NVIDIA Container Toolkit does not enable DeepDoc GPU inference. GPU resources remain available only to other components or external model services that explicitly support them.
+No. The RAGFlow open-source 1.0 Go DeepDoc backend runs layout analysis, OCR, and table recognition on CPU.
 
 ---
 
@@ -144,7 +144,7 @@ Check that the Go API and Admin services started, then review the RAGFlow contai
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` from the repository root when using the CPU Compose service; use `ragflow-gpu` for the GPU service). The Go services log these startup messages:
+You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` from the repository root). The Go services log these startup messages:
 
 ```text
 Starting api server: ...
@@ -205,7 +205,6 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
    docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
    ```
 
-   Use `ragflow-gpu` instead of `ragflow-cpu` for the GPU Compose service.
 
 2. Confirm that the Go ingestor is running and sending heartbeats to admin. Check admin's service status for the ingestor; an API health response alone does not confirm that workers are consuming tasks.
 3. Check the NATS connection and JetStream consumer in the logs. Look for pull errors, consumer initialization failures, and repeated task failures.
@@ -219,7 +218,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists, check the ingestor and container logs for an out-of-memory error. Make sure the Docker runtime or host has enough memory available for the RAGFlow service, and reduce concurrent parsing work if necessary.
 
 :::note
-The standard Go Compose file does not apply `MEM_LIMIT` to `ragflow-cpu` or `ragflow-gpu`; that variable limits selected dependency services. Changing it does not increase the memory available to the Go ingestor. Adjust the Docker runtime or host allocation, or add an explicit service-level memory limit in a Compose override if your environment requires one.
+The standard Go Compose file does not apply `MEM_LIMIT` to `ragflow-cpu`; that variable limits selected dependency services. Changing it does not increase the memory available to the Go ingestor. Adjust the Docker runtime or host allocation, or add an explicit service-level memory limit in a Compose override if your environment requires one.
 :::
 
 ![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
@@ -242,7 +241,7 @@ From the repository root, follow the Go service logs written to the mounted log 
 tail -f docker/ragflow-logs/*.log
 ```
 
-To view the container's combined output, use `docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` (or `ragflow-gpu` for a GPU deployment).
+To view the container's combined output, use `docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu`.
 
 ---
 
@@ -260,7 +259,7 @@ To view the container's combined output, use `docker compose --env-file docker/.
    docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
    ```
 
-   Use `ragflow-gpu` instead of `ragflow-cpu` for a GPU deployment. Check the `nats` and selected document engine services in the same Compose project when diagnosing ingestion or indexing.
+   Check the `nats` and selected document engine services in the same Compose project when diagnosing ingestion or indexing.
 
 2. Use the [system health API](./references/http_api_reference.md#check-system-health) to check the database, Kvrocks cache, document engine, object storage, and message queue. The response field named `redis` reports the Kvrocks check in the Go deployment; `message_queue` reports the queue connection.
 
@@ -345,7 +344,7 @@ The Go API returns HTTP 404 with `Not Found: <path>` when a request does not mat
 
 For normal UI and API access, use `http://<IP_OF_YOUR_MACHINE>` when `SVR_WEB_HTTP_PORT` is 80, or include the configured web port. Nginx forwards API traffic to the Go API on internal port `9380` and Admin traffic to internal port `9381`.
 
-The Go Compose deployment uses `SVR_HTTP_PORT` and `ADMIN_SVR_HTTP_PORT` for the directly published API and Admin host ports. For normal browser and API access, prefer the Nginx web port so the same public URL works for CPU and GPU deployments.
+The Go Compose deployment uses `SVR_HTTP_PORT` and `ADMIN_SVR_HTTP_PORT` for the directly published API and Admin host ports. For normal browser and API access, prefer the Nginx web port.
 
 ---
 

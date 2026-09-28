@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="лицензия">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -114,7 +111,7 @@
 
 ### 🍭 **«Качество на входе — качество на выходе»**
 
-- Извлечение знаний на основе [глубокого понимания документов](./deepdoc/README.md) из неструктурированных данных со сложным форматированием.
+- Извлечение знаний на основе глубокого понимания документов из неструктурированных данных со сложным форматированием.
 - Поиск «иголки в стоге данных» при практически неограниченном количестве токенов.
 
 ### 🍱 **Шаблонный чанкинг**
@@ -167,7 +164,7 @@
 - Docker ≥ 24.0.0 и Docker Compose ≥ v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/) — требуется только для Self-Managed контейнерной Sandbox.
 
-Для Docker-развёртывания не требуется устанавливать Go на хост. Для GPU-развёртывания также нужен NVIDIA Container Toolkit. Для Self-Managed контейнерной Sandbox необходимо установить и настроить gVisor; другим провайдерам Sandbox gVisor на хосте RAGFlow не требуется.
+Для Docker-развёртывания не требуется устанавливать Go на хост. Для Self-Managed контейнерной Sandbox необходимо установить и настроить gVisor; другим провайдерам Sandbox gVisor на хосте RAGFlow не требуется.
 
 > [!TIP]
 > Если Docker ещё не установлен (Windows, Mac или Linux), см. [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -211,31 +208,20 @@
 ```bash
    cd ragflow/docker
 
-   git checkout v0.27.2
+   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
    # Опционально: используйте стабильный тег (см. релизы)
    # Это гарантирует, что entrypoint.sh соответствует версии образа.
 
-   # CPU-режим для DeepDoc:
-   docker compose -f docker-compose.yml up -d
-
-   # GPU-ускорение DeepDoc:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-> До версии `v0.22.0` существовали образы с моделями эмбеддингов и slim-образы без них:
-
-| Тег образа RAGFlow | Размер (ГБ) | Есть модели эмбеддингов? | Стабильный?      |
-|--------------------|-------------|--------------------------|------------------|
-| v0.21.1            | ≈9          | ✔️                       | Стабильный релиз |
-| v0.21.1-slim       | ≈2          | ❌                        | Стабильный релиз |
-
-> Начиная с `v0.22.0` поставляется только slim-редакция, суффикс `-slim` больше не используется.
+> В открытой версии RAGFlow 1.0 DeepDoc использует CPU для анализа макета, OCR и распознавания таблиц.
 
 4. Проверьте статус после запуска:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose --env-file .env -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
    _Успешный запуск выглядит так:_
@@ -256,73 +242,13 @@
 
    > При стандартных настройках достаточно `http://IP_ВАШЕЙ_МАШИНЫ` (порт 80 можно не указывать).
 
-6. В файле [service_conf.yaml.template](./docker/service_conf.yaml.template) выберите нужного провайдера LLM в `user_default_llm` и укажите `API_KEY`.
+6. После входа добавьте LLM, модель эмбеддингов и reranker на странице поставщиков моделей, затем укажите имя модели, адрес сервиса и API-ключ.
 
    > Подробнее: [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
 
    _Готово!_
 
-## 🔧 Конфигурация
-
-Основные файлы конфигурации:
-
-- [.env](./docker/.env) — базовые настройки системы (`SVR_HTTP_PORT`, `MYSQL_PASSWORD`, `MINIO_PASSWORD` и др.).
-- [service_conf.yaml.template](./docker/service_conf.yaml.template) — конфигурация бэкенд-сервисов. Переменные окружения подставляются автоматически при старте контейнера.
-- [docker-compose.yml](./docker/docker-compose.yml) — оркестрация сервисов.
-
-> Подробное описание переменных и настроек есть в [./docker/README](./docker/README.md). Их можно использовать как `${ENV_VARS}` в `service_conf.yaml.template`.
-
-Чтобы изменить HTTP-порт по умолчанию (80), в [docker-compose.yml](./docker/docker-compose.yml) замените `80:80` на `<ВАШ_ПОРТ>:80`.
-
-После изменений перезапустите контейнеры:
-
-```bash
-docker compose -f docker-compose.yml up -d
-```
-
-### Переключение с Elasticsearch на Infinity
-
-По умолчанию RAGFlow использует Elasticsearch. Чтобы перейти на [Infinity](https://github.com/infiniflow/infinity/):
-
-1. Остановите все контейнеры:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> Флаг `-v` удалит volumes — существующие данные будут потеряны.
-
-2. В файле **docker/.env** установите `DOC_ENGINE=infinity`.
-3. Запустите контейнеры:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Переключение на Infinity на Linux/arm64 пока официально не поддерживается.
-
-## 🔧 Сборка Docker-образа
-
-Образ занимает около 2 ГБ и рассчитывает на внешние LLM и сервисы эмбеддингов.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Если вы за прокси:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 Запуск из исходников для разработки
+### 🔨 Запуск из исходников для разработки
 
 1. Установите версию Go из `go.mod` (сейчас Go 1.27), Clang 20, LLD 20, CMake 4.0 или новее и файлы разработки PCRE2. Сервисам Go нужны CGO и нативные библиотеки; [build.sh](./build.sh) задаёт необходимые параметры сборки.
 
@@ -344,11 +270,8 @@ docker build --platform linux/amd64 \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   Добавьте в `/etc/hosts` имена узлов из **conf/service_conf.yaml**:
+   Сервисы Go, запущенные из исходного кода, подключаются к Kvrocks через `localhost:6379`; предоставленная конфигурация не требует изменения `/etc/hosts`.
 
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
 
 4. После миграции базы данных запустите сервисы по порядку. Выполняйте каждую команду в отдельном терминале из корня репозитория и оставьте открытыми четыре терминала сервисов:
 
@@ -366,13 +289,13 @@ docker build --platform linux/amd64 \
    npm install
    ```
 
-8. Запустите фронтенд:
+5. Запустите фронтенд:
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-9. После разработки остановите каждый сервис сочетанием Ctrl+C в соответствующем терминале:
+После разработки остановите каждый сервис сочетанием Ctrl+C в соответствующем терминале:
 
    ```bash
    # Нажмите Ctrl+C в каждом терминале службы, чтобы остановить процесс.

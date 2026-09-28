@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="licence">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -112,7 +109,7 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 
 ### 🍭 **"Quality in, quality out"**
 
-- Extraction de connaissances basée sur la [compréhension approfondie des documents](./deepdoc/README.md) à partir de données non structurées aux formats complexes.
+- Extraction de connaissances basée sur la compréhension approfondie des documents à partir de données non structurées aux formats complexes.
 - Trouve "l'aiguille dans la meule de données" de tokens littéralement illimités.
 
 ### 🍱 **Découpage(Chunking) basé sur des templates**
@@ -165,7 +162,7 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/) : requis uniquement avec le Sandbox de conteneurs Self-Managed.
 
-Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. Le déploiement GPU nécessite également NVIDIA Container Toolkit. Le Sandbox de conteneurs Self-Managed nécessite l’installation et la configuration de gVisor ; les autres fournisseurs de Sandbox n’en ont pas besoin sur l’hôte RAGFlow.
+Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. Le Sandbox de conteneurs Self-Managed nécessite l’installation et la configuration de gVisor ; les autres fournisseurs de Sandbox n’en ont pas besoin sur l’hôte RAGFlow.
 
 > [!TIP]
 > Si vous n'avez pas installé Docker sur votre machine locale (Windows, Mac ou Linux), consultez [Installer Docker Engine](https://docs.docker.com/engine/install/).
@@ -198,7 +195,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Construisez l’image Go et démarrez le serveur avec la configuration Compose Go. La cible de construction officielle est `linux/amd64` ; le mode CPU est utilisé par défaut. Le déploiement GPU nécessite NVIDIA Container Toolkit. Consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx) pour connaître les exigences détaillées.
+3. Construisez l’image Go et démarrez le serveur avec la configuration Compose Go. La cible de construction officielle est `linux/amd64`. Consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx) pour connaître les exigences détaillées.
 
    Avant le premier déploiement, définissez `RAGFLOW_IMAGE=ragflow:go-local` dans **docker/.env**, puis exécutez depuis la racine du dépôt :
 
@@ -209,7 +206,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
    docker compose --env-file .env -f docker-compose.yml up -d
    ```
 
-   Avec la configuration MySQL par défaut, le point d’entrée de l’image exécute d’abord les migrations, puis démarre Syncer, Admin, API et Ingestor via `bin/ragflow_server`. Dans RAGFlow open-source 1.0, DeepDoc utilise l’inférence CPU pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux, même si le profil GPU est activé.
+   Avec la configuration MySQL par défaut, le point d’entrée de l’image exécute d’abord les migrations, puis démarre Syncer, Admin, API et Ingestor via `bin/ragflow_server`. Dans RAGFlow open-source 1.0, DeepDoc utilise l’inférence CPU pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
 
 4. Vérifiez l’état des dépendances avec `docker compose --env-file .env -f docker-compose.yml ps`, puis confirmez que RAGFlow est prêt avec l’interface HTTP (le conteneur RAGFlow ne définit pas de healthcheck Compose) :
 
@@ -223,7 +220,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
    > Avec les paramètres par défaut, il vous suffit d'entrer `http://IP_OF_YOUR_MACHINE` (**sans** numéro de port), car le port HTTP par défaut `80` peut être omis lors de l'utilisation des configurations par défaut.
    >
-6. Dans [service_conf.yaml.template](./docker/service_conf.yaml.template), sélectionnez la fabrique LLM souhaitée dans `user_default_llm` et mettez à jour le champ `API_KEY` avec la clé API correspondante.
+6. Après vous être connecté à RAGFlow, ajoutez le LLM, le modèle d'embedding et le reranker sur la page des fournisseurs de modèles, puis renseignez le nom du modèle, l'adresse du service et la clé API correspondants.
 
    > Voir [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) pour plus d'informations.
    >
@@ -236,7 +233,7 @@ Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, 
 
 Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 
-## 🔨 Lancer le service depuis les sources pour le développement
+### 🔨 Lancer le service depuis les sources pour le développement
 
 1. Installez la version de Go indiquée dans `go.mod` (Go 1.27 actuellement), Clang 20, LLD 20, CMake 4.0 ou version ultérieure, ainsi que les fichiers de développement PCRE2. Les services Go dépendent de CGO et de bibliothèques natives ; [build.sh](./build.sh) configure les paramètres nécessaires.
 2. Clonez le dépôt, préparez les bibliothèques natives et les fichiers de modèles requis, puis compilez les services Go :
@@ -256,40 +253,46 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   Ajoutez la ligne suivante à `/etc/hosts` pour résoudre les hôtes définis dans **conf/service_conf.yaml** vers `127.0.0.1` :
-
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
-4. Après la migration de la base de données, démarrez les services dans l’ordre. Exécutez chaque commande dans un terminal distinct depuis la racine du dépôt et laissez ouverts les quatre terminaux des services :
+   Les services Go lancés depuis les sources se connectent à Kvrocks via `localhost:6379`, tandis que les services Docker utilisent le nom d'hôte du réseau de conteneurs. Aucune modification de `/etc/hosts` n'est nécessaire avec la configuration fournie.
+4. Exécutez d'abord la migration, puis démarrez Admin, Ingestor, Syncer et API dans quatre terminaux distincts depuis la racine du dépôt. Le terminal de migration peut être fermé une fois la commande terminée ; les quatre autres doivent rester ouverts :
 
    ```bash
+   # Terminal 1 : migration
    ./bin/ragflow_server --migrate
+
+   # Terminal 2 : Admin, port cible 9381
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+
+   # Terminal 3 : Ingestor
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+
+   # Terminal 4 : Syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+
+   # Terminal 5 : API, port cible 9380
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
+
+   `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer.
 5. Installez Node.js et npm uniquement pour développer le front-end :
 
    ```bash
    cd web
    npm install
    ```
-8. Lancez le service front-end :
+   Lancez ensuite le service front-end :
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   _La sortie suivante confirme un lancement réussi du système :_
-
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Une fois le développement terminé, arrêtez chaque service avec Ctrl+C dans son terminal :
+   Dans un autre terminal, vérifiez ensuite que l'API Go est prête :
 
    ```bash
-   # Appuyez sur Ctrl+C dans chaque terminal de service pour arrêter le processus correspondant.
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   Une réponse HTTP 200 indique que l'API répond. À la fin du développement, appuyez sur `Ctrl+C` dans chaque terminal de service. Pour arrêter les dépendances sans supprimer les conteneurs, exécutez `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Pour supprimer les conteneurs de dépendances et le réseau Compose tout en conservant les volumes nommés, exécutez `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
 
 ## 📚 Documentation
 

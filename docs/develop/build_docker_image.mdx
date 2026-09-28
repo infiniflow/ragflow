@@ -22,7 +22,7 @@ The documented Go image target is `linux/amd64`. On an Apple Silicon Mac, Docker
 
 ## Platform support
 
-- **Linux x86-64:** CPU deployment is the default and recommended path. A GPU Compose deployment is available when the host has NVIDIA Container Toolkit configured. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+- **Linux x86-64:** This is the supported Docker build target. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 - **Apple Silicon macOS:** Build and run the `linux/amd64` image through Docker Desktop x86-64 emulation. Document processing and image builds may be slower than on an x86-64 Linux host.
 - **Linux ARM64:** A native Go Docker build is not currently supported. The Go image depends on native libraries that are published for Linux x86-64. Use a Linux x86-64 host for a supported native build.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
@@ -56,7 +56,7 @@ cd docker
 docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-The default `DEVICE=cpu` starts `ragflow-cpu`. To use `ragflow-gpu`, set `DEVICE=gpu` in `.env` and configure the NVIDIA container runtime on the host. This selection can make GPUs available to components that explicitly support them, but it does not enable GPU execution for the open-source 1.0 Go DeepDoc backend.
+The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go DeepDoc backend uses CPU inference.
 
 ## Verify the service
 
@@ -66,7 +66,7 @@ docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
-Use `ragflow-gpu` in the logs command if you selected GPU. A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in the health-check URL and when opening the web interface in a browser.
+A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in the health-check URL and when opening the web interface in a browser.
 
 For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env`. Use this only for local development; keep it `false` for production.
 

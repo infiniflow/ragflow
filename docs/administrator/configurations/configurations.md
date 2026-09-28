@@ -139,21 +139,6 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `TEI_PORT`
   The port used to expose the text-embeddings-inference service to the host machine, allowing **external** access to the text-embeddings-inference service running inside the Docker container. Defaults to `6380`.
 
-### OceanBase and SeekDB Memory
-
-- `OB_MEMORY_LIMIT`
-  The memory limit configured for the bundled OceanBase service. Defaults to `10G`.
-- `OB_SYSTEM_MEMORY`
-  The OceanBase system-memory setting. Defaults to `2G`.
-- `OB_DATAFILE_SIZE`
-  The configured size of the OceanBase data file. Defaults to `20G`.
-- `OB_LOG_DISK_SIZE`
-  The configured size of the OceanBase log disk. Defaults to `20G`.
-- `SEEKDB_MEMORY_LIMIT`
-  The memory limit passed to the bundled SeekDB service. Defaults to `2G`.
-
-For an OceanBase deployment, use at least 4 CPU cores and 32 GB host memory as a starting point, leaving room beyond OceanBase's own [production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993) for the other RAGFlow services. Set `MEM_LIMIT` to no less than `OB_MEMORY_LIMIT`; a 12 GiB container limit is recommended, expressed as `MEM_LIMIT=12884901888` in **docker/.env**. The [SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd) specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk space. These values apply to their respective database services only and do not replace the resource recommendation for the complete RAGFlow deployment. The OceanBase data-file and log-disk defaults account for `40G` before container images, RAGFlow object storage, indexes, and logs. Plan additional free disk space for the complete deployment rather than treating `40G` as the host disk requirement.
-
 ### Timezone
 
 - `TZ`

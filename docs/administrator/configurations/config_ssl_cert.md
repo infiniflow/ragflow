@@ -97,10 +97,8 @@ exit
 docker compose --env-file docker/.env -f docker/docker-compose.yml restart ragflow-cpu
 ```
 
-Use `ragflow-gpu` instead of `ragflow-cpu` when the GPU service is selected.
-
 ## Configuration Persistence
 
 :::tip IMPORTANT
-Changes made with `docker cp` or `docker exec` are lost when the RAGFlow container is recreated. After a successful test, store the certificates on the host and add persistent certificate and `ragflow.conf` volume mounts to the `ragflow-cpu` or `ragflow-gpu` service in `docker/docker-compose.yml`.
+Changes made with `docker cp` or `docker exec` are lost when the RAGFlow container is recreated. After a successful test, store the certificates on the host and add persistent certificate and `ragflow.conf` volume mounts to the `ragflow-cpu` service in `docker/docker-compose.yml`.
 :::

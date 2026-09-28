@@ -62,7 +62,7 @@ docker compose --env-file .env -f docker-compose.yml logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
-If `SVR_WEB_HTTP_PORT` is not `80`, append the configured port to the URL. For a GPU deployment, set `DEVICE=gpu`, install NVIDIA Container Toolkit on the host, and use `ragflow-gpu` in the logs command. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference, including when the GPU Compose service is selected.
+If `SVR_WEB_HTTP_PORT` is not `80`, append the configured port to the URL. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference.
 
 ## 🐬 Docker environment variables
 
@@ -140,17 +140,6 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 - `EXPOSE_NATS_PORT`
   The port published on the Docker host. Change this value to avoid a host-side port conflict; Go containers continue to use `NATS_PORT` internally.
 
-### ClickHouse
-
-- `CLICKHOUSE_HOST`, `CLICKHOUSE_TCP_PORT`
-  The internal address used by the Go services. Defaults to `clickhouse:9000`.
-- `EXPOSE_CLICKHOUSE_TCP_PORT`
-  The native TCP port published on the Docker host. Defaults to `9900`.
-- `CLICKHOUSE_HTTP_PORT`
-  The HTTP port published on the host. Defaults to `8123`.
-- `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DATABASE`
-  The credentials and database used by the Go services.
-
 ### RAGFlow
 
 - `SVR_HTTP_PORT`
@@ -159,8 +148,6 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
   The target Go Admin port published by Compose. Defaults to `9381`.
 - `SVR_WEB_HTTP_PORT`, `SVR_WEB_HTTPS_PORT`
   The public Nginx ports. Defaults to `80` and `443`.
-- `DEVICE`
-  Selects the `cpu` or `gpu` RAGFlow service. Defaults to `cpu`.
 - `RAGFLOW_DEV_MODE`
   Set to `true` only for development checkouts that intentionally use a development migration marker. Keep it `false` in production.
 - `RAGFLOW_IMAGE`
@@ -181,7 +168,7 @@ The optional `tei-cpu` and `tei-gpu` profiles start a local text-embeddings-infe
 
 DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/rag/res/deepdoc`.
 
-In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference, including when the RAGFlow container is started with the GPU Compose profile.
+In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 ### Timezone
 
@@ -197,58 +184,6 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference, including wh
 
 - `TOKENIZER_EMBEDDING_BATCH_SIZE`
   An optional positive integer that overrides the number of text chunks sent in each embedding request. When it is not set, RAGFlow uses the embedding model's batch size, or `16` if the model does not provide one. Larger values can increase memory usage and may exceed the model provider's request limit; increase it gradually and verify parsing on representative documents.
-
-### SeekDB memory
-
-When `DOC_ENGINE=seekdb`, `SEEKDB_MEMORY_LIMIT` controls the memory limit passed to the bundled SeekDB service and defaults to `2G`. The [SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd) specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk space. These are SeekDB-only requirements, not the requirements for the complete RAGFlow deployment. The container is also subject to the applicable `MEM_LIMIT` upper limit.
-
-### OceanBase prerequisites
-
-Before setting `DOC_ENGINE=oceanbase`, plan memory separately from the general RAGFlow host recommendation. For the complete RAGFlow deployment with the bundled OceanBase service, use at least 4 CPU cores and 32 GB host memory as a starting point. This leaves room beyond OceanBase's own [production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993) for the other RAGFlow services. OceanBase defaults to `OB_MEMORY_LIMIT=10G` and `OB_SYSTEM_MEMORY=2G`. Its data file and log disk default to `OB_DATAFILE_SIZE=20G` and `OB_LOG_DISK_SIZE=20G`. These two values describe OceanBase's configured disk allocation, not the total disk required by the deployment. Reserve additional space for container images, RAGFlow object storage, indexes, and logs. Before enabling this profile, raise `MEM_LIMIT` so the OceanBase container limit is not lower than `OB_MEMORY_LIMIT`; a 12 GiB limit is recommended to leave container headroom. In **docker/.env**, set:
-
-```dotenv
-MEM_LIMIT=12884901888
-```
-
-These are deployment recommendations, not memory reserved exclusively for OceanBase. The host must also provide memory for RAGFlow and the other enabled services.
-
-Also make sure the host OS allows the file descriptor and core dump limits OceanBase expects.
-
-1. Set host limits:
-
-   ```bash
-   sudo tee /etc/security/limits.d/99-oceanbase.conf >/dev/null <<'EOF'
-   root soft nofile 655350
-   root hard nofile 655350
-   * soft nofile 655350
-   * hard nofile 655350
-   * soft core unlimited
-   * hard core unlimited
-   EOF
-   ```
-
-2. Make sure PAM limits are enabled:
-
-   ```bash
-   grep -E 'pam_limits\.so' /etc/pam.d/common-session /etc/pam.d/common-session-noninteractive
-   ```
-
-   If missing, add them:
-
-   ```bash
-   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session
-   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session-noninteractive
-   ```
-
-3. Log out and log back in, or reboot.
-
-4. Verify the effective limit:
-
-   ```bash
-   ulimit -n
-   ```
-
-   Expected: `655350`, or at least `20000`.
 
 ## 🐋 Service configuration
 
@@ -350,7 +285,7 @@ If you want your instance to be available under `https`, follow these steps:
    - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
 
 3. **Update docker-compose.yml**
-   Add the certificate volumes to the `ragflow-cpu` or `ragflow-gpu` service in `docker-compose.yml`:
+   Add the certificate volumes to the `ragflow-cpu` service in `docker-compose.yml`:
    ```yaml
    services:
      ragflow-cpu:

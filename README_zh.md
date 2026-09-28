@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -112,7 +109,7 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 基于[深度文档理解](./deepdoc/README.md)，能够从各类复杂格式的非结构化数据中提取真知灼见。
+- 基于深度文档理解，能够从各类复杂格式的非结构化数据中提取真知灼见。
 - 真正在无限上下文（token）的场景下快速完成大海捞针测试。
 
 ### 🍱 **基于模板的文本切片**
@@ -173,7 +170,7 @@
 - Docker ≥ 24.0.0，Docker Compose ≥ v2.26.1。
 - [gVisor](https://gvisor.dev/docs/user_guide/install/)：仅在使用 Self-Managed 容器 Sandbox 时需要安装和配置。
 
-Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container Toolkit；使用 Self-Managed 容器 Sandbox 时需要额外安装和配置 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主机上安装 gVisor。
+Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox 时需要额外安装和配置 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主机上安装 gVisor。
 
 > ⚠️ **提示：** 如果你尚未在本机安装 Docker（Windows、macOS 或 Linux），可以参考 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
@@ -208,7 +205,7 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
 3. 构建 Go 版镜像并使用 Go 版 Compose 配置启动服务器：
 
-   > ⚠️ **提示：** Go 镜像的正式构建目标为 `linux/amd64`；CPU 为默认部署方式，GPU 部署需要 NVIDIA Container Toolkit。详细平台、资源和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
+   > ⚠️ **提示：** Go 镜像的正式构建目标为 `linux/amd64`。详细平台、资源和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
 
    > 首次部署需要先构建 Go 镜像，构建时间取决于网络和机器性能。
 
@@ -227,7 +224,7 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
    默认 MySQL 配置下，Go 镜像入口会先执行数据库迁移，再通过 `bin/ragflow_server` 启动 Syncer、Admin、API 和 Ingestor。
 
-   > 如需 GPU 配置，在 **docker/.env** 中设置 `DEVICE=gpu`，并确保宿主机已配置 NVIDIA 容器运行环境。RAGFlow 开源版 1.0 的 DeepDoc 版面分析、OCR 和表格识别使用 CPU 推理；GPU 配置供其他支持 GPU 的组件或外部模型服务使用。
+   > RAGFlow 开源版 1.0 的 DeepDoc 版面分析、OCR 和表格识别使用 CPU 推理。
 
 4. 服务器启动成功后再次确认服务器状态：
 
@@ -245,8 +242,6 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
    # CPU 部署
    docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
 
-   # GPU 部署
-   docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-gpu
    ```
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
@@ -261,7 +256,7 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
 #### ⚙️ Docker 配置与调整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 作为 Redis 协议兼容缓存，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎、模型镜像源及 GPU 配置请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 作为 Redis 协议兼容缓存，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 

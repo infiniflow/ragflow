@@ -44,7 +44,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
    ```
 
-3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. The same file controls `DOC_ENGINE`, `DEVICE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
+3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. The same file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
 4. Start the Go service and its dependencies:
 
@@ -53,7 +53,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker compose --env-file .env -f docker-compose.yml up -d
    ```
 
-   The default `DEVICE=cpu` selects `ragflow-cpu`. For the GPU Compose service, set `DEVICE=gpu` in `.env` and configure the NVIDIA container runtime on the host. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference; selecting `DEVICE=gpu` does not change these DeepDoc operations.
+   In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference.
 
    :::caution Development checkouts
    A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
@@ -66,13 +66,13 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker compose --env-file .env -f docker-compose.yml logs -f ragflow-cpu
    ```
 
-   If you selected `DEVICE=gpu`, use `ragflow-gpu` in the logs command. After initialization, check the Go API and its dependencies through the web port from another terminal:
+   After initialization, check the Go API and its dependencies through the web port from another terminal:
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   This check works for both CPU and GPU deployments. A successful response has HTTP status 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL. Wait for this check to pass before opening the web interface.
+   A successful response has HTTP status 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL. Wait for this check to pass before opening the web interface.
 
 6. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL.
 
@@ -129,7 +129,7 @@ To create your first dataset:
 
    ![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
-   If parsing stalls, check the `ragflow-cpu` (or `ragflow-gpu`) service logs with the Compose command above for ingestion errors.
+   If parsing stalls, check the `ragflow-cpu` service logs with the Compose command above for ingestion errors.
 
 ## Intervene with file parsing
 

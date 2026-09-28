@@ -73,7 +73,7 @@ docker compose --env-file docker/.env -f docker/docker-compose.yml --profile cpu
 
 The Go Compose deployment exposes the Admin Service on `9381` and the API server on `9380` by default. Use `ADMIN_SVR_HTTP_PORT` and `SVR_HTTP_PORT` to change the corresponding published host ports.
 
-For both CPU and GPU deployments, use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). Initialize the first superuser with `--init-superuser` only when initial account setup is required.
+Use the Go Compose entry point documented in [Go Docker deployment](../../../docker/README.md). Initialize the first superuser with `--init-superuser` only when initial account setup is required.
 
 ## Check health and service registration
 

@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/Lisensi-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="Lisensi">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -165,7 +162,7 @@ Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Hanya diperlukan saat menggunakan container Sandbox Self-Managed.
 
-Deployment Docker tidak memerlukan Go di host. Deployment GPU juga memerlukan NVIDIA Container Toolkit. Container Sandbox Self-Managed memerlukan instalasi dan konfigurasi gVisor; penyedia Sandbox lainnya tidak memerlukan gVisor di host RAGFlow.
+Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed memerlukan instalasi dan konfigurasi gVisor; penyedia Sandbox lainnya tidak memerlukan gVisor di host RAGFlow.
 
 > [!TIP]
 > Jika Anda belum menginstal Docker di komputer lokal Anda (Windows, Mac, atau Linux), lihat [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -205,36 +202,25 @@ Deployment Docker tidak memerlukan Go di host. Deployment GPU juga memerlukan NV
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.27.2 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.27.2, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
+> Tulis `RAGFLOW_IMAGE=ragflow:go-local` ke **docker/.env** sebelum memulai. Target build resmi image Go adalah `linux/amd64`.
 
 ```bash
    cd ragflow/docker
 
-   git checkout v0.27.2
+   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
    # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
-   # Use CPU for DeepDoc tasks:
-   docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-> Catatan: Sebelum `v0.22.0`, kami menyediakan image dengan model embedding dan image slim tanpa model embedding. Detailnya sebagai berikut:
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
+> Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
 
 1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose --env-file .env -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
@@ -258,8 +244,7 @@ Deployment Docker tidak memerlukan Go di host. Deployment GPU juga memerlukan NV
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
    >
-3. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
-   bidang `API_KEY` dengan kunci API yang sesuai.
+3. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
    >
@@ -272,7 +257,7 @@ Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, 
 
 Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, serta mempertahankan atau menghapus data yang ada, ikuti juga panduan konfigurasi Docker tersebut.
 
-## 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
+### 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
 
 1. Instal versi Go yang ditentukan di `go.mod` (saat ini Go 1.27), Clang 20, LLD 20, CMake 4.0 atau yang lebih baru, serta berkas pengembangan PCRE2. Layanan Go memerlukan CGO dan pustaka native; [build.sh](./build.sh) mengatur parameter build yang diperlukan.
 2. Clone repositori, siapkan pustaka native dan berkas model yang diperlukan, lalu build layanan Go:
@@ -292,11 +277,8 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
+   Layanan Go yang dijalankan dari sumber terhubung ke Kvrocks melalui `localhost:6379`; konfigurasi yang disediakan tidak memerlukan perubahan pada `/etc/hosts`.
 
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
 4. Setelah migrasi database selesai, jalankan layanan secara berurutan. Jalankan setiap perintah di terminal terpisah dari root repositori dan biarkan keempat terminal layanan tetap berjalan:
 
    ```bash
@@ -312,7 +294,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    cd web
    npm install
    ```
-8. Jalankan aplikasi frontend:
+5. Jalankan aplikasi frontend:
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
@@ -321,7 +303,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Setelah pengembangan selesai, tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya:
+Setelah pengembangan selesai, tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya:
 
    ```bash
    # Tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya.

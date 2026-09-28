@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -115,7 +112,7 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 基於[深度文件理解](./deepdoc/README.md)，能夠從各類複雜格式的非結構化資料中提取真知灼見。
+- 基於深度文件理解，能夠從各類複雜格式的非結構化資料中提取真知灼見。
 - 真正在無限上下文（token）的場景下快速完成大海撈針測試。
 
 ### 🍱 **基於模板的文字切片**
@@ -172,7 +169,7 @@
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在使用 Self-Managed 容器 Sandbox 時需要安裝和設定。
 
-Docker 部署無需在主機安裝 Go。GPU 部署還需要 NVIDIA Container Toolkit；使用 Self-Managed 容器 Sandbox 時需要額外安裝和設定 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主機安裝 gVisor。
+Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時需要額外安裝和設定 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主機安裝 gVisor。
 
 > [!TIP]
 > 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
@@ -208,9 +205,15 @@ Docker 部署無需在主機安裝 Go。GPU 部署還需要 NVIDIA Container Too
 3. 建置 Go 版映像，並使用 Go 版 Compose 設定啟動伺服器：
 
 > [!NOTE]
-> Go 映像的正式建置目標為 `linux/amd64`；CPU 為預設部署方式，GPU 部署需要 NVIDIA Container Toolkit。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+> Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
 > 首次部署前需要先建置 Go 映像，建置時間取決於網路和機器效能。
+
+將以下值寫入 `docker/.env`：
+
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
+```
 
 ```bash
    cd ragflow
@@ -221,13 +224,7 @@ Docker 部署無需在主機安裝 Go。GPU 部署還需要 NVIDIA Container Too
 
 預設 MySQL 設定下，Go 映像入口會先執行資料庫遷移，再透過 `bin/ragflow_server` 啟動 Syncer、Admin、API 和 Ingestor。
 
-> 如需 GPU 設定，請在 **docker/.env** 中設定 `DEVICE=gpu`，並確保主機已設定 NVIDIA 容器執行環境。RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理；GPU 設定供其他支援 GPU 的元件或外部模型服務使用。
-
-> [!TIP]
-> 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
->
-> - 華為雲鏡像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
-> - 阿里雲鏡像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
+> RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理。
 
 4. 檢查相依服務狀態及 API 是否就緒：
 
@@ -256,7 +253,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
 
 切換文件引擎、更新設定、重新啟動服務，以及保留或清除既有資料等操作，也請依照上述 Docker 設定文件執行。
 
-## 🔨 以原始碼啟動 Go 服務
+### 🔨 以原始碼啟動 Go 服務
 
 原始碼啟動需要安裝 `go.mod` 指定的 Go 版本（目前為 Go 1.27）、Clang 20、LLD 20、CMake >= 4.0、PCRE2 開發檔案，以及 CGO 所需的原生程式庫。僅開發 React 前端時需要 Node.js 和 npm。
 
@@ -283,18 +280,27 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   在 `/etc/hosts` 加入設定中所需主機名稱的對應項目，並將它們解析至 `127.0.0.1`。
+   從原始碼啟動的 Go 服務透過 `localhost:6379` 連線到 Compose 暴露的 Kvrocks；Docker 服務則使用容器網路中的主機名稱。使用提供的設定無需修改 `/etc/hosts`。
 4. 先遷移資料庫，再依序啟動服務。每項命令都要在倉庫根目錄的獨立終端機執行；資料庫遷移完成後可關閉該終端機，其餘四個服務終端機需保持執行：
 
    ```bash
+   # 終端機 1：遷移資料庫
    ./bin/ragflow_server --migrate
+
+   # 終端機 2：Admin，目標連接埠 9381
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+
+   # 終端機 3：Ingestor
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+
+   # 終端機 4：Syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+
+   # 終端機 5：API，目標連接埠 9380
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
-   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。Admin 應先於其他服務啟動。各服務的健康檢查、`build.sh --run` 限制和停止依賴服務的方法，請參閱[從原始碼啟動服務](./docs/develop/launch_ragflow_from_source.md)。
+   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer。
 5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
    ```bash
@@ -303,7 +309,13 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   開發結束時，在各服務終端機按 `Ctrl+C` 停止對應程序。
+   在另一個終端機確認 Go API 已就緒：
+
+   ```bash
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
+   ```
+
+   返回 HTTP 200 表示 API 可以正常回應。開發結束時，在各服務終端機按 `Ctrl+C` 停止對應程序。如需停止相依服務但保留容器，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需移除相依服務容器和 Compose 網路但保留具名資料卷，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`。
 
 ## 📚 技術文檔
 

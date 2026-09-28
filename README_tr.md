@@ -34,9 +34,6 @@
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/Lisans-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="lisans">
     </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
-    </a>
 </p>
 
 <h4 align="center">
@@ -114,7 +111,7 @@ Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) ba
 
 ### 🍭 **"Kaliteli girdi, kaliteli çıktı"**
 
-- Karmaşık formatlara sahip yapılandırılmamış verilerden [derin doküman anlayışı](./deepdoc/README.md) tabanlı bilgi çıkarımı.
+- Karmaşık formatlara sahip yapılandırılmamış verilerden derin doküman anlayışı tabanlı bilgi çıkarımı.
 - Kelimenin tam anlamıyla sınırsız token içinde "samanlıkta iğne bulma" yeteneği.
 
 ### 🍱 **Şablon tabanlı parçalama**
@@ -167,7 +164,7 @@ Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) ba
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca Self-Managed kapsayıcı Sandbox kullanılırken gereklidir.
 
-Docker dağıtımı ana makineye Go kurulmasını gerektirmez. GPU dağıtımı ayrıca NVIDIA Container Toolkit gerektirir. Self-Managed kapsayıcı Sandbox, gVisor kurulumu ve yapılandırması gerektirir; diğer Sandbox sağlayıcıları RAGFlow ana makinesinde gVisor gerektirmez.
+Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kapsayıcı Sandbox, gVisor kurulumu ve yapılandırması gerektirir; diğer Sandbox sağlayıcıları RAGFlow ana makinesinde gVisor gerektirmez.
 
 > [!TIP]
 > Yerel makinenize (Windows, Mac veya Linux) Docker yüklemediyseniz, [Docker Engine Kurulumu](https://docs.docker.com/engine/install/) sayfasına bakın.
@@ -212,31 +209,20 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. GPU dağıtımı 
 ```bash
    cd ragflow/docker
 
-   git checkout v0.27.2
+   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
    # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
    # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
 
-   # DeepDoc görevleri için CPU kullanımı:
-   docker compose -f docker-compose.yml up -d
-
-   # DeepDoc görevlerini hızlandırmak için GPU kullanımı:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
+   docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-> Not: `v0.22.0` öncesinde hem gömme modelleri içeren imajlar hem de gömme modelleri içermeyen ince (slim) imajlar sunuyorduk. Detaylar aşağıdadır:
-
-| RAGFlow imaj etiketi | İmaj boyutu (GB) | Gömme modelleri var mı? | Kararlı mı?    |
-|-----------------------|-------------------|-------------------------|-----------------|
-| v0.21.1               | &approx;9        | ✔️                      | Kararlı sürüm   |
-| v0.21.1-slim          | &approx;2        | ❌                       | Kararlı sürüm   |
-
-> `v0.22.0`'dan itibaren yalnızca ince (slim) sürümü sunuyoruz ve imaj etiketine artık **-slim** son eki eklemiyoruz.
+> RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
 
 4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose --env-file .env -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
    _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
@@ -260,75 +246,14 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. GPU dağıtımı 
    > Varsayılan ayarlarla, yalnızca `http://MAKİNENİZİN_IP_ADRESİ` girmeniz yeterlidir (port numarası **gerekmez**),
    > çünkü varsayılan HTTP sunucu portu `80` varsayılan yapılandırmalar kullanıldığında ihmal edilebilir.
    >
-6. [service_conf.yaml.template](./docker/service_conf.yaml.template) dosyasında, `user_default_llm` içinde istediğiniz LLM sağlayıcısını seçin ve
-   `API_KEY` alanını ilgili API anahtarıyla güncelleyin.
+6. RAGFlow'a giriş yaptıktan sonra model sağlayıcıları sayfasından LLM, embedding modeli ve reranker ekleyin; model adını, servis adresini ve API anahtarını girin.
 
    > Daha fazla bilgi için [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) sayfasına bakın.
    >
 
    _Gösteri başlasın!_
 
-## 🔧 Yapılandırmalar
-
-Sistem yapılandırmaları söz konusu olduğunda, aşağıdaki dosyaları yönetmeniz gerekecektir:
-
-- [.env](./docker/.env): `SVR_HTTP_PORT`, `MYSQL_PASSWORD` ve `MINIO_PASSWORD` gibi temel sistem ayarlarını içerir.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): Arka uç hizmetlerini yapılandırır. Bu dosyadaki ortam değişkenleri, Docker konteyneri başladığında otomatik olarak doldurulacaktır. Docker konteyneri içinde ayarlanan tüm ortam değişkenleri kullanıma hazır olacak ve hizmet davranışını dağıtım ortamına göre özelleştirmenize olanak tanıyacaktır.
-- [docker-compose.yml](./docker/docker-compose.yml): Sistem, başlatılmak için [docker-compose.yml](./docker/docker-compose.yml) dosyasına dayanır.
-
-> [./docker/README](./docker/README.md) dosyası, [service_conf.yaml.template](./docker/service_conf.yaml.template) dosyasında `${ENV_VARS}` olarak kullanılabilen ortam ayarları ve hizmet yapılandırmalarının ayrıntılı bir açıklamasını sağlar.
-
-Varsayılan HTTP sunucu portunu (80) değiştirmek için [docker-compose.yml](./docker/docker-compose.yml) dosyasında `80:80` ifadesini `<SUNUCU_PORTUNUZ>:80` olarak değiştirin.
-
-Yukarıdaki yapılandırma değişikliklerinin etkili olması için tüm konteynerlerin yeniden başlatılması gerekir:
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Doküman Motorunu Elasticsearch'ten Infinity'ye Geçirme
-
-RAGFlow varsayılan olarak tam metin ve vektörlerin depolanması için Elasticsearch kullanır. [Infinity](https://github.com/infiniflow/infinity/)'ye geçmek için şu adımları izleyin:
-
-1. Çalışan tüm konteynerleri durdurun:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> `-v` seçeneği Docker konteyner birimlerini silecek ve mevcut veriler temizlenecektir.
-
-2. **docker/.env** dosyasında `DOC_ENGINE` değerini `infinity` olarak ayarlayın.
-3. Konteynerleri başlatın:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Linux/arm64 makinesinde Infinity'ye geçiş henüz resmi olarak desteklenmemektedir.
-
-## 🔧 Docker İmajı Oluşturma
-
-Bu imaj yaklaşık 2 GB boyutundadır ve harici LLM ile gömme hizmetlerine bağlıdır.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Veya bir proxy arkasındaysanız, proxy parametrelerini iletebilirsiniz:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://PROXY_ADRESINIZ:PORT \
-  --build-arg https_proxy=http://PROXY_ADRESINIZ:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
+### 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
 
 1. `go.mod` dosyasında belirtilen Go sürümünü (şu anda Go 1.27), Clang 20, LLD 20, CMake 4.0 veya üzerini ve PCRE2 geliştirme dosyalarını yükleyin. Go hizmetleri CGO ve yerel kitaplıklara bağlıdır; [build.sh](./build.sh) gerekli derleme parametrelerini ayarlar.
 2. Depoyu klonlayın, gerekli yerel kitaplıkları ve model dosyalarını hazırlayın, ardından Go hizmetlerini derleyin:
@@ -348,11 +273,8 @@ docker build --platform linux/amd64 \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   **docker/.env** dosyasında belirtilen tüm ana bilgisayar adlarını `127.0.0.1`'e çözümlemek için `/etc/hosts` dosyasına aşağıdaki satırı ekleyin:
+   Kaynaktan çalıştırılan Go hizmetleri Kvrocks'a `localhost:6379` üzerinden bağlanır; sağlanan yapılandırmada `/etc/hosts` değişikliği gerekmez.
 
-   ```text
-   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
-   ```
 4. Veritabanı geçişinden sonra hizmetleri belirtilen sırayla başlatın. Her komutu deponun kök dizininden ayrı bir terminalde çalıştırın ve dört hizmet terminalini açık bırakın:
 
    ```bash
@@ -368,7 +290,7 @@ docker build --platform linux/amd64 \
    cd web
    npm install
    ```
-8. Ön yüz hizmetini başlatın:
+5. Ön yüz hizmetini başlatın:
 
    ```bash
    API_PROXY_SCHEME=go npm run dev
@@ -377,7 +299,7 @@ docker build --platform linux/amd64 \
    _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Geliştirme tamamlandığında, durdurmak için her hizmet terminalinde Ctrl+C'ye basın:
+Geliştirme tamamlandığında, durdurmak için her hizmet terminalinde Ctrl+C'ye basın:
 
    ```bash
    # Her hizmet terminalinde Ctrl+C'ye basın.
