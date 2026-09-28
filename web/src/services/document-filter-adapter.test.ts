@@ -51,25 +51,18 @@ describe('document status filter adapter', () => {
     ]);
   });
 
-  it('shows Go status options with zero counts when no task is running', () => {
+  it('only shows Go status options present in the dataset', () => {
     mockIsGo = true;
 
     expect(
       adaptDocumentFilter({
         suffix: { pdf: 2 },
-        metadata: {},
-        ingestion_status: { UNSTART: 2 },
-      }),
-    ).toMatchObject({
-      suffix: { pdf: 2 },
-      run_status: {
-        '0': 2,
-        QUEUED: 0,
-        '1': 0,
-        '2': 0,
-        '3': 0,
-        '4': 0,
-      },
+        metadata: { empty_metadata: { true: 1 } },
+        ingestion_status: { RUNNING: 1, COMPLETED: 1 },
+      }).run_status,
+    ).toEqual({
+      '1': 1,
+      '3': 1,
     });
   });
 

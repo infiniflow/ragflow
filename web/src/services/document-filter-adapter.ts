@@ -35,9 +35,7 @@ const goStatusOptions = Object.fromEntries(
 export const adaptDocumentFilter = (
   filter: DocumentFilterResponse,
 ): IDocumentInfoFilter => {
-  const goRunStatus: IDocumentInfoFilter['run_status'] = Object.fromEntries(
-    Object.keys(goQueryStatuses).map((option) => [option, 0]),
-  );
+  const goRunStatus: IDocumentInfoFilter['run_status'] = {};
   for (const [status, count] of Object.entries(filter.ingestion_status ?? {})) {
     const option = goStatusOptions[status];
     if (option) {
