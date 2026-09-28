@@ -1,6 +1,8 @@
 package indexdoc
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -193,6 +195,34 @@ func TestProcessChunksForPipeline_MetadataMapAggregated(t *testing.T) {
 	// The consumed metadata key must not leak onto the persisted chunk.
 	if _, exists := chunks[0]["metadata"]; exists {
 		t.Error("metadata key should be removed from the chunk after aggregation")
+	}
+}
+
+func TestProcessChunksForPipeline_MetadataAggregationPreservesStructuredValues(t *testing.T) {
+	outline := []map[string]any{{"title": "Overview", "depth": 1}}
+	chunks := []map[string]any{
+		{"text": "first", "metadata": map[string]any{
+			"_isCurrent": true, "_version": json.Number("2"), "outline": outline,
+			"dimensions": []int{10, 20}, "config": map[string]any{"source": "pdf"}, "nullable": nil,
+			"tags": []string{"one", "shared"},
+		}},
+		{"text": "second", "metadata": map[string]any{
+			"_isCurrent": false, "_version": json.Number("3"), "outline": "must not replace structured list",
+			"dimensions": []string{"must not extend structured list"}, "config": map[string]any{"source": "replacement"},
+			"nullable": "now a string", "tags": []any{"shared", "two"},
+		}},
+	}
+	metadata, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	want := map[string]any{
+		"_isCurrent": false, "_version": json.Number("3"), "outline": outline,
+		"dimensions": []int{10, 20}, "config": map[string]any{"source": "pdf"}, "nullable": "now a string",
+		"tags": []string{"one", "shared", "two"},
+	}
+	if !reflect.DeepEqual(metadata, want) {
+		t.Fatalf("metadata = %#v, want %#v", metadata, want)
 	}
 }
 
