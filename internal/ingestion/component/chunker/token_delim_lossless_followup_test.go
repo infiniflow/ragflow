@@ -69,6 +69,7 @@ func TestChunkFromItem_RetainsWhitespacePieces(t *testing.T) {
 	}{
 		{"interior blank line", "alpha\n\nbeta", []string{"alpha\n", "\nbeta"}},
 		{"leading delimiter", "\nsecond line", []string{"\nsecond line"}},
+		{"trailing delimiter", "alpha\n\n", []string{"alpha\n\n"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

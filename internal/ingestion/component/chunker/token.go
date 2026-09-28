@@ -765,10 +765,13 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 		}
 		kept = append(kept, p)
 	}
-	// A leading blank run followed by at least one real piece still belongs to
-	// the source; prepend it to the first kept piece rather than discarding it.
+	// A pending blank run belongs to the source and must be preserved. A run
+	// that preceded the first real piece is already prepended during the loop;
+	// any run left over after the last real piece (a trailing delimiter) is
+	// appended to the last kept piece so the emitted text reconstructs the
+	// source exactly instead of being shifted to the front.
 	if leading != "" && len(kept) > 0 {
-		kept[0] = leading + kept[0]
+		kept[len(kept)-1] += leading
 	}
 	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
