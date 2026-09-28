@@ -194,6 +194,16 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
+	var diagnostics *common.MetadataFilterDiagnostic
+	if args.RetrievalFrom == "dataset" {
+		diagnostics = &common.MetadataFilterDiagnostic{}
+		if len(args.MetaDataFilter) == 0 {
+			diagnostics.Method = "disabled"
+			diagnostics.Status = "disabled"
+			diagnostics.Logic = "and"
+			diagnostics.Conditions = []map[string]interface{}{}
+		}
+	}
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -211,6 +221,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
 		TenantID:                 retrievalTenantID(ctx),
+		Diagnostics:              diagnostics,
 	}
 
 	var chunks []RetrievalChunk
@@ -252,8 +263,21 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// citation grounding call can read them. The recording is
 	// best-effort — when the canvas state is not
 	// attached (e.g. unit tests), we skip silently.
-	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
+	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && args.RetrievalFrom == "dataset" {
 		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
+		if diagnostics != nil {
+			diagnostic := map[string]any{
+				"method":                 diagnostics.Method,
+				"status":                 diagnostics.Status,
+				"conditions":             diagnostics.Conditions,
+				"logic":                  diagnostics.Logic,
+				"matched_document_count": diagnostics.MatchedDocumentCount,
+				"tool_name":              retrievalToolName,
+				"query":                  args.Query,
+				"dataset_ids":            args.DatasetIDs,
+			}
+			state.AppendMetadataFilterDiagnostic(diagnostic)
+		}
 	}
 	result, err := stubJSONWithErr(out)
 	if err != nil {
