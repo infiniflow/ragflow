@@ -245,3 +245,58 @@ class TestApplyMetaDataFilterBaseScope:
         with caplog.at_level("DEBUG"):
             assert self._run(flt, metas, ["docA"]) == ["-999"]
         assert "base_count=1, filter_hit_count=1, constrained_count=0, removed_all_filter_hits=True" in caplog.text
+
+    @staticmethod
+    def _run_generated(method, conditions, metas, base, semi_auto=None):
+        import asyncio
+        import sys
+        import types
+        from unittest.mock import patch
+
+        stub = types.ModuleType("rag.prompts.generator")
+
+        async def gen_meta_filter(*a, **k):
+            return {"conditions": conditions, "logic": "and"}
+
+        stub.gen_meta_filter = gen_meta_filter
+
+        from common.metadata_utils import apply_meta_data_filter
+
+        filter_def = {"method": method}
+        if method == "semi_auto":
+            filter_def["semi_auto"] = semi_auto or ["color"]
+
+        with patch.dict(sys.modules, {"rag.prompts.generator": stub}):
+            return asyncio.run(apply_meta_data_filter(filter_def, metas, base_doc_ids=base, kb_ids=None))
+
+    def test_auto_empty_intersection_with_base_scope_returns_sentinel(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        conditions = [{"key": "color", "op": "=", "value": "red"}]
+        assert self._run_generated("auto", conditions, metas, ["docA"]) == ["-999"]
+
+    def test_auto_empty_without_base_scope_returns_none(self):
+        metas = {"color": {"blue": ["docA"]}}
+        conditions = [{"key": "color", "op": "=", "value": "red"}]
+        assert self._run_generated("auto", conditions, metas, None) is None
+
+    def test_semi_auto_empty_intersection_with_base_scope_returns_sentinel(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        conditions = [{"key": "color", "op": "=", "value": "red"}]
+        assert self._run_generated("semi_auto", conditions, metas, ["docA"], semi_auto=["color"]) == ["-999"]
+
+    def test_auto_empty_conditions_with_base_scope_keeps_base(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run_generated("auto", [], metas, ["docA"]) == ["docA"]
+
+    def test_semi_auto_empty_conditions_with_base_scope_keeps_base(self):
+        metas = {"color": {"red": ["docB"], "blue": ["docA"]}}
+        assert self._run_generated("semi_auto", [], metas, ["docA"], semi_auto=["color"]) == ["docA"]
+
+    def test_auto_empty_conditions_without_base_scope_returns_none(self):
+        metas = {"color": {"blue": ["docA"]}}
+        assert self._run_generated("auto", [], metas, None) is None
+
+    def test_auto_matching_conditions_with_base_scope_unchanged(self):
+        metas = {"color": {"red": ["docA", "docB"]}}
+        conditions = [{"key": "color", "op": "=", "value": "red"}]
+        assert self._run_generated("auto", conditions, metas, ["docA"]) == ["docA"]
