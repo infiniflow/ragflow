@@ -466,6 +466,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			var opts []workflowx.LoopOption
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
+			opts = append(opts, workflowx.WithLoopStatePersistence(exp.snapshot, exp.restore))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
 					state, _ := runtime.GetStateFromContext(ctx)

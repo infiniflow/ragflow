@@ -36,6 +36,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -53,6 +54,8 @@ type loopExpansion struct {
 	ShouldQuit workflowx.LoopCondition[map[string]any]
 	MaxIters   int
 	Members    map[string]bool // cpn_ids consumed by the sub-graph; caller skips these in the main pass.
+	snapshot   func(context.Context) ([]byte, error)
+	restore    func(context.Context, []byte) error
 }
 
 // buildLoopExpansion constructs the sub-workflow + termination condition
@@ -107,6 +110,12 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 		ShouldQuit: shouldQuit,
 		MaxIters:   maxIters,
 		Members:    members,
+		snapshot: func(ctx context.Context) ([]byte, error) {
+			return snapshotLoopVariables(ctx, loopID)
+		},
+		restore: func(ctx context.Context, data []byte) error {
+			return restoreLoopVariables(ctx, loopID, data)
+		},
 	}, nil
 }
 
@@ -337,6 +346,29 @@ func buildSubWorkflow(
 	initNode.AddInput(compose.START)
 
 	return sub, nil
+}
+
+func snapshotLoopVariables(ctx context.Context, loopID string) ([]byte, error) {
+	state, err := GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return json.Marshal(state.Snapshot()[loopID])
+}
+
+func restoreLoopVariables(ctx context.Context, loopID string, data []byte) error {
+	state, err := GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return err
+	}
+	var values map[string]any
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	for name, value := range values {
+		state.SetVar(loopID, name, value)
+	}
+	return nil
 }
 
 func subCanvasForMembers(c *Canvas, members map[string]bool) *Canvas {
