@@ -471,7 +471,6 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				if encoded, raw, resolved := resolveImageURL(ctx, imgURL); resolved {
 					if raw != nil {
 						appendOCRText(item, imageOCR.recognize(raw))
-						appendOCRText(item, imageOCR.recognize(raw))
 						item["image"] = base64.StdEncoding.EncodeToString(raw)
 					} else {
 						item["image"] = encoded

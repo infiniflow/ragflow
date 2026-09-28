@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"

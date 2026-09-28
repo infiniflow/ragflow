@@ -37,7 +37,6 @@ import (
 	_ "image/png"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
-	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
 const (
