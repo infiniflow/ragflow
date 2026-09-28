@@ -180,7 +180,7 @@ The direct Go API health check and frontend should return HTTP 200, the version 
 Press `Ctrl+C` in the frontend and Go server terminals. To stop the dependency containers started in step 2:
 
 ```bash
-docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml stop \
+docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop \
   es01 mysql minio nats kvrocks clickhouse
 ```
 
