@@ -175,6 +175,11 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 		if IsChunkerComponent(s.CpnID) {
 			keys["enable_children"] = struct{}{}
+			// parent_child is the component-scoped home of the parent/child
+			// split setting; it must survive cleaning so the chunker node keeps
+			// it (ApplyParentChildChunkerConfig derives children_delimiters
+			// from it). No flat top-level parent_child is accepted.
+			keys["parent_child"] = struct{}{}
 		}
 		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
 			keys[k] = struct{}{}
@@ -355,10 +360,9 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// parent_child setting scoped onto each chunker component. The setting may live
-// as a "parent_child" sub-object on the chunker node itself (component-scoped)
-// or, for transitional input, as a flat top-level "parent_child" key in
-// rawConfig. The flat key is never written back into componentConfig.
+// parent_child setting scoped onto each chunker component. The setting must live
+// as a "parent_child" sub-object on the chunker node itself (component-scoped);
+// flat top-level parent_child keys are not accepted.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
 	for componentID, value := range componentConfig {
 		if !IsChunkerComponent(componentID) {
@@ -368,17 +372,10 @@ func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map
 		if !ok {
 			continue
 		}
-		var parentChild map[string]interface{}
-		if pc, ok := params["parent_child"].(map[string]interface{}); ok {
-			parentChild = pc
-		} else if pc, ok := rawConfig["parent_child"].(map[string]interface{}); ok {
-			parentChild = pc
-		}
-		if parentChild == nil {
+		parentChild, ok := params["parent_child"].(map[string]interface{})
+		if !ok {
 			continue
 		}
-		// Scope the setting onto the chunker node (component-scoped); no flat key.
-		params["parent_child"] = parentChild
 		useParentChild, _ := parentChild["use_parent_child"].(bool)
 		childrenDelimiters := []string{}
 		if useParentChild {

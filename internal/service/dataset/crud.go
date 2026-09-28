@@ -149,9 +149,6 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 
 	parentChildConfig := map[string]interface{}{}
-	if pc := resolveParentChild(req.ParserConfig); pc != nil {
-		parentChildConfig["parent_child"] = pc
-	}
 	if req.ParserConfig != nil {
 		for componentID, value := range req.ParserConfig {
 			if pipelinepkg.IsChunkerComponent(componentID) {

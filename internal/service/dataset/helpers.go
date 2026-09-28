@@ -389,9 +389,6 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	// Re-derive delimiters from parent_child, then keep explicit chunker edits
 	// (or an existing chunker setting on a partial update) over that fallback.
 	parentChildConfig := map[string]interface{}{}
-	if pc := resolveParentChild(incoming); pc != nil {
-		parentChildConfig["parent_child"] = pc
-	}
 	for componentID, value := range incoming {
 		if pipelinepkg.IsChunkerComponent(componentID) {
 			parentChildConfig[componentID] = value

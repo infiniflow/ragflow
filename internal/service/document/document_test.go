@@ -3479,9 +3479,11 @@ func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) 
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 		ParserConfig: map[string]any{
-			"parent_child": map[string]any{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
@@ -3537,9 +3539,11 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 
 	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{
-			"parent_child": map[string]any{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, map[string]bool{"parser_config": true})
