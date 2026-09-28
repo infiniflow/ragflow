@@ -198,12 +198,25 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-// TODO(#9): validateDatasetParserConfig will reject every flat (non-component
-// scoped) key. During the metadata/parent_child componentization PRs (#11/#12)
-// the Go backend still mints and consumes these top-level keys, so validation
-// is intentionally a pass-through here. It is tightened to reject all flat keys
-// only after the backend no longer produces them.
+// validateDatasetParserConfig rejects the flat (non-component-scoped) forms of
+// the keys the Go backend now scopes onto components. `metadata` must live under
+// an Extractor node and `parent_child` under a GeneralChunker node; the Python
+// backend is fully retired (SystemHandler.Language always returns "go"), so this
+// check applies unconditionally. Parser-level flat keys (chunk_token_num,
+// delimiter, ...) remain valid on the built-in path and are intentionally not
+// rejected.
 func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+	if len(parserConfig) == 0 {
+		return nil
+	}
+	for _, flatKey := range []string{"metadata", "parent_child"} {
+		if _, ok := parserConfig[flatKey]; ok {
+			return fmt.Errorf(
+				"parser_config key %q must be component-scoped (e.g. under an Extractor or GeneralChunker node), not a flat top-level key",
+				flatKey,
+			)
+		}
+	}
 	return nil
 }
 
@@ -333,25 +346,17 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	var mm map[string]any
 	if incoming != nil {
-		if v, ok := incoming["metadata"].(map[string]any); ok {
-			mm = v
-		} else if v := extractorNodeMetadata(incoming); v != nil {
-			mm = v
-		}
+		mm = extractorNodeMetadata(incoming)
 	}
 	if mm == nil && existing != nil {
-		if v, ok := existing["metadata"].(map[string]any); ok {
-			mm = v
-		} else if v := extractorNodeMetadata(existing); v != nil {
-			mm = v
-		}
+		mm = extractorNodeMetadata(existing)
 	}
 	if mm != nil {
 		next["metadata"] = mm
 	}
 	// Resolve the dataset-level parent_child setting (component-scoped on a
-	// chunker node, or a flat top-level key for transitional input) and scope it
-	// onto every chunker node in next. There is no flat aggregation key.
+	// chunker node) and scope it onto every chunker node in next. There is no
+	// flat aggregation key.
 	parentChild := resolveParentChild(incoming, existing)
 	if parentChild != nil {
 		for componentID, value := range next {
@@ -446,16 +451,13 @@ func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
 }
 
 // resolveParentChild extracts the dataset-level parent_child setting from one or
-// more parser_configs. It prefers a component-scoped "parent_child" sub-object
-// on a chunker node and falls back to a flat top-level "parent_child" key for
-// transitional input. Returns nil when absent.
+// more parser_configs. It reads the component-scoped "parent_child" sub-object on
+// a chunker node only; flat top-level keys are not accepted. Returns nil when
+// absent.
 func resolveParentChild(configs ...map[string]interface{}) map[string]any {
 	for _, cfg := range configs {
 		if cfg == nil {
 			continue
-		}
-		if v, ok := cfg["parent_child"].(map[string]any); ok {
-			return v
 		}
 		for componentID, raw := range cfg {
 			if !pipelinepkg.IsChunkerComponent(componentID) {

@@ -169,9 +169,11 @@ func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 		ParserID:  &parserID,
 		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, "tenant-1")

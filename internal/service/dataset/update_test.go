@@ -108,9 +108,11 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	})
@@ -143,9 +145,11 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
 	existingConfig := entity.JSONMap{
-		"parent_child": map[string]interface{}{
-			"use_parent_child":   true,
-			"children_delimiter": "|",
+		"GeneralChunker:SixApplesFall": map[string]interface{}{
+			"parent_child": map[string]interface{}{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
 		},
 	}
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", existingConfig).Error; err != nil {
@@ -1227,10 +1231,12 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 		"Parser:HipSignsRhyme": map[string]interface{}{
 			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
 		},
-		"metadata": map[string]interface{}{
-			"enabled":           true,
-			"metadata":          incomingMetadata,
-			"built_in_metadata": incomingBuiltInMetadata,
+		"Extractor:AutoExtractDefault": map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"enabled":           true,
+				"metadata":          incomingMetadata,
+				"built_in_metadata": incomingBuiltInMetadata,
+			},
 		},
 	}
 
@@ -1278,10 +1284,12 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 		"type": "string",
 	}}
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"metadata": map[string]interface{}{
-			"enabled":           true,
-			"metadata":          existingMetadata,
-			"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+		"Extractor:AutoExtractDefault": map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"enabled":           true,
+				"metadata":          existingMetadata,
+				"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+			},
 		},
 	}).Error; err != nil {
 		t.Fatalf("seed parser_config: %v", err)

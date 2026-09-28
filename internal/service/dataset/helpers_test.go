@@ -242,6 +242,29 @@ func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
 	}
 }
 
+func TestValidateParserConfigRejectsFlatMetadataAndParentChild(t *testing.T) {
+	if err := validateDatasetParserConfig(map[string]interface{}{"metadata": map[string]interface{}{}}); err == nil {
+		t.Fatal("expected error for flat metadata key")
+	}
+	if err := ValidateDocumentParserConfig(map[string]interface{}{"parent_child": map[string]interface{}{}}); err == nil {
+		t.Fatal("expected error for flat parent_child key")
+	}
+	// Component-scoped (cpnID-keyed) forms are accepted.
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"Extractor:AutoExtractDefault": map[string]interface{}{"metadata": map[string]interface{}{}},
+		"GeneralChunker:SixApplesFall": map[string]interface{}{"parent_child": map[string]interface{}{}},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
+	}
+	// Parser-level flat keys remain valid on the built-in path.
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"chunk_token_num": float64(128),
+		"delimiter":       "\n",
+	}); err != nil {
+		t.Fatalf("expected nil for parser-level flat keys, got %v", err)
+	}
+}
+
 // --- normalizeDatasetID ---
 
 func TestNormalizeDatasetID_Invalid(t *testing.T) {
@@ -368,10 +391,12 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 
 func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	cases := map[string]interface{}{
@@ -380,7 +405,11 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 	}
 	for name, incomingMetadata := range cases {
 		t.Run(name, func(t *testing.T) {
-			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			incoming := map[string]interface{}{
+				"Extractor:AutoExtractDefault": map[string]any{
+					"metadata": incomingMetadata,
+				},
+			}
 			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
 			meta, ok := got["metadata"].(map[string]any)
 			if !ok {
@@ -396,17 +425,21 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 
 func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           false,
-			"metadata":          []any{},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	incoming := map[string]interface{}{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
