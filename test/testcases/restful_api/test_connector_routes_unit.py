@@ -453,6 +453,66 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
 
 @pytest.mark.p2
+def test_create_connector_rejects_non_integer_freq_fields(monkeypatch):
+    """Non-integer refresh_freq/prune_freq/timeout_secs must answer with a data
+    error instead of raising ValueError out of int() (#19470)."""
+    module = _load_connector_app(monkeypatch)
+
+    async def _no_sleep(_secs):
+        return None
+
+    monkeypatch.setattr(module.asyncio, "sleep", _no_sleep)
+    save_calls = []
+    monkeypatch.setattr(module.ConnectorService, "save", lambda **payload: save_calls.append(payload))
+    monkeypatch.setattr(module, "get_uuid", lambda: "generated-id")
+
+    for field in ("refresh_freq", "prune_freq", "timeout_secs"):
+        req = {"name": "new", "source": "gmail", "config": {"y": 2}, field: "abc"}
+        monkeypatch.setattr(module, "get_request_json", lambda body=req: _AwaitableValue(body))
+        res = _run(module.create_connector())
+        assert res["message"] == f"`{field}` should be an integer", res
+        assert not save_calls
+
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda cid: (True, _FakeConnectorRecord({"id": cid})))
+    req = {"name": "new", "source": "gmail", "config": {"y": 2}, "refresh_freq": "7", "prune_freq": 9, "timeout_secs": "120"}
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(req))
+    res = _run(module.create_connector())
+    assert res["data"]["id"] == "generated-id"
+    assert save_calls[-1]["refresh_freq"] == 7
+    assert save_calls[-1]["prune_freq"] == 9
+    assert save_calls[-1]["timeout_secs"] == 120
+
+
+@pytest.mark.p2
+def test_create_connector_requires_name_source_config(monkeypatch):
+    """The route must carry @validate_request("name", "source", "config") so a
+    missing field answers with an argument error instead of a KeyError (#19470).
+
+    The shared validate_request decorator is stubbed out by the loader, so the
+    required-field wiring is asserted by re-executing the module with a
+    recording decorator factory.
+    """
+    _load_connector_app(monkeypatch)
+
+    recorded = []
+
+    def _recording_validate_request(*keys):
+        recorded.append(keys)
+        return lambda fn: fn
+
+    monkeypatch.setattr(sys.modules["api.utils.api_utils"], "validate_request", _recording_validate_request)
+
+    repo_root = Path(__file__).resolve().parents[3]
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "connector_api.py"
+    spec = importlib.util.spec_from_file_location("test_connector_create_required_fields", module_path)
+    reloaded = importlib.util.module_from_spec(spec)
+    reloaded.manager = _DummyManager()
+    spec.loader.exec_module(reloaded)
+
+    assert ("name", "source", "config") in recorded
+
+
+@pytest.mark.p2
 def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     """Verify per-id connector routes stop before body parsing or service access."""
     module = _load_connector_app(monkeypatch)

@@ -106,6 +106,18 @@ async def create_connector():
         except (TypeError, ValueError):
             return get_data_error_result(message="refresh_freq, prune_freq and timeout_secs must be integers")
         req["id"] = get_uuid()
+        try:
+            refresh_freq = int(req.get("refresh_freq", 5))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="`refresh_freq` should be an integer")
+        try:
+            prune_freq = int(req.get("prune_freq", 5))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="`prune_freq` should be an integer")
+        try:
+            timeout_secs = int(req.get("timeout_secs", 60 * 29))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="`timeout_secs` should be an integer")
         conn = {
             "id": req["id"],
             "tenant_id": current_user.id,
