@@ -143,7 +143,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    API_PROXY_SCHEME=python npm run dev
    ```
 
-   The `python` proxy scheme routes API requests to the Python backend on port `9380`. Use `go` for the Go backend on port `9384`, or `hybrid` when running both backends.
+   The `python` proxy scheme routes API requests to the Python backend on port `9380`. Use `go` for the Go backend on port `9380`, or `hybrid` when running both backends.
 
    *The following message appears, showing the IP address and port number of your frontend service:*
 
