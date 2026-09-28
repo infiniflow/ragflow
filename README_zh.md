@@ -158,8 +158,7 @@
 ## 🔎 系统架构
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-  <!-- 架构图预留位置：原图 2760 × 1600，展示宽度 1000、高度约 580；收到正式图片后在此处插入。 -->
-  <div style="width:100%;max-width:1000px;height:580px;border:1px dashed #b8c4cc;display:flex;align-items:center;justify-content:center;">系统架构图预留位置（1000 × 580）</div>
+  <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
 </div>
 
 ## 🏠 本地部署
