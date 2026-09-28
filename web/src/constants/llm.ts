@@ -110,6 +110,7 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  Requesty = 'Requesty',
 }
 
 // Please lowercase the file name
@@ -203,6 +204,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Requesty]: 'requesty',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -252,6 +254,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
+  [LLMFactory.Requesty]: 'https://app.requesty.ai/api-keys',
   [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',

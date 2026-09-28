@@ -79,3 +79,39 @@ describe('MWS provider configuration', () => {
     });
   });
 });
+
+describe('Requesty provider configuration', () => {
+  it('uses dynamic model discovery', () => {
+    expect(LIST_MODEL_PROVIDERS.has(LLMFactory.Requesty)).toBe(true);
+  });
+
+  it('forwards the picked models and keeps the base URL optional', () => {
+    const config = LocalLlmConfigs[LLMFactory.Requesty];
+
+    expect(config).toMatchObject({
+      llmFactory: LLMFactory.Requesty,
+      title: 'Requesty',
+      docLink: 'https://docs.requesty.ai',
+    });
+    expect(
+      config.fields.find((field) => field.name === 'base_url'),
+    ).toMatchObject({ required: false });
+    expect(
+      config.fields.some((field) => field.name === 'provider_order'),
+    ).toBe(false);
+
+    expect(
+      config.submitTransform?.({
+        instance_name: 'requesty',
+        base_url: 'https://router.eu.requesty.ai/v1',
+        api_key: 'key',
+        model_info: [],
+      }),
+    ).toMatchObject({
+      instance_name: 'requesty',
+      llm_factory: LLMFactory.Requesty,
+      base_url: 'https://router.eu.requesty.ai/v1',
+      api_key: 'key',
+    });
+  });
+});
