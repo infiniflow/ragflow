@@ -2,15 +2,6 @@ include:
   - ./docker-compose-base.yml
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
-  # The Go stack uses Kvrocks exclusively (see the `kvrocks` service) and does
-  # not need Valkey. Disable the Valkey `redis` service inherited from the base
-  # compose by giving it a profile the Go deployment never activates, so it does
-  # not occupy the Redis port slot and Kvrocks can use a dedicated, CI-offset
-  # host-published port (see docker-compose-base.yml; the variable is KVROCKS_PORT,
-  # offset per CI job and distinct from REDIS_PORT).
-  redis:
-    profiles:
-      - ragflow-py
 
   deepdoc:
     image: ${DEEPDOC_IMAGE:-deepdoc_oss:latest}
