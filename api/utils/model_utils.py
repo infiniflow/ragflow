@@ -19,6 +19,12 @@ from common.constants import ModelTypeBinary
 
 
 def get_model_type_human(model_type: int) -> List[str]:
+    if not isinstance(model_type, int) or isinstance(model_type, bool):
+        # A non-integer model_type (e.g. a leftover varchar row from a partial
+        # migration) would otherwise raise TypeError on the bitwise '&' and
+        # turn one bad row into a 500 for the whole model list. Skip instead
+        # so the rest of the response still loads. See issue #19569.
+        return []
     return [mt.name.lower() for mt in ModelTypeBinary if model_type & mt.value]
 
 
