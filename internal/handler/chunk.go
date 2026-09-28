@@ -725,6 +725,9 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 	if !ok {
 		return nil, nil
 	}
+	if string(raw) == "null" {
+		return nil, errors.New(listMessage)
+	}
 	var values []interface{}
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil, errors.New(listMessage)
