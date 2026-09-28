@@ -46,8 +46,6 @@ services:
       - ${SVR_HTTP_PORT}:9380
       - ${ADMIN_SVR_HTTP_PORT}:9381
       - ${SVR_MCP_PORT}:9382 # entry for MCP (host_port:docker_port). The docker_port must match the value you set for `mcp-port` above.
-      - ${GO_HTTP_PORT}:9384
-      - ${GO_ADMIN_PORT}:9383
     environment:
       # Shared secret used to authenticate towards sandbox-executor-manager.
       # Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on that service.

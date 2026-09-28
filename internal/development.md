@@ -291,8 +291,8 @@ cd web && export API_PROXY_SCHEME=hybrid && npm run dev
 ```
 
 ## 4. Service Ports & API Routing
-- api server listens on port 9384 by default
-- admin server listens on port 9383 by default
+- api server listens on port 9380 by default
+- admin server listens on port 9381 by default
 
 After updating or implementing an API, update the frontend development environment routes in web/vite.config.ts under proxySchemes.
 
