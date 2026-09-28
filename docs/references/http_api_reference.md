@@ -2496,7 +2496,6 @@ Retrieves chunks from specified datasets.
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
-  - `"toc_enhance"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
@@ -2561,8 +2560,6 @@ curl --request POST \
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`
-  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
@@ -2729,7 +2726,6 @@ curl --request POST \
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
-  - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
 - `"top_n"`: (*Body parameter*), `int`
