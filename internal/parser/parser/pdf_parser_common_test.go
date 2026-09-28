@@ -895,6 +895,8 @@ func TestPDFTextCarriesTableMarkup(t *testing.T) {
 		{"opens with table tag", "<table><tr><td>a</td></tr></table>", true},
 		{"row tag only", "<tr><td>a</td></tr>", true},
 		{"uppercase tag", "<TABLE><TR><TD>a</TD></TR></TABLE>", true},
+		{"prefix is not a tag", "<transaction>text</transaction>", false},
+		{"table prefix is not a tag", "<tabletop>text</tabletop>", false},
 		{"tag with attributes", "<table border='1'><tr><td>a</td></tr></table>", true},
 		{"trailing whitespace around tag", "  <tr><td>a</td></tr>\n", true},
 	}

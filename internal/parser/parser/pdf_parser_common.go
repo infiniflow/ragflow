@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -945,8 +946,10 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 // successful parse that produced nothing. Downgrading the label when
 // the markup is absent restores the consumer-side contract that a
 // "table" item carries an actual table. See issue #20143.
+var pdfTableTag = regexp.MustCompile(`(?i)<(?:table|tr)(?:[\s/>])`)
+
 func pdfTextCarriesTableMarkup(text string) bool {
-	return strings.Contains(text, "<table") || strings.Contains(text, "<tr")
+	return pdfTableTag.MatchString(text)
 }
 
 // pdfDowngradeLabelIfNoTableMarkup rewrites an item map so that the
