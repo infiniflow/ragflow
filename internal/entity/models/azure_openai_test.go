@@ -353,3 +353,91 @@ func TestAzureEmbedHappyPath(t *testing.T) {
 		t.Errorf("embedding=%#v", embeddings[0])
 	}
 }
+
+// newAzureCredentialServer answers every Azure data-plane call and records
+// the api-key header and api-version query parameter the request carried.
+func newAzureCredentialServer(gotKey, gotVersion *string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotKey = r.Header.Get("api-key")
+		*gotVersion = r.URL.Query().Get("api-version")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/chat/completions") && r.Header.Get("Accept") == "text/event-stream":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n")
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"hi"}}]}`)
+		case strings.HasSuffix(r.URL.Path, "/embeddings"):
+			_, _ = io.WriteString(w, `{"data":[{"embedding":[0.1],"index":0}]}`)
+		default:
+			_, _ = io.WriteString(w, `{"data":[{"id":"gpt-4o"}]}`)
+		}
+	}))
+}
+
+// The model settings form stores {"api_key": ..., "api_version": ...} as the
+// instance's api_key whenever an API version is set, which it is by default.
+func TestAzureUnwrapsBundledAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	credentials := []struct {
+		name   string
+		apiKey string
+	}{
+		{"plain key", "test-key"},
+		{"bundle with api_version", `{"api_key":"test-key","api_version":"2024-02-01"}`},
+		{"bundle without api_version", `{"api_key":"test-key"}`},
+	}
+	messages := []Message{{Role: "user", Content: "hi"}}
+	deployment := "text-embedding-3-small"
+	calls := []struct {
+		name string
+		call func(m *AzureOpenAIModel, cfg *APIConfig) error
+	}{
+		{"chat", func(m *AzureOpenAIModel, cfg *APIConfig) error {
+			_, err := m.ChatWithMessages(t.Context(), "gpt-4o", messages, cfg, nil, nil)
+			return err
+		}},
+		{"chat stream", func(m *AzureOpenAIModel, cfg *APIConfig) error {
+			return m.ChatStreamlyWithSender(t.Context(), "gpt-4o", messages, cfg, nil, nil,
+				func(*string, *string) error { return nil })
+		}},
+		{"embed", func(m *AzureOpenAIModel, cfg *APIConfig) error {
+			_, err := m.Embed(t.Context(), &deployment, EmbedRequest{Texts: []string{"hi"}}, cfg, nil, nil)
+			return err
+		}},
+		{"list models", func(m *AzureOpenAIModel, cfg *APIConfig) error {
+			_, err := m.ListModels(t.Context(), cfg)
+			return err
+		}},
+	}
+	for _, cred := range credentials {
+		for _, c := range calls {
+			t.Run(cred.name+"/"+c.name, func(t *testing.T) {
+				var gotKey, gotVersion string
+				srv := newAzureCredentialServer(&gotKey, &gotVersion)
+				defer srv.Close()
+
+				apiKey := cred.apiKey
+				if err := c.call(newAzureForTest(srv.URL), &APIConfig{ApiKey: &apiKey}); err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if gotKey != "test-key" {
+					t.Errorf("api-key=%q, want test-key", gotKey)
+				}
+				if gotVersion != azureAPIVersion {
+					t.Errorf("api-version=%q, want %s", gotVersion, azureAPIVersion)
+				}
+			})
+		}
+	}
+}
+
+func TestAzureRejectsBundleWithoutAPIKey(t *testing.T) {
+	apiKey := `{"api_key":"","api_version":"2024-02-01"}`
+	_, err := newAzureForTest("http://unused").ChatWithMessages(t.Context(), "gpt-4o",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Fatalf("err=%v, want api key is required", err)
+	}
+}

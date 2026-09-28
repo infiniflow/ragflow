@@ -28,6 +28,28 @@ import (
 // azureAPIVersion is the Azure OpenAI REST API version sent as the
 const azureAPIVersion = "2024-10-21"
 
+// azureAPIKey extracts the API key from the stored api_key. When an API
+// version is set, the model settings form stores api_key as a JSON object:
+//
+//	{"api_key": "...", "api_version": "..."}
+//
+// Otherwise api_key is the plain key.
+func azureAPIKey(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if strings.HasPrefix(key, "{") {
+		var bundle struct {
+			APIKey string `json:"api_key"`
+		}
+		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
+			return strings.TrimSpace(bundle.APIKey)
+		}
+	}
+	return key
+}
+
 // AzureOpenAIModel implements ModelDriver for Azure OpenAI.
 type AzureOpenAIModel struct {
 	baseModel BaseModel
@@ -43,7 +65,7 @@ func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureO
 			// Azure OpenAI authenticates with the non-standard "api-key"
 			// header instead of "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {
-				return "api-key", *cfg.ApiKey
+				return "api-key", azureAPIKey(cfg)
 			},
 		},
 	}
@@ -57,6 +79,15 @@ func (a *AzureOpenAIModel) Name() string {
 	return "azure-openai"
 }
 
+// checkAPIConfig rejects a missing API key, including a stored JSON object
+// whose api_key field is empty.
+func (a *AzureOpenAIModel) checkAPIConfig(apiConfig *APIConfig) error {
+	if azureAPIKey(apiConfig) == "" {
+		return fmt.Errorf("api key is required")
+	}
+	return nil
+}
+
 // deploymentURL builds a deployment-scoped data-plane URL of the form
 func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string {
 	return fmt.Sprintf("%s/deployments/%s/%s?api-version=%s",
@@ -65,7 +96,7 @@ func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string 
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := a.checkAPIConfig(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -116,7 +147,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. Used for streaming chat responses with no extra channel.
 func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := a.checkAPIConfig(apiConfig); err != nil {
 		return err
 	}
 
@@ -178,7 +209,7 @@ type azureEmbeddingResponse struct {
 
 // Embed turns a list of texts into embedding vectors
 func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := a.checkAPIConfig(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -230,7 +261,7 @@ func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, request
 
 // ListModels returns the deployment names visible to the configured API key.
 func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := a.checkAPIConfig(apiConfig); err != nil {
 		return nil, err
 	}
 
