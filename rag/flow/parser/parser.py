@@ -66,6 +66,7 @@ from rag.flow.parser.utils import (
     remove_toc_pdf,
     remove_toc_word,
 )
+from rag.flow.parser.vlm_config import get_vlm_config
 from rag.llm.cv_model import Base as VLM
 from rag.utils.base64_image import image2id
 
@@ -315,6 +316,15 @@ class ParserParam(ProcessParamBase):
             html_output_format = html_config.get("output_format", "")
             self.check_valid_value(html_output_format, "HTML output format abnormal.", self.allowed_output_format["html"])
 
+        audio_config = self.setups.get("audio", "")
+        if audio_config:
+            audio_vlm = get_vlm_config(audio_config)
+            self.check_empty(audio_vlm.get("llm_id"), "Audio VLM")
+
+        video_config = self.setups.get("video", "")
+        if video_config:
+            video_vlm = get_vlm_config(video_config)
+            self.check_empty(video_vlm.get("llm_id"), "Video VLM")
         email_config = self.setups.get("email", "")
         if email_config:
             email_output_format = email_config.get("output_format", "")
