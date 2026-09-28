@@ -19,7 +19,6 @@ package elasticsearch
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,21 +40,25 @@ type Engine struct {
 
 // NewEngine creates an Elasticsearch engine
 func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engine, error) {
-	// Create ES client
-	client, err := elasticsearch.NewClient(elasticsearch.Config{
+	// Create ES client. Certificate validation stays enabled (Go's transport
+	// default) so an API key or password is never sent to an unverified peer.
+	esCfg := elasticsearch.Config{
 		Addresses: []string{esConfig.Hosts},
-		Username:  esConfig.Username,
-		Password:  esConfig.Password,
 		Transport: &http.Transport{
 			MaxIdleConns:          1000,
 			MaxIdleConnsPerHost:   300,
 			MaxConnsPerHost:       500,
 			IdleConnTimeout:       60 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
-			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-			ForceAttemptHTTP2:     true,
 		},
-	})
+	}
+	if esConfig.APIKey != "" {
+		esCfg.APIKey = esConfig.APIKey
+	} else {
+		esCfg.Username = esConfig.Username
+		esCfg.Password = esConfig.Password
+	}
+	client, err := elasticsearch.NewClient(esCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Elasticsearch client: %w", err)
 	}
