@@ -31,6 +31,7 @@ from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
+from common.doc_store.doc_store_base import OrderByExpr
 from common.llm_request_context import normalize_llm_user_id
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
@@ -441,6 +442,22 @@ class TaskService(CommonService):
         return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
 
+def doc_has_chunks(doc_id: str, chunking_config: dict) -> bool:
+    """Whether the document still has at least one chunk in the doc store."""
+    res = settings.docStoreConn.search(
+        ["id"],
+        [],
+        {"doc_id": [doc_id]},
+        [],
+        OrderByExpr(),
+        0,
+        1,
+        search.index_name(chunking_config["tenant_id"]),
+        [chunking_config["kb_id"]],
+    )
+    return settings.docStoreConn.get_total(res) > 0
+
+
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str | None = None):
     """Create and queue document processing tasks.
 
@@ -559,8 +576,11 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str |
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
     if prev_tasks:
-        for task in parse_task_array:
-            ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
+        # A task row outlives the chunks it names: changing the chunk method deletes the
+        # document's chunks and leaves the rows behind, still naming the deleted ids.
+        if doc_has_chunks(doc["id"], chunking_config):
+            for task in parse_task_array:
+                ck_num += reuse_prev_task_chunks(task, prev_tasks, chunking_config)
         TaskService.filter_delete([Task.doc_id == doc["id"]])
         pre_chunk_ids = []
         for pre_task in prev_tasks:
