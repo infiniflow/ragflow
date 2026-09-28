@@ -42,6 +42,9 @@ export interface IParserConfig {
   delimiter?: string;
   html4excel?: boolean;
   layout_recognize?: string;
+  layout_recognize_auto_text?: string;
+  layout_recognize_auto_scanned?: string;
+  layout_recognize_auto_min_chars_per_page?: number;
   pages?: any[];
   chunk_token_num?: number;
   auto_keywords?: number;

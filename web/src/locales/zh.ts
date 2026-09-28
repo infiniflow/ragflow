@@ -537,6 +537,13 @@ export default {
       pageRangeFromInvalid: '起始页码必须为大于 0 的整数',
       pageRangeToInvalid: '结束页码必须为不小于起始页码的整数',
       layoutRecognize: 'PDF解析器',
+      layoutRecognizeAuto: '自动（按文档）',
+      layoutRecognizeAutoTitle: '自动解析子选项',
+      layoutRecognizeAutoText: '文本 PDF 解析器',
+      layoutRecognizeAutoScanned: '扫描 PDF 解析器',
+      layoutRecognizeAutoMinChars: '文本层阈值（字符/页）',
+      layoutRecognizeAutoMinCharsTip:
+        '若每页平均非空白字符数低于该值，则使用扫描 PDF 解析器。',
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
       taskPageSize: '任务页面大小',

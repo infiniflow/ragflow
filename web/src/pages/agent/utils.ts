@@ -238,6 +238,14 @@ export function transformParserParams(params: ParserFormSchemaType) {
               python: {},
             }),
           };
+          if (cur.parse_method?.toLowerCase() === 'auto') {
+            filteredSetup.layout_recognize_auto_text =
+              cur.layout_recognize_auto_text;
+            filteredSetup.layout_recognize_auto_scanned =
+              cur.layout_recognize_auto_scanned;
+            filteredSetup.layout_recognize_auto_min_chars_per_page =
+              cur.layout_recognize_auto_min_chars_per_page;
+          }
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
             filteredSetup.table_result_type = cur.table_result_type;

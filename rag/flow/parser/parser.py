@@ -268,7 +268,18 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
+            if pdf_parse_method.lower() not in [
+                "auto",
+                "deepdoc",
+                "plain_text",
+                "mineru",
+                "docling",
+                "opendataloader",
+                "tcadp parser",
+                "paddleocr",
+                "somark",
+                "mistral ocr",
+            ]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -342,6 +353,10 @@ class Parser(ProcessBase):
 
         # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
+        if isinstance(raw_parse_method, str) and raw_parse_method.strip().lower() == "auto":
+            from common.pdf_auto_layout import resolve_pipeline_auto_parse_method
+
+            raw_parse_method = resolve_pipeline_auto_parse_method(conf, blob, callback=self.callback)
         # If raw_parse_method is a tenant_model ID, resolve it to
         # model_name@instance_name@provider_name so the provider-specific
         # branches below can match the per-provider suffix.

@@ -56,7 +56,8 @@ export function PdfFormFields({ prefix }: CommonProps) {
       !isEmpty(parseMethod) &&
       parseMethod !== ParseDocumentType.DeepDOC &&
       parseMethod !== ParseDocumentType.PlainText &&
-      parseMethod !== ParseDocumentType.TCADPParser
+      parseMethod !== ParseDocumentType.TCADPParser &&
+      parseMethod?.toLowerCase() !== ParseDocumentType.Auto.toLowerCase()
     );
   }, [parseMethod]);
 
