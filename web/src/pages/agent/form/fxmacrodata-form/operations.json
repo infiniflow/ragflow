@@ -27,7 +27,7 @@
       "properties": {
         "base": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -36,7 +36,7 @@
         },
         "quote": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -216,7 +216,7 @@
       "properties": {
         "currency": {
           "type": "string",
-          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -268,7 +268,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -337,7 +337,7 @@
       "properties": {
         "base": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -346,7 +346,7 @@
         },
         "quote": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -465,7 +465,7 @@
       "properties": {
         "currency": {
           "type": "string",
-          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, KRW, MYR, NOK, NZD, PEN, SEK, THB, USD.",
           "examples": [
             "GBP"
           ],
@@ -664,7 +664,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, INR, JPY, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, ILS, INR, JPY, NGN, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
         },
         "limit": {
           "type": "integer",
@@ -818,7 +818,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -1077,7 +1077,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       },
       "required": [
@@ -1096,7 +1096,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -1681,11 +1681,11 @@
   },
   {
     "name": "mcp_data_catalogue",
-    "description": "List every macroeconomic indicator FXMacroData publishes for a currency, with units, frequency, and coverage/freshness metadata. ALWAYS call this first when the user asks about a country's macro data \u2014 it returns the exact `indicator` slug strings to pass to indicator_query, release_calendar, and indicator_visual_artifact. Check `coverage` before calling indicator_query; stale, partial, or unavailable rows are not suitable for real-time carry or inflation analysis. Supported currencies (lowercase 3-letter codes): AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "List every macroeconomic indicator FXMacroData publishes for a currency, with units, frequency, and coverage/freshness metadata. ALWAYS call this first when the user asks about a country's macro data \u2014 it returns the exact `indicator` slug strings to pass to indicator_query, release_calendar, and indicator_visual_artifact. Check `coverage` before calling indicator_query; stale, partial, or unavailable rows are not suitable for real-time carry or inflation analysis. Supported currencies (lowercase 3-letter codes): AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -1775,11 +1775,11 @@
   },
   {
     "name": "mcp_macro_news",
-    "description": "Return recent official central-bank news and press-release headlines for a currency. Use this when a report needs headline context for central-bank policy, inflation, employment, GDP, trade, fiscal, energy, or commodity narratives. The tool returns official-source headline rows and lightweight keyword-derived affected_indicators and sentiment fields when a headline is classifiable. Supported currencies: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, INR, JPY, NOK, NZD, PEN, PLN, SEK, USD, ZAR. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "Return recent official central-bank news and press-release headlines for a currency. Use this when a report needs headline context for central-bank policy, inflation, employment, GDP, trade, fiscal, energy, or commodity narratives. The tool returns official-source headline rows and lightweight keyword-derived affected_indicators and sentiment fields when a headline is classifiable. Supported currencies: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, ILS, INR, JPY, NGN, NOK, NZD, PEN, PLN, SEK, USD, ZAR. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, INR, JPY, NOK, NZD, PEN, PLN, SEK, USD, ZAR.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, ILS, INR, JPY, NGN, NOK, NZD, PEN, PLN, SEK, USD, ZAR.",
           "examples": [
             "usd",
             "eur",
@@ -1829,11 +1829,11 @@
   },
   {
     "name": "mcp_release_calendar",
-    "description": "Get upcoming scheduled macroeconomic release timestamps for a currency. Use this when the user asks 'when is the next CPI/GDP/payrolls/policy decision', or to plan a trade around a known release. Returns ISO-8601 announcement_datetime values in UTC plus market-local timestamps. Pass `timezone` for an additional `announcement_datetime_requested_timezone` field. Each row has a `release` string with the indicator name and a `currency` code. Unbounded calls return future releases only; do not show stale past rows unless the user explicitly asks for historical/past calendar data. Consumer-facing clients should present the returned markdown agenda or render the Release Calendar App resource; do not summarize this tool as only a row count. Pass an optional `indicator` filter to narrow to a single series. Pass optional `start_date` and `end_date` bounds when the user mentions a month, week, day, or explicit date range. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "Get upcoming scheduled macroeconomic release timestamps for a currency. Use this when the user asks 'when is the next CPI/GDP/payrolls/policy decision', or to plan a trade around a known release. Returns ISO-8601 announcement_datetime values in UTC plus market-local timestamps. Pass `timezone` for an additional `announcement_datetime_requested_timezone` field. Each row has a `release` string with the indicator name and a `currency` code. Unbounded calls return future releases only; do not show stale past rows unless the user explicitly asks for historical/past calendar data. Consumer-facing clients should present the returned markdown agenda or render the Release Calendar App resource; do not summarize this tool as only a row count. Pass an optional `indicator` filter to narrow to a single series. Pass optional `start_date` and `end_date` bounds when the user mentions a month, week, day, or explicit date range. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -1918,11 +1918,11 @@
   },
   {
     "name": "mcp_release_calendar_visual_artifact",
-    "description": "Same payload as release_calendar, but named as an explicit visual artifact tool so compatible MCP Apps clients render the interactive Release Calendar App inline. Prefer this by default when the user asks to show, display, visualize, or render a macro release calendar, especially for prompts like 'show me the AUD release calendar'. Only prefer plain release_calendar when the user explicitly asks for a raw table, JSON, exact rows, or text-only output. Pass optional `indicator`, `start_date`, and `end_date` filters when the user names a specific series, month, week, day, or date range. Pass `timezone` when the user asks for local times in a specific city or region. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "Same payload as release_calendar, but named as an explicit visual artifact tool so compatible MCP Apps clients render the interactive Release Calendar App inline. Prefer this by default when the user asks to show, display, visualize, or render a macro release calendar, especially for prompts like 'show me the AUD release calendar'. Only prefer plain release_calendar when the user explicitly asks for a raw table, JSON, exact rows, or text-only output. Pass optional `indicator`, `start_date`, and `end_date` filters when the user names a specific series, month, week, day, or date range. Pass `timezone` when the user asks for local times in a specific city or region. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -2007,11 +2007,11 @@
   },
   {
     "name": "mcp_event_predictions",
-    "description": "Return stored forecasts, consensus-style predictions, central-bank projections, survey forecasts, IMF forecasts, nowcasts, or FXMacroData blended predictions for macro announcements. Use this with release_calendar and indicator_query when a report needs actual-vs-consensus, prior-vs-forecast, or event-surprise context. Rows are keyed by announcement_id/date/indicator and include prediction source metadata. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: requires an FXMacroData API key; an anonymous call returns subscription_required with a subscribe link.",
+    "description": "Return stored forecasts, consensus-style predictions, central-bank projections, survey forecasts, IMF forecasts, nowcasts, or FXMacroData blended predictions for macro announcements. Use this with release_calendar and indicator_query when a report needs actual-vs-consensus, prior-vs-forecast, or event-surprise context. Rows are keyed by announcement_id/date/indicator and include prediction source metadata. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: requires an FXMacroData API key; an anonymous call returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -2628,11 +2628,11 @@
   },
   {
     "name": "mcp_forex",
-    "description": "Get raw historical FX spot-rate rows for a currency pair (e.g. EUR/USD, USD/JPY). Prefer this tool when the user explicitly wants a plain-text table, raw rows, exact values, JSON-like data, or technical-indicator series (SMA, EMA, RSI, MACD, Bollinger Bands, etc.) computed from spot without a chart. If the user asks more generally to show/tell/explain the last few weeks or months of a pair, prefer forex_visual_artifact instead so the client can render a chart. Daily granularity from official central-bank reference rates with full multi-year history. Supported currencies (use lowercase 3-letter codes): AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Optional `indicators` parameter accepts a comma-separated list of technical indicator slugs to attach to each row. Supported indicator values: adx_14, atr_14, bollinger_bands, cci_20, donchian_20, ema_12, ema_20, ema_200, ema_26, ema_50, macd, macd_histogram, macd_signal, rsi_14, sma_20, sma_200, sma_50, stochastic_14_3, williams_r_14, all. Access: requires an FXMacroData API key; an anonymous call returns subscription_required with a subscribe link.",
+    "description": "Get raw historical FX spot-rate rows for a currency pair (e.g. EUR/USD, USD/JPY). Prefer this tool when the user explicitly wants a plain-text table, raw rows, exact values, JSON-like data, or technical-indicator series (SMA, EMA, RSI, MACD, Bollinger Bands, etc.) computed from spot without a chart. If the user asks more generally to show/tell/explain the last few weeks or months of a pair, prefer forex_visual_artifact instead so the client can render a chart. Daily granularity from official central-bank reference rates with full multi-year history. Supported currencies (use lowercase 3-letter codes): AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Optional `indicators` parameter accepts a comma-separated list of technical indicator slugs to attach to each row. Supported indicator values: adx_14, atr_14, bollinger_bands, cci_20, donchian_20, ema_12, ema_20, ema_200, ema_26, ema_50, macd, macd_histogram, macd_signal, rsi_14, sma_20, sma_200, sma_50, stochastic_14_3, williams_r_14, all. Access: requires an FXMacroData API key; an anonymous call returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -2642,7 +2642,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -2778,7 +2778,7 @@
   },
   {
     "name": "mcp_indicator_query",
-    "description": "Get a paginated historical time series of a single macroeconomic indicator for a currency, sourced directly from the official central bank or statistical agency. Use this for CPI/inflation, GDP, unemployment, policy rates, bond yields, payrolls, retail sales, PCE, PPI, trade balance, current account, money supply, and similar series. Each row returns `date` (value-as-of), `val` (numeric), and `announcement_datetime` (when the value was first published \u2014 useful for backtest point-in-time integrity). This plain tool returns raw rows for data workflows. Use `indicator_visual_artifact` when the host should render an MCP App chart. Use `limit`, `offset`, or `page` to page through broad histories; check `pagination.next_offset` and `pagination.page_includes_latest_available` in the result. Responses default to official-source rows only; prohibited private aggregator rows are always removed. Always call data_catalogue(currency) first to get the exact indicator slug. USD indicators are free; non-USD requires API key. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "Get a paginated historical time series of a single macroeconomic indicator for a currency, sourced directly from the official central bank or statistical agency. Use this for CPI/inflation, GDP, unemployment, policy rates, bond yields, payrolls, retail sales, PCE, PPI, trade balance, current account, money supply, and similar series. Each row returns `date` (value-as-of), `val` (numeric), and `announcement_datetime` (when the value was first published \u2014 useful for backtest point-in-time integrity). This plain tool returns raw rows for data workflows. Use `indicator_visual_artifact` when the host should render an MCP App chart. Use `limit`, `offset`, or `page` to page through broad histories; check `pagination.next_offset` and `pagination.page_includes_latest_available` in the result. Responses default to official-source rows only; prohibited private aggregator rows are always removed. Always call data_catalogue(currency) first to get the exact indicator slug. USD indicators are free; non-USD requires API key. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
@@ -2791,7 +2791,7 @@
             }
           ],
           "default": null,
-          "description": "3-letter ISO currency code (case-insensitive). Optional if `slug` is provided as a `\"usd:cpi\"`-style compound. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Optional if `slug` is provided as a `\"usd:cpi\"`-style compound. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -2998,7 +2998,7 @@
             }
           ],
           "default": null,
-          "description": "Single-series currency for announcements, predictions, or COT. Supported macro currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Supported COT currencies: AUD, CAD, CHF, EUR, GBP, JPY, MXN, NZD, USD, XAU.",
+          "description": "Single-series currency for announcements, predictions, or COT. Supported macro currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Supported COT currencies: AUD, CAD, CHF, EUR, GBP, JPY, MXN, NZD, USD, XAU.",
           "examples": [
             "usd",
             "eur",
@@ -3034,7 +3034,7 @@
             }
           ],
           "default": null,
-          "description": "Base currency for single-series forex plots. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency for single-series forex plots. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "aud",
@@ -3051,7 +3051,7 @@
             }
           ],
           "default": null,
-          "description": "Quote currency for single-series forex plots. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency for single-series forex plots. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -3231,11 +3231,11 @@
   },
   {
     "name": "mcp_indicator_visual_artifact",
-    "description": "Same payload as indicator_query, but also returns MCP Apps metadata so compatible clients (Claude Desktop, ChatGPT, Codex, etc.) render an interactive line chart instead of a JSON dump. Prefer this by default for indicator time-series requests, especially when the user asks to show, tell, explain, compare, inspect a trend, or review a recent window. For broad histories, use the existing `limit`, `offset`, or `page` controls and inspect `pagination.next_offset` rather than retrying with arbitrary shorter windows. Only fall back to indicator_query when the user explicitly wants a raw table, plain text list, JSON, exact rows, or minimal structured data. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
+    "description": "Same payload as indicator_query, but also returns MCP Apps metadata so compatible clients (Claude Desktop, ChatGPT, Codex, etc.) render an interactive line chart instead of a JSON dump. Prefer this by default for indicator time-series requests, especially when the user asks to show, tell, explain, compare, inspect a trend, or review a recent window. For broad histories, use the existing `limit`, `offset`, or `page` controls and inspect `pagination.next_offset` rather than retrying with arbitrary shorter windows. Only fall back to indicator_query when the user explicitly wants a raw table, plain text list, JSON, exact rows, or minimal structured data. Supported currencies: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD. Call data_catalogue(currency) for the exact indicator slugs; the `indicator` parameter below also lists them. Access: USD is available without an API key; every other currency returns subscription_required with a subscribe link.",
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -3339,7 +3339,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -3349,7 +3349,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -3551,7 +3551,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -3561,7 +3561,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -3616,7 +3616,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -3639,7 +3639,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -3705,7 +3705,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -3715,7 +3715,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -3779,7 +3779,7 @@
             }
           ],
           "default": null,
-          "description": "Comma-separated 3-letter currency codes (lowercase preferred). Supported values include: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Comma-separated 3-letter currency codes (lowercase preferred). Supported values include: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd,eur,gbp,jpy",
             "aud,cad,chf,nzd",
@@ -3845,7 +3845,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -3855,7 +3855,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -3985,7 +3985,7 @@
             }
           ],
           "default": null,
-          "description": "Base currency for pair context, 3-letter ISO code (case-insensitive). Defaults to the release currency when omitted. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency for pair context, 3-letter ISO code (case-insensitive). Defaults to the release currency when omitted. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4003,7 +4003,7 @@
             }
           ],
           "default": "usd",
-          "description": "Quote currency for pair context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency for pair context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4020,7 +4020,7 @@
             }
           ],
           "default": "usd",
-          "description": "Release currency used for queue and spotlight indicator. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Release currency used for queue and spotlight indicator. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -4087,7 +4087,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "Currency for macro event series, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Currency for macro event series, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -4114,7 +4114,7 @@
             }
           ],
           "default": "eur",
-          "description": "FX base currency for market context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "FX base currency for market context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4132,7 +4132,7 @@
             }
           ],
           "default": "usd",
-          "description": "FX quote currency for market context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "FX quote currency for market context, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4203,7 +4203,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4213,7 +4213,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4352,7 +4352,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -4427,7 +4427,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code (case-insensitive). Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",
@@ -4482,7 +4482,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4491,7 +4491,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4585,7 +4585,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4594,7 +4594,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4650,7 +4650,7 @@
     "input_schema": {
       "properties": {
         "base": {
-          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Base currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "eur",
             "gbp",
@@ -4659,7 +4659,7 @@
           "type": "string"
         },
         "quote": {
-          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Quote currency, 3-letter ISO code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "jpy",
@@ -4814,7 +4814,7 @@
     "input_schema": {
       "properties": {
         "currency": {
-          "description": "3-letter ISO currency code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "3-letter ISO currency code. Supported: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "usd",
             "eur",

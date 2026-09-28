@@ -35,7 +35,7 @@
       "properties": {
         "base": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -44,7 +44,7 @@
         },
         "quote": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -126,7 +126,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -140,7 +140,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -449,7 +449,7 @@
       "properties": {
         "currency": {
           "type": "string",
-          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -497,7 +497,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. The 3-letter currency code (e.g., USD, AUD, EUR, GBP, CHF) Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -562,7 +562,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -612,7 +612,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, COMM, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       },
       {
@@ -716,7 +716,7 @@
       "properties": {
         "base": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -725,7 +725,7 @@
         },
         "quote": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -842,7 +842,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Base currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "AUD"
           ],
@@ -856,7 +856,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Quote currency code Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD.",
           "examples": [
             "USD"
           ],
@@ -1017,7 +1017,7 @@
       "properties": {
         "currency": {
           "type": "string",
-          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, KRW, MYR, NOK, NZD, PEN, SEK, THB, USD.",
           "examples": [
             "GBP"
           ],
@@ -1101,7 +1101,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NOK, NZD, PEN, SEK, THB, USD.",
+          "description": "Required path parameter. Currency code Allowed values: AUD, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, KRW, MYR, NOK, NZD, PEN, SEK, THB, USD.",
           "examples": [
             "GBP"
           ],
@@ -1470,7 +1470,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, INR, JPY, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, ILS, INR, JPY, NGN, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
         },
         "limit": {
           "type": "integer",
@@ -1505,7 +1505,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, INR, JPY, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CZK, DKK, EUR, GBP, HKD, ILS, INR, JPY, NGN, NOK, NZD, PEN, PLN, SEK, USD, ZAR."
         }
       },
       {
@@ -1827,7 +1827,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -2084,7 +2084,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       },
       {
@@ -2425,7 +2425,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       },
       "required": [
@@ -2442,7 +2442,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       }
     ]
@@ -2459,7 +2459,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         },
         "indicator": {
           "type": "string",
@@ -2680,7 +2680,7 @@
           "type": "string",
           "title": "Currency",
           "example": "AUD",
-          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, ILS, JPY, NGN, NOK, NZD, PEN, SEK, THB, USD."
+          "description": "Required path parameter. Allowed values: AUD, BRL, CAD, CHF, CNH, CNY, DKK, EUR, GBP, HUF, ILS, JPY, KRW, MYR, NGN, NOK, NZD, PEN, SEK, THB, TWD, USD."
         }
       },
       {
