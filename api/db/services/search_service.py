@@ -18,7 +18,7 @@ from datetime import datetime
 from peewee import fn
 
 from common.constants import StatusEnum
-from api.db.db_models import DB, Search, User
+from api.db.db_models import DB, Search, User, UserTenant
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
 
@@ -48,6 +48,20 @@ class SearchService(CommonService):
                 cls.model.created_by == user_id,
                 cls.model.status == StatusEnum.VALID.value,
             )
+            .first()
+        )
+        return search is not None
+
+    @classmethod
+    @DB.connection_context()
+    def accessible(cls, search_id, user_id) -> bool:
+        search = (
+            cls.model.select(cls.model.id)
+            .join(
+                UserTenant,
+                on=((cls.model.tenant_id == UserTenant.tenant_id) & (UserTenant.user_id == user_id) & (UserTenant.status == StatusEnum.VALID.value)),
+            )
+            .where((cls.model.id == search_id) & (cls.model.status == StatusEnum.VALID.value))
             .first()
         )
         return search is not None

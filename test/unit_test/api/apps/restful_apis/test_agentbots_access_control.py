@@ -103,7 +103,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls, kb_accessible=True, search_
         resolve_llm_setting=lambda s: s or {"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4},
     )
     _stub(monkeypatch, "common.metadata_utils", apply_meta_data_filter=lambda *_a, **_k: None)
-    _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace(get_detail=lambda _id: {"search_config": search_config or {}}))
+    _stub(monkeypatch, "api.db.services.search_service", SearchService=SimpleNamespace(get_detail=lambda _id: {"search_config": search_config or {}}, accessible=lambda *_a, **_k: True))
     _stub(
         monkeypatch,
         "api.db.services.user_service",
