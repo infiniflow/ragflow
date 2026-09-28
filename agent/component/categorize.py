@@ -143,11 +143,21 @@ class Categorize(LLM, ABC):
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
         max_category = list(self._param.category_description.keys())[-1]
         if any(category_counts.values()):
-            max_category = max(category_counts.items(), key=lambda x: x[1])[0]
+            max_category = self._pick_category(category_counts)
             cpn_ids = self._param.category_description[max_category]["to"]
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
+
+    @staticmethod
+    def _pick_category(category_counts: dict) -> str:
+        """Pick the winning category by how often it appears in the answer.
+
+        Ties resolve toward the longest (most specific) category name, so a
+        category that is a substring of another does not steal the route when
+        the answer names the longer one.
+        """
+        return max(category_counts.items(), key=lambda x: (x[1], len(x[0])))[0]
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
