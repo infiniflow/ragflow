@@ -47,7 +47,7 @@ For example, `v0.27.1-14-g6daae7f2` means 14 commits after the `v0.27.1` tag, at
 
 Elasticsearch meets RAGFlow's core hybrid search requirements, including full-text search, vector search, phrase search, and advanced ranking capabilities.
 
-The Go backend also supports [Infinity](https://github.com/infiniflow/infinity), OceanBase, and SeekDB as document engines. Infinity is an AI-native database developed by InfiniFlow and optimized for RAG workloads. Support levels and available features may vary between document engines.
+The Go backend also supports [Infinity](https://github.com/infiniflow/infinity) as a document engine. Infinity is an AI-native database developed by InfiniFlow and optimized for RAG workloads. Support levels and available features may vary between document engines.
 
 ---
 
@@ -61,7 +61,7 @@ REST API access on cloud.ragflow.io depends on the subscription plan. Check the 
 
 ### Why does RAGFlow require substantial system resources?
 
-RAGFlow runs multiple components for document parsing, embedding, full-text and vector indexing, retrieval, task processing, metadata storage, caching, and object storage. Some document parsers also load or download machine-learning models and may require significant CPU and memory resources. External model or parser services may additionally require GPU resources.
+RAGFlow runs multiple components for document parsing, embedding, full-text and vector indexing, retrieval, task processing, metadata storage, caching, and object storage. Some document parsers also load or download machine-learning models and may require significant CPU and memory resources.
 
 Actual resource usage depends on the selected document engine, parser, model provider, document volume, and workload. See the [quickstart prerequisites](./quickstart.mdx#prerequisites) for the recommended starting configuration.
 
@@ -229,7 +229,7 @@ The standard Go Compose file does not apply `MEM_LIMIT` to `ragflow-cpu`; that v
 
 An index failure means that RAGFlow could not write the processed document chunks to the configured document engine.
 
-Check the task logs, embedding model, document engine connection, and system health. If you use Elasticsearch, Infinity, OceanBase, SeekDB, or another document engine supported by the current Go backend, verify that the corresponding service is running and accessible.
+Check the task logs, embedding model, document engine connection, and system health. If you use Elasticsearch, Infinity, or another document engine supported by the current Go backend, verify that the corresponding service is running and accessible.
 
 ---
 
