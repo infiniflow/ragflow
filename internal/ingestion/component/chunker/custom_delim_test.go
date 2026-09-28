@@ -6,14 +6,11 @@ import (
 	"testing"
 )
 
-// custom_delim_test pins the backtick-wrapped delimiter behavior of
-// TokenChunker against the lossless contract: a delimiter is a split hint, not a
-// delete instruction, so every emitted chunk KEEPS its delimiter and the
-// concatenation of all chunk texts reproduces the source exactly.
-//
-// All delimiter paths (primary and children, text/markdown/html and JSON) must
-// retain the captured delimiter (Go's splitByDelim with keepDelim=true), so
-// "第一句内容。" stays "第一句内容。" rather than becoming "第一句内容".
+// custom_delim_test pins the backtick-wrapped (custom) delimiter behavior of
+// TokenChunker: a backtick delimiter is an explicit split instruction, not text
+// to preserve, so it is DROPPED from the chunk text (mirroring Python's
+// _split_text_by_pattern). Bare (non-backtick) delimiters are retained
+// losslessly.
 //
 // Plain text/markdown/html inputs must not gain doc_type_kwd merely because a
 // custom delimiter is configured: Python emits only text for those paths.
@@ -78,10 +75,12 @@ func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	if got := joinedText(chunks); got != "alpha--beta::gamma--delta" {
-		t.Fatalf("lossless reconstruction failed: got %q", got)
+	// The custom primary ("`::`") delimiter is DROPPED, so "::" vanishes from
+	// the joined text; the bare children delimiter "--" is RETAINED (lossless).
+	if got := joinedText(chunks); got != "alpha--betagamma--delta" {
+		t.Fatalf("joined text failed: got %q", got)
 	}
-	want := []string{"alpha--", "beta::", "gamma--", "delta"}
+	want := []string{"alpha--", "beta", "gamma--", "delta"}
 	if got := chunkTexts(chunks); !slices.Equal(got, want) {
 		t.Fatalf("chunk texts: want %v got %v", want, got)
 	}
@@ -99,7 +98,9 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	want := []string{"first sentence here\n", "second sentence here\n", "third sentence here"}
+	// The custom ("`\n`") delimiter is DROPPED, so each segment loses its
+	// trailing newline.
+	want := []string{"first sentence here", "second sentence here", "third sentence here"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}
@@ -126,12 +127,15 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	if got := joinedText(chunks); got != "first segment line one\nfirst segment line twosecond segment line one\nsecond segment line two" {
-		t.Fatalf("lossless reconstruction failed: got %q", got)
+	// The custom ("`\n`") delimiter is DROPPED (Python-compatible split
+	// instruction), so the joined output is the bare segment texts with no
+	// inter-segment newline.
+	if got := joinedText(chunks); got != "first segment line onefirst segment line twosecond segment line onesecond segment line two" {
+		t.Fatalf("joined text failed: got %q", got)
 	}
 	for i, w := 0, []string{
-		"first segment line one\n", "first segment line two",
-		"second segment line one\n", "second segment line two",
+		"first segment line one", "first segment line two",
+		"second segment line one", "second segment line two",
 	}; i < len(w); i++ {
 		got := chunks[i]["text"].(string)
 		if got != w[i] {
@@ -156,8 +160,10 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	if got := joinedText(chunks); got != "# Title\n\nParagraph one.\n\nParagraph two." {
-		t.Fatalf("lossless reconstruction failed: got %q", got)
+	// The custom ("`\n`") delimiter is DROPPED, so the paragraphs are joined
+	// with the newline separator removed.
+	if got := joinedText(chunks); got != "# TitleParagraph one.Paragraph two." {
+		t.Fatalf("joined text failed: got %q", got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
@@ -171,8 +177,10 @@ func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 		"html": "<p>one</p>\n<p>two</p>\n<p>three</p>",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	if got := joinedText(chunks); got != "<p>one</p>\n<p>two</p>\n<p>three</p>" {
-		t.Fatalf("lossless reconstruction failed: got %q", got)
+	// The custom ("`\n`") delimiter is DROPPED, so the <p> blocks are joined
+	// with the newline separator removed.
+	if got := joinedText(chunks); got != "<p>one</p><p>two</p><p>three</p>" {
+		t.Fatalf("joined text failed: got %q", got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }

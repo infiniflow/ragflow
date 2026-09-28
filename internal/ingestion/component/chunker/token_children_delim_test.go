@@ -45,8 +45,8 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 // TestTokenChunker_ChildrenDelimiterBacktickStripped asserts that a
 // backtick-wrapped children_delimiter contributes its INNER content as the
 // split pattern (not the literal wrapped token), and the matched delimiter is
-// KEPT on each child (lossless) — consistent with the main delimiter list
-// behavior.
+// DROPPED from each child (Python-compatible) — consistent with the main
+// delimiter list behavior.
 func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":      "delimiter",
@@ -65,8 +65,8 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	// The children delimiter "###" is retained on each child.
-	want := []string{"sec one###", "sec two###", "sec three"}
+	// The children delimiter "###" is dropped from each child.
+	want := []string{"sec one", "sec two", "sec three"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}
@@ -93,7 +93,9 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks2, _ := out2["chunks"].([]map[string]any)
-	backtickWrapped := []string{"a `###", "` b"}
+	// The inner "###" matches and is DROPPED, leaving the surrounding
+	// backticks as literal text.
+	backtickWrapped := []string{"a `", "` b"}
 	if len(chunks2) != len(backtickWrapped) {
 		t.Fatalf("backtick literal chunk count: want %d got %d (%v)", len(backtickWrapped), len(chunks2), chunkTexts(chunks2))
 	}

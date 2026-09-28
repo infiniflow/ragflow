@@ -65,7 +65,7 @@ func TestDelimiterLossless_BoundaryReconstruction(t *testing.T) {
 func TestSplitByChildrenKeepsWhitespaceOnlyPiece(t *testing.T) {
 	pat := compileDelimPattern([]string{"\n"})
 	doc := schema.ChunkDoc{Text: "A\n\nB", DocType: "text", CKType: "text"}
-	out := splitByChildren([]schema.ChunkDoc{doc}, pat)
+	out := splitByChildren([]schema.ChunkDoc{doc}, pat, true)
 	var got strings.Builder
 	for _, c := range out {
 		got.WriteString(c.Text)
@@ -81,7 +81,7 @@ func TestSplitByChildrenKeepsWhitespaceOnlyPiece(t *testing.T) {
 func TestApplyChildrenDelimTextKeepsWhitespaceOnlyPiece(t *testing.T) {
 	pat := compileDelimPattern([]string{"\n"})
 	doc := schema.ChunkDoc{Text: "A\n\nB", CKType: "text"}
-	out := applyChildrenDelimText([]schema.ChunkDoc{doc}, pat)
+	out := applyChildrenDelimText([]schema.ChunkDoc{doc}, pat, true)
 	var got strings.Builder
 	for _, c := range out {
 		got.WriteString(c.Text)
@@ -92,19 +92,31 @@ func TestApplyChildrenDelimTextKeepsWhitespaceOnlyPiece(t *testing.T) {
 	}
 }
 
-// TestChunkPerSegmentKeepsLeadingWhitespace pins that a source starting with a
-// delimiter (custom backtick "\n") keeps its leading newline: "\nsecond line"
-// must not become "second line".
-func TestChunkPerSegmentKeepsLeadingWhitespace(t *testing.T) {
-	input := map[string]any{"name": "t", "output_format": "text", "text": "\nsecond line"}
-	chunks := driveChunker(t, map[string]any{
-		"chunk_token_size": float64(512),
-		"delimiters":       []string{`\n`},
-	}, input)
-	got := joinChunks(chunks)
-	if want := "\nsecond line"; got != want {
-		t.Errorf("leading newline dropped: got=%q want=%q", got, want)
-	}
+// TestChunkPerSegmentDropsCustomDelimiter pins that a backtick (custom)
+// delimiter is DROPPED, mirroring Python's naive_merge has_custom branch: a
+// leading custom delimiter ("SEPsecond line") yields "second line", and an
+// internal one ("firstSEPsecond") yields "first"/"second".
+func TestChunkPerSegmentDropsCustomDelimiter(t *testing.T) {
+	t.Run("leading", func(t *testing.T) {
+		input := map[string]any{"name": "t", "output_format": "text", "text": "SEPsecond line"}
+		chunks := driveChunker(t, map[string]any{
+			"chunk_token_size": float64(512),
+			"delimiters":       []string{"`SEP`"},
+		}, input)
+		if got := joinChunks(chunks); got != "second line" {
+			t.Errorf("custom leading delimiter not dropped: got=%q want %q", got, "second line")
+		}
+	})
+	t.Run("internal", func(t *testing.T) {
+		input := map[string]any{"name": "t", "output_format": "text", "text": "firstSEPsecond"}
+		chunks := driveChunker(t, map[string]any{
+			"chunk_token_size": float64(512),
+			"delimiters":       []string{"`SEP`"},
+		}, input)
+		if got := joinChunks(chunks); got != "firstsecond" {
+			t.Errorf("custom delimiter not dropped: got=%q want %q", got, "firstsecond")
+		}
+	})
 }
 
 // childDocTexts is a small local helper for failure messages.

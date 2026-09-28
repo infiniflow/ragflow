@@ -197,11 +197,13 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 			t.Errorf("chunk[%d] is the bare delimiter %q", i, text)
 		}
 	}
-	// The custom (backtick) delimiter "666" is retained on the chunk it ends.
-	if got, want := chunks[0]["text"], "alpha section\n666"; got != want {
+	// The custom (backtick) delimiter "666" is DROPPED (Python-compatible).
+	// chunkPerSegment .strip()s each segment, so the surrounding "\n" is also
+	// trimmed as trailing/leading whitespace — neither segment carries it.
+	if got, want := chunks[0]["text"], "alpha section"; got != want {
 		t.Errorf("chunk[0] text = %q, want %q", got, want)
 	}
-	if got, want := chunks[1]["text"], "\nbeta section"; got != want {
+	if got, want := chunks[1]["text"], "beta section"; got != want {
 		t.Errorf("chunk[1] text = %q, want %q", got, want)
 	}
 }
@@ -1105,7 +1107,7 @@ func TestSplitByChildrenRecomputesTokenCounts(t *testing.T) {
 		DocType: "text",
 		CKType:  "text",
 		TKNums:  intPtr(tokenizeStr(parentText)),
-	}}, regexp.MustCompile(`\. `))
+	}}, regexp.MustCompile(`\. `), true)
 
 	if len(children) != 2 {
 		t.Fatalf("children = %d, want 2", len(children))
@@ -1127,7 +1129,7 @@ func TestApplyChildrenDelimText_RecomputesTokenCounts(t *testing.T) {
 		DocType: "text",
 		CKType:  "text",
 		TKNums:  intPtr(tokenizeStr(parentText)),
-	}}, regexp.MustCompile(`\. `))
+	}}, regexp.MustCompile(`\. `), true)
 
 	if len(out) != 2 {
 		t.Fatalf("children = %d, want 2", len(out))
@@ -1148,7 +1150,7 @@ func TestApplyChildrenDelimText_DefaultsMomToCurrentChunk(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\. `)
 
-	out := applyChildrenDelimText(docs, pattern)
+	out := applyChildrenDelimText(docs, pattern, true)
 	if len(out) != 3 {
 		t.Fatalf("want 3 children, got %d", len(out))
 	}
@@ -1173,7 +1175,7 @@ func TestApplyChildrenDelimText_OverwritesIncomingMom(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\. `)
 
-	out := applyChildrenDelimText(docs, pattern)
+	out := applyChildrenDelimText(docs, pattern, true)
 	if len(out) != 3 {
 		t.Fatalf("want 3 children, got %d", len(out))
 	}
@@ -1200,7 +1202,7 @@ func TestApplyChildrenDelimText_NilPatternIsNoop(t *testing.T) {
 	docs := []schema.ChunkDoc{
 		{Text: "alpha. beta", Mom: "kept"},
 	}
-	out := applyChildrenDelimText(docs, nil)
+	out := applyChildrenDelimText(docs, nil, true)
 	if len(out) != 1 {
 		t.Fatalf("want 1 chunk unchanged, got %d", len(out))
 	}
@@ -1221,7 +1223,7 @@ func TestApplyChildrenDelimText_FallbackStripsLeadingNewline(t *testing.T) {
 	}
 	pattern := regexp.MustCompile(`\. `)
 
-	out := applyChildrenDelimText(docs, pattern)
+	out := applyChildrenDelimText(docs, pattern, true)
 	if len(out) != 3 {
 		t.Fatalf("want 3 children, got %d", len(out))
 	}

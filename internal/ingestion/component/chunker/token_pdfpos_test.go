@@ -257,7 +257,7 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -266,10 +266,10 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	// With the lossless split the trailing "\n" delimiter is retained on piece 0,
-	// so piece 0 has 5 visible runes ("AAAA" + "\n") and piece 1 has 4 ("BBBB");
-	// the slice is therefore proportional to 5/9 of the box height.
-	wantSplit := 40.0 * 5.0 / 9.0
+	// The custom ("`\n`") delimiter is DROPPED (Python-compatible split
+	// instruction), so piece 0 is "AAAA" (4 runes) and piece 1 is "BBBB" (4);
+	// the slice is therefore proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
 	if p0[0][3] != 0 || math.Abs(p0[0][4]-wantSplit) > 1e-9 {
 		t.Errorf("piece 0 bounds = [%v,%v], want [0,%v]", p0[0][3], p0[0][4], wantSplit)
 	}
@@ -361,7 +361,7 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -370,11 +370,10 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	// The parser tag is still excluded from the ratio (removeTag strips it), but
-	// the retained "\n" delimiter is visible text and now counts as a rune, so
-	// piece 0 has 5 visible runes ("AAAA" + "\n") and piece 1 has 4 ("CCCC"); the
-	// split is proportional to 5/9 of the box height.
-	wantSplit := 40.0 * 5.0 / 9.0
+	// The parser tag is excluded from the ratio (removeTag strips it), and the
+	// custom ("`\n`") delimiter is DROPPED, so piece 0 is "AAAA" (4 runes) and
+	// piece 1 is "CCCC" (4); the split is proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
 	if math.Abs(p0[0][4]-wantSplit) > 1e-9 {
 		t.Errorf("piece 0 bottom = %v, want %v (tag runes excluded, retained delimiter counted)", p0[0][4], wantSplit)
 	}

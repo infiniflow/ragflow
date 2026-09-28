@@ -130,7 +130,7 @@ func TestBareDelimiterSplitsJSON(t *testing.T) {
 
 // TestCustomDelimiterStillOneChunkPerSegment locks the distinction: a
 // backtick-wrapped delimiter yields one chunk per segment with NO token merge,
-// and each segment KEEPS its trailing delimiter (lossless).
+// and the custom delimiter is DROPPED (Python-compatible split instruction).
 func TestCustomDelimiterStillOneChunkPerSegment(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":   "delimiter",
@@ -141,7 +141,7 @@ func TestCustomDelimiterStillOneChunkPerSegment(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	chunks := invokeText(t, c.(*TokenChunkerComponent), "alpha::beta::gamma::delta")
-	want := []string{"alpha::", "beta::", "gamma::", "delta"}
+	want := []string{"alpha", "beta", "gamma", "delta"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}

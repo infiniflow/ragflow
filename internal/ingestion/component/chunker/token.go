@@ -336,33 +336,19 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 
 // chunkPerSegment splits text on a custom (backtick) delimiter and emits one
 // chunk per segment with no token-size merge. Mirrors Python naive_merge's
-// has_custom branch (token_chunker.py:1194-1213).
+// has_custom branch (token_chunker.py:1194-1213): the custom delimiter itself
+// is DROPPED (and each segment .strip()ed). Only the built-in (non-backtick)
+// delimiter set is retained losslessly (see mergeByTokenSize) — a backtick
+// delimiter is an explicit split instruction, not text to preserve.
 func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
-	parts := splitByDelim(text, delimPattern, true)
+	parts := splitByDelim(text, delimPattern, false)
 	cleaned := make([]string, 0, len(parts))
-	// Leading whitespace-only pieces (e.g. a source that starts with a
-	// delimiter, like "\nsecond line") carry no preceding segment to fold into,
-	// so they are buffered and prepended to the first real segment. This keeps
-	// a leading retained delimiter instead of silently dropping it.
-	var leading string
 	for _, p := range parts {
-		// A delimiter is a split hint, not a delete instruction: the retained
-		// delimiter (and any surrounding whitespace) stays with its segment so
-		// the emitted chunks reproduce the source exactly. A whitespace-only
-		// segment between consecutive delimiters (e.g. the blank line of
-		// "# Title\n\nParagraph") is NOT dropped — its retained delimiters are
-		// folded into an adjacent segment, so the source blank line survives
-		// and no empty chunk is emitted.
-		if strings.TrimSpace(p) == "" {
-			if len(cleaned) > 0 {
-				cleaned[len(cleaned)-1] += p
-			} else {
-				leading += p
-			}
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
 			continue
 		}
-		cleaned = append(cleaned, leading+p)
-		leading = ""
+		cleaned = append(cleaned, trimmed)
 	}
 	if len(cleaned) == 0 {
 		return emptyOutputs()
@@ -374,7 +360,11 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 		// metadata such as doc_type_kwd.
 		textDocs = append(textDocs, schema.ChunkDoc{Text: s, CKType: "text"})
 	}
-	docs := applyChildrenDelimText(textDocs, childrenPattern)
+	// A backtick children delimiter is also custom and is dropped; a bare
+	// children delimiter (e.g. "。") is retained losslessly like the main
+	// built-in set.
+	keepChildren := !hasCustomDelim(c.param.ChildrenDelimiters)
+	docs := applyChildrenDelimText(textDocs, childrenPattern, keepChildren)
 	return chunkOutputs(docs)
 }
 
@@ -541,7 +531,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 		}
 		docs = append(docs, ch)
 	}
-	final := applyChildrenDelimText(docs, childrenPattern)
+	final := applyChildrenDelimText(docs, childrenPattern, !hasCustomDelim(c.param.ChildrenDelimiters))
 	return chunkOutputs(final)
 }
 
@@ -567,6 +557,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		}
 	}
 
+	// Computed once before the goroutines so the split path can decide whether
+	// the main delimiter is a custom (backtick) one — those are dropped, bare
+	// delimiters are retained losslessly.
+	customDelim := hasCustomDelim(c.param.Delimiters)
+
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
 		lane := lanes[w]
@@ -590,7 +585,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 				if isTextParserSentenceFallback(fileType, c.param.Delimiters, items[i]) {
 					perItem[i] = splitTextParserSentences(items[i])
 				} else {
-					perItem[i] = chunkFromItem(items[i], delimPattern)
+					// A custom (backtick) delimiter is an explicit split
+					// instruction, not text to preserve: drop it like Python's
+					// _split_text_by_pattern. Bare delimiters are retained losslessly.
+					perItem[i] = chunkFromItem(items[i], delimPattern, !customDelim)
 				}
 			}
 		}(lane.start, lane.end)
@@ -620,7 +618,6 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// chunk per segment — no token-size merge (naive_merge:1194-1213).
 	// Otherwise split-then-merge: delimiter-split segments are greedily
 	// merged to chunk_token_size with optional overlap.
-	customDelim := hasCustomDelim(c.param.Delimiters)
 	if !customDelim {
 		// Attach before the merge — Python's non-delimiter branch collects the
 		// context from the pre-merge text units. The merge only joins text
@@ -638,7 +635,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 
 	if childrenPattern != nil {
-		flat = splitByChildren(flat, childrenPattern)
+		flat = splitByChildren(flat, childrenPattern, !hasCustomDelim(c.param.ChildrenDelimiters))
 	}
 	if customDelim {
 		// Python's delimiter branch splits by children first, then attaches.
@@ -725,8 +722,11 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // JSON-payload internals
 // ---------------------------------------------------------------------------
 
-// chunkFromItem mirrors _build_json_chunks for a single item.
-func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.ChunkDoc {
+// chunkFromItem mirrors _build_json_chunks for a single item. keepDelim
+// follows the same policy as the text path: a bare delimiter is retained so
+// the chunk reproduces the source exactly, but a custom (backtick) delimiter
+// is dropped (Python-compatible split instruction).
+func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bool) []schema.ChunkDoc {
 	if it.CKType == "table_row" {
 		row := cloneChunkDoc(it)
 		row.DocType = "text"
@@ -743,7 +743,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	parts := splitByDelim(txt, delimPattern, true)
+	parts := splitByDelim(txt, delimPattern, keepDelim)
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -1735,7 +1735,7 @@ func flatten(perItem [][]schema.ChunkDoc) []schema.ChunkDoc {
 	return out
 }
 
-func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp, keepDelim bool) []schema.ChunkDoc {
 	if pattern == nil {
 		return chunks
 	}
@@ -1746,12 +1746,14 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			continue
 		}
 		mom := strings.TrimPrefix(ck.Text, "\n")
-		parts := splitByDelim(ck.Text, pattern, true)
+		parts := splitByDelim(ck.Text, pattern, keepDelim)
 		// Whitespace-only pieces from consecutive delimiters ("A\n\nB") must be
 		// folded into an adjacent child, not discarded — otherwise the repeated
 		// newline disappears from the child text. A leading whitespace-only
 		// piece (no preceding child of this parent yet) is buffered and
-		// prepended to the first real child.
+		// prepended to the first real child. This only matters when the
+		// delimiter is retained (keepDelim); a dropped custom delimiter leaves
+		// no whitespace-only pieces behind.
 		var leading string
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
@@ -1799,7 +1801,7 @@ func hasCustomDelim(delims []string) bool {
 	return chunk.HasCustomDelimiterList(delims)
 }
 
-func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keepDelim bool) []schema.ChunkDoc {
 	if pattern == nil {
 		return docs
 	}
@@ -1812,9 +1814,11 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		mom := strings.TrimPrefix(t, "\n")
 		// Whitespace-only pieces from consecutive delimiters must be folded into
 		// an adjacent child (or prepended to the first child when leading), so a
-		// repeated newline in the source is not silently dropped.
+		// repeated newline in the source is not silently dropped. This only
+		// matters when the delimiter is retained (keepDelim); a dropped custom
+		// delimiter leaves no whitespace-only pieces behind.
 		var leading string
-		for _, text := range splitByDelim(t, pattern, true) {
+		for _, text := range splitByDelim(t, pattern, keepDelim) {
 			if strings.TrimSpace(text) == "" {
 				if n := len(out); n > 0 && out[n-1].Mom == mom {
 					prev := out[n-1]
