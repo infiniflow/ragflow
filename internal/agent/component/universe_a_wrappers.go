@@ -237,7 +237,13 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-	return parseToolEnvelope(out), nil
+	decoded := parseToolEnvelope(out)
+	if chunks, ok := decoded["chunks"]; ok {
+		if _, has := decoded["json"]; !has {
+			decoded["json"] = chunks
+		}
+	}
+	return decoded, nil
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -495,7 +501,7 @@ func (c *codeExecComponent) Inputs() map[string]string {
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
 	res := make(map[string]any, len(c.params))
-	for k, _ := range c.params {
+	for k := range c.params {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
