@@ -163,11 +163,32 @@ class TestDeleteAgentSession:
         assert delete_calls == []
 
     @pytest.mark.p1
-    def test_delete_succeeds_when_session_belongs_to_agent(self, monkeypatch):
-        conv = SimpleNamespace(dialog_id="agent-1")
+    def test_delete_succeeds_for_session_creator(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-1", user_id="tenant-1")
         module, delete_calls = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
 
         result = module.delete_agent_session_item(agent_id="agent-1", session_id="sess-1", tenant_id="tenant-1")
+
+        assert result == {"code": 0, "message": "", "data": True}
+        assert delete_calls == ["sess-1"]
+
+    @pytest.mark.p1
+    def test_delete_rejects_shared_session_for_non_owner(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-1", user_id="owner-user")
+        module, delete_calls = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.delete_agent_session_item(agent_id="agent-1", session_id="sess-1", tenant_id="team-member")
+
+        assert result == {"code": 109, "message": "shared session is readonly", "data": False}
+        assert delete_calls == []
+
+    @pytest.mark.p1
+    def test_delete_succeeds_for_canvas_owner(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-1", user_id="other-user")
+        module, delete_calls = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+        monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: [SimpleNamespace(id="agent-1")])
+
+        result = module.delete_agent_session_item(agent_id="agent-1", session_id="sess-1", tenant_id="owner-user")
 
         assert result == {"code": 0, "message": "", "data": True}
         assert delete_calls == ["sess-1"]

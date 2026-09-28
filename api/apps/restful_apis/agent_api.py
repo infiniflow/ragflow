@@ -565,6 +565,11 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
     exists, conv = API4ConversationService.get_by_id(session_id)
     if not exists or conv.dialog_id != agent_id:
         return get_data_error_result(message="Session not found!")
+    # Deleting is a write, so it is limited to the canvas owner or the session's
+    # creator; a shared session stays readonly for the other team members
+    # (mirrors the Go API's DeleteAgentSessionItem).
+    if not UserCanvasService.query(user_id=tenant_id, id=agent_id) and conv.user_id != tenant_id:
+        return get_json_result(data=False, message="shared session is readonly", code=RetCode.AUTHENTICATION_ERROR)
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
