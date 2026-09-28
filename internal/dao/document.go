@@ -160,16 +160,34 @@ const latestIngestionTaskJoin = `LEFT JOIN ingestion_task ON ingestion_task.docu
 		  )
 	)`
 
+func buildDocumentListIngestionStatusExpression(db *gorm.DB) string {
+	const taskStatus = "COALESCE(NULLIF(ingestion_task.status, ''), 'UNSTART')"
+	if !db.Migrator().HasColumn(&entity.Document{}, "run") {
+		return taskStatus
+	}
+
+	return `CASE
+		WHEN ingestion_task.id IS NOT NULL THEN ` + taskStatus + `
+		WHEN document.run = '1' THEN 'RUNNING'
+		WHEN document.run = '2' THEN 'STOPPED'
+		WHEN document.run = '3' THEN 'COMPLETED'
+		WHEN document.run = '4' THEN 'FAILED'
+		WHEN document.run = '5' THEN 'SCHEDULED'
+		ELSE 'UNSTART'
+	END`
+}
+
 // ListByKBIDWithOptions lists documents by knowledge base ID with filters.
 func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
 	var documents []*entity.DocumentListItem
 	var total int64
+	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
 
 	// Historical retries can leave multiple ingestion tasks per document. Keep
 	// only the newest row, with ID as a deterministic tie-breaker for equal
 	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ` + ingestionStatus + ` as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").

@@ -221,6 +221,91 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 	if got := listed["ingestion_status"]; got != "SCHEDULED" {
 		t.Fatalf("ingestion_status = %v, want %q", got, "SCHEDULED")
 	}
+	if db.Migrator().HasColumn(&entity.Document{}, "run") {
+		t.Fatal("document list query added the legacy run column")
+	}
+}
+
+func TestDocumentListFallsBackToReadOnlyLegacyRun(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Exec("ALTER TABLE document ADD COLUMN run TEXT").Error; err != nil {
+		t.Fatalf("add legacy run fixture column: %v", err)
+	}
+
+	tests := []struct {
+		id, run, task, want string
+		hasTask             bool
+	}{
+		{id: "unstart", run: "0", want: "UNSTART"},
+		{id: "empty", want: "UNSTART"},
+		{id: "running", run: "1", want: common.RUNNING},
+		{id: "stopped", run: "2", want: common.STOPPED},
+		{id: "completed", run: "3", want: common.COMPLETED},
+		{id: "failed", run: "4", want: common.FAILED},
+		{id: "scheduled", run: "5", want: common.SCHEDULED},
+		{id: "unknown", run: "9", want: "UNSTART"},
+		{id: "task-wins", run: "3", task: common.RUNNING, hasTask: true, want: common.RUNNING},
+		{id: "empty-task-wins", run: "3", hasTask: true, want: "UNSTART"},
+	}
+
+	create := func(value interface{}) {
+		t.Helper()
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("create %T: %v", value, err)
+		}
+	}
+	fileID := "file-legacy"
+	create(&entity.File{ID: fileID, ParentID: "parent-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: "legacy.pdf", Type: "document"})
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		create(&entity.Document{ID: documentID, KbID: "kb-legacy", ParserConfig: entity.JSONMap{}})
+		if err := db.Table("document").Where("id = ?", documentID).UpdateColumn("run", test.run).Error; err != nil {
+			t.Fatalf("set legacy run for %s: %v", documentID, err)
+		}
+		create(&entity.File2Document{ID: "link-" + test.id, FileID: sp(fileID), DocumentID: sp(documentID)})
+		if test.hasTask {
+			create(&entity.IngestionTask{ID: "task-" + test.id, DocumentID: documentID, Status: test.task})
+		}
+	}
+
+	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID: "kb-legacy", Limit: len(tests),
+	})
+	if err != nil {
+		t.Fatalf("list legacy documents: %v", err)
+	}
+	if total != int64(len(tests)) || len(documents) != len(tests) {
+		t.Fatalf("listed %d documents (total %d), want %d", len(documents), total, len(tests))
+	}
+
+	statusByID := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document.IngestionStatus != nil {
+			statusByID[document.ID] = *document.IngestionStatus
+		}
+	}
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		if got := statusByID[documentID]; got != test.want {
+			t.Errorf("status for %s = %q, want %q", documentID, got, test.want)
+		}
+	}
+	var stored string
+	if err := db.Table("document").Select("run").Where("id = ?", "doc-completed").Scan(&stored).Error; err != nil {
+		t.Fatalf("read legacy run: %v", err)
+	}
+	if stored != "3" {
+		t.Fatalf("legacy run changed from %q to %q", "3", stored)
+	}
 }
 
 func TestDocumentListDeduplicatesHistoricalIngestionTasks(t *testing.T) {
