@@ -450,7 +450,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				files.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				files.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				files.GET("/:id", r.fileHandler.Download)
-				files.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
+			}
+
+			workspaceFiles := v1.Group("/workspace-files")
+			{
+				workspaceFiles.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
 			// File routes
@@ -474,17 +478,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
-			commitWorkspace := v1.Group("/workspace")
+			// /workspaces/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			commitWorkspaces := v1.Group("/workspaces")
 			{
-				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+				commitWorkspaces.POST("/:workspace_id/commits", r.fileCommitHandler.CreateCommit)
+				commitWorkspaces.GET("/:workspace_id/commits", r.fileCommitHandler.ListCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitWorkspaces.GET("/:workspace_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
 			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
