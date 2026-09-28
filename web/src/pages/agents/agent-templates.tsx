@@ -8,7 +8,10 @@ import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
-import { bindUnboundRetrieval } from './template-retrieval-binding';
+import {
+  bindUnboundModel,
+  bindUnboundRetrieval,
+} from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
@@ -47,10 +50,12 @@ export default function AgentTemplates() {
       const canvasCategory = template?.canvas_category;
       const datasetIds: string[] = payload?.dataset_ids ?? [];
       const memoryIds: string[] = payload?.memory_ids ?? [];
-      const boundDsl =
+      const modelId: string = payload?.llm_id ?? '';
+      let boundDsl =
         dsl && (datasetIds.length > 0 || memoryIds.length > 0)
           ? bindUnboundRetrieval(dsl, datasetIds, memoryIds)
           : dsl;
+      boundDsl = bindUnboundModel(boundDsl, modelId);
 
       const ret = await setAgent({
         title: payload.name,

@@ -50,7 +50,7 @@
                         },
                         "query": "begin@customer_review",
                         "temperature": 0,
-                        "tenant_llm_id": 90
+                        "tenant_llm_id": null
                     }
                 },
                 "upstream": [
@@ -94,7 +94,7 @@
                             }
                         },
                         "query": "begin@customer_review",
-                        "tenant_llm_id": 90
+                        "tenant_llm_id": null
                     }
                 },
                 "upstream": [
@@ -339,7 +339,7 @@
                             "query": "begin@customer_review",
                             "temperature": 0.2,
                             "temperatureEnabled": false,
-                            "tenant_llm_id": 90,
+                            "tenant_llm_id": null,
                             "topPEnabled": false,
                             "top_p": 0.75
                         },
@@ -403,7 +403,7 @@
                             "query": "begin@customer_review",
                             "temperature": 0,
                             "temperatureEnabled": true,
-                            "tenant_llm_id": 90,
+                            "tenant_llm_id": null,
                             "topPEnabled": false,
                             "top_p": 0.3
                         },

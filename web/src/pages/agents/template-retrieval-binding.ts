@@ -97,6 +97,67 @@ export interface RetrievalBindingCount {
   memoryCount: number;
 }
 
+export interface ModelBindingCount {
+  modelCount: number;
+}
+
+const modelComponents = new Set([
+  Operator.Agent,
+  Operator.Categorize,
+  Operator.Extractor,
+]);
+
+function walkModelParams(dsl: DSL | Record<string, any>) {
+  const locations: Array<{ params: Record<string, any> }> = [];
+  const add = (componentName: unknown, params: unknown) => {
+    if (
+      modelComponents.has(componentName as Operator) &&
+      params &&
+      typeof params === 'object'
+    ) {
+      locations.push({ params: params as Record<string, any> });
+    }
+  };
+  const graph = (dsl as Record<string, any>)?.graph;
+  for (const node of graph?.nodes ?? [])
+    add(node?.data?.label, node?.data?.form);
+  for (const component of Object.values(
+    (dsl as Record<string, any>)?.components ?? {},
+  )) {
+    const obj = (component as Record<string, any>)?.obj;
+    add(obj?.component_name, obj?.params);
+  }
+  return locations;
+}
+
+export function countUnboundModel(
+  dsl: DSL | Record<string, any> | undefined,
+): ModelBindingCount {
+  if (!dsl) return { modelCount: 0 };
+  const source =
+    (dsl as Record<string, any>).components &&
+    typeof (dsl as Record<string, any>).components === 'object'
+      ? walkModelParams({ components: (dsl as Record<string, any>).components })
+      : walkModelParams(dsl);
+  let modelCount = 0;
+  for (const { params } of source) {
+    if (!(params.llm_id || params.model_id)) modelCount++;
+  }
+  return { modelCount };
+}
+
+export function bindUnboundModel(
+  dsl: DSL | Record<string, any> | undefined,
+  modelId: string,
+): DSL | undefined {
+  if (!dsl || !modelId) return dsl;
+  const next = cloneDeep(dsl) as Record<string, any>;
+  for (const { params } of walkModelParams(next)) {
+    if (!(params.llm_id || params.model_id)) params.llm_id = modelId;
+  }
+  return next as DSL;
+}
+
 /**
  * Counts retrieval steps that explicitly source from a dataset/memory but do
  * not carry any binding yet. Such steps fail at runtime with a
