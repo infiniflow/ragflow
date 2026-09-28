@@ -8311,6 +8311,7 @@ dependencies = [
     { name = "ranx" },
     { name = "rapidfuzz" },
     { name = "readability-lxml" },
+    { name = "redis-lua-py" },
     { name = "regex" },
     { name = "replicate" },
     { name = "reportlab" },
@@ -8478,6 +8479,7 @@ requires-dist = [
     { name = "ranx", specifier = "==0.3.20" },
     { name = "rapidfuzz", specifier = "==3.14.5" },
     { name = "readability-lxml", specifier = ">=0.8.4,<1.0.0" },
+    { name = "redis-lua-py", specifier = "==0.12.0", index = "https://pypi.org/simple" },
     { name = "regex", specifier = ">=2025.11.3" },
     { name = "replicate", specifier = "==0.31.0" },
     { name = "reportlab", specifier = ">=4.4.1" },
@@ -8628,6 +8630,15 @@ name = "red-black-tree-mod"
 version = "1.22"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/48/75/bfa342a2ebfc9623b701f1c6995b9906fd6dd2cedf6bce777d09e23303ac/red-black-tree-mod-1.22.tar.gz", hash = "sha256:38e3652903a2bf96379c27c2082ca0b7b905158662dd7ef0c97f4fd93a9aa908" }
+
+[[package]]
+name = "redis-lua-py"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/c6/f01ab8e37cf381b10cb91327444d1cbc7657ed396864db8b78c1d7d8333d/redis_lua_py-0.12.0.tar.gz", hash = "sha256:97fe45193e8a05bdec4c358d5e8d8296cb00d48e5be1ba4aa72eae89981ca66d", size = 317661, upload-time = "2026-09-25T20:08:35.052Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ae/6e/e0f59e2128cdadc459a8d1cbd66f3c463b9caaab008a59725d962afe257a/redis_lua_py-0.12.0-py3-none-any.whl", hash = "sha256:9c91e6d84dfc0136b5194a64950a7cd8ef8a7cd37156c3991d84a88c14cbe3b6", size = 108759, upload-time = "2026-09-25T20:08:33.753Z" },
+]
 
 [[package]]
 name = "referencing"

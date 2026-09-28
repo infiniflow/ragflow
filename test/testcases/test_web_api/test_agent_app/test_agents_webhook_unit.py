@@ -129,7 +129,7 @@ class _StubRedisConn:
         self.bucket_exc = None
         self.REDIS = object()
 
-    def lua_token_bucket(self, **_kwargs):
+    def token_bucket(self, **_kwargs):
         if self.bucket_exc is not None:
             raise self.bucket_exc
         return self.bucket_result

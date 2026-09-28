@@ -17,11 +17,14 @@
 import asyncio
 import logging
 import json
+import math
 import uuid
 
 import valkey as redis
 from common.decorator import singleton
 from common import settings
+from redis_lua_py import Key, script
+from redis_lua_py import redis as lua_redis
 from valkey.lock import Lock
 
 REDIS = {}
@@ -32,6 +35,36 @@ except Exception:
         REDIS = settings.get_base_config("redis", {})
     except Exception:
         REDIS = {}
+
+
+@script
+def _delete_if_equal(key: Key, expected_value: str) -> int:
+    if lua_redis.get(key) == expected_value:
+        lua_redis.delete(key)
+        return 1
+    return 0
+
+
+@script
+def _token_bucket(key: Key, capacity: float, rate: float, now: float, cost: float) -> list[int]:
+    data = lua_redis.hmget(key, "tokens", "timestamp")
+    tokens = float(data[0])
+    last_ts = float(data[1])
+
+    if tokens is None:
+        tokens = capacity
+        last_ts = now
+
+    delta: float = max(0, now - last_ts)
+    tokens = min(capacity, tokens + delta * rate)
+
+    if tokens < cost:
+        return [0, tokens]
+
+    tokens -= cost
+    lua_redis.hset(key, "tokens", tokens, "timestamp", now)
+    lua_redis.expire(key, math.ceil(capacity / rate * 2))
+    return [1, tokens]
 
 
 class RedisMsg:
@@ -59,68 +92,10 @@ class RedisMsg:
 
 @singleton
 class RedisDB:
-    lua_delete_if_equal = None
-    lua_token_bucket = None
-    LUA_DELETE_IF_EQUAL_SCRIPT = """
-        local current_value = redis.call('get', KEYS[1])
-        if current_value and current_value == ARGV[1] then
-            redis.call('del', KEYS[1])
-            return 1
-        end
-        return 0
-    """
-
-    LUA_TOKEN_BUCKET_SCRIPT = """
-        -- KEYS[1] = rate limit key
-        -- ARGV[1] = capacity
-        -- ARGV[2] = rate
-        -- ARGV[3] = now
-        -- ARGV[4] = cost
-
-        local key       = KEYS[1]
-        local capacity  = tonumber(ARGV[1])
-        local rate      = tonumber(ARGV[2])
-        local now       = tonumber(ARGV[3])
-        local cost      = tonumber(ARGV[4])
-
-        local data = redis.call("HMGET", key, "tokens", "timestamp")
-        local tokens = tonumber(data[1])
-        local last_ts = tonumber(data[2])
-
-        if tokens == nil then
-            tokens = capacity
-            last_ts = now
-        end
-
-        local delta = math.max(0, now - last_ts)
-        tokens = math.min(capacity, tokens + delta * rate)
-
-        if tokens < cost then
-            return {0, tokens}
-        end
-
-        tokens = tokens - cost
-
-        redis.call("HMSET", key,
-            "tokens", tokens,
-            "timestamp", now
-        )
-
-        redis.call("EXPIRE", key, math.ceil(capacity / rate * 2))
-
-        return {1, tokens}
-    """
-
     def __init__(self):
         self.REDIS = None
         self.config = REDIS
         self.__open__()
-
-    def register_scripts(self) -> None:
-        cls = self.__class__
-        client = self.REDIS
-        cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
-        cls.lua_token_bucket = client.register_script(cls.LUA_TOKEN_BUCKET_SCRIPT)
 
     def __open__(self):
         try:
@@ -138,8 +113,6 @@ class RedisDB:
                 conn_params["password"] = password
 
             self.REDIS = redis.StrictRedis(**conn_params)
-
-            self.register_scripts()
         except Exception as e:
             logging.warning(f"Redis can't be connected. Error: {str(e)}")
         return self.REDIS
@@ -515,11 +488,18 @@ class RedisDB:
         Delete a key if its value is equals to the given one, do nothing otherwise.
         """
         try:
-            return bool(self.lua_delete_if_equal(keys=[key], args=[expected_value], client=self.REDIS))
+            return bool(_delete_if_equal(self.REDIS, key=key, expected_value=expected_value))
         except Exception as e:
             logging.warning("RedisDB.delete_if_equal got exception: %s", str(e))
             self.__open__()
         return False
+
+    def token_bucket(self, key: str, capacity: float, rate: float, now: float, cost: float) -> list[int]:
+        """
+        Atomically take `cost` tokens from the bucket at `key`, refilled at `rate` per second up to `capacity`.
+        Returns [allowed, remaining], where allowed is 1 if the tokens were taken and 0 otherwise.
+        """
+        return _token_bucket(self.REDIS, key=key, capacity=capacity, rate=rate, now=now, cost=cost)
 
     def delete(self, key) -> bool:
         try:
