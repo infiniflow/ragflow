@@ -158,6 +158,128 @@ func fieldKeyword(fieldName string) bool {
 	return false
 }
 
+// fieldJSON reports fields stored as Infinity JSON columns. The Infinity Go
+// SDK expects JSON columns as encoded strings, not Go slices or maps. Column
+// names are matched case-insensitively so the write path (transformChunkFields)
+// and the read path (decodeJSONFields) agree on every spelling.
+func fieldJSON(fieldName string) bool {
+	switch strings.ToLower(fieldName) {
+	case "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
+		"related_kb_pages_kwd", "claims", "page_ids", "source_chunk_hashes",
+		"rechunked_from_chunk_ids", "aliases":
+		return true
+	default:
+		return false
+	}
+}
+
+// fieldJSONList reports JSON columns whose value is an array and whose filter
+// semantics are membership rather than whole-document equality.
+func fieldJSONList(fieldName string) bool {
+	switch strings.ToLower(fieldName) {
+	case "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
+		"related_kb_pages_kwd", "claims", "page_ids",
+		"rechunked_from_chunk_ids", "aliases":
+		return true
+	default:
+		return false
+	}
+}
+
+func jsonListFilterConditions(fieldName string, value interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) []string {
+	values := []interface{}{value}
+	switch typed := value.(type) {
+	case []string:
+		values = make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			values = append(values, item)
+		}
+	case []interface{}:
+		values = typed
+	}
+
+	column, found := tableColumns[fieldName]
+	if !found {
+		return []string{"1=0"}
+	}
+	columnType := ""
+	columnType = strings.ToLower(column.Type)
+	conditions := make([]string, 0, len(values))
+	for _, item := range values {
+		switch {
+		case strings.Contains(columnType, "json"):
+			literal, err := json.Marshal(item)
+			if err != nil {
+				continue
+			}
+			conditions = append(conditions, fmt.Sprintf("json_contains(%s, '%s')",
+				fieldName, strings.ReplaceAll(string(literal), "'", "''")))
+		case strings.Contains(columnType, "char"):
+			text, ok := item.(string)
+			if !ok || text == "" {
+				continue
+			}
+			conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')",
+				convertMatchingField(fieldName), strings.ReplaceAll(text, "'", "''")))
+		}
+	}
+	if len(conditions) == 0 {
+		return []string{"1=0"}
+	}
+	return conditions
+}
+
+func hasJSONListFilter(condition map[string]interface{}) bool {
+	for fieldName := range condition {
+		if fieldJSONList(fieldName) {
+			return true
+		}
+	}
+	return false
+}
+
+func loadTableColumns(table *infinity.Table) (map[string]struct {
+	Type    string
+	Default interface{}
+}, error) {
+	columns := make(map[string]struct {
+		Type    string
+		Default interface{}
+	})
+	response, err := table.ShowColumns()
+	if err != nil {
+		return nil, err
+	}
+	result, ok := response.(*infinity.QueryResult)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type: %T", response)
+	}
+	names := result.Data["name"]
+	types := result.Data["type"]
+	defaults := result.Data["default"]
+	for i, rawName := range names {
+		name, _ := rawName.(string)
+		columnType := ""
+		if i < len(types) {
+			columnType, _ = types[i].(string)
+		}
+		var defaultValue interface{}
+		if i < len(defaults) {
+			defaultValue = defaults[i]
+		}
+		columns[name] = struct {
+			Type    string
+			Default interface{}
+		}{Type: columnType, Default: defaultValue}
+	}
+	return columns, nil
+}
+
 // existsCondition builds a NOT EXISTS or field!=" condition
 func existsCondition(field string, tableColumns map[string]struct {
 	Type    string
@@ -204,6 +326,16 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 						}
 					}
 				}
+			}
+			continue
+		}
+
+		// JSON-list fields use member containment. Legacy tables stored these
+		// columns as ###-joined varchar values, so retain their full-text fallback.
+		if fieldJSONList(k) && tableColumns != nil {
+			jsonConditions := jsonListFilterConditions(k, v, tableColumns)
+			if len(jsonConditions) > 0 {
+				conditions = append(conditions, "("+strings.Join(jsonConditions, " OR ")+")")
 			}
 			continue
 		}

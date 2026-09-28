@@ -469,6 +469,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
 		sessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
 	if err != nil {
@@ -1271,6 +1272,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
 		req.SessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	// req.Files is already normalized to the 1D file list by the

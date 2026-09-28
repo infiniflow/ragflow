@@ -422,6 +422,7 @@ export default {
       redoAll: '清除现有分块',
       applyAutoMetadataSettings: '应用全局自动元数据设置',
       parseFileTip: '您确定要解析吗？',
+      clearChunksReparseTip: '您确定要清空分块重新解析吗？',
       parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
