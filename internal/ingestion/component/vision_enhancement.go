@@ -177,20 +177,19 @@ func maybeDispatchVisionEnhancement(
 	setup := setups[family]
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// Collect visual resources. A table without an inline image or PDF crop
-	// locator has no visual payload to enhance.
+	// Collect visual resources, including Markdown images whose type is text
+	// because flatten_media_to_text is enabled.
 	var items []int
 	for i, item := range dispatched.JSON {
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" && kd != "table" {
-			continue
-		}
 		if img, _ := item["image"].(string); img != "" {
 			items = append(items, i)
 			continue
 		}
-		if _, ok := parser.ExtractPDFPositions(item); ok {
-			items = append(items, i)
+		kd, _ := item["doc_type_kwd"].(string)
+		if kd == "image" || kd == "table" {
+			if _, ok := parser.ExtractPDFPositions(item); ok {
+				items = append(items, i)
+			}
 		}
 	}
 	if len(items) == 0 {
@@ -203,6 +202,7 @@ func maybeDispatchVisionEnhancement(
 	var apiConfig *modelModule.APIConfig
 	var prompt string
 	vlmReady := false
+	var resolveErr error
 	if tenantID != "" {
 		modelRef := configuredMediaModelID(setup, family)
 		var err error
@@ -218,10 +218,19 @@ func maybeDispatchVisionEnhancement(
 		}
 		if err == nil {
 			prompt, err = figureVisionPromptBuilder(language)
-			vlmReady = err == nil
+			vlmReady = err == nil && driver != nil
 		}
+		resolveErr = err
 	}
 	if !vlmReady {
+		warning := "vision enhancement skipped: tenant ID is missing"
+		if tenantID != "" {
+			warning = "vision enhancement skipped: no usable vision model"
+			if resolveErr != nil {
+				warning = fmt.Sprintf("vision enhancement skipped: %v", resolveErr)
+			}
+		}
+		dispatched.Warnings = append(dispatched.Warnings, warning)
 		return dispatched, false, nil
 	}
 
@@ -246,7 +255,7 @@ func maybeDispatchVisionEnhancement(
 		case sem <- struct{}{}:
 			vlmSlot = true
 		case <-ctx.Done():
-			break
+			// The loop exits below when no slot was acquired.
 		}
 		if !vlmSlot {
 			break

@@ -108,16 +108,21 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
+	mediaBudget := newEmbeddedMediaBudget()
 	imageOCR := newImageOCRBudget(ctx)
+	mediaBudget.imageOCR = imageOCR
 	defer imageOCR.close()
-	unresolvedImages := walkMarkdownBlocksWithImages(ctx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, imageOCR)
+	unresolvedImages := walkMarkdownBlocksWithImages(imageOCR.ctx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
-	warnings := imageOCR.warnings()
+	warnings := mediaBudget.warnings()
+	if mediaBudget.items > 0 && imageOCR.ctx.Err() == context.DeadlineExceeded {
+		warnings = append(warnings, "Markdown image processing reached the document time budget")
+	}
 	if unresolvedImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
 	}
@@ -386,7 +391,7 @@ func markdownTableCells(line string) []string {
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
 // (<div>, <style>, …) are emitted as ordinary text with no ck_type.
-func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, imageOCR *imageOCRBudget) int {
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
 	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
 		var ckType string
@@ -468,19 +473,41 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		if imgURL, ok := findBlockImage(child); ok {
 			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
 			if fetchRemoteImages || !isRemote {
-				if encoded, raw, resolved := resolveImageURL(ctx, imgURL); resolved {
+				switch {
+				case isRemote && ctx.Err() != nil:
+					item["media_omitted"] = true
+				case !budget.reserveItem():
+					item["media_omitted"] = true
+				default:
+					encoded, raw, resolved := resolveImageURL(ctx, imgURL)
+					if !resolved {
+						unresolvedImages++
+						break
+					}
+					size := len(raw)
+					if raw == nil {
+						encodedBytes := len(encoded) - strings.Count(encoded, "\r") - strings.Count(encoded, "\n")
+						decodedSize, ok := base64DecodedSize(encoded, encodedBytes)
+						if !ok {
+							unresolvedImages++
+							break
+						}
+						size = int(decodedSize)
+					}
+					if !budget.includeReservedSize(size) {
+						item["media_omitted"] = true
+						break
+					}
 					if raw != nil {
-						appendOCRText(item, imageOCR.recognize(raw))
+						budget.recognizeImage(raw, item)
 						item["image"] = base64.StdEncoding.EncodeToString(raw)
 					} else {
 						item["image"] = encoded
-						appendOCRText(item, imageOCR.recognizeBase64(encoded))
+						appendOCRText(item, budget.imageOCR.recognizeBase64(encoded))
 					}
 					if !flatten {
 						item["doc_type_kwd"] = "image"
 					}
-				} else {
-					unresolvedImages++
 				}
 			}
 		}

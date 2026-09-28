@@ -47,6 +47,12 @@ var (
 
 const visionPDFSourceBudget = 90 * time.Second
 
+type visionPageSizer interface {
+	PageSize(pageNum int) (float64, float64, error)
+}
+
+var _ visionPageSizer = (*deepdocpdf.PDFOxideEngine)(nil)
+
 func init() {
 	visionSourceFetcher = FetchBinary
 	visionEngineOpener = deepdocpdf.NewEngine
@@ -161,9 +167,7 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 }
 
 func pdfPagesRasterWithinVisionLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
-	sizer, ok := engine.(interface {
-		PageSize(int) (float64, float64, error)
-	})
+	sizer, ok := engine.(visionPageSizer)
 	if !ok {
 		return false
 	}

@@ -52,24 +52,38 @@ func newEmbeddedMediaBudget() *embeddedMediaBudget {
 // been reached. Byte-limit omissions can keep walking so later text and media
 // metadata remain available.
 func (b *embeddedMediaBudget) include(data []byte) (bool, bool) {
-	if b.countExhausted {
+	if !b.reserveItem() {
 		return false, false
+	}
+	return b.includeReservedSize(len(data)), true
+}
+
+// reserveItem lets a parser cap image source attempts before fetching bytes.
+func (b *embeddedMediaBudget) reserveItem() bool {
+	if b.countExhausted {
+		return false
 	}
 	if b.items >= b.maxItems {
 		b.countExhausted = true
-		return false, false
+		return false
 	}
 	b.items++
-	if len(data) > b.maxImageBytes {
+	return true
+}
+
+// includeReservedSize charges a previously reserved image without retaining
+// or decoding its payload just to measure its size.
+func (b *embeddedMediaBudget) includeReservedSize(size int) bool {
+	if size > b.maxImageBytes {
 		b.oversizedImages++
-		return false, true
+		return false
 	}
-	if len(data) > b.maxTotalBytes-b.totalBytes {
+	if size > b.maxTotalBytes-b.totalBytes {
 		b.documentOverflows++
-		return false, true
+		return false
 	}
-	b.totalBytes += len(data)
-	return true, true
+	b.totalBytes += size
+	return true
 }
 
 func (b *embeddedMediaBudget) warnings() []string {

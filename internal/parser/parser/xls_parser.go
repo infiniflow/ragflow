@@ -85,10 +85,18 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	items, warnings, sheetsCount, err := parseXLSXBytes(data, nil)
+	mediaBudget := newEmbeddedMediaBudget()
+	imageOCR := newImageOCRBudget(ctx)
+	mediaBudget.imageOCR = imageOCR
+	defer imageOCR.close()
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, mediaBudget)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
+	warnings = append(warnings, mediaBudget.warnings()...)
 
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,

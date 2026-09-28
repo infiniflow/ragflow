@@ -15,9 +15,7 @@
 //
 
 // Media dispatch: image, audio, video parser branches that require
-// model access (IMAGE2TEXT, SPEECH2TEXT) at the component
-// layer. Mirrors Python's _image / _audio / _video methods in
-// rag/flow/parser/parser.py and rag/app/picture.py.
+// model access (IMAGE2TEXT, SPEECH2TEXT) at the component layer.
 //
 // Audio and video branches dispatch their models directly. Image OCR is
 // supplied by PictureParser; the component retains PaddleOCR selection and
@@ -32,7 +30,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -80,11 +77,9 @@ func maybeDispatchVideo(
 }
 
 // Image dispatch: optional PaddleOCR plus IMAGE2TEXT vision describe ---
-// Mirrors Python's rag/app/picture.py:chunk() image branch:
 //   1. Try PaddleOCR if layout_recognize is "@PaddleOCR"
 //   2. Fall back to local DeepDOC OCR in PictureParser
-//   3. If OCR text is short (≤32 chars or ≤32 English words),
-//      also call IMAGE2TEXT VLM describe()
+//   3. If image enhancement is enabled, call IMAGE2TEXT VLM describe()
 //   4. Returns combined text
 
 func maybeDispatchImage(
@@ -95,6 +90,7 @@ func maybeDispatchImage(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
+	enableVisionEnhancement bool,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
 		return parser.ParseResult{}, false, nil
@@ -142,6 +138,11 @@ func maybeDispatchImage(
 		imageB64 := base64.StdEncoding.EncodeToString(binary)
 		dataURI = "data:" + imageMIME(filename) + ";base64," + imageB64
 	}()
+	if !enableVisionEnhancement {
+		result := imageDispatchResult(ocrText, dataURI)
+		result.Warnings = append(result.Warnings, parsed.Warnings...)
+		return result, true, nil
+	}
 	result, handled, err := maybeDispatchImageVLM(ctx, db, dataURI, ocrText, tenantID, setup, inputs)
 	result.Warnings = append(result.Warnings, parsed.Warnings...)
 	return result, handled, err
@@ -156,20 +157,15 @@ func maybeDispatchImageVLM(
 	setup schema.ParserSetup,
 	inputs map[string]any,
 ) (parser.ParseResult, bool, error) {
-
-	// --- Phase 2: VLM description (when OCR text is short) ---
-	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
-	// then use OCR text only; otherwise call cv_mdl.describe().
+	// --- Phase 2: optional VLM description ---
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
-	if vlmGateShouldSkip(ocrText, lang) {
-		// OCR returned substantial text — skip VLM.
-		return imageDispatchResult(ocrText, dataURI), true, nil
-	}
 	if tenantID == "" {
-		return imageDispatchResult(ocrText, dataURI), true, nil
+		result := imageDispatchResult(ocrText, dataURI)
+		result.Warnings = append(result.Warnings, "image VLM enhancement skipped: tenant ID is missing")
+		return result, true, nil
 	}
 
-	// Short OCR text (or no text): supplement with VLM describe.
+	// Supplement parser-provided OCR text with a VLM description.
 	modelRef := configuredMediaModelID(setup, "image")
 	var driver modelModule.ModelDriver
 	var modelName string
@@ -185,13 +181,13 @@ func maybeDispatchImageVLM(
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}
+	if err == nil && driver == nil {
+		err = fmt.Errorf("no usable vision model")
+	}
 	if err != nil {
-		// If VLM is unavailable, but we have OCR text, return it.
-		if ocrText != "" {
-			return imageDispatchResult(ocrText, dataURI), true, nil
-		}
-		return parser.ParseResult{}, true,
-			fmt.Errorf("parser: picture image2text model: %w", err)
+		result := imageDispatchResult(ocrText, dataURI)
+		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err))
+		return result, true, nil
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
@@ -211,11 +207,9 @@ func maybeDispatchImageVLM(
 	vision := true
 	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
-		if ocrText != "" {
-			return imageDispatchResult(ocrText, dataURI), true, nil
-		}
-		return parser.ParseResult{}, true,
-			fmt.Errorf("parser: picture describe: %w", err)
+		result := imageDispatchResult(ocrText, dataURI)
+		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement failed: %v", err))
+		return result, true, nil
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
@@ -429,23 +423,6 @@ func videoMIME(filename string) string {
 }
 
 // --- OCR helpers for picture dispatch ---
-
-// vlmGateShouldSkip determines whether the OCR text is substantial enough
-// to skip the secondary VLM description call.
-// Mirrors Python picture.py:chunk():
-//
-//	txt = txt.strip()
-//	if (eng and len(txt.split()) > 32) or len(txt) > 32 -> skip VLM
-func vlmGateShouldSkip(ocrText, lang string) bool {
-	ocrText = strings.TrimSpace(ocrText)
-	if ocrText == "" {
-		return false
-	}
-	eng := strings.EqualFold(lang, "english")
-	wordCount := len(strings.Fields(ocrText))
-	charCount := utf8.RuneCountInString(ocrText)
-	return (eng && wordCount > 32) || charCount > 32
-}
 
 // runPaddleOCRImage tries PaddleOCR remote API for image text extraction.
 // Mirrors Python's picture.py:_try_paddleocr_image() which creates a
