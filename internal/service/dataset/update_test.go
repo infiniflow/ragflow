@@ -157,7 +157,10 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 	}
 
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserConfig: map[string]interface{}{"chunk_token_num": float64(256)},
+		// Component-scoped override (flat parser-level keys are rejected now).
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(256)},
+		},
 	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)

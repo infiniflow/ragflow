@@ -206,24 +206,28 @@ func TestValidateDatasetParserConfigSize_OverLimit(t *testing.T) {
 }
 
 func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) {
+	// A flat key is rejected regardless of its value (even nil): datasets are
+	// component-scoped only, so "task_page_size"/"pages" must live on a node.
 	for _, config := range []map[string]interface{}{
 		{"task_page_size": nil},
 		{"pages": nil},
 	} {
-		if err := validateDatasetParserConfig(config); err != nil {
-			t.Fatalf("validateDatasetParserConfig(%#v): expected nil, got %v", config, err)
+		if err := validateDatasetParserConfig(config); err == nil {
+			t.Fatalf("validateDatasetParserConfig(%#v): expected error for flat key, got nil", config)
 		}
 	}
 }
 
 func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
 	err := validateDatasetParserConfig(map[string]interface{}{"delimiter": float64(1)})
-	if err != nil {
-		t.Fatalf("expected nil for float delimiter, got %v", err)
+	if err == nil {
+		t.Fatal("expected error for flat delimiter key")
 	}
 }
 
 func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
+	// Documents keep a lenient flat contract (e.g. a flat "metadata" map with no
+	// Extractor node); only flat "parent_child" is rejected.
 	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
 		t.Fatalf("expected nil for unknown flat field, got %v", err)
 	}
@@ -234,11 +238,36 @@ func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
 
 func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
 	config := map[string]interface{}{"children_delimiter": "|"}
-	if err := validateDatasetParserConfig(config); err != nil {
-		t.Fatalf("expected nil, got %v", err)
+	// Datasets reject every flat key, including parser-level ones.
+	if err := validateDatasetParserConfig(config); err == nil {
+		t.Fatal("expected error for flat children_delimiter on dataset")
 	}
+	// Documents still accept legacy flat keys except parent_child.
 	if err := ValidateDocumentParserConfig(config); err != nil {
-		t.Fatalf("expected nil, got %v", err)
+		t.Fatalf("expected nil for document flat children_delimiter, got %v", err)
+	}
+}
+
+func TestValidateDatasetParserConfig_RejectsAnyFlatKey(t *testing.T) {
+	for _, flat := range []map[string]interface{}{
+		{"chunk_token_num": float64(128)},
+		{"delimiter": "\n"},
+		{"children_delimiter": "|"},
+		{"layout_recognize": "DeepDOC"},
+		{"auto_keywords": float64(0)},
+		{"task_page_size": float64(1)},
+		{"pages": nil},
+		{"parser_specific": "value"},
+	} {
+		if err := validateDatasetParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat dataset config %#v", flat)
+		}
+	}
+	// Component-scoped keys (containing ":") always pass.
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(512)},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
 	}
 }
 
@@ -256,12 +285,19 @@ func TestValidateParserConfigRejectsFlatMetadataAndParentChild(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("expected nil for component-scoped keys, got %v", err)
 	}
-	// Parser-level flat keys remain valid on the built-in path.
-	if err := validateDatasetParserConfig(map[string]interface{}{
-		"chunk_token_num": float64(128),
-		"delimiter":       "\n",
-	}); err != nil {
-		t.Fatalf("expected nil for parser-level flat keys, got %v", err)
+	// Parser-level flat keys are no longer accepted on datasets: the Go backend
+	// is component-scoped only (chunk size is "chunk_token_size" on the chunker
+	// node, not the legacy flat "chunk_token_num").
+	for _, flat := range []map[string]interface{}{
+		{"chunk_token_num": float64(128)},
+		{"delimiter": "\n"},
+		{"children_delimiter": "|"},
+		{"layout_recognize": "DeepDOC"},
+		{"parser_specific": "value"},
+	} {
+		if err := validateDatasetParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat dataset config %#v", flat)
+		}
 	}
 }
 

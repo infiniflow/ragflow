@@ -40,7 +40,7 @@ describe('normalizeParserConfig backend awareness', () => {
     mockIsGoBackend = true;
   });
 
-  it('scopes metadata and parent_child onto component nodes for the Go backend', () => {
+  it('scopes metadata and parent_child onto component nodes and drops every flat key for the Go backend', () => {
     const out = normalizeParserConfig({
       ...baseConfig,
     }) as Record<string, any>;
@@ -49,14 +49,18 @@ describe('normalizeParserConfig backend awareness', () => {
       metadata: { enabled: true, metadata: [], built_in_metadata: [] },
     });
     expect(out['GeneralChunker:SixApplesFall']).toEqual({
+      chunk_token_size: 128,
       parent_child: { children_delimiter: '!?;', use_parent_child: true },
     });
     // No flat transport keys survive for the Go backend.
     expect(out).not.toHaveProperty('metadata');
     expect(out).not.toHaveProperty('parent_child');
-    // Parser-level flat keys are preserved as-is for the built-in path.
-    expect(out.chunk_token_num).toBe(128);
-    expect(out.delimiter).toBe('\n');
+    // The Go backend reads chunk_token_size off the chunker node, never a flat
+    // chunk_token_num, so the flat key must be gone and the value re-homed.
+    expect(out).not.toHaveProperty('chunk_token_num');
+    expect(out).not.toHaveProperty('delimiter');
+    expect(out).not.toHaveProperty('layout_recognize');
+    expect(out).not.toHaveProperty('auto_keywords');
     // graphrag/raptor are always stripped.
     expect(out).not.toHaveProperty('graphrag');
     expect(out).not.toHaveProperty('raptor');
@@ -81,14 +85,22 @@ describe('normalizeParserConfig backend awareness', () => {
     expect(out).not.toHaveProperty('GeneralChunker:SixApplesFall');
   });
 
-  it('does not scope anything when metadata/parent_child are absent', () => {
-    const { metadata, enable_children, use_parent_child, ...rest } = baseConfig;
-    const out = normalizeParserConfig({ ...rest }) as Record<string, any>;
+  it('does not scope anything when metadata/parent_child are absent but still re-homes chunk_token_num', () => {
+    const out = normalizeParserConfig({
+      chunk_token_num: 128,
+      layout_recognize: 'DeepDOC',
+      delimiter: '\n',
+    }) as Record<string, any>;
 
     expect(out).not.toHaveProperty('Extractor:AutoExtractDefault');
-    expect(out).not.toHaveProperty('GeneralChunker:SixApplesFall');
     expect(out).not.toHaveProperty('parent_child');
     expect(out).not.toHaveProperty('metadata');
-    expect(out.chunk_token_num).toBe(128);
+    // No flat parser-level key survives for the Go backend.
+    expect(out).not.toHaveProperty('chunk_token_num');
+    expect(out).not.toHaveProperty('delimiter');
+    // The chunk size is still re-homed onto the chunker node.
+    expect(out['GeneralChunker:SixApplesFall']).toEqual({
+      chunk_token_size: 128,
+    });
   });
 });

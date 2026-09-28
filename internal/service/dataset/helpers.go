@@ -198,22 +198,27 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-// validateDatasetParserConfig rejects the flat (non-component-scoped) forms of
-// the keys the Go backend now scopes onto components. `metadata` must live under
-// an Extractor node and `parent_child` under a GeneralChunker node; the Python
-// backend is fully retired (SystemHandler.Language always returns "go"), so this
-// check applies unconditionally. Parser-level flat keys (chunk_token_num,
-// delimiter, ...) remain valid on the built-in path and are intentionally not
-// rejected.
+// validateDatasetParserConfig enforces the Go backend's "component-scoped only"
+// contract: every top-level parser_config key must be keyed by a component id
+// (it contains ":"), never a flat (non-component-scoped) key. The Python backend
+// is fully retired (SystemHandler.Language always returns "go"), so the dataset
+// parser_config is always built from a DSL whose params live on component nodes
+// (e.g. chunk size is "chunk_token_size" on the chunker node, not the legacy
+// flat "chunk_token_num"). Any flat key would be silently dropped by
+// CleanComponentParams downstream and is never consumed, so we reject it loudly
+// here instead.
+//
+// Document configs are exempt via ValidateDocumentParserConfig, which keeps the
+// flat "metadata" map (extracted field values carried without an Extractor node).
 func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 	if len(parserConfig) == 0 {
 		return nil
 	}
-	for _, flatKey := range []string{"metadata", "parent_child"} {
-		if _, ok := parserConfig[flatKey]; ok {
+	for key := range parserConfig {
+		if !strings.Contains(key, ":") {
 			return fmt.Errorf(
 				"parser_config key %q must be component-scoped (e.g. under an Extractor or GeneralChunker node), not a flat top-level key",
-				flatKey,
+				key,
 			)
 		}
 	}
@@ -226,9 +231,22 @@ func ValidateParserConfig(parserConfig map[string]interface{}) error {
 }
 
 // ValidateDocumentParserConfig validates the parser_config attached to a
-// document.
+// document. Documents are more lenient than datasets: a document may carry a
+// flat "metadata" map (extracted field values with no Extractor node), which
+// ApplyComponentScopedParserConfig preserves. The one flat key documents must
+// not use is "parent_child" — it is component-scoped under a GeneralChunker node.
+// (Datasets reject every flat key via validateDatasetParserConfig.)
 func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+	if len(parserConfig) == 0 {
+		return nil
+	}
+	if _, ok := parserConfig["parent_child"]; ok {
+		return fmt.Errorf(
+			"parser_config key %q must be component-scoped (under a GeneralChunker node), not a flat top-level key",
+			"parent_child",
+		)
+	}
+	return nil
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its

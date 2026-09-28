@@ -45,11 +45,19 @@ const isMinerULayoutRecognize = (layoutRecognize: unknown): boolean =>
  * Normalizes parser configuration before it is sent to the API.
  *
  * The Python backend keeps the legacy flat-key contract (top-level `metadata`
- * / `parent_child`). The Go backend requires component-scoped keys, so the
- * dataset-level `metadata` is nested under `Extractor:AutoExtractDefault` and
- * `parent_child` under `GeneralChunker:SixApplesFall`; no flat `metadata` or
- * `parent_child` is emitted. All other (parser-level) keys are left flat for
- * both backends, matching what the Go backend preserves on the built-in path.
+ * / `parent_child` and all parser-level keys as-is).
+ *
+ * The Go backend rejects every flat (non-component-scoped) key, so this
+ * normalizer drops all parser-level flat keys (`chunk_token_num`, `delimiter`,
+ * `auto_keywords`, `layout_recognize`, ...) and emits only component-scoped
+ * keys (those containing `:`). The two legacy flat values the Go backend still
+ * understands are re-homed onto their owning nodes:
+ *   - `metadata`          → `Extractor:AutoExtractDefault.metadata`
+ *   - `parent_child`      → `GeneralChunker:SixApplesFall.parent_child`
+ *   - `chunk_token_num`   → `GeneralChunker:SixApplesFall.chunk_token_size`
+ * (the built-in path reads `chunk_token_size` off the chunker node, never a
+ * flat `chunk_token_num`). Any key already containing `:` is passed through
+ * untouched.
  * @param parserConfig - The parser configuration object
  * @returns Processed parser config
  */
@@ -92,35 +100,44 @@ export const normalizeParserConfig = (
       }
     : undefined;
 
-  const flat: Record<string, any> = {
-    auto_keywords,
-    auto_questions,
-    chunk_token_num,
-    delimiter,
-    html4excel,
-    layout_recognize,
-    tag_kb_ids,
-    topn_tags,
-    filename_embd_weight,
-    task_page_size,
-    pages,
-    children_delimiter,
-    enable_children,
-    metadata,
-    ...(parentChild ? { parent_child: parentChild } : {}),
-    ...additionalParserConfig,
-  };
-
   // Python backend: keep the legacy flat-key contract unchanged.
   if (!pickByBackend({ go: true, python: false })) {
-    return flat;
+    return {
+      auto_keywords,
+      auto_questions,
+      chunk_token_num,
+      delimiter,
+      html4excel,
+      layout_recognize,
+      tag_kb_ids,
+      topn_tags,
+      filename_embd_weight,
+      task_page_size,
+      pages,
+      children_delimiter,
+      enable_children,
+      metadata,
+      ...(parentChild ? { parent_child: parentChild } : {}),
+      ...additionalParserConfig,
+    };
   }
 
-  // Go backend: scope dataset-level metadata/parent_child onto their owning
-  // component nodes; never emit a flat `metadata`/`parent_child` key.
-  const scoped: Record<string, any> = { ...flat };
-  delete scoped.metadata;
-  delete scoped.parent_child;
+  // Go backend: emit ONLY component-scoped keys. The legacy flat parser-level
+  // keys have no consumer on the Go backend (the built-in path reads component
+  // nodes, e.g. GeneralChunker:SixApplesFall.chunk_token_size), so they are
+  // dropped rather than forwarded. Already-scoped keys pass through untouched.
+  const scoped: Record<string, any> = {};
+  for (const [key, value] of Object.entries(additionalParserConfig)) {
+    if (key.includes(':')) {
+      scoped[key] = value;
+    }
+  }
+  if (chunk_token_num !== undefined && chunk_token_num !== null) {
+    scoped['GeneralChunker:SixApplesFall'] = {
+      ...(scoped['GeneralChunker:SixApplesFall'] as Record<string, any> | undefined),
+      chunk_token_size: chunk_token_num,
+    };
+  }
   if (metadata && typeof metadata === 'object') {
     scoped['Extractor:AutoExtractDefault'] = {
       ...(scoped['Extractor:AutoExtractDefault'] as Record<string, any> | undefined),
