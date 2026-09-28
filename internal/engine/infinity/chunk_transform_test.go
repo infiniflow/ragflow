@@ -161,6 +161,36 @@ func TestTransformChunkFieldsJSONSlices(t *testing.T) {
 	}
 }
 
+func TestTransformChunkFieldsKeepsEncodedJSON(t *testing.T) {
+	got := transformChunkFields(map[string]interface{}{
+		"source_doc_ids": `["doc-1"]`,
+	}, nil)
+
+	if want := `["doc-1"]`; got["source_doc_ids"] != want {
+		t.Errorf("source_doc_ids = %#v, want %q", got["source_doc_ids"], want)
+	}
+}
+
+func TestDecodeJSONFields(t *testing.T) {
+	row := map[string]interface{}{
+		"source_doc_ids":      `["doc-1","doc-2"]`,
+		"aliases":             "alpha###beta",
+		"source_chunk_hashes": `{"chunk-1":"hash-1"}`,
+	}
+
+	decodeJSONFields(row)
+
+	if want := []interface{}{"doc-1", "doc-2"}; !reflect.DeepEqual(row["source_doc_ids"], want) {
+		t.Errorf("source_doc_ids = %#v, want %#v", row["source_doc_ids"], want)
+	}
+	if want := []interface{}{"alpha", "beta"}; !reflect.DeepEqual(row["aliases"], want) {
+		t.Errorf("aliases = %#v, want %#v", row["aliases"], want)
+	}
+	if want := map[string]interface{}{"chunk-1": "hash-1"}; !reflect.DeepEqual(row["source_chunk_hashes"], want) {
+		t.Errorf("source_chunk_hashes = %#v, want %#v", row["source_chunk_hashes"], want)
+	}
+}
+
 // TestTransformChunkFieldsDropsTenantRoutingField ensures the tenant routing
 // field is not sent to Infinity, whose per-tenant table schema does not have a
 // tenant_id column.

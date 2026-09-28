@@ -110,8 +110,19 @@ func NewWikiMapVersionStoreWithVectorSizeResolver(
 }
 
 func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tenantID, datasetID string) error {
-	if engine.Type(s.engine) != engine.EngineInfinity || s.resolveVectorSize == nil {
+	if engine.Type(s.engine) != engine.EngineInfinity {
 		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenantID)
+	exists, err := s.engine.ChunkStoreExists(ctx, baseName, datasetID)
+	if err != nil {
+		return fmt.Errorf("check Infinity chunk store for Wiki MAP: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if s.resolveVectorSize == nil {
+		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: vector-size resolver is not configured")
 	}
 	vectorSize, err := s.resolveVectorSize(ctx)
 	if err != nil {
@@ -120,7 +131,7 @@ func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tena
 	if vectorSize <= 0 {
 		return fmt.Errorf("resolve Wiki MAP vector size: got %d", vectorSize)
 	}
-	if err := s.engine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", tenantID), datasetID, vectorSize, ""); err != nil {
+	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
 		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: %w", err)
 	}
 	return nil

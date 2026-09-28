@@ -133,6 +133,24 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 			}
 			common.Info("Successfully added vector column", zap.String("column", vectorColName))
 		}
+
+		// A metadata-only Wiki MAP write can create the dataset table before a
+		// table-parser document arrives. Reconcile the parser-specific column on
+		// the existing-table path so creation order does not make table chunks
+		// unwritable.
+		if parserID == "table" {
+			chunkDataExists, checkErr := e.columnExists(table, "chunk_data")
+			if checkErr != nil {
+				return fmt.Errorf("failed to check chunk_data column: %w", checkErr)
+			}
+			if !chunkDataExists {
+				if _, addErr := table.AddColumns(infinity.TableSchema{
+					&infinity.ColumnDefinition{Name: "chunk_data", DataType: "json", Default: "{}"},
+				}); addErr != nil {
+					return fmt.Errorf("failed to add chunk_data column: %w", addErr)
+				}
+			}
+		}
 	} else {
 		// Table doesn't exist, create it with vector column in the initial schema
 		common.Info(fmt.Sprintf("Creating table with vector column: %s with dimension %d", vectorColName, vecSize))
@@ -856,21 +874,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
-	// Build filter string from req.Filter
+	// Build the backend-independent portion of the filter. JSON-list predicates
+	// are completed per table below because legacy tables stored those columns
+	// as varchar while current tables use JSON.
+	var filterCopy map[string]interface{}
 	if req.Filter != nil {
-		filterCopy := make(map[string]interface{})
+		filterCopy = make(map[string]interface{})
 		for k, v := range req.Filter {
 			if k != "kb_id" {
 				filterCopy[k] = v
 			}
 		}
-
-		condStr := equivalentConditionToStr(filterCopy)
-		if condStr != "" {
-			filterParts = append(filterParts, condStr)
-		}
 	}
-	filterStr := strings.Join(filterParts, " AND ")
 
 	orderBy := req.OrderBy
 	var rankFeature map[string]float64
@@ -948,6 +963,25 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			if err != nil {
 				continue
 			}
+			tableFilterParts := append([]string(nil), filterParts...)
+			if len(filterCopy) > 0 {
+				var tableColumns map[string]struct {
+					Type    string
+					Default interface{}
+				}
+				if hasJSONListFilter(filterCopy) {
+					tableColumns, err = loadTableColumns(tbl)
+					if err != nil {
+						common.Warn("Failed to load Infinity columns for JSON-list filter",
+							zap.String("tableName", tableName), zap.Error(err))
+						continue
+					}
+				}
+				if condition := equivalentConditionToStr(filterCopy, tableColumns); condition != "" {
+					tableFilterParts = append(tableFilterParts, condition)
+				}
+			}
+			filterStr := strings.Join(tableFilterParts, " AND ")
 			table := tbl.Output(outputColumns)
 
 			var textFields []string
@@ -1323,6 +1357,7 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 	}
 
 	common.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
+	decodeJSONFields(chunk)
 
 	// Apply field mappings (same as in GetFields)
 	// docnm -> docnm_kwd, title_tks, title_sm_tks
@@ -1380,6 +1415,7 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 // Used by Search() to mutate chunks with derived fields before returning.
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
+		decodeJSONFields(chunk)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -1536,6 +1572,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 	needImportantKwdEmptyCount := fieldsAll["important_kwd"]
 
 	for _, chunk := range chunks {
+		decodeJSONFields(chunk)
 		// Build column map for case-insensitive lookup (Python line 747)
 		columnMap := make(map[string]string)
 		for k := range chunk {
@@ -2231,7 +2268,10 @@ func floatsEqual(a, b float64) bool {
 }
 
 // equivalentConditionToStr converts a condition map to an Infinity filter string
-func equivalentConditionToStr(condition map[string]interface{}) string {
+func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
 	if len(condition) == 0 {
 		return ""
 	}
@@ -2259,6 +2299,16 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 		// Handle exists specially (without table schema, use string comparison)
 		if k == "exists" {
 			cond = append(cond, fmt.Sprintf("%v!=''", v))
+			continue
+		}
+
+		// JSON-list fields use member containment. Legacy varchar columns keep
+		// the old full-text behavior.
+		if fieldJSONList(k) && tableColumns != nil {
+			jsonConditions := jsonListFilterConditions(k, v, tableColumns)
+			if len(jsonConditions) > 0 {
+				cond = append(cond, "("+strings.Join(jsonConditions, " OR ")+")")
+			}
 			continue
 		}
 
@@ -2386,6 +2436,43 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 		return ""
 	}
 	return strings.Join(cond, " AND ")
+}
+
+// decodeJSONFields converts Infinity JSON-column strings back into their Go
+// array/object representation. Legacy list rows used ###-joined strings, so
+// preserve read compatibility for those columns.
+func decodeJSONFields(chunk map[string]interface{}) {
+	for fieldName, value := range chunk {
+		fieldNameLower := strings.ToLower(fieldName)
+		if !fieldJSON(fieldNameLower) {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		if text == "" {
+			if fieldJSONList(fieldNameLower) {
+				chunk[fieldName] = []interface{}{}
+			}
+			continue
+		}
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+			chunk[fieldName] = decoded
+			continue
+		}
+		if fieldJSONList(fieldNameLower) {
+			parts := strings.Split(text, "###")
+			decodedList := make([]interface{}, 0, len(parts))
+			for _, part := range parts {
+				if part != "" {
+					decodedList = append(decodedList, part)
+				}
+			}
+			chunk[fieldName] = decodedList
+		}
+	}
 }
 
 // calculateScores calculates _score = score_column + pagerank
@@ -2659,12 +2746,7 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			d["chunk_data"] = utility.ConvertMapToJSONString(v)
 		default:
 			if fieldJSON(k) {
-				jsonBytes, err := json.Marshal(v)
-				if err == nil {
-					d[k] = string(jsonBytes)
-				} else {
-					d[k] = v
-				}
+				d[k] = encodeJSONField(v)
 			} else if strings.HasSuffix(k, "_feas") {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
@@ -2705,6 +2787,17 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 	}
 
 	return d
+}
+
+func encodeJSONField(value interface{}) interface{} {
+	if text, ok := value.(string); ok && json.Valid([]byte(text)) {
+		return text
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	return string(encoded)
 }
 
 // DropChunkStore drops a chunk table from Infinity
