@@ -34,6 +34,73 @@ export interface RetrievalBindings {
   memoryCount: number;
 }
 
+export interface ModelBindingCount {
+  modelCount: number;
+  modelTypes?: string[];
+}
+
+const modelComponents = new Set([
+  Operator.Agent,
+  Operator.Categorize,
+  Operator.Extractor,
+]);
+
+function walkModelParams(dsl: DSL | Record<string, any>) {
+  const locations: Array<{ params: Record<string, any> }> = [];
+  const add = (componentName: unknown, params: unknown) => {
+    if (
+      modelComponents.has(componentName as Operator) &&
+      params &&
+      typeof params === 'object'
+    ) {
+      locations.push({ params: params as Record<string, any> });
+    }
+  };
+  for (const node of (dsl as Record<string, any>)?.graph?.nodes ?? [])
+    add(node?.data?.label, node?.data?.form);
+  for (const component of Object.values(
+    (dsl as Record<string, any>)?.components ?? {},
+  )) {
+    const obj = (component as Record<string, any>)?.obj;
+    add(obj?.component_name, obj?.params);
+  }
+  return locations;
+}
+
+export function countUnboundModel(
+  dsl: DSL | Record<string, any> | undefined,
+): ModelBindingCount {
+  if (!dsl) return { modelCount: 0 };
+  const source = (dsl as Record<string, any>).components
+    ? walkModelParams({ components: (dsl as Record<string, any>).components })
+    : walkModelParams(dsl);
+  let modelCount = 0;
+  const modelTypes = new Set<string>();
+  for (const { params } of source) {
+    if (!(params.llm_id || params.model_id)) {
+      modelCount++;
+      if (params.llm_filter === 'image2text') modelTypes.add('vision');
+      if (params.llm_filter === 'chat') modelTypes.add('chat');
+    }
+  }
+  return {
+    modelCount,
+    modelTypes: modelTypes.size ? [...modelTypes] : undefined,
+  };
+}
+
+export function bindUnboundModel(
+  dsl: DSL | Record<string, any> | undefined,
+  modelId: string,
+) {
+  if (!dsl || !modelId) return dsl;
+  const next = cloneDeep(dsl) as Record<string, any>;
+  for (const { params } of walkModelParams(next)) {
+    if (!(params.llm_id || params.model_id)) params.llm_id = modelId;
+  }
+  return next as DSL;
+}
+
 function findAgentParams(
   components: Record<string, any>,
   agentId: string,

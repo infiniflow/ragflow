@@ -1501,7 +1501,7 @@ func logTokenizerCounters() {
 }
 
 // resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
-// env, else the RAGFlow default (rag/res/deepdoc, mirroring deepdoc_server.py),
+// env, else the RAGFlow default model dir (rag/res/deepdoc),
 // else the snapshot fetched by ragflow_deps/download_deps.py. The first
 // candidate that actually contains the required weights wins.
 func resolveDeepDocModelDir() string {

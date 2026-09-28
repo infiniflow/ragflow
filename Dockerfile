@@ -170,7 +170,7 @@ USER root
 SHELL ["/bin/bash", "-c"]
 WORKDIR /ragflow
 
-# Cache Go modules BEFORE copying source (mirrors the Dockerfile_go_ci fix):
+# Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
 # copy only the manifests, download the full module graph into a persistent
 # BuildKit cache mount, then bring in source. GOMODCACHE/GOCACHE are pinned to the
 # mounted paths so `go mod download` and `build.sh --go` share the same cache and
@@ -189,7 +189,7 @@ COPY build.sh ./
 # ORT version pins from these files; without them the --go build fails with
 # "could not parse the ONNX Runtime version from one of the pinned locations".
 COPY ragflow_deps/download_go_deps.py ragflow_deps/download_deps.py ./ragflow_deps/
-COPY Dockerfile_go ./
+COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
 # static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).

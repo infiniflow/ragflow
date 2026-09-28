@@ -11,6 +11,7 @@ import { TemplateCard } from './template-card';
 import {
   bindUnboundRetrieval,
   collectUnboundRetrievalBindings,
+  bindUnboundModel,
 } from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
@@ -49,6 +50,7 @@ export default function AgentTemplates() {
       const dsl = template?.dsl;
       const canvasCategory = template?.canvas_category;
       const memoryIds: string[] = payload?.memory_ids ?? [];
+      const modelId: string = payload?.llm_id ?? '';
       const datasetBlocks = collectUnboundRetrievalBindings(dsl).datasetBlocks;
       const datasetBindings = Object.fromEntries(
         datasetBlocks.map((block, index) => [
@@ -58,12 +60,13 @@ export default function AgentTemplates() {
             : (payload?.dataset_bindings?.[index] ?? []),
         ]),
       );
-      const boundDsl =
+      let boundDsl =
         dsl &&
         (Object.values(datasetBindings).some((ids) => ids.length > 0) ||
           memoryIds.length > 0)
           ? bindUnboundRetrieval(dsl, datasetBindings, memoryIds)
           : dsl;
+      boundDsl = bindUnboundModel(boundDsl, modelId);
 
       const ret = await setAgent({
         title: payload.name,
