@@ -43,7 +43,7 @@ from common.connection_utils import timeout
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
 from common.misc_utils import thread_pool_exec
-from rag.nlp import rag_tokenizer, add_positions
+from rag.nlp import rag_tokenizer, add_source_positions
 from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -341,7 +341,7 @@ class DataflowService:
             ck.pop("text", None)
 
             if "positions" in ck:
-                add_positions(ck, ck["positions"])
+                add_source_positions(ck, ck["positions"])
                 del ck["positions"]
 
         return metadata
