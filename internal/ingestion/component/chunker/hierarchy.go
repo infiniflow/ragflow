@@ -138,6 +138,26 @@ func (n *chunkNode) getPaths(paths *[][]int, titles []int, depth int, includeHea
 	return pathTitles
 }
 
+// openHeadings returns the headings of a text run that are still open at
+// its end: the last heading of each level, dropping any that a later
+// heading of the same or a higher level closed.
+func openHeadings(run []lineRecord, levels []int) ([]lineRecord, []int) {
+	var openRecs []lineRecord
+	var openLevels []int
+	for i, lvl := range levels {
+		if lvl <= 0 || lvl >= bodyLevel {
+			continue
+		}
+		n := len(openLevels)
+		for n > 0 && openLevels[n-1] >= lvl {
+			n--
+		}
+		openRecs = append(openRecs[:n], run[i])
+		openLevels = append(openLevels[:n], lvl)
+	}
+	return openRecs, openLevels
+}
+
 // invokeHierarchy runs the HierarchyTitleChunker strategy.
 func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
@@ -180,9 +200,17 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	// resolve_target_level(text_levels, hierarchy) — the exact call
 	// python makes inside flush_text_records (Gap H: the hierarchy
 	// pointer is dereferenced defensively so a nil never panics).
+	//
+	// A media record does not close the section around it: after each
+	// flush the open heading chain is carried into the next run, so
+	// body text after an image/table keeps its ancestor path. The first
+	// `carried` records of a run are those headings. Path indexes are in
+	// document order, so a path ending below `carried` holds only
+	// headings the previous run already emitted, and is skipped.
 	var recordGroups [][]lineRecord
 	var textRun []lineRecord
 	var textLevels []int
+	carried := 0
 
 	flush := func() {
 		if len(textRun) == 0 {
@@ -209,7 +237,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 			var pathIndexes [][]int
 			root.getPaths(&pathIndexes, nil, targetLevel, p.IncludeHeadingContent)
 			for _, path := range pathIndexes {
-				if len(path) == 0 {
+				if len(path) == 0 || path[len(path)-1] < carried {
 					continue
 				}
 				grp := make([]lineRecord, len(path))
@@ -219,8 +247,8 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 				recordGroups = append(recordGroups, grp)
 			}
 		}
-		textRun = textRun[:0]
-		textLevels = textLevels[:0]
+		textRun, textLevels = openHeadings(textRun, textLevels)
+		carried = len(textRun)
 	}
 
 	for i, rec := range records {

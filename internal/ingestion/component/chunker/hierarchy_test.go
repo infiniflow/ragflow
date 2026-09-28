@@ -17,6 +17,7 @@
 package chunker
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -530,5 +531,203 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	}
 	if !(iA < iB && iB < iBody) {
 		t.Errorf("non-text order wrong: imgA=%d imgB=%d body=%d, want imgA<imgB<body", iA, iB, iBody)
+	}
+}
+
+// hierarchyChunkTexts runs HierarchyTitleChunker over structured items
+// and returns the emitted chunk texts in order.
+func hierarchyChunkTexts(t *testing.T, params map[string]any, items []map[string]any) []string {
+	t.Helper()
+	c, err := NewHierarchyTitleChunker(params)
+	if err != nil {
+		t.Fatalf("NewHierarchyTitleChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name":   "doc",
+		"chunks": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	texts := make([]string, len(chunks))
+	for i, ck := range chunks {
+		texts[i], _ = ck["text"].(string)
+	}
+	return texts
+}
+
+func textItem(text string) map[string]any {
+	return map[string]any{"text": text, "doc_type_kwd": "text"}
+}
+
+func imageItem(text string) map[string]any {
+	return map[string]any{"text": text, "doc_type_kwd": "image", "img_id": text}
+}
+
+// TestHierarchyTitleChunker_HeadingPathSurvivesMedia pins issue #18293:
+// body text that follows an image/table under the same heading keeps
+// its ancestor heading path, and headings carried over the media are
+// not re-emitted as heading-only chunks.
+func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
+	cases := []struct {
+		name           string
+		hierarchy      int
+		includeHeading bool
+		items          []map[string]any
+		want           []string
+	}{
+		{
+			name:           "single level",
+			hierarchy:      1,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("before figure"),
+				imageItem("figure"),
+				textItem("after figure"),
+			},
+			want: []string{
+				"# Chapter 1\nbefore figure\n",
+				"figure\n",
+				"# Chapter 1\nafter figure\n",
+			},
+		},
+		{
+			name:           "nested ancestors and following sibling",
+			hierarchy:      2,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("## 1.1 Background"),
+				textItem("before figure"),
+				imageItem("figure"),
+				textItem("after figure"),
+				textItem("## 1.2 Goals"),
+				textItem("goals body"),
+			},
+			want: []string{
+				"# Chapter 1\n## 1.1 Background\nbefore figure\n",
+				"figure\n",
+				"# Chapter 1\n## 1.1 Background\nafter figure\n",
+				"# Chapter 1\n## 1.2 Goals\ngoals body\n",
+			},
+		},
+		{
+			name:           "leaf-only paths without include_heading_content",
+			hierarchy:      2,
+			includeHeading: false,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("chapter intro"),
+				textItem("## 1.1 Background"),
+				textItem("before figure"),
+				imageItem("figure"),
+				textItem("after figure"),
+			},
+			want: []string{
+				"# Chapter 1\nchapter intro\n## 1.1 Background\nbefore figure\n",
+				"figure\n",
+				"# Chapter 1\n## 1.1 Background\nafter figure\n",
+			},
+		},
+		{
+			name:           "consecutive media emit no heading-only chunk",
+			hierarchy:      2,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("## 1.1 Background"),
+				textItem("before figures"),
+				imageItem("figure A"),
+				imageItem("figure B"),
+				textItem("after figures"),
+			},
+			want: []string{
+				"# Chapter 1\n## 1.1 Background\nbefore figures\n",
+				"figure A\n",
+				"figure B\n",
+				"# Chapter 1\n## 1.1 Background\nafter figures\n",
+			},
+		},
+		{
+			name:           "media before the first heading",
+			hierarchy:      1,
+			includeHeading: true,
+			items: []map[string]any{
+				imageItem("cover"),
+				textItem("# Chapter 1"),
+				textItem("body"),
+			},
+			want: []string{
+				"cover\n",
+				"# Chapter 1\nbody\n",
+			},
+		},
+		{
+			name:           "media directly after a heading",
+			hierarchy:      1,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				imageItem("figure"),
+				textItem("after figure"),
+			},
+			want: []string{
+				"# Chapter 1\n",
+				"figure\n",
+				"# Chapter 1\nafter figure\n",
+			},
+		},
+		{
+			name:           "new top-level heading after media",
+			hierarchy:      1,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("body one"),
+				imageItem("figure"),
+				textItem("# Chapter 2"),
+				textItem("body two"),
+			},
+			want: []string{
+				"# Chapter 1\nbody one\n",
+				"figure\n",
+				"# Chapter 2\nbody two\n",
+			},
+		},
+		{
+			// Only the open heading chain is carried over: 1.1 is
+			// closed by 1.2 before the figure and must not reappear.
+			name:           "closed sibling heading is not carried",
+			hierarchy:      1,
+			includeHeading: true,
+			items: []map[string]any{
+				textItem("# Chapter 1"),
+				textItem("## 1.1 Background"),
+				textItem("background body"),
+				textItem("## 1.2 Goals"),
+				textItem("goals body"),
+				imageItem("figure"),
+				textItem("after figure"),
+			},
+			want: []string{
+				"# Chapter 1\n## 1.1 Background\nbackground body\n## 1.2 Goals\ngoals body\n",
+				"figure\n",
+				"# Chapter 1\n## 1.2 Goals\nafter figure\n",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := hierarchyChunkTexts(t, map[string]any{
+				"hierarchy":               tc.hierarchy,
+				"levels":                  [][]string{{`^# `, `^## `}},
+				"include_heading_content": tc.includeHeading,
+			}, tc.items)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("chunks mismatch\ngot:  %q\nwant: %q", got, tc.want)
+			}
+		})
 	}
 }
