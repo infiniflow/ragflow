@@ -136,6 +136,8 @@ class Excel(ExcelParser):
                 continue
             df = pd.DataFrame(data, columns=headers)
             df.columns = _deduplicate_column_names(df.columns)
+            doc_id = kwargs.get("doc_id", "")
+            row_images = {}
             for img in pending_cell_images:
                 excel_row = img["row_from"] - 1
                 excel_col = img["col_from"] - 1
@@ -150,9 +152,18 @@ class Excel(ExcelParser):
                     continue
 
                 col_name = df.columns[excel_col]
+                tag = f"{doc_id}_r{excel_row}_c{excel_col}" if doc_id else f"r{excel_row}_c{excel_col}"
+                desc = img.get("image_description") or "Image"
+                img_md = f"\n\n![{desc}](fig:{tag})"
 
-                if not df.iloc[df_row_idx][col_name]:
-                    df.iat[df_row_idx, excel_col] = img["image_description"]
+                current_val = str(df.iat[df_row_idx, excel_col] or "").strip()
+                if not current_val:
+                    df.iat[df_row_idx, excel_col] = f"{desc}{img_md}"
+                else:
+                    df.iat[df_row_idx, excel_col] = f"{current_val}{img_md}"
+                row_images.setdefault(df_row_idx, {})[tag] = img["image"]
+
+            df.attrs["row_images"] = row_images
             res.append(df)
         for img in flow_images:
             tables.append(
@@ -586,6 +597,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                 "clmns_map": clmns_map,
                 "py_clmns": py_clmns,
                 "field_map": field_map,
+                "row_images": getattr(df, "attrs", {}).get("row_images", {}),
             }
         )
 
@@ -614,10 +626,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
         clmn_tys = spec["clmn_tys"]
         clmns_map = spec["clmns_map"]
         py_clmns = spec["py_clmns"]
+        row_images = spec.get("row_images", {})
         _debug_row_idx = 0
         for ii, row in df.iterrows():
             _debug_row_idx += 1
-            d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            d = {"doc_id": kwargs.get("doc_id", ""), "docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            if ii in row_images:
+                d["images"] = row_images[ii]
+                d["image"] = next(iter(row_images[ii].values()))
             text_fields = []  # indexing + both -> content_with_weight
             stored = {}  # metadata + both -> chunk_data (Infinity) or typed fields (ES)
             for j in range(len(clmns)):
@@ -669,7 +685,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                     logger.debug(f"[TABLE_PARSER_DEBUG] Chunk ES extra field keys (sample): {_extra[:20]}")
             res.append(d)
     if tbls:
-        doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+        doc = {"doc_id": kwargs.get("doc_id", ""), "docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
         res.extend(tokenize_table(tbls, doc, is_english, language=lang))
     callback(0.35, "")
 
