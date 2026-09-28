@@ -62,6 +62,8 @@
 
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
+ローカルにデプロイする場合は、[セルフホスティング](#-セルフホスティング)を参照してください。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -69,18 +71,17 @@
 
 ## 🔥 最新情報
 
-- 2026-06-15 Feishu、Discord、Telegram、Lineなどの複数のチャットチャンネルをサポートします。
-- 2026-04-24 DeepSeek v4 をサポート。
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットにアクセスする公式スキルを提供。
-- 2025-12-26 AIエージェントの「メモリ」機能をサポート。
-- 2025-11-19 Gemini 3 Proをサポートしています。
-- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
-- 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
-- 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
-- 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
-- 2025-08-01 エージェントワークフローとMCPをサポート。
-- 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
-- 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
+- 2026-09-10 SitemapによるWebコンテンツの取り込みに対応。
+- 2026-08-19 Knowledge Compilationを導入。ドキュメントおよびデータセット単位でWiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skillsを生成できます。
+- 2026-08-19 Low、Medium、High、Ultraの思考モードを備えたAgentic RAGを導入。
+- 2026-07-02 Google BigQueryデータソースの取り込みと増分同期に対応。
+- 2026-06-29 WhatsApp、DingTalk、WeComのチャットチャネルに対応。
+- 2026-05-26 AgentがWebページを閲覧・操作できるBrowserコンポーネントを追加。
+- 2026-04-21 7種類の組み込みデータ取り込みパイプラインテンプレートを追加。
+- 2026-04-21 Agentアプリの公開、Sandboxでのコード実行、グラフ生成に対応。
+- 2026-04-21 ユーザー単位のメモリ保存と検索に対応。
+
+その他の更新については[リリースノート全文](./docs/release_notes.md)を参照してください。
 
 
 ## 🎉 続きを楽しみに
@@ -103,6 +104,21 @@
 - 知的で解釈しやすい。
 - テンプレートオプションが豊富。
 
+### 🧩 **ナレッジコンパイル（Knowledge Compilation）**
+
+- ドキュメントやデータセットのコンテンツを、Wiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skills などの構造化された成果物に整理します。
+- コンパイルモデルと処理ルールを設定し、成果物の表示、更新、再生成を行えます。
+
+### 🧠 **Agentic Retrieval**
+
+- 複雑な質問を分析し、必要に応じて分解、ナレッジ検索、根拠確認を複数段階で行います。
+- Low、Medium、High、Ultra の思考モードで、質問の複雑さに応じて検索と推論の深さを調整できます。
+
+### ⚙️ **Go ネイティブサービスアーキテクチャ**
+
+- API、Admin、Ingestor、Syncer は統合された Go サービスが提供します。DeepDoc は Go プロセス内で動作し、レイアウト解析、OCR、表認識を担当します。
+- Go サービスは CGO 経由でネイティブ文書解析ライブラリと ONNX Runtime を呼び出します。MCP と Sandbox Executor は必要に応じて有効化できます。
+
 ### 🌱 **ハルシネーションが軽減された根拠のある引用**
 
 - 可視化されたテキストチャンキング（text chunking）で人間の介入を可能にする。
@@ -122,19 +138,18 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow システムアーキテクチャ" width="1000" />
 </div>
 
 ## 🎬 セルフホスティング
 
 ### 📝 必要条件
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
+- 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルとOceanBaseには追加のリソースが必要です。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-ManagedコンテナSandboxを使用する場合のみ必要です。
+
+DockerデプロイではホストへのGoのインストールは不要です。GPUデプロイにはNVIDIA Container Toolkitも必要です。Self-ManagedコンテナSandboxではgVisorのインストールと設定が必要ですが、他のSandboxプロバイダーではRAGFlowホストへのgVisorのインストールは不要です。
 
 > [!TIP]
 > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
@@ -293,56 +308,39 @@ docker build --platform linux/amd64 \
 
 ## 🔨 ソースコードからサービスを起動する方法
 
-1. `uv` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
-
-   ```bash
-   pipx install uv
-   ```
-2. ソースコードをクローンし、Python の依存関係をインストールする:
+1. `go.mod` で指定されたGoバージョン（現在はGo 1.27）、Clang 20、LLD 20、CMake 4.0以降、およびPCRE2開発ファイルをインストールします。GoサービスはCGOとネイティブライブラリに依存し、[build.sh](./build.sh)が必要なビルド設定を行います。
+2. リポジトリをクローンし、必要なネイティブライブラリとモデルファイルを準備してからGoサービスをビルドします:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
+3. Docker Composeで必要な依存サービス（Elasticsearch、MySQL、MinIO、NATS、Kvrocks、ClickHouse）を起動します:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
    `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
-4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
+4. データベースのマイグレーション後、サービスを順番に起動します。各コマンドはリポジトリのルートから別々のターミナルで実行し、サービス用の4つのターミナルは開いたままにします:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
-
-   ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
-   ```
-6. バックエンドサービスを起動する:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. フロントエンドの依存関係をインストールする:
+5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールします:
 
    ```bash
    cd web
@@ -351,16 +349,16 @@ docker build --platform linux/amd64 \
 8. フロントエンドサービスを起動する:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
    _以下の画面で、システムが正常に起動したことを示します:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
+9. 開発が完了したら、各サービスのターミナルでCtrl+Cを押して停止します:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # 各サービスを実行しているターミナルでCtrl+Cを押して停止します。
    ```
 
 ## 📚 ドキュメンテーション

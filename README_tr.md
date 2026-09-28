@@ -81,6 +81,8 @@
 
 Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
+Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma) bölümüne bakın.
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -88,18 +90,17 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 
 ## 🔥 Son Güncellemeler
 
-- 2026-06-15 Feishu, Discord, Telegram, Line vb. gibi birden fazla sohbet kanalını destekleyin.
-- 2026-04-24 DeepSeek v4 desteği.
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
-- 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
-- 2025-11-19 Gemini 3 Pro desteği eklendi.
-- 2025-11-12 Confluence, S3, Notion, Discord, Google Drive'dan veri senkronizasyonu desteği eklendi.
-- 2025-10-23 Doküman ayrıştırma yöntemi olarak MinerU ve Docling desteği eklendi.
-- 2025-10-15 Düzenlenebilir veri alım hattı desteği eklendi.
-- 2025-08-08 OpenAI'ın en yeni GPT-5 serisi modelleri için destek eklendi.
-- 2025-08-01 Ajanlı iş akışı ve MCP desteği eklendi.
-- 2025-05-23 Ajana Python/JavaScript kod çalıştırıcı bileşeni eklendi.
-- 2025-03-19 PDF veya DOCX dosyalarındaki görselleri yorumlamak için çok modlu model desteği eklendi.
+- 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
+- 2026-08-19 Belge ve veri kümesi düzeyinde Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills üretmek için Knowledge Compilation tanıtıldı.
+- 2026-08-19 Low, Medium, High ve Ultra düşünme modlarına sahip Agentic RAG tanıtıldı.
+- 2026-07-02 Google BigQuery veri kaynağı alımı ve artımlı eşitleme eklendi.
+- 2026-06-29 WhatsApp, DingTalk ve WeCom sohbet kanalları eklendi.
+- 2026-05-26 Agent'ların web sayfalarında gezinip işlem yapmasını sağlayan Browser bileşeni eklendi.
+- 2026-04-21 Yedi yerleşik veri alım hattı şablonu eklendi.
+- 2026-04-21 Agent uygulamalarını yayımlama, sandbox kod yürütme ve grafik oluşturma eklendi.
+- 2026-04-21 Kullanıcı düzeyinde bellek depolama ve erişimi eklendi.
+
+Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) bakın.
 
 ## 🎉 Bizi Takip Edin
 
@@ -121,6 +122,21 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 - Akıllı ve açıklanabilir.
 - Aralarından seçim yapabileceğiniz çok sayıda şablon seçeneği.
 
+### 🧩 **Bilgi Derleme (Knowledge Compilation)**
+
+- Belge ve veri kümesi içeriğini Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills gibi yapılandırılmış bilgi çıktılarına dönüştürün.
+- Derleme modellerini ve işleme kurallarını yapılandırın; bilgi çıktılarını görüntüleyin, güncelleyin veya yeniden oluşturun.
+
+### 🧠 **Agentic Retrieval**
+
+- Karmaşık soruları analiz edin; gerektiğinde soruları alt parçalara ayırın, bilgi arayın ve kanıtları birden fazla adımda doğrulayın.
+- Low, Medium, High ve Ultra düşünme modlarıyla arama ve akıl yürütme derinliğini sorunun karmaşıklığına göre ayarlayın.
+
+### ⚙️ **Go yerel servis mimarisi**
+
+- API, Admin, Ingestor ve Syncer birleşik bir Go servisi tarafından sunulur. DeepDoc, Go süreci içinde sayfa düzeni analizi, OCR ve tablo tanımayı yürütür.
+- Go servisleri CGO üzerinden yerel belge ayrıştırma kitaplıklarını ve ONNX Runtime'ı çağırır. MCP ve Sandbox Executor gerektiğinde etkinleştirilebilir.
+
 ### 🌱 **Azaltılmış halüsinasyonlarla temellendirilmiş alıntılar**
 
 - İnsan müdahalesine olanak tanıyan metin parçalama görselleştirmesi.
@@ -140,19 +156,18 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 ## 🔎 Sistem Mimarisi
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow sistem mimarisi" width="1000" />
 </div>
 
 ## 🎬 Kendi Sunucusunda Barındırma
 
 ### 📝 Ön Koşullar
 
-- CPU >= 4 çekirdek
-- RAM >= 16 GB
-- Disk >= 50 GB
+- Önerilen başlangıç yapılandırması: 4 CPU çekirdeği, 16 GB RAM ve 50 GB kullanılabilir disk alanı. Gerçek gereksinimler belge motoruna, veri hacmine, ayrıştırma görevlerine ve eşzamanlılığa bağlıdır. Yerel modeller ve OceanBase ek kaynak gerektirir.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca RAGFlow'un kod çalıştırıcı (sandbox) özelliğini kullanmayı planlıyorsanız gereklidir.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca Self-Managed kapsayıcı Sandbox kullanılırken gereklidir.
+
+Docker dağıtımı ana makineye Go kurulmasını gerektirmez. GPU dağıtımı ayrıca NVIDIA Container Toolkit gerektirir. Self-Managed kapsayıcı Sandbox, gVisor kurulumu ve yapılandırması gerektirir; diğer Sandbox sağlayıcıları RAGFlow ana makinesinde gVisor gerektirmez.
 
 > [!TIP]
 > Yerel makinenize (Windows, Mac veya Linux) Docker yüklemediyseniz, [Docker Engine Kurulumu](https://docs.docker.com/engine/install/) sayfasına bakın.
@@ -315,58 +330,39 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
 
-1. `uv` yükleyin veya zaten yüklüyse bu adımı atlayın:
-
-   ```bash
-   pipx install uv
-   ```
-2. Kaynak kodunu klonlayın ve Python bağımlılıklarını yükleyin:
+1. `go.mod` dosyasında belirtilen Go sürümünü (şu anda Go 1.27), Clang 20, LLD 20, CMake 4.0 veya üzerini ve PCRE2 geliştirme dosyalarını yükleyin. Go hizmetleri CGO ve yerel kitaplıklara bağlıdır; [build.sh](./build.sh) gerekli derleme parametrelerini ayarlar.
+2. Depoyu klonlayın, gerekli yerel kitaplıkları ve model dosyalarını hazırlayın, ardından Go hizmetlerini derleyin:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
+3. Gerekli bağımlılıkları (Elasticsearch, MySQL, MinIO, NATS, Kvrocks ve ClickHouse) Docker Compose ile başlatın:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
    **docker/.env** dosyasında belirtilen tüm ana bilgisayar adlarını `127.0.0.1`'e çözümlemek için `/etc/hosts` dosyasına aşağıdaki satırı ekleyin:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
-4. HuggingFace'e erişemiyorsanız, bir ayna site kullanmak için `HF_ENDPOINT` ortam değişkenini ayarlayın:
+4. Veritabanı geçişinden sonra hizmetleri belirtilen sırayla başlatın. Her komutu deponun kök dizininden ayrı bir terminalde çalıştırın ve dört hizmet terminalini açık bırakın:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. İşletim sisteminizde jemalloc yoksa, aşağıdaki şekilde yükleyin:
-
-   ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
-   ```
-6. Arka uç hizmetini başlatın:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. Ön yüz bağımlılıklarını yükleyin:
+5. Node.js ve npm'i yalnızca ön yüz geliştirecekseniz yükleyin:
 
    ```bash
    cd web
@@ -375,16 +371,16 @@ docker build --platform linux/amd64 \
 8. Ön yüz hizmetini başlatın:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
    _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Geliştirme tamamlandıktan sonra RAGFlow ön yüz ve arka uç hizmetini durdurun:
+9. Geliştirme tamamlandığında, durdurmak için her hizmet terminalinde Ctrl+C'ye basın:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # Her hizmet terminalinde Ctrl+C'ye basın.
    ```
 
 ## 📚 Dokümantasyon

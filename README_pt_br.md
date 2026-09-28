@@ -88,18 +88,17 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 ## 🔥 Últimas Atualizações
 
-- 15-06-2026 Suporte a múltiplos canais de chat, como Feishu, Discord, Telegram, Line, etc..
-- 24-04-2026 Suporta DeepSeek v4.
-- 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Fornece um skill oficial para acessar datasets do RAGFlow via OpenClaw.
-- 26-12-2025 Suporte à função 'Memória' para agentes de IA.
-- 19-11-2025 Suporta Gemini 3 Pro.
-- 12-11-2025 Suporta a sincronização de dados do Confluence, S3, Notion, Discord e Google Drive.
-- 23-10-2025 Suporta MinerU e Docling como métodos de análise de documentos.
-- 15-10-2025 Suporte para pipelines de dados orquestrados.
-- 08-08-2025 Suporta a mais recente série GPT-5 da OpenAI.
-- 01-08-2025 Suporta fluxo de trabalho agente e MCP.
-- 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
-- 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
+- 2026-09-10 Adicionada a ingestão de conteúdo da Web por meio de sitemaps.
+- 2026-08-19 Lançado o Knowledge Compilation, que gera Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines e Skills nos níveis de documento e dataset.
+- 2026-08-19 Lançado o Agentic RAG com os modos de pensamento Low, Medium, High e Ultra.
+- 2026-07-02 Adicionadas a ingestão de dados do Google BigQuery e a sincronização incremental.
+- 2026-06-29 Adicionados canais de chat para WhatsApp, DingTalk e WeCom.
+- 2026-05-26 Adicionado o componente Browser, que permite aos Agents navegar e interagir com páginas da Web.
+- 2026-04-21 Adicionados sete modelos integrados de pipeline de ingestão de dados.
+- 2026-04-21 Adicionadas a publicação de aplicações Agent, a execução de código em sandbox e a geração de gráficos.
+- 2026-04-21 Adicionados o armazenamento e a recuperação de memória em nível de usuário.
+
+Consulte as [notas de versão completas](./docs/release_notes.md) para ver outras atualizações.
 
 ## 🎉 Fique Ligado
 
@@ -121,6 +120,21 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 - Inteligente e explicável.
 - Muitas opções de templates para escolher.
 
+### 🧩 **Compilação de conhecimento (Knowledge Compilation)**
+
+- Organize conteúdo de documentos e conjuntos de dados em artefatos estruturados, como Wiki, Graph, Tree, PageIndex, Mind Map, Timeline e Skills.
+- Configure modelos de compilação e regras de processamento e visualize, atualize ou gere novamente os artefatos.
+
+### 🧠 **Recuperação agêntica (Agentic Retrieval)**
+
+- O modelo analisa perguntas complexas e, quando necessário, divide a questão, pesquisa conhecimentos e verifica evidências em várias etapas.
+- Os modos Low, Medium, High e Ultra permitem ajustar a profundidade da busca e do raciocínio à complexidade da pergunta.
+
+### ⚙️ **Arquitetura de serviços nativa em Go**
+
+- Um serviço Go unificado fornece API, Admin, Ingestor e Syncer. O DeepDoc é executado no processo Go e realiza análise de layout, OCR e reconhecimento de tabelas.
+- Os serviços Go chamam bibliotecas nativas de análise de documentos e ONNX Runtime via CGO. MCP e Sandbox Executor podem ser habilitados conforme necessário.
+
 ### 🌱 **Citações fundamentadas com menos alucinações**
 
 - Visualização da fragmentação de texto para permitir intervenção humana.
@@ -140,19 +154,18 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 ## 🔎 Arquitetura do Sistema
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="Arquitetura do sistema RAGFlow" width="1000" />
 </div>
 
 ## 🎬 Auto-hospedagem
 
 ### 📝 Pré-requisitos
 
-- CPU >= 4 núcleos
-- RAM >= 16 GB
-- Disco >= 50 GB
+- Configuração inicial recomendada: 4 núcleos de CPU, 16 GB de RAM e 50 GB de espaço em disco disponível. Os requisitos reais dependem do mecanismo de documentos, volume de dados, tarefas de análise e concorrência. Modelos locais e OceanBase exigem recursos adicionais.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário apenas se você pretende usar o recurso de executor de código (sandbox) do RAGFlow.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário somente ao usar o Sandbox de contêineres Self-Managed.
+
+A implantação Docker não exige a instalação do Go no host. A implantação com GPU também exige o NVIDIA Container Toolkit. O Sandbox de contêineres Self-Managed exige instalação e configuração do gVisor; outros provedores de Sandbox não exigem gVisor no host do RAGFlow.
 
 > [!TIP]
 > Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
@@ -308,56 +321,39 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento
 
-1. Instale o `uv` e o `pre-commit`, ou pule esta etapa se eles já estiverem instalados:
-
-   ```bash
-   pipx install uv
-   ```
-2. Clone o código-fonte e instale as dependências Python:
+1. Instale a versão do Go especificada em `go.mod` (atualmente Go 1.27), Clang 20, LLD 20, CMake 4.0 ou superior e os arquivos de desenvolvimento do PCRE2. Os serviços Go dependem de CGO e bibliotecas nativas; o [build.sh](./build.sh) configura os parâmetros necessários.
+2. Clone o repositório, prepare as bibliotecas nativas e os arquivos de modelo necessários e compile os serviços Go:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # instala os módulos Python dependentes do RAGFlow
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. Inicie os serviços dependentes (MinIO, Elasticsearch, Redis e MySQL) usando Docker Compose:
+3. Inicie as dependências necessárias (Elasticsearch, MySQL, MinIO, NATS, Kvrocks e ClickHouse) usando Docker Compose:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
    Adicione a seguinte linha ao arquivo `/etc/hosts` para resolver todos os hosts especificados em **docker/.env** para `127.0.0.1`:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
-4. Se não conseguir acessar o HuggingFace, defina a variável de ambiente `HF_ENDPOINT` para usar um site espelho:
+4. Após migrar o banco de dados, inicie os serviços na ordem indicada. Execute cada comando em um terminal separado, a partir da raiz do repositório, e mantenha abertos os quatro terminais de serviço:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. Se o seu sistema operacional não tiver jemalloc, instale-o da seguinte maneira:
-
-   ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum instalar jemalloc
-   # mac
-   brew install jemalloc
-   ```
-6. Lance o serviço de back-end:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. Instale as dependências do front-end:
+5. Instale Node.js e npm somente se for desenvolver o front-end:
 
    ```bash
    cd web
@@ -366,16 +362,16 @@ docker build --platform linux/amd64 \
 8. Lance o serviço de front-end:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
    _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Pare os serviços de front-end e back-end do RAGFlow após a conclusão do desenvolvimento:
+9. Ao terminar o desenvolvimento, pressione Ctrl+C no terminal de cada serviço para interrompê-lo:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # Pressione Ctrl+C no terminal de cada serviço para interromper o processo correspondente.
    ```
 
 ## 📚 Documentação

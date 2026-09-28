@@ -81,6 +81,8 @@
 
 جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
+للنشر محليًا، راجع قسم [النشر المحلي](#-الاستضافة-الذاتية).
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -88,18 +90,17 @@
 
 ## 🔥 آخر التحديثات
 
-- 15-06-2026 يدعم قنوات دردشة متعددة مثل Feishu و Discord و Telegram و Line وما إلى ذلك.
-- 24-04-2026 يدعم DeepSeek v4.
-- 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — توفر مهارة رسمية للوصول إلى مجموعات بيانات RAGFlow عبر OpenClaw.
-- 26-12-2025 يدعم ميزة "Memory" لوكلاء الذكاء الاصطناعي.
-- 11-11-2025 يدعم Gemini 3 Pro.
-- 12-11-2025 يدعم مزامنة البيانات من Confluence، S3، Notion، Discord، Google Drive.
-- 23-10-2025 يدعم MinerU وDocling كطرق لتحليل المستندات.
-- 15-10-2025 يدعم العرض الأوركسترالي pipeline.
-- 08-08-2025 يدعم أحدث موديلات سلسلة OpenAI.
-- 01-08-2025 يدعم سير العمل الوكيل وMCP.
-- 23-05-2025 تمت إضافة مكون منفذ كود Python/JavaScript إلى Agent.
-- 19-03-2025 يدعم استخدام نموذج متعدد الوسائط لفهم الصور داخل ملفات PDF أو DOCX.
+- 2026-09-10 إضافة استيعاب محتوى الويب عبر خرائط المواقع.
+- 2026-08-19 إطلاق Knowledge Compilation لإنشاء Wiki وGraph وTree وPageIndex وMind Map وTimeline وSkills على مستوى المستند ومجموعة البيانات.
+- 2026-08-19 إطلاق Agentic RAG مع أوضاع التفكير Low وMedium وHigh وUltra.
+- 2026-07-02 إضافة استيعاب مصادر بيانات Google BigQuery والمزامنة التدريجية.
+- 2026-06-29 إضافة قنوات دردشة WhatsApp وDingTalk وWeCom.
+- 2026-05-26 إضافة مكوّن Browser لتمكين Agents من تصفح صفحات الويب والتفاعل معها.
+- 2026-04-21 إضافة سبعة قوالب مضمّنة لخطوط استيعاب البيانات.
+- 2026-04-21 إضافة نشر تطبيقات Agent وتنفيذ التعليمات البرمجية في Sandbox وإنشاء المخططات.
+- 2026-04-21 إضافة تخزين الذاكرة واسترجاعها على مستوى المستخدم.
+
+راجع [ملاحظات الإصدار الكاملة](./docs/release_notes.md) لمزيد من التحديثات.
 
 ## 🎉 تابعونا
 
@@ -123,6 +124,21 @@
 - ذكي وقابل للتفسير.
 - الكثير من خيارات القالب للاختيار من بينها.
 
+### 🧩 **تجميع المعرفة (Knowledge Compilation)**
+
+- يحوّل المحتوى على مستوى المستند ومجموعة البيانات إلى مخرجات معرفية منظمة، مثل Wiki وGraph وTree وPageIndex وMind Map وTimeline وSkills.
+- يتيح ضبط نماذج التجميع وقواعد المعالجة، ثم عرض المخرجات وتحديثها وإعادة إنشائها.
+
+### 🧠 **الاسترجاع الوكيلي (Agentic Retrieval)**
+
+- يحلل الأسئلة المعقدة، ويقسمها عند الحاجة، ويسترجع المعرفة ويتحقق من الأدلة عبر خطوات متعددة.
+- تدعم أوضاع التفكير Low وMedium وHigh وUltra ضبط عمق الاسترجاع والاستدلال حسب تعقيد السؤال.
+
+### ⚙️ **بنية خدمات Go الأصلية**
+
+- توفر خدمة Go موحدة API وAdmin وIngestor وSyncer. يعمل DeepDoc داخل عملية Go لتحليل التخطيط وOCR والتعرف على الجداول.
+- تستدعي خدمات Go مكتبات تحليل المستندات الأصلية وONNX Runtime عبر CGO. ويمكن تفعيل MCP وSandbox Executor عند الحاجة.
+
 ### 🌱 **استشهادات مؤرضة لتقليل الهلوسة**
 
 - تصور تقطيع النص للسماح بالتدخل البشري.
@@ -142,19 +158,18 @@
 ## 🔎 هندسة النظام
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="بنية RAGFlow" width="1000" />
 </div>
 
 ## 🎬 الاستضافة الذاتية
 
 ### 📝 المتطلبات الأساسية
 
-- CPU >= 4 مراكز
-- الرام >= 16 جيجا
-- القرص >= 50 جيجا بايت
+- التكوين الابتدائي الموصى به: 4 أنوية CPU وذاكرة RAM بسعة 16 GB ومساحة قرص متاحة تبلغ 50 GB. تختلف المتطلبات الفعلية حسب محرك المستندات وحجم البيانات ومهام التحليل والتزامن؛ وتتطلب النماذج المحلية وOceanBase موارد إضافية.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- بايثون >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): مطلوب فقط إذا كنت تنوي استخدام ميزة منفذ التعليمات البرمجية (وضع الحماية) لـ RAGFlow.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): مطلوب فقط عند استخدام Sandbox للحاويات Self-Managed.
+
+لا يتطلب نشر Docker تثبيت Go على المضيف. ويتطلب نشر GPU أيضًا NVIDIA Container Toolkit. يتطلب Self-Managed container Sandbox تثبيت gVisor وإعداده؛ أما موفرو Sandbox الآخرون فلا يتطلبون تثبيت gVisor على مضيف RAGFlow.
 
 > [!TIP]
 > إذا لم تقم بتثبيت Docker على جهازك المحلي (Windows أو Mac أو Linux)، راجع [تثبيت Docker Engine](https://docs.docker.com/engine/install/).
@@ -320,58 +335,39 @@ docker build --platform linux/amd64 \
 
 ## 🔨 إطلاق الخدمة من المصدر للتطوير
 
-1. قم بتثبيت `uv`، أو قم بتخطي هذه الخطوة إذا كان مثبتًا بالفعل:
-
-   ```bash
-   pipx install uv
-   ```
-2. استنساخ الكود المصدري وتثبيت تبعيات بايثون:
+1. ثبّت إصدار Go المحدد في `go.mod` (حاليًا Go 1.27)، وClang 20 وLLD 20 وCMake 4.0 أو أحدث وملفات تطوير PCRE2. تعتمد خدمات Go على CGO والمكتبات الأصلية؛ ويضبط [build.sh](./build.sh) خيارات البناء اللازمة.
+2. استنسخ المستودع وجهّز المكتبات الأصلية وملفات النماذج المطلوبة للبناء، ثم ابنِ خدمات Go:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. قم بتشغيل الخدمات التابعة (MinIO وElasticsearch وRedis وMySQL) باستخدام Docker Compose:
+3. ابدأ الخدمات التابعة المطلوبة (Elasticsearch وMySQL وMinIO وNATS وKvrocks وClickHouse) باستخدام Docker Compose:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   أضف السطر التالي إلى `/etc/hosts` لحل كافة المضيفين المحددين في **docker/.env** إلى `127.0.0.1`:
+   أضف السطر التالي إلى `/etc/hosts` لحل أسماء المضيفين المحددة في **conf/service_conf.yaml** إلى `127.0.0.1`:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
-4. إذا لم تتمكن من الوصول إلى HuggingFace، فقم بتعيين متغير البيئة `HF_ENDPOINT` لاستخدام موقع مرآة:
+4. بعد اكتمال ترحيل قاعدة البيانات، شغّل الخدمات بالترتيب. نفّذ كل أمر في نافذة طرفية مستقلة ومن جذر المستودع، واترك نوافذ الخدمات الأربع مفتوحة:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. إذا كان نظام التشغيل لديك لا يحتوي على jemalloc، فيرجى تثبيته على النحو التالي:
-
-   ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
-   ```
-6. إطلاق الخدمة الخلفية:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. تثبيت تبعيات الواجهة الأمامية:
+5. ثبّت Node.js وnpm فقط عند تطوير الواجهة الأمامية:
 
    ```bash
    cd web
@@ -380,7 +376,7 @@ docker build --platform linux/amd64 \
 8. إطلاق خدمة الواجهة الأمامية:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
    _النتيجة التالية تؤكد الإطلاق الناجح للنظام:_
@@ -389,7 +385,7 @@ docker build --platform linux/amd64 \
 9. أوقف خدمة الواجهة الأمامية والخلفية RAGFlow بعد اكتمال التطوير:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # اضغط Ctrl+C في نافذة كل خدمة لإيقافها.
    ```
 
 ## 📚 التوثيق

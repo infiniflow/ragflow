@@ -88,18 +88,17 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
-- 2026-06-15 Mendukung berbagai saluran obrolan seperti Feishu, Discord, Telegram, Line, dll.
-- 2026-04-24 Mendukung DeepSeek v4.
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Menyediakan skill resmi untuk mengakses dataset RAGFlow melalui OpenClaw.
-- 2025-12-26 Mendukung 'Memori' untuk agen AI.
-- 2025-11-19 Mendukung Gemini 3 Pro.
-- 2025-11-12 Mendukung sinkronisasi data dari Confluence, S3, Notion, Discord, Google Drive.
-- 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
-- 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
-- 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
-- 2025-08-01 Mendukung alur kerja agen dan MCP.
-- 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
-- 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
+- 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
+- 2026-08-19 Memperkenalkan Knowledge Compilation untuk menghasilkan Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills pada tingkat dokumen dan dataset.
+- 2026-08-19 Memperkenalkan Agentic RAG dengan mode berpikir Low, Medium, High, dan Ultra.
+- 2026-07-02 Menambahkan ingest sumber data Google BigQuery dan sinkronisasi inkremental.
+- 2026-06-29 Menambahkan kanal chat WhatsApp, DingTalk, dan WeCom.
+- 2026-05-26 Menambahkan komponen Browser agar Agent dapat menjelajahi dan berinteraksi dengan halaman web.
+- 2026-04-21 Menambahkan tujuh templat pipeline ingest data bawaan.
+- 2026-04-21 Menambahkan publikasi aplikasi Agent, eksekusi kode sandbox, dan pembuatan grafik.
+- 2026-04-21 Menambahkan penyimpanan dan pengambilan memori tingkat pengguna.
+
+Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 
 ## 🎉 Tetap Terkini
 
@@ -121,6 +120,21 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - Cerdas dan dapat dijelaskan.
 - Banyak pilihan template yang tersedia.
 
+### 🧩 **Kompilasi Pengetahuan (Knowledge Compilation)**
+
+- Ubah konten pada tingkat dokumen dan dataset menjadi artefak terstruktur seperti Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills.
+- Atur model kompilasi serta aturan pemrosesan, lalu lihat, perbarui, atau buat ulang artefak pengetahuan.
+
+### 🧠 **Pengambilan Agentic (Agentic Retrieval)**
+
+- Model menganalisis pertanyaan kompleks dan bila perlu memecahnya, mencari pengetahuan, serta memverifikasi bukti melalui beberapa tahap.
+- Mode Low, Medium, High, dan Ultra menyesuaikan kedalaman pencarian dan penalaran dengan kompleksitas pertanyaan.
+
+### ⚙️ **Arsitektur layanan native Go**
+
+- Satu layanan Go menyediakan API, Admin, Ingestor, dan Syncer. DeepDoc berjalan di dalam proses Go untuk analisis tata letak, OCR, dan pengenalan tabel.
+- Layanan Go memanggil pustaka pengurai dokumen native dan ONNX Runtime melalui CGO. MCP dan Sandbox Executor dapat diaktifkan sesuai kebutuhan.
+
 ### 🌱 **Referensi yang Didasarkan pada Data untuk Mengurangi Hallusinasi**
 
 - Visualisasi pemotongan teks memungkinkan intervensi manusia.
@@ -140,19 +154,18 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 ## 🔎 Arsitektur Sistem
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="Arsitektur sistem RAGFlow" width="1000" />
 </div>
 
 ## 🎬 Pengelolaan Mandiri
 
 ### 📝 Prasyarat
 
-- CPU >= 4 inti
-- RAM >= 16 GB
-- Disk >= 50 GB
+- Konfigurasi awal yang disarankan: 4 inti CPU, RAM 16 GB, dan ruang disk tersedia 50 GB. Kebutuhan aktual bergantung pada mesin dokumen, volume data, tugas penguraian, dan konkurensi. Model lokal dan OceanBase memerlukan sumber daya tambahan.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Hanya diperlukan jika Anda ingin menggunakan fitur eksekutor kode (sandbox) dari RAGFlow.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Hanya diperlukan saat menggunakan container Sandbox Self-Managed.
+
+Deployment Docker tidak memerlukan Go di host. Deployment GPU juga memerlukan NVIDIA Container Toolkit. Container Sandbox Self-Managed memerlukan instalasi dan konfigurasi gVisor; penyedia Sandbox lainnya tidak memerlukan gVisor di host RAGFlow.
 
 > [!TIP]
 > Jika Anda belum menginstal Docker di komputer lokal Anda (Windows, Mac, atau Linux), lihat [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -292,56 +305,39 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
 
-1. Instal `uv`, atau lewati langkah ini jika sudah terinstal:
-
-   ```bash
-   pipx install uv
-   ```
-2. Clone kode sumber dan instal dependensi Python:
+1. Instal versi Go yang ditentukan di `go.mod` (saat ini Go 1.27), Clang 20, LLD 20, CMake 4.0 atau yang lebih baru, serta berkas pengembangan PCRE2. Layanan Go memerlukan CGO dan pustaka native; [build.sh](./build.sh) mengatur parameter build yang diperlukan.
+2. Clone repositori, siapkan pustaka native dan berkas model yang diperlukan, lalu build layanan Go:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:
+3. Jalankan dependensi yang diperlukan (Elasticsearch, MySQL, MinIO, NATS, Kvrocks, dan ClickHouse) menggunakan Docker Compose:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan semua host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
+   Tambahkan baris berikut ke `/etc/hosts` untuk memetakan host yang ditentukan di **conf/service_conf.yaml** ke `127.0.0.1`:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
-4. Jika Anda tidak dapat mengakses HuggingFace, atur variabel lingkungan `HF_ENDPOINT` untuk menggunakan situs mirror:
+4. Setelah migrasi database selesai, jalankan layanan secara berurutan. Jalankan setiap perintah di terminal terpisah dari root repositori dan biarkan keempat terminal layanan tetap berjalan:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. Jika sistem operasi Anda tidak memiliki jemalloc, instal sebagai berikut:
-
-   ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
-   ```
-6. Jalankan aplikasi backend:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. Instal dependensi frontend:
+5. Instal Node.js dan npm hanya jika mengembangkan frontend:
 
    ```bash
    cd web
@@ -350,16 +346,16 @@ docker build --platform linux/amd64 \
 8. Jalankan aplikasi frontend:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
 
    ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Hentikan layanan front-end dan back-end RAGFlow setelah pengembangan selesai:
+9. Setelah pengembangan selesai, tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # Tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya.
    ```
 
 ## 📚 Dokumentasi

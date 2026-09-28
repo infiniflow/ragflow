@@ -81,6 +81,8 @@
 
 Попробуйте облачную версию: [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
+Для локального развёртывания см. раздел [Локальное развёртывание](#-самостоятельное-развёртывание).
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -88,18 +90,17 @@
 
 ## 🔥 Последние обновления
 
-- 2026-06-15 Поддержка нескольких каналов чата: Feishu, Discord, Telegram, Line и другие.
-- 2026-04-24 Поддержка DeepSeek v4.
-- 2026-03-24 [RAGFlow Skill на OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — официальный навык для работы с датасетами RAGFlow через OpenClaw.
-- 2025-12-26 Поддержка «Памяти» для AI-агентов.
-- 2025-11-19 Поддержка Gemini 3 Pro.
-- 2025-11-12 Синхронизация данных из Confluence, S3, Notion, Discord и Google Drive.
-- 2025-10-23 Поддержка MinerU и Docling в качестве методов парсинга документов.
-- 2025-10-15 Поддержка настраиваемого пайплайна ingestion.
-- 2025-08-08 Поддержка новейших моделей серии GPT-5 от OpenAI.
-- 2025-08-01 Поддержка агентных workflow и MCP.
-- 2025-05-23 Добавлен компонент выполнения кода на Python/JavaScript в Agent.
-- 2025-03-19 Поддержка мультимодальных моделей для понимания изображений внутри PDF и DOCX.
+- 2026-09-10 Добавлен сбор веб-контента через sitemap.
+- 2026-08-19 Представлена Knowledge Compilation для создания Wiki, Graph, Tree, PageIndex, Mind Map, Timeline и Skills на уровне документов и наборов данных.
+- 2026-08-19 Представлен Agentic RAG с режимами рассуждения Low, Medium, High и Ultra.
+- 2026-07-02 Добавлены источник данных Google BigQuery и инкрементальная синхронизация.
+- 2026-06-29 Добавлены каналы чата WhatsApp, DingTalk и WeCom.
+- 2026-05-26 Добавлен компонент Browser для просмотра и взаимодействия агентов с веб-страницами.
+- 2026-04-21 Добавлены семь встроенных шаблонов конвейеров ingest данных.
+- 2026-04-21 Добавлены публикация приложений Agent, выполнение кода в sandbox и генерация диаграмм.
+- 2026-04-21 Добавлены хранение и поиск пользовательской памяти.
+
+Другие обновления см. в [полных примечаниях к выпускам](./docs/release_notes.md).
 
 ## 🎉 Следите за обновлениями
 
@@ -121,6 +122,21 @@
 - Интеллектуальный и объяснимый.
 - Большой выбор готовых шаблонов.
 
+### 🧩 **Компиляция знаний (Knowledge Compilation)**
+
+- Преобразуйте содержимое документов и наборов данных в структурированные объекты знаний: Wiki, Graph, Tree, PageIndex, Mind Map, Timeline и Skills.
+- Настраивайте модели компиляции и правила обработки, просматривайте, обновляйте и создавайте объекты знаний заново.
+
+### 🧠 **Агентный поиск (Agentic Retrieval)**
+
+- Модель анализирует сложные вопросы и при необходимости разбивает их на части, ищет знания и проверяет доказательства в несколько этапов.
+- Режимы Low, Medium, High и Ultra позволяют регулировать глубину поиска и рассуждений в зависимости от сложности вопроса.
+
+### ⚙️ **Нативная Go-архитектура сервисов**
+
+- Единый сервис Go предоставляет API, Admin, Ingestor и Syncer. DeepDoc работает внутри процесса Go и выполняет анализ макета, OCR и распознавание таблиц.
+- Сервисы Go вызывают нативные библиотеки обработки документов и ONNX Runtime через CGO. MCP и Sandbox Executor можно включать по мере необходимости.
+
 ### 🌱 **Обоснованные цитаты с минимальными галлюцинациями**
 
 - Визуализация чанкинга с возможностью ручной корректировки.
@@ -140,19 +156,18 @@
 ## 🔎 Архитектура системы
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="Архитектура RAGFlow" width="1000" />
 </div>
 
 ## 🎬 Самостоятельное развёртывание
 
 ### 📝 Требования
 
-- CPU ≥ 4 ядра
-- RAM ≥ 16 ГБ
-- Диск ≥ 50 ГБ
+- Рекомендуемая начальная конфигурация: 4 ядра CPU, 16 ГБ RAM и 50 ГБ свободного места на диске. Фактические требования зависят от движка документов, объёма данных, задач анализа и параллельной нагрузки. Локальные модели и OceanBase требуют дополнительных ресурсов.
 - Docker ≥ 24.0.0 и Docker Compose ≥ v2.26.1
-- Python ≥ 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/) — нужен только если вы планируете использовать песочницу (code executor).
+- [gVisor](https://gvisor.dev/docs/user_guide/install/) — требуется только для Self-Managed контейнерной Sandbox.
+
+Для Docker-развёртывания не требуется устанавливать Go на хост. Для GPU-развёртывания также нужен NVIDIA Container Toolkit. Для Self-Managed контейнерной Sandbox необходимо установить и настроить gVisor; другим провайдерам Sandbox gVisor на хосте RAGFlow не требуется.
 
 > [!TIP]
 > Если Docker ещё не установлен (Windows, Mac или Linux), см. [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -309,68 +324,42 @@ docker build --platform linux/amd64 \
 
 ## 🔨 Запуск из исходников для разработки
 
-> [!IMPORTANT]
-> После первого клонирования один раз выполните из корня репозитория:
-> `git config --local --unset core.hooksPath`, `uv tool install lefthook` и `lefthook install`.
+1. Установите версию Go из `go.mod` (сейчас Go 1.27), Clang 20, LLD 20, CMake 4.0 или новее и файлы разработки PCRE2. Сервисам Go нужны CGO и нативные библиотеки; [build.sh](./build.sh) задаёт необходимые параметры сборки.
 
-1. Установите `uv` (если ещё не установлен):
-
-   ```bash
-   pipx install uv
-   ```
-
-2. Клонируйте репозиторий и установите зависимости:
+2. Клонируйте репозиторий, подготовьте нативные библиотеки и файлы моделей, затем соберите сервисы Go:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
 
-3. Запустите зависимости (MinIO, Elasticsearch, Redis, MySQL):
+3. Запустите необходимые зависимости (Elasticsearch, MySQL, MinIO, NATS, Kvrocks и ClickHouse):
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   Добавьте в `/etc/hosts`:
+   Добавьте в `/etc/hosts` имена узлов из **conf/service_conf.yaml**:
 
    ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
+   127.0.0.1       es01 mysql minio nats kvrocks clickhouse
    ```
 
-4. Если нет доступа к HuggingFace, укажите зеркало:
+4. После миграции базы данных запустите сервисы по порядку. Выполняйте каждую команду в отдельном терминале из корня репозитория и оставьте открытыми четыре терминала сервисов:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-
-5. Если в системе нет jemalloc:
-
-   ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
-   ```
-
-6. Запустите бэкенд:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-
-7. Установите зависимости фронтенда:
+5. Установите Node.js и npm только для разработки фронтенда:
 
    ```bash
    cd web
@@ -380,13 +369,13 @@ docker build --platform linux/amd64 \
 8. Запустите фронтенд:
 
    ```bash
-   npm run dev
+   API_PROXY_SCHEME=go npm run dev
    ```
 
-9. После разработки остановите сервисы:
+9. После разработки остановите каждый сервис сочетанием Ctrl+C в соответствующем терминале:
 
    ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
+   # Нажмите Ctrl+C в каждом терминале службы, чтобы остановить процесс.
    ```
 
 ## 📚 Документация

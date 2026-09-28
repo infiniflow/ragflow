@@ -14,8 +14,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Backend: Go implements the API, admin, ingestor, and syncer modes in `cmd/ragflow_server.go`; the CLI runs from `cmd/ragflow-cli.go`. The Python API, admin, and workers are still present and `docker/entrypoint.sh` still defaults to Python when `API_PROXY_SCHEME` is unset. Go-only operation is the migration target, not the current repository state.
 - Frontend: React + TypeScript + Vite in `web/`. When working under `web/`, read and follow `web/AGENTS.md` for frontend conventions.
 - The Go module contains the server, ingestion, parsing, agent runtime, CLI, and supporting services.
-- Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
-
+- Runtime services commonly include MySQL/PostgreSQL, Kvrocks, NATS JetStream, MinIO, ClickHouse, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 ## Go-only target
 - Remove all Python code and Python-specific dependencies, scripts, containers, CI jobs, documentation, SDKs, and tests from the repository. Do not add new Python code while this removal is in progress. Replace Python-based preparation of Go native libraries, DeepDoc models, and the BPE table before removing the existing download scripts.
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
