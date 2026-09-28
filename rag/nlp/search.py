@@ -1113,6 +1113,17 @@ class Dealer:
                 )
                 chunks.extend(cks)
                 continue
+            # Parents indexed before IDs were scoped by dataset and document can
+            # be shared with identical text elsewhere in the tenant index.
+            child_scopes = {(_chunk_scalar(ck.get("kb_id")), _chunk_scalar(ck.get("doc_id"))) for ck in cks}
+            if child_scopes != {(_chunk_scalar(chunk.get("kb_id")), _chunk_scalar(chunk.get("doc_id")))}:
+                logging.warning(
+                    "Parent chunk '%s' belongs to another dataset or document; falling back to %d child chunk(s).",
+                    id,
+                    len(cks),
+                )
+                chunks.extend(cks)
+                continue
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),
