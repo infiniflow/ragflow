@@ -120,7 +120,7 @@ func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string
 
 func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}}
-	store := NewWikiMapVersionStore(engine)
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, nil)
 	version := kccommon.WikiMapVersion{
 		Key:                 "version-a",
 		TenantID:            "tenant-1",
@@ -228,7 +228,7 @@ func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
 
 func TestWikiMapActiveStateRequiresResolverOnlyWhenInfinityStoreMissing(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}, engineType: "infinity"}
-	store := NewWikiMapVersionStore(engine).(kccommon.WikiMapActiveStateStore)
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, nil).(kccommon.WikiMapActiveStateStore)
 	state := kccommon.WikiMapActiveState{
 		Key: "active-a", TenantID: "tenant-1", DatasetID: "kb-1",
 		DocumentID: "doc-1", Payload: []byte(`{}`),
