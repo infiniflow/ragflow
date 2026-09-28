@@ -266,42 +266,11 @@ Deployment Docker tidak memerlukan Go di host. Deployment GPU juga memerlukan NV
 
    _Sistem telah siap digunakan!_
 
-## 🔧 Konfigurasi
+### ⚙️ Konfigurasi Docker
 
-Untuk konfigurasi sistem, Anda perlu mengelola file-file berikut:
+Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, dengan Kvrocks sebagai cache yang kompatibel dengan protokol Redis dan NATS JetStream sebagai antrean pesan. Untuk mengatur image, port, kata sandi, mesin dokumen, sumber image model, dan opsi GPU, lihat [panduan konfigurasi Docker](./docker/README.md). Untuk batasan platform dan persyaratan macOS, lihat [panduan build image Go dan dukungan platform](./docs/develop/build_docker_image.mdx).
 
-- [.env](./docker/.env): Menyimpan pengaturan dasar sistem, seperti `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, dan
-  `MINIO_PASSWORD`.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): Mengonfigurasi aplikasi backend.
-- [docker-compose.yml](./docker/docker-compose.yml): Sistem ini bergantung pada [docker-compose.yml](./docker/docker-compose.yml) untuk memulai.
-
-Untuk memperbarui port HTTP default (80), buka [docker-compose.yml](./docker/docker-compose.yml) dan ubah `80:80`
-menjadi `<YOUR_SERVING_PORT>:80`.
-
-Pembaruan konfigurasi ini memerlukan reboot semua kontainer agar efektif:
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-## 🔧 Membangun Docker Image
-
-Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan embedding.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Jika berada di belakang proxy, Anda dapat melewatkan argumen proxy:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
+Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, serta mempertahankan atau menghapus data yang ada, ikuti juga panduan konfigurasi Docker tersebut.
 
 ## 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
 

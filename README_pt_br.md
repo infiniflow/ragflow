@@ -198,126 +198,39 @@ A implantação Docker não exige a instalação do Go no host. A implantação 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Inicie o servidor usando as imagens Docker pré-compiladas:
+3. Construa a imagem Go e inicie o servidor com a configuração Compose Go. O destino oficial de build é `linux/amd64`; o modo CPU é usado por padrão, e a implantação com GPU requer o NVIDIA Container Toolkit. Consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx) para obter detalhes.
 
-> [!CAUTION]
-> Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
-> Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
-
-    > O comando abaixo baixa a edição`v0.27.2` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.27.2`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
-
-```bash
-   cd ragflow/docker
-
-   git checkout v0.27.2
-   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases)
-   # Esta etapa garante que o arquivo entrypoint.sh no código corresponda à versão da imagem do Docker.
-
-   # Use CPU for DeepDoc tasks:
-   docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> Nota: Antes da `v0.22.0`, fornecíamos imagens com modelos de embedding e imagens slim sem modelos de embedding. Detalhes a seguir:
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
-
-4. Verifique o status do servidor após tê-lo iniciado:
+   Antes da primeira implantação, defina `RAGFLOW_IMAGE=ragflow:go-local` em **docker/.env** e execute, a partir da raiz do repositório:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   cd ragflow
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+   cd docker
+   docker compose --env-file .env -f docker-compose.yml up -d
    ```
 
-   _O seguinte resultado confirma o lançamento bem-sucedido do sistema:_
+   Na configuração padrão do MySQL, o entrypoint da imagem executa as migrações do banco de dados e inicia Syncer, Admin, API e Ingestor por meio de `bin/ragflow_server`. No RAGFlow open-source 1.0, DeepDoc usa inferência por CPU para análise de layout, OCR e reconhecimento de tabelas, mesmo com o perfil GPU ativado.
+
+4. Verifique o estado das dependências com `docker compose --env-file .env -f docker-compose.yml ps` e confirme se o RAGFlow está pronto pela interface HTTP (o contêiner do RAGFlow não define um healthcheck do Compose):
 
    ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Rodando em todos os endereços (0.0.0.0)
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
-   > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network abnormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
-   >
+   Uma resposta HTTP 200 indica que o serviço está pronto. Se `SVR_WEB_HTTP_PORT` foi alterado, use essa porta na URL. Se a inicialização falhar, consulte os logs do serviço correspondente pelo Compose.
 5. No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
 
    > Com as configurações padrão, você só precisa digitar `http://IP_DO_SEU_MÁQUINA` (**sem** o número da porta), pois a porta HTTP padrão `80` pode ser omitida ao usar as configurações padrão.
    >
-6. Em [service_conf.yaml.template](./docker/service_conf.yaml.template), selecione a fábrica LLM desejada em `user_default_llm` e atualize o campo `API_KEY` com a chave de API correspondente.
-
-   > Consulte [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) para mais informações.
-   >
+6. Após entrar, adicione um LLM, um modelo de embedding e um reranker na página de provedores de modelos, incluindo o nome do modelo, o endereço do serviço e a chave de API.
 
 _O show está no ar!_
 
-## 🔧 Configurações
+### ⚙️ Configuração do Docker
 
-Quando se trata de configurações do sistema, você precisará gerenciar os seguintes arquivos:
+A implantação Go com Docker usa `docker/.env` e `docker/docker-compose.yml`, com Kvrocks como cache compatível com o protocolo Redis e NATS JetStream como fila de mensagens. Para configurar imagem, portas, senhas, mecanismo de documentos, origem das imagens de modelos e opções de GPU, consulte o [guia de configuração do Docker](./docker/README.md). Para limitações de plataforma e requisitos do macOS, consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx).
 
-- [.env](./docker/.env): Contém as configurações fundamentais para o sistema, como `SVR_HTTP_PORT`, `MYSQL_PASSWORD` e `MINIO_PASSWORD`.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): Configura os serviços de back-end. As variáveis de ambiente neste arquivo serão automaticamente preenchidas quando o contêiner Docker for iniciado. Quaisquer variáveis de ambiente definidas dentro do contêiner Docker estarão disponíveis para uso, permitindo personalizar o comportamento do serviço com base no ambiente de implantação.
-- [docker-compose.yml](./docker/docker-compose.yml): O sistema depende do [docker-compose.yml](./docker/docker-compose.yml) para iniciar.
-
-> O arquivo [./docker/README](./docker/README.md) fornece uma descrição detalhada das configurações do ambiente e dos serviços, que podem ser usadas como `${ENV_VARS}` no arquivo [service_conf.yaml.template](./docker/service_conf.yaml.template).
-
-Para atualizar a porta HTTP de serviço padrão (80), vá até [docker-compose.yml](./docker/docker-compose.yml) e altere `80:80` para `<SUA_PORTA_DE_SERVIÇO>:80`.
-
-Atualizações nas configurações acima exigem um reinício de todos os contêineres para que tenham efeito:
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Mudar o mecanismo de documentos de Elasticsearch para Infinity
-
-O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetores. Para mudar para o [Infinity](https://github.com/infiniflow/infinity/), siga estas etapas:
-
-1. Pare todos os contêineres em execução:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-   Note: `-v` irá deletar os volumes do contêiner, e os dados existentes serão apagados.
-2. Defina `DOC_ENGINE` no **docker/.env** para `infinity`.
-3. Inicie os contêineres:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!ATENÇÃO]
- > A mudança para o Infinity em uma máquina Linux/arm64 ainda não é oficialmente suportada.
-
-## 🔧 Criar uma imagem Docker
-
-Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM e incorporação.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Se você estiver atrás de um proxy, pode passar argumentos de proxy:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
+Para trocar o mecanismo de documentos, alterar configurações, reiniciar serviços e manter ou remover dados existentes, siga também o guia de configuração do Docker.
 
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento
 
