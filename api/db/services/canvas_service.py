@@ -28,7 +28,7 @@ from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.misc_utils import get_uuid, thread_pool_exec
 from common.constants import StatusEnum
 from api.utils.api_utils import get_data_openai
-import tiktoken
+from common.token_utils import get_encoder
 from peewee import fn
 
 
@@ -427,7 +427,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
 
 
 async def completion_openai(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
-    tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+    tiktoken_encoder = get_encoder()
     prompt_tokens = len(tiktoken_encoder.encode(str(question)))
     user_id = kwargs.get("user_id", "")
 
