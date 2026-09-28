@@ -14,6 +14,7 @@ from agent.component.base import ComponentParamBase
 from agent.tools.base import LLMToolPluginCallSession, ToolBase
 from agent.tools import fxmacrodata as provider
 from agent.tools.fxmacrodata_client import FXMacroDataError, list_operations
+import agent.tools.fxmacrodata_client.client as client_module
 from agent.tools.fxmacrodata_client.client import MAX_RESPONSE_BYTES, STREAM_CHUNK_BYTES
 from agent.tools.fxmacrodata_client.transport import redact_text
 from agent.tools.fxmacrodata import FXMacroDataClient
@@ -54,6 +55,10 @@ class Session:
             result = Response(self.payload, self.status, kwargs.get("headers", {}).get("Accept") == "text/event-stream")
         self.responses.append(result)
         return result
+
+
+def sent_key(call):
+    return (call[2]["headers"] or {}).get("X-API-Key")
 
 
 def arguments_for(operation):
@@ -118,7 +123,7 @@ def test_all_operations_load_from_native_dsl_and_execute_canvas_inputs(operation
     metadata = tool.get_meta()["function"]
     assert metadata["name"] == "fxmacrodata_" + operation.name
     assert metadata["parameters"] == operation.input_schema
-    assert all("api_key" not in call[2]["params"] for call in session.calls)
+    assert all(not sent_key(call) and "api_key" not in (call[2]["params"] or {}) for call in session.calls)
 
 
 def test_complete_unique_metadata_and_public_schemas():
@@ -154,7 +159,8 @@ def test_environment_key_is_invocation_only_and_not_serialized(make_canvas, monk
     assert secret not in str(canvas)
     with caplog.at_level(logging.DEBUG):
         tool.invoke(**tool.get_input())
-    assert any(call[2]["params"].get("api_key") == secret for call in session.calls)
+    assert session.calls and all(sent_key(call) == secret for call in session.calls)
+    assert all("api_key" not in (call[2]["params"] or {}) for call in session.calls)
     assert secret not in str(canvas) + caplog.text + json.dumps(tool.get_meta())
 
 
@@ -165,7 +171,7 @@ def test_public_mode_ignores_inherited_credentials(make_canvas, monkeypatch):
     result = tool.invoke(**tool.get_input())
     assert "No records returned" in result
     assert tool.output("json") == []
-    assert all("api_key" not in call[2]["params"] for call in session.calls)
+    assert all(not sent_key(call) and "api_key" not in (call[2]["params"] or {}) for call in session.calls)
 
 
 @pytest.mark.parametrize("status", [401, 403, 429, 500])
@@ -354,6 +360,38 @@ def test_event_stream_budget_bounds_an_undelimited_frame():
     response = ChunkedResponse([b"x" * STREAM_CHUNK_BYTES] * (MAX_RESPONSE_BYTES // STREAM_CHUNK_BYTES + 1))
     with pytest.raises(FXMacroDataError, match="bounded response budget"):
         list(client._bounded_lines(response, time.monotonic() + 5))
+
+
+class SearchSpy:
+    """Counts how many bytes the line scanner searches."""
+
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self.searched = 0
+
+    def search(self, buffer, pos=0):
+        self.searched += len(buffer) - pos
+        return self.pattern.search(buffer, pos)
+
+
+def test_event_stream_searches_each_byte_once_across_chunk_boundaries(monkeypatch):
+    spy = SearchSpy(client_module._LINE_END)
+    monkeypatch.setattr(client_module, "_LINE_END", spy)
+    client = FXMacroDataClient(session=Session({}))
+    chunks = [b"data: a", b"-long-", b"line\r", b"\n", b"data: b\r", b"\n\r", b"\n"]
+    lines = list(client._bounded_lines(ChunkedResponse(chunks), time.monotonic() + 5))
+    assert lines == [b"data: a-long-line", b"data: b", b""]
+    assert spy.searched <= sum(map(len, chunks))
+
+
+def test_event_stream_undelimited_frame_is_searched_linearly_up_to_the_budget(monkeypatch):
+    spy = SearchSpy(client_module._LINE_END)
+    monkeypatch.setattr(client_module, "_LINE_END", spy)
+    client = FXMacroDataClient(session=Session({}))
+    response = ChunkedResponse([b"x" * STREAM_CHUNK_BYTES] * (MAX_RESPONSE_BYTES // STREAM_CHUNK_BYTES + 1))
+    with pytest.raises(FXMacroDataError, match="bounded response budget"):
+        list(client._bounded_lines(response, time.monotonic() + 5))
+    assert spy.searched <= MAX_RESPONSE_BYTES
 
 
 def test_mcp_result_split_across_stream_chunks_is_still_matched(make_canvas, monkeypatch):

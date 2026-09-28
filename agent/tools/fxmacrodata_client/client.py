@@ -150,7 +150,7 @@ class FXMacroDataClient:
             if headers and headers.get("Mcp-Session-Id"):
                 response = None
                 try:
-                    response = self._request("DELETE", MCP_URL, params=self._auth_params(), headers=headers, timeout=min(self.timeout, 2))
+                    response = self._request("DELETE", MCP_URL, headers={**headers, **self._auth_headers()}, timeout=min(self.timeout, 2))
                 except Exception:
                     # Closing a session is best effort and must not mask a tool
                     # result or expose an underlying request/credential error.
@@ -202,6 +202,9 @@ class FXMacroDataClient:
         seen_bytes = 0
         pending = bytearray()
         skip_lf = False
+        # Bytes of ``pending`` before ``scan`` were already searched and hold no
+        # delimiter, so each chunk only searches what it appended.
+        scan = 0
         # iter_lines only yields after a delimiter, so a long undelimited frame
         # could evade both byte and elapsed-time checks. Bound raw bytes first:
         # ``pending`` only ever holds bytes already counted against the budget,
@@ -221,7 +224,7 @@ class FXMacroDataClient:
             skip_lf = False
             pending += chunk
             start = 0
-            while (match := _LINE_END.search(pending, start)) is not None:
+            while (match := _LINE_END.search(pending, scan)) is not None:
                 end = match.start()
                 yield bytes(pending[start:end])
                 start = end + 1
@@ -232,7 +235,9 @@ class FXMacroDataClient:
                     else:
                         # A CR at the chunk edge may be the first half of CRLF.
                         skip_lf = True
+                scan = start
             del pending[:start]
+            scan = len(pending)
 
     @staticmethod
     @contextmanager
@@ -294,8 +299,8 @@ class FXMacroDataClient:
         finally:
             response.close()
 
-    def _auth_params(self) -> dict[str, str]:
-        return {"api_key": self._api_key} if self._api_key else {}
+    def _auth_headers(self) -> dict[str, str]:
+        return {"X-API-Key": self._api_key} if self._api_key else {}
 
     def execute(self, operation_name: str, arguments: dict[str, Any] | None = None) -> Result:
         with self._lock, protected_diagnostics(self._api_key):
@@ -319,8 +324,8 @@ class FXMacroDataClient:
         if op.method == "MCP":
             return self._call_mcp(op.name[4:], args)
         path = op.path
-        params: dict[str, Any] = self._auth_params()
-        headers = {"Accept": "application/json"}
+        params: dict[str, Any] = {}
+        headers = {"Accept": "application/json", **self._auth_headers()}
         for parameter in op.parameters:
             name = parameter["name"]
             if name not in args or args[name] is None:
@@ -397,7 +402,7 @@ class FXMacroDataClient:
         if not notification:
             self._request_id += 1
             body["id"] = self._request_id
-        response = self._request("POST", MCP_URL, params=self._auth_params(), headers=headers, body=body)
+        response = self._request("POST", MCP_URL, headers={**headers, **self._auth_headers()}, body=body)
         response_headers = dict(response.headers)
         if notification:
             try:
