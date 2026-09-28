@@ -194,6 +194,7 @@ LIST DATASET 'my_dataset' SYNC_LOGS;
 SET DEFAULT LLM 'gpt-4';
 SET DEFAULT EMBEDDING 'text-embedding-ada-002';
 RESET DEFAULT LLM;
+```
 
 
 ## Parser Implementation

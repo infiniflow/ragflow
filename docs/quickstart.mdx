@@ -19,10 +19,7 @@ This guide deploys the Go backend with the repository's Go Docker image and Comp
 
 ## Prerequisites
 
-- A recommended starting configuration of 4 CPU cores (x86-64), 16 GB RAM,
-  and 50 GB free disk space. Actual requirements depend on the document engine,
-  data volume, parsing workload, and concurrency. Local models and OceanBase
-  require additional resources;
+- A recommended starting configuration of 4 CPU cores (x86-64), 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the document engine, data volume, parsing workload, and concurrency. Local models and OceanBase require additional resources.
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit;
 - Access to the dependency image `infiniflow/ragflow_deps:latest` during the image build, and to an LLM and embedding model at runtime.
 
