@@ -732,6 +732,34 @@ func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
 	}
 }
 
+// TestDispatch_PDFVisionJSON_RejectsInvalidPages pins that an invalid pages
+// value fails the VLM parse before any page is rendered. A fallback to every
+// page would send the whole PDF to the vision model.
+func TestDispatch_PDFVisionJSON_RejectsInvalidPages(t *testing.T) {
+	origRenderer := pdfVisionPageRenderer
+	t.Cleanup(func() { pdfVisionPageRenderer = origRenderer })
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		t.Errorf("renderer called with ranges %v, want no render for invalid pages", ranges)
+		return nil, fmt.Errorf("renderer must not run")
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	setups["pdf"]["pages"] = "abc"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "pdf vision pages") {
+		t.Fatalf("Invoke error = %v, want pdf vision pages error", err)
+	}
+}
+
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
