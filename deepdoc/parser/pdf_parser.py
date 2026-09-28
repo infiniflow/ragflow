@@ -2018,7 +2018,16 @@ class RAGFlowPdfParser:
                 logging.warning(f"Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
                 continue
 
-            imgs.append(self.page_images[pns[0]].crop((left * ZM, top * ZM, right * ZM, min(bottom, self.page_images[pns[0]].size[1]))))
+            x0, y0, x1, y1 = left * ZM, top * ZM, right * ZM, min(bottom, self.page_images[pns[0]].size[1])
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            if x1 <= x0 or y1 <= y0:
+                bottom -= self.page_images[pns[0]].size[1]
+                continue
+
+            imgs.append(self.page_images[pns[0]].crop((x0, y0, x1, y1)))
             if 0 < ii < len(poss) - 1:
                 positions.append((pns[0] + self.page_from, left, right, top, min(bottom, self.page_images[pns[0]].size[1]) / ZM))
             bottom -= self.page_images[pns[0]].size[1]
@@ -2026,7 +2035,15 @@ class RAGFlowPdfParser:
                 if not (0 <= pn < page_count):
                     logging.warning(f"Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
                     continue
-                imgs.append(self.page_images[pn].crop((left * ZM, 0, right * ZM, min(bottom, self.page_images[pn].size[1]))))
+                x0, y0, x1, y1 = left * ZM, 0, right * ZM, min(bottom, self.page_images[pn].size[1])
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= self.page_images[pn].size[1]
+                    continue
+                imgs.append(self.page_images[pn].crop((x0, y0, x1, y1)))
                 if 0 < ii < len(poss) - 1:
                     positions.append((pn + self.page_from, left, right, 0, min(bottom, self.page_images[pn].size[1]) / ZM))
                 bottom -= self.page_images[pn].size[1]
