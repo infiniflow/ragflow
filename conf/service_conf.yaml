@@ -74,11 +74,6 @@ oceanbase:
     password: 'infini_rag_flow'
     host: 'localhost'
     port: 2881
-redis:
-  db: 1
-  username: ''
-  password: 'infini_rag_flow'
-  host: 'localhost:6379'
 kvrocks:
   db: 1
   username: ''
