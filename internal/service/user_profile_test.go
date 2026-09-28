@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -37,7 +38,7 @@ func TestGetUserProfileOmitsCredentials(t *testing.T) {
 		Password:    &pw,
 	}
 
-	profile := NewUserService().GetUserProfile(user)
+	profile := NewUserService().GetUserProfile(context.Background(), user)
 
 	if _, ok := profile["access_token"]; ok {
 		t.Errorf("GetUserProfile leaked access_token: %v", profile["access_token"])

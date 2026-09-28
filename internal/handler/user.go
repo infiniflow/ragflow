@@ -727,6 +727,5 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-
-  common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
+	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }
