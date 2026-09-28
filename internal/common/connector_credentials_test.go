@@ -24,7 +24,7 @@ import (
 	"testing"
 )
 
-// Fixed public test vector shared with the Python implementation.
+// Fixed public test vector. A format change that breaks it also breaks the rows that are already stored.
 const (
 	testConnectorKey          = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 	testConnectorCipherVector = "enc:v1:ZGVmZ2hpamtsbW5vMzm/FhC2IvFVBzHK4EVIiS2pKzu5X9Feh/PZO57Rh3K0yyGkLTDmruUEeZB6LtRoLedehJBJUg=="
@@ -50,7 +50,7 @@ func TestConnectorKey(t *testing.T) {
 		t.Fatalf("valid key: got %v, want %v", key, want)
 	}
 
-	// Python's b64decode(validate=True) rejects line breaks that Go's decoder skips.
+	// Line breaks must fail, although Go's decoder skips them.
 	for _, bad := range []string{"not-base64-!!", base64.StdEncoding.EncodeToString(make([]byte, 16)), testConnectorKey + "\n", testConnectorKey + "\r\n", testConnectorKey + "\r", testConnectorKey[:20] + "\n" + testConnectorKey[20:]} {
 		t.Setenv(EnvRAGFlowConnectorKey, bad)
 		key, err = ConnectorKey()
@@ -106,7 +106,7 @@ func TestConnectorCredentialsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecryptConnectorCredentialsCrossRuntimeVector(t *testing.T) {
+func TestDecryptConnectorCredentialsFixedVector(t *testing.T) {
 	t.Setenv(EnvRAGFlowConnectorKey, testConnectorKey)
 	got, err := DecryptConnectorCredentials(map[string]interface{}{"credentials": testConnectorCipherVector, "wiki": "x"})
 	if err != nil {

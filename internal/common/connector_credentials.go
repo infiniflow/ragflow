@@ -27,7 +27,7 @@ import (
 	"strings"
 )
 
-// The Python server reads and writes the same format, so both must change together.
+// Stored rows use this format, so a change needs a new prefix version.
 const (
 	connectorCredentialsField    = "credentials"
 	connectorCredentialsPrefix   = "enc:v1:"
@@ -46,7 +46,7 @@ func ConnectorKey() ([]byte, error) {
 	if encoded == "" {
 		return nil, nil
 	}
-	// Go's decoder skips \r and \n; reject them so a key is valid in Go only when it is valid in Python.
+	// Go's decoder skips \r and \n; reject them so only the documented one-line base64 form is accepted.
 	key, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || strings.ContainsAny(encoded, "\r\n") {
 		return nil, fmt.Errorf("%s is not valid base64", EnvRAGFlowConnectorKey)
