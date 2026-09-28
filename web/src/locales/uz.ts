@@ -2695,8 +2695,6 @@ export default {
       delimiters: 'Ajratgichlar',
       delimitersTip:
         'Har bir qatorga bitta ajratuvchi; ko‘p belgili ajratuvchilar shu holatda yozilishi mumkin (masalan, ##). Bektiklar bilan (masalan, `##`): qattiq bo‘lish — har bir ajratuvchi o‘z bo‘lagini boshlaydi va token hajmiga qo‘shilish qo‘llanilmaydi. Bektiksiz: yumshoq bo‘lish — ajratuvchi faqat bo‘lish nuqtasi bo‘lib, bo‘laklar bo‘lak token hajmiga qadar birlashtiriladi, shuning uchun qisqa hujjatlarda ko‘rinadigan o‘zgarish bo‘lmasligi mumkin.',
-      delimitersTipPython:
-        'Har bir qatorga bitta ajratuvchi. Faqat bektik bilan o‘ralgan yozuvlar (masalan, `##`) kuchga kiradi: har bir ajratuvchi o‘z bo‘lagini boshlaydi va token hajmiga qo‘shilish qo‘llanilmaydi. Bektiksiz yozuvlar e’tiborga olinmaydi.',
       childrenDelimitersTip:
         'Bola bo‘lish: har bir ota bo‘lak bu ajratuvchilar bo‘yicha qidiruvda ishlatiladigan bola bo‘laklarga yana bo‘linadi; bo‘lak token hajmi qo‘llanilmaydi.',
       one: 'Bitta',

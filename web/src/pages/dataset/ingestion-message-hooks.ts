@@ -3,7 +3,6 @@ import {
   IngestionMessageParams,
 } from '@/interfaces/database/ingestion';
 import { listIngestionMessages } from '@/services/knowledge-service';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -27,7 +26,6 @@ export const useIngestionMessages = (
   params: IngestionMessageParams = DefaultParams,
 ) => {
   const queryClient = useQueryClient();
-  const isGoBackend = useIsGoBackend();
   const [finishing, setFinishing] = useState(false);
   const finishingRef = useRef(false);
 
@@ -39,7 +37,7 @@ export const useIngestionMessages = (
     IngestionMessageParams | undefined
   >({
     queryKey: IngestionMessageKeys.messages(datasetId, logId),
-    enabled: enabled && isGoBackend && !!datasetId && !!logId,
+    enabled: enabled && !!datasetId && !!logId,
     initialPageParam: undefined,
     queryFn: async ({ pageParam }) => {
       const { data: res = {} } = await listIngestionMessages(
@@ -82,7 +80,6 @@ export const useIngestionMessages = (
   useEffect(() => {
     if (
       !enabled ||
-      !isGoBackend ||
       !datasetId ||
       !logId ||
       terminal ||
@@ -148,7 +145,6 @@ export const useIngestionMessages = (
     return () => clearInterval(interval);
   }, [
     enabled,
-    isGoBackend,
     datasetId,
     logId,
     terminal,
@@ -169,7 +165,6 @@ export const useIngestionMessages = (
       !terminal ||
       finishingRef.current ||
       !enabled ||
-      !isGoBackend ||
       !datasetId ||
       !logId
     ) {
@@ -212,7 +207,7 @@ export const useIngestionMessages = (
       }
     }, PollIntervalMs);
     return () => clearTimeout(timer);
-  }, [datasetId, enabled, isGoBackend, logId, params, queryClient, terminal]);
+  }, [datasetId, enabled, logId, params, queryClient, terminal]);
 
   return {
     ...query,

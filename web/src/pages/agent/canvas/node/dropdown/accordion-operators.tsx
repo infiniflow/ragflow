@@ -5,7 +5,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Operator } from '@/constants/agent';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { PropsWithChildren, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import useGraphStore from '../../../store';
@@ -154,7 +153,6 @@ export function PipelineAccordionOperators({
   const { findNodeByName, getOperatorTypeFromId } = useGraphStore(
     (state) => state,
   );
-  const isGoBackend = useIsGoBackend();
   const sourceOperator = getOperatorTypeFromId(nodeId) as
     | Operator
     | undefined;
@@ -163,10 +161,9 @@ export function PipelineAccordionOperators({
     () =>
       buildPipelineNextOperators(
         sourceOperator,
-        isGoBackend,
         (operator) => !!findNodeByName(operator),
       ),
-    [findNodeByName, isGoBackend, sourceOperator],
+    [findNodeByName, sourceOperator],
   );
 
   return (

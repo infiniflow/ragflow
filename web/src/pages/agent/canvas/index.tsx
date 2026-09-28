@@ -1,5 +1,4 @@
 import { useTheme } from '@/components/theme-provider';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import {
   Tooltip,
   TooltipContent,
@@ -236,14 +235,13 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   const { calculateDropdownPosition } = useDropdownPosition(reactFlowInstance);
 
-  const isGoBackend = useIsGoBackend();
   const isPipeline = useIsPipeline();
   const { findNodeByName, getOperatorTypeFromId } = useGraphStore(
     (state) => state,
   );
 
   // Whether the "next step" menu offers anything for the drag source. On a
-  // pipeline, single-instance operators already on canvas plus the Go
+  // pipeline, single-instance operators already on canvas plus the
   // topology rules can leave the menu empty; such a drag is aborted.
   const hasNextStepOperators = useCallback(
     (sourceNodeId: string) => {
@@ -252,11 +250,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       }
       return hasPipelineNextOperators(
         getOperatorTypeFromId(sourceNodeId) as Operator | undefined,
-        isGoBackend,
         (operator) => !!findNodeByName(operator),
       );
     },
-    [findNodeByName, getOperatorTypeFromId, isGoBackend, isPipeline],
+    [findNodeByName, getOperatorTypeFromId, isPipeline],
   );
 
   const {

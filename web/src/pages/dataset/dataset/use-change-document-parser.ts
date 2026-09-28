@@ -1,16 +1,11 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import {
-  useSetDocumentParser,
-  useSetDocumentPipelineParser,
-} from '@/hooks/use-document-request';
+import { useSetDocumentPipelineParser } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
-import { pickByBackend } from '@/utils/backend-variant';
 import { useCallback, useState } from 'react';
 
 export const useChangeDocumentParser = () => {
-  const { setDocumentParser, loading } = useSetDocumentParser();
-  const { setDocumentPipelineParser, loading: pipelineParserLoading } =
+  const { setDocumentPipelineParser, loading } =
     useSetDocumentPipelineParser();
   const [record, setRecord] = useState<IDocumentInfo>({} as IDocumentInfo);
 
@@ -23,35 +18,22 @@ export const useChangeDocumentParser = () => {
   const onChangeParserOk = useCallback(
     async (parserConfigInfo: IChangeParserRequestBody) => {
       if (record?.id && record?.dataset_id) {
-        // The Go document endpoint takes `parser_id` and a pipeline-shaped
-        // parser_config; the Python one keeps the legacy payload shape.
-        const common = {
+        // The document endpoint takes `parser_id` and a pipeline-shaped
+        // parser_config.
+        const ret = await setDocumentPipelineParser({
           parserId: parserConfigInfo.parser_id,
           pipelineId: parserConfigInfo.pipeline_id || '',
           documentId: record?.id,
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
-        };
-        const ret = await pickByBackend({
-          go: () =>
-            setDocumentPipelineParser({
-              ...common,
-              parseType: parserConfigInfo.parseType,
-            }),
-          python: () => setDocumentParser(common),
-        })();
+          parseType: parserConfigInfo.parseType,
+        });
         if (ret === 0) {
           hideChangeParserModal();
         }
       }
     },
-    [
-      record?.id,
-      record?.dataset_id,
-      setDocumentParser,
-      setDocumentPipelineParser,
-      hideChangeParserModal,
-    ],
+    [record?.id, record?.dataset_id, setDocumentPipelineParser, hideChangeParserModal],
   );
 
   const handleShowChangeParserModal = useCallback(
@@ -63,7 +45,7 @@ export const useChangeDocumentParser = () => {
   );
 
   return {
-    changeParserLoading: loading || pipelineParserLoading,
+    changeParserLoading: loading,
     onChangeParserOk,
     changeParserVisible,
     hideChangeParserModal,
