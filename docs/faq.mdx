@@ -160,27 +160,6 @@ These messages come from separate processes and may appear in a different order.
 
 ---
 
-### What does `Realtime synonym is disabled, since no redis connection` mean?
-
-The Go deployment uses Kvrocks as its Redis-compatible cache, although this warning still says `redis`. Check the cache before continuing:
-
-1. From the repository root, confirm that Kvrocks is running:
-   ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml ps kvrocks
-   ```
-2. Inspect the Kvrocks logs:
-   ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml logs kvrocks
-   ```
-3. Check the Go service logs for connection-refused, authentication, or DNS errors. The standard Go Compose deployment connects to `kvrocks:6379`; for a customized Docker deployment, verify `KVROCKS_HOST` and `KVROCKS_PORT` in the container configuration. For Go processes launched directly on the host, set the reachable `host:port` value in `conf/service_conf.yaml` under `kvrocks.host`; do not rely on the Docker environment variables to override that source configuration.
-4. Call the [system health API](./references/http_api_reference.md#check-system-health). Its `redis` field reports the health of the Redis-compatible Kvrocks connection.
-
-Do not assume this warning is harmless: features that depend on the cache, including real-time synonym updates, may be unavailable until the connection is restored.
-
-![Realtime synonym warning in the RAGFlow logs](https://github.com/infiniflow/ragflow/assets/93570324/ef5a6194-084a-4fe3-bdd5-1c025b40865c)
-
----
-
 ### Why are document tasks waiting in the queue?
 
 The Go ingestor consumes document tasks from NATS JetStream. A growing queue can mean that no ingestor is consuming, workers are busy, or tasks are repeatedly failing.
@@ -261,7 +240,7 @@ To view the container's combined output, use `docker compose --env-file docker/.
 
    Check the `nats` and selected document engine services in the same Compose project when diagnosing ingestion or indexing.
 
-2. Use the [system health API](./references/http_api_reference.md#check-system-health) to check the database, Kvrocks cache, document engine, object storage, and message queue. The response field named `redis` reports the Kvrocks check in the Go deployment; `message_queue` reports the queue connection.
+2. Use the [system health API](./references/http_api_reference.md#check-system-health) to check the database, Kvrocks cache, document engine, object storage, and NATS message queue.
 
 A running container does not necessarily mean that the service inside it is healthy. Check the health API and logs for connection, port, DNS, and configuration errors.
 
@@ -569,7 +548,7 @@ To improve response speed:
 
 RAGFlow sends PDF documents to a remote MinerU service and polls for the parsed result. To use it:
 
-1. Prepare a reachable MinerU 3.x API service running version 3.3.0 or later. RAGFlow connects to the service through its `/file_parse` and `/tasks` endpoints.
+1. Prepare a reachable MinerU API service that provides the `/file_parse` and `/tasks` endpoints used by RAGFlow.
 2. In **docker/.env** or on the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_API_KEY`: An API key if the MinerU service requires one.
@@ -603,7 +582,7 @@ Use the following environment variables when MinerU is not configured directly i
 2. Set `MINERU_API_KEY` if your MinerU service requires authentication.
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
 
-For a custom Parser component, the numeric `mineru_poll_timeout` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
+For a custom Parser component, the numeric `mineru_timeout_seconds` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
@@ -679,7 +658,8 @@ This method uses PaddleOCR's official API service with an access token.
 
 **Notes:**
 
-- Use an API base URL that includes `/api`, such as `https://paddleocr.aistudio-app.com/api`. The Go client appends `/v2/ocr/jobs` when submitting a request; do not paste the full job endpoint into `PADDLEOCR_API_URL`.
+- When configuring the asynchronous **PaddleOCR model provider** through `PADDLEOCR_API_URL` or the **Model providers** page, use an API base URL that includes `/api`, such as `https://paddleocr.aistudio-app.com/api`, but does not include `/v2/ocr/jobs`. The provider appends `/v2/ocr/jobs`.
+- When configuring the PDF parser directly with `paddleocr_base_url` in a custom Parser component or `PADDLEOCR_BASE_URL` in the environment, use the service origin without `/api`, such as `https://paddleocr.aistudio-app.com`. The direct parser appends `/api/v2/ocr/jobs`.
 - Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
 - This method requires internet connectivity to reach the official PaddleOCR API.
 
@@ -719,11 +699,12 @@ Enter the base URL without the `/layout-parsing` suffix because the Go provider 
 
 | Environment Variable | Description | Default | Required |
 |---------------------|-------------|---------|----------|
-| `PADDLEOCR_API_URL` | PaddleOCR API base URL, including `/api` but without `/v2/ocr/jobs` | _unset_ | Yes, when using environment variables |
+| `PADDLEOCR_API_URL` | Asynchronous model-provider base URL, including `/api` but without `/v2/ocr/jobs` | _unset_ | Yes, when configuring the model provider through environment variables |
+| `PADDLEOCR_BASE_URL` | Direct PDF-parser service origin, without `/api/v2/ocr/jobs` | _unset_ | Yes, when configuring the parser directly through environment variables |
 | `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
 | `PADDLEOCR_ACCESS_TOKEN` | Bearer token for the PaddleOCR service | _unset_ | When the service requires authentication |
 
-These environment variables configure and auto-provision the asynchronous **PaddleOCR** provider. They are not required when configuring a provider through the UI and do not select **PaddleOCR.local**.
+`PADDLEOCR_API_URL` configures and auto-provisions the asynchronous **PaddleOCR** model provider. `PADDLEOCR_BASE_URL` is the fallback used by the direct PDF parser. These variables are not required when configuring a provider through the UI and do not select **PaddleOCR.local**.
 
 ---
 
