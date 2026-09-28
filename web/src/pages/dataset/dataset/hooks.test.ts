@@ -270,20 +270,42 @@ describe('useShowLog — Go backend early-log fallback', () => {
     mockList.mockResolvedValue({
       data: {
         data: {
-          logs: [{ document_id: 'doc-1', progress_msg: 'Task is queued...' }],
+          logs: [
+            {
+              id: 'python-run',
+              document_id: 'doc-1',
+              progress_msg: 'Python parse completed',
+            },
+          ],
           total: 1,
         },
       },
     } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
 
-    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.CREATED });
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
     await waitFor(() =>
-      expect(result.current.logInfo.details).toBe('Task is queued...'),
+      expect(mockMessages).toHaveBeenCalledWith('kb-1', 'python-run', {
+        limit: 200,
+      }),
     );
-    expect(result.current.logInfo.status).toBe(RunningStatus.QUEUED);
+    expect(result.current.logInfo.details).toBe('Python parse completed');
+    expect(result.current.logInfo.events).toBeUndefined();
+    expect(result.current.logInfo.status).toBe(RunningStatus.DONE);
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
       expect.objectContaining({ log_type: 'file' }),

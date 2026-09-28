@@ -132,7 +132,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
         details,
-        events: messages?.items,
+        events: messages?.items.length ? messages.items : undefined,
         loadPreviousEvents: hasPreviousPage
           ? () => fetchPreviousPage()
           : undefined,
