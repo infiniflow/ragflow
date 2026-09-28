@@ -44,6 +44,18 @@ type MetaFilterInput struct {
 	Logic      string // "and" | "or"
 }
 
+// MetadataFilterDiagnostic captures the runtime outcome of a metadata-filter
+// pass so the agent reference can report whether a filter was applied,
+// generated, disabled, or produced no matches, along with the resulting
+// conditions and matched-document count.
+type MetadataFilterDiagnostic struct {
+	Method               string                   `json:"method"`
+	Status               string                   `json:"status"`
+	Conditions           []map[string]interface{} `json:"conditions"`
+	Logic                string                   `json:"logic"`
+	MatchedDocumentCount int                      `json:"matched_document_count"`
+}
+
 // operatorMapping translates Python-style operators to internal symbols.
 var operatorMapping = map[string]string{
 	"is":     "=",

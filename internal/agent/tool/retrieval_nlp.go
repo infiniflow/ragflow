@@ -120,6 +120,7 @@ type retrievalEnhancer interface {
 		chatModel *modelModule.ChatModel,
 		baseDocIDs []string,
 		kbIDs []string,
+		diagnostics *common.MetadataFilterDiagnostic,
 	) ([]string, error)
 	LabelQuestion(
 		ctx context.Context,
@@ -239,7 +240,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 			return nil, fmt.Errorf("retrieval: metadata filter service is not configured")
 		}
 		docIDs, err = a.enhancer.FilterDocuments(
-			ctx, req.MetaDataFilter, query, chatModel, docIDs, datasets.kbIDs,
+			ctx, req.MetaDataFilter, query, chatModel, docIDs, datasets.kbIDs, req.Diagnostics,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("retrieval: filter documents: %w", err)
