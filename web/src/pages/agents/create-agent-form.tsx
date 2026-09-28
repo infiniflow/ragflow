@@ -6,6 +6,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { MemoriesFormField } from '@/components/memories-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -22,7 +23,10 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { FlowType, FlowTypeConfig } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
-import { RetrievalBindings } from './template-retrieval-binding';
+import {
+  ModelBindingCount,
+  RetrievalBindings,
+} from './template-retrieval-binding';
 
 export type CreateAgentFormProps = IModalProps<any> & {
   loading?: boolean;
@@ -31,6 +35,7 @@ export type CreateAgentFormProps = IModalProps<any> & {
   // set, the form asks the user to bind them before creating the agent, so
   // the canvas never ends up with a retrieval that fails at runtime.
   retrievalBindings?: RetrievalBindings;
+  modelBindings?: ModelBindingCount;
 };
 
 type FlowTypeCardProps = {
@@ -91,6 +96,7 @@ export const FormSchema = z.object({
   dataset_ids: z.array(z.string()).optional(),
   dataset_bindings: z.array(z.array(z.string())).optional(),
   memory_ids: z.array(z.string()).optional(),
+  llm_id: z.string().optional(),
 });
 
 export type FormSchemaType = z.infer<typeof FormSchema>;
@@ -101,6 +107,7 @@ export function CreateAgentForm({
   loading,
   showTypeCards = false,
   retrievalBindings,
+  modelBindings,
 }: CreateAgentFormProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -114,12 +121,20 @@ export function CreateAgentForm({
   // Compilation operators are configured on the edit-next page, so the dialog
   // skips the name field and turns the submit button into a navigation step.
   const isCompiler = showTypeCards && selectedType === FlowType.Compiler;
+  const modelRequired = (modelBindings?.modelCount ?? 0) > 0;
 
   const handleNext = useCallback(() => {
     navigate(`${Routes.CompilationTemplatesEditNext}?source=agents`);
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
+    if (modelRequired && !data.llm_id) {
+      form.setError('llm_id', {
+        type: 'manual',
+        message: t('common.pleaseSelect'),
+      });
+      return;
+    }
     const datasetBlocks = retrievalBindings?.datasetBlocks ?? [];
     if (datasetBlocks.length === 1 && isEmpty(data.dataset_ids)) {
       form.setError('dataset_ids', {
@@ -183,6 +198,14 @@ export function CreateAgentForm({
           </RAGFlowFormItem>
         )}
         {!isCompiler && <NameFormField></NameFormField>}
+        {!isCompiler && modelRequired && (
+          <ModelTreeSelectFormField
+            name="llm_id"
+            label={t('chat.model')}
+            modelTypes={modelBindings?.modelTypes}
+            required
+          />
+        )}
         {!isCompiler && datasetBlocks.length === 1 && (
           <section className="space-y-4">
             <p className="text-sm text-text-secondary">{datasetHint}</p>
