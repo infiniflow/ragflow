@@ -349,19 +349,22 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	if mm != nil {
 		next["metadata"] = mm
 	}
-	var parentChild map[string]any
-	if incoming != nil {
-		if value, ok := incoming["parent_child"].(map[string]any); ok {
-			parentChild = value
-		}
-	}
-	if parentChild == nil && existing != nil {
-		if value, ok := existing["parent_child"].(map[string]any); ok {
-			parentChild = value
-		}
-	}
+	// Resolve the dataset-level parent_child setting (component-scoped on a
+	// chunker node, or a flat top-level key for transitional input) and scope it
+	// onto every chunker node in next. There is no flat aggregation key.
+	parentChild := resolveParentChild(incoming, existing)
 	if parentChild != nil {
-		next["parent_child"] = parentChild
+		for componentID, value := range next {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := value.(map[string]interface{})
+			if !ok {
+				params = map[string]interface{}{}
+				next[componentID] = params
+			}
+			params["parent_child"] = parentChild
+		}
 	}
 	requestedChildren := make(map[string]interface{})
 	for componentID, value := range incoming {
@@ -380,14 +383,17 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	// Re-derive delimiters from parent_child, then keep explicit chunker edits
 	// (or an existing chunker setting on a partial update) over that fallback.
-	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	parentChildConfig := map[string]interface{}{}
+	if pc := resolveParentChild(incoming); pc != nil {
+		parentChildConfig["parent_child"] = pc
+	}
 	for componentID, value := range incoming {
 		if pipelinepkg.IsChunkerComponent(componentID) {
 			parentChildConfig[componentID] = value
 		}
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(next, parentChildConfig)
-	_, parentChildUpdated := incoming["parent_child"]
+	parentChildUpdated := parentChild != nil
 	for componentID, value := range next {
 		if !pipelinepkg.IsChunkerComponent(componentID) {
 			continue
@@ -434,6 +440,34 @@ func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
 		}
 		if meta, ok := params["metadata"].(map[string]any); ok {
 			return meta
+		}
+	}
+	return nil
+}
+
+// resolveParentChild extracts the dataset-level parent_child setting from one or
+// more parser_configs. It prefers a component-scoped "parent_child" sub-object
+// on a chunker node and falls back to a flat top-level "parent_child" key for
+// transitional input. Returns nil when absent.
+func resolveParentChild(configs ...map[string]interface{}) map[string]any {
+	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
+		if v, ok := cfg["parent_child"].(map[string]any); ok {
+			return v
+		}
+		for componentID, raw := range cfg {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pc, ok := params["parent_child"].(map[string]any); ok {
+				return pc
+			}
 		}
 	}
 	return nil

@@ -3553,9 +3553,12 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
 		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
 	}
-	parentChild, ok := resp.ParserConfig["parent_child"].(map[string]interface{})
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
 	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
-		t.Fatalf("parent_child = %#v, want persisted public setting", resp.ParserConfig["parent_child"])
+		t.Fatalf("chunker parent_child = %#v, want persisted public setting", chunker["parent_child"])
+	}
+	if _, ok := resp.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level flat parent_child should be absent, got %#v", resp.ParserConfig["parent_child"])
 	}
 }
 

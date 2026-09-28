@@ -355,34 +355,41 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// top-level parent_child setting unless the request explicitly configures the
-// chunker itself.
+// parent_child setting scoped onto each chunker component. The setting may live
+// as a "parent_child" sub-object on the chunker node itself (component-scoped)
+// or, for transitional input, as a flat top-level "parent_child" key in
+// rawConfig. The flat key is never written back into componentConfig.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
-	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	componentConfig["parent_child"] = parentChild
-	useParentChild, _ := parentChild["use_parent_child"].(bool)
-	childrenDelimiters := []string{}
-	if useParentChild {
-		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
-			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
-		}
-	}
-
 	for componentID, value := range componentConfig {
 		if !IsChunkerComponent(componentID) {
 			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		var parentChild map[string]interface{}
+		if pc, ok := params["parent_child"].(map[string]interface{}); ok {
+			parentChild = pc
+		} else if pc, ok := rawConfig["parent_child"].(map[string]interface{}); ok {
+			parentChild = pc
+		}
+		if parentChild == nil {
+			continue
+		}
+		// Scope the setting onto the chunker node (component-scoped); no flat key.
+		params["parent_child"] = parentChild
+		useParentChild, _ := parentChild["use_parent_child"].(bool)
+		childrenDelimiters := []string{}
+		if useParentChild {
+			if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+				childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+			}
 		}
 		if requested, ok := rawConfig[componentID].(map[string]interface{}); ok {
 			if _, provided := requested["children_delimiters"]; provided {
 				continue
 			}
-		}
-		params, ok := value.(map[string]interface{})
-		if !ok {
-			continue
 		}
 		params["children_delimiters"] = childrenDelimiters
 	}
