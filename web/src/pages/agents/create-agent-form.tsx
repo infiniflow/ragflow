@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { FlowType, FlowTypeConfig } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
-import { RetrievalBindings } from './template-retrieval-binding';
+import { RetrievalBindingCount } from './template-retrieval-binding';
 
 export type CreateAgentFormProps = IModalProps<any> & {
   loading?: boolean;
@@ -30,7 +30,7 @@ export type CreateAgentFormProps = IModalProps<any> & {
   // Templates may ship retrieval steps without any dataset/memory bound. When
   // set, the form asks the user to bind them before creating the agent, so
   // the canvas never ends up with a retrieval that fails at runtime.
-  retrievalBindings?: RetrievalBindings;
+  retrievalBindings?: RetrievalBindingCount;
 };
 
 type FlowTypeCardProps = {
@@ -89,7 +89,6 @@ export const FormSchema = z.object({
   description: z.string().trim().optional(),
   type: z.nativeEnum(FlowType).optional(),
   dataset_ids: z.array(z.string()).optional(),
-  dataset_bindings: z.array(z.array(z.string())).optional(),
   memory_ids: z.array(z.string()).optional(),
 });
 
@@ -120,25 +119,15 @@ export function CreateAgentForm({
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
-    const datasetBlocks = retrievalBindings?.datasetBlocks ?? [];
-    if (datasetBlocks.length === 1 && isEmpty(data.dataset_ids)) {
+    if (
+      (retrievalBindings?.datasetCount ?? 0) > 0 &&
+      isEmpty(data.dataset_ids)
+    ) {
       form.setError('dataset_ids', {
         type: 'manual',
         message: t('flow.retrievalDatasetRequired'),
       });
       return;
-    }
-    if (datasetBlocks.length > 1) {
-      const missingIndex = datasetBlocks.findIndex((_, index) =>
-        isEmpty(data.dataset_bindings?.[index]),
-      );
-      if (missingIndex >= 0) {
-        form.setError(`dataset_bindings.${missingIndex}`, {
-          type: 'manual',
-          message: t('flow.retrievalDatasetRequired'),
-        });
-        return;
-      }
     }
     if ((retrievalBindings?.memoryCount ?? 0) > 0 && isEmpty(data.memory_ids)) {
       form.setError('memory_ids', {
@@ -153,13 +142,11 @@ export function CreateAgentForm({
     }
   }
 
-  const datasetBlocks = retrievalBindings?.datasetBlocks ?? [];
-  const datasetHint =
-    datasetBlocks.length === 1
-      ? t('flow.retrievalTemplateDatasetHint', {
-          num: 1,
-        })
-      : undefined;
+  const datasetHint = retrievalBindings?.datasetCount
+    ? t('flow.retrievalTemplateDatasetHint', {
+        num: retrievalBindings.datasetCount,
+      })
+    : undefined;
   const memoryHint = retrievalBindings?.memoryCount
     ? t('flow.retrievalTemplateMemoryHint', {
         num: retrievalBindings.memoryCount,
@@ -183,23 +170,10 @@ export function CreateAgentForm({
           </RAGFlowFormItem>
         )}
         {!isCompiler && <NameFormField></NameFormField>}
-        {!isCompiler && datasetBlocks.length === 1 && (
+        {!isCompiler && datasetHint && (
           <section className="space-y-4">
             <p className="text-sm text-text-secondary">{datasetHint}</p>
             <KnowledgeBaseFormField required showVariable={false} />
-          </section>
-        )}
-        {!isCompiler && datasetBlocks.length > 1 && (
-          <section className="space-y-4">
-            {datasetBlocks.map((block, index) => (
-              <KnowledgeBaseFormField
-                key={block.blockId}
-                required
-                showVariable={false}
-                name={`dataset_bindings.${index}`}
-                label={block.displayName}
-              />
-            ))}
           </section>
         )}
         {!isCompiler && memoryHint && (

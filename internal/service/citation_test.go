@@ -593,9 +593,8 @@ func TestDecorateQuote(t *testing.T) {
 
 // TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
 // shape of the report: an answer that only says the knowledge base has no answer
-// must come back without [ID:n] markers, even though the evidence pool and a
-// resolvable marker are present. The evidence itself still ships — what the
-// cite switch removes is the doc_aggs cards the markers would have opened.
+// must come back with neither [ID:n] markers nor a reference, even though the
+// evidence pool and a resolvable marker are present.
 func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
@@ -612,11 +611,7 @@ func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
 	if strings.Contains(res.Answer, "[ID:") {
 		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
 	}
-	if _, has := res.Reference["doc_aggs"]; has {
-		t.Fatalf("not-found answer still carries doc_aggs: %#v", res.Reference)
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["id"] != "c0" {
-		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
+	if len(res.Reference) != 0 {
+		t.Fatalf("not-found answer still carries a reference: %#v", res.Reference)
 	}
 }

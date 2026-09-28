@@ -8,10 +8,7 @@ import { IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
-import {
-  bindUnboundRetrieval,
-  collectUnboundRetrievalBindings,
-} from './template-retrieval-binding';
+import { bindUnboundRetrieval } from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
 export default function AgentTemplates() {
@@ -48,21 +45,11 @@ export default function AgentTemplates() {
     async (payload: any) => {
       const dsl = template?.dsl;
       const canvasCategory = template?.canvas_category;
+      const datasetIds: string[] = payload?.dataset_ids ?? [];
       const memoryIds: string[] = payload?.memory_ids ?? [];
-      const datasetBlocks = collectUnboundRetrievalBindings(dsl).datasetBlocks;
-      const datasetBindings = Object.fromEntries(
-        datasetBlocks.map((block, index) => [
-          block.blockId,
-          datasetBlocks.length === 1
-            ? (payload?.dataset_ids ?? [])
-            : (payload?.dataset_bindings?.[index] ?? []),
-        ]),
-      );
       const boundDsl =
-        dsl &&
-        (Object.values(datasetBindings).some((ids) => ids.length > 0) ||
-          memoryIds.length > 0)
-          ? bindUnboundRetrieval(dsl, datasetBindings, memoryIds)
+        dsl && (datasetIds.length > 0 || memoryIds.length > 0)
+          ? bindUnboundRetrieval(dsl, datasetIds, memoryIds)
           : dsl;
 
       const ret = await setAgent({

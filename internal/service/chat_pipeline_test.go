@@ -792,10 +792,7 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 }
 
-// TestDecorateAnswer_QuoteDisabledKeepsChunks pins the cite=false shape of the
-// reference: the retrieved evidence still ships, but doc_aggs does not — with
-// the citation markers stripped there is nothing left to open those cards from.
-func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
+func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	kb := map[string]interface{}{
@@ -804,12 +801,8 @@ func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
 	}
 	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
 		nil, 0, false, nil, "", nil, "", nil, true)
-	if _, has := result.Reference["doc_aggs"]; has {
-		t.Fatalf("disabled citations must drop doc_aggs: %#v", result.Reference)
-	}
-	chunks, ok := result.Reference["chunks"].([]map[string]interface{})
-	if !ok || len(chunks) != 1 || chunks[0]["id"] != "c1" {
-		t.Fatalf("disabled citations must still ship the evidence chunks: %#v", result.Reference["chunks"])
+	if result.Reference == nil || len(result.Reference) != 0 {
+		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
 	}
 	if result.Answer != "Answer" {
 		t.Fatalf("answer changed: %q", result.Answer)
@@ -2051,16 +2044,11 @@ func TestAsyncChatHarnessQuote(t *testing.T) {
 			if !final.Final || final.Answer != want || streamed.String() != want {
 				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
 			}
-			// The evidence ships either way; only doc_aggs follows the cite switch.
-			chunks, _ := final.Reference["chunks"].([]map[string]interface{})
-			if len(chunks) != 1 {
-				t.Fatalf("reference chunks = %#v, want the harness evidence", final.Reference["chunks"])
+			if (len(final.Reference) > 0) != tt.wantQuote {
+				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
 			}
-			if _, hasDocAggs := final.Reference["doc_aggs"]; hasDocAggs != tt.wantQuote {
-				t.Fatalf("doc_aggs presence = %v, quote=%v: %#v", hasDocAggs, tt.wantQuote, final.Reference)
-			}
-			if !tt.wantQuote && strings.Contains(reasoning.String(), "[ID:") {
-				t.Fatalf("disabled citations must be removed from reasoning, got %q", reasoning.String())
+			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
+				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
 			}
 		})
 	}
@@ -2162,11 +2150,9 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedKeepsChunks pins that an agentic answer using
-// no citation marker still carries the evidence it was grounded on: the pool is
-// the provenance of the answer, and the cite switch governs the doc_aggs cards
-// rather than the passages themselves.
-func TestDecorateHarnessAnswerUncitedKeepsChunks(t *testing.T) {
+// TestDecorateHarnessAnswerUncitedOmitsReference ensures an agentic answer
+// without citation markers does not expose the internal evidence pool.
+func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{
@@ -2184,9 +2170,8 @@ func TestDecorateHarnessAnswerUncitedKeepsChunks(t *testing.T) {
 
 	s := &ChatPipelineService{}
 	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["id"] != "c1" {
-		t.Fatalf("reference chunks = %#v, want the evidence pool", res.Reference["chunks"])
+	if res.Reference != nil {
+		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
 	}
 }
 
@@ -2256,11 +2241,8 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
-	// The unresolvable marker is dropped, but the evidence it was drawn from
-	// still ships.
-	remaining, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(remaining) != 1 || remaining[0]["document_name"] != "wolf.jpg" {
-		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
+	if res.Reference != nil {
+		t.Fatalf("an answer without a resolvable citation must not carry a reference, got %#v", res.Reference)
 	}
 }
 

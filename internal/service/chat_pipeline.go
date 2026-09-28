@@ -3245,14 +3245,11 @@ func (s *ChatPipelineService) decorateAnswer(
 		}
 	}
 
-	// Reference assembly. `chunks` is the evidence the answer was grounded on,
-	// so it ships whenever knowledge was retrieved and independent of the cite
-	// setting; `doc_aggs` is the list of source cards the UI opens from a
-	// citation marker, so it ships only while citations are enabled — with no
-	// marker to open them from, the cards would be dead weight. Chunk vectors
-	// never leave this function.
-	if hasKnowledges {
-		refs = make(map[string]interface{}, len(kbinfos))
+	// Include sources only when citations are enabled and at least one citation
+	// actually resolves to a chunk, stripping chunk vectors. Retrieved evidence
+	// without a citation must not be exposed as a document reference.
+	if hasKnowledges && quote && len(citationIdx) > 0 {
+		refs = make(map[string]interface{})
 		for k, v := range kbinfos {
 			refs[k] = v
 		}
@@ -3270,9 +3267,8 @@ func (s *ChatPipelineService) decorateAnswer(
 			}
 			refs["chunks"] = chunksFormat(newChunks)
 		}
-		if !quote {
-			delete(refs, "doc_aggs")
-		}
+	} else if !quote {
+		refs = map[string]interface{}{}
 	}
 
 	// Check for invalid API key errors (outside knowledges guard).
@@ -3349,19 +3345,6 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 }
 
-// chunksOnlyReference is the reference of an answer whose citations were
-// disabled: the retrieved evidence, in the client-facing shape, without
-// doc_aggs. The evidence still records what the answer was grounded on; only
-// the source cards go, since there is no citation marker left in the answer to
-// open them from.
-func chunksOnlyReference(kbinfos map[string]interface{}) map[string]interface{} {
-	refs := map[string]interface{}{}
-	if chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-		refs["chunks"] = chunksFormat(referenceChunks(nil, chunksRaw))
-	}
-	return refs
-}
-
 // decorateHarnessAnswer formats the reasoning chat's final answer. The harness
 // 'rag' tool already composed the answer WITH its own [ID:N] citations, so —
 // unlike decorateAnswer for the native async_chat path — we never run
@@ -3404,7 +3387,7 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	if !quote {
 		return AsyncChatResult{
 			Answer:    stripCitations(think + ans),
-			Reference: chunksOnlyReference(kbinfos),
+			Reference: map[string]interface{}{},
 			CreatedAt: float64(time.Now().Unix()),
 		}
 	}
@@ -3490,18 +3473,24 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		}
 	}
 
-	// The rendered evidence list comes first, in the order the model saw it, so a
-	// marker's number is that entry's index; the remaining pool chunks follow so
-	// no retrieved passage is lost. chunksFormat builds the client-facing shape
-	// (content, document_name, dataset_id, ...) in NEW maps, so the engine keys
-	// and the per-chunk vector never reach the reference and the shared chunks
-	// stay intact. The evidence ships even when the final answer cited none of
-	// it; doc_aggs, absent here, is what stays gated on `quote`.
-	refs := make(map[string]interface{}, len(kbinfos))
-	for k, v := range kbinfos {
-		refs[k] = v
+	// Build a reference only when at least one citation resolves to a document.
+	// The harness may have collected evidence without the final answer citing it;
+	// that evidence must remain internal.
+	var refs map[string]interface{}
+	if len(citedDocIDs) > 0 {
+		ref := make(map[string]interface{}, len(kbinfos))
+		for k, v := range kbinfos {
+			ref[k] = v
+		}
+		// The rendered evidence list comes first, in the order the model saw it,
+		// so a marker's number is that entry's index; the remaining pool chunks
+		// follow so no retrieved passage is lost. chunksFormat builds the
+		// client-facing shape (content, document_name, dataset_id, ...) in NEW
+		// maps, so the engine keys and the per-chunk vector never reach the
+		// reference and the shared chunks stay intact.
+		ref["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
+		refs = ref
 	}
-	refs["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
 
 	return AsyncChatResult{
 		Answer:    think + ans,

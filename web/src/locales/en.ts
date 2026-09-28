@@ -2563,8 +2563,7 @@ Example: Virtual Hosted Style`,
       navDeleteNodeTitle: 'Delete node',
       navDeleteNodeDescription:
         'Are you sure you want to delete this node and its children?',
-      representationEmpty:
-        'The pipeline compiler is not configured, or no artifact was extracted.',
+      representationEmpty: 'No artifact templates available.',
       representationUnsupported:
         'This representation type is not supported yet.',
       claimsPanelTitle: 'Claims · {{name}}',
