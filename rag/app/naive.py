@@ -19,6 +19,7 @@ import os
 import re
 from collections.abc import Callable
 from functools import reduce
+from html import escape as html_escape
 from io import BytesIO
 from timeit import default_timer as timer
 from typing import Any
@@ -812,7 +813,7 @@ class Docx(DocxParser):
                 title = self.__get_nearest_title(table_idx, filename)
                 html = "<table>"
                 if title:
-                    html += f"<caption>Table Location: {title}</caption>"
+                    html += f"<caption>Table Location: {html_escape(title)}</caption>"
                 for r in tb.rows:
                     html += "<tr>"
                     col_idx = 0
@@ -827,7 +828,8 @@ class Docx(DocxParser):
                                 else:
                                     break
                             col_idx += 1
-                            html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                            cell = html_escape(c.text)
+                            html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                     except Exception as e:
                         logging.warning(f"Error parsing table, ignore: {e}")
                     html += "</tr>"
