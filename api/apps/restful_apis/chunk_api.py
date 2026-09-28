@@ -361,6 +361,24 @@ async def stop_parsing(tenant_id, dataset_id):
     return get_result()
 
 
+def _empty_retrieval_data(*, debug, similarity_threshold, vector_similarity_weight):
+    """Build the empty retrieval response, including opt-in diagnostics."""
+    data = {"total": 0, "chunks": [], "doc_aggs": {}}
+    if debug:
+        data["debug"] = search.build_retrieval_debug(
+            candidate_ids=[],
+            sorted_ids=[],
+            sorted_scores=[],
+            sorted_term_scores=[],
+            sorted_vector_scores=[],
+            valid_ids=[],
+            returned_ids=[],
+            similarity_threshold=similarity_threshold,
+            vector_similarity_weight=vector_similarity_weight,
+        )
+    return data
+
+
 @manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
 @manager.route("/datasets/search", methods=["POST"])  # noqa: F821
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
@@ -388,6 +406,17 @@ async def retrieval_test(tenant_id, dataset_id=None):
         if "doc_ids" in search_config:
             search_config["document_ids"] = search_config["doc_ids"]
         req = {**search_config, **req}
+    debug = req.get("debug", False)
+    if not isinstance(debug, bool):
+        return get_error_data_result("`debug` should be a boolean")
+    try:
+        similarity_threshold = float(req.get("similarity_threshold", 0.2))
+    except (TypeError, ValueError):
+        return get_error_data_result("`similarity_threshold` should be a number")
+    try:
+        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+    except (TypeError, ValueError):
+        return get_error_data_result("`vector_similarity_weight` should be a number")
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
@@ -406,7 +435,13 @@ async def retrieval_test(tenant_id, dataset_id=None):
     size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
-        return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+        return get_result(
+            data=_empty_retrieval_data(
+                debug=debug,
+                similarity_threshold=similarity_threshold,
+                vector_similarity_weight=vector_similarity_weight,
+            )
+        )
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
     toc_enhance = req.get("toc_enhance", False)
@@ -457,17 +492,15 @@ async def retrieval_test(tenant_id, dataset_id=None):
             else:
                 doc_ids = filtered_doc_ids
             if not doc_ids and metadata_condition.get("conditions"):
-                return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
+                return get_result(
+                    data=_empty_retrieval_data(
+                        debug=debug,
+                        similarity_threshold=similarity_threshold,
+                        vector_similarity_weight=vector_similarity_weight,
+                    )
+                )
     elif not doc_ids:
         doc_ids = None
-    try:
-        similarity_threshold = float(req.get("similarity_threshold", 0.2))
-    except (TypeError, ValueError):
-        return get_error_data_result("`similarity_threshold` should be a number")
-    try:
-        vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-    except (TypeError, ValueError):
-        return get_error_data_result("`vector_similarity_weight` should be a number")
     if "top_k" in request_fields:
         logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
     knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
@@ -541,6 +574,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             trace_id=search_id,
             must_not=None if include_knowledge_compilation else {"exists": "compile_kwd"},
             rerank_candidates_count=rerank_candidates_count,
+            debug=debug,
         )
         if toc_enhance:
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -553,6 +587,11 @@ async def retrieval_test(tenant_id, dataset_id=None):
             ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, chat_model_config))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
+
+        if debug:
+            debug_info = ranks.get("debug")
+            if isinstance(debug_info, dict) and isinstance(debug_info.get("funnel"), dict):
+                debug_info["funnel"]["returned"] = len(ranks["chunks"])
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
