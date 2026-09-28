@@ -99,21 +99,15 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
-// splitByDelim splits text on every match of pattern.
-//
-// When keepDelim is true the matched delimiter is preserved by gluing it to the
-// end of the segment that precedes it, so concatenating the returned segments
-// reproduces text exactly: "a。b。" yields ["a。", "b。"] and a leading or
-// trailing delimiter stays attached to its neighbour. This is the lossless
-// TokenChunker contract — a delimiter is a hint for where the chunker MAY
-// break, never a character to delete, so "。" must not vanish (or be swapped
-// for "\n") after chunking.
-//
-// When keepDelim is false the delimiter is DISCARDED (mirroring Python's
-// _split_text_by_pattern, which keeps only the even-index text parts); that
-// mode is used by the GeneralChunker legacy paths that still match Python's
-// drop behaviour, and by any caller that needs the historical contract.
-func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
+// splitDroppingDelim mirrors Python's _split_text_by_pattern
+// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
+// glued to a segment: re.split with a captured group keeps delimiters at odd
+// indices, and only the even-index (text) parts are kept. This is the
+// behavior shared TokenChunker paths and General's primary/Markdown splits
+// reproduce so a split chunk reads "first sentence here" without the trailing
+// delimiter. General's legacy-compatible children split is implemented
+// separately because that path keeps the delimiter attached to its parent.
+func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -121,37 +115,19 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 	if len(idxs) == 0 {
 		return []string{text}
 	}
-	if !keepDelim {
-		// Drop mode: keep only the text between delimiters, skipping any
-		// delimiter that sits at the very start (no preceding text).
-		var out []string
-		cursor := 0
-		for _, idx := range idxs {
-			start, end := idx[0], idx[1]
-			if start == cursor {
-				cursor = end
-				continue
-			}
-			out = append(out, text[cursor:start])
-			cursor = end
-		}
-		if cursor < len(text) {
-			out = append(out, text[cursor:])
-		}
-		return out
-	}
-	// Keep mode: attach each delimiter to the segment ending just before it so
-	// the concatenation is lossless. Trailing text with no trailing delimiter
-	// is appended as the final segment.
 	var out []string
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		out = append(out, text[cursor:start]+text[start:end])
+		if start == cursor {
+			cursor = end
+			continue
+		}
+		out = append(out, text[cursor:start])
 		cursor = end
 	}
-	if tail := text[cursor:]; tail != "" {
-		out = append(out, tail)
+	if cursor < len(text) {
+		out = append(out, text[cursor:])
 	}
 	return out
 }
@@ -191,18 +167,6 @@ func itemDocType(it schema.ChunkDoc) string {
 		return "image"
 	}
 	return "text"
-}
-
-// isMediaChunk reports whether a chunk is an image or table region. It checks
-// CKType first (general/token paths set it) and falls back to DocType
-// (group/hierarchy forward parser output that carries only doc_type_kwd), so
-// it classifies media regardless of which chunker produced the chunk.
-func isMediaChunk(ck schema.ChunkDoc) bool {
-	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
-	if typ == "" {
-		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
-	}
-	return typ == "image" || typ == "table"
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".

@@ -64,8 +64,8 @@ func BuildCodeExecContract(outputs map[string]any, rawResult any) (*CodeExecCont
 	return &CodeExecContract{
 		BusinessOutput: businessName,
 		Value:          normalizedValue,
-		ActualType:     inferCodeExecActualType(normalizedValue),
-		Content:        renderCodeExecCanonicalContent(normalizedValue),
+		ActualType:     InferCodeExecActualType(normalizedValue),
+		Content:        RenderCodeExecCanonicalContent(normalizedValue),
 	}, nil
 }
 
@@ -89,10 +89,7 @@ func NormalizeCodeExecOutputValue(value any) any {
 }
 
 func InferCodeExecActualType(value any) string {
-	return inferCodeExecActualType(NormalizeCodeExecOutputValue(value))
-}
-
-func inferCodeExecActualType(value any) string {
+	value = NormalizeCodeExecOutputValue(value)
 	switch v := value.(type) {
 	case nil:
 		return "Null"
@@ -106,9 +103,9 @@ func inferCodeExecActualType(value any) string {
 		if len(v) == 0 {
 			return "Array<Any>"
 		}
-		first := inferCodeExecActualType(v[0])
+		first := InferCodeExecActualType(v[0])
 		for _, item := range v[1:] {
-			if inferCodeExecActualType(item) != first {
+			if InferCodeExecActualType(item) != first {
 				return "Array<Any>"
 			}
 		}
@@ -133,10 +130,7 @@ func inferCodeExecActualType(value any) string {
 }
 
 func RenderCodeExecCanonicalContent(value any) string {
-	return renderCodeExecCanonicalContent(NormalizeCodeExecOutputValue(value))
-}
-
-func renderCodeExecCanonicalContent(value any) string {
+	value = NormalizeCodeExecOutputValue(value)
 	switch v := value.(type) {
 	case nil:
 		return ""
@@ -221,12 +215,13 @@ func validateCodeExecExpectedType(expectedType string, value any, path string) e
 		return nil
 	}
 
+	value = NormalizeCodeExecOutputValue(value)
 	if strings.HasPrefix(etype, "Array<") && strings.HasSuffix(etype, ">") {
 		list, ok := value.([]any)
 		if !ok {
 			return fmt.Errorf(
 				"CodeExec contract mismatch at %s: expected type %s, got %s",
-				codeExecPathOrValue(path), etype, inferCodeExecActualType(value),
+				codeExecPathOrValue(path), etype, InferCodeExecActualType(value),
 			)
 		}
 		innerType := strings.TrimSpace(etype[len("Array<") : len(etype)-1])
@@ -265,7 +260,7 @@ func validateCodeExecExpectedType(expectedType string, value any, path string) e
 	}
 	return fmt.Errorf(
 		"CodeExec contract mismatch at %s: expected type %s, got %s",
-		codeExecPathOrValue(path), etype, inferCodeExecActualType(value),
+		codeExecPathOrValue(path), etype, InferCodeExecActualType(value),
 	)
 }
 

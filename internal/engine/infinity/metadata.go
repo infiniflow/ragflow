@@ -586,7 +586,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	// Build filter from req.Filter
 	var filterStr string
 	if req.Filter != nil {
-		filterStr = equivalentConditionToStr(req.Filter, nil)
+		filterStr = equivalentConditionToStr(req.Filter)
 	}
 
 	// Get database and table

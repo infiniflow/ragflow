@@ -157,13 +157,21 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 			contextMemory := ctxState.SnapshotMemory()
 			localSysHistory := state.SnapshotSysHistory()
 			contextSysHistory := ctxState.SnapshotSysHistory()
-			for cpnID, bucket := range state.Snapshot() {
+			for cpnID, bucket := range state.Outputs {
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
 				}
 			}
 			sysNS, envNS, globalsNS := state.SnapshotNamespaces()
-			ctxState.MergeNamespaces(sysNS, envNS, globalsNS)
+			for k, v := range sysNS {
+				ctxState.Sys[k] = v
+			}
+			for k, v := range envNS {
+				ctxState.Env[k] = v
+			}
+			for k, v := range globalsNS {
+				ctxState.Globals[k] = v
+			}
 			if len(contextHistory) >= len(localHistory) {
 				state.SetHistory(contextHistory)
 			} else {
@@ -227,7 +235,9 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	}
 	if ctxState != nil && state != nil && ctxState != state {
 		sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-		state.ReplaceNamespaces(sysNS, envNS, globalsNS)
+		state.Sys = sysNS
+		state.Env = envNS
+		state.Globals = globalsNS
 		state.SetHistory(ctxState.SnapshotHistory())
 		state.SetMemory(ctxState.SnapshotMemory())
 	}
@@ -272,10 +282,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
-	state.MergeNamespaces(map[string]any{
-		"_node_start_" + cpnID:  now,
-		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
-	}, nil, nil)
+	if state.Sys != nil {
+		state.Sys["_node_start_"+cpnID] = now
+		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
+	}
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
 		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
@@ -314,9 +324,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 	var elapsed float64
-	sysNS, _, _ := state.SnapshotNamespaces()
-	if start, ok := sysNS["_node_start_"+cpnID].(float64); ok {
-		elapsed = now - start
+	if state.Sys != nil {
+		if start, ok := state.Sys["_node_start_"+cpnID].(float64); ok {
+			elapsed = now - start
+		}
 	}
 	if elapsed < 0 {
 		elapsed = 0
@@ -324,13 +335,20 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 
 	// Collect outputs from the state's Outputs bucket for this cpn.
 	var outputs map[string]any
-	if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
-		outputs = bucket
+	if state.Outputs != nil {
+		if bucket, ok := state.Outputs[cpnID]; ok && len(bucket) > 0 {
+			outputs = make(map[string]any, len(bucket))
+			for k, v := range bucket {
+				outputs[k] = v
+			}
+		}
 	}
 
 	inputs := map[string]any{}
-	if v, ok := sysNS["_node_inputs_"+cpnID].(map[string]any); ok {
-		inputs = v
+	if state.Sys != nil {
+		if v, ok := state.Sys["_node_inputs_"+cpnID].(map[string]any); ok {
+			inputs = v
+		}
 	}
 
 	var nfErr interface{}
@@ -419,7 +437,9 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 			sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-			st.ReplaceNamespaces(sysNS, envNS, globalsNS)
+			st.Sys = sysNS
+			st.Env = envNS
+			st.Globals = globalsNS
 			st.Path = append([]string(nil), ctxState.Path...)
 			st.SetHistory(ctxState.SnapshotHistory())
 			st.SetMemory(ctxState.SnapshotMemory())
@@ -427,19 +447,15 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		st := NewCanvasState("", "")
 		if globals != nil {
-			sysNS := make(map[string]any)
-			envNS := make(map[string]any)
-			globalsNS := make(map[string]any)
 			for k, v := range globals {
 				if strings.HasPrefix(k, "sys.") {
-					sysNS[strings.TrimPrefix(k, "sys.")] = v
+					st.Sys[strings.TrimPrefix(k, "sys.")] = v
 				} else if strings.HasPrefix(k, "env.") {
-					envNS[strings.TrimPrefix(k, "env.")] = v
+					st.Env[strings.TrimPrefix(k, "env.")] = v
 				} else {
-					globalsNS[k] = v
+					st.Globals[k] = v
 				}
 			}
-			st.MergeNamespaces(sysNS, envNS, globalsNS)
 		}
 		st.SetHistory(c.History)
 		st.SetMemory(c.Memory)
@@ -466,7 +482,6 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			var opts []workflowx.LoopOption
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
-			opts = append(opts, workflowx.WithLoopStatePersistence(exp.snapshot, exp.restore))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
 					state, _ := runtime.GetStateFromContext(ctx)

@@ -1,0 +1,2 @@
+The python files in this directory are shared between service. They contain common utilities, models, and functions that can be used across various
+services to ensure consistency and reduce code duplication.

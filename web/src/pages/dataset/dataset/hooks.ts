@@ -79,7 +79,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
           // share a name.
           document_id: sourceDoc?.id,
           log_type: 'file',
-          orderby: 'create_time',
+          orderby: 'run_count',
           desc: true,
           page_size: 1,
         },
@@ -88,7 +88,6 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     },
   });
   const logID = documentLog?.logs[0]?.id;
-  const selectedLog = documentLog?.logs[0];
   const {
     data: messages,
     fetchPreviousPage,
@@ -102,21 +101,18 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
 
   const logInfo = useMemo(() => {
     const source = sourceDoc;
-    const details = source
-      ? messages?.items.length
-        ? ''
-        : selectedLog?.latest_ingestion_event?.message ||
-          selectedLog?.progress_msg ||
-          getDocumentProgressMessage({
-            ...source,
-            latest_ingestion_event:
-              latestEvent ?? source.latest_ingestion_event,
-          })
-      : '-';
     let log: ILogInfo = {
       taskId: source?.id,
       fileName: source?.name || '-',
-      details,
+      details: source
+        ? messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            })
+        : '-',
     };
     if (source) {
       log = {
@@ -131,8 +127,14 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         // Go derives status from ingestion_status (queued included);
         // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
-        details,
-        events: messages?.items.length ? messages.items : undefined,
+        details: messages?.items.length
+          ? ''
+          : getDocumentProgressMessage({
+              ...source,
+              latest_ingestion_event:
+                latestEvent ?? source.latest_ingestion_event,
+            }),
+        events: messages?.items,
         loadPreviousEvents: hasPreviousPage
           ? () => fetchPreviousPage()
           : undefined,
@@ -143,7 +145,6 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     return log;
   }, [
     sourceDoc,
-    selectedLog,
     latestEvent,
     messages,
     fetchPreviousPage,

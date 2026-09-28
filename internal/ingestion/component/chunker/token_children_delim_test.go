@@ -1,12 +1,14 @@
 package chunker
 
 import (
+	"strings"
 	"testing"
 )
 
 // TestTokenChunker_ChildrenDelimiterDroppedJSON asserts that the JSON-path
-// secondary children_delimiters split KEEPS the delimiter on each child's text
-// (lossless), while keeping the full source text in "mom".
+// secondary children_delimiters split DROPS the delimiter from each child's
+// text (matching Python's _split_chunk_docs_by_children /
+// _split_text_by_pattern), while keeping the full source text in "mom".
 func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"children_delimiters": []string{"。"},
@@ -28,8 +30,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunk count: want 3 got %d (%v)", len(chunks), chunkTexts(chunks))
 	}
-	// The children delimiter is retained on each child chunk.
-	want := []string{"第一句内容。", "第二句内容。", "第三句内容。"}
+	want := []string{"第一句内容", "第二句内容", "第三句内容"}
 	const mom = "第一句内容。第二句内容。第三句内容。"
 	for i, w := range want {
 		got := chunks[i]["text"].(string)
@@ -42,11 +43,13 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 	}
 }
 
+// TestTokenChunker_ChildrenDelimiterDroppedText asserts the text/markdown/html
+// children_delimiters split also DROPS the delimiter (applyChildrenDelimText
+// mirrors _split_text_by_pattern), keeping the parent segment in "mom".
 // TestTokenChunker_ChildrenDelimiterBacktickStripped asserts that a
 // backtick-wrapped children_delimiter contributes its INNER content as the
 // split pattern (not the literal wrapped token), and the matched delimiter is
-// DROPPED from each child (Python-compatible) — consistent with the main
-// delimiter list behavior.
+// dropped from each child — consistent with the main delimiter list behavior.
 func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":      "delimiter",
@@ -65,7 +68,6 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	// The children delimiter "###" is dropped from each child.
 	want := []string{"sec one", "sec two", "sec three"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
@@ -76,9 +78,7 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
 	}
-	// The backtick wrapper is stripped from the PATTERN: the match is on the
-	// inner "###", so the surrounding backticks remain as literal text in the
-	// child chunks (i.e. "`###`" is not consumed as a whole delimiter).
+	// The literal backtick token `###` must never match as a whole string.
 	c2, _ := NewTokenChunker(map[string]any{
 		"delimiter_mode":      "delimiter",
 		"delimiters":          []string{"\n"},
@@ -93,15 +93,9 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks2, _ := out2["chunks"].([]map[string]any)
-	// The inner "###" matches and is DROPPED, leaving the surrounding
-	// backticks as literal text.
-	backtickWrapped := []string{"a `", "` b"}
-	if len(chunks2) != len(backtickWrapped) {
-		t.Fatalf("backtick literal chunk count: want %d got %d (%v)", len(backtickWrapped), len(chunks2), chunkTexts(chunks2))
-	}
-	for i, w := range backtickWrapped {
-		if got := chunks2[i]["text"].(string); got != w {
-			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
+	for _, ck := range chunks2 {
+		if strings.Contains(ck["text"].(string), "###") {
+			t.Errorf("child text kept literal backtick-wrapped token: %q", ck["text"].(string))
 		}
 	}
 }
@@ -124,8 +118,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedText(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	// The children delimiter ". " is retained on each child.
-	want := []string{"alpha one. ", "alpha two. ", "alpha three."}
+	want := []string{"alpha one", "alpha two", "alpha three."}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}

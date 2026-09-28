@@ -153,7 +153,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 	for _, p := range prods {
 		id, _ := p.GetExtraString("id")
 		docID, _ := p.GetExtraString("doc_id")
-		if id == "" || docID == "" || p.Text == "" {
+		tenant, _ := p.GetExtraString("tenant_id")
+		if id == "" || docID == "" || tenant == "" || p.Text == "" {
 			t.Fatalf("structure: product missing schema fields: %+v", p)
 		}
 		if !chunkHasVector(p) {
@@ -165,8 +166,7 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 	// compact graph blob was removed by #19474).
 	graphCount, nodeCount, edgeCount := 0, 0, 0
 	for _, p := range prods {
-		// knowledge_graph_kwd discriminates the structure graph rows.
-		kind, _ := p.GetExtraString("knowledge_graph_kwd")
+		kind, _ := p.GetExtraString("kc_kind")
 		switch kind {
 		case "graph":
 			graphCount++
@@ -199,7 +199,8 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 	for _, p := range prods {
 		id, _ := p.GetExtraString("id")
 		docID, _ := p.GetExtraString("doc_id")
-		if id == "" || docID == "" || p.Text == "" {
+		tenant, _ := p.GetExtraString("tenant_id")
+		if id == "" || docID == "" || tenant == "" || p.Text == "" {
 			t.Fatalf("wiki: product missing schema fields: %+v", p)
 		}
 		if !chunkHasVector(p) {
@@ -209,8 +210,7 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 
 	foundPage := false
 	for _, p := range prods {
-		// compile_kwd=wiki_page is the page/section discriminator.
-		if kwd, _ := p.GetExtraString("compile_kwd"); kwd == "wiki_page" {
+		if kind, _ := p.GetExtraString("kc_kind"); kind == "page" {
 			foundPage = true
 		}
 	}

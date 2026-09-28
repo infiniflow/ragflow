@@ -41,11 +41,12 @@ const (
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.
 type hybridSearchArgs struct {
-	Query    string   `json:"query"`
-	KbIDs    []string `json:"kb_ids,omitempty"`
-	TopN     int      `json:"top_n,omitempty"`
-	DocScope []string `json:"doc_scope,omitempty"`
-	Keywords string   `json:"keywords,omitempty"`
+	Query       string   `json:"query"`
+	KbIDs       []string `json:"kb_ids,omitempty"`
+	TopN        int      `json:"top_n,omitempty"`
+	DocScope    []string `json:"doc_scope,omitempty"`
+	Keywords    string   `json:"keywords,omitempty"`
+	UseCompiled bool     `json:"use_compiled,omitempty"`
 }
 
 type agenticSearchResult struct {
@@ -88,17 +89,18 @@ func (a *AgenticSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			"query": {
 				Type: schema.String, Required: true, Desc: "The search query.",
 			},
-			"kb_ids":    {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
-			"top_n":     {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
-			"doc_scope": {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
-			"keywords":  {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
+			"kb_ids":       {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
+			"top_n":        {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
+			"doc_scope":    {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
+			"keywords":     {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
+			"use_compiled": {Type: schema.Boolean, Desc: "Whether to enrich with compiled products."},
 		}),
 	}, nil
 }
 
 // InvokableRun executes the retrieval. It returns JSON with "chunks" (array of
-// chunk maps). Retrieval failures are returned so the caller can distinguish
-// an unavailable backend from a successful search with no matches.
+// chunk maps). Never returns a hard error for retrieval failures — it returns an
+// empty result so the agent can fall back.
 func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...einotool.Option) (string, error) {
 	var args hybridSearchArgs
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -130,12 +132,10 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 		AllowDenseFallback:       new(false),
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
-		TenantID:                 tenantID,
-		ExcludeCompiled:          true,
 	}
 	chunks, err := svc.Search(ctx, nil, req)
 	if err != nil {
-		return "", fmt.Errorf("%s: retrieval: %w", a.mode, err)
+		return jsonChunksEmpty(), nil // agent falls back on failure
 	}
 
 	// Keyword narrowing (mirrors Python _narrow_by_keywords).

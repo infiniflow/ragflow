@@ -88,18 +88,14 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		if ip := net.ParseIP(host); ip != nil {
 			return host, ip, nil
 		}
-		addrs, lerr := common.LookupHost(host)
+		ips, lerr := net.LookupIP(host)
 		if lerr != nil {
 			return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 		}
-		if len(addrs) == 0 {
+		if len(ips) == 0 {
 			return "", nil, fmt.Errorf("ssrf: %s has no A/AAAA records", host)
 		}
-		ip := net.ParseIP(addrs[0])
-		if ip == nil {
-			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addrs[0], host)
-		}
-		return host, ip, nil
+		return host, ips[0], nil
 	}
 
 	// Short-circuit the well-known host aliases that DNS lookups may
@@ -120,16 +116,12 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		return host, ip, nil
 	}
 
-	addrs, lerr := common.LookupHost(host)
+	ips, lerr := net.LookupIP(host)
 	if lerr != nil {
 		return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 	}
 	var firstSafe net.IP
-	for _, addr := range addrs {
-		ip := net.ParseIP(addr)
-		if ip == nil {
-			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
-		}
+	for _, ip := range ips {
 		if isPrivateOrLoopback(ip) {
 			return "", nil, fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
@@ -160,7 +152,12 @@ func isPrivateOrLoopback(ip net.IP) bool {
 }
 
 func allowAnyHost() bool {
-	return common.AllowAnyHostForTest
+	switch strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvAllowAnyHost))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // ValidateDBHost parses host (literal IP or DNS name), verifies it
@@ -183,7 +180,7 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Mirror ResolveAndValidate's test-only bypass.
+	// Mirror ResolveAndValidate's bypass for dev/test runs.
 	if allowAnyHost() {
 		if ip := net.ParseIP(host); ip != nil {
 			return ip.String(), nil

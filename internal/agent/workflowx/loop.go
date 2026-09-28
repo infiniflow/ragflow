@@ -150,8 +150,6 @@ type loopOptions struct {
 	enableSubCheckpoint bool
 	onStart             func(context.Context, any)
 	onFinish            func(context.Context, error)
-	snapshotState       func(context.Context) ([]byte, error)
-	restoreState        func(context.Context, []byte) error
 }
 
 // WithLoopMaxIterations caps the loop at n iterations. The cap is checked
@@ -185,15 +183,6 @@ func WithLoopLifecycleHooks(onStart func(context.Context, any), onFinish func(co
 	return func(o *loopOptions) {
 		o.onStart = onStart
 		o.onFinish = onFinish
-	}
-}
-
-// WithLoopStatePersistence preserves caller-owned state across an interrupted
-// loop execution.
-func WithLoopStatePersistence(snapshot func(context.Context) ([]byte, error), restore func(context.Context, []byte) error) LoopOption {
-	return func(o *loopOptions) {
-		o.snapshotState = snapshot
-		o.restoreState = restore
 	}
 }
 
@@ -292,7 +281,6 @@ type loopInterruptState struct {
 	SubCheckpointID string            `json:"sub_checkpoint_id"`
 	SubCheckpoints  map[string][]byte `json:"sub_checkpoints,omitempty"`
 	ReplayChunks    [][]byte          `json:"replay_chunks,omitempty"`
-	RuntimeState    []byte            `json:"runtime_state,omitempty"`
 }
 
 // AddLoopNode appends a loop node to the outer workflow `wf`. The
@@ -385,7 +373,6 @@ type loopSnapshot struct {
 	subCheckID     string
 	subCheckpoints map[string][]byte
 	replayChunks   [][]byte
-	runtimeState   []byte
 }
 
 // loadLoopSnapshot reads the loop state from the context if the
@@ -420,7 +407,6 @@ func loadLoopSnapshot[T any](ctx context.Context, defaultMode LoopStreamMode) (l
 		subCheckID:     st.SubCheckpointID,
 		subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
 		replayChunks:   cloneByteSlices(st.ReplayChunks),
-		runtimeState:   append([]byte(nil), st.RuntimeState...),
 	}, nil
 }
 
@@ -433,29 +419,7 @@ func encodeState(s loopSnapshot) ([]byte, error) {
 		SubCheckpointID: s.subCheckID,
 		SubCheckpoints:  cloneCheckpointMap(s.subCheckpoints),
 		ReplayChunks:    cloneByteSlices(s.replayChunks),
-		RuntimeState:    append([]byte(nil), s.runtimeState...),
 	})
-}
-
-func encodeInterruptState(ctx context.Context, options *loopOptions, snap loopSnapshot) ([]byte, error) {
-	if options.snapshotState != nil {
-		state, err := options.snapshotState(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("workflowx: snapshot loop state: %w", err)
-		}
-		snap.runtimeState = state
-	}
-	return encodeState(snap)
-}
-
-func restoreInterruptState(ctx context.Context, options *loopOptions, snap loopSnapshot) error {
-	if len(snap.runtimeState) == 0 || options.restoreState == nil {
-		return nil
-	}
-	if err := options.restoreState(ctx, snap.runtimeState); err != nil {
-		return fmt.Errorf("%w: restore runtime state: %w", ErrLoopResumeStateInvalid, err)
-	}
-	return nil
 }
 
 // runLoopInvoke executes the loop on the invoke path. It is the
@@ -466,9 +430,6 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 
 	snap, err := loadLoopSnapshot[T](ctx, options.streamMode)
 	if err != nil {
-		return zero, err
-	}
-	if err := restoreInterruptState(ctx, options, snap); err != nil {
 		return zero, err
 	}
 
@@ -514,7 +475,7 @@ func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runna
 				// resume via the standard eino
 				// ResumeWithData / BatchResumeWithData
 				// primitives.
-				state, mErr := encodeInterruptState(ctx, options, loopSnapshot{
+				state, mErr := encodeState(loopSnapshot{
 					startIteration: iteration,
 					current:        currentJSON,
 					streamMode:     snap.streamMode,
@@ -603,9 +564,6 @@ func runLoopStream[T any](
 	if err != nil {
 		return nil, err
 	}
-	if err := restoreInterruptState(ctx, options, snap); err != nil {
-		return nil, err
-	}
 
 	var current T
 	if snap.startIteration == 1 && snap.current == nil {
@@ -668,7 +626,7 @@ func runLoopStream[T any](
 			reader, serr := sub.Stream(subCtx, current, withSubCheckpoint(options.runOpts, subCheckID, options.enableSubCheckpoint)...)
 			if serr != nil {
 				if isInterruptError(serr) {
-					state, mErr := encodeInterruptState(ctx, options, loopSnapshot{
+					state, mErr := encodeState(loopSnapshot{
 						startIteration: iteration,
 						current:        currentJSON,
 						streamMode:     streamMode,
@@ -695,7 +653,7 @@ func runLoopStream[T any](
 			collected, cerr := readAllStream(reader)
 			if cerr != nil {
 				if isInterruptError(cerr) {
-					state, mErr := encodeInterruptState(ctx, options, loopSnapshot{
+					state, mErr := encodeState(loopSnapshot{
 						startIteration: iteration,
 						current:        currentJSON,
 						streamMode:     streamMode,

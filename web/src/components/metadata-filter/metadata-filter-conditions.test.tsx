@@ -13,6 +13,10 @@ jest.mock('@/hooks/use-knowledge-request', () => ({
   useFetchKnowledgeMetadata: jest.fn(),
 }));
 
+jest.mock('@/pages/agent/form/components/prompt-editor', () => ({
+  PromptEditor: () => null,
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));

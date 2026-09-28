@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -31,20 +30,6 @@ import (
 func fixturesDir(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("testdata")
-}
-
-func TestNormalizeForRunDoesNotMutateNestedDSLValues(t *testing.T) {
-	in := map[string]any{
-		"globals":   map[string]any{"nested": map[string]any{"value": "{IterationItem:x@item}"}},
-		"variables": []any{map[string]any{"value": "{IterationItem:x@index}"}},
-	}
-	original := deepCopyAny(in).(map[string]any)
-
-	_ = NormalizeForRun(in)
-
-	if !reflect.DeepEqual(in, original) {
-		t.Fatalf("NormalizeForRun mutated nested input: got %#v, want %#v", in, original)
-	}
 }
 
 // loadFixture reads a JSON file from internal/agent/dsl/testdata into a

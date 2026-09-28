@@ -119,10 +119,6 @@ func TestMergeStructureDataset_IsolatesTemplates(t *testing.T) {
 func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
-		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity A",
-			Meta: map[string]any{"kind": "entity", "name": "A"}},
-		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity B",
-			Meta: map[string]any{"kind": "entity", "name": "B"}},
 		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "rel desc",
 			Meta: map[string]any{"kind": "relation", "from": "A", "to": "B", "source_chunk_ids": []string{"c1"}}},
 		{Variant: kccommon.VariantStructure, DocID: "d2", Content: "rel desc 2",
@@ -132,19 +128,10 @@ func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	fw := c.writer.(*fakeWriter)
-	if len(fw.buckets) != 3 {
-		t.Fatalf("want 2 entity buckets and 1 relation bucket, got %d", len(fw.buckets))
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 relation bucket, got %d", len(fw.buckets))
 	}
-	var b *StructureBucket
-	for i := range fw.buckets {
-		if fw.buckets[i].Type == "relation" {
-			b = &fw.buckets[i]
-			break
-		}
-	}
-	if b == nil {
-		t.Fatalf("missing relation bucket: %+v", fw.buckets)
-	}
+	b := fw.buckets[0]
 	if b.Type != "relation" || b.FromEntity != "A" || b.ToEntity != "B" {
 		t.Errorf("relation bucket = %+v, want Type=relation From=A To=B", b)
 	}
@@ -156,10 +143,6 @@ func TestMergeStructureDataset_RelationsNotDropped(t *testing.T) {
 func TestMergeStructureDataset_NormalizesRelationIdentity(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
-		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity A",
-			Meta: map[string]any{"kind": "entity", "name": "A"}},
-		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "entity B",
-			Meta: map[string]any{"kind": "entity", "name": "B"}},
 		{Variant: kccommon.VariantStructure, DocID: "d1", Content: "first",
 			Meta: map[string]any{"kind": "relation", "from": " A  ", "to": " B ", "relation_type": " Related  ", "source_chunk_ids": []string{"c1"}}},
 		{Variant: kccommon.VariantStructure, DocID: "d2", Content: "second",
@@ -169,20 +152,10 @@ func TestMergeStructureDataset_NormalizesRelationIdentity(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	buckets := c.writer.(*fakeWriter).buckets
-	if len(buckets) != 3 {
-		t.Fatalf("normalized relation identity should produce two entity buckets and one relation bucket, got %d: %v", len(buckets), buckets)
+	if len(buckets) != 1 {
+		t.Fatalf("normalized relation identity should produce one bucket, got %d: %+v", len(buckets), buckets)
 	}
-	var relationBucket *StructureBucket
-	for i := range buckets {
-		if buckets[i].Type == "relation" {
-			relationBucket = &buckets[i]
-			break
-		}
-	}
-	if relationBucket == nil {
-		t.Fatalf("missing relation bucket: %+v", buckets)
-	}
-	if got := len(relationBucket.SourceDocIDs); got != 2 {
+	if got := len(buckets[0].SourceDocIDs); got != 2 {
 		t.Fatalf("relation source docs = %v, want two docs", buckets[0].SourceDocIDs)
 	}
 }
@@ -221,9 +194,6 @@ func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
 			Content: `{"name":"Root","type":"mindmap"}`,
 			Meta:    map[string]any{"kind": "entity", "name": "Root", "entity_type": "mindmap"}},
 		{Variant: kccommon.VariantMindmap, DocID: "d1",
-			Content: `{"name":"Child","type":"mindmap"}`,
-			Meta:    map[string]any{"kind": "entity", "name": "Child", "entity_type": "mindmap"}},
-		{Variant: kccommon.VariantMindmap, DocID: "d1",
 			Content: `{"from":"Root","to":"Child","type":"related"}`,
 			Meta:    map[string]any{"kind": "relation", "from": "Root", "to": "Child", "relation_type": "related"}},
 	}
@@ -231,15 +201,14 @@ func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
 		t.Fatalf("mergeStructureDataset: %v", err)
 	}
 	fw := c.writer.(*fakeWriter)
-	if len(fw.buckets) != 3 {
-		t.Fatalf("want two entity and one relation bucket, got %d", len(fw.buckets))
+	if len(fw.buckets) != 2 {
+		t.Fatalf("want entity and relation buckets, got %d", len(fw.buckets))
 	}
 	for _, b := range fw.buckets {
 		switch b.Type {
 		case "mindmap":
-			want := b.Name
-			if b.Description != want {
-				t.Errorf("entity %q fallback description = %q, want %q", b.Name, b.Description, want)
+			if b.Description != "Root" {
+				t.Errorf("entity fallback description = %q, want %q", b.Description, "Root")
 			}
 		case "relation":
 			if b.Description != "Root related Child" {
@@ -369,7 +338,7 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 		"id":                            "s1",
 		"doc_id":                        "d1",
 		"compile_kwd":                   "list",
-		"content_with_weight":           `{"entities":[]}`,
+		"kc_payload":                    `{"entities":[]}`,
 		"knowledge_graph_kwd":           "graph",
 		"name_kwd":                      "engine",
 		"source_chunk_ids":              []interface{}{"c1"},
@@ -394,7 +363,7 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 		"id":                            "t1",
 		"doc_id":                        "d1",
 		"compile_kwd":                   "tree",
-		"content_with_weight":           "overall summary",
+		"kc_payload":                    "overall summary",
 		"raptor_kwd":                    "root",
 		"source_chunk_ids":              []interface{}{"c1"},
 		"source_doc_ids":                []interface{}{"d1"},

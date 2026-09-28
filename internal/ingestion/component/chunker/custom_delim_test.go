@@ -6,11 +6,20 @@ import (
 	"testing"
 )
 
-// custom_delim_test pins the backtick-wrapped (custom) delimiter behavior of
-// TokenChunker: a backtick delimiter is an explicit split instruction, not text
-// to preserve, so it is DROPPED from the chunk text (mirroring Python's
-// _split_text_by_pattern). Bare (non-backtick) delimiters are retained
-// losslessly.
+// custom_delim_test pins the backtick-wrapped newline delimiter behavior of
+// TokenChunker against Python's rag/flow/chunker/token_chunker.py.
+//
+// All delimiter paths (primary and children, text/markdown/html and JSON)
+// must DROP the captured delimiter from each chunk's text, matching Python's
+// _split_text_by_pattern (token_chunker.py:79-90, used by both _build_json_chunks
+// and _split_chunk_docs_by_children). Go's splitDroppingDelim reproduces this.
+//
+// The JSON primary path is the one most prone to regress: Python's
+// _build_json_chunks (token_chunker.py:121) splits each item through
+// _split_text_by_pattern, which keeps only the even-index (text) parts and
+// DISCARDS the captured delimiter. So a "first segment line one\n" item yields
+// "first segment line one" with the newline dropped. Go's chunkFromItem does
+// the same via splitDroppingDelim, matching the Python reference.
 //
 // Plain text/markdown/html inputs must not gain doc_type_kwd merely because a
 // custom delimiter is configured: Python emits only text for those paths.
@@ -61,8 +70,7 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 }
 
 // TestCustomDelimTextChildrenKeepCKType covers primary and child splitting in
-// combination: child chunks remain unstructured but retain Go's live CKType,
-// and every delimiter (primary "::" and children "--") is kept.
+// combination: child chunks remain unstructured but retain Go's live CKType.
 func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
 	params := map[string]any{
 		"chunk_token_size":    float64(128),
@@ -75,21 +83,14 @@ func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	// The custom primary ("`::`") delimiter is DROPPED, so "::" vanishes from
-	// the joined text; the bare children delimiter "--" is RETAINED (lossless).
-	if got := joinedText(chunks); got != "alpha--betagamma--delta" {
-		t.Fatalf("joined text failed: got %q", got)
-	}
-	want := []string{"alpha--", "beta", "gamma--", "delta"}
+	want := []string{"alpha", "beta", "gamma", "delta"}
 	if got := chunkTexts(chunks); !slices.Equal(got, want) {
 		t.Fatalf("chunk texts: want %v got %v", want, got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimTextKeepsDelimiter reproduces token__text_backtick under the
-// lossless contract: the backtick-newline delimiter is retained at the end of
-// every segment.
+// TestCustomDelimTextDropsDelimiter reproduces token__text_backtick.
 func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -98,8 +99,6 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	// The custom ("`\n`") delimiter is DROPPED, so each segment loses its
-	// trailing newline.
 	want := []string{"first sentence here", "second sentence here", "third sentence here"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
@@ -113,9 +112,9 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimJSONKeepsDelimiter reproduces token__json_backtick under the
-// lossless contract: the primary (custom backtick) delimiter is kept on every
-// chunk text, and the joined output reproduces the source exactly.
+// TestCustomDelimJSONDropsDelimiter reproduces token__json_backtick: the
+// primary (custom backtick) delimiter is dropped from every chunk text,
+// matching Python's _split_text_by_pattern.
 func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -127,19 +126,17 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	// The custom ("`\n`") delimiter is DROPPED (Python-compatible split
-	// instruction), so the joined output is the bare segment texts with no
-	// inter-segment newline.
-	if got := joinedText(chunks); got != "first segment line onefirst segment line twosecond segment line onesecond segment line two" {
-		t.Fatalf("joined text failed: got %q", got)
-	}
-	for i, w := 0, []string{
+	want := []string{
 		"first segment line one", "first segment line two",
 		"second segment line one", "second segment line two",
-	}; i < len(w); i++ {
+	}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
+	}
+	for i, w := range want {
 		got := chunks[i]["text"].(string)
-		if got != w[i] {
-			t.Errorf("chunk[%d] text: want %q got %q", i, w[i], got)
+		if got != w {
+			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
 	}
 	for i, chunk := range chunks {
@@ -149,10 +146,8 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	}
 }
 
-// TestCustomDelimMarkdownKeepsDelimiter reproduces token__markdown_backtick
-// under the lossless contract: the markdown text is split on the
-// backtick-newline delimiter and every chunk keeps its delimiter, so the joined
-// output reproduces the markdown source exactly.
+// TestCustomDelimMarkdownDropsDelimiter reproduces token__markdown_backtick:
+// the delimiter is dropped and no chunk text ends with a newline.
 func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -160,16 +155,23 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	// The custom ("`\n`") delimiter is DROPPED, so the paragraphs are joined
-	// with the newline separator removed.
-	if got := joinedText(chunks); got != "# TitleParagraph one.Paragraph two." {
-		t.Fatalf("joined text failed: got %q", got)
+	// The upstream decode normalizes Markdown block boundaries into the
+	// backtick-newline delimiter, so the text path must split into exactly
+	// three trimmed chunks with the delimiter dropped (no trailing newline).
+	want := []string{"# Title", "Paragraph one.", "Paragraph two."}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
+	}
+	for i, w := range want {
+		got := chunks[i]["text"].(string)
+		if got != w {
+			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
+		}
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimHTMLKeepsDelimiter reproduces token__html_backtick under the
-// lossless contract.
+// TestCustomDelimHTMLDropsDelimiter reproduces token__html_backtick.
 func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -177,10 +179,15 @@ func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 		"html": "<p>one</p>\n<p>two</p>\n<p>three</p>",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	// The custom ("`\n`") delimiter is DROPPED, so the <p> blocks are joined
-	// with the newline separator removed.
-	if got := joinedText(chunks); got != "<p>one</p><p>two</p><p>three</p>" {
-		t.Fatalf("joined text failed: got %q", got)
+	want := []string{"<p>one</p>", "<p>two</p>", "<p>three</p>"}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
+	}
+	for i, w := range want {
+		got := chunks[i]["text"].(string)
+		if got != w {
+			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
+		}
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }

@@ -202,7 +202,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-hello"),
+		t.Context(),
 		"user-1",
 		"canvas-hello",
 		"session-hello",
@@ -800,7 +800,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-fillup-events"),
+		t.Context(),
 		"user-1",
 		"canvas-fillup-events",
 		"session-fillup-events",
@@ -941,7 +941,7 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-parallel"),
+		t.Context(),
 		"user-1",
 		"canvas-parallel",
 		"session-parallel",
@@ -1002,13 +1002,6 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if err := json.Unmarshal(raw, &dsl); err != nil {
 		t.Fatalf("parse all.json: %v", err)
 	}
-	components := dsl["components"].(map[string]any)
-	loopParams := components["Loop:InputUntil1"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
-	loopParams["loop_variables"] = []any{
-		map[string]any{"variable": "vlaue", "input_mode": "constant", "value": "1", "type": "string"},
-	}
-	messageParams := components["Message:LoopDone"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
-	messageParams["content"] = []any{"loop={Loop:InputUntil1@vlaue}; input={UserFillUp:LoopInput@value}"}
 	makeCanvasWithDSL(t, "canvas-all", "user-1", "tenant-1", "v-all", dsl)
 
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
@@ -1018,7 +1011,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 
 	events1, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-all-loop"),
+		t.Context(),
 		"user-1",
 		"canvas-all",
 		"session-all-loop",
@@ -1097,8 +1090,11 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if len(messages2) != 1 {
 		t.Fatalf("run 3: expected 1 message event after resume, got %d", len(messages2))
 	}
-	if messages2[0].Content != "loop=1; input=1" {
-		t.Errorf("run 3: Content = %q, want %q", messages2[0].Content, "loop=1; input=1")
+	if !strings.Contains(messages2[0].Content, "循环结束") {
+		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "循环结束")
+	}
+	if !strings.Contains(messages2[0].Content, "1") {
+		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "1")
 	}
 }
 
@@ -1140,12 +1136,8 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 	var allMessages []canvas.MessageEvent
 
 	for i, input := range inputs {
-		runCtx := t.Context()
-		if i == 0 {
-			runCtx = WithAgentSessionID(runCtx, sessionID)
-		}
 		events, err := svc.RunAgent(
-			runCtx,
+			t.Context(),
 			"user-1",
 			"canvas-all-multi",
 			sessionID,
@@ -1238,7 +1230,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	sessionID := "session-all-iteration"
 
 	events1, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), sessionID),
+		t.Context(),
 		"user-1",
 		"canvas-all-iteration",
 		sessionID,
@@ -1348,7 +1340,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-all-var-assigner"),
+		t.Context(),
 		"user-1",
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
@@ -1432,7 +1424,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-all-data-ops"),
+		t.Context(),
 		"user-1",
 		"canvas-all-data-ops",
 		"session-all-data-ops",
@@ -1534,7 +1526,7 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-bogus"),
+		t.Context(),
 		"user-1",
 		"canvas-bogus",
 		"session-bogus",
@@ -1606,7 +1598,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	cp := canvas.NewKvrocksCheckPointStoreWithClient(cpClient, 30*24*time.Hour)
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events1, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-all-categorize"),
+		t.Context(),
 		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
@@ -1764,7 +1756,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-invoke-fail"),
+		t.Context(),
 		"user-1",
 		"canvas-invoke-fail",
 		"session-invoke-fail",
@@ -1871,7 +1863,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 
 	svc := NewAgentServiceWithOptions(cp, canvas.CanvasStateSerializer{}, tracker)
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-cp"),
+		t.Context(),
 		"user-1",
 		"canvas-cp",
 		"session-cp",
@@ -2046,7 +2038,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		WithAgentSessionID(ctx, sessionID),
+		ctx,
 		"user-1",
 		canvasID,
 		sessionID,
@@ -2113,7 +2105,7 @@ func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-missing-upload", "user-1", "tenant-1", "v-missing-upload", dsl)
 
 	events, err := NewAgentService().RunAgent(
-		WithAgentSessionID(t.Context(), "session-missing-upload"),
+		t.Context(),
 		"user-1",
 		"canvas-missing-upload",
 		"session-missing-upload",
@@ -2191,7 +2183,7 @@ func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), sessionID),
+		t.Context(),
 		"user-1",
 		canvasID,
 		sessionID,

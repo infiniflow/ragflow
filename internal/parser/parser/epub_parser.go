@@ -82,10 +82,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, err := extractEPUBTextItems(reader, opfPath, spineItems)
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
-	}
+	items, detectedEnc := extractEPUBTextItems(reader, opfPath, spineItems)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -197,31 +194,14 @@ var (
 	epubWSRe     = regexp.MustCompile(`\s+`)
 )
 
-// extractEPUBTextItems reads every spine item and returns one text item per
-// item that has text. An item that cannot be read is skipped; when items were
-// skipped and no other item could be read, it returns an error instead of an
-// empty result. An item that holds no text (an image-only chapter) still counts
-// as read, and an empty item counts as neither.
-func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string, error) {
+func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string) {
 	var items []map[string]any
-	var failures []string
-	read := 0
 	detectedEncoding := "utf-8"
 	for _, href := range spineHrefs {
-		raw, err := readEPUBContentFile(r, opfDir, href)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", href, err))
-			continue
-		}
-		if len(raw) == 0 {
-			continue
-		}
-		read++
-		decoded, enc := DecodeToUTF8(raw, "application/xhtml+xml")
+		text, enc := readEPUBContentFile(r, opfDir, href)
 		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
 			detectedEncoding = enc
 		}
-		text := stripHTMLTags(string(decoded))
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
@@ -230,15 +210,13 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 			"doc_type_kwd": "text",
 		})
 	}
-	if len(failures) > 0 && read == 0 {
-		return nil, detectedEncoding, fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
-	}
-	return items, detectedEncoding, nil
+	return items, detectedEncoding
 }
 
 // readEPUBContentFile resolves a spine href (relative to the OPF
-// directory) inside the ZIP and returns the item's raw bytes.
-func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
+// directory) inside the ZIP, reads the raw bytes, and strips HTML to
+// return clean text and detected encoding.
+func readEPUBContentFile(r *zip.Reader, opfDir, href string) (string, string) {
 	// Resolve href relative to the directory containing the OPF.
 	// Use path.Join/Dir (slash separator) because ZIP entry paths are always POSIX.
 	resolved := path.Join(path.Dir(opfDir), href)
@@ -256,10 +234,16 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
 		}
 	}
 	if err != nil {
-		return nil, err
+		return "", ""
 	}
 	defer f.Close()
-	return io.ReadAll(f)
+
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return "", ""
+	}
+	decoded, enc := DecodeToUTF8(raw, "application/xhtml+xml")
+	return stripHTMLTags(string(decoded)), enc
 }
 
 // stripHTMLTags removes HTML markup and returns normalized plain text.

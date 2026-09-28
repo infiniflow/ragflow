@@ -37,33 +37,19 @@ var legacyPipelineOperationStatuses = map[string]string{
 	"5": "SCHEDULE",
 }
 
-func expandPipelineOperationStatuses(statuses []string) []string {
+func normalizePipelineOperationStatuses(statuses []string) []string {
 	if len(statuses) == 0 {
 		return statuses
 	}
-	values := make([]string, 0, len(statuses)*2)
-	seen := make(map[string]struct{}, len(statuses)*2)
-	add := func(status string) {
-		if _, ok := seen[status]; ok {
-			return
-		}
-		seen[status] = struct{}{}
-		values = append(values, status)
-	}
-	for _, status := range statuses {
-		add(status)
+	normalized := make([]string, len(statuses))
+	for i, status := range statuses {
 		if canonical, ok := legacyPipelineOperationStatuses[status]; ok {
-			add(canonical)
-			continue
-		}
-		for legacy, canonical := range legacyPipelineOperationStatuses {
-			if canonical == status {
-				add(legacy)
-				break
-			}
+			normalized[i] = canonical
+		} else {
+			normalized[i] = status
 		}
 	}
-	return values
+	return normalized
 }
 
 // PipelineOperationLogDAO data access object for pipeline_operation_log.
@@ -94,7 +80,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 		query = query.Where("document_id = ?", documentID)
 	}
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", expandPipelineOperationStatuses(operationStatus))
+		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)
@@ -133,7 +119,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 // documents share a name.
 func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("kb_id = ? AND (run_count > 0 OR run_count IS NULL)", kbID)
+		Where("kb_id = ? AND run_count > 0", kbID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -144,7 +130,7 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	query = query.Where("document_id <> ?", entity.DatasetLogDocumentID)
 
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", expandPipelineOperationStatuses(operationStatus))
+		query = query.Where("operation_status IN ?", operationStatus)
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)
