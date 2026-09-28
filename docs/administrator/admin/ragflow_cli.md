@@ -62,8 +62,10 @@ The installation scripts are maintained in [`tools/scripts/install.sh`](https://
 If you are developing or modifying the CLI, build the Go server and CLI binaries from the repository root instead:
 
 ```bash
-bash build.sh --go
+bash build.sh --all
 ```
+
+Use `--all` for the initial build from a fresh checkout. After the native libraries and C++ bindings are available, use `bash build.sh --go` for subsequent Go-only rebuilds.
 
 Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
 

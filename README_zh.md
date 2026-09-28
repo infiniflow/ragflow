@@ -269,9 +269,9 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
 
 #### 📝 源码启动前提条件
 
-源码启动需要安装 `go.mod` 指定的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2 开发文件和 CGO 所需的原生库。仅开发 React 前端时需要 Node.js 和 npm。
+源码启动请安装 `go.mod` 中指定的 Go 版本（当前为 Go 1.27）、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2 开发文件和 CGO 所需的原生库。仅开发 React 前端时需要 Node.js 和 npm。
 
-1. 克隆仓库，安装 `go.mod` 指定版本的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake ≥ 4.0，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
+1. 克隆仓库，并安装 `go.mod` 中指定的 Go 版本（当前为 Go 1.27）、Clang 20、LLD 20、CMake ≥ 4.0，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git

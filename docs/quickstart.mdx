@@ -14,7 +14,7 @@ This quick start guide describes a general process from:
 - Establishing an AI chat based on your datasets.
 
 :::danger IMPORTANT
-This guide deploys the Go backend with the repository's Go Docker image and Compose configuration. The supported Docker build target is Linux x86-64. For ARM64, build on the target architecture and verify that the selected document engine and native libraries are supported.
+This guide deploys the Go backend with the repository's Go Docker image and Compose configuration. The supported native Docker build target is Linux x86-64. Linux ARM64 is not currently a supported native target because the Go image depends on native libraries published for x86-64.
 :::
 
 ## Prerequisites
@@ -103,7 +103,7 @@ To add and configure an LLM:
 
 ## Create your first dataset
 
-You are allowed to upload files to a dataset in RAGFlow and parse them into datasets. A dataset is a collection of documents. Question answering in RAGFlow can be based on a particular dataset or multiple datasets. File formats that RAGFlow supports include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), pictures (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
+You can upload files to a dataset in RAGFlow and parse them into chunks. A dataset is a collection of documents. Question answering in RAGFlow can be based on one or more datasets. Supported file formats include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), images (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
 
 To create your first dataset:
 
