@@ -107,9 +107,20 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	items, warnings, sheets, err := parseXLSXBytes(data)
+	mediaBudget := newEmbeddedMediaBudget()
+	imageOCR := newImageOCRBudget(ctx)
+	mediaBudget.imageOCR = imageOCR
+	defer imageOCR.close()
+	items, warnings, sheets, err := parseXLSXBytes(data, mediaBudget)
 	if err == nil {
+		if ctx.Err() != nil {
+			return ParseResult{Err: ctx.Err()}
+		}
+		warnings = append(warnings, mediaBudget.warnings()...)
 		return xlsxParseResult(filename, items, warnings, sheets)
+	}
+	if ctx.Err() != nil {
+		return ParseResult{Err: ctx.Err()}
 	}
 
 	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
@@ -119,15 +130,24 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	items, warnings, sheets, retryErr := parseXLSXBytes(normalized)
+	// The first parse attempt is discarded, so its media reservations and OCR
+	// warnings must not affect the normalized retry's output.
+	mediaBudget = newEmbeddedMediaBudget()
+	mediaBudget.imageOCR = imageOCR
+	imageOCR.resetFailures()
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, mediaBudget)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
 	}
+	if ctx.Err() != nil {
+		return ParseResult{Err: ctx.Err()}
+	}
 	warnings = append(normalizeWarnings, warnings...)
+	warnings = append(warnings, mediaBudget.warnings()...)
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -143,7 +163,7 @@ func parseXLSXBytes(data []byte) ([]map[string]any, []string, int, error) {
 			return nil, warnings, len(sheets), err
 		}
 		warnings = append(warnings, sheetWarnings...)
-		images, imageWarnings := extractXLSXImages(f, sheet)
+		images, imageWarnings := extractXLSXImages(f, sheet, mediaBudget)
 		for _, image := range images {
 			row, _ := numericItemInt(image["row_start"])
 			col, _ := numericItemInt(image["col_start"])

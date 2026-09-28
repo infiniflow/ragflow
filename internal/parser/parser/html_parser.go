@@ -78,8 +78,12 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{imageOCR: newImageOCRBudget(ctx)}
+	defer state.imageOCR.close()
 	walkHTMLBlocksWithState(doc, &items, state)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	// remove_toc: post-parse text heuristic (mirrors Python
 	// parser.py:1087-1088 remove_toc → remove_contents_table).
 	if p.RemoveTOC {
@@ -109,13 +113,18 @@ type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
+	imageOCR            *imageOCRBudget
 }
 
 func (s *htmlWalkState) warnings() []string {
+	var warnings []string
 	if s.skippedInlineImages == 0 {
-		return nil
+		warnings = append(warnings, s.imageOCR.warnings()...)
+		return warnings
 	}
-	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
+	warnings = append(warnings, fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
+	warnings = append(warnings, s.imageOCR.warnings()...)
+	return warnings
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
@@ -486,6 +495,9 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 		"media_order":  state.mediaOrder,
 	}
 	item["image"] = src
+	if state.imageOCR != nil {
+		appendOCRText(item, state.imageOCR.recognizeBase64(src))
+	}
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
 		item["row_index"] = row

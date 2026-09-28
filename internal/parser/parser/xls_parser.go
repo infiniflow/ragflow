@@ -85,7 +85,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	items, warnings, sheetsCount, err := parseXLSXBytes(data)
+	items, warnings, sheetsCount, err := parseXLSXBytes(data, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}

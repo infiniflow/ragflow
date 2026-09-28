@@ -15,13 +15,13 @@
 //
 
 // Media dispatch: image, audio, video parser branches that require
-// model access (OCR, IMAGE2TEXT, SPEECH2TEXT) at the component
+// model access (IMAGE2TEXT, SPEECH2TEXT) at the component
 // layer. Mirrors Python's _image / _audio / _video methods in
 // rag/flow/parser/parser.py and rag/app/picture.py.
 //
-// These follow the maybeDispatchPDFVision pattern: they bypass
-// dispatchParse and call the model directly from the component
-// layer, returning a parser.ParseResult.
+// Audio and video branches dispatch their models directly. Image OCR is
+// supplied by PictureParser; the component retains PaddleOCR selection and
+// optional IMAGE2TEXT enrichment.
 
 package component
 
@@ -29,18 +29,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"image"
-
-	// Import image decoders for common formats.
-	_ "golang.org/x/image/bmp"
-	_ "golang.org/x/image/tiff"
-	_ "golang.org/x/image/webp"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -89,10 +79,10 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: OCR + IMAGE2TEXT vision describe ---
+// Image dispatch: optional PaddleOCR plus IMAGE2TEXT vision describe ---
 // Mirrors Python's rag/app/picture.py:chunk() image branch:
 //   1. Try PaddleOCR if layout_recognize is "@PaddleOCR"
-//   2. Fallback to local ONNX OCR (DeepDoc /predict/ocr endpoint)
+//   2. Fall back to local DeepDOC OCR in PictureParser
 //   3. If OCR text is short (≤32 chars or ≤32 English words),
 //      also call IMAGE2TEXT VLM describe()
 //   4. Returns combined text
@@ -114,9 +104,6 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
-	defer cancelOCR()
-
 	// --- Phase 1: OCR ---
 	var ocrText string
 
@@ -132,28 +119,32 @@ func maybeDispatchImage(
 		}
 	}
 
-	// Step 1b: Fallback to local ONNX OCR (DeepDoc /predict/ocr).
-	// Mirrors Python's picture.py:ocr(np.array(img)) from deepdoc.vision.
-	release, err := sharedOCRMediaAdmission().acquire(ctx)
+	// PictureParser owns the local DeepDOC fallback and returns its OCR text
+	// and warnings as part of the parser result.
+	var parsed parser.ParseResult
+	if strings.TrimSpace(ocrText) == "" {
+		parsed = dispatchParse(ctx, fileType, filename, binary, setups)
+		if parsed.Err != nil {
+			return parsed, true, parsed.Err
+		}
+		if len(parsed.JSON) > 0 {
+			ocrText, _ = parsed.JSON[0]["text"].(string)
+		}
+	}
+
+	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
 	}
 	var dataURI string
 	func() {
 		defer release()
-		if ocrText == "" && ocrCtx.Err() == nil {
-			if img, _, decodeErr := decodeOCRImage(binary); decodeErr == nil {
-				if txt, ocrErr := runLocalImageOCRImage(ocrCtx, img); ocrErr == nil && strings.TrimSpace(txt) != "" {
-					ocrText = strings.TrimSpace(txt)
-				}
-			}
-		}
-		// Keep payload encoding under the same process admission as decode/OCR;
-		// release it before model resolution and the network call.
 		imageB64 := base64.StdEncoding.EncodeToString(binary)
 		dataURI = "data:" + imageMIME(filename) + ";base64," + imageB64
 	}()
-	return maybeDispatchImageVLM(ctx, db, dataURI, ocrText, tenantID, setup, inputs)
+	result, handled, err := maybeDispatchImageVLM(ctx, db, dataURI, ocrText, tenantID, setup, inputs)
+	result.Warnings = append(result.Warnings, parsed.Warnings...)
+	return result, handled, err
 }
 
 func maybeDispatchImageVLM(
@@ -465,161 +456,4 @@ func runPaddleOCRImage(binary []byte, filename string) (string, error) {
 		return "", fmt.Errorf("paddleocr: not configured (set PADDLEOCR_ACCESS_TOKEN)")
 	}
 	return client.ParseImage(binary, filename)
-}
-
-// runLocalImageOCRImage detects and recognizes text using the in-process
-// DeepDoc analyzer (ONNX models served locally via the native backend).
-func runLocalImageOCRImage(ctx context.Context, img image.Image) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	analyzer, err := parser.GetDocAnalyzer()
-	if err != nil {
-		return "", fmt.Errorf("local OCR: %w", err)
-	}
-	if img == nil {
-		return "", fmt.Errorf("local OCR: nil image")
-	}
-
-	// Step 1: Detect text regions.
-	boxes, err := analyzer.OCRDetect(ctx, img)
-	if err != nil {
-		return "", fmt.Errorf("local OCR: detect: %w", err)
-	}
-	if len(boxes) == 0 {
-		return "", nil
-	}
-
-	// Step 2: Sort boxes by Y (top to bottom), then X (left to right)
-	// for reading-order text assembly.
-	sort.Slice(boxes, func(i, j int) bool {
-		yi := (boxes[i].Y0 + boxes[i].Y2) / 2
-		yj := (boxes[j].Y0 + boxes[j].Y2) / 2
-		if yi < yj {
-			return true
-		}
-		if yi > yj {
-			return false
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	// Step 3: Recognize text per box.
-	var texts []string
-	bounds := img.Bounds()
-	for _, box := range boxes {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		// Convert quad box to axis-aligned crop rect.
-		x0 := int(min4(box.X0, box.X1, box.X2, box.X3))
-		y0 := int(min4(box.Y0, box.Y1, box.Y2, box.Y3))
-		x1 := int(max4(box.X0, box.X1, box.X2, box.X3))
-		y1 := int(max4(box.Y0, box.Y1, box.Y2, box.Y3))
-
-		// Clamp to image bounds.
-		if x0 < bounds.Min.X {
-			x0 = bounds.Min.X
-		}
-		if y0 < bounds.Min.Y {
-			y0 = bounds.Min.Y
-		}
-		if x1 > bounds.Max.X {
-			x1 = bounds.Max.X
-		}
-		if y1 > bounds.Max.Y {
-			y1 = bounds.Max.Y
-		}
-		if x1 <= x0 || y1 <= y0 {
-			continue
-		}
-
-		// Crop the region. This requires an image type that supports
-		// cropping; for simplicity we recode through a sub-image.
-		crop := cropImage(img, x0, y0, x1, y1)
-		if crop == nil {
-			continue
-		}
-
-		recTexts, err := analyzer.OCRRecognize(ctx, crop)
-		if err != nil {
-			continue // skip boxes that fail recognition
-		}
-		for _, t := range recTexts {
-			s := strings.TrimSpace(t.Text)
-			if s != "" {
-				texts = append(texts, s)
-			}
-		}
-	}
-
-	if len(texts) == 0 {
-		return "", nil
-	}
-	return strings.Join(texts, "\n"), nil
-}
-
-// cropImage extracts a sub-rectangle from img. Works with any image.Image
-// by converting to RGBA if needed, then cropping.
-func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
-	bounds := img.Bounds()
-	cropRect := image.Rect(
-		bounds.Min.X+x0, bounds.Min.Y+y0,
-		bounds.Min.X+x1, bounds.Min.Y+y1,
-	)
-	switch src := img.(type) {
-	case *image.RGBA:
-		return src.SubImage(cropRect)
-	case *image.NRGBA:
-		return src.SubImage(cropRect)
-	case *image.RGBA64:
-		return src.SubImage(cropRect)
-	case *image.NRGBA64:
-		return src.SubImage(cropRect)
-	case *image.Gray:
-		return src.SubImage(cropRect)
-	case *image.Gray16:
-		return src.SubImage(cropRect)
-	case *image.YCbCr:
-		return src.SubImage(cropRect)
-	case *image.Paletted:
-		return src.SubImage(cropRect)
-	default:
-		// Convert to RGBA for cropping.
-		rgba := image.NewRGBA(cropRect)
-		for y := cropRect.Min.Y; y < cropRect.Max.Y; y++ {
-			for x := cropRect.Min.X; x < cropRect.Max.X; x++ {
-				rgba.Set(x, y, img.At(x, y))
-			}
-		}
-		return rgba
-	}
-}
-
-func min4(a, b, c, d float64) float64 {
-	m := a
-	if b < m {
-		m = b
-	}
-	if c < m {
-		m = c
-	}
-	if d < m {
-		m = d
-	}
-	return m
-}
-
-func max4(a, b, c, d float64) float64 {
-	m := a
-	if b > m {
-		m = b
-	}
-	if c > m {
-		m = c
-	}
-	if d > m {
-		m = d
-	}
-	return m
 }

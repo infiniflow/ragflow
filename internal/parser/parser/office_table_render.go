@@ -297,7 +297,7 @@ func deprecatedHTML4Excel(setup map[string]any, parserName string) {
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
 // scanning the worksheet's entire coordinate space.
-func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []string) {
+func extractXLSXImages(f *excelize.File, sheet string, budget *embeddedMediaBudget) ([]map[string]any, []string) {
 	cells, err := f.GetPictureCells(sheet)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
@@ -308,6 +308,7 @@ func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []stri
 
 	items := make([]map[string]any, 0, len(cells))
 	warnings := make([]string, 0)
+cellLoop:
 	for _, cell := range cells {
 		pictures, err := f.GetPictures(sheet, cell)
 		if err != nil {
@@ -323,24 +324,40 @@ func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []stri
 				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
 				continue
 			}
-			encoded := base64.StdEncoding.EncodeToString(picture.File)
+			included, keepWalking := true, true
+			if budget != nil {
+				included, keepWalking = budget.include(picture.File)
+			}
+			if !keepWalking {
+				break cellLoop
+			}
 			alt := cell
 			if picture.Format != nil && picture.Format.AltText != "" {
 				alt = picture.Format.AltText
 			}
 			row, col := axisToRC(cell)
-			items = append(items, map[string]any{
+			item := map[string]any{
 				"text":         alt,
 				"doc_type_kwd": "image",
 				"ck_type":      "image",
-				"image":        "data:" + mimeType + ";base64," + encoded,
 				"sheet":        sheet,
 				"cell":         cell,
 				"row_start":    row,
 				"row_end":      row,
 				"col_start":    col,
 				"col_end":      col,
-			})
+			}
+			if included {
+				if budget != nil {
+					budget.recognizeImage(picture.File, item)
+				}
+				encoded := base64.StdEncoding.EncodeToString(picture.File)
+				item["image"] = "data:" + mimeType + ";base64," + encoded
+			} else {
+				item["image"] = nil
+				item["media_omitted"] = true
+			}
+			items = append(items, item)
 		}
 	}
 	return items, warnings

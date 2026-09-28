@@ -157,7 +157,7 @@ func TestVisionCropImage_RejectsAggregatePagePixelsBeforeRendering(t *testing.T)
 		t.Fatalf("Crop: %v", err)
 	}
 	if img != nil {
-		t.Fatalf("Crop = %#v, want nil when combined page pixels exceed the OCR budget", img)
+		t.Fatalf("Crop = %#v, want nil when combined page pixels exceed the vision budget", img)
 	}
 	if renderCalls != 0 {
 		t.Fatalf("render calls = %d, want pages rejected before raster allocation", renderCalls)

@@ -14,18 +14,11 @@
 //  limitations under the License.
 //
 
-// PictureParser validates and stores configuration for image files.
-// The actual OCR and VLM description is performed by the
-// component-layer maybeDispatchImage, which mirrors Python's
-// rag/app/picture.py:chunk() image branch.
+// PictureParser validates image files and performs local DeepDOC OCR.
+// Optional PaddleOCR and VLM dispatch remain in the ingestion component.
 //
-// Python reference:
-//   - Image is opened with PIL, converted to RGB
-//   - PaddleOCR tried first (if layout_recognize == "@PaddleOCR")
-//   - Falls back to local deepdoc.vision.OCR (ONNX text detection)
-//   - If OCR text is short (≤32 chars / ≤32 words for English),
-//     calls IMAGE2TEXT VLM describe() for a natural-language description
-//   - Returns tokenized text with media context attached
+// The ingestion component selects the optional PaddleOCR path before invoking
+// this parser as the local DeepDOC fallback.
 
 package parser
 
@@ -50,7 +43,7 @@ var imageExtensions = map[string]bool{
 	"ai": true, "raw": true, "wmf": true,
 }
 
-// PictureParser handles image files for OCR and VLM description.
+// PictureParser handles local DeepDOC OCR for image files.
 type PictureParser struct {
 	OutputFormat string
 }
@@ -71,10 +64,8 @@ func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult implements ParseResultProducer. It validates the
-// file extension against the image extension whitelist. The actual
-// OCR and VLM description happens via maybeDispatchImage at the
-// component layer (mirrors Python's picture.py:chunk()).
+// ParseWithResult validates the image extension and extracts local DeepDOC
+// OCR text before returning the image item to ingestion.
 func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if len(ext) > 1 && ext[0] == '.' {
@@ -102,13 +93,24 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		outFmt = "json"
 	}
 
+	imageOCR := newImageOCRBudget(ctx)
+	defer imageOCR.close()
+	item := map[string]any{
+		"text":         imageOCR.recognize(data),
+		"doc_type_kwd": DocTypeImage,
+	}
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	return ParseResult{
 		OutputFormat: outFmt,
 		File: map[string]any{
 			"name":         filename,
 			"size":         len(data),
-			"doc_type_kwd": "image",
+			"doc_type_kwd": DocTypeImage,
 		},
+		JSON:     []map[string]any{item},
+		Warnings: imageOCR.warnings(),
 	}
 }
 

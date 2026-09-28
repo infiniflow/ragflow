@@ -16,10 +16,12 @@
 
 package parser
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const (
-	maxEmbeddedImageBytes         = 32 << 20
+	maxEmbeddedImageBytes         = MaxImagePayloadBytes
 	maxEmbeddedDocumentImageBytes = 64 << 20
 	maxEmbeddedMediaItems         = 256
 )
@@ -34,6 +36,7 @@ type embeddedMediaBudget struct {
 	oversizedImages   int
 	documentOverflows int
 	countExhausted    bool
+	imageOCR          *imageOCRBudget
 }
 
 func newEmbeddedMediaBudget() *embeddedMediaBudget {
@@ -94,5 +97,14 @@ func (b *embeddedMediaBudget) warnings() []string {
 			b.maxItems,
 		))
 	}
+	warnings = append(warnings, b.imageOCR.warnings()...)
 	return warnings
+}
+
+func (b *embeddedMediaBudget) recognizeImage(data []byte, item map[string]any) {
+	if b == nil || b.imageOCR == nil || item == nil {
+		return
+	}
+	text := b.imageOCR.recognize(data)
+	appendOCRText(item, text)
 }

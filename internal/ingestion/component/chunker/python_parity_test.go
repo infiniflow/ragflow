@@ -110,31 +110,9 @@ func TestChunker_PreservesLayoutField(t *testing.T) {
 	}
 }
 
-func TestChunker_PreservesVisionMetadata(t *testing.T) {
-	items := []map[string]any{{
-		"text":              "A chart showing annual growth.",
-		"doc_type_kwd":      "image",
-		"vision_source_kwd": "deepdoc",
-		"ocr_status_kwd":    "pending",
-	}}
-	out := invokeAsTokenChunker(t, items)
-	chunks := chunksFromOutput(t, out)
-	if len(chunks) != 1 {
-		t.Fatalf("chunks = %d, want 1", len(chunks))
-	}
-	if got, want := chunks[0]["vision_source_kwd"], "deepdoc"; got != want {
-		t.Errorf("chunks[0].vision_source_kwd = %v, want %v", got, want)
-	}
-	if got, want := chunks[0]["ocr_status_kwd"], "pending"; got != want {
-		t.Errorf("chunks[0].ocr_status_kwd = %v, want %v", got, want)
-	}
-}
-
 // TestChunker_PassesPDFPositionsThrough pins the _pdf_positions
-// pass-through. The PDF parser path (DeepDOC) attaches bbox
-// coordinates under this key; the chunker must forward them
-// so downstream layout-aware components can rebuild the page
-// geometry.
+// pass-through. DeepDOC's PDF parser attaches bounding boxes under this key;
+// downstream layout-aware components use them to rebuild page geometry.
 func TestChunker_PassesPDFPositionsThrough(t *testing.T) {
 	positions := [][]float64{{0.1, 0.2, 0.3, 0.4}, {0.5, 0.6, 0.7, 0.8}}
 	items := []map[string]any{

@@ -25,9 +25,9 @@ import (
 	"testing"
 )
 
-func TestMaterializeInlineVisionImageKeepsVLMForOCRDimensionLimit(t *testing.T) {
+func TestMaterializeInlineVisionImageKeepsVLMForImageDimensionLimit(t *testing.T) {
 	var encoded bytes.Buffer
-	large := image.NewRGBA(image.Rect(0, 0, maxOCRImageEdge+1, 1))
+	large := image.NewRGBA(image.Rect(0, 0, maxVisionImageEdge+1, 1))
 	if err := png.Encode(&encoded, large); err != nil {
 		t.Fatalf("encode oversized image: %v", err)
 	}

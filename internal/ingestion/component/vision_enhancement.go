@@ -15,7 +15,7 @@
 //
 
 // Package component — vision media enhancement: enriches parsed JSON items
-// with local OCR and vision-model descriptions of embedded images/tables.
+// with vision-model descriptions of embedded images/tables.
 // Mirrors Python's enhance_media_sections_with_vision
 // (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
 
@@ -59,12 +59,8 @@ const (
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
 	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
-	visionChatTimeout = 30 * time.Second
-)
-
-var (
-	visionOCRInvokeBudget = 60 * time.Second
-	visionOCRItemBudget   = 10 * time.Second
+	visionChatTimeout     = 30 * time.Second
+	visionMediaItemBudget = 10 * time.Second
 )
 
 var (
@@ -146,9 +142,9 @@ func isValidBase64(s string, stripWhitespace bool) bool {
 	return false
 }
 
-// visionImageCropper materializes the raster and VLM payload for a parsed
-// item. Under cgo it crops PDF sections on demand; both build variants use
-// inline images directly. Close releases any re-acquired native engine.
+// visionImageCropper materializes the VLM payload for a parsed item. Under
+// cgo it crops PDF sections on demand; inline images stay encoded. Close
+// releases any re-acquired native engine.
 type visionImageCropper interface {
 	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
@@ -160,8 +156,8 @@ type visionImage struct {
 	VLMDataValidated bool
 }
 
-// maybeDispatchVisionEnhancement appends local OCR and VLM descriptions to
-// parsed image resources and table regions.
+// maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
+// resources and table regions. Local OCR belongs to each image parser.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -182,7 +178,7 @@ func maybeDispatchVisionEnhancement(
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
 	// Collect visual resources. A table without an inline image or PDF crop
-	// locator is structured text, not an OCR target.
+	// locator has no visual payload to enhance.
 	var items []int
 	for i, item := range dispatched.JSON {
 		kd, _ := item["doc_type_kwd"].(string)
@@ -200,11 +196,8 @@ func maybeDispatchVisionEnhancement(
 	if len(items) == 0 {
 		return dispatched, false, nil
 	}
-	ocrCtx, cancelOCR := context.WithTimeout(ctx, visionOCRInvokeBudget)
-	defer cancelOCR()
-
-	// Resolve VLM independently from local OCR. OCR still runs when the tenant
-	// has no configured vision model.
+	// Resolve VLM before materializing image payloads. Parser-owned OCR has
+	// already completed, so there is no image work to do without a VLM model.
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -228,6 +221,9 @@ func maybeDispatchVisionEnhancement(
 			vlmReady = err == nil
 		}
 	}
+	if !vlmReady {
+		return dispatched, false, nil
+	}
 
 	// Materialize one resource at a time. The VLM semaphore is acquired before
 	// materialization, so at most visionEnhancementConcurrency encoded payloads
@@ -238,7 +234,6 @@ func maybeDispatchVisionEnhancement(
 	}
 	defer cropper.Close()
 	modified := false
-	parseMethod := getStringOr(setup, "parse_method", "")
 	descriptions := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
@@ -246,30 +241,21 @@ func maybeDispatchVisionEnhancement(
 		if err := ctx.Err(); err != nil {
 			break
 		}
-		if ocrCtx.Err() != nil && !vlmReady {
+		vlmSlot := false
+		select {
+		case sem <- struct{}{}:
+			vlmSlot = true
+		case <-ctx.Done():
 			break
 		}
-		vlmSlot := false
-		if vlmReady {
-			select {
-			case sem <- struct{}{}:
-				vlmSlot = true
-			case <-ctx.Done():
-				break
-			}
-			if !vlmSlot {
-				break
-			}
+		if !vlmSlot {
+			break
 		}
 		var resource *visionImage
 		func() {
-			mediaParent := ctx
-			if !vlmReady {
-				mediaParent = ocrCtx
-			}
-			itemCtx, cancelItem := context.WithTimeout(mediaParent, visionOCRItemBudget)
+			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
 			defer cancelItem()
-			release, err := sharedOCRMediaAdmission().acquire(itemCtx)
+			release, err := parser.AcquireImageMedia(itemCtx)
 			if err != nil {
 				if ctx.Err() == nil && vlmReady {
 					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
@@ -288,15 +274,6 @@ func maybeDispatchVisionEnhancement(
 					}
 				}
 				return
-			}
-			if imageWithinOCRLimits(resource.Raster) && mediaOCRStatus(fileType, parseMethod, dispatched.JSON[itemIdx]) == ocrPending && ocrCtx.Err() == nil {
-				ocrItemCtx, cancelOCRItem := context.WithTimeout(ocrCtx, visionOCRItemBudget)
-				text, ocrErr := runLocalImageOCRImage(ocrItemCtx, resource.Raster)
-				cancelOCRItem()
-				if ocrErr == nil && strings.TrimSpace(text) != "" {
-					appendItemText(dispatched.JSON[itemIdx], strings.TrimSpace(text))
-					modified = true
-				}
 			}
 			if ctx.Err() == nil && vlmReady && resource.VLMData == "" && resource.Raster != nil {
 				resource.VLMData, err = encodeVisionRaster(resource.Raster)
@@ -346,7 +323,7 @@ func maybeDispatchVisionEnhancement(
 		return dispatched, modified, err
 	}
 
-	// Append descriptions after any OCR text (single newline \n, matching Python).
+	// Append descriptions after parser-provided OCR text.
 	for slot, itemIdx := range items {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {
@@ -357,41 +334,6 @@ func maybeDispatchVisionEnhancement(
 	}
 
 	return dispatched, modified, nil
-}
-
-type ocrStatus int
-
-const (
-	ocrPending ocrStatus = iota
-	ocrAttempted
-	ocrUnknown
-)
-
-func mediaOCRStatus(fileType utility.FileType, parseMethod string, item map[string]any) ocrStatus {
-	if marker, ok := item["ocr_status_kwd"].(string); ok {
-		switch strings.ToLower(strings.TrimSpace(marker)) {
-		case "pending":
-			return ocrPending
-		case "attempted":
-			return ocrAttempted
-		case "unknown":
-			return ocrUnknown
-		}
-	}
-	if fileType != utility.FileTypePDF {
-		return ocrPending
-	}
-	method := strings.TrimSpace(parseMethod)
-	if method == "" {
-		method = "deepdoc"
-	}
-	if !strings.EqualFold(method, "deepdoc") {
-		return ocrUnknown
-	}
-	if kind, _ := item["doc_type_kwd"].(string); kind == "table" {
-		return ocrAttempted
-	}
-	return ocrPending
 }
 
 func appendItemText(item map[string]any, text string) {

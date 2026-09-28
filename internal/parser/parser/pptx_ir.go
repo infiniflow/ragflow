@@ -75,6 +75,7 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 			}
 			included, keepWalking := budget.include(data)
 			if included {
+				budget.recognizeImage(data, imageItem)
 				imageItem["image"] = base64.StdEncoding.EncodeToString(data)
 			} else if keepWalking {
 				imageItem["media_omitted"] = true

@@ -105,7 +105,7 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 			pages[pn] = struct{}{}
 		}
 	}
-	if !pdfPagesRasterWithinOCRLimits(c.engine, pages) {
+	if !pdfPagesRasterWithinVisionLimits(c.engine, pages) {
 		return nil, nil
 	}
 	single := make(map[int]image.Image, len(pages))
@@ -122,14 +122,14 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if len(single) == 0 {
 		return nil, nil
 	}
-	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxOCRImagePixels)
+	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxVisionImagePixels)
 	if raster == nil {
 		return nil, nil
 	}
 	return &visionImage{Raster: raster}, nil
 }
 
-func pdfPagesRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
+func pdfPagesRasterWithinVisionLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
 	sizer, ok := engine.(interface {
 		PageSize(int) (float64, float64, error)
 	})
@@ -147,12 +147,12 @@ func pdfPagesRasterWithinOCRLimits(engine deepdoctype.PDFEngine, pageNums map[in
 		if math.IsNaN(widthPixels) || math.IsInf(widthPixels, 0) ||
 			math.IsNaN(heightPixels) || math.IsInf(heightPixels, 0) ||
 			widthPixels <= 0 || heightPixels <= 0 ||
-			widthPixels > maxOCRImageEdge || heightPixels > maxOCRImageEdge ||
-			widthPixels*heightPixels > float64(maxOCRImagePixels) {
+			widthPixels > maxVisionImageEdge || heightPixels > maxVisionImageEdge ||
+			widthPixels*heightPixels > float64(maxVisionImagePixels) {
 			return false
 		}
 		pagePixels := int64(widthPixels * heightPixels)
-		if pagePixels > maxOCRImagePixels-totalPixels {
+		if pagePixels > maxVisionImagePixels-totalPixels {
 			return false
 		}
 		totalPixels += pagePixels

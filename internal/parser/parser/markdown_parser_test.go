@@ -438,18 +438,18 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, found := resolveImageURL("data:image/png;base64," + b64)
+	result, raw, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
-	if result != b64 {
+	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, found := resolveImageURL("./local/image.png"); found {
+	if _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -468,13 +468,12 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	result, found := resolveImageURL(ts.URL + "/image.png")
+	encoded, result, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
-	expectedB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-bytes"))
-	if result != expectedB64 {
-		t.Fatalf("got %q, want %q", result, expectedB64)
+	if encoded != "" || string(result) != "fake-png-bytes" {
+		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
 	}
 }
 
@@ -517,21 +516,21 @@ func TestFindBlockImage(t *testing.T) {
 	}
 }
 
-func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
-	_, err := fetchImageAsBase64("https://user:pass@example.com/img.png")
+func TestFetchImage_RejectsCredentials(t *testing.T) {
+	_, err := fetchImage(context.Background(), "https://user:pass@example.com/img.png")
 	if err == nil {
 		t.Fatal("expected error for URL with credentials")
 	}
 }
 
-func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+func TestFetchImage_InvalidURL(t *testing.T) {
 	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
-	_, err := fetchImageAsBase64(ts.URL + "/nonexistent.png")
+	_, err := fetchImage(context.Background(), ts.URL+"/nonexistent.png")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}

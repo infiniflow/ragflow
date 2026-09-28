@@ -472,7 +472,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	var handledImage bool
 	if !handledVision && !handledMedia {
-		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
+		// Image/Picture dispatch: PaddleOCR, Parser DeepDOC fallback, and
+		// optional IMAGE2TEXT vision description.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
 		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {

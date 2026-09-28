@@ -108,16 +108,26 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText, p.FetchRemoteImages)
+	imageOCR := newImageOCRBudget(ctx)
+	defer imageOCR.close()
+	unresolvedImages := walkMarkdownBlocksWithImages(ctx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, imageOCR)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+	}
+	warnings := imageOCR.warnings()
+	if unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
 	}
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 		},
-		JSON: items,
+		JSON:     items,
+		Warnings: warnings,
 	}
 }
 
@@ -376,7 +386,8 @@ func markdownTableCells(line string) []string {
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
 // (<div>, <style>, …) are emitted as ordinary text with no ck_type.
-func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool) {
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, imageOCR *imageOCRBudget) int {
+	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -457,17 +468,27 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, 
 		if imgURL, ok := findBlockImage(child); ok {
 			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
 			if fetchRemoteImages || !isRemote {
-				if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
-					item["image"] = imgData
+				if encoded, raw, resolved := resolveImageURL(ctx, imgURL); resolved {
+					if raw != nil {
+						appendOCRText(item, imageOCR.recognize(raw))
+						appendOCRText(item, imageOCR.recognize(raw))
+						item["image"] = base64.StdEncoding.EncodeToString(raw)
+					} else {
+						item["image"] = encoded
+						appendOCRText(item, imageOCR.recognizeBase64(encoded))
+					}
 					if !flatten {
 						item["doc_type_kwd"] = "image"
 					}
+				} else {
+					unresolvedImages++
 				}
 			}
 		}
 
 		*out = append(*out, item)
 	}
+	return unresolvedImages
 }
 
 // isTableHTML reports whether block text is an outer <table> element (the
@@ -502,44 +523,53 @@ func findBlockImage(n ast.Node) (string, bool) {
 	return url, found
 }
 
-// resolveImageURL resolves a Markdown image URL to its base64-encoded data.
+// resolveImageURL resolves a Markdown image URL to an encoded payload or raw
+// bytes.
 // Supports:
-//   - data:image/... URIs → decoded directly
+//   - data:image/... URIs → validated encoded payload
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
 // Local / relative paths are not fetched (security). Returns
-// (base64String, true) on success, ("", false) when resolution fails.
-func resolveImageURL(imageURL string) (string, bool) {
-	if strings.HasPrefix(imageURL, dataURIPrefix) {
+// exactly one of encoded and raw populated on success.
+func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, ok bool) {
+	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
 		// data:image/png;base64,xxxx
 		idx := strings.Index(imageURL, "base64,")
 		if idx < 0 {
-			return "", false
+			idx = strings.Index(strings.ToLower(imageURL), "base64,")
 		}
-		return imageURL[idx+len("base64,"):], true
+		if idx < 0 {
+			return "", nil, false
+		}
+		encoded = imageURL[idx+len("base64,"):]
+		if !validBase64ImagePayload(encoded, MaxImagePayloadBytes) {
+			return "", nil, false
+		}
+		return encoded, nil, true
 	}
 	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
-		b64, err := fetchImageAsBase64(imageURL)
+		raw, err := fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", false
+			return "", nil, false
 		}
-		return b64, true
+		return "", raw, true
 	}
 	// Local / relative paths — not fetched for security.
-	return "", false
+	return "", nil, false
 }
 
-// fetchImageAsBase64 fetches an HTTP(S) image URL and returns its
-// content as a base64-encoded string. Local/private addresses and
-// redirects to them are rejected (SSRF guard). Hostnames are resolved
-// once and the validated IP is pinned in a custom DialContext to
-// prevent DNS-rebinding TOCTOU attacks.
-func fetchImageAsBase64(rawURL string) (string, error) {
+// fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses
+// and redirects to them are rejected (SSRF guard). Hostnames are resolved
+// once and the validated IP is pinned in a custom DialContext to prevent
+// DNS-rebinding TOCTOU attacks.
+func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	rawURL = strings.TrimSpace(rawURL)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("markdown: invalid image URL: %w", err)
+		return nil, fmt.Errorf("markdown: invalid image URL: %w", err)
 	}
 
 	// pinned maps hostname (without port) → validated IP. The hostname
@@ -549,7 +579,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	pinned := make(map[string]net.IP)
 
 	pinHost := func(host string) error {
-		ip, err := resolveAndValidateHost(host)
+		ip, err := resolveAndValidateHost(ctx, host)
 		if err != nil {
 			return err
 		}
@@ -564,7 +594,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	}
 
 	if err := pinHost(parsed.Host); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	transport := &http.Transport{
@@ -594,32 +624,36 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("markdown: create image request: %w", err)
+		return nil, fmt.Errorf("markdown: create image request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
+		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024)) // 32 MiB cap
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("markdown: read image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	return base64.StdEncoding.EncodeToString(body), nil
+	if len(body) > MaxImagePayloadBytes {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
+	}
+	return body, nil
 }
 
 // resolveAndValidateHost resolves a host (which may include a port),
 // validates none of its IPs are internal/private, and returns the
 // first public IP for connection pinning.
-func resolveAndValidateHost(host string) (net.IP, error) {
+func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
@@ -634,7 +668,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return ip, nil
 	}
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), hostname)
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}

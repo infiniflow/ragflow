@@ -165,8 +165,13 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		}
 	}
 	budget := newEmbeddedMediaBudget()
+	budget.imageOCR = newImageOCRBudget(ctx)
+	defer budget.imageOCR.close()
 	items, err := buildPPTXJSONSections(irJSON, budget)
 	if err != nil {
+		return ParseResult{Err: err}
+	}
+	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if len(items) == 0 || itemsAllEmpty(items) {

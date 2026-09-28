@@ -114,7 +114,12 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
 		}
 		budget := newEmbeddedMediaBudget()
+		budget.imageOCR = newImageOCRBudget(ctx)
+		defer budget.imageOCR.close()
 		sections := buildDOCXJSONSections(irJSON, budget)
+		if err := ctx.Err(); err != nil {
+			return ParseResult{Err: err}
+		}
 		// remove_header_footer: drop sections whose normalized text
 		// matches a docx header/footer entry (mirrors Python
 		// parser.py:889-891 extract_docx_header_footer_texts +

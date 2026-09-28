@@ -383,7 +383,7 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 						"column_index":    tableImage.column,
 						"media_order":     mediaOrder + 1,
 					}
-					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata)
+					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata, budget)
 				}
 
 			case "list":
@@ -468,16 +468,17 @@ func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embe
 	if !included && !keepWalking {
 		return sections, false
 	}
-	return appendDOCXImagePayload(sections, data, included, metadata), keepWalking
+	return appendDOCXImagePayload(sections, data, included, metadata, budget), keepWalking
 }
 
-func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any) []map[string]any {
+func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any, budget *embeddedMediaBudget) []map[string]any {
 	item := map[string]any{
 		"text":         "",
 		"image":        nil,
 		"doc_type_kwd": "image",
 	}
 	if included {
+		budget.recognizeImage(data, item)
 		item["image"] = base64.StdEncoding.EncodeToString(data)
 	} else {
 		item["media_omitted"] = true

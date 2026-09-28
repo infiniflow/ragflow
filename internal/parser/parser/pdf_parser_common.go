@@ -327,46 +327,7 @@ func normalizePDFParseMethod(raw string) string {
 }
 
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	result := p.parseWithResult(ctx, filename, data)
-	return markPDFVisionMetadata(result, p.ParseMethod)
-}
-
-func markPDFVisionMetadata(result ParseResult, parseMethod string) ParseResult {
-	if result.Err != nil || result.OutputFormat != "json" {
-		return result
-	}
-
-	source := normalizePDFParseMethod(parseMethod)
-	if source == "" {
-		source = "deepdoc"
-	}
-	status := "unknown"
-	if source == "deepdoc" {
-		status = "pending"
-	}
-
-	for _, item := range result.JSON {
-		if item == nil {
-			continue
-		}
-		kind, _ := item[DocTypeKey].(string)
-		if kind != DocTypeImage && kind != DocTypeTable {
-			continue
-		}
-		imagePayload, _ := item["image"].(string)
-		_, hasPositions := ExtractPDFPositions(item)
-		if strings.TrimSpace(imagePayload) == "" && !hasPositions {
-			continue
-		}
-
-		item["vision_source_kwd"] = source
-		itemStatus := status
-		if source == "deepdoc" && kind == DocTypeTable {
-			itemStatus = "attempted"
-		}
-		item["ocr_status_kwd"] = itemStatus
-	}
-	return result
+	return p.parseWithResult(ctx, filename, data)
 }
 
 func (p *PDFParser) validateParseMethod() error {
@@ -423,8 +384,8 @@ func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoc
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
 // single production entry point now that the external HTTP service is no longer
-// a backend. Callers outside the parser package (e.g. standalone image OCR in
-// the ingestion component) use this instead of constructing a client.
+// a backend. PDF and non-PDF image parsers use it instead of constructing a
+// client.
 func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
 	return deepDocAnalyzerFromEnv()
 }
