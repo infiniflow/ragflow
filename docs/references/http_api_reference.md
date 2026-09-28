@@ -49,7 +49,7 @@ RAGFlow responses may contain both an HTTP status code and a business code in th
 | 500 | Server error |
 ---
 
-## Migrate to 1.0 Go
+## Migrate to 1.0
 
 RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
 
@@ -104,7 +104,7 @@ The following paths remain available only on the Python backend. They are not re
 Creates a model response for a given chat conversation.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/chats_openai/{chat_id}/chat/completions` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/chats_openai/{chat_id}/chat/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
@@ -2144,7 +2144,7 @@ Failure:
 Updates content or configurations for a specified chunk.
 
 :::caution REMOVED ALIAS
-`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is not available in 1.0.0. Use this endpoint instead.
+`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -3392,7 +3392,7 @@ Failure:
 Updates a session of a specified chat assistant.
 
 :::caution REMOVED ALIAS
-`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is not available in 1.0.0. Use this endpoint instead.
+`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -3823,7 +3823,7 @@ Failure:
 Starts a chat completion request. The same endpoint supports three modes:
 
 :::caution REMOVED ALIAS
-`POST /api/v1/chats/{chat_id}/completions` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/chats/{chat_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
@@ -4376,7 +4376,7 @@ Asks a specified agent a question to start an AI-powered conversation.
 Uses a single completion endpoint for all agent conversations.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/agents/{agent_id}/completions` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/agents/{agent_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -5134,7 +5134,7 @@ Failure:
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/sessions/related_questions` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/sessions/related_questions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
@@ -6542,7 +6542,7 @@ Failure
 Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
 
 :::caution REMOVED ALIAS
-`GET /v1/system/healthz` is not available in 1.0.0. Use this endpoint instead.
+`GET /v1/system/healthz` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6625,7 +6625,7 @@ Explanation:
 Uploads one or multiple files to the system.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/file/upload` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/file/upload` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6697,7 +6697,7 @@ Failure:
 Uploads a file and creates the respective document.
 
 :::caution REMOVED ALIAS
-`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are not available in 1.0.0. Use this endpoint instead.
+`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6776,7 +6776,7 @@ Failure:
 **GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
 :::caution REMOVED ALIAS
-The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are not available in 1.0.0. Use this endpoint instead.
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are not available in 1.0. Use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded for use in the agent system.
@@ -6836,7 +6836,7 @@ Failure:
 Creates a new file or folder in the system.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/file/create` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/file/create` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6912,7 +6912,7 @@ Failure:
 Lists files and folders under a specific folder.
 
 :::caution REMOVED ALIAS
-`GET /api/v1/file/list` is not available in 1.0.0. Use this endpoint instead.
+`GET /api/v1/file/list` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6993,7 +6993,7 @@ Failure:
 Retrieves the immediate parent folder information of a specified file.
 
 :::caution REMOVED ALIAS
-`GET /api/v1/file/parent_folder?file_id=...` is not available in 1.0.0. Use this endpoint instead.
+`GET /api/v1/file/parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7050,7 +7050,7 @@ Failure:
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
 :::caution REMOVED ALIAS
-`GET /api/v1/file/all_parent_folder?file_id=...` is not available in 1.0.0. Use this endpoint instead.
+`GET /api/v1/file/all_parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7113,7 +7113,7 @@ Failure:
 Deletes one or multiple files or folders.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/file/rm` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/file/rm` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7180,7 +7180,7 @@ Failure:
 Downloads a file from the system.
 
 :::caution REMOVED ALIAS
-`GET /api/v1/file/get/{file_id}` is not available in 1.0.0. Use this endpoint instead.
+`GET /api/v1/file/get/{file_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7228,7 +7228,7 @@ Failure:
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
 
 :::caution REMOVED ALIAS
-The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are not available in 1.0.0. Use this endpoint instead.
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are not available in 1.0. Use this endpoint instead.
 :::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
@@ -7331,7 +7331,7 @@ or
 Converts files to documents and links them to specified datasets.
 
 :::caution REMOVED ALIAS
-`POST /api/v1/file/convert` is not available in 1.0.0. Use this endpoint instead.
+`POST /api/v1/file/convert` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
