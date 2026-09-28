@@ -747,13 +747,28 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	// Collect non-empty parts first so we can slice positions proportionally.
+	// Fold whitespace-only pieces into an adjacent real piece instead of
+	// dropping them, so a bare retained delimiter that produces a blank run
+	// (the blank line between two "\n", or a leading "\n") survives in the
+	// emitted text. This mirrors the text/children paths and keeps the chunk
+	// reconstruction lossless for the common case.
 	var kept []string
+	var leading string
 	for _, p := range parts {
 		if strings.TrimSpace(p) == "" {
+			leading += p
 			continue
 		}
+		if leading != "" {
+			p = leading + p
+			leading = ""
+		}
 		kept = append(kept, p)
+	}
+	// A leading blank run followed by at least one real piece still belongs to
+	// the source; prepend it to the first kept piece rather than discarding it.
+	if leading != "" && len(kept) > 0 {
+		kept[0] = leading + kept[0]
 	}
 	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
@@ -1817,10 +1832,19 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keep
 		// repeated newline in the source is not silently dropped. This only
 		// matters when the delimiter is retained (keepDelim); a dropped custom
 		// delimiter leaves no whitespace-only pieces behind.
+		//
+		// Folding is scoped to the CURRENT parent only: parentStart records how
+		// many children existed before this parent's pieces, so a whitespace
+		// piece may only attach to this parent's own last child. Comparing
+		// out[n-1].Mom would be wrong because Mom holds the parent TEXT
+		// (TrimPrefix(t, "\n")), not a parent identity; two distinct parents
+		// with identical text would then cross-fold, corrupting one child and
+		// dropping the other's delimiter.
+		parentStart := len(out)
 		var leading string
 		for _, text := range splitByDelim(t, pattern, keepDelim) {
 			if strings.TrimSpace(text) == "" {
-				if n := len(out); n > 0 && out[n-1].Mom == mom {
+				if n := len(out); n > parentStart {
 					prev := out[n-1]
 					setChunkText(&prev, prev.Text+text)
 					out[n-1] = prev
