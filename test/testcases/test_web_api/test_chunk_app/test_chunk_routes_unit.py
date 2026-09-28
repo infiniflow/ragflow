@@ -19,6 +19,8 @@ import contextlib
 import inspect
 import importlib.util
 import sys
+import threading
+import time
 from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -124,8 +126,10 @@ class _DummyDocStore:
             "content_sm_ltks": ["c"],
         }
 
-    def get(self, *_args, **_kwargs):
-        return dict(self.chunk) if self.chunk is not None else None
+    def get(self, chunk_id, *_args, **_kwargs):
+        if self.chunk is None or self.chunk.get("id") != chunk_id:
+            return None
+        return dict(self.chunk)
 
     def update(self, condition, payload, *_args, **_kwargs):
         self.updated.append((condition, payload))
@@ -277,6 +281,30 @@ def _load_chunk_module(monkeypatch):
     rag_app_pkg = ModuleType("rag.app")
     rag_app_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "rag.app", rag_app_pkg)
+
+    rag_utils_pkg = ModuleType("rag.utils")
+    rag_utils_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "rag.utils", rag_utils_pkg)
+
+    class _RedisDistributedLock:
+        acquirable = True
+        acquired_keys = []
+
+        def __init__(self, lock_key, lock_value=None, timeout=10, blocking_timeout=1):
+            self.lock_key = lock_key
+
+        def acquire(self):
+            if not _RedisDistributedLock.acquirable:
+                return False
+            _RedisDistributedLock.acquired_keys.append(self.lock_key)
+            return True
+
+        def release(self):
+            return None
+
+    redis_conn_mod = ModuleType("rag.utils.redis_conn")
+    redis_conn_mod.RedisDistributedLock = _RedisDistributedLock
+    monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_conn_mod)
 
     rag_qa_mod = ModuleType("rag.app.qa")
     rag_qa_mod.rmPrefix = lambda text: str(text).strip("Q: ").strip("A: ")
@@ -851,6 +879,106 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_keeps_event_loop_responsive(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    _set_request_json(monkeypatch, module, {"content": "slow chunk"})
+
+    def slow_encode(_self, _inputs):
+        time.sleep(0.3)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", slow_encode)
+
+    async def scenario():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        ticks = 0
+        while not task.done():
+            await asyncio.sleep(0.01)
+            ticks += 1
+        return await task, ticks
+
+    res, ticks = _run(scenario())
+    assert res["code"] == 0, res
+    assert ticks >= 5, f"event loop was blocked while the chunk was embedded ({ticks} ticks)"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    _set_request_json(monkeypatch, module, {"content": "stalled chunk"})
+    release = threading.Event()
+
+    def stalled_encode(_self, _inputs):
+        release.wait(5)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", stalled_encode)
+
+    started_at = time.monotonic()
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert time.monotonic() - started_at < 2, "the request should return at its deadline"
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "a timed-out request must not insert late"
+    assert module.DocumentService.increment_calls == [], "a timed-out request must not count late"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_worker_timeout_error_is_not_the_deadline(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    _set_request_json(monkeypatch, module, {"content": "provider timeout"})
+
+    def provider_timeout(_self, _inputs):
+        raise TimeoutError("embedding provider read timed out")
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", provider_timeout)
+
+    with pytest.raises(TimeoutError, match="embedding provider"):
+        _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_does_not_count_twice(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    _set_request_json(monkeypatch, module, {"content": "retried chunk"})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(module.DocumentService.increment_calls) == 1
+
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(module.settings.docStoreConn.inserted) == 2, "the retry still rewrites the chunk"
+    assert len(module.DocumentService.increment_calls) == 1, "the retry must not count the chunk again"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_busy_lock_skips_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module.RedisDistributedLock, "acquirable", False)
+    _set_request_json(monkeypatch, module, {"content": "contended chunk"})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "being added" in res["message"], res
+    assert module.settings.docStoreConn.inserted == []
+    assert module.DocumentService.increment_calls == []
 
 
 @pytest.mark.p2
