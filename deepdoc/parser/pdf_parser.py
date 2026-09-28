@@ -2018,7 +2018,10 @@ class RAGFlowPdfParser:
                 logging.warning(f"Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
                 continue
 
-            x0, y0, x1, y1 = left * ZM, top * ZM, right * ZM, min(bottom, self.page_images[pns[0]].size[1])
+            page_height = self.page_images[pns[0]].size[1]
+            x0, y0, x1, y1 = left * ZM, top * ZM, right * ZM, min(bottom, page_height)
+            y0 = max(0, min(y0, page_height))
+            y1 = max(0, min(y1, page_height))
             if x0 > x1:
                 x0, x1 = x1, x0
             if y0 > y1:
