@@ -1,6 +1,6 @@
 # RAGFlow Instructions
 
-Use this file as the local operating guide for the current codebase. Prefer the code and the current AGENT.md over any older convention or remembered project shape.
+Use this file as the local operating guide for the current codebase. Prefer the code and the current AGENTS.md over any older convention or remembered project shape.
 
 ## Core Stance
 - Treat legacy code as liability, not as a compatibility target.
