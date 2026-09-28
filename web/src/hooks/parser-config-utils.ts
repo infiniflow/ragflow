@@ -14,6 +14,8 @@
  *  limitations under the License.
  */
 
+import { pickByBackend } from '@/utils/backend-variant';
+
 /**
  * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
  * top-level key containing ":" marks the pipeline structure, which must be
@@ -41,6 +43,13 @@ const isMinerULayoutRecognize = (layoutRecognize: unknown): boolean =>
 
 /**
  * Normalizes parser configuration before it is sent to the API.
+ *
+ * The Python backend keeps the legacy flat-key contract (top-level `metadata`
+ * / `parent_child`). The Go backend requires component-scoped keys, so the
+ * dataset-level `metadata` is nested under `Extractor:AutoExtractDefault` and
+ * `parent_child` under `GeneralChunker:SixApplesFall`; no flat `metadata` or
+ * `parent_child` is emitted. All other (parser-level) keys are left flat for
+ * both backends, matching what the Go backend preserves on the built-in path.
  * @param parserConfig - The parser configuration object
  * @returns Processed parser config
  */
@@ -63,6 +72,7 @@ export const normalizeParserConfig = (
     children_delimiter,
     use_parent_child,
     enable_children,
+    metadata,
     ...additionalParserConfig
   } = parserConfig;
   delete additionalParserConfig.graphrag;
@@ -74,7 +84,15 @@ export const normalizeParserConfig = (
       delete additionalParserConfig[key];
     }
   }
-  return {
+
+  const parentChild = enable_children
+    ? {
+        children_delimiter,
+        use_parent_child: use_parent_child ?? enable_children,
+      }
+    : undefined;
+
+  const flat: Record<string, any> = {
     auto_keywords,
     auto_questions,
     chunk_token_num,
@@ -88,12 +106,32 @@ export const normalizeParserConfig = (
     pages,
     children_delimiter,
     enable_children,
-    parent_child: enable_children
-      ? {
-          children_delimiter,
-          use_parent_child: use_parent_child ?? enable_children,
-        }
-      : undefined,
+    metadata,
+    ...(parentChild ? { parent_child: parentChild } : {}),
     ...additionalParserConfig,
   };
+
+  // Python backend: keep the legacy flat-key contract unchanged.
+  if (!pickByBackend({ go: true, python: false })) {
+    return flat;
+  }
+
+  // Go backend: scope dataset-level metadata/parent_child onto their owning
+  // component nodes; never emit a flat `metadata`/`parent_child` key.
+  const scoped: Record<string, any> = { ...flat };
+  delete scoped.metadata;
+  delete scoped.parent_child;
+  if (metadata && typeof metadata === 'object') {
+    scoped['Extractor:AutoExtractDefault'] = {
+      ...(scoped['Extractor:AutoExtractDefault'] as Record<string, any> | undefined),
+      metadata,
+    };
+  }
+  if (parentChild) {
+    scoped['GeneralChunker:SixApplesFall'] = {
+      ...(scoped['GeneralChunker:SixApplesFall'] as Record<string, any> | undefined),
+      parent_child: parentChild,
+    };
+  }
+  return scoped;
 };
