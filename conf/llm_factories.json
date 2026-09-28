@@ -5803,6 +5803,32 @@
             ]
         },
         {
+            "name": "Voxell Forge",
+            "logo": "",
+            "tags": "TEXT EMBEDDING",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "turbo",
+                    "tags": "TEXT EMBEDDING,2048",
+                    "max_tokens": 2048,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "pro",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "ultra",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                }
+            ]
+        },
+        {
             "name": "GiteeAI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TEXT RE-RANK",

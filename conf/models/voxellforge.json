@@ -1,0 +1,49 @@
+{
+  "name": "Voxell Forge",
+  "url": {
+    "default": "https://api.voxell.ai/v1"
+  },
+  "url_suffix": {
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "voxellforge",
+  "models": [
+    {
+      "name": "turbo",
+      "max_tokens": 2048,
+      "max_dimension": 1024,
+      "dimensions": [
+        1024
+      ],
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 256
+    },
+    {
+      "name": "pro",
+      "max_tokens": 512,
+      "max_dimension": 2560,
+      "dimensions": [
+        2560
+      ],
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 256
+    },
+    {
+      "name": "ultra",
+      "max_tokens": 512,
+      "max_dimension": 4096,
+      "dimensions": [
+        4096
+      ],
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 256
+    }
+  ]
+}
