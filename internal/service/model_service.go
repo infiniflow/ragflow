@@ -471,45 +471,6 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
-func validateBedrockAPIKeyAuth(providerName, apiKey string) (bool, string, error) {
-	if !strings.EqualFold(providerName, "Bedrock") {
-		return false, apiKey, nil
-	}
-	var rawConfig map[string]json.RawMessage
-	if json.Unmarshal([]byte(apiKey), &rawConfig) != nil {
-		return false, apiKey, nil
-	}
-	var authMode string
-	if json.Unmarshal(rawConfig["auth_mode"], &authMode) != nil || authMode != "bedrock_api_key" {
-		return false, apiKey, nil
-	}
-	var config struct {
-		APIKey string `json:"bedrock_api_key"`
-		Region string `json:"bedrock_region"`
-	}
-	if json.Unmarshal([]byte(apiKey), &config) != nil {
-		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
-	}
-	config.APIKey = strings.TrimSpace(config.APIKey)
-	if config.APIKey == "" {
-		return true, apiKey, errors.New("Bedrock API key must be provided")
-	}
-	config.Region = strings.TrimSpace(config.Region)
-	if config.Region == "" {
-		return true, apiKey, errors.New("AWS region must be provided")
-	}
-	if err := modelModule.ValidateBedrockRegion(config.Region); err != nil {
-		return true, apiKey, err
-	}
-	rawConfig["bedrock_api_key"], _ = json.Marshal(config.APIKey)
-	rawConfig["bedrock_region"], _ = json.Marshal(config.Region)
-	normalizedAPIKey, err := json.Marshal(rawConfig)
-	if err != nil {
-		return true, apiKey, errors.New("invalid Bedrock API-key configuration")
-	}
-	return true, string(normalizedAPIKey), nil
-}
-
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
@@ -542,26 +503,6 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	providerName := provider.ProviderName
 
-	// Normalize api_key: VLLM with empty api_key defaults to "x".
-	// Mirrors Python's _normalize_provider_api_key.
-	if strings.EqualFold(providerName, "VLLM") && apiKey == "" {
-		apiKey = "x"
-	}
-
-	bedrockAPIKeyAuth, apiKey, err := validateBedrockAPIKeyAuth(providerName, apiKey)
-	if err != nil {
-		return common.CodeBadRequest, err
-	}
-	if bedrockAPIKeyAuth {
-		if len(modelInfo) == 0 {
-			return common.CodeBadRequest, errors.New("at least one Bedrock model must be selected")
-		}
-		for _, model := range modelInfo {
-			if strings.TrimSpace(model.ModelName) == "" {
-				return common.CodeBadRequest, errors.New("Bedrock model name must be provided")
-			}
-		}
-	}
 	instanceID := utility.GenerateToken()
 
 	extra := make(map[string]string)
@@ -590,7 +531,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	// (TenantModelInstanceDAO.Create owns its own transaction), so a failure
 	// here has to be undone explicitly or the tenant keeps a half-populated
 	// instance and can no longer reuse the instance name.
-	if err = m.addModelsToNewInstance(ctx, tenantID, providerName, instanceName, region, modelInfo, bedrockAPIKeyAuth); err != nil {
+	if err = m.addModelsToNewInstance(ctx, tenantID, providerName, instanceName, region, modelInfo); err != nil {
 		if rollbackErr := m.rollbackCreatedInstance(ctx, instanceID); rollbackErr != nil {
 			common.Logger.Error("failed to roll back model instance after model creation failure",
 				zap.String("instance_id", instanceID), zap.Error(rollbackErr))
@@ -603,16 +544,13 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 
 // addModelsToNewInstance creates the models of a freshly created provider
 // instance, either the requested ones or the provider's factory defaults.
-func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenantID, providerName, instanceName, region string, modelInfo []CreateInstanceModelInfo, bedrockAPIKeyAuth bool) error {
+func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenantID, providerName, instanceName, region string, modelInfo []CreateInstanceModelInfo) error {
 	if len(modelInfo) > 0 {
 		for _, model := range modelInfo {
 			if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, model); err != nil {
 				return err
 			}
 		}
-		return nil
-	}
-	if bedrockAPIKeyAuth {
 		return nil
 	}
 	// model_info not provided — add all factory default models.
@@ -1979,15 +1917,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
 	}
 
-	// Normalize api_key: VLLM with empty api_key defaults to "x".
-	if strings.EqualFold(providerName, "vllm") && apiKey == "" {
-		apiKey = "x"
-	}
-
-	_, apiKey, err = validateBedrockAPIKeyAuth(providerName, apiKey)
-	if err != nil {
-		return common.CodeBadRequest, err
-	}
 	// Update instance record.
 	instanceUpdates := map[string]interface{}{
 		"api_key": apiKey,
