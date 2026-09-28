@@ -51,7 +51,7 @@ func TestWikiReadersFilterDisabledDocuments(t *testing.T) {
 
 	eng := &fakeEngine{searchChunks: []map[string]interface{}{{
 		"id": "page-1", "doc_id": "active-doc", "compile_kwd": "wiki_page",
-		"available_int": 0, "kc_payload": "page content", "slug_kwd": "entity/page",
+		"available_int": 0, "content_with_weight": "page content", "slug_kwd": "entity/page",
 		"page_type_kwd": "entity", "title_kwd": "page", "source_doc_ids": []string{"active-doc"},
 	}}}
 	r := engineReader{eng: eng}
@@ -82,21 +82,20 @@ func TestSearchSimilarFiltersByVariant(t *testing.T) {
 		searchChunks: []map[string]interface{}{
 			// dirty row: wrong variant (must be skipped by the in-memory guard).
 			{
-				"id":            "dirty",
-				"doc_id":        "kb",
-				"available_int": 1,
-				"compile_kwd":   "wiki_section", // not wiki_page
-				"kc_payload":    "{\"c\":1}",
-				"_score":        0.99,
+				"id":                  "dirty",
+				"doc_id":              "kb",
+				"available_int":       1,
+				"compile_kwd":         "wiki_section", // not wiki_page
+				"content_with_weight": "{\"c\":1}",
+				"_score":              0.99,
 			},
-			// good row: correct variant + kc_kind round-trip.
+			// good row: correct variant (wiki_page => kind "page").
 			{
 				"id":                   "page1",
 				"doc_id":               "kb",
 				"available_int":        1,
 				"compile_kwd":          "wiki_page",
-				"kc_kind":              "page",
-				"kc_payload":           "{\"c\":1}",
+				"content_with_weight":  "{\"c\":1}",
 				"create_timestamp_flt": 1700000000.0,
 				"create_time":          "2023-11-14T22:13:20Z",
 				"_score":               0.95,
@@ -113,7 +112,7 @@ func TestSearchSimilarFiltersByVariant(t *testing.T) {
 		t.Fatalf("expected the wiki_page row to win, got %q", p.ID)
 	}
 	if p.Meta["kind"] != "page" {
-		t.Fatalf("expected kc_kind round-trip to 'page', got %v", p.Meta["kind"])
+		t.Fatalf("expected compile_kwd=wiki_page to map to kind 'page', got %v", p.Meta["kind"])
 	}
 	if p.Merged != true {
 		t.Fatalf("expected merged=true for available_int=1 row")
@@ -136,7 +135,7 @@ func TestSearchSimilarFiltersByVariant(t *testing.T) {
 		t.Fatalf("expected compile_kwd=%q filter, got %v", compileKwdWikiPage, eng.lastSearchReq.Filter["compile_kwd"])
 	}
 	// SelectFields must include the round-trip columns added in the 8th review.
-	for _, want := range []string{"kc_kind", "create_timestamp_flt", "create_time"} {
+	for _, want := range []string{"compile_kwd", "content_with_weight", "create_timestamp_flt", "create_time"} {
 		found := false
 		for _, f := range eng.lastSearchReq.SelectFields {
 			if f == want {
@@ -156,12 +155,12 @@ func TestSearchSimilarSkipsNonMerged(t *testing.T) {
 	eng := &fakeEngine{
 		searchChunks: []map[string]interface{}{
 			{
-				"id":            "doc1",
-				"doc_id":        "doc",
-				"available_int": 0,
-				"compile_kwd":   "wiki_page",
-				"kc_payload":    "{\"c\":1}",
-				"_score":        0.99,
+				"id":                  "doc1",
+				"doc_id":              "doc",
+				"available_int":       0,
+				"compile_kwd":         "wiki_page",
+				"content_with_weight": "{\"c\":1}",
+				"_score":              0.99,
 			},
 		},
 	}

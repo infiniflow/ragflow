@@ -592,6 +592,12 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// page-leading title isolated in its own column.
 	boxes = lyt.FinalReadingOrderMerge(boxes)
 
+	// Rejoin words a PDF split across a line break with a hyphen. Must run
+	// after FinalReadingOrderMerge (consecutive lines are adjacent, same
+	// column) and before NaiveVerticalMerge (which would otherwise glue the
+	// halves with a space). See layout.Dehyphenate.
+	boxes = lyt.Dehyphenate(boxes)
+
 	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, pageEnglish)
 	result.Metrics.BoxesVertMerge = len(boxes)
 	if err := ctx.Err(); err != nil {

@@ -619,4 +619,69 @@ func TestContextualTextConcatenatesMediaContext(t *testing.T) {
 // helpers
 // ---------------------------------------------------------------------------
 
+func TestFlattenLegacyParserSetups(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   map[string]any
+	}{
+		{
+			name: "nested setups lifted",
+			params: map[string]any{
+				"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+				"setups": map[string]any{
+					"pdf": map[string]any{"parse_method": "vision"},
+				},
+			},
+			want: map[string]any{
+				"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+				"pdf":     map[string]any{"parse_method": "vision"},
+			},
+		},
+		{
+			name: "flat params unchanged",
+			params: map[string]any{
+				"pdf": map[string]any{"parse_method": "deepdoc"},
+			},
+			want: map[string]any{
+				"pdf": map[string]any{"parse_method": "deepdoc"},
+			},
+		},
+		{
+			name: "empty setups map removed",
+			params: map[string]any{
+				"setups": map[string]any{},
+			},
+			want: map[string]any{},
+		},
+		{
+			name: "same family field-merged with top-level winning",
+			params: map[string]any{
+				"pdf":    map[string]any{"lang": "English"},
+				"setups": map[string]any{"pdf": map[string]any{"parse_method": "vision", "lang": "Chinese"}},
+			},
+			want: map[string]any{
+				"pdf": map[string]any{"parse_method": "vision", "lang": "English"},
+			},
+		},
+		{
+			name: "non-map setups value left alone",
+			params: map[string]any{
+				"setups": "bogus",
+			},
+			want: map[string]any{
+				"setups": "bogus",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FlattenLegacyParserSetups(tc.params)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("FlattenLegacyParserSetups() = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
 func ptrString(s string) *string { return &s }

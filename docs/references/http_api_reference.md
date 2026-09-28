@@ -7,7 +7,7 @@ sidebar_custom_props: {
 ---
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -49,11 +49,27 @@ RAGFlow responses may contain both an HTTP status code and a business code in th
 | 500 | Server error |
 ---
 
-## Deprecated API Aliases
+## Migrate to 1.0
 
-The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
+RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
 
-| Deprecated endpoint                                                               | Replacement endpoint                                                                |
+The following changes require client updates:
+
+| Area | RAGFlow 1.0 Go change | Client action |
+|------|------------------------|---------------|
+| Dataset parser selection | Dataset create and update use `parser_id`; responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `parser_id`. For the general parser, send `"parser_id": "general"`. |
+| Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
+| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
+
+:::note
+Go responses include `X-API-Source: go`, which can be used to verify the serving backend during rollout.
+:::
+
+### Removed API aliases
+
+The following paths remain available only on the Python backend. They are not registered by the RAGFlow 1.0 Go backend.
+
+| Removed endpoint                                                                  | Replacement endpoint                                                                |
 |-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
@@ -73,7 +89,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **GET** `/api/v1/file/get/{file_id}`                                              | **GET** `/api/v1/files/{file_id}`                                                   |
 | **POST** `/api/v1/file/mv`                                                        | **POST** `/api/v1/files/move`                                                       |
 | **POST** `/api/v1/file/convert`                                                   | **POST** `/api/v1/files/link-to-datasets`                                           |
-| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions` | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true` |
+| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions`                      | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true`         |
 
 ---
 
@@ -87,8 +103,8 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 
 Creates a model response for a given chat conversation.
 
-:::caution DEPRECATED
-`POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats_openai/{chat_id}/chat/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
@@ -101,7 +117,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"model"`: `string`
+  - `"model"`: `string` (optional)
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
   - `"extra_body"`: `object` (optional)
@@ -142,7 +158,7 @@ curl --request POST \
 - `chat_id` (*Path parameter*) `string`, *Required*
   Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`
   The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
@@ -239,13 +255,13 @@ Failure:
 
 ---
 
-### Create agent completion
+### Create OpenAI-compatible agent completion
 
-:::caution DEPRECATED
-This endpoint remains available for backward compatibility but may be removed in a future release. New integrations should use `POST /api/v1/agents/chat/completions` with `"openai-compatible": true`.
+:::caution REMOVED ALIAS
+RAGFlow 1.0 Go does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
 :::
 
-**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+**POST** `/api/v1/agents/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -254,23 +270,28 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- URL: `/api/v1/agents/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+  - `"agent_id"`: `string`
+  - `"openai-compatible"`: `boolean` (must be `true`)
   - `"model"`: `string`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"session_id"`: `string` (optional)
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
+        "agent_id": "AGENT_ID",
+        "openai-compatible": true,
         "model": "model",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true
@@ -279,7 +300,13 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `agent_id` (*Body parameter*) `string`, *Required*
+  The ID of the associated agent.
+
+- `openai-compatible` (*Body parameter*) `boolean`, *Required*
+  Must be `true` to enable the OpenAI-compatible response format.
+
+- `model` (*Body parameter*) `string`
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
@@ -2116,8 +2143,8 @@ Failure:
 
 Updates content or configurations for a specified chunk.
 
-:::caution DEPRECATED
-`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -2469,7 +2496,6 @@ Retrieves chunks from specified datasets.
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
-  - `"toc_enhance"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
@@ -2534,8 +2560,6 @@ curl --request POST \
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`
-  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
@@ -2702,7 +2726,6 @@ curl --request POST \
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
-  - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
 - `"top_n"`: (*Body parameter*), `int`
@@ -3364,8 +3387,8 @@ Failure:
 
 Updates a session of a specified chat assistant.
 
-:::caution DEPRECATED
-`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -3795,8 +3818,8 @@ Failure:
 
 Starts a chat completion request. The same endpoint supports three modes:
 
-:::caution DEPRECATED
-`POST /api/v1/chats/{chat_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats/{chat_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
@@ -4348,8 +4371,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-:::caution DEPRECATED
-`POST /api/v1/agents/{agent_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/agents/{agent_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -5106,8 +5129,8 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-:::caution DEPRECATED
-`POST /api/v1/sessions/related_questions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/sessions/related_questions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
@@ -6514,8 +6537,8 @@ Failure
 
 Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
 
-:::caution DEPRECATED
-`GET /v1/system/healthz` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /v1/system/healthz` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6597,8 +6620,8 @@ Explanation:
 
 Uploads one or multiple files to the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/upload` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/upload` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6669,8 +6692,8 @@ Failure:
 
 Uploads a file and creates the respective document.
 
-:::caution DEPRECATED
-`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6748,8 +6771,8 @@ Failure:
 
 **GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
-:::caution DEPRECATED
-The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are not available in 1.0. Use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded for use in the agent system.
@@ -6808,8 +6831,8 @@ Failure:
 
 Creates a new file or folder in the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/create` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/create` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6884,8 +6907,8 @@ Failure:
 
 Lists files and folders under a specific folder.
 
-:::caution DEPRECATED
-`GET /api/v1/file/list` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/list` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6965,8 +6988,8 @@ Failure:
 
 Retrieves the immediate parent folder information of a specified file.
 
-:::caution DEPRECATED
-`GET /api/v1/file/parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7022,8 +7045,8 @@ Failure:
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
-:::caution DEPRECATED
-`GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/all_parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7085,8 +7108,8 @@ Failure:
 
 Deletes one or multiple files or folders.
 
-:::caution DEPRECATED
-`POST /api/v1/file/rm` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/rm` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7152,8 +7175,8 @@ Failure:
 
 Downloads a file from the system.
 
-:::caution DEPRECATED
-`GET /api/v1/file/get/{file_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/get/{file_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7200,8 +7223,8 @@ Failure:
 
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
 
-:::caution DEPRECATED
-The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are not available in 1.0. Use this endpoint instead.
 :::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
@@ -7303,8 +7326,8 @@ or
 
 Converts files to documents and links them to specified datasets.
 
-:::caution DEPRECATED
-`POST /api/v1/file/convert` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/convert` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request

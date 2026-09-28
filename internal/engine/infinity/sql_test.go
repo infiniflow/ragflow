@@ -424,3 +424,48 @@ func TestBuildFilterFromCondition_StringSliceIDPreservesScope(t *testing.T) {
 		t.Errorf("empty []string id: got %q, want '1=1'", got)
 	}
 }
+
+func TestBuildFilterFromConditionJSONListMembership(t *testing.T) {
+	jsonColumns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"source_doc_ids": {Type: "Json", Default: "[]"},
+	}
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1", "doc-2"}}
+	want := `(json_contains(source_doc_ids, '"doc-1"') OR json_contains(source_doc_ids, '"doc-2"'))`
+	if got := buildFilterFromCondition(condition, jsonColumns); got != want {
+		t.Errorf("JSON-list condition = %q, want %q", got, want)
+	}
+	if got := equivalentConditionToStr(condition, jsonColumns); got != want {
+		t.Errorf("JSON-list search condition = %q, want %q", got, want)
+	}
+}
+
+func TestBuildFilterFromConditionLegacyJSONListMembership(t *testing.T) {
+	legacyColumns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"source_doc_ids": {Type: "Varchar", Default: ""},
+	}
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1"}}
+	want := `(filter_fulltext('source_doc_ids', 'doc-1'))`
+	if got := buildFilterFromCondition(condition, legacyColumns); got != want {
+		t.Errorf("legacy JSON-list condition = %q, want %q", got, want)
+	}
+	if got := equivalentConditionToStr(condition, legacyColumns); got != want {
+		t.Errorf("legacy JSON-list search condition = %q, want %q", got, want)
+	}
+}
+
+func TestBuildFilterFromConditionMissingJSONListColumnNeverMatches(t *testing.T) {
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1"}}
+	want := `(1=0)`
+	if got := buildFilterFromCondition(condition, map[string]struct {
+		Type    string
+		Default interface{}
+	}{}); got != want {
+		t.Errorf("missing JSON-list column condition = %q, want %q", got, want)
+	}
+}
