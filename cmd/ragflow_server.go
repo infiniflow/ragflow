@@ -1038,7 +1038,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
 	})
 	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
 	common.Info("agent: retrieval service adapter installed")
 
 	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
