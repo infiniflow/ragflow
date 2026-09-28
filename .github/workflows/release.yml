@@ -1,8 +1,8 @@
 name: release
 
 on:
-  #schedule:
-  #  - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
+  schedule:
+    - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
   # https://github.com/orgs/community/discussions/26286?utm_source=chatgpt.com#discussioncomment-3251208
   # "The create event does not support branch filter and tag filter."
   # The "create tags" trigger is specifically focused on the creation of new tags, while the "push tags" trigger is activated when tags are pushed, including both new tag creations and updates to existing tags.
