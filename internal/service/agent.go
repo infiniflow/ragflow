@@ -1463,6 +1463,20 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
+	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
+	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
+		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
+		if err != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
+		}
+		if existingSession == nil {
+			if !trustedFirstTouch {
+				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+			}
+		} else if existingSession.DialogID != canvasID || existingSession.UserID != userID {
+			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		}
+	}
 	messageID := utility.GenerateToken()
 	questionSaved := false
 	persistQuestion := func() error {
@@ -1703,26 +1717,24 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = normalisedDSLForRun(versionRow)
 	}
 	sessionFound := false
-	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
-		if sessionErr != nil {
-			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
+	if sessionID != "" && s.api4ConversationDAO != nil && dao.DB != nil {
+		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
+		if err != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
-		if session != nil && session.UserID != userID {
+		if existingSession != nil && (existingSession.DialogID != canvasID || existingSession.UserID != userID) {
 			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
 		}
-		sessionFound = session != nil
-		if session != nil && len(session.DSL) > 0 {
-			dsl = dslpkg.NormalizeForRun(session.DSL)
+		sessionFound = existingSession != nil
+		if existingSession != nil && len(existingSession.DSL) > 0 {
+			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
 	if err := validateAgentChatModels(ctx, userID, dsl); err != nil {
 		return nil, err
 	}
-	// A handler may allocate the session id before calling RunAgent so the
-	// effective id is available even when the run emits no events. Treat an
-	// absent conversation row as a first touch regardless of who generated the
-	// id; there is still only one business identity (session_id).
+	// A trusted boundary may allocate the session id before calling RunAgent so
+	// the effective id is available even when the run emits no events.
 	if !sessionFound || newSession {
 		// The editable/released canvas can be a runtime replica from another
 		// conversation. A new session may reuse its graph, memory, and env state,
