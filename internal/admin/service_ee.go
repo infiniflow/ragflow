@@ -30,8 +30,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, string) {
-	GlobalServerStore.UpdateServerInfo(serverName, status)
+func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
+	err := GlobalServerStore.UpdateServerInfo(serverName, status)
+	if err != nil {
+		return common.CodeErrorServerStatus, nil, err.Error()
+	}
 	return CheckLicense()
 }
 
@@ -1241,8 +1244,12 @@ func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []s
 	return []map[string]interface{}{element}, nil
 }
 
-func CheckLicense() (common.ErrorCode, string) {
-	return common.CodeLicenseValid, ""
+func CheckClientStatus(serverName string, status *common.BaseMessage) error {
+	return nil
+}
+
+func CheckLicense() (common.ErrorCode, map[string]interface{}, string) {
+	return common.CodeLicenseValid, map[string]interface{}{}, ""
 }
 
 // DownloadSensitiveWords download sensitive words
