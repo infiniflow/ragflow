@@ -21,6 +21,7 @@ import { configResponsive } from 'ahooks';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ar';
 import 'dayjs/locale/tr';
+import 'dayjs/locale/uz';
 import 'dayjs/locale/zh-cn';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
 import customParseFormat from 'dayjs/plugin/customParseFormat';

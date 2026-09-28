@@ -108,6 +108,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 	question := extractLastUserContent(req.Messages)
 	if req.SessionID == "" {
 		req.SessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	runContext := service.WithOpenAICompatMessages(c.Request.Context(), req.Messages)
