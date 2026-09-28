@@ -340,21 +340,29 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
 	parts := splitByDelim(text, delimPattern, true)
 	cleaned := make([]string, 0, len(parts))
+	// Leading whitespace-only pieces (e.g. a source that starts with a
+	// delimiter, like "\nsecond line") carry no preceding segment to fold into,
+	// so they are buffered and prepended to the first real segment. This keeps
+	// a leading retained delimiter instead of silently dropping it.
+	var leading string
 	for _, p := range parts {
 		// A delimiter is a split hint, not a delete instruction: the retained
 		// delimiter (and any surrounding whitespace) stays with its segment so
 		// the emitted chunks reproduce the source exactly. A whitespace-only
 		// segment between consecutive delimiters (e.g. the blank line of
 		// "# Title\n\nParagraph") is NOT dropped — its retained delimiters are
-		// folded into the preceding segment, so the source blank line survives
+		// folded into an adjacent segment, so the source blank line survives
 		// and no empty chunk is emitted.
 		if strings.TrimSpace(p) == "" {
 			if len(cleaned) > 0 {
 				cleaned[len(cleaned)-1] += p
+			} else {
+				leading += p
 			}
 			continue
 		}
-		cleaned = append(cleaned, p)
+		cleaned = append(cleaned, leading+p)
+		leading = ""
 	}
 	if len(cleaned) == 0 {
 		return emptyOutputs()
@@ -522,8 +530,12 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 	for _, ch := range merged {
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
-		// indexed/embedded chunk text.
-		setChunkText(&ch, removeTag(strings.TrimSpace(ch.Text)))
+		// indexed/embedded chunk text. Only the tags are removed — the source
+		// whitespace (including any retained delimiter) is preserved, so the
+		// emitted chunk reproduces the source exactly (lossless). Trimming the
+		// chunk text would drop a retained delimiter that happens to sit at a
+		// chunk boundary.
+		setChunkText(&ch, removeTag(ch.Text))
 		if ch.Text == "" {
 			continue
 		}
@@ -1735,9 +1747,26 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 		}
 		mom := strings.TrimPrefix(ck.Text, "\n")
 		parts := splitByDelim(ck.Text, pattern, true)
+		// Whitespace-only pieces from consecutive delimiters ("A\n\nB") must be
+		// folded into an adjacent child, not discarded — otherwise the repeated
+		// newline disappears from the child text. A leading whitespace-only
+		// piece (no preceding child of this parent yet) is buffered and
+		// prepended to the first real child.
+		var leading string
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
+				if n := len(out); n > 0 && out[n-1].Mom == mom {
+					prev := out[n-1]
+					setChunkText(&prev, prev.Text+p)
+					out[n-1] = prev
+					continue
+				}
+				leading += p
 				continue
+			}
+			if leading != "" {
+				p = leading + p
+				leading = ""
 			}
 			cp := cloneChunkDoc(ck)
 			// The count describes the child's own text. The delimiter branch
@@ -1780,11 +1809,27 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
+		mom := strings.TrimPrefix(t, "\n")
+		// Whitespace-only pieces from consecutive delimiters must be folded into
+		// an adjacent child (or prepended to the first child when leading), so a
+		// repeated newline in the source is not silently dropped.
+		var leading string
 		for _, text := range splitByDelim(t, pattern, true) {
 			if strings.TrimSpace(text) == "" {
+				if n := len(out); n > 0 && out[n-1].Mom == mom {
+					prev := out[n-1]
+					setChunkText(&prev, prev.Text+text)
+					out[n-1] = prev
+					continue
+				}
+				leading += text
 				continue
 			}
-			child := schema.ChunkDoc{CKType: d.CKType, Mom: strings.TrimPrefix(t, "\n")}
+			if leading != "" {
+				text = leading + text
+				leading = ""
+			}
+			child := schema.ChunkDoc{CKType: d.CKType, Mom: mom}
 			setChunkText(&child, text)
 			out = append(out, child)
 		}

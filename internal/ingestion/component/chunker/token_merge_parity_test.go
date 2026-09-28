@@ -96,7 +96,7 @@ func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []str
 	merged := mergeUnits(units, cap, overlapPct, "")
 	out := make([]string, 0, len(merged))
 	for _, ck := range merged {
-		text := removeTag(strings.TrimSpace(ck.Text))
+		text := removeTag(ck.Text)
 		if text == "" {
 			continue
 		}
@@ -247,7 +247,7 @@ func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappe
 		// Mirror production token.go: removeTag first, then TrimSpace, so
 		// whitespace between visible text and a trailing position tag survives
 		// exactly as the Go TokenChunker emits it.
-		text := removeTag(strings.TrimSpace(ck.Text))
+		text := removeTag(ck.Text)
 		if text == "" {
 			continue
 		}
