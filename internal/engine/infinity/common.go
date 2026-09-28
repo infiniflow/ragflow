@@ -159,9 +159,11 @@ func fieldKeyword(fieldName string) bool {
 }
 
 // fieldJSON reports fields stored as Infinity JSON columns. The Infinity Go
-// SDK expects JSON columns as encoded strings, not Go slices or maps.
+// SDK expects JSON columns as encoded strings, not Go slices or maps. Column
+// names are matched case-insensitively so the write path (transformChunkFields)
+// and the read path (decodeJSONFields) agree on every spelling.
 func fieldJSON(fieldName string) bool {
-	switch fieldName {
+	switch strings.ToLower(fieldName) {
 	case "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
 		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
 		"related_kb_pages_kwd", "claims", "page_ids", "source_chunk_hashes",
@@ -175,7 +177,7 @@ func fieldJSON(fieldName string) bool {
 // fieldJSONList reports JSON columns whose value is an array and whose filter
 // semantics are membership rather than whole-document equality.
 func fieldJSONList(fieldName string) bool {
-	switch fieldName {
+	switch strings.ToLower(fieldName) {
 	case "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
 		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
 		"related_kb_pages_kwd", "claims", "page_ids",
