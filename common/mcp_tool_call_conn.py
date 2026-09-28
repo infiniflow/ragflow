@@ -320,13 +320,12 @@ class MCPToolCallSession(ToolCallSession):
         if result.isError:
             return f"MCP server error: {result.content}"
 
-        # For now, we only support text content
         if not result.content:
             return "MCP server returned empty content."
-        if isinstance(result.content[0], TextContent):
-            return result.content[0].text
-        else:
-            return f"Unsupported content type {type(result.content)}"
+        text_content = [item.text for item in result.content if isinstance(item, TextContent)]
+        if text_content:
+            return "\n".join(text_content)
+        return f"Unsupported content type {type(result.content)}"
 
     async def _get_tools_from_mcp_server(self, request_timeout: float | int = 8, deadline: float | None = None) -> list[Tool]:
         try:

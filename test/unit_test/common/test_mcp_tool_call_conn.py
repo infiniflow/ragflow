@@ -41,6 +41,33 @@ async def _stop_tasks(session: MCPToolCallSession, *tasks: asyncio.Task) -> None
     assert all(task.done() for task in tasks)
 
 
+@pytest.mark.asyncio
+async def test_call_mcp_tool_returns_all_text_content_items():
+    session = _make_session()
+
+    async def fake_call_mcp_server(*_args, **_kwargs):
+        return SimpleNamespace(
+            isError=False,
+            content=[
+                mcp_tool_call_conn.TextContent(type="text", text='{"projectNumber":"2023_040"}'),
+                mcp_tool_call_conn.TextContent(type="text", text='{"projectNumber":"2023_040-001"}'),
+                mcp_tool_call_conn.TextContent(type="text", text='{"projectNumber":"2023_040-002"}'),
+            ],
+        )
+
+    session._call_mcp_server = fake_call_mcp_server
+
+    result = await session._call_mcp_tool("navigo_list_projects", {})
+
+    assert result == "\n".join(
+        [
+            '{"projectNumber":"2023_040"}',
+            '{"projectNumber":"2023_040-001"}',
+            '{"projectNumber":"2023_040-002"}',
+        ]
+    )
+
+
 @pytest.mark.parametrize("server_type", [MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP])
 def test_close_sync_waits_for_transport_context_cleanup(monkeypatch, server_type):
     initialized = threading.Event()
