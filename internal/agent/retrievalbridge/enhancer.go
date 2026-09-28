@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -56,6 +57,8 @@ func (e *Enhancer) CrossLanguages(
 
 // FilterDocuments applies auto, semi-auto, or manual metadata filtering and
 // constrains the result by any document scope supplied by upstream tools.
+// When diagnostics is non-nil, the runtime outcome is recorded for reporting
+// in agent references.
 func (e *Enhancer) FilterDocuments(
 	ctx context.Context,
 	filter map[string]any,
@@ -63,6 +66,7 @@ func (e *Enhancer) FilterDocuments(
 	chatModel *modelModule.ChatModel,
 	baseDocIDs []string,
 	kbIDs []string,
+	diagnostics *common.MetadataFilterDiagnostic,
 ) ([]string, error) {
 	if e == nil || e.metadataSvc == nil {
 		return nil, fmt.Errorf("metadata service is not configured")
@@ -71,7 +75,11 @@ func (e *Enhancer) FilterDocuments(
 	if err != nil {
 		return nil, err
 	}
-	docIDs, noMatches := service.ApplyMetaDataFilter(
+	var diag *common.MetadataFilterDiagnostic
+	if diagnostics != nil {
+		diag = &common.MetadataFilterDiagnostic{}
+	}
+	docIDs, noMatches := service.ApplyMetaDataFilterWithDiagnostics(
 		ctx,
 		filter,
 		metadata,
@@ -79,7 +87,11 @@ func (e *Enhancer) FilterDocuments(
 		chatModel,
 		baseDocIDs,
 		kbIDs,
+		diag,
 	)
+	if diagnostics != nil && diag != nil {
+		*diagnostics = *diag
+	}
 	if noMatches {
 		return []string{service.NoMatchDocIDSentinel}, nil
 	}
