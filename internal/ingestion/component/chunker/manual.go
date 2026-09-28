@@ -72,7 +72,7 @@ func NewManualChunker(params map[string]any) (runtime.Component, error) {
 	// operator form is not promised to apply them; we strip them here
 	// instead of accepting and silently ignoring them downstream. See issue
 	// #20139.
-	conf := map[string]any{"method": "group"}
+	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
 	dropped := make([]string, 0, 3)
 	for k, v := range params {
 		switch k {

@@ -447,6 +447,7 @@ func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
 			name: "method downgrade attempt is dropped",
 			params: map[string]any{
 				"method":                  "naive",
+				"levels":                  [][]string{{`^# `}},
 				"chunk_token_cap":         128,
 				"include_heading_content": true,
 			},
@@ -455,6 +456,7 @@ func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
 			name: "method upgrade attempt is dropped",
 			params: map[string]any{
 				"method":                  "hierarchy",
+				"levels":                  [][]string{{`^# `}},
 				"chunk_token_cap":         256,
 				"include_heading_content": false,
 			},
@@ -462,6 +464,7 @@ func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
 		{
 			name: "only cap and heading flag set",
 			params: map[string]any{
+				"levels":                  [][]string{{`^# `}},
 				"chunk_token_cap":         1024,
 				"include_heading_content": true,
 			},
