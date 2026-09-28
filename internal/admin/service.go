@@ -1455,7 +1455,7 @@ func (s *Service) TestSandboxConnection(ctx context.Context, providerType string
 var heartBeatCount int64 = 0
 
 // HandleHeartbeat handle heartbeat
-func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, string) {
+func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
 	heartBeatCount++
 
 	status := &common.BaseMessage{
