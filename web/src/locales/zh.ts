@@ -2144,7 +2144,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       navDeleteAllDescription: '确定要删除整个 PageIndex 吗？此操作无法撤销。',
       navDeleteNodeTitle: '删除 PageIndex',
       navDeleteNodeDescription: '确定要删除该节点及其子节点吗？',
-      representationEmpty: '暂无 Artifact 模板。',
+      representationEmpty: 'Pipeline 编译器未配置或未提取到 Artifact。',
       representationUnsupported: '暂不支持该表征类型。',
       claimsPanelTitle: '证据链 · {{name}}',
       claimsTotal: '共 {{count}} 条',

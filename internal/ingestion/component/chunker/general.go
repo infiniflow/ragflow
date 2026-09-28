@@ -589,7 +589,7 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 			result = append(result, unit)
 			continue
 		}
-		for _, part := range splitDroppingDelim(unit.Text, pattern) {
+		for _, part := range splitByDelim(unit.Text, pattern, false) {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -1112,7 +1112,7 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema
 			result = append(result, unit)
 			continue
 		}
-		for _, part := range splitDroppingDelim(unit.Text, pattern) {
+		for _, part := range splitByDelim(unit.Text, pattern, false) {
 			if strings.TrimSpace(part) == "" {
 				continue
 			}
