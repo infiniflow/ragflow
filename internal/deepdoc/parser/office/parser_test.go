@@ -1,4 +1,4 @@
-package docx
+package office
 
 import (
 	"testing"

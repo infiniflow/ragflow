@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"strings"
 
-	deepdocdocx "ragflow/internal/deepdoc/parser/docx"
+	deepdocoffice "ragflow/internal/deepdoc/parser/office"
 )
 
 // pptxExtract is a test seam for the native office_oxide extraction. It
 // defaults to the deepdoc/docx backend and is overridden in tests to capture
 // the effective container format passed to the engine.
-var pptxExtract = deepdocdocx.OpenAndExtract
+var pptxExtract = deepdocoffice.OpenAndExtract
 
 // PPTXParser parses both .pptx (OOXML) and .ppt (OLE binary)
 // files via the office_oxide backend. The format field controls
@@ -139,7 +139,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	irJSON, _, plainText, err := pptxExtract(data, effFormat)
 	if err != nil {
-		if errors.Is(err, deepdocdocx.ErrOfficeCGORequired) {
+		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
 		}
 		return ParseResult{Err: fmt.Errorf("presentation extract: %w", err)}

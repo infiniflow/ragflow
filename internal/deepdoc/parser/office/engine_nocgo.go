@@ -1,3 +1,5 @@
+//go:build !cgo
+
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +14,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package docx
+package office
 
-import "errors"
+import "fmt"
 
-// ErrOfficeCGORequired is returned by OpenAndExtract when the build has no
-// native office_oxide backend. The parser package wraps it into its own
-// ErrOfficeCGORequired so callers observe a stable sentinel regardless of
-// which layer reports the missing engine.
-var ErrOfficeCGORequired = errors.New("deepdoc/docx: cgo required")
+// OpenAndExtract is unavailable without the native office_oxide backend.
+func OpenAndExtract(data []byte, format string) (irJSON, markdown, plainText string, err error) {
+	return "", "", "", fmt.Errorf("%w", ErrOfficeCGORequired)
+}

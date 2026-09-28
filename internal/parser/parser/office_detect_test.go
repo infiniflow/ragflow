@@ -65,6 +65,29 @@ func TestDOCXParser_FallsBackToDOCForOLEHeader(t *testing.T) {
 	}
 }
 
+// TestDOCXParser_JSONEmptyIRReturnsError locks Finding B: when the native
+// backend opens the document but returns an empty structured IR, the JSON
+// output path must fail loud (it is built entirely from the IR, which the
+// Markdown path can fall back from plain text). This guards against silently
+// emitting empty JSON sections.
+func TestDOCXParser_JSONEmptyIRReturnsError(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error) {
+		// Open succeeds, but the IR view is empty.
+		return "", "", "", nil
+	}
+
+	res := p.ParseWithResult(ctx, "empty.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error for JSON output with empty IR, got nil")
+	}
+}
+
 // TestDOCXParser_TruncatedOLENotFallback ensures a truncated OLE prefix
 // (only 4 bytes) does not trigger the DOC fallback — it must stay "docx"
 // so truncated garbage is not misclassified as OLE.

@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"strings"
 
-	deepdocdocx "ragflow/internal/deepdoc/parser/docx"
+	deepdocoffice "ragflow/internal/deepdoc/parser/office"
 )
 
 // docExtract is the native office_oxide extraction seam for the DOC family.
-var docExtract = deepdocdocx.OpenAndExtract
+var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
 	OutputFormat string
@@ -55,7 +55,7 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	irJSON, mdText, plainText, err := docExtract(data, "doc")
 	if err != nil {
-		if errors.Is(err, deepdocdocx.ErrOfficeCGORequired) {
+		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
 		}
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
@@ -114,7 +114,18 @@ func extractDocText(irJSON, mdText, plainText string) (string, string, error) {
 	if irJSON != "" {
 		irText = flattenDocIR(irJSON)
 	}
-	return selectDocTextView(irJSON, irText, mdText, plainText), mdText, nil
+	text := selectDocTextView(irJSON, irText, mdText, plainText)
+	// Fail loud when the document yielded no usable text in any view. The
+	// OpenAndExtract contract swallows per-view errors, so an empty selected
+	// view plus an empty Markdown view is the only signal we get that the
+	// document has no extractable text — surfacing it avoids silently
+	// producing 0 chunks (Finding A). A legitimately empty payload (e.g. a
+	// scanned-image doc with OCR off) is rare and failing is safer than
+	// silent data loss.
+	if strings.TrimSpace(text) == "" && strings.TrimSpace(mdText) == "" {
+		return "", "", fmt.Errorf("doc extract: no text content")
+	}
+	return text, mdText, nil
 }
 
 // selectDocTextView chooses the best plain-text rendering from office_oxide's

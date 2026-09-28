@@ -1,6 +1,6 @@
 //go:build cgo
 
-package docx
+package office
 
 import (
 	"encoding/base64"

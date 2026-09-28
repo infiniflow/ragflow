@@ -21,18 +21,18 @@ import (
 	"fmt"
 	"strings"
 
-	deepdocdocx "ragflow/internal/deepdoc/parser/docx"
+	deepdocoffice "ragflow/internal/deepdoc/parser/office"
 )
 
 // docxExtract is a test seam for the native office_oxide extraction. It
 // defaults to the deepdoc/docx backend (which is the only place that depends
 // on office_oxide) and is overridden in tests to capture the effective
 // container format passed to the engine.
-var docxExtract = deepdocdocx.OpenAndExtract
+var docxExtract = deepdocoffice.OpenAndExtract
 
 // DOCXParser is the DOCX/DOC parser. It is a CGO-free facade: magic-byte
 // sniffing and post-processing live here, while the native extraction lives
-// in internal/deepdoc/parser/docx. The IR data model and postprocessing live
+// in internal/deepdoc/parser/office. The IR data model and postprocessing live
 // in cgo-free files (docx_ir.go, docx_postprocess.go, office_table_render.go)
 // so they compile and test without native libraries.
 type DOCXParser struct {
@@ -94,7 +94,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// OOXML header/footer parts to strip.
 	irJSON, md, _, err := docxExtract(data, format)
 	if err != nil {
-		if errors.Is(err, deepdocdocx.ErrOfficeCGORequired) {
+		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
 		}
 		return ParseResult{Err: fmt.Errorf("docx extract: %w", err)}
@@ -116,8 +116,15 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	if p.outputFormat == "json" {
+		// The JSON path is built entirely from the structured IR, so an
+		// empty IR is a fatal parse error for this output format — the
+		// Markdown path below still has the plain-text fallback. The
+		// OpenAndExtract contract swallows per-view errors, so we cannot
+		// distinguish "IR failed" from "IR legitimately empty"; either way
+		// the JSON path has nothing to build from, so we fail loud
+		// (Finding B) rather than emit empty/garbage JSON sections.
 		if irJSON == "" {
-			return ParseResult{Err: fmt.Errorf("docx to-ir-json: empty result")}
+			return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
 		}
 		var sections []map[string]any
 		sections = buildDOCXJSONSections(irJSON)

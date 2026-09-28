@@ -1,6 +1,6 @@
 //go:build cgo && manual
 
-package docx
+package office
 
 import (
 	"os"
