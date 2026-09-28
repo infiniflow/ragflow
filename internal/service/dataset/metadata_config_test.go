@@ -377,9 +377,16 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent, got %#v", persisted.ParserConfig["enable_metadata"])
 	}
-	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent, got %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok = persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected modular metadata map, got %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	metaObj, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map under extractor node, got %#v", extractor["metadata"])
 	}
 	if enabled, ok := metaObj["enabled"].(bool); !ok || enabled {
 		t.Fatalf("expected modular metadata.enabled == false after emptying fields, got %#v", metaObj["enabled"])

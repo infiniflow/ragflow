@@ -1185,6 +1185,27 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
+// extractorNodeMetadata returns the metadata object stored on the first
+// Extractor node of a parser_config (the component-scoped form).
+func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	for cpnID, raw := range cfg {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if meta, ok := params["metadata"].(map[string]interface{}); ok {
+			return meta
+		}
+	}
+	t.Fatalf("no Extractor node with metadata found in parser_config: %#v", cfg)
+	return nil
+}
+
 func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -1222,12 +1243,16 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	meta := extractorNodeMetadataInTest(t, map[string]interface{}(persisted.ParserConfig))
+	if !reflect.DeepEqual(meta, map[string]interface{}{
 		"enabled":           true,
 		"metadata":          incomingMetadata,
 		"built_in_metadata": incomingBuiltInMetadata,
 	}) {
-		t.Fatalf("modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("modular metadata was not preserved on extractor node: %#v", meta)
+	}
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent: %#v", persisted.ParserConfig["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])
@@ -1275,12 +1300,16 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	meta := extractorNodeMetadataInTest(t, map[string]interface{}(persisted.ParserConfig))
+	if !reflect.DeepEqual(meta, map[string]interface{}{
 		"enabled":           true,
 		"metadata":          existingMetadata,
 		"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
 	}) {
-		t.Fatalf("existing modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("existing modular metadata was not preserved on extractor node: %#v", meta)
+	}
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent: %#v", persisted.ParserConfig["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])

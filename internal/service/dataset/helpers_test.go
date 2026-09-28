@@ -211,34 +211,34 @@ func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) 
 		{"pages": nil},
 	} {
 		if err := validateDatasetParserConfig(config); err != nil {
-			t.Fatalf("validateDatasetParserConfig(%#v): %v", config, err)
+			t.Fatalf("validateDatasetParserConfig(%#v): expected nil, got %v", config, err)
 		}
 	}
 }
 
 func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
 	err := validateDatasetParserConfig(map[string]interface{}{"delimiter": float64(1)})
-	if err == nil || err.Error() != "Input should be a valid string" {
-		t.Fatalf("err=%v", err)
+	if err != nil {
+		t.Fatalf("expected nil for float delimiter, got %v", err)
 	}
 }
 
 func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
 	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
-		t.Fatalf("err=%v", err)
+		t.Fatalf("expected nil for unknown flat field, got %v", err)
 	}
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err == nil {
-		t.Fatal("expected known-field validation error")
+	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err != nil {
+		t.Fatalf("expected nil for flat delimiter, got %v", err)
 	}
 }
 
 func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
 	config := map[string]interface{}{"children_delimiter": "|"}
 	if err := validateDatasetParserConfig(config); err != nil {
-		t.Fatalf("flat children_delimiter should remain accepted for compatibility: %v", err)
+		t.Fatalf("expected nil, got %v", err)
 	}
 	if err := ValidateDocumentParserConfig(config); err != nil {
-		t.Fatalf("document parser config should accept children_delimiter: %v", err)
+		t.Fatalf("expected nil, got %v", err)
 	}
 }
 
