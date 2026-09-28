@@ -189,6 +189,7 @@ export function CreateAgentForm({
           <ModelTreeSelectFormField
             name="llm_id"
             label={t('chat.model')}
+            modelTypes={modelBindings?.modelTypes}
             required
           />
         )}

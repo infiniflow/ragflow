@@ -99,6 +99,7 @@ export interface RetrievalBindingCount {
 
 export interface ModelBindingCount {
   modelCount: number;
+  modelTypes?: string[];
 }
 
 const modelComponents = new Set([
@@ -140,10 +141,18 @@ export function countUnboundModel(
       ? walkModelParams({ components: (dsl as Record<string, any>).components })
       : walkModelParams(dsl);
   let modelCount = 0;
+  const modelTypes = new Set<string>();
   for (const { params } of source) {
-    if (!(params.llm_id || params.model_id)) modelCount++;
+    if (!(params.llm_id || params.model_id)) {
+      modelCount++;
+      if (params.llm_filter === 'image2text') modelTypes.add('vision');
+      if (params.llm_filter === 'chat') modelTypes.add('chat');
+    }
   }
-  return { modelCount };
+  return {
+    modelCount,
+    modelTypes: modelTypes.size ? [...modelTypes] : undefined,
+  };
 }
 
 export function bindUnboundModel(
