@@ -27,9 +27,11 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 import uuid
+from collections import defaultdict
 
 from packaging.version import InvalidVersion, Version
 from peewee import (
@@ -527,10 +529,20 @@ class TenantModelInstanceStage(MigrationStage):
             return 0, self.target_tables
 
         # Get records from tenant_llm with provider_id lookup
-        # Group by tenant_id, llm_factory, api_key to get distinct records
-        # instance_name = llm_factory, provider_id from tenant_model_provider, api_key from tenant_llm
+        # Group by tenant_id, llm_factory, api_key to get distinct records.
+        # The ``api_base`` and ``llm_name`` are MAX-aggregated so all rows
+        # in the group carry the same values (they would anyway since
+        # they're already grouped by the other keys). They are read here
+        # so the new instance row carries the right ``base_url`` in its
+        # ``extra`` JSON — the runtime reads ``base_url`` from ``extra``
+        # (#17578 Gap 1: without this, every embedding/chat call fails
+        # with "url cannot be None") — and a stable human-readable
+        # ``instance_name`` derived from ``llm_name`` instead of the
+        # hardcoded "default" — multiple api_keys for the same provider
+        # otherwise collide on ``instance_name`` (#17578 Gap 3).
         cursor = self.db.execute_sql(
-            "SELECT tl.tenant_id, tl.llm_factory, tl.api_key, MAX(tl.status) as status, tmp.id as provider_id "
+            "SELECT tl.tenant_id, tl.llm_factory, tl.api_key, MAX(tl.status) as status, tmp.id as provider_id, "
+            "MAX(tl.api_base) as api_base, MAX(tl.llm_name) as llm_name "
             "FROM tenant_llm tl "
             "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
             "WHERE NOT EXISTS ("
@@ -552,36 +564,96 @@ class TenantModelInstanceStage(MigrationStage):
         # only differ in the is_tools field. We merge these by stripping is_tools for comparison.
         records = self._dedup_api_key_records(records)
 
-        logger.info(f"Migrating {len(records)} tenant_model_instance records...")
+        # Re-fetch the full record set (now deduplicated) so the
+        # subsequent INSERT has the api_base / llm_name columns that
+        # the dedup helper consumed. We re-issue the SELECT with the
+        # deduped (tenant_id, llm_factory, api_key, provider_id) tuples
+        # as an IN filter. If a re-fetch would change rows between the
+        # two SELECTs the migration is racy, but the dedup only drops
+        # duplicate (is_tools-only) rows so the set is stable.
+        dedup_keys = {(t, f, k, p) for t, f, k, _s, p in records}
+        if not dedup_keys:
+            return 0, self.target_tables
+        in_clauses = []
+        in_params: list = []
+        for t, f, k, p in dedup_keys:
+            in_clauses.append("(tl.tenant_id=%s AND tl.llm_factory=%s AND tl.api_key=%s AND tmp.id=%s)")
+            in_params.extend([t, f, k, p])
+        where = " OR ".join(in_clauses)
+        full_cursor = self.db.execute_sql(
+            "SELECT tl.tenant_id, tl.llm_factory, tl.api_key, MAX(tl.status) as status, tmp.id as provider_id, "
+            "MAX(tl.api_base) as api_base, MAX(tl.llm_name) as llm_name "
+            "FROM tenant_llm tl "
+            "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"WHERE {where} "
+            "GROUP BY tl.tenant_id, tl.llm_factory, tl.api_key, tmp.id",
+            in_params,
+        )
+        full_records = full_cursor.fetchall()
+
+        if not full_records:
+            return 0, self.target_tables
+
+        logger.info(f"Migrating {len(full_records)} tenant_model_instance records...")
+
+        # Build a per-(tenant_id, provider_id) instance_name so multiple
+        # api_keys for the same provider don't collide on the same
+        # ``instance_name``. ``default`` (or the sanitised ``llm_name``)
+        # is the first instance; only on actual collision within the
+        # same (tenant_id, provider_id) group do we add ``-1``, ``-2`` ...
+        # (the dedup earlier in this method guarantees distinct api_keys
+        # reach this point, so collisions are only caused by duplicate
+        # ``llm_name`` values, which the runtime treats as the same
+        # instance — the suffix is the only way to keep both rows in
+        # the table without a unique constraint violation).
+        seen_names: dict[tuple, set] = defaultdict(set)
+        prepared_records = []
+        for tenant_id, llm_factory, api_key, status, provider_id, api_base, llm_name in full_records:
+            base = "default" if not llm_name else re.sub(r"[^A-Za-z0-9_.-]+", "_", llm_name)[:120]
+            instance_name = base
+            counter = 0
+            while instance_name in seen_names[(tenant_id, provider_id)]:
+                counter += 1
+                instance_name = f"{base}-{counter}"
+            seen_names[(tenant_id, provider_id)].add(instance_name)
+            prepared_records.append((tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name))
 
         if self.dry_run:
-            logger.info(f"[DRY RUN] Would insert {len(records)} records")
-            for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
-                logger.info(f"  instance_name=default, provider_id={provider_id}, api_key=***")
-            if len(records) > 5:
-                logger.info(f"  ... and {len(records) - 5} more records")
-            return len(records), self.target_tables
+            logger.info(f"[DRY RUN] Would insert {len(prepared_records)} records")
+            for tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name in prepared_records[:5]:
+                logger.info(f"  instance_name={instance_name}, provider_id={provider_id}, api_key=***, api_base={api_base}")
+            if len(prepared_records) > 5:
+                logger.info(f"  ... and {len(prepared_records) - 5} more records")
+            return len(prepared_records), self.target_tables
 
         # Insert records in batches
         batch_size = 100
-        for i in range(0, len(records), batch_size):
-            batch = records[i : i + batch_size]
+        for i in range(0, len(prepared_records), batch_size):
+            batch = prepared_records[i : i + batch_size]
             values = []
-            for tenant_id, llm_factory, api_key, status, provider_id in batch:
+            for tenant_id, llm_factory, api_key, status, provider_id, api_base, instance_name in batch:
                 record_id = self.generate_uuid()
-                instance_name = "default"
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
                 status_val = "active" if status in ["1", "active", "enable"] else "inactive"
+                # Build the ``extra`` JSON. ``api_base`` from ``tenant_llm``
+                # becomes ``base_url`` — the runtime reads from ``extra``,
+                # not from the legacy column. Escape backslashes and
+                # double-quotes for the MySQL string literal.
+                extra_payload = {}
+                if api_base:
+                    extra_payload["base_url"] = api_base
+                extra_json = json.dumps(extra_payload, ensure_ascii=False, sort_keys=True)
+                extra_escaped = extra_json.replace("\\", "\\\\").replace("'", "''")
                 values.append(
                     f"('{record_id}', '{instance_name}', '{provider_id}', "
-                    f"'{api_key_escaped}', '{status_val}', "
+                    f"'{api_key_escaped}', '{status_val}', '{extra_escaped}', "
                     f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
                     f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))"
                 )
 
             insert_sql = f"""
                 INSERT INTO tenant_model_instance
-                (id, instance_name, provider_id, api_key, status, create_time, create_date, update_time, update_date)
+                (id, instance_name, provider_id, api_key, status, extra, create_time, create_date, update_time, update_date)
                 VALUES {", ".join(values)}
             """
             self.db.execute_sql(insert_sql)
