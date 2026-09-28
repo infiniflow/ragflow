@@ -41,8 +41,20 @@ Each Go server process compares its code version with this marker after database
 
 Check the migration logs as well as the exit status before starting services. Some schema conflicts are logged and skipped, and built-in template seeding failures are logged as warnings; a successful exit alone does not verify every schema change or template row. The migration command can be rerun after a failure, but do not assume every database DDL operation is transactional. Check the error and database state before retrying. The Go backend has no supported automatic rollback command or generated reverse migration. To return to an older release, restore a compatible database backup along with the older binary.
 
+## PostgreSQL metadata database
+
+When `DB_TYPE` is `postgres`, model-provider table creation, `model_type` merge, and `tenant_*_id` backfill run through the Python scripts in `tools/scripts/` instead of `bin/ragflow_server --migrate` (the Go migration path targets MySQL).
+
+The [postgres_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/postgres_migration.py) entry point shares the same stages as [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/mysql_migration.py), including:
+
+- Creating `tenant_model_provider`, `tenant_model_instance`, and `tenant_model` when they are missing
+- Merging legacy string `tenant_model.model_type` values into the integer bitmask (`model_type_merge`)
+- Converting integer `tenant_*_id` columns to `varchar(32)` **and** backfilling them from `llm_id` / `embd_id` by resolving `tenant_model.id` (`tenant_model_id_migration`)
+
+`tools/scripts/run_migrations.sh` selects `postgres_migration.py` when `DB_TYPE` is `postgres` or `postgresql`. On the Go Docker image, `docker/entrypoint-go.sh` invokes that script for PostgreSQL metadata databases. `DB_TYPE=gaussdb` skips these scripts until a GaussDB-specific migration path exists.
+
 ## Development mode
 
 `RAGFLOW_DEV_MODE=true` disables only the code-versus-database downgrade check for Go server processes. It does not run migrations, reverse schema changes, or make an older binary compatible with a newer database. This is especially relevant to development builds: the conversation-history migration records `v1.0.0-rc1.dev1` even when the checkout still reports a `v0.27.x` release. Use it only for a development database in that situation. Set it for each affected server process; keep it unset in production.
 
-This migration procedure applies to the default MySQL metadata database.
+The upgrade procedure above applies to the default MySQL metadata database. Use the PostgreSQL section when your metadata store is PostgreSQL.
