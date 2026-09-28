@@ -21,8 +21,7 @@ function usage() {
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
-    echo
-    echo "MCP: configure service_conf.yaml or RAGFLOW_MCP_* environment variables."
+
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -36,12 +35,23 @@ function usage() {
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_DATASYNC=1
+ENABLE_MCP_SERVER=0
 ENABLE_ADMIN_SERVER=0 # Default close admin server
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 INIT_MODEL_PROVIDER_TABLES=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
+
+MCP_HOST="127.0.0.1"
+MCP_PORT=9382
+MCP_BASE_URL="http://127.0.0.1:9380"
+MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
+MCP_MODE="self-host"
+MCP_HOST_API_KEY=""
+MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
+MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
+MCP_JSON_RESPONSE_FLAG="--json-response"
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
