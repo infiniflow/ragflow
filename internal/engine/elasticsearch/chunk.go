@@ -2331,7 +2331,7 @@ func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) 
 //   - "content_with_weight" is stored and returned as "content_with_weight"
 //   - No field name mapping is needed in GetFields
 func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	common.Info("GetFields called", zap.Int("chunkCount", len(chunks)), zap.Strings("fields", fields))
+	common.Debug("GetFields called", zap.Int("chunkCount", len(chunks)), zap.Strings("fields", fields))
 	result := make(map[string]map[string]interface{})
 
 	if len(fields) == 0 || len(chunks) == 0 {
@@ -2396,7 +2396,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 		}
 	}
 
-	common.Info("GetFields result", zap.Int("resultCount", len(result)), zap.Strings("keys", func() []string {
+	common.Debug("GetFields result", zap.Int("resultCount", len(result)), zap.Strings("keys", func() []string {
 		keys := make([]string, 0, len(result))
 		for k := range result {
 			keys = append(keys, k)

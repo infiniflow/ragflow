@@ -34,7 +34,7 @@ import (
 // to search.go so the only two consumers (HybridSearch and the structure-nav grepper)
 // both reach it.
 
-// NarrowOrKeep: narrow chunks to
+// narrowOrKeep: narrow chunks to
 // keyword-bearing sentences, but keep the originals when narrowing would drop
 // everything.
 //
@@ -46,7 +46,7 @@ import (
 // Both outcomes are reported to the DEVELOPER log only (Python parity), never to
 // the think block: the resize ratio is pool bookkeeping, and the leg's own result
 // line already reports what came back.
-func NarrowOrKeep(ctx context.Context, chunks []map[string]any, keywords, label string, logger *log.Logger) []map[string]any {
+func narrowOrKeep(ctx context.Context, chunks []map[string]any, keywords, label string, logger *log.Logger) []map[string]any {
 	if strings.TrimSpace(keywords) == "" || len(chunks) == 0 {
 		return chunks
 	}
@@ -61,7 +61,7 @@ func NarrowOrKeep(ctx context.Context, chunks []map[string]any, keywords, label 
 	//
 	// ctx is unused here on purpose: the signature stays uniform with the other
 	// narrowing entry points, and a future step would have it available.
-	narrowed := NarrowByKeywords(chunks, keywords)
+	narrowed := narrowByKeywords(chunks, keywords)
 	if len(narrowed) > 0 {
 		logger.Printf("[%s] Kept %d of %d passage(s) that actually mention the keywords.",
 			label, len(narrowed), len(chunks))
@@ -72,13 +72,13 @@ func NarrowOrKeep(ctx context.Context, chunks []map[string]any, keywords, label 
 	return chunks
 }
 
-// NarrowByKeywords narrows each chunk to the sentences mentioning any keyword
+// narrowByKeywords narrows each chunk to the sentences mentioning any keyword
 // (+/-1 neighbour) and drops keyword-less chunks.
 //
-// Unlike NarrowOrKeep this is the strict form: it may return an empty slice, and callers
-// that must not lose evidence should use NarrowOrKeep instead.
-func NarrowByKeywords(chunks []map[string]any, keywords string) []map[string]any {
-	kwds := SplitKeywords(keywords)
+// Unlike narrowOrKeep this is the strict form: it may return an empty slice, and callers
+// that must not lose evidence should use narrowOrKeep instead.
+func narrowByKeywords(chunks []map[string]any, keywords string) []map[string]any {
+	kwds := splitKeywords(keywords)
 	// The input is returned unchanged when there is nothing to narrow on. A nil return
 	// would wipe the whole evidence pool, so return the original chunks verbatim instead.
 	if len(kwds) == 0 || len(chunks) == 0 {
@@ -90,7 +90,7 @@ func NarrowByKeywords(chunks []map[string]any, keywords string) []map[string]any
 		if c == nil {
 			continue
 		}
-		narrowed, ok := NarrowContent(ChunkTextOf(c), kwds)
+		narrowed, ok := narrowContent(ChunkTextOf(c), kwds)
 		if !ok {
 			continue
 		}
@@ -121,11 +121,11 @@ func NarrowByKeywords(chunks []map[string]any, keywords string) []map[string]any
 	return out
 }
 
-// SplitKeywords normalizes a keyword string into search terms. When fewer than
+// splitKeywords normalizes a keyword string into search terms. When fewer than
 // 3 comma terms exist, falls back to space-split bigrams — a bare keyword blob
 // ("finale run time") is more discriminative as bigrams than as single words.
-// This is the term construction used by NarrowByKeywords.
-func SplitKeywords(keywords string) []string {
+// This is the term construction used by narrowByKeywords.
+func splitKeywords(keywords string) []string {
 	if strings.TrimSpace(keywords) == "" {
 		return nil
 	}
@@ -257,14 +257,14 @@ func sentenceMatches(low string, stems, verbatim []string, stemmed [][]string) b
 	return false
 }
 
-// NarrowContent returns the keyword-bearing sentences (+/-2 neighbours) with
+// narrowContent returns the keyword-bearing sentences (+/-2 neighbours) with
 // the keywords highlighted, or ("", false) when no keyword occurs.
 // Keyword sentences are kept within a +/-2 window, AND fact-dense sentences (numbers /
 // years / percentages / proper nouns) within a +/-1 window even without a keyword hit, so
 // numeric or named-entity answers survive narrowing. Block-level tables and markdown
 // pipe-tables (>=3 rows) are returned whole — keyword-window narrowing would otherwise
 // truncate them.
-func NarrowContent(content string, kwds []string) (string, bool) {
+func narrowContent(content string, kwds []string) (string, bool) {
 	if strings.TrimSpace(content) == "" || len(kwds) == 0 {
 		return "", false
 	}
@@ -276,7 +276,7 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 		// cost/accuracy compromise; raw HTML is the expensive and least readable
 		// option. The row set is NOT pruned — rank/order and completeness decide table
 		// answers. Falls back to the raw text when nothing renders.
-		return "..." + HighlightKeywords(TableViewOrRaw(content), kwds) + "...", true
+		return "..." + highlightKeywords(tableViewOrRaw(content), kwds) + "...", true
 	}
 	pipeRows := 0
 	for _, line := range strings.Split(content, "\n") {
@@ -285,9 +285,9 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 		}
 	}
 	if pipeRows >= 3 {
-		return "..." + HighlightKeywords(content, kwds) + "...", true
+		return "..." + highlightKeywords(content, kwds) + "...", true
 	}
-	sents := SplitSentences(content)
+	sents := splitSentences(content)
 	if len(sents) == 0 {
 		return "", false
 	}
@@ -302,7 +302,7 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 			for j := max(0, i-2); j < min(len(sents), i+3); j++ {
 				keep[j] = true
 			}
-		} else if IsFactDenseSentence(s) {
+		} else if isFactDenseSentence(s) {
 			// Keep fact-dense sentences even without a keyword hit so the answer
 			// value (a bare figure, a date, a proper noun) is never lost.
 			for j := max(0, i-1); j < min(len(sents), i+2); j++ {
@@ -319,16 +319,16 @@ func NarrowContent(content string, kwds []string) (string, bool) {
 			b.WriteString(sents[i])
 		}
 	}
-	return "..." + HighlightKeywords(b.String(), kwds) + "...", true
+	return "..." + highlightKeywords(b.String(), kwds) + "...", true
 }
 
-// HighlightKeywords stars keyword occurrences, longest term first so a longer keyword is
+// highlightKeywords stars keyword occurrences, longest term first so a longer keyword is
 // not partially consumed by a shorter one. The marker is a STAR, not an XML tag — a
 // multi-word entity must stay ONE contiguous span
 // ("*Atlanta Braves*", never "*Atlanta* *Braves*") for the downstream
 // entity cross-check. The <em> tags elsewhere in this port are the ENGINE's
 // highlight markup (rag/utils/*_conn.py, agentic_search.go), a different layer.
-func HighlightKeywords(text string, kwds []string) string {
+func highlightKeywords(text string, kwds []string) string {
 	if len(kwds) == 0 {
 		return text
 	}
@@ -427,13 +427,13 @@ func runesHavePrefix(hay, needle []rune) bool {
 	return true
 }
 
-// IsFactDenseSentence reports whether a sentence carries a fact-bearing signal: a
+// isFactDenseSentence reports whether a sentence carries a fact-bearing signal: a
 // number / year / percentage / magnitude word or a proper noun that is not part of an
 // abbreviation run. It keeps only informative sentences when narrowing / grepping, so a
 // numeric or entity answer is never dropped just because it lacks the query keywords.
 // Deliberately NO quoted-span or ≥6-token rule, and no bare digit counts as a fact
 // signal — those widened the gate far beyond the strict definition.
-func IsFactDenseSentence(s string) bool {
+func isFactDenseSentence(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return false
@@ -578,9 +578,9 @@ func protectedSpans(text string) [][2]int {
 	return merged
 }
 
-// SplitSentences splits text into sentences, treating each block-level HTML
+// splitSentences splits text into sentences, treating each block-level HTML
 // element and markdown table as one atomic unit.
-func SplitSentences(text string) []string {
+func splitSentences(text string) []string {
 	if text == "" {
 		return nil
 	}

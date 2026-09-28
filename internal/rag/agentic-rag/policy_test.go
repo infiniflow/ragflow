@@ -42,11 +42,10 @@ func TestNodeClockKeepsItsFloorOnASpentBudget(t *testing.T) {
 		{"prefetch with less room than its floor", PrefetchTimeoutS, 10.0, 4.0, 10.0},
 		{"prefetch with room left", PrefetchTimeoutS, 10.0, 40.0, 40.0},
 		{"prefetch capped by its own budget", PrefetchTimeoutS, 10.0, 600.0, 90.0},
-		// The draft and the SCA review: 60s each, floored at 15s.
-		{"draft with the budget spent", DraftTimeoutS, 15.0, -10.0, 15.0},
-		{"sca with the budget spent", SCATimeoutS, 15.0, -10.0, 15.0},
-		// The gap -> query rewrite call: 45s, floored at 10s.
-		{"rewrite with the budget spent", RewriteTimeoutS, 10.0, -10.0, 10.0},
+		// The draft / SCA-review / gap-rewrite cases are gone with those nodes: this branch's graph
+		// has no reviewer and no rewrite call (the session writes its own next queries), so the
+		// constants went with them. The property under test is the same one, on the nodes that
+		// remain.
 		// The slot research pass has no floor of its own — its caller floors it at 20s, and
 		// only reaches it with MinRoundHeadroomS still on the clock.
 		{"research pass with the budget spent", PassTimeoutS, 0, -25.0, 0},

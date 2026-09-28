@@ -210,5 +210,5 @@ func docMetaText(value any) (string, bool) {
 	if text == "" {
 		return "", false
 	}
-	return truncateRunes(text, docMetaValueRunes), true
+	return runtime.TruncateRunes(text, docMetaValueRunes), true
 }

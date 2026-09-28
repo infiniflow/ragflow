@@ -17,13 +17,16 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log"
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -501,10 +504,10 @@ func TestCompiledExpanderReportsDocTenantResolutionFailure(t *testing.T) {
 // TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails covers the per-doc load: the
 // failing doc is logged and dropped, while the remaining docs still contribute.
 func TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails(t *testing.T) {
-	var buf bytes.Buffer
-	prevLog := _LOG
-	_LOG = log.New(&buf, "", 0)
-	t.Cleanup(func() { _LOG = prevLog })
+	core, logs := observer.New(zapcore.DebugLevel)
+	prevLog := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = prevLog })
 
 	store := &ownerRecordingStore{stubCompiledStore: &stubCompiledStore{
 		rows: []map[string]any{
@@ -539,7 +542,8 @@ func TestCompiledExpanderLogsAndKeepsOtherDocsWhenOneLoadFails(t *testing.T) {
 	if got := compiledIDs(kb.Chunks); len(got) != 1 || got[0] != "s2" {
 		t.Errorf("expanded = %v, want only s2 (docA's load failed)", got)
 	}
-	if !strings.Contains(buf.String(), "failed to load chunks for doc_id=docA") {
-		t.Errorf("log = %q, want the failing doc named", buf.String())
+	if entries := logs.FilterMessage("compiled expand: failed to load chunks").All(); len(entries) != 1 ||
+		entries[0].ContextMap()["doc_id"] != "docA" {
+		t.Errorf("log = %v, want the failing doc named", logs.All())
 	}
 }

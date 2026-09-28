@@ -31,7 +31,7 @@ func saRelation(from, to, typ string) map[string]any {
 	return map[string]any{"from": from, "to": to, "type": typ}
 }
 
-// RenderStructure feeds the LLM prompt in graph_explore (via AskStructure); it must render
+// renderStructure feeds the LLM prompt in graph_explore (via askStructure); it must render
 // exactly "Name (Type): Description" for entities (Type defaulting to "other") and
 // "From -[Type]-> To" for relations (Type defaulting to "related").
 func TestRenderStructure(t *testing.T) {
@@ -44,7 +44,7 @@ func TestRenderStructure(t *testing.T) {
 		saRelation("OmiyaSoft", "Culdcept", "founded"),
 		saRelation("A", "B", ""), // missing type -> related
 	}
-	out := RenderStructure(entities, relations)
+	out := renderStructure(entities, relations)
 
 	if !strings.Contains(out, "Entities:") || !strings.Contains(out, "Relations:") {
 		t.Fatalf("missing section headers: %q", out)
@@ -81,7 +81,7 @@ func TestRenderStructureCapsAtLimits(t *testing.T) {
 	for i := range relations {
 		relations[i] = saRelation("A", "B", "r")
 	}
-	out := RenderStructure(entities, relations)
+	out := renderStructure(entities, relations)
 	// Each entity bullet is "\n- E (t)"; caps at maxStructureEntities.
 	if n := strings.Count(out, "\n- E (t)"); n != maxStructureEntities {
 		t.Errorf("entity bullets = %d, want cap %d", n, maxStructureEntities)
@@ -93,7 +93,7 @@ func TestRenderStructureCapsAtLimits(t *testing.T) {
 
 // An empty list is joined to "", so both-empty input renders "".
 func TestRenderStructureEmpty(t *testing.T) {
-	if out := RenderStructure(nil, nil); out != "" {
+	if out := renderStructure(nil, nil); out != "" {
 		t.Errorf("empty structure must render empty string, got %q", out)
 	}
 }
@@ -119,12 +119,12 @@ func TestCapitalizeWord(t *testing.T) {
 	}
 }
 
-// AskStructure: request-scoped model + temperature 0.2.
+// askStructure: request-scoped model + temperature 0.2.
 
 // TestAskStructureNilModelSkips verifies a nil model short-circuits to an empty verdict
 // instead of reaching the global invoker (no model is available).
 func TestAskStructureNilModelSkips(t *testing.T) {
-	answer, relevant := AskStructure(context.Background(), nil, "Q", "knowledge graph", "Graph exploration", nil, nil)
+	answer, relevant := askStructure(context.Background(), nil, "Q", "knowledge graph", "Graph exploration", nil, nil)
 	if answer != "" || len(relevant) != 0 {
 		t.Errorf("nil model -> (%q, %v), want empty", answer, relevant)
 	}
@@ -136,7 +136,7 @@ func TestAskStructureUsesTemperatureTwoTenths(t *testing.T) {
 	mdl := &tempRecordingModel{replies: []*ModelReply{{
 		Content: `{"is_sufficient": true, "answer": "founded in 1984", "relevant_entities": ["OmiyaSoft"]}`,
 	}}}
-	answer, relevant := AskStructure(context.Background(), mdl, "who founded Culdcept?",
+	answer, relevant := askStructure(context.Background(), mdl, "who founded Culdcept?",
 		"knowledge graph", "Graph exploration",
 		[]map[string]any{saEntity("OmiyaSoft", "company", "")}, nil)
 	if mdl.temperature == nil {
@@ -159,7 +159,7 @@ func TestAskStructureInsufficientKeepsRelevant(t *testing.T) {
 	mdl := &tempRecordingModel{replies: []*ModelReply{{
 		Content: `{"is_sufficient": false, "answer": "", "relevant_entities": ["Culdcept"]}`,
 	}}}
-	answer, relevant := AskStructure(context.Background(), mdl, "Q", "mindmap", "Mindmap exploration",
+	answer, relevant := askStructure(context.Background(), mdl, "Q", "mindmap", "Mindmap exploration",
 		[]map[string]any{saEntity("Culdcept", "game", "")}, nil)
 	if answer != "" {
 		t.Errorf("insufficient answer = %q, want empty", answer)

@@ -18,7 +18,7 @@ package runtime
 // Report synthesis prompts.
 //
 // Mirrors rag/advanced_rag/harness/prompts/report_prompt.py. {cite_rules} in
-// FinalAnswerSystem is substituted by the caller (see agentic_rag.ComposeAnswer).
+// FinalAnswerSystem is substituted by the caller (see agentic_rag.ComposeAnswerWith).
 
 // FinalAnswerSystem mirrors report_prompt.FINAL_ANSWER_SYSTEM. {cite_rules} is
 // substituted by the caller.

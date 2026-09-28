@@ -24,7 +24,7 @@ import "strings"
 // from a thinking_mode
 // string, so tuning a mode is a one-table edit.
 //
-// Unknown labels fall back to NAIVE rather than erroring: the label comes from
+// Unknown labels fall back to naive rather than erroring: the label comes from
 // user input at request time, and failing here would fail the whole request.
 
 // allTools are the tools the action session can bind, in declaration order.
@@ -40,8 +40,8 @@ var allTools = []string{
 	"web_search",
 }
 
-// GraphExploreTool is the relational exploration tool reserved for ultra.
-const GraphExploreTool = "graph_explore"
+// graphExploreTool is the relational exploration tool reserved for ultra.
+const graphExploreTool = "graph_explore"
 
 // ModeSpec: (a frozen dataclass). Everything that
 // varies between thinking modes lives here.
@@ -49,11 +49,13 @@ const GraphExploreTool = "graph_explore"
 // Tools is the set of tool names visible to the model in this mode. An empty
 // set means the model gets no tool loop at all.
 type ModeSpec struct {
-	Label          string
-	Agentic        bool
-	EnableSCA      bool
-	SCAMaxRounds   int
-	UseFanout      bool
+	Label   string
+	Agentic bool
+	// MaxRounds is how many FOLLOW-UP research rounds a question may take after its first pass.
+	// It is the loop's bound that is not the clock: a round either answers — and the run stops
+	// there — or asks for another one, and this is how many times it may ask.
+	MaxRounds int
+
 	ActionMaxTurns int
 	// SnippetsPerQuery caps how many hits of ONE query the session reads.
 	//
@@ -83,43 +85,48 @@ func allToolSet() map[string]bool {
 
 // THINKING_MODES
 //
-//   - low: one hybrid-search pass through direct_search. No action session,
-//     so no tool loop — the model never sees tools in this mode.
-//   - medium: agentic, SCA review on, no planner decomposition.
-//   - high: adds planner + prefetch fan-out over the same tool surface.
-//   - ultra: deeper sessions, more SCA rounds, and the relational tool.
+// A mode says how MUCH a question may spend and WHAT it may reach for — never HOW the
+// question is answered. Every agentic mode walks the same graph (planner → prefetch →
+// research rounds → answer), so a mode cannot change what a run means; it only changes the
+// numbers (turns, snippets per query, SCA rounds) and the tool surface.
+//
+//   - low: no agentic run at all: one hybrid-search pass through direct_search, and the
+//     model never sees a tool.
+//   - medium: the agentic loop, with a smaller turn/snippet budget.
+//   - high: the same loop with more of both.
+//   - ultra: the same loop, deeper still, plus the relational tool.
 var THINKING_MODES = map[string]ModeSpec{
 	"low": {
-		Label: "low", Agentic: false, EnableSCA: false,
-		SCAMaxRounds: 0, UseFanout: false, ActionMaxTurns: 4,
+		Label: "low", Agentic: false,
+		MaxRounds: 0, ActionMaxTurns: 4,
 		SnippetsPerQuery: 0,
 		Tools:            map[string]bool{},
 	},
 	"medium": {
-		Label: "medium", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: false, ActionMaxTurns: 8,
+		Label: "medium", Agentic: true,
+		MaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 6,
 		Tools:            allToolSet(),
 	},
 	"high": {
-		Label: "high", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 3, UseFanout: true, ActionMaxTurns: 8,
+		Label: "high", Agentic: true,
+		MaxRounds: 3, ActionMaxTurns: 8,
 		SnippetsPerQuery: 8,
 		Tools:            allToolSet(),
 	},
 	"ultra": {
-		Label: "ultra", Agentic: true, EnableSCA: true,
-		SCAMaxRounds: 5, UseFanout: true, ActionMaxTurns: 10,
+		Label: "ultra", Agentic: true,
+		MaxRounds: 5, ActionMaxTurns: 10,
 		SnippetsPerQuery: 10,
-		Tools:            toolsOf(append(append([]string{}, allTools...), GraphExploreTool)...),
+		Tools:            toolsOf(append(append([]string{}, allTools...), graphExploreTool)...),
 	},
 }
 
-// NAIVE is the fallback for an unrecognised mode label. It is not agentic — the
+// naive is the fallback for an unrecognised mode label. It is not agentic — the
 // caller answers with plain retrieval rather than failing the request.
-var NAIVE = ModeSpec{
-	Label: "naive", Agentic: false, EnableSCA: false,
-	SCAMaxRounds: 0, UseFanout: false, ActionMaxTurns: 4,
+var naive = ModeSpec{
+	Label: "naive", Agentic: false,
+	MaxRounds: 0, ActionMaxTurns: 4,
 	Tools: map[string]bool{},
 }
 
@@ -135,34 +142,34 @@ func (m ModeSpec) ToolNames() []string {
 			out = append(out, n)
 		}
 	}
-	if m.Tools[GraphExploreTool] {
-		out = append(out, GraphExploreTool)
+	if m.Tools[graphExploreTool] {
+		out = append(out, graphExploreTool)
 	}
 	return out
 }
 
-// GetMode: (label): unknown labels fall back to NAIVE.
+// GetMode: (label): unknown labels fall back to naive.
 // The label arrives from user input, so erroring here would fail the request.
 func GetMode(label string) ModeSpec {
 	m, ok := THINKING_MODES[strings.ToLower(strings.TrimSpace(label))]
 	if !ok {
-		return NAIVE
+		return naive
 	}
 	return m
 }
 
-// ThinkingModeCarrier is implemented by the RAGTools-like object that owns the
+// thinkingModeCarrier is implemented by the RAGTools-like object that owns the
 // request-scoped retrieval context (its thinking mode).
-type ThinkingModeCarrier interface {
+type thinkingModeCarrier interface {
 	GetThinkingMode() string
 }
 
 // ResolveMode: (tools): reads a RAGTools-like
 // object's thinking mode into its spec. Values that do not implement
-// ThinkingModeCarrier fall back to NAIVE.
+// thinkingModeCarrier fall back to naive.
 func ResolveMode(tools any) ModeSpec {
-	if c, ok := tools.(ThinkingModeCarrier); ok {
+	if c, ok := tools.(thinkingModeCarrier); ok {
 		return GetMode(c.GetThinkingMode())
 	}
-	return NAIVE
+	return naive
 }

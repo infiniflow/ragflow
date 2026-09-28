@@ -926,7 +926,7 @@ func RerankWithKNN(
 		return []float64{}, []float64{}, []float64{}
 	}
 
-	common.InfoCtx(ctx, "RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+	common.DebugCtx(ctx, "RerankWithKNN started", zap.Int("chunkCount", len(ids)), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
 
 	// Normalize important_kwd - Python checks if it's a string and wraps in list
 	// for i in sres.ids:
@@ -949,7 +949,7 @@ func RerankWithKNN(
 	if qb != nil {
 		_, keywords = qb.Question(query, "qa", 0.6)
 	}
-	common.InfoCtx(ctx, "RerankWithKNN keywords", zap.Any("keywords", keywords))
+	common.DebugCtx(ctx, "RerankWithKNN keywords", zap.Any("keywords", keywords))
 
 	// Build token lists matching Python's OrderedDict approach
 	insTw := make([][]string, 0, len(ids))
@@ -988,7 +988,7 @@ func RerankWithKNN(
 
 	// Calculate token similarity
 	tsim = TokenSimilarity(keywords, insTw, qb)
-	common.InfoCtx(ctx, "RerankWithKNN tsim", zap.Float64s("tsim", tsim))
+	common.DebugCtx(ctx, "RerankWithKNN tsim", zap.Float64s("tsim", tsim))
 
 	// Build vector similarity from knnScores - matches Python's np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids])
 	vsim = make([]float64, len(ids))
@@ -1013,9 +1013,9 @@ func RerankWithKNN(
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
 	sim = applyRankFeatureScoresForIDs(ids, field, sim, rankFeature)
-	common.InfoCtx(ctx, "RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
+	common.DebugCtx(ctx, "RerankWithKNN rankFeatureScores", zap.Any("rankFeature", rankFeature), zap.Any("simAfterRank", sim))
 
-	common.InfoCtx(ctx, "RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
+	common.DebugCtx(ctx, "RerankWithKNN completed", zap.Int("outputChunks", len(sim)))
 	return sim, tsim, vsim
 }
 

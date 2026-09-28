@@ -23,8 +23,10 @@ import (
 	"unicode"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Ask the chat model to answer a question from a compiled-structure outline.
@@ -41,7 +43,7 @@ import (
 // structureQATemperature pins the temperature for the outline-verdict call.
 const structureQATemperature = 0.2
 
-// RenderStructure renders a compiled structure (entities + relations) as a
+// renderStructure renders a compiled structure (entities + relations) as a
 // compact outline for the prompt:
 //
 //	Entities:
@@ -53,7 +55,7 @@ const structureQATemperature = 0.2
 // Both lists are capped at maxStructureEntities / maxStructureRelations; empty
 // names and empty relation endpoints are dropped. Entities with no type fall
 // back to "other"; relations with no type fall back to "related".
-func RenderStructure(entities, relations []map[string]any) string {
+func renderStructure(entities, relations []map[string]any) string {
 	var lines []string
 	if len(entities) > 0 {
 		lines = append(lines, "Entities:")
@@ -67,7 +69,7 @@ func RenderStructure(entities, relations []map[string]any) string {
 				continue
 			}
 			typ := strings.TrimSpace(orStr(strAny(e["type"]), "other"))
-			desc := strings.Join(strings.Fields(strAny(e["description"])), " ")
+			desc := FlattenLine(strAny(e["description"]))
 			line := "- " + name + " (" + typ + ")"
 			if desc != "" {
 				line += ": " + desc
@@ -94,7 +96,7 @@ func RenderStructure(entities, relations []map[string]any) string {
 	return strings.Join(lines, "\n")
 }
 
-// AskStructure asks the chat model to answer `topic` from the rendered outline.
+// askStructure asks the chat model to answer `topic` from the rendered outline.
 //
 // Returns (answer, relevant_entity_names): answer is empty unless the model judged the
 // outline sufficient; the names are always returned so the caller can pull the underlying
@@ -103,19 +105,19 @@ func RenderStructure(entities, relations []map[string]any) string {
 // the log tag. `model` is the request-scoped chat model; a nil model means no model is
 // available and the call skips. Never raises: on any chat/parse failure both results are
 // empty.
-func AskStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
+func askStructure(ctx context.Context, model SessionModel, topic, noun, label string, entities, relations []map[string]any) (string, []string) {
 	if model == nil {
-		_LOG.Printf("[%s] structure QA skipped (no chat model)", label)
+		common.Warn("structure QA skipped (no chat model)", zap.String("label", label))
 		return "", nil
 	}
 	system := strings.ReplaceAll(navSystemPrompt, "{noun}", "the "+noun)
-	rendered := RenderStructure(entities, relations)
+	rendered := renderStructure(entities, relations)
 	user := fmt.Sprintf("Question:\n%s\n\n%s:\n%s\n\nOutput JSON:", topic, capitalizeWord(noun), rendered)
 
-	// The context length is exposed via ContextLengthModel; when absent, the 8192 default
+	// The context length is exposed via contextLengthModel; when absent, the 8192 default
 	// (chat.EffectiveContextLength) applies, i.e. when the model config omits it.
 	budget := 0
-	if cl, ok := model.(ContextLengthModel); ok {
+	if cl, ok := model.(contextLengthModel); ok {
 		budget = cl.ContextLength()
 	}
 	if budget <= 0 {
@@ -125,7 +127,7 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 		*schema.UserMessage(user),
 	}, budget)
 	if fitErr != "" {
-		_LOG.Printf("[%s] prompt fitting failed: %s", label, fitErr)
+		common.Warn("structure QA: prompt fitting failed", zap.String("label", label), zap.Any("error", fitErr))
 		return "", nil
 	}
 	// FitMessages may prepend/trim a system message; re-extract it so the model
@@ -148,17 +150,19 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	if tm, ok := model.(TemperatureModel); ok {
 		resp, err = tm.CompleteWithTemperature(ctx, msgs, nil, structureQATemperature)
 	} else {
-		_LOG.Printf("[%s] model %T cannot carry per-call temperature; using its default (wanted %v)", label, model, structureQATemperature)
+		common.Info("structure QA: model cannot carry per-call temperature, using its default",
+			zap.String("label", label), zap.String("model_type", fmt.Sprintf("%T", model)),
+			zap.Any("wanted_temp", structureQATemperature))
 		resp, err = model.Complete(ctx, msgs, nil)
 	}
 	if err != nil {
-		_LOG.Printf("[%s] could not read the outline with the model: %v", label, err)
+		common.Warn("structure QA: could not read the outline with the model", zap.String("label", label), zap.Error(err))
 		return "", nil
 	}
 
 	var verdict structureNavVerdict
-	if err := UnmarshalModelJSON(resp.Content, &verdict); err != nil {
-		_LOG.Printf("[%s] could not parse the outline verdict: %v", label, err)
+	if err := unmarshalModelJSON(resp.Content, &verdict); err != nil {
+		common.Warn("structure QA: could not parse the outline verdict", zap.String("label", label), zap.Error(err))
 		return "", nil
 	}
 
@@ -176,7 +180,8 @@ func AskStructure(ctx context.Context, model SessionModel, topic, noun, label st
 	if verdict.IsSufficient {
 		outcome = "answers"
 	}
-	_LOG.Printf("[%s] the %s %s the question; %d relevant entity(ies)", label, noun, outcome, len(relevant))
+	common.Info("structure QA: outline verdict", zap.String("label", label), zap.Any("noun", noun),
+		zap.Any("outcome", outcome), zap.Int("entities", len(relevant)))
 	return answer, relevant
 }
 

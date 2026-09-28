@@ -36,7 +36,7 @@ func (e *kgIndexCapturingEngine) Search(_ context.Context, req *types.SearchRequ
 }
 
 // TestKGSearchUsesConfiguredIndexName pins that the knowledge-graph walk searches
-// the SAME index the rest of the request reads: ExploreGraph loads its evidence
+// the SAME index the rest of the request reads: exploreGraph loads its evidence
 // with indexNameFor(deps.TenantID, deps.IndexName), so a tenant that overrides
 // the index name must have it honoured by the KG rows too. Hardcoding
 // ragflow_<tenantID> made the walk query one index and return passages loaded

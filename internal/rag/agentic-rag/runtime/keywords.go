@@ -23,8 +23,10 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/chat"
+	"ragflow/internal/common"
 )
 
 // Four-aspect keyword extraction with entity weighting.
@@ -55,8 +57,8 @@ const (
 // pair; aliases and fact_type find/boost but must not dominate.
 var keywordAspects = []string{"entity", "aliases", "fact_type", "qualifiers"}
 
-// KeywordsSystem mirrors keywords.py::_KEYWORDS_SYSTEM.
-const KeywordsSystem = `You turn ONE question into search terms for a keyword/BM25 search engine.
+// keywordsSystem mirrors keywords.py::_KEYWORDS_SYSTEM.
+const keywordsSystem = `You turn ONE question into search terms for a keyword/BM25 search engine.
 
 Emit the terms that would appear VERBATIM in a document that answers the question, sorted into FOUR
 categories. Every term must come from the question itself or be a surface form of something in it.
@@ -100,7 +102,7 @@ Any category may be empty.`
 // normKeyword: normalise a term for cross-category
 // dedup (lowercase, whitespace-collapsed).
 func normKeyword(s string) string {
-	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
+	return FlattenLine(strings.ToLower(s))
 }
 
 // parseAspects: parse the LLM's JSON into one
@@ -110,7 +112,7 @@ func normKeyword(s string) string {
 // entity and an alias must not collect a second share of the query's mass on the
 // strength of having been named twice.
 func parseAspects(raw string) map[string][]string {
-	data, _ := ExtractJSON(StripThinkAndFences(raw)).(map[string]any)
+	data, _ := ExtractJSON(stripThinkAndFences(raw)).(map[string]any)
 	aspects := map[string][]string{}
 	seen := map[string]bool{}
 	for _, aspect := range keywordAspects {
@@ -154,10 +156,10 @@ func asAspectList(v any) []any {
 // reThinkWrap matches a leading <think>...</think> preamble.
 var reThinkWrap = regexp.MustCompile(`(?s)^.*</think>`)
 
-// StripThinkAndFences removes a leading thinking preamble and Markdown fences.
+// stripThinkAndFences removes a leading thinking preamble and Markdown fences.
 // Exported so the runtime (compute.go, keywords.go) and the agentic_rag package's
 // moved Formalize can share one implementation.
-func StripThinkAndFences(s string) string {
+func stripThinkAndFences(s string) string {
 	s = reThinkWrap.ReplaceAllString(s, "")
 	s = reFencedJSON.ReplaceAllString(s, "$1")
 	return strings.TrimSpace(s)
@@ -182,24 +184,24 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 	if model != nil {
 		// The question is fitted to the model context window before the call, so an over-long
 		// question is trimmed rather than rejected. The context length is exposed via
-		// ContextLengthModel; when none is available the chat.EffectiveContextLength(0)
+		// contextLengthModel; when none is available the chat.EffectiveContextLength(0)
 		// default (8192) applies.
 		budget := 0
-		if cl, ok := model.(ContextLengthModel); ok {
+		if cl, ok := model.(contextLengthModel); ok {
 			budget = cl.ContextLength()
 		}
 		if budget <= 0 {
 			budget = chat.EffectiveContextLength(0)
 		}
-		fitted, fitErr := chat.FitMessages(KeywordsSystem, []schema.Message{
+		fitted, fitErr := chat.FitMessages(keywordsSystem, []schema.Message{
 			*schema.UserMessage(question),
 		}, budget)
 		if fitErr != "" {
-			_LOG.Printf("[Keywords] prompt fitting failed: %s", fitErr)
+			common.Warn("keywords: prompt fitting failed", zap.Any("error", fitErr))
 		}
 		// FitMessages may prepend/trim a system message; re-extract it so the
 		// model call is exactly [system, user...].
-		systemPrompt := KeywordsSystem
+		systemPrompt := keywordsSystem
 		if len(fitted) > 0 && fitted[0].Role == schema.System {
 			systemPrompt = fitted[0].Content
 		}
@@ -225,13 +227,14 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 		if tm, ok := model.(TemperatureModel); ok {
 			reply, err = tm.CompleteWithTemperature(ctx, msgs, nil, keywordExtractionTemperature)
 		} else {
-			_LOG.Printf("[Keywords] model %T cannot carry per-call temperature; using its default (wanted %v)", model, keywordExtractionTemperature)
+			common.Info("keywords: model cannot carry per-call temperature, using its default",
+				zap.String("model_type", fmt.Sprintf("%T", model)), zap.Any("wanted_temp", keywordExtractionTemperature))
 			reply, err = model.Complete(ctx, msgs, nil)
 		}
 		if err == nil {
 			aspects = parseAspects(reply.Content)
 		} else {
-			_LOG.Printf("[Keywords] extraction failed: %v", err)
+			common.Warn("keywords: extraction failed", zap.Error(err))
 		}
 	}
 
@@ -267,12 +270,13 @@ func ExtractWeightedKeywords(ctx context.Context, model SessionModel, question s
 
 	// There is NO term-count cap — only the keywordMaxChars (400) hard cap on the final joined
 	// strings: only the character cap is applied, never a per-term limit.
-	query = truncateRunes(query, keywordMaxChars)
-	keywords = truncateRunes(keywords, keywordMaxChars)
+	query = TruncateRunes(query, keywordMaxChars)
+	keywords = TruncateRunes(keywords, keywordMaxChars)
 
-	_LOG.Printf("[Keywords] entity x%d: %s | aliases: %s | fact-type: %s | qualifiers x%d: %s",
-		keywordEntityRepeat, joinOrDash(aspects["entity"]), joinOrDash(aspects["aliases"]),
-		joinOrDash(aspects["fact_type"]), keywordQualifierRepeat, joinOrDash(aspects["qualifiers"]))
+	common.Info("keywords: entity", zap.Int("repeat", keywordEntityRepeat),
+		zap.String("entity", joinOrDash(aspects["entity"])), zap.String("aliases", joinOrDash(aspects["aliases"])),
+		zap.String("fact_type", joinOrDash(aspects["fact_type"])), zap.Int("qualifier_repeat", keywordQualifierRepeat),
+		zap.String("qualifiers", joinOrDash(aspects["qualifiers"])))
 	return query, keywords
 }
 

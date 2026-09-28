@@ -35,6 +35,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/service/nav"
@@ -48,7 +49,7 @@ type RunRequest struct {
 	// Question is the user's question.
 	Question string
 	// ThinkingMode selects the ModeSpec ("low"/"medium"/"high"/"ultra").
-	// An unrecognised value degrades to NAIVE.
+	// An unrecognised value degrades to naive.
 	ThinkingMode string
 	// Keywords narrow retrieved chunks to the sentences mentioning them.
 	Keywords string
@@ -80,46 +81,23 @@ type RunRequest struct {
 	TextAttachments string
 }
 
-// searchExecutor adapts SearchDeps to ToolExecutor, so the retriever and
+// searchExecutor adapts SearchDeps to toolExecutor, so the retriever and
 // compiled expander are what the session's retrieval tools call.
 type searchExecutor struct {
 	deps SearchDeps
 	req  RunRequest
 }
 
-// NewSearchExecutor builds the retrieval/navigation ToolExecutor used by both
+// NewSearchExecutor builds the retrieval/navigation toolExecutor used by both
 // the single-session path and the agentic loop's programmatic fan-out fetches.
 //
 // Exported so the agentic_rag package (which cannot be imported from here) can reuse
 // the same evidence handling instead of duplicating it.
-func NewSearchExecutor(deps SearchDeps, req RunRequest) ToolExecutor {
+func NewSearchExecutor(deps SearchDeps, req RunRequest) toolExecutor {
 	return &searchExecutor{deps: deps, req: req}
 }
 
-// CoverageRunner is the tool layer's enumeration seam: the runtime asks the EXECUTOR to
-// run the direction's own enumeration over the corpus, so the step belongs to the graph
-// rather than to a prompt.
-//
-// It is a runner rather than a caller-side helper for one reason: the runtime has to be
-// able to ask the corpus itself. Queries handed to the model as a list are advice and may
-// simply not be run, so the enumeration is a step of the graph, and the only thing it needs
-// from the tool layer is a search.
-type CoverageRunner interface {
-	EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet
-}
-
-// EnumerateCoverage runs the direction's OWN enumeration over the corpus: one recall per
-// operand (the actor's declared forms and the act words), then the windows where the deed
-// is stated (see EnumerateCoverage in coverage_enumerate.go).
-func (e *searchExecutor) EnumerateCoverage(ctx context.Context, cov Coverage, kb *Kbinfos) CoverageSet {
-	deps := e.deps
-	if len(deps.KbIDs) == 0 && len(e.req.DatasetIDs) > 0 {
-		deps.KbIDs = e.req.DatasetIDs
-	}
-	return EnumerateCoverage(ctx, deps, cov, kb)
-}
-
-// Execute implements ToolExecutor for the wired tools. Tools whose port has not
+// Execute implements toolExecutor for the wired tools. Tools whose port has not
 // landed are classified, not errored: they report MISS (the tool is valid, this
 // call reached nothing) so the model falls back to a different tool instead of
 // stalling.
@@ -143,6 +121,12 @@ func (e *searchExecutor) Execute(ctx context.Context, name string, args map[stri
 	// (ToolCallLine) — see there for why.
 	if logger != nil && name != "" {
 		logger.Printf("[Function tool] Running the %s tool with: %s", name, renderedArgs)
+		// The caller's own statement of what THIS call is for (see arrayParamWithReason). It is
+		// logged as its own line because that is what makes it checkable afterwards: a run's
+		// reasons, read in order, show whether the research was moving or paraphrasing itself.
+		if reason := argString(args, "reason"); reason != "" {
+			logger.Printf("[Function tool] %s reason: %s", name, TruncateRunes(reason, 280))
+		}
 	}
 	if name != "" {
 		StepsFrom(ctx).Emit(ThinkEvent{
@@ -232,7 +216,7 @@ func (e *searchExecutor) dispatch(ctx context.Context, name string, args map[str
 	case "graph_explore":
 		return e.graphExplore(ctx, args)
 	case "web_search":
-		return WebSearchTool(ctx, e.deps, args)
+		return webSearchTool(ctx, e.deps, args)
 	case "wiki_query":
 		return e.wikiQuery(ctx, args)
 	}
@@ -269,12 +253,12 @@ func RenderToolArgs(args map[string]any) string {
 	return string(b)
 }
 
-// QueryLabel renders a tool call's query argument(s) as bare quoted text
+// queryLabel renders a tool call's query argument(s) as bare quoted text
 // ("\"曹操是谁\"" or "\"曹操的逝世日期\", \"曹操是谁\""), or "" when the call carries
 // none. It is the ONE place the query-ish keys are listed, so a tool that renames
 // its question field cannot make the think block and the result labels disagree
 // about which calls have a query.
-func QueryLabel(args map[string]any) string {
+func queryLabel(args map[string]any) string {
 	for _, key := range []string{"query", "queries", "question"} {
 		if label := quoteQueries(args[key]); label != "" {
 			return label
@@ -300,7 +284,7 @@ func QueryLabel(args map[string]any) string {
 // Exported because the outer react loop dispatches its own tools (rag /
 // summarize_document) and reports the same line.
 func ToolCallLine(name string, args map[string]any) string {
-	if q := QueryLabel(args); q != "" {
+	if q := queryLabel(args); q != "" {
 		return fmt.Sprintf("Running the %s tool with %s.", name, q)
 	}
 	return fmt.Sprintf("Running the %s tool.", name)
@@ -369,7 +353,7 @@ func renderToolOutcome(name, label string, oc ToolOutcome, err error) string {
 	switch oc.Status {
 	case StatusOK:
 		return fmt.Sprintf("The %s tool returned %s%s%s.", name, results, documentSuffix(oc.Payload), label)
-	case StatusRedundant:
+	case statusRedundant:
 		return fmt.Sprintf("The %s tool returned %s%s, already in the evidence pool.", name, results, label)
 	case StatusMiss:
 		if oc.Reason == ReasonUnwired {
@@ -377,11 +361,11 @@ func renderToolOutcome(name, label string, oc ToolOutcome, err error) string {
 		}
 		return fmt.Sprintf("The %s tool matched nothing%s.", name, orForThisQuery(label))
 	case StatusEmpty:
-		if oc.Reason == ReasonNoStructure {
+		if oc.Reason == reasonNoStructure {
 			return fmt.Sprintf("The %s tool has no compiled structure to read%s%s.", name, label, causeSuffix(oc.Diagnostic))
 		}
 		return fmt.Sprintf("The %s tool found nothing available%s%s.", name, label, causeSuffix(oc.Diagnostic))
-	case StatusPoor:
+	case statusPoor:
 		return fmt.Sprintf("The %s tool produced a result too weak to use%s%s.", name, label, causeSuffix(oc.Diagnostic))
 	case StatusError:
 		return fmt.Sprintf("The %s tool could not run%s%s.", name, label, causeSuffix(oc.Diagnostic))
@@ -400,7 +384,7 @@ func renderToolOutcome(name, label string, oc ToolOutcome, err error) string {
 // knows. Where a document-scoped call has no query, the human sentence simply
 // goes unlabelled and the developer copy uses docIDLabel.
 func ArgsLabel(args map[string]any) string {
-	if q := QueryLabel(args); q != "" {
+	if q := queryLabel(args); q != "" {
 		return " for " + q
 	}
 	return ""
@@ -496,7 +480,7 @@ func pluralOf(noun string) string {
 	return noun + "s"
 }
 
-// ThinkLabelMaxRunes caps the piece of ONE argument a step's sentence and a tool
+// thinkLabelMaxRunes caps the piece of ONE argument a step's sentence and a tool
 // call's rendering may carry.
 //
 // A tool's "query" is not always a question: the slot-research driver searches a
@@ -504,15 +488,15 @@ func pluralOf(noun string) string {
 // on six lines of a single round (running / matched nothing / locate / searching
 // / returned …) until the round was unreadable. The cap is per VALUE, so the
 // sentence stays a sentence.
-const ThinkLabelMaxRunes = 60
+const thinkLabelMaxRunes = 60
 
 // capForThink caps one string for the think block: rune-safe (it never cuts a
 // character in half) and marked with an ellipsis when it was cut.
 func capForThink(s string) string {
-	if utf8.RuneCountInString(s) <= ThinkLabelMaxRunes {
+	if utf8.RuneCountInString(s) <= thinkLabelMaxRunes {
 		return s
 	}
-	return truncateRunes(s, ThinkLabelMaxRunes) + "…"
+	return TruncateRunes(s, thinkLabelMaxRunes) + "…"
 }
 
 // documentSuffix renders " from N document(s)" for the distinct doc ids a
@@ -694,7 +678,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	// the SESSION scope still applies: the router ceilings its scope with the session
 	// doc_scope. The router must therefore receive the session ceiling, never the tool
 	// argument.
-	res := NavigateTree(ctx, router, NavTreeInput{
+	res := navigateTree(ctx, router, navTreeInput{
 		Query: query,
 		// threads ONLY the tool argument's keywords (usually absent, so "") — passing the
 		// run-level request keywords re-biased every tree routing toward the original
@@ -706,7 +690,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 	})
 
 	switch res.EmptyReason {
-	case ReasonNoStructure:
+	case reasonNoStructure:
 		return ToolOutcome{
 			Payload: []any{map[string]any{
 				// The dataset_has_compilation gate: the payload carries kind+note only.
@@ -714,7 +698,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 				"note": "This dataset has no compiled document-navigation structure; use search_chunks / retrieve instead.",
 			}},
 			Status: StatusEmpty,
-			Reason: ReasonNoStructure,
+			Reason: reasonNoStructure,
 		}, nil
 	case ReasonNoDoc:
 		// Structure exists, this query reached nothing — a MISS, not an EMPTY.
@@ -727,10 +711,10 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 			Status: StatusMiss,
 			Reason: ReasonNoDoc,
 		}, nil
-	case ReasonInfra, ReasonBadArgs:
+	case reasonInfra, ReasonBadArgs:
 		return ToolOutcome{
 			Payload: []any{},
-			Status:  ReasonStatus(res.EmptyReason),
+			Status:  reasonStatus(res.EmptyReason),
 			Reason:  res.EmptyReason,
 			// Carry WHY the descent failed: the reason bucket alone ("infra")
 			// leaves a reader with nothing to act on.
@@ -753,7 +737,7 @@ func (e *searchExecutor) navigateTree(ctx context.Context, args map[string]any) 
 		Payload:     payload,
 		EvidenceIDs: nil, // routing only — no passages retrieved
 		Status:      StatusOK,
-		Reason:      ReasonNone,
+		Reason:      reasonNone,
 		Metrics: map[string]any{
 			"docs":        len(res.DocIDs),
 			"routed_docs": res.RoutedDocs,
@@ -811,7 +795,7 @@ func chunkAggRetrieveFrom(r Retriever) nav.ChunkRetriever {
 //
 // NOTE on shapes: the Go reader (navigation.loadStructureEntities) currently
 // reads only the compact graph-blob rows, whereas BOTH row shapes (graph blob AND
-// per-entity/relation rows) should be merged. ParseCompiledStructure in navtools.go
+// per-entity/relation rows) should be merged. parseCompiledStructure in navtools.go
 // already implements the merged parsing; wiring it into the reader is the remaining
 // step.
 func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]any) (ToolOutcome, error) {
@@ -840,15 +824,15 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		// DocScope is the session ceiling, not the tool argument (see the note in
 		// navigateTree): args["doc_scope"] is never threaded, but the routing done when
 		// doc_id is absent applies the session document scope.
-		res := NavigateTree(ctx, e.navRouter(ctx), NavTreeInput{
+		res := navigateTree(ctx, e.navRouter(ctx), navTreeInput{
 			Query:    query,
 			Keywords: e.req.Keywords,
 			DocScope: e.deps.DocScope,
 			TenantID: e.deps.TenantID,
 			KbIDs:    e.deps.KbIDs,
 		})
-		if res.EmptyReason == ReasonInfra {
-			return ToolOutcome{Payload: []any{}, Status: ReasonStatus(res.EmptyReason), Reason: res.EmptyReason, Diagnostic: res.Diagnostic}, nil
+		if res.EmptyReason == reasonInfra {
+			return ToolOutcome{Payload: []any{}, Status: reasonStatus(res.EmptyReason), Reason: res.EmptyReason, Diagnostic: res.Diagnostic}, nil
 		}
 		docIDs = res.DocIDs
 		if len(docIDs) > navTreeMaxDocs {
@@ -888,7 +872,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 				"doc_id": docID,
 				"note":   fmt.Sprintf("No compiled structure of kind='%s' reachable for this document. Try another doc_id or kind, or use search_chunks / retrieve / list_chunks.", kind),
 			}},
-			Status:  ReasonStatus(res.EmptyReason),
+			Status:  reasonStatus(res.EmptyReason),
 			Reason:  res.EmptyReason,
 			Metrics: metrics,
 		}, nil
@@ -899,7 +883,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 	// chunk snippets, so a zero chunk_ptr count with matched claims is a success.
 	status := StatusOK
 	if drill.chunkPtrs == 0 && drill.claimHits == 0 {
-		status = StatusPoor
+		status = statusPoor
 	}
 	content := res.Text
 	if len(content) > 8000 {
@@ -913,7 +897,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 		Payload:     []any{map[string]any{"kind": "navigate_structure", "doc_id": firstOr(docIDs, ""), "content": content}},
 		EvidenceIDs: evidenceIDs,
 		Status:      status,
-		Reason:      ReasonNone,
+		Reason:      reasonNone,
 		Metrics:     metrics,
 	}, nil
 }
@@ -934,7 +918,7 @@ func (e *searchExecutor) navigateStructure(ctx context.Context, args map[string]
 //     degrades to the nav-row router, which needs no backend.
 //
 // A caller-installed NavRouter is an explicit override and skips both.
-func (e *searchExecutor) navRouter(ctx context.Context) NavTreeRouter {
+func (e *searchExecutor) navRouter(ctx context.Context) navTreeRouter {
 	if e.deps.NavRouter != nil {
 		return e.deps.NavRouter
 	}
@@ -945,23 +929,23 @@ func (e *searchExecutor) navRouter(ctx context.Context) NavTreeRouter {
 }
 
 // noCompilationRouter is what an UNCOMPILED dataset gets: Route answers (nil, nil), the
-// NavTreeRouter contract's "this dataset has no compiled tree", so NavigateTree reports
+// navTreeRouter contract's "this dataset has no compiled tree", so navigateTree reports
 // no_structure (dataset-level, and its tool note says to use search_chunks / retrieve)
 // instead of routing the query through raw-chunk aggregation.
 type noCompilationRouter struct{}
 
-// Route implements NavTreeRouter: no compiled structure, nothing to route, not an error.
+// Route implements navTreeRouter: no compiled structure, nothing to route, not an error.
 func (noCompilationRouter) Route(context.Context, string, string, string, []string, int) ([][2]string, error) {
 	return nil, nil
 }
 
 // defaultNavRouter builds the claim_agg router over the chunk_agg fallback.
-// See ClaimAggRouter and nav.NewChunkAggRouter.
-func defaultNavRouter(deps SearchDeps) NavTreeRouter {
+// See claimAggRouter and nav.NewChunkAggRouter.
+func defaultNavRouter(deps SearchDeps) navTreeRouter {
 	if deps.Backend == nil {
 		return nav.NewNavServiceRouter()
 	}
-	return &ClaimAggRouter{
+	return &claimAggRouter{
 		Deps:      deps,
 		Fallback:  nav.NewChunkAggRouter(chunkAggRetrieveFrom(deps.Backend), nav.ChunkAggSummarize()),
 		Summarize: nav.ChunkAggSummarize(),
@@ -990,87 +974,27 @@ func argString(args map[string]any, key string) string {
 	return s
 }
 
-// evidencePoolCap is the hard cap on the shared evidence pool. It is deliberately LARGER
-// than the SCA view cap (60) so storage and review stay DECOUPLED — the pool accumulates
-// while the SCA reads a ranked top-60 view. Coupling them at 60 starved the raw-evidence
-// channel in 42% of rounds (every admit rejected -> status REDUNDANT -> the model
-// re-searched for nothing).
-//
-// Claim pseudo-chunks BYPASS this cap: they are appended directly to the pool, and the cap
-// only guards regular chunk admission.
-//
-// The cap is 200 (the old 120 was sized for a consumer that no longer exists) —
-// the round-level sweep that rendered the WHOLE pool into one prompt, where the cap
-// and that prompt's budget were the same number. Nothing renders the pool whole any
-// more (the SCA reads a ranked 60-chunk view, the session seed injects a bounded
-// digest, the draft is bounded), so the cap is a storage-discipline number again —
-// and on an enumeration it is the NEXT ceiling rather than a prompt limit: what it
-// refuses is the passage that would have reached the last members, which are named
-// late in the pool's order.
-const evidencePoolCap = 200
-
-// The cap check and its "pool FULL" line now live on PoolAdmitter.Full, where
-// the pool lock is held (see kbinfos.go): the check must not read len(Chunks)
-// while another session appends.
-
-// probeTerms returns the terms of a PROBE query — the caller's own alternation,
-// "荀正|管亥|车胄" — and nil for every other query shape.
-//
-// An alternation is the one place the model states explicitly WHICH individuals
-// it is asking about, which makes its per-term result the batch's answer and not
-// just another search: a name that comes back empty is a name this corpus does
-// not carry, and a name that comes back with a window is a member. Both facts are
-// destroyed by a cap that drops the window (see PoolAdmitter.Novelty), so a probe
-// is exempt while a topic query is not — a topic query names no individuals, so
-// its hits compete for the cap like everything else.
-func probeTerms(q string) []string {
-	if !strings.Contains(q, "|") {
-		return nil
+// argInt reads an integer argument, returning def when it is absent or carries nothing
+// numeric. A tool call is model output: a string where a number belongs is a malformed call,
+// not a reason to fail the run.
+func argInt(args map[string]any, key string, def int) int {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return def
 	}
-	return GrepTermsFromQuery(q)
-}
-
-// namedTermsOf is the call's own statement of WHICH individuals it asked about:
-// the terms of the queries it carried, deduped and capped.
-//
-// Every shape the model uses lands here — an alternation ("A|B|C"), a
-// space-separated list inside one string, or a list of query strings — because
-// GrepTermsFromQuery already reads all three. That is the point: the seat
-// mechanism is attached to the FACT that the call named terms, not to a syntax
-// the model may never write — a `|`-triggered mechanism would fire never.
-//
-// The cap (GrepTermsMax) bounds the seat pass, which runs one cheap keyword
-// search per unreached term; the caller logs how many named terms were dropped
-// so the ceiling is visible in the run.
-//
-// The terms are the caller's OWN WORDS (GrepWordsFromQuery), not the CJK windows
-// the locate step derives from them: a window is our guess at where a name can be
-// found, and probing one spends a retrieval on a fragment nobody asked about.
-func namedTermsOf(queries []string) []string {
-	var out []string
-	seen := make(map[string]bool, len(queries)*2)
-	for _, q := range queries {
-		for _, t := range GrepWordsFromQuery(q) {
-			// A PIECE OF A PATTERN is a phrase, not a name: an alternation carrying
-			// operators asks how a deed is written, and probing its pieces as names
-			// spends a retrieval on a word nobody proposed as a member. An alternation
-			// of PLAIN words is exactly what the seat exists for, so the test is pattern
-			// OPERATORS, not "|".
-			if strings.ContainsAny(t, ".*+?()[]{}^$\\") {
-				continue
-			}
-			low := strings.ToLower(strings.TrimSpace(t))
-			if low == "" || seen[low] {
-				continue
-			}
-			seen[low] = true
-			out = append(out, t)
-			if len(out) >= GrepTermsMax {
-				return out
-			}
+	switch v := raw.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case string:
+		var n int
+		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d", &n); err != nil {
+			return def
 		}
+		return n
 	}
-	return out
+	return def
 }
 
 // search runs one retrieval call for a tool invocation.
@@ -1149,7 +1073,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// NOT reach?" — the question whose answer is a search of its own.
 	var reached []map[string]any
 	// Per-call reach notes: what each query reached term by term, and which of its
-	// terms nothing reached (see ToolOutcome.Note / GrepReachLine). A batch of
+	// terms nothing reached (see ToolOutcome.Note / grepReachLine). A batch of
 	// names is exactly where this matters — the passages alone cannot say whether
 	// a member was missing or simply never asked about.
 	var reachNotes []string
@@ -1160,7 +1084,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// search_chunks. Best effort: any failure falls through without claims.
 	if name == "retrieve" || name == "search_chunks" || strings.HasPrefix(name, "grep") {
 		if len(queries) > 0 {
-			if claimPayload, _, claimPseudo, ok := ClaimPrefetch(ctx, e.deps, queries[0], seen); ok {
+			if claimPayload, _, claimPseudo, ok := claimPrefetch(ctx, e.deps, queries[0], seen); ok {
 				newEvidence := 0
 				e.deps.KB.Admit(func(p *PoolAdmitter) {
 					for _, pc := range claimPseudo {
@@ -1181,13 +1105,13 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				})
 				status := StatusOK
 				if newEvidence == 0 {
-					status = StatusRedundant
+					status = statusRedundant
 				}
 				return ToolOutcome{
 					Payload:     payload,
 					EvidenceIDs: evidenceIDs,
 					Status:      status,
-					Reason:      ReasonNone,
+					Reason:      reasonNone,
 					Metrics:     map[string]any{"hits": len(claimPayload), "new_evidence": newEvidence, "claims": len(claimPayload)},
 				}, nil
 			}
@@ -1214,12 +1138,12 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		if useCompiled {
 			searchFn = HybridSearch
 		} else {
-			searchFn = GrepSearch
+			searchFn = grepSearch
 		}
 		// Keywords differ per tool:
 		//   - retrieve → grep_search(keywords=nav_hint or None). The nav hint is an explicit
 		//     PARAMETER, passed ONLY by the navigation ladder; the model's own retrieve
-		//     dispatch passes none, in which case GrepSearch falls back to the query's own
+		//     dispatch passes none, in which case grepSearch falls back to the query's own
 		//     extracted terms and turns them into the BM25 hint. The session run keywords
 		//     (req.Keywords) are never forwarded.
 		//   - search_chunks takes no keywords at all, so hybrid_search's narrowing is a
@@ -1251,19 +1175,23 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// Computed on the LEG's candidates, not on the payload below: the payload is
 		// truncated to the per-query snippet cap, and a term whose window was cut is
 		// still a term this query reached.
-		if line := GrepReachLine(q, chunks, ReachTermsOf(q)); line != "" {
+		if line := grepReachLine(q, chunks, reachTermsOf(q)); line != "" {
 			reachNotes = append(reachNotes, line)
 		}
-		// Only the first snippetsPerQueryFor(mode) hits of each query are considered
-		// — EXCEPT for a query that NAMES
-		// terms, which keeps one candidate per named term first. The locate step
-		// hands back one window per term, and a flat cut is what turns a six-name
-		// call into "the names that matched most": the rarest lose their seat to the
-		// ones the ranking already preferred.
+		// A NAME this query reached is a member candidate WITH its evidence, and the ledger of that
+		// pair is what the record line ("FOUND BUT NOT RECORDED"), the record checkpoint and the
+		// answer stage's material list all read.
+		//
+		// It used to be written only on the grep/pattern path and by the named-term seats, so a
+		// session that probed names with search_chunks left NO trace — while the reach note printed
+		// them on every call. Measured 2026-09-20 (三国/关羽): `[reach] 20 candidate(s) … 颜良(20)`
+		// on each call and `probed-reached=0` in the record, so there was nothing to checkpoint,
+		// nothing to render for a member, and the answer read "insufficient evidence".
+		// The cut is the mode's per-query snippet count, applied in RANK order: which snippets matter
+		// is the model's reading decision, and the runtime no longer widens the cut for a query it
+		// reads names out of (that reading was the inference this design removes — see the note in
+		// session_state_line.go).
 		limit := snippetsPerQueryFor(e.req.ThinkingMode)
-		if n := len(namedTermsOf([]string{q})); n > limit {
-			limit = n
-		}
 		if len(chunks) > limit {
 			chunks = chunks[:limit]
 		}
@@ -1280,19 +1208,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 			// The claim-covered set is computed from the LIVE pool once per batch, under the
 			// same critical section.
 			covered := p.ClaimCoveredIDs()
-			// The cap exemption for this batch, derived from the probe's own terms
-			// (see probeTerms / PoolAdmitter.Novelty): a full pool still takes the
-			// window that answers a name nothing in the pool has reached yet,
-			// because that window is the batch's result rather than one more
-			// passage.
-			novel := p.Novelty(probeTerms(q))
 			for _, c := range chunks {
-				// Admission early-stops once the shared pool reaches the cap, BEFORE the
-				// per-call dedup — except for the probe window above, which IS the answer the
-				// caller asked for.
-				if p.Full() && !novel.Admits(c) {
-					continue
-				}
 				cid := ChunkIDOf(c)
 				if seen[cid] {
 					continue
@@ -1300,7 +1216,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 				// already quoted verbatim by a pooled claim →
 				// skip the full passage (table chunks exempt: their answer rows
 				// survive only in full text). Not pooled, not passed to the model.
-				if p.CoveredByClaim(cid, covered, IsTableChunk(c)) {
+				if p.CoveredByClaim(cid, covered, isTableChunk(c)) {
 					continue
 				}
 				seen[cid] = true
@@ -1316,91 +1232,6 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		// Pool this search's doc_aggs (skipped when it returned no chunks, like
 		// _merge_kbinfos).
 		e.deps.KB.MergeDocAggs(aggs)
-	}
-
-	// ── Named-term seats ─────────────────────────────────────────────────────
-	// The individuals this call named are honored IN FULL, independent of the
-	// expensive leg's own limits: one cheap keyword search per term the call's
-	// retrievals did not reach, each keeping the window that carries it (see
-	// TermSeat). The terms of list items maxQ dropped are included — "the model
-	// already said the name" should mean the name was looked for, whatever
-	// syntax carried it and whichever leg ran.
-	//
-	// A term that reaches nothing is RECORDED, not retried (Kbinfos.RecordProbedAbsent):
-	// "this corpus has no 荀正" is the answer to a probe, and it is what the
-	// rewrite reads before choosing its next angle.
-	if named := namedTermsOf(allQueries); len(named) > 0 {
-		seatScope := []string(nil)
-		if name != "search_chunks" {
-			// doc_scope is a retrieve-family argument; search_chunks takes none
-			// (see the query loop above).
-			seatScope = toolDocScope(args)
-		}
-		unreached := termsNotCarried(reached, named)
-		// Every named term is PROBED (recall: its own window enters the pool), but
-		// only the ones the call proposed as ITEMS are RECORDED — the ledger is read
-		// back as the session's to-do list, and a question's words are not members
-		// it could record (see probeItemsOf).
-		proposed := probeItemsOf(allQueries)
-		seats, absent := 0, 0
-		for _, term := range unreached {
-			record := proposed[strings.ToLower(term)]
-			seat, found := TermSeat(ctx, e.deps, SearchParams{
-				KbIDs:    e.req.DatasetIDs,
-				DocScope: seatScope,
-			}, term)
-			if !found {
-				absent++
-				if record {
-					e.deps.KB.RecordProbedAbsent(term)
-				}
-				continue
-			}
-			// The seat's ids are collected here and recorded AFTER the batch: the
-			// ledger has its own lock, so writing it inside the critical section
-			// would be safe, but keeping the pool lock to pool work costs nothing
-			// and leaves the locking order (pool → ledger) exercised in one place
-			// only.
-			var seatedIDs []string
-			e.deps.KB.Admit(func(p *PoolAdmitter) {
-				// A seat is a probe's answer, so it is exempt from the pool cap
-				// on the same grounds as the weave above (see Novelty).
-				novel := p.Novelty([]string{term})
-				for _, c := range seat {
-					if p.Full() && !novel.Admits(c) {
-						continue
-					}
-					cid := ChunkIDOf(c)
-					if cid != "" && seen[cid] {
-						continue
-					}
-					if cid != "" {
-						seen[cid] = true
-					}
-					evidenceIDs = append(evidenceIDs, cid)
-					payload = append(payload, passageFromChunk(c))
-					if p.Add(c) {
-						newChunks++
-					}
-					if cid != "" {
-						seatedIDs = append(seatedIDs, cid)
-					}
-					seats++
-				}
-			})
-			// A seat IS the proof that this name is a member: record the pair
-			// (term, passage) so the round's record holds the members with their
-			// evidence, not just the count — again only for a proposed item.
-			if record {
-				for _, cid := range seatedIDs {
-					e.deps.KB.RecordReachedTerm(term, cid)
-				}
-			}
-		}
-		if len(unreached) > 0 {
-			logger.Printf("[Action Session] named-term seats: %d named, %d unreached, %d seat(s) admitted, %d absent.",
-				len(named), len(unreached), seats, absent)
-		}
 	}
 
 	// A cut is a fact about the SEARCH, not about the corpus, and the model cannot
@@ -1425,15 +1256,15 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 	// Zero new evidence (every hit was already in the pool) is REDUNDANT, not
 	// OK. The FULL payload is still returned here — the model sees the passages AND a
 	// redundant status, so it knows the ground is already covered. The session tool node
-	// appends the "ALREADY in your evidence" note on StatusRedundant, which is what stops
+	// appends the "ALREADY in your evidence" note on statusRedundant, which is what stops
 	// the re-issue; dropping the payload (as an earlier version did) hid the evidence the
 	// model needs.
 	if newChunks == 0 {
 		return ToolOutcome{
 			Payload:     payload,
 			EvidenceIDs: evidenceIDs,
-			Status:      StatusRedundant,
-			Reason:      ReasonNone,
+			Status:      statusRedundant,
+			Reason:      reasonNone,
 			Metrics:     map[string]any{"hits": len(payload), "new_evidence": 0},
 			Note:        strings.Join(reachNotes, "\n"),
 		}, nil
@@ -1442,7 +1273,7 @@ func (e *searchExecutor) search(ctx context.Context, name string, args map[strin
 		Payload:     payload,
 		EvidenceIDs: evidenceIDs,
 		Status:      StatusOK,
-		Reason:      ReasonNone,
+		Reason:      reasonNone,
 		Metrics:     map[string]any{"hits": len(payload), "new_evidence": newChunks},
 		Note:        strings.Join(reachNotes, "\n"),
 	}, nil
@@ -1460,7 +1291,7 @@ const metadataKeysHintMax = 30
 // could only be read once. Keeping the selector free of retrieval is also what keeps its
 // answer "which documents match" independent of what the model meant to search for.
 //
-// The statuses are set explicitly rather than derived (see ReasonStatus): a missing filter
+// The statuses are set explicitly rather than derived (see reasonStatus): a missing filter
 // or a metadata key the dataset does not carry is MISS/bad_args — the model should change
 // the filter or switch tools, not read it as an infrastructure failure — a filter matching
 // no document is MISS/no_doc, and only a metadata-index read failure is ERROR/infra.
@@ -1489,7 +1320,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 				"note": "metadata_search is unavailable in this deployment (no metadata resolver is wired). Use search_chunks / retrieve.",
 			}},
 			Status:  StatusError,
-			Reason:  ReasonInfra,
+			Reason:  reasonInfra,
 			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
@@ -1498,7 +1329,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 		return ToolOutcome{
 			Payload: []any{},
 			Status:  StatusError,
-			Reason:  ReasonInfra,
+			Reason:  reasonInfra,
 			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
@@ -1517,7 +1348,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 				"note": "The document-metadata index could not be read (infrastructure failure — NOT a statement about the dataset). Fall back to search_chunks / retrieve.",
 			}},
 			Status:  StatusError,
-			Reason:  ReasonInfra,
+			Reason:  reasonInfra,
 			Metrics: map[string]any{"docs": 0},
 		}, nil
 	}
@@ -1560,7 +1391,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 	// 3) Resolve the document set. This IS the tool's output: the ids are returned to the
 	//    model so it can spend them on the search tools that take a document handle, and the
 	//    filter itself is query-independent (it never needed a query).
-	docIDs, ok := MetadataDocIDs(ctx, e.deps, normalized, logic)
+	docIDs, ok := metadataDocIDs(ctx, e.deps, normalized, logic)
 	if !ok {
 		logger.Printf("[Metadata search] no documents matched filters=%v logic=%s", normalized, logic)
 		return ToolOutcome{
@@ -1617,7 +1448,7 @@ func (e *searchExecutor) metadataSearch(ctx context.Context, args map[string]any
 		// the answer only through the tool the model spends them on.
 		EvidenceIDs: nil,
 		Status:      StatusOK,
-		Reason:      ReasonNone,
+		Reason:      reasonNone,
 		Metrics:     map[string]any{"docs": len(docIDs)},
 	}, nil
 }
@@ -1782,7 +1613,8 @@ func NormalizeMetadataValue(value any, op string) any {
 		return nil
 	}
 	if len(flat) > 1 {
-		_LOG.Printf("[Metadata search] value list collapsed to the single keyword %q (ignored: %v); to match all, issue one condition per keyword", flat[0], flat[1:])
+		common.Warn("metadata search: value list collapsed to the single keyword; to match all, issue one condition per keyword",
+			zap.String("keyword", flat[0]), zap.Any("ignored", flat[1:]))
 	}
 	return flat[0]
 }
@@ -1822,11 +1654,11 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 				"error": "no model",
 			}},
 			Status:  StatusError,
-			Reason:  ReasonInfra,
+			Reason:  reasonInfra,
 			Metrics: map[string]any{},
 		}, nil
 	}
-	cf := ComputeFromFacts(ctx, e.deps.Model, question, facts, 0)
+	cf := computeFromFacts(ctx, e.deps.Model, question, facts, 0)
 	if cf == nil {
 		// Nothing derivable is POOR/no_doc.
 		return ToolOutcome{
@@ -1835,7 +1667,7 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 				"expression": nil,
 				"note":       "no numeric answer derivable from given facts; answer directly or retrieve more numbers.",
 			}},
-			Status:  StatusPoor,
+			Status:  statusPoor,
 			Reason:  ReasonNoDoc,
 			Metrics: map[string]any{},
 		}, nil
@@ -1849,7 +1681,7 @@ func (e *searchExecutor) calculate(ctx context.Context, args map[string]any) (To
 			"result":     cf.Value,
 		}},
 		Status:  StatusOK,
-		Reason:  ReasonNone,
+		Reason:  reasonNone,
 		Metrics: map[string]any{},
 	}, nil
 }
@@ -1955,23 +1787,27 @@ func toolDocScope(args map[string]any) []string {
 // merge reads it as entry["id"],
 // so a "chunk_id" key silently disables the drill's structure_path attachment.
 func passageFromChunk(c map[string]any) map[string]any {
-	// Table chunks are shown to the model as a Markdown view (key-value for infoboxes,
-	// a full-row pipe table for ranked/result tables) instead of raw <table> markup:
-	// same rows, a fraction of the tokens, and a form the model can aggregate. They
-	// also pass through un-truncated: the 1200-char cap would hide rows mid/late in a
-	// long standings table. The shared pool keeps the RAW chunk for citation.
-	var content string
-	if IsTableChunk(c) {
-		content = TableViewOrRaw(ChunkTextOf(c))
-	} else {
-		// Content is a plain slice at 1200 chars (no trim, no ellipsis).
-		content = truncateRunes(ChunkTextOf(c), 1200)
-	}
 	return map[string]any{
 		"id":      ChunkIDOf(c),
-		"content": content,
+		"content": passageContent(c),
 		"doc_id":  DocIDOf(c),
 	}
+}
+
+// passageContent renders one chunk's model-facing text, and is the SINGLE place that decides how
+// a passage is shown: table chunks as the rendered FIELD view — one JSON object per row, built from
+// the table's columns (`{"Children": "3"}`, `{"Rank": "19", "Rider": "Danilo", "Points": "62"}`);
+// see renderTables — instead of raw <table> markup — same rows, a fraction of the tokens, and a form
+// the model can aggregate — and un-truncated, because the 1200-char cap would
+// hide rows mid/late in a long standings table. Everything else is a plain slice at 1200 code
+// points (no trim, no ellipsis). Every tool that hands a passage to the model goes through here;
+// list_chunks used to build its own dict, which is how an 8275-code-point standings table reached
+// the model as raw <table> markup. The shared pool keeps the RAW chunk for citation.
+func passageContent(c map[string]any) string {
+	if isTableChunk(c) {
+		return tableViewOrRaw(ChunkTextOf(c))
+	}
+	return TruncateRunes(ChunkTextOf(c), 1200)
 }
 
 // PublishReferences writes the accumulated evidence into the canvas state so the
@@ -1993,7 +1829,7 @@ func PublishReferences(ctx context.Context, kb *Kbinfos) {
 		docID := DocIDOf(c)
 		name := DocTitleOf(c)
 		content := ChunkTextOf(c)
-		datasetID := DatasetIDOf(c)
+		datasetID := datasetIDOf(c)
 		chunks = append(chunks, map[string]any{
 			"id":                  fmt.Sprint(idx),
 			"chunk_id":            chunkID,

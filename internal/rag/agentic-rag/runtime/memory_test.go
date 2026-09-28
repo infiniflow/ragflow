@@ -30,7 +30,7 @@ func TestMemorySearchReturnsRelevant(t *testing.T) {
 		memChunk("The Eiffel Tower is a wrought-iron lattice tower in Paris.", "d2", "c2"),
 	}}
 	// "rifampicin" / "tuberculosis" both hit chunk c1 only.
-	hits := MemorySearch(kb, "What is rifampicin used for in tuberculosis treatment?", 0, 0)
+	hits := memorySearch(kb, "What is rifampicin used for in tuberculosis treatment?", 0, 0)
 	if len(hits) != 1 {
 		t.Fatalf("hits = %d, want 1", len(hits))
 	}
@@ -42,7 +42,7 @@ func TestMemorySearchReturnsRelevant(t *testing.T) {
 	}
 
 	// Unrelated query clears nothing.
-	if got := MemorySearch(kb, "How many moons does Jupiter have?", 0, 0); got != nil {
+	if got := memorySearch(kb, "How many moons does Jupiter have?", 0, 0); got != nil {
 		t.Errorf("unrelated query should return nil, got %d hits", len(got))
 	}
 }
@@ -57,12 +57,12 @@ func TestMemorySearchRatioBar(t *testing.T) {
 	// "rifampicin" -> 1/9 ~= 0.111 < the 0.12 default ratio, so it clears
 	// nothing.
 	q := "rifampicin airplane bicycle coffee mountain ocean planet quarter river"
-	if got := MemorySearch(kb, q, 0, 0); got != nil {
+	if got := memorySearch(kb, q, 0, 0); got != nil {
 		t.Errorf("below-ratio query should return nil, got %d hits", len(got))
 	}
 
 	// Lowering the ratio lets the same single-term hit through.
-	if got := MemorySearch(kb, q, 0, 0.1); len(got) != 1 {
+	if got := memorySearch(kb, q, 0, 0.1); len(got) != 1 {
 		t.Errorf("ratio 0.1 should keep the hit, got %d", len(got))
 	}
 }
@@ -73,7 +73,7 @@ func TestMemorySearchCJKTrigram(t *testing.T) {
 		memChunk("利福平是一种抗生素，用于治疗结核病。", "d1", "c1"),
 		memChunk("巴黎的埃菲尔铁塔是著名的铁制建筑。", "d2", "c2"),
 	}}
-	hits := MemorySearch(kb, "利福平治疗什么疾病？", 0, 0)
+	hits := memorySearch(kb, "利福平治疗什么疾病？", 0, 0)
 	if len(hits) != 1 || hits[0]["chunk_id"] != "c1" {
 		t.Errorf("CJK 3-gram search failed: got %d hits, want 1 (c1)", len(hits))
 	}
@@ -85,7 +85,7 @@ func TestMemorySearchRanking(t *testing.T) {
 		memChunk("Rifampicin treats tuberculosis and leprosy.", "d1", "low"),
 		memChunk("Rifampicin is an antibiotic for tuberculosis and also used for leprosy and meningitis.", "d2", "high"),
 	}}
-	hits := MemorySearch(kb, "rifampicin tuberculosis leprosy", 0, 0)
+	hits := memorySearch(kb, "rifampicin tuberculosis leprosy", 0, 0)
 	if len(hits) != 2 {
 		t.Fatalf("hits = %d, want 2", len(hits))
 	}
@@ -124,7 +124,7 @@ func TestMemoryGrepLimitAppliesToShortChunks(t *testing.T) {
 	}
 	kb := &Kbinfos{Memory: mem}
 
-	hits := MemoryGrep(kb, []string{"rifampicin"}, 2)
+	hits := memoryGrep(kb, []string{"rifampicin"}, 2)
 	if len(hits) != 2 {
 		t.Fatalf("hits = %d, want the limit 2 (a short chunk must not bypass the cap)", len(hits))
 	}
@@ -134,12 +134,12 @@ func TestMemoryGrepLimitAppliesToShortChunks(t *testing.T) {
 
 	// limit <= 0 is NOT normalized to the default: there is no such guard, so the
 	// `len(hits) >= limit` check fires on the first hit.
-	if got := len(MemoryGrep(kb, []string{"rifampicin"}, 0)); got != 1 {
+	if got := len(memoryGrep(kb, []string{"rifampicin"}, 0)); got != 1 {
 		t.Errorf("limit=0 hits = %d, want 1 (the limit is not normalized)", got)
 	}
 
 	// The default (6) is passed explicitly and caps at 6.
-	if got := len(MemoryGrep(kb, []string{"rifampicin"}, grepMaxChunks)); got != grepMaxChunks {
+	if got := len(memoryGrep(kb, []string{"rifampicin"}, grepMaxChunks)); got != grepMaxChunks {
 		t.Errorf("default-limit hits = %d, want %d", got, grepMaxChunks)
 	}
 }

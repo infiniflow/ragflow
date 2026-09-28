@@ -86,7 +86,7 @@ func TestNavigateTreeRoutesAndRendersXML(t *testing.T) {
 		{"doc-a", "OmiyaSoft company profile"},
 		{"doc-b", ""},
 	}}
-	got := NavigateTree(context.Background(), router, NavTreeInput{
+	got := navigateTree(context.Background(), router, navTreeInput{
 		Query:    "Who created Culdcept?",
 		Keywords: "Culdcept, creator",
 		KbIDs:    []string{"kb1"},
@@ -124,16 +124,16 @@ func TestNavigateTreeRoutesAndRendersXML(t *testing.T) {
 }
 
 func TestNavigateTreeDistinguishesNoStructureFromNoDoc(t *testing.T) {
-	got := NavigateTree(context.Background(), &stubRouter{nilResult: true}, NavTreeInput{
+	got := navigateTree(context.Background(), &stubRouter{nilResult: true}, navTreeInput{
 		Query: "q", KbIDs: []string{"kb1"},
 	})
-	if got.EmptyReason != ReasonNoStructure {
-		t.Errorf("no tree: reason = %q, want %q", got.EmptyReason, ReasonNoStructure)
+	if got.EmptyReason != reasonNoStructure {
+		t.Errorf("no tree: reason = %q, want %q", got.EmptyReason, reasonNoStructure)
 	}
 	if got.HasStructure() {
 		t.Error("no tree must report HasStructure=false")
 	}
-	got = NavigateTree(context.Background(), &stubRouter{emptyResult: true}, NavTreeInput{
+	got = navigateTree(context.Background(), &stubRouter{emptyResult: true}, navTreeInput{
 		Query: "q", KbIDs: []string{"kb1"},
 	})
 	if got.EmptyReason != ReasonNoDoc {
@@ -145,20 +145,20 @@ func TestNavigateTreeDistinguishesNoStructureFromNoDoc(t *testing.T) {
 }
 
 func TestNavigateTreeBadArgsAndInfra(t *testing.T) {
-	if got := NavigateTree(context.Background(), &stubRouter{}, NavTreeInput{}); got.EmptyReason != ReasonBadArgs {
+	if got := navigateTree(context.Background(), &stubRouter{}, navTreeInput{}); got.EmptyReason != ReasonBadArgs {
 		t.Errorf("no query: reason = %q, want bad_args", got.EmptyReason)
 	}
-	if got := NavigateTree(context.Background(), nil, NavTreeInput{Query: "q"}); got.EmptyReason != ReasonInfra {
+	if got := navigateTree(context.Background(), nil, navTreeInput{Query: "q"}); got.EmptyReason != reasonInfra {
 		t.Errorf("no router: reason = %q, want infra", got.EmptyReason)
 	}
 	// Every configured dataset failed to answer: infra, NOT no_structure. Route()
 	// reports "no compiled tree" as (nil, nil), so a non-nil error is a failure —
 	// a dataset-level verdict drawn from zero successful reads would mislabel an
 	// outage, and no_structure is the verdict the session strikes a tool out on.
-	got := NavigateTree(context.Background(), &stubRouter{err: errors.New("ES down")}, NavTreeInput{
+	got := navigateTree(context.Background(), &stubRouter{err: errors.New("ES down")}, navTreeInput{
 		Query: "q", KbIDs: []string{"kb1"},
 	})
-	if got.EmptyReason != ReasonInfra {
+	if got.EmptyReason != reasonInfra {
 		t.Errorf("backend error: reason = %q, want infra", got.EmptyReason)
 	}
 	if !got.HasStructure() {
@@ -185,11 +185,11 @@ func (r *perKBRouter) Route(_ context.Context, _, kbID, _ string, _ []string, _ 
 // datasets' state unknown, so the answer must stay infra — concluding
 // no_structure there would end the tool on evidence that was never read.
 func TestNavigateTreePartialFailureIsInfra(t *testing.T) {
-	got := NavigateTree(context.Background(), &perKBRouter{
+	got := navigateTree(context.Background(), &perKBRouter{
 		results: map[string][][2]string{"kb2": nil}, // kb2 answered: no compiled tree
 		errs:    map[string]error{"kb1": errors.New("ES down")},
-	}, NavTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
-	if got.EmptyReason != ReasonInfra {
+	}, navTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
+	if got.EmptyReason != reasonInfra {
 		t.Errorf("partial failure: reason = %q, want infra", got.EmptyReason)
 	}
 	// A failed descent has no upstream counterpart to copy — the exception escapes upstream
@@ -201,38 +201,38 @@ func TestNavigateTreePartialFailureIsInfra(t *testing.T) {
 
 	// A dataset that answered AND routed still wins: one failed read must not
 	// discard the documents another dataset returned.
-	got = NavigateTree(context.Background(), &perKBRouter{
+	got = navigateTree(context.Background(), &perKBRouter{
 		results: map[string][][2]string{"kb2": [][2]string{{"doc-a", "summary"}}},
 		errs:    map[string]error{"kb1": errors.New("ES down")},
-	}, NavTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
+	}, navTreeInput{Query: "q", KbIDs: []string{"kb1", "kb2"}})
 	if got.EmptyReason != "" || len(got.DocIDs) != 1 || got.DocIDs[0] != "doc-a" {
 		t.Errorf("partial success: reason = %q, doc_ids = %v, want doc-a from kb2", got.EmptyReason, got.DocIDs)
 	}
 }
 
-// TestNavigateTreeEmptyXML pins the text each empty NavResult carries: `count="0"` plus an
+// TestNavigateTreeEmptyXML pins the text each empty navResult carries: `count="0"` plus an
 // `error="..."` attribute that is OMITTED for a query-level miss (present for "no retriever"
 // and "query is required"). The model does not read it — every empty_reason is replaced with
-// the tool's own note (tool_executor.go) — but the NavResult value must match.
+// the tool's own note (tool_executor.go) — but the navResult value must match.
 func TestNavigateTreeEmptyXML(t *testing.T) {
 	cases := []struct {
 		name string
-		got  NavResult
+		got  navResult
 		want string
 	}{
 		{
 			"bad_args",
-			NavigateTree(context.Background(), &stubRouter{}, NavTreeInput{}),
+			navigateTree(context.Background(), &stubRouter{}, navTreeInput{}),
 			"<tree_navigation count=\"0\" error=\"query is required\">\n</tree_navigation>",
 		},
 		{
 			"infra: no router",
-			NavigateTree(context.Background(), nil, NavTreeInput{Query: "q"}),
+			navigateTree(context.Background(), nil, navTreeInput{Query: "q"}),
 			"<tree_navigation count=\"0\" error=\"no retriever\">\n</tree_navigation>",
 		},
 		{
 			"no_doc: no attribute",
-			NavigateTree(context.Background(), &stubRouter{emptyResult: true}, NavTreeInput{
+			navigateTree(context.Background(), &stubRouter{emptyResult: true}, navTreeInput{
 				Query: "q", KbIDs: []string{"kb1"},
 			}),
 			"<tree_navigation count=\"0\">\n</tree_navigation>",
@@ -241,7 +241,7 @@ func TestNavigateTreeEmptyXML(t *testing.T) {
 			// A state with no upstream equivalent: the nav-tree route has no
 			// no_structure verdict, so this label is this file's own wording.
 			"no_structure",
-			NavigateTree(context.Background(), &stubRouter{nilResult: true}, NavTreeInput{
+			navigateTree(context.Background(), &stubRouter{nilResult: true}, navTreeInput{
 				Query: "q", KbIDs: []string{"kb1"},
 			}),
 			"<tree_navigation count=\"0\" error=\"no compiled navigation tree\">\n</tree_navigation>",
@@ -260,7 +260,7 @@ func TestNavigateTreeCachesBestPerDocAcrossDatasets(t *testing.T) {
 		{"doc-a", "summary from kb2"},
 		{"doc-b", "b"},
 	}}
-	got := NavigateTree(context.Background(), router, NavTreeInput{
+	got := navigateTree(context.Background(), router, navTreeInput{
 		Query: "q", KbIDs: []string{"kb1", "kb2"},
 	})
 	if len(got.DocIDs) != 2 {
@@ -273,7 +273,7 @@ func TestNavigateTreeCapsAt8(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		table = append(table, [2]string{string(rune('a'+i%26)) + string(rune('0'+i/26)), "s"})
 	}
-	got := NavigateTree(context.Background(), &stubRouter{table: table}, NavTreeInput{
+	got := navigateTree(context.Background(), &stubRouter{table: table}, navTreeInput{
 		Query: "q", KbIDs: []string{"kb1"},
 	})
 	if len(got.DocIDs) != navTreeMaxDocs {
@@ -283,7 +283,7 @@ func TestNavigateTreeCapsAt8(t *testing.T) {
 
 func TestNavigateTreeEscapesXML(t *testing.T) {
 	router := &stubRouter{table: [][2]string{{"d&<>\"'1", "a < b & c"}}}
-	got := NavigateTree(context.Background(), router, NavTreeInput{
+	got := navigateTree(context.Background(), router, navTreeInput{
 		Query: `who "made" <it> & that`, KbIDs: []string{"kb1"},
 	})
 	if strings.Contains(got.Text, "<it>") {
@@ -300,40 +300,40 @@ func TestNavigateTreeEscapesXML(t *testing.T) {
 // Compiled-structure parsing
 
 func TestParseCompiledStructureGraphBlob(t *testing.T) {
-	rows := []StructureRow{{
+	rows := []structureRow{{
 		CompileKwd:        "tree",
 		KnowledgeGraphKwd: "graph",
 		Content:           `{"entities": [{"name": "OmiyaSoft"}, {"name": "Culdcept"}], "relations": [{"src": "OmiyaSoft", "dst": "Culdcept"}]}`,
 	}}
-	ents, rels := ParseCompiledStructure(rows, []string{"tree"})
+	ents, rels := parseCompiledStructure(rows, []string{"tree"})
 	if len(ents) != 2 || len(rels) != 1 {
 		t.Fatalf("blob: entities=%d relations=%d, want 2/1", len(ents), len(rels))
 	}
 }
 
 func TestParseCompiledStructurePerEntityRows(t *testing.T) {
-	rows := []StructureRow{
+	rows := []structureRow{
 		{CompileKwd: "page_index", KnowledgeGraphKwd: "entity", Content: `{"name": "OmiyaSoft"}`},
 		{CompileKwd: "page_index", KnowledgeGraphKwd: "entity", Content: `{"name": "Culdcept"}`},
 		{CompileKwd: "page_index", KnowledgeGraphKwd: "relation", Content: `{"src": "OmiyaSoft", "dst": "Culdcept"}`},
 	}
-	ents, rels := ParseCompiledStructure(rows, []string{"timeline"})
+	ents, rels := parseCompiledStructure(rows, []string{"timeline"})
 	if len(ents) != 2 || len(rels) != 1 {
 		t.Fatalf("per-row: entities=%d relations=%d, want 2/1", len(ents), len(rels))
 	}
 }
 
 func TestParseCompiledStructureKindFilterAndNormalization(t *testing.T) {
-	rows := []StructureRow{
+	rows := []structureRow{
 		{CompileKwd: "page_index", KnowledgeGraphKwd: "entity", Content: `{"name": "A"}`},
 		{CompileKwd: "knowledge_graph", KnowledgeGraphKwd: "entity", Content: `{"name": "B"}`},
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "C"}`},
 	}
-	ents, _ := ParseCompiledStructure(rows, []string{"timeline"})
+	ents, _ := parseCompiledStructure(rows, []string{"timeline"})
 	if len(ents) != 2 {
 		t.Errorf("timeline filter = %d entities, want 2 (page_index + knowledge_graph)", len(ents))
 	}
-	ents, _ = ParseCompiledStructure([]StructureRow{
+	ents, _ = parseCompiledStructure([]structureRow{
 		{CompileKwd: "", TemplateKind: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "E"}`},
 	}, []string{"tree"})
 	if len(ents) != 1 {
@@ -342,24 +342,24 @@ func TestParseCompiledStructureKindFilterAndNormalization(t *testing.T) {
 }
 
 func TestParseCompiledStructureSkipsMalformed(t *testing.T) {
-	rows := []StructureRow{
+	rows := []structureRow{
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: "not json"},
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: `[1,2,3]`},
 		{CompileKwd: "tree", KnowledgeGraphKwd: "unknown_shape", Content: `{"name":"X"}`},
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "ok"}`},
 	}
-	ents, _ := ParseCompiledStructure(rows, []string{"tree"})
+	ents, _ := parseCompiledStructure(rows, []string{"tree"})
 	if len(ents) != 1 {
 		t.Errorf("entities = %d, want 1 (malformed rows skipped)", len(ents))
 	}
 }
 
 func TestParseCompiledStructureEmptyKindsMatchesAll(t *testing.T) {
-	rows := []StructureRow{
+	rows := []structureRow{
 		{CompileKwd: "tree", KnowledgeGraphKwd: "entity", Content: `{"name": "A"}`},
 		{CompileKwd: "other", KnowledgeGraphKwd: "entity", Content: `{"name": "B"}`},
 	}
-	ents, _ := ParseCompiledStructure(rows, nil)
+	ents, _ := parseCompiledStructure(rows, nil)
 	if len(ents) != 2 {
 		t.Errorf("no filter = %d entities, want 2", len(ents))
 	}
@@ -368,16 +368,16 @@ func TestParseCompiledStructureEmptyKindsMatchesAll(t *testing.T) {
 // Knowledge-graph exploration
 
 // TestExploreGraphShortCircuitsOnEmptyInput verifies the documented contract:
-// no query text or no bound datasets yields an empty ExploreResult (no engine
+// no query text or no bound datasets yields an empty exploreResult (no engine
 // call). The engine-backed happy path needs a live Infinity backend and is not
 // exercised in the unit tier.
 func TestExploreGraphShortCircuitsOnEmptyInput(t *testing.T) {
 	// No query text.
-	if res, err := ExploreGraph(context.Background(), SearchDeps{}, "t1", []string{"kb1"}, "", "", nil); err != nil || res.Answer != "" || len(res.Chunks) != 0 {
+	if res, err := exploreGraph(context.Background(), SearchDeps{}, "t1", []string{"kb1"}, "", "", nil); err != nil || res.Answer != "" || len(res.Chunks) != 0 {
 		t.Errorf("empty query -> (%+v, %v), want empty result", res, err)
 	}
 	// No bound datasets.
-	if res, err := ExploreGraph(context.Background(), SearchDeps{}, "t1", nil, "OmiyaSoft", "", nil); err != nil || res.Answer != "" || len(res.Chunks) != 0 {
+	if res, err := exploreGraph(context.Background(), SearchDeps{}, "t1", nil, "OmiyaSoft", "", nil); err != nil || res.Answer != "" || len(res.Chunks) != 0 {
 		t.Errorf("no datasets -> (%+v, %v), want empty result", res, err)
 	}
 }
@@ -385,7 +385,7 @@ func TestExploreGraphShortCircuitsOnEmptyInput(t *testing.T) {
 // TestExploreGraphUnconfiguredEngineErrors verifies a missing engine is
 // surfaced rather than silently returning empty.
 func TestExploreGraphUnconfiguredEngineErrors(t *testing.T) {
-	if _, err := ExploreGraph(context.Background(), SearchDeps{}, "t1", []string{"kb1"}, "OmiyaSoft", "", nil); err == nil {
+	if _, err := exploreGraph(context.Background(), SearchDeps{}, "t1", []string{"kb1"}, "OmiyaSoft", "", nil); err == nil {
 		t.Error("expected an error when the engine is not configured")
 	}
 }
@@ -803,7 +803,7 @@ func TestEmptyReasonLabel(t *testing.T) {
 	cases := map[string]string{
 		ReasonBadArgs:     "query is required",
 		ReasonNoDoc:       "no document located",
-		ReasonNoStructure: "no structure",
+		reasonNoStructure: "no structure",
 	}
 	for in, want := range cases {
 		if got := emptyReasonLabel(in); got != want {
@@ -1030,13 +1030,13 @@ func TestTocDrilldownKeptOrderIsDeterministic(t *testing.T) {
 }
 
 func TestParseCompiledStructureCarriesVec(t *testing.T) {
-	rows := []StructureRow{{
+	rows := []structureRow{{
 		CompileKwd:        "tree",
 		KnowledgeGraphKwd: "graph",
 		Content:           `{"entities": [{"name": "A"}, {"name": "B"}], "relations": []}`,
 		Vec:               []float64{1, 2},
 	}}
-	ents, _ := ParseCompiledStructure(rows, []string{"tree"})
+	ents, _ := parseCompiledStructure(rows, []string{"tree"})
 	if len(ents) != 2 {
 		t.Fatalf("entities = %d, want 2", len(ents))
 	}
@@ -1061,7 +1061,7 @@ func TestNavigationToolsReportEmptyWhenUncompiled(t *testing.T) {
 	// instead of panicking.
 
 	oc, _ := ex.Execute(context.Background(), "navigate_tree", map[string]any{"query": "topic"})
-	if oc.Status != StatusEmpty || oc.Reason != ReasonNoStructure {
+	if oc.Status != StatusEmpty || oc.Reason != reasonNoStructure {
 		t.Errorf("navigate_tree: got (%s,%s), want (empty,no_structure)", oc.Status, oc.Reason)
 	}
 	// A note must accompany it, so the model knows to switch tools.
@@ -1070,7 +1070,7 @@ func TestNavigationToolsReportEmptyWhenUncompiled(t *testing.T) {
 	}
 
 	oc, _ = ex.Execute(context.Background(), "navigate_structure", map[string]any{"doc_id": "d1", "query": "topic"})
-	if oc.Status != StatusEmpty || oc.Reason != ReasonNoStructure {
+	if oc.Status != StatusEmpty || oc.Reason != reasonNoStructure {
 		t.Errorf("navigate_structure: got (%s,%s), want (empty,no_structure)", oc.Status, oc.Reason)
 	}
 }
@@ -1083,8 +1083,8 @@ func TestNavigateStructureDocRejectsForeignDocument(t *testing.T) {
 		DocIDVerifier: stubVerifier{known: map[string]bool{"mine": true}},
 	})
 
-	if res.EmptyReason != ReasonNoStructure {
-		t.Fatalf("EmptyReason = %q, want %q", res.EmptyReason, ReasonNoStructure)
+	if res.EmptyReason != reasonNoStructure {
+		t.Fatalf("EmptyReason = %q, want %q", res.EmptyReason, reasonNoStructure)
 	}
 	if len(res.DocIDs) != 0 {
 		t.Fatalf("DocIDs = %v, want none", res.DocIDs)
@@ -1104,7 +1104,7 @@ func TestIndexNameForFallsBackToRagflowPrefix(t *testing.T) {
 }
 
 // TestNavigateStructuresEmptyDocIDsRoutesViaRouter pins the empty-doc_id vector routing: a
-// direct call with no doc_ids routes through the NavTreeRouter first instead of immediately
+// direct call with no doc_ids routes through the navTreeRouter first instead of immediately
 // returning MISS. The tool path still passes non-empty doc_ids and must NOT consult the
 // router.
 func TestNavigateStructuresEmptyDocIDsRoutesViaRouter(t *testing.T) {
@@ -1133,7 +1133,7 @@ func TestNavigateStructuresEmptyDocIDsRoutesViaRouter(t *testing.T) {
 // dataset.
 func TestNavigateTreeRoutesWithinSessionDocScope(t *testing.T) {
 	router := &stubNavRouter{docs: [][2]string{{"d1", "summary"}}}
-	NavigateTree(context.Background(), router, NavTreeInput{
+	navigateTree(context.Background(), router, navTreeInput{
 		Query:    "topic",
 		TenantID: "t1",
 		KbIDs:    []string{"kb1"},

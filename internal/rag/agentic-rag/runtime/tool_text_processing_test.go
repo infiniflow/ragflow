@@ -18,9 +18,7 @@ package runtime
 
 import (
 	"regexp"
-	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 func TestEscapeTermAsciiWord(t *testing.T) {
@@ -73,12 +71,12 @@ func TestTermsToPatternsCapsAndSkipsEmpty(t *testing.T) {
 	for i := range terms {
 		terms[i] = "t"
 	}
-	pats := TermsToPatterns(terms)
+	pats := termsToPatterns(terms)
 	if len(pats) != maxGrepTerms {
 		t.Errorf("len = %d, want capped at %d", len(pats), maxGrepTerms)
 	}
 	// Mixed empties (whitespace) are skipped.
-	pats = TermsToPatterns([]string{"", "  ", ",,,", "cat"})
+	pats = termsToPatterns([]string{"", "  ", ",,,", "cat"})
 	if len(pats) != 1 {
 		t.Errorf("len = %d, want 1 (only 'cat' compiles)", len(pats))
 	}
@@ -86,7 +84,7 @@ func TestTermsToPatternsCapsAndSkipsEmpty(t *testing.T) {
 
 // mustNarrow is a convenience for the full NarrowByTerms signature with the
 // default context and caps used by the term path.
-func mustNarrow(chunks []map[string]any, terms, fallbackTerms []string, keywords string) NarrowResult {
+func mustNarrow(chunks []map[string]any, terms, fallbackTerms []string, keywords string) narrowResult {
 	return NarrowByTerms(chunks, terms, fallbackTerms, keywords, NarrowContext{Before: 2, After: 2}, defaultOutCharsPerChunk, defaultOutTotalChars)
 }
 
@@ -131,11 +129,11 @@ func TestNarrowWithFallbackKeywordAndOriginals(t *testing.T) {
 		{"content": "The weather is nice today."},
 	}
 	// Keyword narrowing matches -> narrowed subset.
-	if got := NarrowWithFallbackKeyword(chunks, "culdcept"); len(got) != 1 {
+	if got := narrowWithFallbackKeyword(chunks, "culdcept"); len(got) != 1 {
 		t.Errorf("keyword fallback kept %d, want 1 (only the matching chunk)", len(got))
 	}
 	// No keyword -> originals kept (never drop).
-	if got := NarrowWithFallbackKeyword(chunks, ""); len(got) != len(chunks) {
+	if got := narrowWithFallbackKeyword(chunks, ""); len(got) != len(chunks) {
 		t.Errorf("len = %d, want all %d on empty keyword", len(got), len(chunks))
 	}
 }
@@ -161,7 +159,7 @@ func TestIsFactDenseSentence(t *testing.T) {
 		{"It was wonderful!!..Atlas shrugged", false},
 	}
 	for _, c := range cases {
-		if got := IsFactDenseSentence(c.s); got != c.want {
+		if got := isFactDenseSentence(c.s); got != c.want {
 			t.Errorf("IsFactDenseSentence(%q) = %v, want %v", c.s, got, c.want)
 		}
 	}
@@ -181,10 +179,10 @@ func TestNarrowByKeywordsEmptyReturnsChunks(t *testing.T) {
 		{"content": "some passage"},
 		{"content_with_weight": "other", "content": "other"},
 	}
-	if got := NarrowByKeywords(chunks, ""); len(got) != len(chunks) {
+	if got := narrowByKeywords(chunks, ""); len(got) != len(chunks) {
 		t.Fatalf("empty keyword kept %d, want all %d", len(got), len(chunks))
 	}
-	if got := NarrowByKeywords(nil, "culdcept"); got != nil {
+	if got := narrowByKeywords(nil, "culdcept"); got != nil {
 		t.Errorf("nil chunks must return nil, got %d", len(got))
 	}
 }
@@ -199,7 +197,7 @@ func TestNarrowByKeywordsMirrorsContentOnlyWhenPresent(t *testing.T) {
 	chunks := []map[string]any{
 		{"content_with_weight": "Alpha foo bar. Culdcept is a game by OmiyaSoft. Beta baz qux."},
 	}
-	got := NarrowByKeywords(chunks, "culdcept")
+	got := narrowByKeywords(chunks, "culdcept")
 	if len(got) != 1 {
 		t.Fatalf("want 1 narrowed chunk, got %d", len(got))
 	}
@@ -217,7 +215,7 @@ func TestNarrowByKeywordsMirrorsContentOnlyWhenPresent(t *testing.T) {
 	chunks2 := []map[string]any{
 		{"content": "Culdcept was made by OmiyaSoft.", "highlight": []any{"old"}},
 	}
-	got2 := NarrowByKeywords(chunks2, "culdcept")
+	got2 := narrowByKeywords(chunks2, "culdcept")
 	if len(got2) != 1 {
 		t.Fatalf("want 1 narrowed chunk, got %d", len(got2))
 	}
@@ -251,25 +249,5 @@ func TestNarrowByTermsNoMatchKeepsOriginalUntouched(t *testing.T) {
 	}
 	if got := ChunkTextOf(res.Kept[1]); got != long {
 		t.Errorf("non-matching chunk was altered (len %d, want %d); grep narrowing must not truncate unmatched evidence", len(got), len(long))
-	}
-}
-
-func TestTruncHeadRuneAware(t *testing.T) {
-	// CJK: 3 bytes per rune. A naive byte slice s[:n] would split a rune and
-	// produce invalid UTF-8; truncHead must keep n codepoints instead.
-	zh := strings.Repeat("中", 50)
-	got := truncHead(zh, 10)
-	if charLen(got) != 10 {
-		t.Errorf("truncHead codepoint count = %d, want 10", charLen(got))
-	}
-	if got != strings.Repeat("中", 10) {
-		t.Errorf("truncHead did not keep the correct rune prefix")
-	}
-	if !utf8.ValidString(got) {
-		t.Error("truncHead produced invalid UTF-8")
-	}
-	// Short input: returned unchanged and byte-identical.
-	if s := "hello"; truncHead(s, 100) != s {
-		t.Errorf("truncHead short input changed: %q", truncHead(s, 100))
 	}
 }

@@ -17,6 +17,8 @@
 package runtime
 
 import (
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"regexp"
 	"sort"
 	"strings"
@@ -32,7 +34,7 @@ import (
 // The store lives on Kbinfos.Memory so it travels with the request.
 
 const (
-	// grepMaxChunks is the default cap for the memory grep. MemoryGrep takes the limit
+	// grepMaxChunks is the default cap for the memory grep. memoryGrep takes the limit
 	// explicitly and does NOT substitute this for a non-positive value (there is no such
 	// guard), so callers that want the default pass it.
 	grepMaxChunks = 6
@@ -44,7 +46,7 @@ const (
 	// answers often live in short chunks.
 	shortChunkChars = 200
 
-	// MemorySearch tuning — the search defaults.
+	// memorySearch tuning — the search defaults.
 	memoryDefaultTopN = 6
 	// memoryMinRatio: a chunk is relevant when it shares >= 1 term AND >= this fraction of
 	// the query's significant terms (normalized overlap bar so CN / EN queries behave alike).
@@ -82,10 +84,10 @@ var memoryStopwords = map[string]struct{}{
 	"your": {},
 }
 
-// MemoryAdd: merges raw retrieved chunks into the
+// memoryAdd: merges raw retrieved chunks into the
 // central store, losslessly, skipping chunks already present and those with no
 // text.
-func MemoryAdd(kb *Kbinfos, chunks []map[string]any) {
+func memoryAdd(kb *Kbinfos, chunks []map[string]any) {
 	if kb == nil || len(chunks) == 0 {
 		return
 	}
@@ -111,7 +113,7 @@ func MemoryAdd(kb *Kbinfos, chunks []map[string]any) {
 		added++
 	}
 	if added > 0 {
-		_LOG.Printf("[Memory] stored %d new raw chunk(s); memory now has %d.", added, len(kb.Memory))
+		common.Info("memory: stored new raw chunks", zap.Int("added", added), zap.Int("total", len(kb.Memory)))
 	}
 }
 
@@ -123,8 +125,8 @@ func MemorySize(kb *Kbinfos) int {
 	return len(kb.Memory)
 }
 
-// MemoryClear
-func MemoryClear(kb *Kbinfos) {
+// memoryClear
+func memoryClear(kb *Kbinfos) {
 	if kb != nil {
 		kb.mu.Lock()
 		defer kb.mu.Unlock()
@@ -132,7 +134,7 @@ func MemoryClear(kb *Kbinfos) {
 	}
 }
 
-// MemoryGrep: returns memory chunks containing any of
+// memoryGrep: returns memory chunks containing any of
 // terms, narrowed to the matching sentence plus a small context window.
 //
 // terms are plain strings (entities / numbers / key phrases) as emitted by the
@@ -142,7 +144,7 @@ func MemoryClear(kb *Kbinfos) {
 // limit is the maximum number of chunks returned and is NOT normalized: there is no such
 // guard, so a limit <= 0 makes the `len(hits) >= limit` check fire on the first hit (at most
 // one chunk comes back). Callers wanting the default pass grepMaxChunks.
-func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
+func memoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 	if kb == nil || len(kb.Memory) == 0 || len(terms) == 0 {
 		return nil
 	}
@@ -186,7 +188,7 @@ func MemoryGrep(kb *Kbinfos, terms []string, limit int) []map[string]any {
 			}
 			continue
 		}
-		sents := SplitSentences(text)
+		sents := splitSentences(text)
 		var kept []string
 		for i, s := range sents {
 			if match(s) {
@@ -296,9 +298,9 @@ func containsStr(ss []string, s string) bool {
 	return false
 }
 
-// MemorySearch: relevance-ranked retrieval over the
+// memorySearch: relevance-ranked retrieval over the
 // raw-chunk memory store (a retrieval-reuse cache, NOT a noise-injection source).
-// Unlike MemoryGrep (loose keyword hit) it keeps only chunks whose overlap with the
+// Unlike memoryGrep (loose keyword hit) it keeps only chunks whose overlap with the
 // query's SIGNIFICANT terms clears a normalized bar, so a fact retrieved earlier can
 // be reused instead of re-querying the index.
 //
@@ -311,7 +313,7 @@ func containsStr(ss []string, s string) bool {
 // significant terms; results are ranked by hit count then text length, capped at
 // topN. Returns nil when nothing clears the bar (the caller falls back to a
 // knowledge-base search). minRatio <= 0 falls back to memoryMinRatio.
-func MemorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[string]any {
+func memorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[string]any {
 	if kb == nil || len(kb.Memory) == 0 {
 		return nil
 	}
@@ -379,7 +381,8 @@ func MemorySearch(kb *Kbinfos, query string, topN int, minRatio float64) []map[s
 	if len(rq) > 60 {
 		rq = rq[:60]
 	}
-	_LOG.Printf("[Memory.search] query=%q -> %d relevant chunk(s) (ratio>=%.2f, %d terms)", string(rq), len(out), minRatio, n)
+	common.Info("memory search: relevant chunks", zap.String("query", string(rq)), zap.Int("chunks", len(out)),
+		zap.Float64("min_ratio", minRatio), zap.Any("terms", n))
 	return out
 }
 
@@ -437,7 +440,7 @@ func significantTerms(text string) []string {
 	return out
 }
 
-// termMatcher precompiles one query term's match predicate so MemorySearch
+// termMatcher precompiles one query term's match predicate so memorySearch
 // does not recompile regexes per chunk.
 type termMatcher struct {
 	// kind: 0 = CJK substring, 1 = digit substring, 2 = Latin word-boundary
@@ -486,10 +489,10 @@ func (m termMatcher) matches(text string) bool {
 	}
 }
 
-// IsStopword reports whether w is one of the shared stopwords.
+// isStopword reports whether w is one of the shared stopwords.
 //
 // The fan-out needs it because the same set filters candidate terms.
-func IsStopword(w string) bool {
+func isStopword(w string) bool {
 	_, ok := memoryStopwords[w]
 	return ok
 }

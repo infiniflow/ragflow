@@ -32,9 +32,9 @@ import (
 // keeps the dependency graph acyclic (tools must not import the root package the root package
 // imports tools from).
 
-// ChunkAttr returns the first non-empty value among keys.
+// chunkAttr returns the first non-empty value among keys.
 // Truthiness is "not nil and not empty".
-func ChunkAttr(c map[string]any, keys ...string) string {
+func chunkAttr(c map[string]any, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := c[k]; ok && v != nil {
 			if s := fmt.Sprint(v); s != "" {
@@ -52,23 +52,93 @@ func ChunkTextOf(c map[string]any) string { return chunkText(c) }
 
 // DocIDOf: doc_id / docid / document_id.
 func DocIDOf(c map[string]any) string {
-	return ChunkAttr(c, "doc_id", "docid", "document_id")
+	return chunkAttr(c, "doc_id", "docid", "document_id")
 }
 
-// DatasetIDOf: dataset_id / kb_id / knowledgebase_id.
-func DatasetIDOf(c map[string]any) string {
-	return ChunkAttr(c, "dataset_id", "kb_id", "knowledgebase_id")
+// shingleRunes is the shingle size of the near-duplicate test below. Four characters is short enough to
+// survive a re-cut boundary (a passage the windowing sliced at a different place) and long enough that
+// unrelated Chinese prose does not collide on its own.
+const shingleRunes = 4
+
+// duplicateOverlap is where two passages count as saying the SAME thing. It is 0.98, NOT the 0.85 a
+// same-kind pipeline uses for its partial-overlap pass, and the difference is the whole point: this
+// runtime's questions are enumerations, whose member passages differ by a NAME and agree in everything
+// else — "关羽手起一刀，斩颜良于马下" against "…斩文丑于马下" is two members by any reader, and a 0.85
+// containment test would call them one passage and drop a member (measured on this repo's own fixtures:
+// forty passages differing in one digit collapsed to ten at 0.85). What this test is FOR is the same
+// passage delivered twice — overlapping windows of adjacent chunks, and parent/child duplicates the
+// retrieval layer already produces (see RetrievalByChildren) — and those agree to within a cut boundary.
+const duplicateOverlap = 0.98
+
+// shingles is the 4-rune shingle set of a normalized text (case- and whitespace-insensitive), or nil.
+func shingles(s string) map[string]struct{} {
+	r := []rune(spaceLess(strings.ToLower(s)))
+	switch {
+	case len(r) == 0:
+		return nil
+	case len(r) < shingleRunes:
+		return map[string]struct{}{string(r): {}}
+	}
+	out := make(map[string]struct{}, len(r)-shingleRunes+1)
+	for i := 0; i+shingleRunes <= len(r); i++ {
+		out[string(r[i:i+shingleRunes])] = struct{}{}
+	}
+	return out
+}
+
+// TextOverlap is the share of the SHORTER text's shingles that also appear in the longer one: 1.0 when
+// one passage contains the other, 0 when they share nothing.
+//
+// It is a containment-flavoured measure on purpose. The passages this runtime compares are windows cut
+// out of adjacent chunks of the SAME document (overlapping retrieval windows), so a long passage and the
+// short window inside it are the same evidence — and a symmetric measure would call them different.
+func TextOverlap(a, b string) float64 {
+	sa, sb := shingles(a), shingles(b)
+	if len(sa) == 0 || len(sb) == 0 {
+		return 0
+	}
+	small, large := sa, sb
+	if len(sb) < len(sa) {
+		small, large = sb, sa
+	}
+	hit := 0
+	for g := range small {
+		if _, ok := large[g]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(small))
+}
+
+// NearDuplicate reports whether two passages say the same thing (see duplicateOverlap).
+//
+// A cheap length guard runs first: a passage five times the length of another cannot be 85% contained in
+// it, and the guard keeps the O(n·m) comparison off the long tail of a scan's hit set.
+func NearDuplicate(a, b string) bool {
+	la, lb := len([]rune(a)), len([]rune(b))
+	if la == 0 || lb == 0 {
+		return false
+	}
+	if la > lb*5 || lb > la*5 {
+		return false
+	}
+	return TextOverlap(a, b) >= duplicateOverlap
+}
+
+// datasetIDOf: dataset_id / kb_id / knowledgebase_id.
+func datasetIDOf(c map[string]any) string {
+	return chunkAttr(c, "dataset_id", "kb_id", "knowledgebase_id")
 }
 
 // DocTitleOf: exactly: docnm_kwd / doc_title / title /
 // document_name (the same four keys, in the same order). Go chunk retrieval
 // carries the title under docnm_kwd, so no extra alias is needed.
 func DocTitleOf(c map[string]any) string {
-	return ChunkAttr(c, "docnm_kwd", "doc_title", "title", "document_name")
+	return chunkAttr(c, "docnm_kwd", "doc_title", "title", "document_name")
 }
 
 // ChunkIDOf: chunk_id / id.
-func ChunkIDOf(c map[string]any) string { return ChunkAttr(c, "chunk_id", "id") }
+func ChunkIDOf(c map[string]any) string { return chunkAttr(c, "chunk_id", "id") }
 
 // Snippet: trim both ends, cut to limit, right-trim ALL
 // trailing whitespace (not just spaces), then add an ellipsis marker when the
@@ -88,10 +158,9 @@ func Snippet(s string, limit int) string {
 	return strings.TrimRightFunc(string(r[:limit]), unicode.IsSpace) + "..."
 }
 
-// IsTableChunk: / _is_table_text: a corpus-neutral
-// table detector — HTML table markup, or >=3 pipe rows. Exported so the
-// orchestrator and the bridge share one implementation.
-func IsTableChunk(c map[string]any) bool {
+// isTableChunk: / _is_table_text: a corpus-neutral table detector — HTML table markup, or
+// >=3 pipe rows.
+func isTableChunk(c map[string]any) bool {
 	return isTableText(ChunkTextOf(c))
 }
 
@@ -110,11 +179,11 @@ func isTableText(text string) bool {
 	return pipeRows >= 3
 }
 
-// XMLEscape: the four XML entities (&, <, >, ").
+// xmlEscape: the four XML entities (&, <, >, ").
 // The apostrophe is intentionally NOT escaped — values are only ever embedded inside
 // double-quoted XML/Markdown attributes, where a literal ' is valid, so escaping it to &apos;
 // would be wrong.
-func XMLEscape(s string) string {
+func xmlEscape(s string) string {
 	r := strings.NewReplacer(
 		"&", "&amp;",
 		"<", "&lt;",
@@ -165,11 +234,11 @@ func ChunkEvidenceIDs(chunks []map[string]any, limit int) []string {
 	return out
 }
 
-// MergeChunks deduplicates incoming chunks against an existing slice by chunkKey, appending
+// mergeChunks deduplicates incoming chunks against an existing slice by chunkKey, appending
 // only unseen ones — the merge pattern used by the direct and compiled-expansion paths.
 //
 // Returns the merged slice and the global indices of the newly appended chunks.
-func MergeChunks(existing, incoming []map[string]any) ([]map[string]any, []int) {
+func mergeChunks(existing, incoming []map[string]any) ([]map[string]any, []int) {
 	seen := make(map[string]struct{}, len(existing))
 	for _, c := range existing {
 		seen[chunkKey(c)] = struct{}{}
