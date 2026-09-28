@@ -227,7 +227,7 @@ check_ort_version_consistency() {
     env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
     d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
     d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
-    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
     if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
         echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
@@ -239,7 +239,7 @@ check_ort_version_consistency() {
         printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
         printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
         printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
-        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "dockerfile:ARG ORT_VERSION"
         exit 1
     fi
 
