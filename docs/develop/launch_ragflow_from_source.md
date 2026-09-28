@@ -13,21 +13,16 @@ sidebar_custom_props: {
 Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
 
 :::note macOS
-This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker
-Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to
-build and run the Go `linux/amd64` image.
+This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to build and run the Go `linux/amd64` image.
 :::
 
-The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout
-analysis, OCR, and table recognition.
+The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout analysis, OCR, and table recognition.
 
 All long-running RAGFlow processes started below use `bin/ragflow_server`.
 
 ## Prerequisites
 
-- A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB
-  free disk space. Actual requirements depend on the selected document engine,
-  local models, data volume, parsing workload, and concurrency.
+- A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the selected document engine, local models, data volume, parsing workload, and concurrency.
 - Docker 24.0.0 or later and Docker Compose v2.26.1 or later.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
@@ -69,8 +64,7 @@ python3 -m venv /tmp/ragflow-go-download-venv
 
 The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
 
-The isolated download environment can be removed after the resources have been
-prepared.
+The isolated download environment can be removed after the resources have been prepared.
 
 Build the C++ bindings and Go binaries:
 
@@ -90,31 +84,22 @@ Check that the newly built executable can load and parse API arguments:
 ./bin/ragflow_server --api --help
 ```
 
-It should print API usage information and may exit with status 1. This command
-only checks that the binary can load and parse arguments; it does not initialize
-DeepDoc, connect to dependencies, or prove that the API can start. Complete the
-runtime checks in section 5 after starting the dependencies and Go processes.
+It should print API usage information and may exit with status 1. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
-In an Ubuntu 24.04 x86_64 verification, `build.sh --all` completed with the
-system's default LLD 18, but the resulting executable crashed during actual
-server startup. Relinking with LLD 20 resolved the crash. Confirm that the
-linker actually selected for the Go/C++ build is LLD 20; installing `lld-20`
-alongside an older default is insufficient.
+The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
 
 ## 2. Start supporting services
 
 With the default `conf/service_conf.yaml`, the host-run Go processes need Elasticsearch, MySQL, MinIO, NATS, Kvrocks, and ClickHouse. Start these services explicitly from the repository root:
 
-The default Elasticsearch service requires `vm.max_map_count` of at least
-`262144` on the Docker host. Check and set it before starting the containers:
+The default Elasticsearch service requires `vm.max_map_count` of at least `262144` on the Docker host. Check and set it before starting the containers:
 
 ```bash
 sysctl vm.max_map_count
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-The change made with `sysctl -w` is temporary. To preserve it after a reboot,
-add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
+The change made with `sysctl -w` is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
@@ -127,18 +112,13 @@ Check that the services are ready before migrating. For this host-run setup, edi
 
 ## 3. Migrate and launch the Go backend
 
-Run the migration once before starting any server process. The examples below
-use development mode, so keep `RAGFLOW_DEV_MODE=true` consistent across the
-migration and every server process. For a production build whose version
-matches the database migration marker, omit this variable from every command.
+Run the migration once before starting any server process:
 
 ```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --migrate
+./bin/ragflow_server --migrate
 ```
 
-Then start each Go mode in a separate terminal, from the repository root. These
-four modes are the complete backend service chain. Start Admin first so API,
-Ingestor, and Syncer can report their heartbeats:
+Then start each Go mode in a separate terminal from the repository root. These four modes are the complete backend service chain. The source-development commands below use `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check; this setting does not run migrations or change the schema. Do not set it in production. Start Admin first so API, Ingestor, and Syncer can report their heartbeats:
 
 ```bash
 # Terminal 1: admin (target port 9381)
@@ -161,21 +141,11 @@ Start the Go syncer in another terminal:
 RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
 ```
 
-After the migration completes, `RAGFLOW_DEV_MODE=true bash build.sh --run` can
-be used as a shortcut to start the Go Admin, Ingestor, and API modes. The
-shortcut does not start Syncer; run the Syncer command above separately when
-the complete service chain is required. It does not replace the standalone
-migration step.
+After the migration completes, `RAGFLOW_DEV_MODE=true bash build.sh --run` can be used as a shortcut to start the Go Admin, Ingestor, and API modes. The shortcut does not start Syncer; run the Syncer command above separately when the complete service chain is required. It does not replace the standalone migration step.
 
-If you changed a dependency's published port or credentials, update
-`conf/service_conf.yaml` before starting the Go processes. In particular,
-`kvrocks.host` is a single `host:port` value; the default source configuration
-is `localhost:6379`. Do not rely on `KVROCKS_HOST` and `KVROCKS_PORT` to override
-this source configuration.
+If you changed a dependency's published port or credentials, update `conf/service_conf.yaml` before starting the Go processes. In particular, `kvrocks.host` is a single `host:port` value; the default source configuration is `localhost:6379`. Do not rely on `KVROCKS_HOST` and `KVROCKS_PORT` to override this source configuration.
 
-`RAGFLOW_DEV_MODE=true` bypasses the code-versus-database version check. Use it
-only for development, not to run an older production binary against a newer
-database. The standalone `--migrate` action must still complete first.
+`RAGFLOW_DEV_MODE=true` bypasses the code-versus-database version check. Use it only for development, not to run an older production binary against a newer database. The standalone `--migrate` action must still complete first.
 
 If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `ragflow_deps/`.
 
@@ -203,11 +173,7 @@ curl -fsS http://127.0.0.1:9222/api/v1/system/version
 curl -fsS http://127.0.0.1:8123/ping
 ```
 
-The direct Go API health check and frontend should return HTTP 200, the version
-request should return JSON with `"code":0`, and ClickHouse should respond `Ok.`.
-These runtime checks confirm that the Go API, frontend proxy, and ClickHouse are
-reachable; also confirm that the startup logs report the in-process DeepDoc
-backend as registered before testing your intended RAGFlow workflow.
+The direct Go API health check and frontend should return HTTP 200, the version request should return JSON with `"code":0`, and ClickHouse should respond `Ok.`. These runtime checks confirm that the Go API, frontend proxy, and ClickHouse are reachable; also confirm that the startup logs report the in-process DeepDoc backend as registered before testing your intended RAGFlow workflow.
 
 ## 6. Stop the services
 
@@ -218,6 +184,4 @@ docker compose --env-file docker/.env-go -f docker/docker-compose-base.yml stop 
   es01 mysql minio nats kvrocks clickhouse
 ```
 
-`stop` preserves the dependency containers for the next development session.
-To remove the containers and Compose network while keeping named data volumes,
-use `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+`stop` preserves the dependency containers for the next development session. To remove the containers and Compose network while keeping named data volumes, use `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.

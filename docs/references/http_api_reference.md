@@ -598,14 +598,10 @@ curl --request POST \
   - Maximum 65535 characters
 
 - `"language"`: (*Body parameter*), `string`
-  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
-  Leading and trailing whitespace are stripped.
-  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
-  No restricted list of language values is enforced.
-  If omitted, the server/database default is used.
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the server/database default is used.
 
 - `"embedding_model"`: (*Body parameter*), `string`
-  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
@@ -779,7 +775,7 @@ curl --request DELETE \
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 - `"delete_all"`: (*Body parameter*), `boolean`
-  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
+  Whether to delete all datasets owned by the current user when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -858,17 +854,13 @@ curl --request PUT \
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 - `"language"`: (*Body parameter*), `string`
-  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
-  Leading and trailing whitespace are stripped.
-  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
-  No restricted list of language values is enforced.
-  If omitted, the existing dataset language remains unchanged.
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the existing dataset language remains unchanged.
 - `"permission"`: (*Body parameter*), `string`
   The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 - `"pagerank"`: (*Body parameter*), `int`
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  Refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank).
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
@@ -907,7 +899,7 @@ curl --request PUT \
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
       - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
@@ -4497,15 +4489,15 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body parameter*), `object`
   Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
+- `"files"`: (*Body parameter*), `array`
+  File descriptors returned by the Agent file upload endpoint. RAGFlow makes the uploaded files available to the Agent through `sys.files`.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - `"chat_template_kwargs"`: (*Body parameter*), `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
-For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
-`http://{address}/v1/canvas/upload/{agent_id}`
-*You will get a corresponding file ID from its response body.*
+Before sending a file in a conversation, upload it as multipart form data with the field name `file` to `POST http://{address}/api/v1/agents/{agent_id}/upload`. The endpoint accepts one or more files and returns a file descriptor for one file or an array of descriptors for multiple files. Pass the returned descriptor or descriptors in the `files` array of the conversation request.
 :::
 
 ##### Response
@@ -7405,8 +7397,7 @@ or
 
 **POST** `/api/v1/workspaces/{workspace_id}/commits`
 
-Creates a new snapshot commit for the specified workspace.
-This endpoint also supports:
+Creates a new snapshot commit for the specified workspace. This endpoint also supports:
 - `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its workspace)
 
 #### Request
@@ -7492,8 +7483,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination.
-Also available at:
+Lists all commits for the specified folder with pagination. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7559,8 +7549,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes.
-Also available at:
+Retrieves the details of a specific commit, including its file changes. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7629,8 +7618,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit.
-Also available at:
+Lists the file changes associated with a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7677,8 +7665,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences.
-Also available at:
+Compares two commits and returns the differences. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7744,8 +7731,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`).
-Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7796,8 +7782,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit.
-Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7863,8 +7848,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit.
-Also available at:
+Retrieves the file content as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request

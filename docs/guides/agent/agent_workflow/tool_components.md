@@ -451,7 +451,7 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 | info | boolean | Node configuration | true | Output company and quote information. |
 | history | boolean | Node configuration | false | Output historical market data. |
 | count | boolean | Node configuration | false | Share count switch defined by the code. |
-| financials | boolean | Node configuration | false | The current implementation outputs calendar information. |
+| financials | boolean | Node configuration | false | Output earnings dates and other financial calendar events returned by Yahoo Finance. |
 | income_stmt | boolean | Node configuration | false | Income statement switch defined by the code. |
 | balance_sheet | boolean | Node configuration | false | Output balance sheet and quarterly balance sheet. |
 | cash_flow_statement | boolean | Node configuration | false | Output cash flow statement and quarterly cash flow statement. |
@@ -529,7 +529,7 @@ Before using the WenCai component, confirm that the WenCai query service is avai
 
 ### Email
 
-The Email component sends HTML emails through SMTP and supports multiple CC addresses. The current version supports recipients, CC recipients, subject, and email body. It does not support adding attachments or BCC recipients through this component.
+The Email component sends HTML emails through SMTP. Configure the recipients, CC recipients, subject, and email body in the component.
 
 #### Parameter Description
 

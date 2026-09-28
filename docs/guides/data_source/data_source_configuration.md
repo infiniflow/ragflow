@@ -408,11 +408,7 @@ The Azure DevOps data source is used to synchronize Azure Repos source files and
 - **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
 - **Content Types**: Choose whether to index source files, pull requests, or both.
 
-Pull request descriptions are re-fetched individually when they reach the 400
-character limit the list endpoint truncates at, so long descriptions are indexed
-in full. Completed and abandoned pull requests are filtered by their close date;
-active ones are always re-indexed, because Azure DevOps exposes no dependable
-"last updated" timestamp for them.
+Pull request descriptions are re-fetched individually when they reach the 400 character limit imposed by the list endpoint, so long descriptions are indexed in full. Completed and abandoned pull requests are filtered by their close date; active ones are always re-indexed because Azure DevOps exposes no dependable "last updated" timestamp for them.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
 
 Build output and vendored directories such as `node_modules`, `bin`, `obj`, `dist`, and `vendor` are skipped, along with binary files and files larger than 1 MB.
@@ -465,7 +461,7 @@ The Gmail data source is used to synchronize Gmail email content to a RAGFlow kn
 
 **Permission requirements**: Google OAuth authorization must have read permissions for the target mailbox emails.
 
-**Account version requirements**: The current interface includes a primary administrator email and OAuth JSON, which is more suitable for Google Workspace administrators or organization mailbox synchronization. Ordinary personal Gmail is recommended only after the actual authorization flow supports it.
+**Account and authorization requirements**: To synchronize a Google Workspace domain, enter a Workspace administrator account as the primary administrator email and provide OAuth credentials authorized for the required Gmail and Admin Directory read-only scopes. To synchronize one Gmail mailbox, enter that mailbox address as the primary administrator email and provide OAuth token JSON containing a refresh token, client ID, and client secret for the same account. When the account does not expose a Workspace directory, the connector synchronizes the primary mailbox only.
 
 **Configuration parameters**:
 
@@ -719,7 +715,7 @@ The Sitemap data source is used to synchronize the web pages listed in a public 
 - **Batch size**: The number of pages fetched and sent to RAGFlow per batch.
 - **Sync deleted files**: After this is enabled, pages removed from the sitemap are removed from the knowledge base index.
 
-Every request goes through the SSRF guard with the resolved address pinned for the duration of the request, response bodies are capped at 64 MB, and at most 1000 sitemap documents are fetched per sync (each sitemap URL once). HTML pages are converted to Markdown with the same boilerplate removal as the other web connectors (`WEB_CONNECTOR_IGNORED_ELEMENTS`: navigation, footer, aside, scripts and styles by default) and stored as `.md` documents. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
+Every request goes through the SSRF guard with the resolved address pinned for the duration of the request, response bodies are capped at 64 MB, and at most 1000 sitemap documents are fetched per sync (each sitemap URL once). HTML pages are converted to Markdown and stored as `.md` documents; during conversion, `script`, `style`, `noscript`, `nav`, `header`, `footer`, `aside`, `form`, `iframe`, and `svg` elements are removed. URLs served with `Content-Type: application/pdf` are stored as `.pdf` documents and processed by the regular PDF pipeline. Each document keeps the page URL, the sitemap URL, and, for discovered PDFs, the parent page URL in its metadata.
 
 Incremental syncs rely on the `<lastmod>` element: only pages whose `lastmod` falls inside the sync window are fetched again, and pages without `lastmod` are only fetched by a full sync. Every document also carries a content fingerprint, so a page that is fetched again but has not changed is skipped instead of being re-indexed.
 

@@ -25,13 +25,13 @@ Use `bash build.sh --go` for subsequent Go-only rebuilds after the C++ bindings 
 
 Before proceeding, run `./bin/ragflow_server --admin --help` to check that the binary can load and parse the Admin arguments. This command prints help and exits; it does not start the Admin Service or test its dependencies. If it exits with status `139` without printing help, see the [build troubleshooting notes](../../develop/launch_ragflow_from_source.md#1-get-the-source-and-build-dependencies).
 
-Complete the standalone database migration before starting any server mode. The following source-development commands use `RAGFLOW_DEV_MODE=true` consistently because an untagged development checkout can carry a migration marker newer than its reported version. Do not set this variable in production; for a production release whose binary and database versions match, omit it from every command. Run the migration once for this startup; do not attach `--migrate` to `--admin`, `--api`, or `--ingestor`:
+Complete the standalone database migration before starting any server mode. Run the migration once for this startup; do not attach `--migrate` to `--admin`, `--api`, or `--ingestor`:
 
 ```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --migrate
+./bin/ragflow_server --migrate
 ```
 
-Start each process in a separate terminal, in this order:
+Start each process in a separate terminal, in this order. The source-development commands below use `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check; this setting does not run migrations or change the schema. Do not set it in production:
 
 ```bash
 RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin

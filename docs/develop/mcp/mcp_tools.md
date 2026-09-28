@@ -45,7 +45,7 @@ Lists datasets available to the authenticated user in descending creation-time o
 | Argument | Type | Required | Default | Valid values and behavior |
 | --- | --- | --- | --- | --- |
 | `page` | integer | No | `1` | Minimum `1`. |
-| `page_size` | integer | No | `100` | Schema accepts `1` through `1000`; the Go connector caps an individual request at 100 results. |
+| `page_size` | integer | No | `100` | From `1` through `100`; a single call returns at most 100 datasets. |
 
 The tool returns one text content item containing one JSON object per line. Each object contains `id`, `name`, and `description`. The text is empty when no datasets are available.
 

@@ -18,8 +18,7 @@ The Go Docker deployment uses the following files:
 - [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml): Starts the Go RAGFlow service together with the dependencies selected through Compose profiles.
 - [docker-compose-base.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-base.yml): Defines shared dependencies such as the document engine, metadata database, MinIO, Kvrocks, NATS, and ClickHouse.
 
-To change the public HTTP or HTTPS port, update `SVR_WEB_HTTP_PORT` or
-`SVR_WEB_HTTPS_PORT` in **docker/.env**. Their defaults are `80` and `443`.
+To change the public HTTP or HTTPS port, update `SVR_WEB_HTTP_PORT` or `SVR_WEB_HTTPS_PORT` in **docker/.env**. Their defaults are `80` and `443`.
 
 :::tip NOTE
 Updates to the above configurations require a reboot of all containers to take effect:
@@ -35,8 +34,7 @@ docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
 - **docker-compose.yml**
   Starts the Go RAGFlow service and selects the required dependency profiles.
 - **docker-compose-base.yml**
-  Defines the shared dependency services used by the selected document engine,
-  metadata database, object storage, cache, queue, and analytical storage.
+  Defines the shared dependency services used by the selected document engine, metadata database, object storage, cache, queue, and analytical storage.
 
 ## Docker Environment Variables
 
@@ -52,9 +50,9 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 ### Elasticsearch
 
 - `STACK_VERSION`
-  The version of Elasticsearch. Defaults to `8.11.3`
+  The version of Elasticsearch. Defaults to `8.11.3`.
 - `ES_PORT`
-  The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container.  Defaults to `1200`.
+  The port used to expose the Elasticsearch service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `1200`.
 - `ELASTIC_PASSWORD`
   The password for Elasticsearch.
 
@@ -66,10 +64,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 ### Resource Management
 
 - `MEM_LIMIT`
-  The maximum memory available to each Compose service that applies this limit.
-  It is a per-container upper limit, not the minimum host memory, the total
-  memory reserved by RAGFlow, or a guarantee that every container consumes this
-  amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
+  The maximum memory available to each Compose service that applies this limit. It is a per-container upper limit, not the minimum host memory, the total memory reserved by RAGFlow, or a guarantee that every container consumes this amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
 
 ### MySQL
 
@@ -80,16 +75,14 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `EXPOSE_MYSQL_PORT`
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
 - `MYSQL_MAX_PACKET`
-  The maximum MySQL communication packet size in bytes. Defaults to
-  `1073741824` bytes (`1 GiB`). Keep the MySQL server's
-  `max_allowed_packet` setting compatible when using an external database.
+  The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
 ### MinIO
 
 RAGFlow utilizes MinIO as its object storage solution, leveraging its scalability to store and manage all uploaded files.
 
 - `MINIO_CONSOLE_PORT`
-  The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`
+  The port used to expose the MinIO console interface to the host machine, allowing **external** access to the web-based console running inside the Docker container. Defaults to `9001`.
 - `MINIO_PORT`
   The port used to expose the MinIO API service to the host machine, allowing **external** access to the MinIO object storage service running inside the Docker container. Defaults to `9000`.
 - `MINIO_USER`
@@ -133,20 +126,15 @@ NATS JetStream provides the message queue used by the Go services.
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
 
-- For the `nightly` edition:
-  - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
-  - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
-  :::
+- `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly`
+- `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`
+
+:::
 
 ### Embedding Service
 
 - `TEI_MODEL`
-  The embedding model served by the optional local text-embeddings-inference
-  service. Its memory requirement depends on the model, runtime backend,
-  precision, batch-token limit, and concurrency. The `tei-cpu` profile uses
-  system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes
-  system RAM. Verify peak usage on the target hardware and reserve additional
-  host memory for RAGFlow and the other enabled services.
+  The embedding model served by the optional local text-embeddings-inference service. Its memory requirement depends on the model, runtime backend, precision, batch-token limit, and concurrency. The `tei-cpu` profile uses system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes system RAM. Verify peak usage on the target hardware and reserve additional host memory for RAGFlow and the other enabled services.
 
 - `TEI_PORT`
   The port used to expose the text-embeddings-inference service to the host machine, allowing **external** access to the text-embeddings-inference service running inside the Docker container. Defaults to `6380`.
@@ -154,8 +142,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 ### OceanBase and SeekDB Memory
 
 - `OB_MEMORY_LIMIT`
-  The memory limit configured for the bundled OceanBase service. Defaults to
-  `10G`.
+  The memory limit configured for the bundled OceanBase service. Defaults to `10G`.
 - `OB_SYSTEM_MEMORY`
   The OceanBase system-memory setting. Defaults to `2G`.
 - `OB_DATAFILE_SIZE`
@@ -165,20 +152,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `SEEKDB_MEMORY_LIMIT`
   The memory limit passed to the bundled SeekDB service. Defaults to `2G`.
 
-For an OceanBase deployment, use at least 4 CPU cores and 32 GB host memory as a
-starting point, leaving room beyond OceanBase's own
-[production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993)
-for the other RAGFlow services. Set `MEM_LIMIT` to no less than
-`OB_MEMORY_LIMIT`; a 12 GiB container limit is recommended, expressed as
-`MEM_LIMIT=12884901888` in **docker/.env**. The
-[SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd)
-specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk
-space. These values apply to their respective database services only and do not
-replace the resource recommendation for the complete RAGFlow deployment.
-The OceanBase data-file and log-disk defaults account for `40G` before
-container images, RAGFlow object storage, indexes, and logs. Plan additional
-free disk space for the complete deployment rather than treating `40G` as the
-host disk requirement.
+For an OceanBase deployment, use at least 4 CPU cores and 32 GB host memory as a starting point, leaving room beyond OceanBase's own [production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993) for the other RAGFlow services. Set `MEM_LIMIT` to no less than `OB_MEMORY_LIMIT`; a 12 GiB container limit is recommended, expressed as `MEM_LIMIT=12884901888` in **docker/.env**. The [SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd) specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk space. These values apply to their respective database services only and do not replace the resource recommendation for the complete RAGFlow deployment. The OceanBase data-file and log-disk defaults account for `40G` before container images, RAGFlow object storage, indexes, and logs. Plan additional free disk space for the complete deployment rather than treating `40G` as the host disk requirement.
 
 ### Timezone
 
@@ -197,13 +171,9 @@ host disk requirement.
 
 ### User Registration
 
-- `REGISTER_ENABLED`
+- `ENABLE_REGISTER`
   - `1`: (Default) Enable user registration.
   - `0`: Disable user registration.
-
-- `OAUTH_AUTO_REGISTER`
-  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login. Also accepts `1`, `yes`, `on`.
-  - Any other value, `false` included: require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
 
 ## Service Configuration
 
@@ -264,65 +234,6 @@ For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google 
 - `username`: Optional Kvrocks ACL username.
 - `password`: The password used by the Go services to access Kvrocks.
 
-### `oauth`
+### Configure model providers
 
-The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
-
-- `<channel>`: Custom channel ID.
-  - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
-  - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
-  - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
-  - `client_id`: Required, unique identifier assigned to the client application.
-  - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
-  - `authorization_url`: Base URL for obtaining user authorization.
-  - `token_url`: URL for exchanging authorization code and obtaining access token.
-  - `userinfo_url`: URL for obtaining user information (username, email, etc.).
-  - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
-  - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-  - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
-
-:::tip NOTE
-The following are best practices for configuring various third-party authentication methods. You can configure one or multiple third-party authentication methods for Ragflow:
-```yaml
-oauth:
-  oauth2:
-    display_name: "OAuth2"
-    client_id: "your_client_id"
-    client_secret: "your_client_secret"
-    authorization_url: "https://your-oauth-provider.com/oauth/authorize"
-    token_url: "https://your-oauth-provider.com/oauth/token"
-    userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
-
-  oidc:
-    display_name: "OIDC"
-    client_id: "your_client_id"
-    client_secret: "your_client_secret"
-    issuer: "https://your-oauth-provider.com/oidc"
-    scope: "openid email profile"
-    redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
-
-  github:
-    # https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
-    type: "github"
-    icon: "github"
-    display_name: "Github"
-    client_id: "your_client_id"
-    client_secret: "your_client_secret"
-    redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
-```
-:::
-
-### `user_default_llm`
-
-Assigning default models to newly registered users through `user_default_llm` is deprecated and no longer supported in the open-source version. Uncommenting this section in **service_conf.yaml.template** does not configure models for new users.
-
-Each tenant must configure its own model provider instances and credentials. New users do not automatically inherit an administrator's configured instances or default model selections.
-
-Go to **User settings** **>** **Model providers** to configure provider instances, add models, and select default models. See [Configure Model API Key](../../guides/models/llm_api_key_setup.md) for instructions.
-
-The Enterprise Edition provides role-level default model settings.
-
-:::note Builtin embedding
-If you deploy TEI, keep the shipped `user_default_llm.default_models.embedding_model` connection settings in **service_conf.yaml.template**. They are used by the TEI `Builtin` embedding service and do not assign administrator-owned model instances to new tenants.
-:::
+Go to **User settings** **>** **Model providers** to configure provider credentials, add models, and select the default models for the current account. See [Configure Model API Key](../../guides/models/llm_api_key_setup.md) for instructions.

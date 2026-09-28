@@ -1,13 +1,8 @@
 # Go Docker deployment
 
-This guide documents the Go implementation of RAGFlow. Use
-`docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and
-`docker/entrypoint.sh` for a Go deployment.
+This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
 
-The Go image runs the API, Admin, Ingestor, and Syncer modes from the single
-`bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an
-official Go image tag documented in the corresponding release notes, or build
-the image locally as described below.
+The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
 
 <details open>
 <summary><b>📗 Table of Contents</b></summary>
@@ -24,19 +19,13 @@ the image locally as described below.
 - **docker-compose.yml**
   Starts the Go RAGFlow container together with the selected dependencies.
 - **docker-compose-base.yml**
-  Defines the dependency services. The default Go profile uses Elasticsearch,
-  MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and
-  metadata databases are selected through `.env`.
+  Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not
-> the Go deployment entry points. On Linux and macOS, use
-> `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image
-> through Docker Desktop emulation.
+> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. On Linux and macOS, use `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image through Docker Desktop emulation.
 
 ### Quick start
 
-Run these commands from the repository root. The `.git` directory must remain
-in the build context because `Dockerfile` uses it to stamp the image version.
+Run these commands from the repository root. The `.git` directory must remain in the build context because `Dockerfile` uses it to stamp the image version.
 
 ```bash
 docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
@@ -48,17 +37,13 @@ Set the image in `docker/.env`:
 RAGFLOW_IMAGE=ragflow:go-local
 ```
 
-If you use the default Elasticsearch document engine on Linux, set
-`vm.max_map_count` to at least `262144` on the Docker host:
+If you use the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least `262144` on the Docker host:
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-This change is temporary. To preserve it after a reboot, add
-`vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the
-setting inside its Linux virtual machine as described in the
-[Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
+This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the setting inside its Linux virtual machine as described in the [Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
 
 Start the default CPU stack:
 
@@ -67,9 +52,7 @@ cd docker
 docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
-The entrypoint migrates the default MySQL metadata database first, then starts
-the Go Syncer, Admin server, API server, and Ingestor. Open
-`http://localhost` after the HTTP health check succeeds.
+The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
 
 Verify the deployment with:
 
@@ -79,11 +62,7 @@ docker compose --env-file .env -f docker-compose.yml logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
-If `SVR_WEB_HTTP_PORT` is not `80`, append the configured port to the URL. For a
-GPU deployment, set `DEVICE=gpu`, install NVIDIA Container Toolkit on the host,
-and use `ragflow-gpu` in the logs command. In the RAGFlow open-source 1.0
-release, DeepDoc layout analysis, OCR, and table recognition use CPU inference,
-including when the GPU Compose service is selected.
+If `SVR_WEB_HTTP_PORT` is not `80`, append the configured port to the URL. For a GPU deployment, set `DEVICE=gpu`, install NVIDIA Container Toolkit on the host, and use `ragflow-gpu` in the logs command. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference, including when the GPU Compose service is selected.
 
 ## 🐬 Docker environment variables
 
@@ -110,16 +89,12 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 ### Kibana
 
 - `KIBANA_PORT`
-  The port used to expose the optional Kibana service to the host machine.
-  Defaults to `6601`. Follow the enablement notes in `.env` before adding the `kibana` profile.
+  The port used to expose the optional Kibana service to the host machine. Defaults to `6601`. Follow the enablement notes in `.env` before adding the `kibana` profile.
 
 ### Resource management
 
 - `MEM_LIMIT`
-  The maximum memory available to each Compose service that applies this limit.
-  It is a per-container upper limit, not the minimum host memory, the total
-  memory reserved by RAGFlow, or a guarantee that every container consumes this
-  amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
+  The maximum memory available to each Compose service that applies this limit. It is a per-container upper limit, not the minimum host memory, the total memory reserved by RAGFlow, or a guarantee that every container consumes this amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
 
 ### MySQL
 
@@ -130,9 +105,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `EXPOSE_MYSQL_PORT`
   The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
 - `MYSQL_MAX_PACKET`
-  The maximum MySQL communication packet size in bytes. Defaults to
-  `1073741824` bytes (`1 GiB`). Keep the MySQL server's
-  `max_allowed_packet` setting compatible when using an external database.
+  The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
 ### MinIO
 
@@ -150,8 +123,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 The Go services use Kvrocks as their Redis-compatible cache. NATS JetStream provides the message queue.
 
 - `KVROCKS_HOST`
-  The hostname used by the Go services. Keep the default `kvrocks` for the
-  Compose deployment.
+  The hostname used by the Go services. Keep the default `kvrocks` for the Compose deployment.
 - `KVROCKS_PORT`
   The host-published Kvrocks port. Defaults to `6379`.
 - `REDIS_PASSWORD`
@@ -166,14 +138,12 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 - `NATS_PORT`
   The internal NATS client port. Defaults to `4222`.
 - `EXPOSE_NATS_PORT`
-  The port published on the Docker host. Change this value to avoid a host-side
-  port conflict; Go containers continue to use `NATS_PORT` internally.
+  The port published on the Docker host. Change this value to avoid a host-side port conflict; Go containers continue to use `NATS_PORT` internally.
 
 ### ClickHouse
 
 - `CLICKHOUSE_HOST`, `CLICKHOUSE_TCP_PORT`
-  The internal address used by the Go services. Defaults to
-  `clickhouse:9000`.
+  The internal address used by the Go services. Defaults to `clickhouse:9000`.
 - `EXPOSE_CLICKHOUSE_TCP_PORT`
   The native TCP port published on the Docker host. Defaults to `9900`.
 - `CLICKHOUSE_HTTP_PORT`
@@ -184,8 +154,7 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 ### RAGFlow
 
 - `SVR_HTTP_PORT`
-  The target Go API port published by Compose. Defaults to `9380`; Nginx proxies
-  normal web API requests to this service.
+  The target Go API port published by Compose. Defaults to `9380`; Nginx proxies normal web API requests to this service.
 - `ADMIN_SVR_HTTP_PORT`
   The target Go Admin port published by Compose. Defaults to `9381`.
 - `SVR_WEB_HTTP_PORT`, `SVR_WEB_HTTPS_PORT`
@@ -193,23 +162,13 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 - `DEVICE`
   Selects the `cpu` or `gpu` RAGFlow service. Defaults to `cpu`.
 - `RAGFLOW_DEV_MODE`
-  Set to `true` only for development checkouts that intentionally use a
-  development migration marker. Keep it `false` in production.
+  Set to `true` only for development checkouts that intentionally use a development migration marker. Keep it `false` in production.
 - `RAGFLOW_IMAGE`
-  The Go Docker image used by `docker-compose.yml`. Use an official Go image
-  tag documented in its release notes, or use the locally built
-  `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding
-  models.
+  The Go Docker image used by `docker-compose.yml`. Use an official Go image tag documented in its release notes, or use the locally built `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding models.
 
 ### Local embedding service
 
-The optional `tei-cpu` and `tei-gpu` profiles start a local
-text-embeddings-inference service. Its memory requirement depends on the model,
-runtime backend, precision, batch-token limit, and concurrency. The `tei-cpu`
-profile uses system RAM; the `tei-gpu` profile primarily uses GPU memory and
-also consumes system RAM. Verify model loading and peak request usage on the
-target hardware, and leave additional host memory for RAGFlow, the document
-engine, databases, and operating system.
+The optional `tei-cpu` and `tei-gpu` profiles start a local text-embeddings-inference service. Its memory requirement depends on the model, runtime backend, precision, batch-token limit, and concurrency. The `tei-cpu` profile uses system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes system RAM. Verify model loading and peak request usage on the target hardware, and leave additional host memory for RAGFlow, the document engine, databases, and operating system.
 
 
 > 💡 **Tip:** If you cannot download a Go RAGFlow Docker image, try the following mirrors.
@@ -220,16 +179,9 @@ engine, databases, and operating system.
 
 ### DeepDoc (in-process)
 
-DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table
-structure recognition (TSR) run **in-process** inside the RAGFlow server using
-ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is
-statically linked into the server binary (resolved at runtime via dlopen(NULL);
-no `libonnxruntime.so` is required) and the models are loaded at runtime;
-`DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile`
-copies the required model assets into `/ragflow/rag/res/deepdoc`.
+DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/rag/res/deepdoc`.
 
-In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference, including
-when the RAGFlow container is started with the GPU Compose profile.
+In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference, including when the RAGFlow container is started with the GPU Compose profile.
 
 ### Timezone
 
@@ -244,45 +196,21 @@ when the RAGFlow container is started with the GPU Compose profile.
 ### Embedding batch size
 
 - `TOKENIZER_EMBEDDING_BATCH_SIZE`
-  An optional positive integer that overrides the number of text chunks sent in
-  each embedding request. When it is not set, RAGFlow uses the embedding
-  model's batch size, or `16` if the model does not provide one. Larger values
-  can increase memory usage and may exceed the model provider's request limit;
-  increase it gradually and verify parsing on representative documents.
+  An optional positive integer that overrides the number of text chunks sent in each embedding request. When it is not set, RAGFlow uses the embedding model's batch size, or `16` if the model does not provide one. Larger values can increase memory usage and may exceed the model provider's request limit; increase it gradually and verify parsing on representative documents.
 
 ### SeekDB memory
 
-When `DOC_ENGINE=seekdb`, `SEEKDB_MEMORY_LIMIT` controls the memory limit passed
-to the bundled SeekDB service and defaults to `2G`. The
-[SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd)
-specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk
-space. These are SeekDB-only requirements, not the requirements for the
-complete RAGFlow deployment. The container is also subject to the applicable
-`MEM_LIMIT` upper limit.
+When `DOC_ENGINE=seekdb`, `SEEKDB_MEMORY_LIMIT` controls the memory limit passed to the bundled SeekDB service and defaults to `2G`. The [SeekDB deployment requirements](https://www.oceanbase.ai/docs/V1.1.0/deploy-by-systemd) specify at least 1 CPU core, 2 GB available memory, and 15 GB free data-disk space. These are SeekDB-only requirements, not the requirements for the complete RAGFlow deployment. The container is also subject to the applicable `MEM_LIMIT` upper limit.
 
 ### OceanBase prerequisites
 
-Before setting `DOC_ENGINE=oceanbase`, plan memory separately from the general
-RAGFlow host recommendation. For the complete RAGFlow deployment with the
-bundled OceanBase service, use at least 4 CPU cores and 32 GB host memory as a
-starting point. This leaves room beyond OceanBase's own
-[production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993)
-for the other RAGFlow services. OceanBase defaults to `OB_MEMORY_LIMIT=10G` and
-`OB_SYSTEM_MEMORY=2G`. Its data file and log disk default to
-`OB_DATAFILE_SIZE=20G` and `OB_LOG_DISK_SIZE=20G`. These two values describe
-OceanBase's configured disk allocation, not the total disk required by the
-deployment. Reserve additional space for container images, RAGFlow object
-storage, indexes, and logs. Before enabling this profile, raise `MEM_LIMIT` so the
-OceanBase container limit is not lower than `OB_MEMORY_LIMIT`; a 12 GiB limit
-is recommended to leave container headroom. In **docker/.env**, set:
+Before setting `DOC_ENGINE=oceanbase`, plan memory separately from the general RAGFlow host recommendation. For the complete RAGFlow deployment with the bundled OceanBase service, use at least 4 CPU cores and 32 GB host memory as a starting point. This leaves room beyond OceanBase's own [production requirements](https://en.oceanbase.com/docs/common-oceanbase-database-10000000001166993) for the other RAGFlow services. OceanBase defaults to `OB_MEMORY_LIMIT=10G` and `OB_SYSTEM_MEMORY=2G`. Its data file and log disk default to `OB_DATAFILE_SIZE=20G` and `OB_LOG_DISK_SIZE=20G`. These two values describe OceanBase's configured disk allocation, not the total disk required by the deployment. Reserve additional space for container images, RAGFlow object storage, indexes, and logs. Before enabling this profile, raise `MEM_LIMIT` so the OceanBase container limit is not lower than `OB_MEMORY_LIMIT`; a 12 GiB limit is recommended to leave container headroom. In **docker/.env**, set:
 
 ```dotenv
 MEM_LIMIT=12884901888
 ```
 
-These are deployment recommendations, not memory reserved exclusively for
-OceanBase. The host must also provide memory for RAGFlow and the other enabled
-services.
+These are deployment recommendations, not memory reserved exclusively for OceanBase. The host must also provide memory for RAGFlow and the other enabled services.
 
 Also make sure the host OS allows the file descriptor and core dump limits OceanBase expects.
 
@@ -398,20 +326,6 @@ Also make sure the host OS allows the file descriptor and core dump limits Ocean
     - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
     - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
     - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
-
-- `user_default_llm`
-  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
-  - `factory`: The LLM supplier. Available options:
-    - `"OpenAI"`
-    - `"DeepSeek"`
-    - `"Moonshot"`
-    - `"Tongyi-Qianwen"`
-    - `"VolcEngine"`
-    - `"ZHIPU-AI"`
-  - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
-
-> 💡 **Tip:** If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
-
 
 ## 📋 Setup Examples
 

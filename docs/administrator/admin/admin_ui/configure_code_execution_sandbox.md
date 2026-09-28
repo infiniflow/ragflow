@@ -56,7 +56,7 @@ When configuring a sandbox, first fill in the connection information and runtime
 
 ## SSH Configuration
 
-`SSH` configuration connects to a remote Linux host and executes Python, Node.js, and other code tasks on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
+`SSH` configuration connects to a remote Linux host and executes Python or Node.js code on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
 
 1. Go to **System management > Model service > SSH Configuration**.
 2. Fill in the remote server connection information.
@@ -94,7 +94,7 @@ The system supports `Password` and `PrivateKey` authentication.
 | `Max Output Bytes` | Maximum size of console output. | Keep the default. Output exceeding the limit is truncated. |
 | `Timeout (seconds)` | Maximum runtime for a single code execution. | The default is 30 seconds. Increase it when execution takes longer. |
 
-Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute Python, Node.js, and other runtime environments. When using private-key authentication, make sure the private key matches the server configuration.
+Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute the configured Python and Node.js binaries. When using private-key authentication, make sure the private key matches the server configuration.
 
 ## Alibaba Cloud CodeInterpreter Configuration
 

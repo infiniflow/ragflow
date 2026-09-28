@@ -66,7 +66,7 @@ During retrieval testing, hybrid search is used to retrieve chunks created by th
 
 #### Similarity Threshold
 
-This setting is the threshold for retrieving chunks. Chunks with similarity below the threshold are filtered out. By default, the threshold is set to `0.2`. This means only chunks with a hybrid similarity score of 20 or higher are retrieved.
+This setting is the threshold for retrieving chunks. Chunks with similarity below the threshold are filtered out. By default, the threshold is set to `0.2`. This means only chunks with a hybrid similarity score of `0.2` or higher are retrieved.
 
 #### Vector Similarity Weight
 

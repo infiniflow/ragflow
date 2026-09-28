@@ -15,22 +15,20 @@ RAGFlow CLI is the Go command-line client for administering RAGFlow. In Admin mo
 
 For regular use, install the prebuilt Go CLI from the latest RAGFlow GitHub Release. The installer detects the operating system and CPU architecture, downloads the matching binary, verifies it against `SHA256SUMS`, and then installs it.
 
-默认安装（Linux/macOS）：
+Default installation on Linux and macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | sh
 ```
 
-不设置版本号时，安装脚本会解析最新 GitHub Release，并根据当前操作系统
-和 CPU 架构安装匹配的 CLI。Linux 和 macOS 也可以通过 `VERSION` 指定版本：
+When `VERSION` is omitted, the installer resolves the latest GitHub Release and installs the CLI that matches the current operating system and CPU architecture. To install a specific version, pass `VERSION` to the installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh \
   | VERSION=v0.27.2 sh
 ```
 
-不指定版本和指定版本都可以正常安装。生产环境或需要重复执行的安装流程，
-建议指定版本，避免后续 Release 变化导致安装结果不同。
+Both forms are supported. Pin a version for production or reproducible installations so that a later Release does not change the installed version.
 
 The default installation path is `/usr/local/bin/ragflow-cli`. If the current user cannot write to that directory, the installer requests `sudo` permission. To install into a user-writable directory instead, set `INSTALL_DIR` and ensure that directory is on `PATH`:
 
@@ -38,14 +36,13 @@ The default installation path is `/usr/local/bin/ragflow-cli`. If the current us
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
-默认安装（Windows PowerShell）：
+Default installation on Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 | iex
 ```
 
-Windows PowerShell 不指定版本时同样使用最新 GitHub Release。需要固定版本时，
-下载脚本后传入 `-Version` 参数：
+When no version is specified, the Windows installer also uses the latest GitHub Release. To install a specific version, download the script and pass `-Version`:
 
 ```powershell
 irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 -OutFile install.ps1
@@ -70,7 +67,7 @@ bash build.sh --go
 
 Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
 
-For a source-development checkout, start the Admin Service with the same `RAGFLOW_DEV_MODE=true` setting used for the migration. Do not set this variable in production. Start Admin before the API server, ingestors, and syncers:
+For a source-development checkout, start the Admin Service with `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check. This setting does not run database migrations or change the schema. Do not set it in production. Start Admin before the API server, ingestors, and syncers:
 
 ```bash
 RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
@@ -623,7 +620,7 @@ MQ PULL [<count>] [NOACK];
 
 | Parameter | Required | Description |
 | --- | --- | --- |
-| `[<count>]` | No | Number of messages to pull. The default is `1` and the value must be within the CLI's allowed range. |
+| `[<count>]` | No | Number of messages to pull, from `1` through `100`. The default is `1`. |
 | `[NOACK]` | No | Negatively acknowledges pulled messages instead of acknowledging them. |
 
 **Example**

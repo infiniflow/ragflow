@@ -118,11 +118,7 @@ The Go API and ingestor initialize the in-process DeepDoc backend. Check their l
 
 ### Does the open-source 1.0 Go DeepDoc backend support GPU inference?
 
-No. The RAGFlow open-source 1.0 Go DeepDoc backend runs layout analysis, OCR,
-and table recognition on CPU. Starting the `ragflow-gpu` Compose service or
-installing NVIDIA Container Toolkit does not enable DeepDoc GPU inference. GPU
-resources remain available only to other components or external model services
-that explicitly support them.
+No. The RAGFlow open-source 1.0 Go DeepDoc backend runs layout analysis, OCR, and table recognition on CPU. Starting the `ragflow-gpu` Compose service or installing NVIDIA Container Toolkit does not enable DeepDoc GPU inference. GPU resources remain available only to other components or external model services that explicitly support them.
 
 ---
 
@@ -476,12 +472,7 @@ The internal bucket and object path depend on how and where the file was uploade
 
 ### How do I tune document parsing and embedding throughput?
 
-Document indexing processes 32 chunks per batch. The embedding request size
-comes from the model's `batch_size` capability, or defaults to `16` when the
-model does not provide one. To tune embedding requests, set
-`TOKENIZER_EMBEDDING_BATCH_SIZE` to a positive integer. Larger batches can use
-more memory and may exceed the model provider's request limit, so increase the
-value gradually and verify parsing on representative documents.
+Document indexing processes 32 chunks per batch. The embedding request size comes from the model's `batch_size` capability, or defaults to `16` when the model does not provide one. To tune embedding requests, set `TOKENIZER_EMBEDDING_BATCH_SIZE` to a positive integer. Larger batches can use more memory and may exceed the model provider's request limit, so increase the value gradually and verify parsing on representative documents.
 
 ---
 
@@ -577,9 +568,9 @@ To improve response speed:
 
 ### How do I use MinerU to parse PDF documents?
 
-RAGFlow's Go PDF parser calls a remote MinerU API and polls for the parsed result. To use it:
+RAGFlow sends PDF documents to a remote MinerU service and polls for the parsed result. To use it:
 
-1. Prepare a reachable legacy MinerU API service (FastAPI server, MinerU &ge; 3.3.0 and &lt; 4.0.0). The current Go client uses MinerU's `/file_parse` and `/tasks` routes; MinerU 4 removes these routes in favor of the V1 API and is not compatible with this client.
+1. Prepare a reachable MinerU 3.x API service running version 3.3.0 or later. RAGFlow connects to the service through its `/file_parse` and `/tasks` endpoints.
 2. In **docker/.env** or on the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_API_KEY`: An API key if the MinerU service requires one.
@@ -594,18 +585,14 @@ RAGFlow's Go PDF parser calls a remote MinerU API and polls for the parsed resul
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
 :::note
-You can configure MinerU through the **Model providers** page instead of setting environment variables. The Go PDF parser directly reads `MINERU_APISERVER`, `MINERU_API_KEY`, and `MINERU_BACKEND` when the parser configuration does not supply them.
-:::
-
-:::caution WARNING
-**Upgrade note:** Compatible MinerU 3.x releases starting with 3.3.0 no longer accept the older backend names `vlm-transformers`, `vlm-vllm-engine`, `vlm-mlx-engine`, `vlm-vllm-async-engine`, and `vlm-lmdeploy-engine`. RAGFlow passes the configured backend name to MinerU without validating it. After upgrading within the compatible 3.x range, re-select a current backend in **Model providers** or update `MINERU_BACKEND`. Do not upgrade this integration to MinerU 4 until the RAGFlow client supports MinerU's V1 API.
+You can configure MinerU through the **Model providers** page instead of setting environment variables. Values configured for the parser take precedence over `MINERU_APISERVER`, `MINERU_API_KEY`, and `MINERU_BACKEND`.
 :::
 
 ---
 
 ### How do I configure MinerU-specific settings?
 
-The Go PDF parser reads these MinerU environment variables when the parser configuration does not provide a value:
+Use the following environment variables when MinerU is not configured directly in the parser:
 
 | Environment variable   | Description                        | Default                             | Example                                                                                         |
 | ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -619,8 +606,6 @@ The Go PDF parser reads these MinerU environment variables when the parser confi
 
 For a custom Parser component, the numeric `mineru_poll_timeout` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
 
-The Go PDF parser does not read `MINERU_SERVER_URL`, `MINERU_OUTPUT_DIR`, or `MINERU_DELETE_OUTPUT` while processing a document. Do not use those variables to configure its downstream model URL or temporary files.
-
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
 :::
@@ -629,7 +614,7 @@ For other environment variables supported by MinerU itself, see the [MinerU envi
 
 ### How do I use MinerU with a vLLM server for document parsing?
 
-The Go parser can send `vlm-http-client` or `hybrid-http-client` as the backend name in a MinerU parse request. Configure the downstream OpenAI-compatible server, such as vLLM, on the MinerU service itself. RAGFlow's Go PDF parser does not pass `MINERU_SERVER_URL` as `server_url` in the request.
+Set `MINERU_BACKEND` to `vlm-http-client` or `hybrid-http-client` to use a downstream OpenAI-compatible server such as vLLM. Configure the downstream server URL on the MinerU service itself.
 
 1. Ensure a MinerU API service is reachable (for example `http://mineru-host:8886`).
 2. Configure the MinerU service to use a reachable OpenAI-compatible server.

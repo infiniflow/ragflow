@@ -102,7 +102,7 @@
 
 ## 🎉 关注项目
 
-⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知 !🌟
+⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知！🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
@@ -118,7 +118,7 @@
 ### 🍱 **基于模板的文本切片**
 
 - 不仅仅是智能，更重要的是可控可解释。
-- 多种文本模板可供选择
+- 多种文本模板可供选择。
 
 ### 🧩 **知识编译（Knowledge Compilation）**
 
@@ -171,10 +171,10 @@
 #### 📝 Docker 部署前提条件
 
 - 建议起步配置：4 核 CPU、16 GB 内存和 50 GB 可用磁盘。实际资源需求取决于文档引擎、数据规模、解析任务和并发量；启用本地模型或 OceanBase 时，请同时满足相应组件的额外资源要求。
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): 仅在你打算使用 RAGFlow 的代码执行器（沙箱）功能时才需要安装。
+- Docker ≥ 24.0.0，Docker Compose ≥ v2.26.1。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/)：仅在使用 Self-Managed 容器 Sandbox 时需要安装和配置。
 
-Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container Toolkit；使用沙箱功能时需要额外安装 gVisor。
+Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container Toolkit；使用 Self-Managed 容器 Sandbox 时需要额外安装和配置 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主机上安装 gVisor。
 
 > ⚠️ **提示：** 如果你尚未在本机安装 Docker（Windows、macOS 或 Linux），可以参考 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安装。
 
@@ -252,7 +252,7 @@ Docker 部署无需在宿主机安装 Go。GPU 部署还需要 NVIDIA Container 
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
    > 上面这个例子中，您只需输入 http://IP_OF_YOUR_MACHINE 即可：未改动过配置则无需输入端口（默认的 HTTP 服务端口 80）。
-6. 登录 RAGFlow 后，在模型提供商页面添加 LLM、Embedding 和 Reranker，并填写对应的模型名称、服务地址和 API key。`user_default_llm` 不再用于为新用户自动分配模型；模板中保留的 `embedding_model` 连接参数仅用于内置 TEI Embedding 服务。
+6. 登录 RAGFlow 后，在模型提供商页面添加 LLM、Embedding 和 Reranker，并填写对应的模型名称、服务地址和 API key。
 
    > 详见 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)。
 
@@ -266,25 +266,13 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 
-### 🔧 源码编译 Docker 镜像
-
-Go 版镜像使用仓库根目录的 [Dockerfile](./Dockerfile)。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-```
-
-构建依赖、代理参数、平台限制和启动验证步骤请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
-
 ### 🔨 以源代码启动 Go 服务
 
 #### 📝 源码启动前提条件
 
 源码启动需要安装 `go.mod` 指定的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2 开发文件和 CGO 所需的原生库。仅开发 React 前端时需要 Node.js 和 npm。
 
-1. 克隆仓库，安装 `go.mod` 指定版本的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake >= 4.0，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
+1. 克隆仓库，安装 `go.mod` 指定版本的 Go 1.27 或更高版本、Clang 20、LLD 20、CMake ≥ 4.0，以及 PCRE2 开发文件。Go 服务依赖 CGO 和原生静态库；[build.sh](./build.sh) 会设置所需的构建参数。
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
@@ -310,12 +298,12 @@ docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-4. 先迁移数据库，再分别在 5 个独立终端中按顺序启动 Go 服务（命令均在仓库根目录运行）。每次只在对应终端中执行该终端下方的命令，不要把所有命令一次性粘贴到同一个终端。每个终端都需要设置 `RAGFLOW_DEV_MODE=true`。迁移命令执行完成后即可关闭终端；Admin、Ingestor、Syncer 和 API 终端需要保持运行。
+4. 先迁移数据库，再分别在 5 个独立终端中按顺序启动 Go 服务（命令均在仓库根目录运行）。每次只在对应终端中执行该终端下方的命令，不要把所有命令一次性粘贴到同一个终端。迁移命令无需设置 `RAGFLOW_DEV_MODE`；开发环境中的 Admin、Ingestor、Syncer 和 API 按下方命令设置 `RAGFLOW_DEV_MODE=true`。迁移命令执行完成后即可关闭终端，其他 4 个服务终端需要保持运行。
 
    终端 1：迁移数据库。
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --migrate
+   ./bin/ragflow_server --migrate
    ```
 
    终端 2：启动 Admin（目标端口 `9381`）。
@@ -350,7 +338,7 @@ docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
    - `--syncer`：启动 Syncer 服务，负责数据同步任务。
    - `--api`：启动 API 服务，为 Web、SDK 和外部客户端提供接口。
 
-   `RAGFLOW_DEV_MODE=true` 用于 Go 源码开发时允许执行开发中的数据库迁移，生产部署不要设置此变量。Admin 应先于其他服务启动。数据库迁移完成后，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可作为便捷方式启动 Admin、Ingestor 和 API；该命令不启动 Syncer，需要完整服务链路时仍应另行执行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
+   `RAGFLOW_DEV_MODE=true` 仅用于开发环境关闭代码版本与数据库迁移版本之间的降级检查，不会执行迁移或改变数据库结构，生产部署不要设置此变量。Admin 应先于其他服务启动。数据库迁移完成后，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可作为便捷方式启动 Admin、Ingestor 和 API；该命令不启动 Syncer，需要完整服务链路时仍应另行执行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
 
 5. 仅在前端开发时安装 Node.js 和 npm，然后启动 React 前端：
 
@@ -394,7 +382,7 @@ docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
 
 ## 🙌 贡献指南
 
-RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们欢迎来自社区的各种贡献。如果您有意参与其中,请查阅我们的 [贡献者指南](https://ragflow.io/docs/dev/contributing) 。
+RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神，我们欢迎来自社区的各种贡献。如果您有意参与其中，请查阅我们的[贡献者指南](https://ragflow.io/docs/dev/contributing)。
 
 ## 🤝 商务合作
 
