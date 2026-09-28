@@ -19,6 +19,6 @@ package office
 import "fmt"
 
 // OpenAndExtract is unavailable without the native office_oxide backend.
-func OpenAndExtract(data []byte, format string) (irJSON, markdown, plainText string, err error) {
-	return "", "", "", fmt.Errorf("%w", ErrOfficeCGORequired)
+func OpenAndExtract(data []byte, format string) (irJSON, markdown, plainText string, mdErr error, err error) {
+	return "", "", "", nil, fmt.Errorf("%w", ErrOfficeCGORequired)
 }

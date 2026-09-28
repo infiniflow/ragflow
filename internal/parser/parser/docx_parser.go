@@ -92,7 +92,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// opens the payload as ZIP and fails closed, so RemoveHeaderFooter becomes
 	// a no-op for legacy OLE inputs. This is acceptable — legacy DOC has no
 	// OOXML header/footer parts to strip.
-	irJSON, md, _, err := docxExtract(data, format)
+	irJSON, md, _, mdErr, err := docxExtract(data, format)
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -153,6 +153,13 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	// Default / Markdown path.
+	if mdErr != nil {
+		// The Markdown view failed but other views survived. Surface the
+		// Markdown render error rather than silently emitting empty markdown
+		// (PR review Finding 3). The JSON path above is unaffected because it
+		// is built from the IR view.
+		return ParseResult{Err: fmt.Errorf("docx extract: markdown render failed: %w", mdErr)}
+	}
 	markdownPayload := md
 	// remove_header_footer on Markdown: filter lines by exact match
 	// (mirrors Python parser.py:923-926 split lines → filter → rejoin).

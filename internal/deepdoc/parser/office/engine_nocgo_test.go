@@ -26,7 +26,7 @@ import (
 // (not attempt to link the C library or panic). This is the behavior the
 // parser package's facade relies on to wrap it into its own sentinel.
 func TestOpenAndExtract_NoCGO(t *testing.T) {
-	_, _, _, err := OpenAndExtract([]byte("PK\x03\x04"), "docx")
+	_, _, _, _, err := OpenAndExtract([]byte("PK\x03\x04"), "docx")
 	if err == nil {
 		t.Fatal("expected ErrOfficeCGORequired, got nil")
 	}

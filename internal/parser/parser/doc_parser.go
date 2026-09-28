@@ -53,7 +53,7 @@ func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 // ParseWithResult extracts text for the DOC family and converts it to the
 // requested output format (defaulting to "json" to match Python's default).
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	irJSON, mdText, plainText, err := docExtract(data, "doc")
+	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}

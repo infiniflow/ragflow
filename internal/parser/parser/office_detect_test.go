@@ -50,9 +50,9 @@ func TestDOCXParser_FallsBackToDOCForOLEHeader(t *testing.T) {
 	defer func() { docxExtract = orig }()
 
 	var gotFormat string
-	docxExtract = func(data []byte, format string) (string, string, string, error) {
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return "", "", "", fmt.Errorf("stub doc open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub doc open: %s", format)
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -77,14 +77,61 @@ func TestDOCXParser_JSONEmptyIRReturnsError(t *testing.T) {
 
 	orig := docxExtract
 	defer func() { docxExtract = orig }()
-	docxExtract = func(data []byte, format string) (string, string, string, error) {
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		// Open succeeds, but the IR view is empty.
-		return "", "", "", nil
+		return "", "", "", nil, nil
 	}
 
 	res := p.ParseWithResult(ctx, "empty.docx", []byte("PK\x03\x04"))
 	if res.Err == nil {
 		t.Fatal("expected error for JSON output with empty IR, got nil")
+	}
+}
+
+// TestDOCXParser_MarkdownViewErrorPropagated locks Finding 3: when the
+// native backend's Markdown view fails but the other views survive,
+// OpenAndExtract surfaces the Markdown error via mdErr and the Markdown output
+// path must fail loud instead of silently emitting empty markdown. The JSON
+// path is unaffected because it is built from the IR view.
+func TestDOCXParser_MarkdownViewErrorPropagated(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		// IR and plain text survive; only the Markdown view fails.
+		return "<ir/>", "", "plain text fallback", fmt.Errorf("markdown boom"), nil
+	}
+
+	res := p.ParseWithResult(ctx, "broken.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error when only the Markdown view fails, got nil")
+	}
+}
+
+// TestDOCXParser_AllViewsEmptyMarkdownReturnsError locks the engine-level
+// contract from Finding 1 at the parser boundary: when the native backend
+// opens the document but every view (IR / Markdown / PlainText) is empty,
+// OpenAndExtract reports a joined error, and the default Markdown output path
+// must fail loud rather than silently emit empty markdown. (office_oxide
+// always returns a structured IR for an openable doc, so this all-empty error
+// is simulated via the seam rather than a real fixture.)
+func TestDOCXParser_AllViewsEmptyMarkdownReturnsError(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return "", "", "", nil, fmt.Errorf("office_oxide docx: all text views failed")
+	}
+
+	res := p.ParseWithResult(ctx, "empty.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error for a document with no extractable text in any view, got nil")
 	}
 }
 
@@ -99,9 +146,9 @@ func TestDOCXParser_TruncatedOLENotFallback(t *testing.T) {
 	defer func() { docxExtract = orig }()
 
 	var gotFormat string
-	docxExtract = func(data []byte, format string) (string, string, string, error) {
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return "", "", "", fmt.Errorf("stub")
+		return "", "", "", nil, fmt.Errorf("stub")
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0}
@@ -124,9 +171,9 @@ func TestPPTXParser_FallsBackToPPTForOLEHeader(t *testing.T) {
 	defer func() { pptxExtract = orig }()
 
 	var gotFormat string
-	pptxExtract = func(data []byte, format string) (string, string, string, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return "", "", "", fmt.Errorf("stub ppt open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub ppt open: %s", format)
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -153,9 +200,9 @@ func TestPPTParser_FallsBackToPPTXForOOXMLHeader(t *testing.T) {
 	defer func() { pptxExtract = orig }()
 
 	var gotFormat string
-	pptxExtract = func(data []byte, format string) (string, string, string, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return "", "", "", fmt.Errorf("stub ppt open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub ppt open: %s", format)
 	}
 
 	// Minimal OOXML ZIP local file header.
@@ -184,9 +231,9 @@ func TestPPTXParser_NoStatePollution(t *testing.T) {
 	defer func() { pptxExtract = orig }()
 
 	calls := []string{}
-	pptxExtract = func(data []byte, format string) (string, string, string, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		calls = append(calls, format)
-		return "", "", "", fmt.Errorf("stub")
+		return "", "", "", nil, fmt.Errorf("stub")
 	}
 
 	oleData := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}

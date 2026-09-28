@@ -19,8 +19,8 @@ func TestDOCParser_EmptyViewsReturnsError(t *testing.T) {
 	orig := docExtract
 	defer func() { docExtract = orig }()
 	// Open succeeds, but all three views come back empty.
-	docExtract = func(data []byte, format string) (string, string, string, error) {
-		return "", "", "", nil
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return "", "", "", nil, nil
 	}
 
 	res := p.ParseWithResult(ctx, "empty.doc", []byte("PK\x03\x04"))

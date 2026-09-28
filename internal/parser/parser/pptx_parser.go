@@ -137,7 +137,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			effFormat = "pptx"
 		}
 	}
-	irJSON, _, plainText, err := pptxExtract(data, effFormat)
+	irJSON, _, plainText, _, err := pptxExtract(data, effFormat)
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}

@@ -17,6 +17,7 @@
 package office
 
 import (
+	"errors"
 	"fmt"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
@@ -28,18 +29,33 @@ import (
 // office_oxide lives here, so the parser package can stay CGO-free and own
 // only the format-agnostic post-processing.
 //
-// ToIRJSON / ToMarkdown / PlainText failures are non-fatal: the corresponding
-// view is returned empty and the parser package's salvage logic (e.g. picking
-// the longest non-empty view, or falling back to plain text) handles it. Only
-// a failed OpenFromBytes is reported as an error.
-func OpenAndExtract(data []byte, format string) (irJSON, markdown, plainText string, err error) {
-	doc, err := officeOxide.OpenFromBytes(data, format)
-	if err != nil {
-		return "", "", "", fmt.Errorf("office_oxide open %s: %w", format, err)
+// A single failing view is non-fatal: the parser package salvages the
+// surviving views (e.g. the DOCX JSON path errors on empty IR, the Markdown
+// path prefers the Markdown view, the DOC path picks the longest view). mdErr
+// is returned separately so the Markdown path can fail loud when only the
+// Markdown view fails. If EVERY view fails there is nothing to recover, so err
+// is set to the joined view errors instead of three empty strings that
+// downstream code would silently treat as "empty document" (PR review
+// Finding 1).
+func OpenAndExtract(data []byte, format string) (irJSON, markdown, plainText string, mdErr error, err error) {
+	doc, openErr := officeOxide.OpenFromBytes(data, format)
+	if openErr != nil {
+		return "", "", "", nil, fmt.Errorf("office_oxide open %s: %w", format, openErr)
 	}
 	defer doc.Close()
-	irJSON, _ = doc.ToIRJSON()
-	markdown, _ = doc.ToMarkdown()
-	plainText, _ = doc.PlainText()
-	return irJSON, markdown, plainText, nil
+
+	irJSON, irErr := doc.ToIRJSON()
+	markdown, mdErr = doc.ToMarkdown()
+	plainText, ptErr := doc.PlainText()
+
+	// Every view failed: nothing to salvage, so report the combined failures
+	// rather than returning three empty strings that downstream code would
+	// silently treat as an empty document (PR review Finding 1).
+	if irJSON == "" && markdown == "" && plainText == "" {
+		return "", "", "", mdErr, fmt.Errorf(
+			"office_oxide %s: all text views failed: %w",
+			format, errors.Join(irErr, mdErr, ptErr),
+		)
+	}
+	return irJSON, markdown, plainText, mdErr, nil
 }

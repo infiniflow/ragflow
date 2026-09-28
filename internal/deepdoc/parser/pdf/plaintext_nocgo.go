@@ -24,6 +24,13 @@ import (
 	"github.com/ledongthuc/pdf"
 )
 
+// maxPDFPageCount is the largest page count PlainText will accept. A corrupt
+// or malicious /Count in the catalog can claim billions of pages; honoring it
+// would either panic make (negative) or allocate/iterate without bound (huge).
+// One million pages is far beyond any real document RAGFlow ingests, so values
+// above it are treated as malformed (PR review Blocker).
+const maxPDFPageCount = 1_000_000
+
 // PlainText extracts plain text per page using the pure-Go ledongthuc/pdf
 // engine. It mirrors the cgo pdf_oxide implementation so the parser package's
 // plain_text strategy keeps working under !cgo builds without native
@@ -39,6 +46,18 @@ func PlainText(data []byte) ([]map[string]any, int, error) {
 		return nil, 0, fmt.Errorf("deepdoc/pdf: plain_text open: %w", err)
 	}
 	pageCount := pdfReader.NumPage()
+	// ledongthuc/pdf reads the catalog /Count verbatim, so a malformed PDF
+	// can report a negative or absurd page count. Feeding that directly into
+	// make would panic ("makeslice: cap out of range") and a huge count would
+	// allocate a massive backing array or loop for billions of iterations,
+	// hanging the ingestor on one corrupt file. Reject implausible counts up
+	// front (PR review Blocker).
+	if pageCount < 0 {
+		return nil, 0, fmt.Errorf("deepdoc/pdf: plain_text: invalid negative page count %d", pageCount)
+	}
+	if pageCount > maxPDFPageCount {
+		return nil, 0, fmt.Errorf("deepdoc/pdf: plain_text: page count %d exceeds sane limit %d", pageCount, maxPDFPageCount)
+	}
 	items := make([]map[string]any, 0, pageCount)
 	for pageNum := 1; pageNum <= pageCount; pageNum++ {
 		p := pdfReader.Page(pageNum)
