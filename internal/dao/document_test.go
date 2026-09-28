@@ -196,7 +196,8 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 		t.Fatalf("create scheduled ingestion task: %v", err)
 	}
 
-	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
 		KbID:    "kb-1",
 		OrderBy: "create_time",
 		Desc:    true,
@@ -220,6 +221,23 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 	}
 	if got := listed["ingestion_status"]; got != "SCHEDULED" {
 		t.Fatalf("ingestion_status = %v, want %q", got, "SCHEDULED")
+	}
+
+	opts := DocumentListOptions{KbID: "kb-1", RunStatuses: []string{common.SCHEDULED}, OrderBy: "ingestion_status", Limit: 10}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, opts)
+	if err != nil || total != 1 || len(documents) != 1 {
+		t.Fatalf("filter scheduled documents: got %d (total %d), err %v", len(documents), total, err)
+	}
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, opts)
+	if err != nil || len(ids) != 1 || ids[0] != "doc-scheduled" {
+		t.Fatalf("filter scheduled document IDs: got %v, err %v", ids, err)
+	}
+	filters, total, err := dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1"})
+	if err != nil || total != 1 {
+		t.Fatalf("get scheduled filter count: total %d, err %v", total, err)
+	}
+	if got := filters["ingestion_status"].(map[string]int64)[common.SCHEDULED]; got != 1 {
+		t.Fatalf("scheduled filter count = %d, want 1", got)
 	}
 	if db.Migrator().HasColumn(&entity.Document{}, "run") {
 		t.Fatal("document list query added the legacy run column")
@@ -277,7 +295,8 @@ func TestDocumentListFallsBackToReadOnlyLegacyRun(t *testing.T) {
 		}
 	}
 
-	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
 		KbID: "kb-legacy", Limit: len(tests),
 	})
 	if err != nil {
@@ -299,12 +318,79 @@ func TestDocumentListFallsBackToReadOnlyLegacyRun(t *testing.T) {
 			t.Errorf("status for %s = %q, want %q", documentID, got, test.want)
 		}
 	}
-	var stored string
-	if err := db.Table("document").Select("run").Where("id = ?", "doc-completed").Scan(&stored).Error; err != nil {
-		t.Fatalf("read legacy run: %v", err)
+
+	completedOpts := DocumentListOptions{KbID: "kb-legacy", RunStatuses: []string{common.COMPLETED}, Limit: len(tests)}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil || total != 1 || len(documents) != 1 || documents[0].ID != "doc-completed" {
+		t.Fatalf("filter completed documents: got %v (total %d), err %v", documents, total, err)
 	}
-	if stored != "3" {
-		t.Fatalf("legacy run changed from %q to %q", "3", stored)
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil || len(ids) != 1 || ids[0] != "doc-completed" {
+		t.Fatalf("filter completed document IDs: got %v, err %v", ids, err)
+	}
+	filters, filterTotal, err := dao.GetFilterByKBID(t.Context(), db, completedOpts)
+	if err != nil || filterTotal != 1 || filters["ingestion_status"].(map[string]int64)[common.COMPLETED] != 1 {
+		t.Fatalf("filter completed count: got %v (total %d), err %v", filters, filterTotal, err)
+	}
+
+	mixedOpts := DocumentListOptions{KbID: "kb-legacy", RunStatuses: []string{"UNSTART", common.COMPLETED}, Limit: len(tests)}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, mixedOpts)
+	if err != nil || total != 5 || len(documents) != 5 {
+		t.Fatalf("filter mixed statuses: got %d (total %d), err %v", len(documents), total, err)
+	}
+	wantMixed := map[string]bool{
+		"doc-unstart": true, "doc-empty": true, "doc-completed": true, "doc-unknown": true, "doc-empty-task-wins": true,
+	}
+	for _, document := range documents {
+		delete(wantMixed, document.ID)
+	}
+	if len(wantMixed) != 0 {
+		t.Fatalf("mixed status filter missed documents: %v", wantMixed)
+	}
+	ids, err = dao.ListIDsByKBIDWithOptions(t.Context(), db, mixedOpts)
+	if err != nil || len(ids) != 5 {
+		t.Fatalf("filter mixed document IDs: got %v, err %v", ids, err)
+	}
+
+	filters, filterTotal, err = dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-legacy"})
+	if err != nil || filterTotal != int64(len(tests)) {
+		t.Fatalf("get legacy filter counts: total %d, err %v", filterTotal, err)
+	}
+	counts := filters["ingestion_status"].(map[string]int64)
+	wantCounts := map[string]int64{"UNSTART": 4, common.RUNNING: 2, common.STOPPED: 1, common.COMPLETED: 1, common.FAILED: 1, common.SCHEDULED: 1}
+	for status, want := range wantCounts {
+		if got := counts[status]; got != want {
+			t.Errorf("filter count for %s = %d, want %d", status, got, want)
+		}
+	}
+
+	wantAscending := []string{common.COMPLETED, common.FAILED, common.RUNNING, common.RUNNING, common.SCHEDULED, common.STOPPED, "UNSTART", "UNSTART", "UNSTART", "UNSTART"}
+	for _, desc := range []bool{false, true} {
+		documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+			KbID: "kb-legacy", OrderBy: "ingestion_status", Desc: desc, Limit: len(tests),
+		})
+		if err != nil || total != int64(len(tests)) || len(documents) != len(tests) {
+			t.Fatalf("sort legacy statuses (desc=%t): got %d (total %d), err %v", desc, len(documents), total, err)
+		}
+		for i, document := range documents {
+			want := wantAscending[i]
+			if desc {
+				want = wantAscending[len(wantAscending)-1-i]
+			}
+			if document.IngestionStatus == nil || *document.IngestionStatus != want {
+				t.Errorf("sorted status %d (desc=%t) = %v, want %s", i, desc, document.IngestionStatus, want)
+			}
+		}
+	}
+
+	for _, test := range tests {
+		var stored string
+		if err := db.Table("document").Select("run").Where("id = ?", "doc-"+test.id).Scan(&stored).Error; err != nil {
+			t.Fatalf("read legacy run for %s: %v", test.id, err)
+		}
+		if stored != test.run {
+			t.Fatalf("legacy run for %s changed from %q to %q", test.id, test.run, stored)
+		}
 	}
 }
 
