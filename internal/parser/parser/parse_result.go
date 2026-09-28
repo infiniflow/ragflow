@@ -19,9 +19,9 @@
 // parsers surface enough data to reconstruct a Python-compatible
 // stage-boundary payload:
 //
-//	output_format ∈ {"json","markdown","text","html"}
-//	file         (enriched metadata)
-//	exactly one payload family populated (matching output_format)
+//	output_format
+//	file (enriched metadata)
+//	backend payload to be normalized by the owning component
 //	err
 //
 // Go parser callers now consume only the structured ParseResult
@@ -33,28 +33,19 @@ package parser
 
 import "context"
 
-// ParseResult is the structured return value of a successful parse.
-// Exactly one of the payload fields (JSON / Markdown / Text / HTML)
-// is populated on success, matching the Python contract — see
-// port-rag-flow-pipeline-to-go.md §4.2:
-//
-//   - OutputFormat = "json"     → JSON populated
-//   - OutputFormat = "markdown" → Markdown populated
-//   - OutputFormat = "text"     → Text populated
-//   - OutputFormat = "html"     → HTML populated
-//
-// On failure (Err != nil), all payload fields are zero values and
-// OutputFormat is empty.
+// ParseResult is the structured return value of a parse operation. JSON holds
+// structured backend output when available; the rendered fields carry
+// non-JSON backend responses to the Parser component's normalization boundary.
+// On failure, Err is non-nil and OutputFormat is empty.
 type ParseResult struct {
-	// OutputFormat is the wire-compatible format the parser
-	// chose. Empty when Err is non-nil.
+	// OutputFormat identifies the backend payload representation. The Parser
+	// component normalizes successful results to JSON. Empty when Err is non-nil.
 	OutputFormat string
 
-	// File is the enriched file metadata the parser emits. In
-	// Python this is the dict form of the original `file`
-	// descriptor, augmented with format-specific keys (e.g.
-	// `outline` on the PDF path, `page_count` for paginated
-	// formats). Nil when the parser did not enrich.
+	// File is metadata produced by the parser backend (for example
+	// `outline` on the PDF path or `page_count` for paginated formats).
+	// Nil when the backend does not produce metadata. It is not an augmented
+	// copy of the upstream file descriptor.
 	//
 	// For the office family (docx/doc, pptx/ppt), File["format"]
 	// reflects the real container format detected via magic-byte
@@ -66,25 +57,22 @@ type ParseResult struct {
 	// echoed the requested extension.
 	File map[string]any
 
-	// JSON is the structured payload when OutputFormat == "json".
+	// JSON is the structured payload when available.
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
 	// Markdown / HTML / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits OCR/VLM result
-	// items. Exactly one payload family is populated on success.
+	// items.
 	JSON []map[string]any
 
-	// Markdown is the string payload when OutputFormat ==
-	// "markdown". Empty otherwise.
+	// Markdown is a backend response awaiting normalization.
 	Markdown string
 
-	// Text is the string payload when OutputFormat == "text".
-	// Empty otherwise.
+	// Text is a backend response awaiting normalization.
 	Text string
 
-	// HTML is the string payload when OutputFormat == "html".
-	// Empty otherwise.
+	// HTML is a backend response awaiting normalization.
 	HTML string
 
 	// Err is the failure reason. On non-nil Err, all payload
@@ -99,4 +87,39 @@ type ParseResult struct {
 // contract. Every parser returned by GetParser must implement it.
 type ParseResultProducer interface {
 	ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
+}
+
+// Canonical document type identifiers used in structured JSON items.
+// These align directly with Python's doc_type_kwd contract.
+const (
+	DocTypeKey   = "doc_type_kwd"
+	DocTypeText  = "text"
+	DocTypeTable = "table"
+	DocTypeImage = "image"
+
+	spreadsheetOutputFormat = "json"
+)
+
+// NewTextJSONItem constructs a canonical text JSON item for parser output.
+func NewTextJSONItem(text string) map[string]any {
+	return map[string]any{
+		"text":     text,
+		DocTypeKey: DocTypeText,
+	}
+}
+
+// NewTableJSONItem constructs a canonical table JSON item for parser output.
+func NewTableJSONItem(html string, sheet string, positions [][]float64) map[string]any {
+	item := map[string]any{
+		"text":     html,
+		DocTypeKey: DocTypeTable,
+		"ck_type":  DocTypeTable,
+	}
+	if sheet != "" {
+		item["sheet"] = sheet
+	}
+	if len(positions) > 0 {
+		item["positions"] = positions
+	}
+	return item
 }

@@ -17,13 +17,14 @@
 package utility
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,22 +34,63 @@ import (
 // targets used by httptest are accepted by AssertURLSafe.
 func allowLoopbackForTests(t *testing.T) func() {
 	t.Helper()
-	orig := LookupHost
-	LookupHost = func(host string) ([]string, error) {
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		// Return a public IPv4 so the guard sees the host as global; the
 		// httptest server is on loopback but we connect via raw URL.
 		return []string{"8.8.8.8"}, nil
 	}
-	return func() { LookupHost = orig }
+	return func() { common.LookupHost = orig }
+}
+
+func TestStreamableSessionCleanupBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{name: "shorter operation timeout", timeout: 100 * time.Millisecond, want: 100 * time.Millisecond},
+		{name: "cleanup timeout cap", timeout: 30 * time.Second, want: 5 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := streamableSessionCleanupBudget(tc.timeout); got != tc.want {
+				t.Errorf("streamableSessionCleanupBudget(%s)=%s, want %s", tc.timeout, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	defer allowLoopbackForTests(t)()
 
-	var initCount, listCount, notifyCount int32
+	var initCount, listCount, notifyCount, deleteCount int32
+	var mu sync.Mutex
+	var requestOrder []string
+	recordRequest := func(method string) {
+		mu.Lock()
+		defer mu.Unlock()
+		requestOrder = append(requestOrder, method)
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer fetch-token" {
+			t.Errorf("Authorization=%q, want rendered header", got)
+		}
+		if got := r.Header.Get("X-Template"); got != "cost $5" {
+			t.Errorf("X-Template=%q, want safe-substituted header", got)
+		}
+		if r.Method == http.MethodDelete {
+			atomic.AddInt32(&deleteCount, 1)
+			recordRequest(http.MethodDelete)
+			if got := r.Header.Get(sessionHeader); got != "test-session" {
+				t.Errorf("DELETE session header=%q, want test-session", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
+			t.Errorf("request method=%s, want POST or DELETE", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
 		}
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
@@ -59,7 +101,14 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 			http.Error(w, "bad body", http.StatusBadRequest)
 			return
 		}
-		switch req["method"] {
+		method, _ := req["method"].(string)
+		recordRequest(method)
+		if method != "initialize" {
+			if got := r.Header.Get(sessionHeader); got != "test-session" {
+				t.Errorf("%s session header=%q, want test-session", method, got)
+			}
+		}
+		switch method {
 		case "initialize":
 			atomic.AddInt32(&initCount, 1)
 			w.Header().Set(sessionHeader, "test-session")
@@ -81,9 +130,18 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tools, err := FetchTools(context.Background(), FetchOptions{
+	tools, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
+		Headers: map[string]string{
+			"${header_name}": "Bearer $token",
+			"X-Template":     "cost $$5",
+			sessionHeader:    "stale-session",
+		},
+		Variables: map[string]string{
+			"header_name": "Authorization",
+			"token":       "fetch-token",
+		},
 		HTTPClient: srv.Client(),
 		Timeout:    2 * time.Second,
 	})
@@ -99,8 +157,14 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 	if tools[1].Name != "fetch" {
 		t.Errorf("tool 1 = %+v", tools[1])
 	}
-	if atomic.LoadInt32(&initCount) != 1 || atomic.LoadInt32(&notifyCount) != 1 || atomic.LoadInt32(&listCount) != 1 {
-		t.Errorf("expected 1 init / 1 notify / 1 list, got %d/%d/%d", initCount, notifyCount, listCount)
+	if atomic.LoadInt32(&initCount) != 1 || atomic.LoadInt32(&notifyCount) != 1 || atomic.LoadInt32(&listCount) != 1 || atomic.LoadInt32(&deleteCount) != 1 {
+		t.Errorf("expected 1 init / 1 notify / 1 list / 1 delete, got %d/%d/%d/%d", initCount, notifyCount, listCount, deleteCount)
+	}
+	mu.Lock()
+	gotOrder := strings.Join(requestOrder, ",")
+	mu.Unlock()
+	if want := "initialize,notifications/initialized,tools/list,DELETE"; gotOrder != want {
+		t.Errorf("request order=%q, want %q", gotOrder, want)
 	}
 }
 
@@ -120,7 +184,7 @@ func TestFetchToolsStreamableHTTPErrorResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := FetchTools(context.Background(), FetchOptions{
+	_, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL,
 		ServerType: TransportStreamableHTTP,
 		HTTPClient: srv.Client(),
@@ -187,7 +251,7 @@ func TestFetchToolsSSE(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	tools, err := FetchTools(context.Background(), FetchOptions{
+	tools, err := FetchTools(t.Context(), FetchOptions{
 		URL:        srv.URL + "/sse",
 		ServerType: TransportSSE,
 		HTTPClient: srv.Client(),
@@ -203,7 +267,7 @@ func TestFetchToolsSSE(t *testing.T) {
 
 func TestFetchToolsUnsupportedType(t *testing.T) {
 	defer allowLoopbackForTests(t)()
-	_, err := FetchTools(context.Background(), FetchOptions{
+	_, err := FetchTools(t.Context(), FetchOptions{
 		URL:        "https://example.com",
 		ServerType: "stdio",
 		Timeout:    time.Second,
@@ -214,25 +278,34 @@ func TestFetchToolsUnsupportedType(t *testing.T) {
 }
 
 func TestFetchToolsEmptyURL(t *testing.T) {
-	_, err := FetchTools(context.Background(), FetchOptions{URL: "", ServerType: TransportSSE})
+	_, err := FetchTools(t.Context(), FetchOptions{URL: "", ServerType: TransportSSE})
 	if err == nil || !strings.Contains(err.Error(), "Invalid url") {
 		t.Fatalf("expected Invalid url error, got %v", err)
 	}
 }
 
 func TestSubstituteTemplate(t *testing.T) {
-	vars := map[string]string{"token": "abc123"}
-	if got := substituteTemplate("Bearer ${token}", vars); got != "Bearer abc123" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("Bearer ${missing}", vars); got != "Bearer ${missing}" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("no-var", vars); got != "no-var" {
-		t.Errorf("got %q", got)
-	}
-	if got := substituteTemplate("${a}-${token}", map[string]string{"a": "1", "token": "2"}); got != "1-2" {
-		t.Errorf("got %q", got)
+	vars := map[string]string{"token": "abc123", "name": "search", "nested": "${name}"}
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "braced", in: "Bearer ${token}", want: "Bearer abc123"},
+		{name: "unbraced", in: "X-$name", want: "X-search"},
+		{name: "escaped dollar", in: "cost $$5", want: "cost $5"},
+		{name: "unknown", in: "Bearer ${missing}", want: "Bearer ${missing}"},
+		{name: "multiple", in: "${name}-${token}", want: "search-abc123"},
+		{name: "non recursive", in: "$nested", want: "${name}"},
+		{name: "malformed braced", in: "${name", want: "${name"},
+		{name: "invalid identifier", in: "${1name}", want: "${1name}"},
+		{name: "literal dollar", in: "no-var$", want: "no-var$"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := substituteTemplate(tc.in, vars); got != tc.want {
+				t.Errorf("substituteTemplate(%q)=%q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 

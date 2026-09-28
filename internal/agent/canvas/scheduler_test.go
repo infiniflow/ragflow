@@ -92,6 +92,38 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 	}
 }
 
+// TestBuildWorkflow_DuplicateUpstreamSucceeds verifies that multiple output
+// handles from one branching node may converge on the same downstream node.
+// The DSL records one upstream entry per handle, while eino requires only one
+// control edge between the two nodes.
+func TestBuildWorkflow_DuplicateUpstreamSucceeds(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"categorize_0"},
+			},
+			"categorize_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Categorize", Params: map[string]any{}},
+				Downstream: []string{"message_0", "message_0"},
+				Upstream:   []string{"begin_0"},
+			},
+			"message_0": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Upstream: []string{"categorize_0", "categorize_0"},
+			},
+		},
+	}
+
+	cc, err := Compile(t.Context(), c)
+	if err != nil {
+		t.Fatalf("Compile duplicate upstream: %v", err)
+	}
+	if cc == nil || cc.Workflow == nil {
+		t.Fatal("Compile produced nil workflow")
+	}
+}
+
 // TestBuildWorkflow_MultiTerminalSucceeds verifies that canvases with
 // more than one terminal component still compile cleanly. The scheduler
 // normalizes multiple terminal outputs through an internal merge node so

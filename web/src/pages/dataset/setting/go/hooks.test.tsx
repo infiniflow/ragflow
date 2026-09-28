@@ -4,7 +4,6 @@ import { useSaveDatasetSetting } from './hooks';
 
 let mockIsGoBackend = true;
 jest.mock('@/utils/backend-runtime', () => ({
-  isGoBackend: () => mockIsGoBackend,
   getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
 }));
 jest.mock('@/hooks/use-knowledge-request', () => ({

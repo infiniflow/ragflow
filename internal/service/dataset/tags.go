@@ -6,22 +6,42 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/ingestion/component"
 )
 
 func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
-	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
+	// merged holds the selectable-tag vocabulary sourced from the tag source
+	// files (parser_config.tags.tag_file_id) declared by the dataset's
+	// documents. A document copies the dataset config at upload and the
+	// document parser dialog may then override it, and that document-level copy
+	// is the one the extractor reads at parse time (see
+	// ingestion/task/pipeline_executor.go) — so it, not the dataset row, is what
+	// describes the tags actually in effect. A dataset-level value no document
+	// carries has not been applied to anything yet and is deliberately not
+	// reported: this endpoint answers "in effect", not "configured", so a
+	// dataset configured after its documents were uploaded reads empty until
+	// those documents are re-uploaded or configured individually. The count for
+	// a tag is the number of times it appears in that source file. The Go
+	// backend has no Python-style tag-library datasets, so there is no
+	// chunk-level aggregation.
+	loader := d.tagVocabularyLoader
+	if loader == nil {
+		loader = component.TagVocabularyFromTagFileID
 	}
-
-	datasetIDsByTenant := make(map[string][]string)
+	merged := make(map[string]int)
+	// The handler accepts repeated IDs, and distinct raw IDs can normalize to
+	// the same dataset (hyphenated vs. compact form). Normalize up front so
+	// each dataset is authorized, loaded and merged exactly once — otherwise a
+	// repeated dataset (e.g. dataset_ids=A,A) would load the same vocabulary
+	// twice and double every count.
+	seen := make(map[string]struct{}, len(datasetIDs))
+	orderedIDs := make([]string, 0, len(datasetIDs))
 	for _, rawID := range datasetIDs {
 		rawID = strings.TrimSpace(rawID)
 		if rawID == "" {
@@ -31,6 +51,21 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
+		if _, dup := seen[datasetID]; dup {
+			continue
+		}
+		seen[datasetID] = struct{}{}
+		orderedIDs = append(orderedIDs, datasetID)
+	}
+
+	// Authorize and load every dataset before reading any document config, so
+	// nothing belonging to an inaccessible dataset is fetched.
+	type authorizedDataset struct {
+		id     string
+		tenant string
+	}
+	authorized := make([]authorizedDataset, 0, len(orderedIDs))
+	for _, datasetID := range orderedIDs {
 		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
 		}
@@ -41,48 +76,64 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			}
 			return nil, common.CodeServerError, errors.New("Database operation failed")
 		}
-		if kb.DocNum <= 0 {
-			continue
-		}
-		datasetIDsByTenant[kb.TenantID] = append(datasetIDsByTenant[kb.TenantID], datasetID)
+		authorized = append(authorized, authorizedDataset{
+			id:     datasetID,
+			tenant: kb.TenantID,
+		})
 	}
 
-	const pageSize = 10000
-	merged := make(map[string]int)
-	for tenantID, kbIDs := range datasetIDsByTenant {
-		for offset := 0; ; offset += pageSize {
-			searchResp, err := d.docEngine.Search(ctx, &enginetypes.SearchRequest{
-				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
-				KbIDs:        kbIDs,
-				Offset:       offset,
-				Limit:        pageSize,
-				SelectFields: []string{"tag_kwd"},
-			})
-			if err != nil {
-				return nil, common.CodeServerError, fmt.Errorf("failed to aggregate tags: %w", err)
+	docConfigs, err := d.documentDAO.ListParserConfigsByKBIDs(ctx, dao.DB, orderedIDs)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	// Every source below comes from a document — that is the copy the extractor
+	// reads, so only it can describe tags in effect. A source file is scoped to
+	// its owning tenant and is normally referenced by every document seeded from
+	// the dataset, so load each (tenant, file) once or its counts add up again.
+	loaded := make(map[string]struct{})
+	for _, ds := range authorized {
+		sources := make(map[string]struct{}, len(docConfigs[ds.id]))
+		for _, docConfig := range docConfigs[ds.id] {
+			if id := component.TagFileIDFromParserConfig(map[string]any(docConfig)); id != "" {
+				sources[id] = struct{}{}
 			}
-			for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
-				tag, _ := agg["key"].(string)
-				if tag == "" {
+		}
+		// Sorted so the vocabulary and any load error are deterministic when a
+		// dataset carries more than one source file.
+		ids := make([]string, 0, len(sources))
+		for id := range sources {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+
+		for _, tagFileID := range ids {
+			key := ds.tenant + "\x00" + tagFileID
+			if _, dup := loaded[key]; dup {
+				continue
+			}
+			loaded[key] = struct{}{}
+			// The file is resolved against the dataset's own tenant:
+			// tag_file_id is user-writable, so a foreign file ID must not
+			// resolve (IDOR, CWE-639).
+			counts, vErr := loader(ctx, tagFileID, ds.tenant)
+			if vErr != nil {
+				// Nothing clears a stale reference when a tag file is deleted, and
+				// a document's parser_config is never validated against the file
+				// table, so an unresolvable id is skipped instead of letting it
+				// discard every other dataset in the request. A database or
+				// storage failure still fails loudly: it says nothing about this
+				// id and may be environment-wide.
+				if component.IsTagSourceNotFound(vErr) {
+					common.Warn(fmt.Sprintf("tag_vocab: skipping unresolvable tag source %q for dataset %q: %v",
+						tagFileID, ds.id, vErr))
 					continue
 				}
-				switch count := agg["count"].(type) {
-				case int:
-					merged[tag] += count
-				case int32:
-					merged[tag] += int(count)
-				case int64:
-					merged[tag] += int(count)
-				case float64:
-					merged[tag] += int(count)
-				}
+				return nil, common.CodeServerError,
+					fmt.Errorf("load tag vocabulary for dataset %q: %w", ds.id, vErr)
 			}
-			chunkCount := len(searchResp.Chunks)
-			if chunkCount == 0 || chunkCount < pageSize {
-				break
-			}
-			if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
-				break
+			for tag, c := range counts {
+				merged[tag] += c
 			}
 		}
 	}
@@ -94,140 +145,4 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 		})
 	}
 	return result, common.CodeSuccess, nil
-}
-
-func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
-	datasetID = strings.TrimSpace(datasetID)
-	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
-	}
-	normalizedID, err := normalizeDatasetID(datasetID)
-	if err != nil {
-		return nil, common.CodeDataError, err
-	}
-	datasetID = normalizedID
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
-	}
-	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("document engine is not initialized")
-	}
-	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
-	}
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	newCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	exists, err := d.docEngine.ChunkStoreExists(newCtx, indexName, datasetID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to inspect chunk store: %w", err)
-	}
-	if !exists {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
-	}
-	const pageSize = 10000
-	counts := make(map[string]int)
-	for offset := 0; ; offset += pageSize {
-		if err = newCtx.Err(); err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("list tags timeout or canceled: %w", err)
-		}
-		searchResp, err := d.docEngine.Search(newCtx, &enginetypes.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        pageSize,
-			SelectFields: []string{"tag_kwd"},
-		})
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to list tags: %w", err)
-		}
-		for _, agg := range d.docEngine.GetAggregation(searchResp.Chunks, "tag_kwd") {
-			tag, _ := agg["key"].(string)
-			if tag == "" {
-				continue
-			}
-			switch count := agg["count"].(type) {
-			case int:
-				counts[tag] += count
-			case int32:
-				counts[tag] += int(count)
-			case int64:
-				counts[tag] += int(count)
-			case float64:
-				counts[tag] += int(count)
-			}
-		}
-		chunkCount := len(searchResp.Chunks)
-		if chunkCount == 0 || chunkCount < pageSize {
-			break
-		}
-		if searchResp.Total > 0 && int64(offset+chunkCount) >= searchResp.Total {
-			break
-		}
-	}
-	if len(counts) == 0 {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
-	}
-	tags := make([]string, 0, len(counts))
-	for tag := range counts {
-		tags = append(tags, tag)
-	}
-	sort.Slice(tags, func(i, j int) bool {
-		if counts[tags[i]] != counts[tags[j]] {
-			return counts[tags[i]] > counts[tags[j]]
-		}
-		return tags[i] < tags[j]
-	})
-	result := make([]map[string]interface{}, 0, len(tags))
-	for _, tag := range tags {
-		result = append(result, map[string]interface{}{
-			"key":   tag,
-			"count": counts[tag],
-		})
-	}
-	return result, common.CodeSuccess, nil
-}
-
-func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromTag, toTag string) (map[string]interface{}, common.ErrorCode, error) {
-	fromTag = strings.TrimSpace(fromTag)
-	toTag = strings.TrimSpace(toTag)
-	datasetID, err := normalizeDatasetID(datasetID)
-	if err != nil {
-		return nil, common.CodeDataError, err
-	}
-	if strings.TrimSpace(datasetID) == "" {
-		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
-	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
-	}
-	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("document engine is not initialized")
-	}
-	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
-	}
-	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	condition := map[string]interface{}{
-		"tag_kwd": fromTag,
-		"kb_id":   datasetID,
-	}
-	newValue := map[string]interface{}{
-		"remove": map[string]interface{}{
-			"tag_kwd": fromTag,
-		},
-		"add": map[string]interface{}{
-			"tag_kwd": toTag,
-		},
-	}
-	err = d.docEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to rename tag: %w", err)
-	}
-	return map[string]interface{}{
-		"from": fromTag,
-		"to":   toTag,
-	}, common.CodeSuccess, nil
 }

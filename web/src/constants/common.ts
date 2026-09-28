@@ -14,49 +14,6 @@
  *  limitations under the License.
  */
 
-export const fileIconMap = {
-  aep: 'aep.svg',
-  ai: 'ai.svg',
-  avi: 'avi.svg',
-  css: 'css.svg',
-  csv: 'csv.svg',
-  dmg: 'dmg.svg',
-  doc: 'doc.svg',
-  docx: 'docx.svg',
-  eps: 'eps.svg',
-  exe: 'exe.svg',
-  fig: 'fig.svg',
-  gif: 'gif.svg',
-  html: 'html.svg',
-  indd: 'indd.svg',
-  java: 'java.svg',
-  jpeg: 'jpeg.svg',
-  jpg: 'jpg.svg',
-  js: 'js.svg',
-  json: 'json.svg',
-  md: 'md.svg',
-  mdx: 'mdx.svg',
-  mkv: 'mkv.svg',
-  mp3: 'mp3.svg',
-  mp4: 'mp4.svg',
-  mpeg: 'mpeg.svg',
-  pdf: 'pdf.svg',
-  png: 'png.svg',
-  ppt: 'ppt.svg',
-  pptx: 'pptx.svg',
-  psd: 'psd.svg',
-  rss: 'rss.svg',
-  sql: 'sql.svg',
-  svg: 'svg.svg',
-  tiff: 'tiff.svg',
-  txt: 'txt.svg',
-  wav: 'wav.svg',
-  webp: 'webp.svg',
-  xls: 'xls.svg',
-  xlsx: 'xlsx.svg',
-  xml: 'xml.svg',
-};
-
 // TODO: Use standard BCP 47 language tag and display names
 export const LanguageList = [
   'English',
@@ -114,6 +71,7 @@ export enum LanguageAbbreviation {
   Tr = 'tr',
   Ko = 'ko',
   Nl = 'nl',
+  Az = 'az',
 }
 
 export const LanguageAbbreviationMap = {
@@ -134,6 +92,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Tr]: 'Türkçe',
   [LanguageAbbreviation.Ko]: '한국어',
   [LanguageAbbreviation.Nl]: 'Nederlands',
+  [LanguageAbbreviation.Az]: 'Azərbaycanca',
 };
 
 export const LanguageTranslationMap = {
@@ -207,6 +166,25 @@ export const Images = [
   'ico',
 ];
 
+export const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
+];
+
 // Without FileViewer
 export const ExceptiveType = [
   'xlsx',
@@ -218,6 +196,9 @@ export const ExceptiveType = [
   'txt',
   'csv',
   'pptx',
+  'html',
+  'htm',
+  'epub',
   ...Images,
 ];
 

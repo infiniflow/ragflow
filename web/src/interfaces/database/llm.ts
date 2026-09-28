@@ -46,6 +46,12 @@ export interface IAvailableProvider {
   model_types: string[];
   url: { default?: string; [key: string]: string | undefined };
   has_instance: boolean;
+  /**
+   * Display-only example endpoint from the provider catalog
+   * (`conf/models/*.json`). Rendered as the endpoint input's placeholder;
+   * never used to build requests nor to pre-fill the form.
+   */
+  url_hint?: string;
 }
 
 export interface IProviderInstance {

@@ -159,7 +159,7 @@ func buildParallelItemWorkflow(
 	collector := wrapper.AddLambdaNode(
 		parallelItemCollectNodeKey,
 		compose.InvokableLambda(func(ctx context.Context, in map[string]any) (map[string]any, error) {
-			localState, _, err := GetStateFromContext[*CanvasState](ctx)
+			localState, err := GetStateFromContext(ctx)
 			if err != nil || localState == nil {
 				return nil, fmt.Errorf("canvas: parallel %q item collector: no canvas state in context", parallelID)
 			}
@@ -201,7 +201,7 @@ func buildParallelOuterWorkflow(
 	toBatch := outer.AddLambdaNode(
 		batchInputKey,
 		compose.InvokableLambda(func(ctx context.Context, _ map[string]any) ([]map[string]any, error) {
-			state, _, err := GetStateFromContext[*CanvasState](ctx)
+			state, err := GetStateFromContext(ctx)
 			if err != nil || state == nil {
 				return nil, fmt.Errorf("canvas: parallel %q: no canvas state in context", key)
 			}
@@ -223,7 +223,7 @@ func buildParallelOuterWorkflow(
 	parOpts = append(parOpts, workflowx.WithParallelContextBuilder(func(
 		ctx context.Context, item any, index int,
 	) context.Context {
-		parentState, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		parentState, err := runtime.GetStateFromContext(ctx)
 		if err != nil || parentState == nil {
 			return ctx
 		}

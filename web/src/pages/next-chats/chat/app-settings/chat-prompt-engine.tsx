@@ -6,7 +6,7 @@ import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
   FormControl,
@@ -223,15 +223,15 @@ export function ChatPromptEngine({
         ></RerankCandidatesCountFormField>
         <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
+        <RerankFormFields prefix={prefix}></RerankFormFields>
+        <CrossLanguageFormField
+          name={prefixName(prefix, 'prompt_config.cross_languages')}
+        ></CrossLanguageFormField>
         <SwitchFormField
           name={prefixName(prefix, 'prompt_config.refine_multiturn')}
           label={t('chat.multiTurn')}
           tooltip={t('chat.multiTurnTip')}
         ></SwitchFormField>
-        <RerankFormFields prefix={prefix}></RerankFormFields>
-        <CrossLanguageFormField
-          name={prefixName(prefix, 'prompt_config.cross_languages')}
-        ></CrossLanguageFormField>
         <DynamicVariableForm
           name={prefixName(prefix, 'prompt_config.parameters')}
         ></DynamicVariableForm>

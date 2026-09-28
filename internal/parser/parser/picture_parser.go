@@ -51,17 +51,8 @@ var imageExtensions = map[string]bool{
 }
 
 // PictureParser handles image files for OCR and VLM description.
-// Mirrors the configuration from setups["picture"]:
-//   - VLMModelID ← setup parse_method (non-"ocr"), vlm.llm_id, or top-level llm_id (in order)
-//   - output_format
-//   - image_context_size
-//   - layout_recognize  →  ("@PaddleOCR:model_name" or empty)
 type PictureParser struct {
-	VLMModelID       string // per-call IMAGE2TEXT model reference (parse_method / vlm.llm_id / llm_id)
-	OutputFormat     string
-	ImageContextSize int    // default 0
-	LayoutRecognize  string // layout_recognize (e.g. "@PaddleOCR")
-	VideoPrompt      string // for video-in-image detection (Python fallback)
+	OutputFormat string
 }
 
 // NewPictureParser constructs a PictureParser.
@@ -70,36 +61,13 @@ func NewPictureParser() *PictureParser {
 }
 
 // ConfigureFromSetup reads picture-specific configuration from the
-// parser setup map. Extracts the per-call IMAGE2TEXT model reference
-// (parse_method non-"ocr" > vlm.llm_id > llm_id), output_format,
-// image_context_size, layout_recognize, and video_prompt.
+// parser setup map.
 func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if pm, ok := setup["parse_method"].(string); ok && pm != "" && !strings.EqualFold(pm, "ocr") {
-		p.VLMModelID = pm
-	} else if vlm, ok := setup["vlm"].(map[string]any); ok {
-		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
-			p.VLMModelID = llmID
-		}
-	}
-	if p.VLMModelID == "" {
-		if llmID, ok := setup["llm_id"].(string); ok && llmID != "" {
-			p.VLMModelID = llmID
-		}
-	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
-	}
-	if v, ok := setup["image_context_size"].(float64); ok {
-		p.ImageContextSize = int(v)
-	}
-	if v, ok := setup["layout_recognize"].(string); ok && v != "" {
-		p.LayoutRecognize = v
-	}
-	if v, ok := setup["video_prompt"].(string); ok && v != "" {
-		p.VideoPrompt = v
 	}
 }
 
@@ -127,11 +95,8 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		}
 	}
 
-	// OutputFormat, VLMModelID, ImageContextSize, and LayoutRecognize
-	// are consumed by maybeDispatchImage at the component layer.
-	// Image family only allows json (schema/parser.go, Python parser.py),
-	// so default empty to json. Strict: explicit text is kept as-is
-	// and will be rejected by the dispatch whitelist.
+	// Parser output is normalized to JSON at the component boundary, so an
+	// absent backend format defaults to JSON here as well.
 	outFmt := p.OutputFormat
 	if outFmt == "" {
 		outFmt = "json"

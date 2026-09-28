@@ -25,7 +25,7 @@ class TestChatAssistantsList:
         assistants = client.list_chats()
         assert len(assistants) == 5
 
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_page_size, expected_message",
         [

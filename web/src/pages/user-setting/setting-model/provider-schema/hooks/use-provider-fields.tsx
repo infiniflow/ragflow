@@ -20,8 +20,12 @@ import { InputSelect } from '@/components/ui/input-select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useMemo } from 'react';
 import { ControllerRenderProps, FieldValues } from 'react-hook-form';
-import { LIST_MODEL_FIELD_NAMES, LIST_MODEL_PROVIDERS } from '../constants';
-import { FACTORIES_WITH_BASE_URL, getProviderConfig } from '../field-config';
+import {
+  LIST_MODEL_FIELD_NAMES,
+  LIST_MODEL_PROVIDERS,
+  URL_HINT_FIELD_NAMES,
+} from '../constants';
+import { getProviderConfig } from '../field-config';
 import type { FieldConfig, SelectOption } from '../types';
 
 interface UseProviderFieldsParams {
@@ -31,6 +35,10 @@ interface UseProviderFieldsParams {
   initialValues?: Record<string, any>;
   baseUrlOptions?: SelectOption[];
   hideWhenInstanceExists: (values: Record<string, any>) => boolean;
+  // Display-only example endpoint from the provider catalog
+  // (`GET /providers` → `url_hint`), rendered as the endpoint field's
+  // placeholder. Never used as a form value.
+  urlHint?: string;
 }
 
 /**
@@ -94,6 +102,7 @@ export const useProviderFields = ({
   initialValues,
   baseUrlOptions,
   hideWhenInstanceExists,
+  urlHint,
 }: UseProviderFieldsParams) => {
   const { t } = useTranslate('setting');
 
@@ -142,17 +151,17 @@ export const useProviderFields = ({
             if (Array.isArray(mt)) return mt.includes('tts');
             return mt === 'tts';
           };
+        // Driven by the provider catalog (`GET /providers`): a provider needs a
+        // base_url iff it advertises one or more URLs in its `url` map.
         case 'showBaseUrl':
-          return () =>
-            FACTORIES_WITH_BASE_URL.some((x) => x === llmFactory) ||
-            llmFactory?.toLowerCase() === 'Anthropic'.toLowerCase();
+          return () => (baseUrlOptions?.length ?? 0) > 0;
         case 'showGroupId':
           return () => llmFactory?.toLowerCase() === 'Minimax'.toLowerCase();
         default:
           return undefined;
       }
     };
-  }, [hideWhenInstanceExists, llmFactory]);
+  }, [hideWhenInstanceExists, llmFactory, baseUrlOptions]);
 
   // For each inputSelect field, build a URL → regionKey map from its
   // options (either inline `field.options` or the shared `baseUrlOptions`).
@@ -191,7 +200,10 @@ export const useProviderFields = ({
           !hasModelNameField || !LIST_MODEL_FIELD_NAMES.has(field.name),
       )
       .map((field) => {
-        const placeholderText = resolveText(field.placeholder, llmFactory, t);
+        const placeholderText =
+          urlHint && URL_HINT_FIELD_NAMES.has(field.name)
+            ? urlHint
+            : resolveText(field.placeholder, llmFactory, t);
         const tooltipText = resolveText(field.tooltip, llmFactory, t);
         const validation = field.validation
           ? {
@@ -273,6 +285,7 @@ export const useProviderFields = ({
     llmFactory,
     hasModelNameField,
     viewMode,
+    urlHint,
   ]);
 
   const defaultValues: FieldValues = useMemo(() => {

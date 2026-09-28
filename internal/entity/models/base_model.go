@@ -26,11 +26,28 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
 )
+
+const (
+	redactedLogValue      = "[REDACTED]"
+	maxLoggedVectorFloats = 3
+)
+
+// APIStatusError is a provider HTTP failure with its status code preserved, so
+// callers can act on the status (failover cooldown, retry) instead of matching
+// the error text. The shared request helpers return it; the message is byte-for-
+// byte what plain fmt.Errorf produced before, so existing assertions still hold.
+type APIStatusError struct {
+	Status int
+	Body   string
+}
+
+func (e *APIStatusError) Error() string {
+	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+}
 
 type BaseModel struct {
 	BaseURL          map[string]string
@@ -213,13 +230,17 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	return body, nil
@@ -244,13 +265,17 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	return body, nil
@@ -274,8 +299,11 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
 	return handler(resp.Body)
@@ -407,9 +435,14 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.MaxBatchSize = modelEntity.MaxBatchSize
 			modelResponse.Dimensions = modelEntity.Dimensions
+			modelResponse.ContextLength = modelEntity.ContextLength
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
+		}
+
+		if model.ContextLength != nil && *model.ContextLength > 0 {
+			modelResponse.ContextLength = model.ContextLength
 		}
 
 		// The provider-list merge treats remote entries as authoritative
@@ -428,67 +461,6 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 	return FillMissingModelTypes(models)
 }
 
-// NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-// settings and an SSRF guard wired into its Transport.
-//
-// allowPrivate selects the guard strictness:
-//   - false (cloud-hosted drivers): every request is validated with
-//     utility.AssertURLSafe — scheme + host must be present and every resolved
-//     IP must be globally routable (private/loopback/link-local/metadata are
-//     rejected). This is the default and closes the go/request-forgery sink.
-//   - true (local-inference drivers): requests are validated with
-//     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
-//     enforced, so self-hosted backends on private networks or loopback work.
-func NewDriverHTTPClient(allowPrivate bool) *http.Client {
-	var t *http.Transport
-	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-		t = dt.Clone()
-	} else {
-		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-	}
-	t.MaxIdleConns = 100
-	t.MaxIdleConnsPerHost = 10
-	t.IdleConnTimeout = 90 * time.Second
-	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 5 * 60 * time.Second
-	t.TLSHandshakeTimeout = 30 * time.Second
-
-	var rt http.RoundTripper = t
-	if allowPrivate {
-		rt = &schemeSafeTransport{base: rt}
-	} else {
-		rt = &strictSSRFTransport{base: rt}
-	}
-	return &http.Client{Transport: rt}
-}
-
-// schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the lenient SSRF guard (http/https scheme + non-empty host).
-// Private and loopback hosts are permitted. Used only by local-inference
-// drivers that may target a user's own network.
-type schemeSafeTransport struct{ base http.RoundTripper }
-
-func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
-		return nil, err
-	}
-	return t.base.RoundTrip(req)
-}
-
-// strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the strict SSRF guard (scheme + host + globally routable IP).
-// This is the default for cloud-hosted model drivers and closes the
-// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
-// point at private hosts, loopback, link-local, or cloud metadata endpoints.
-type strictSSRFTransport struct{ base http.RoundTripper }
-
-func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
-		return nil, err
-	}
-	return t.base.RoundTrip(req)
-}
-
 // PostJSONRequest marshals body to JSON, creates a POST request to url
 func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string, body map[string]interface{}) (*http.Response, error) {
 	data, err := json.Marshal(body)
@@ -504,12 +476,6 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 		req.Header.Set("Authorization", auth)
 	}
 	return client.Do(req)
-}
-
-// ReadErrorBody reads all bytes from r and returns them as a string suitable
-func ReadErrorBody(r io.Reader) string {
-	b, _ := io.ReadAll(r)
-	return string(b)
 }
 
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
@@ -546,7 +512,11 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 			if cfg.ToolChoice != nil {
 				toolChoice = *cfg.ToolChoice
 			}
-			reqBody["tool_choice"] = toolChoice
+			if cfg.ToolChoiceValue != nil {
+				reqBody["tool_choice"] = cfg.ToolChoiceValue
+			} else {
+				reqBody["tool_choice"] = toolChoice
+			}
 		}
 	}
 
@@ -598,7 +568,11 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 	}
 	reqBody["tools"] = chatConfig.Tools
 	if chatConfig.ToolChoice != nil {
-		reqBody["tool_choice"] = *chatConfig.ToolChoice
+		if chatConfig.ToolChoiceValue != nil {
+			reqBody["tool_choice"] = chatConfig.ToolChoiceValue
+		} else {
+			reqBody["tool_choice"] = *chatConfig.ToolChoice
+		}
 	}
 }
 

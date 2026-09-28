@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/common"
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
@@ -35,8 +33,8 @@ import (
 //     Go-on-Py orientation, holding the Go OCR mode fixed so the only
 //     variable is the crop.
 //
-// Prereqs: DeepDoc at DEEPDOC_URL (or localhost:9390) + CGO native libs.
-// Run: bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestCropOrientationAB -v
+// Prereqs: in-process DeepDoc backend (MODEL_DIR set; ONNX Runtime statically linked) + CGO native libs.
+// Run: bash build.sh --test-native ./internal/deepdoc/parser/pdf/ -run TestCropOrientationAB -v
 const abOutDir = "/tmp/orient_ab"
 
 func TestCropOrientationAB(t *testing.T) {
@@ -48,17 +46,7 @@ func TestCropOrientationAB(t *testing.T) {
 		t.Skipf("test PDF not found: %s", pdfPath)
 	}
 
-	baseURL := common.GetEnv(common.EnvDeepDocURL)
-	if baseURL == "" {
-		baseURL = "http://localhost:9390"
-	}
-	dd, err := inf.NewClient(baseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !dd.Health() {
-		t.Fatalf("DeepDoc not available at %s", baseURL)
-	}
+	dd := mustConnectInProcessAnalyzer(t)
 
 	data, err := os.ReadFile(pdfPath)
 	if err != nil {

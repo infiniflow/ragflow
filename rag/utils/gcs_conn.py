@@ -67,7 +67,7 @@ class RAGFlowGCS:
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket (to match interface)
-        for _ in range(3):
+        for attempt in range(3):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, fnm)
@@ -80,8 +80,10 @@ class RAGFlowGCS:
                 return False
             except Exception:
                 logging.exception(f"Fail to put {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return False
 
     def rm(self, bucket, fnm, tenant_id=None):
@@ -98,7 +100,7 @@ class RAGFlowGCS:
 
     def get(self, bucket, filename, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket
-        for _ in range(1):
+        for attempt in range(3):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, filename)
@@ -109,8 +111,10 @@ class RAGFlowGCS:
                 return None
             except Exception:
                 logging.exception(f"Fail to get {bucket}/{filename}")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return None
 
     def obj_exist(self, bucket, filename, tenant_id=None):
@@ -135,7 +139,7 @@ class RAGFlowGCS:
 
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         # RENAMED PARAMETER: bucket_name -> bucket
-        for _ in range(10):
+        for attempt in range(3):
             try:
                 bucket_obj = self.client.bucket(self.bucket_name)
                 blob_path = self._get_blob_path(bucket, fnm)
@@ -149,8 +153,10 @@ class RAGFlowGCS:
                 return url
             except Exception:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
+                if attempt == 2:
+                    raise
                 self.__open__()
-                time.sleep(1)
+                time.sleep(2**attempt)
         return None
 
     def remove_bucket(self, bucket):

@@ -9,13 +9,15 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/deepdoc/native"
+	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // Test1PdfColspanEndToEnd parses real_pdfs/1.pdf through the PRODUCTION path
-// (real DLA+TSR+OCR against DEEPDOC_URL) and asserts the table HTML carries
-// colspan="6" on the merged header — matching Python's golden
+// (real DLA+TSR+OCR via the in-process Go DeepDoc analyzer) and asserts the
+// table HTML carries colspan="6" on the merged header — matching Python's golden
 // (output/py/ocr_real/tables/1.pdf.json: row0 collapses to 3 text cells
 // because the header spans 6 of the 8 columns).
 //
@@ -28,9 +30,19 @@ import (
 // emits colspan=6. TSR input is identical on both sides, so the divergence
 // was purely a Go assembly bug, not a model issue.
 //
-// Requires DEEPDOC_URL (OSS DeepDoc) reachable; skips otherwise.
+// Requires DEEPDOC_MODEL_DIR (in-process DeepDoc model weights); skips otherwise.
 func Test1PdfColspanEndToEnd(t *testing.T) {
-	client := mustConnectInferenceClient(t)
+	modelDir := os.Getenv("DEEPDOC_MODEL_DIR")
+	if modelDir == "" {
+		t.Skip("set DEEPDOC_MODEL_DIR to run the in-process colspan e2e test")
+	}
+	if err := native.InitORT(); err != nil {
+		t.Fatalf("InitORT: %v", err)
+	}
+	analyzer, err := infnative.NewAnalyzer(modelDir, infnative.DefaultDropScore)
+	if err != nil {
+		t.Fatalf("NewAnalyzer: %v", err)
+	}
 
 	pdfDir := common.GetEnv("BATCH_PARITY_PDF_DIR")
 	if pdfDir == "" {
@@ -44,7 +56,7 @@ func Test1PdfColspanEndToEnd(t *testing.T) {
 
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
-	result, err := p.Parse(t.Context(), data, client)
+	result, err := p.Parse(t.Context(), data, analyzer)
 	if err != nil {
 		t.Fatalf("Parse 1.pdf: %v", err)
 	}

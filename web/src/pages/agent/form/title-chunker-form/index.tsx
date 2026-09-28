@@ -1,5 +1,6 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { omit } from 'lodash';
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
 import {
@@ -64,12 +66,7 @@ export const FormSchema = z.object({
   root_chunk_as_heading: z.boolean().optional(),
   hierarchyRules: rulesSchema,
   groupRules: rulesSchema,
-  chunk_token_cap: z
-    .number()
-    .int()
-    .min(128)
-    .max(8000)
-    .optional(),
+  chunk_token_cap: z.coerce.number().int().min(128).max(8000).optional(),
 });
 
 export enum TitleChunkerRulesField {
@@ -228,19 +225,49 @@ function RulesFieldArray({ name }: RulesFieldArrayProps) {
   );
 }
 
+function RootChunkAsHeadingItem() {
+  const { t } = useTranslation();
+  return (
+    <RAGFlowFormItem
+      name="root_chunk_as_heading"
+      label={t('flow.rootAsHeading', 'Use root as heading')}
+      tooltip={t(
+        'flow.rootAsHeadingTip',
+        'Treat the root node as a H0 heading when building the hierarchy',
+      )}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch checked={field.value} onCheckedChange={field.onChange} />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
 const TitleChunkerForm = ({
   node,
   onValuesChange,
   hideOutputs,
-}: INextOperatorForm) => {
+  externalErrors,
+  pinMethodGroup,
+}: INextOperatorForm & { pinMethodGroup?: boolean }) => {
   const { t } = useTranslation();
   const initialValues = useFormValues(initialTitleChunkerValues, node);
 
   const form = useForm<TitleChunkerFormSchemaType>({
-    defaultValues: transformApiResponseToForm(initialValues),
+    defaultValues: pinMethodGroup
+      ? {
+          ...transformApiResponseToForm(initialValues),
+          method: TitleChunkerMethod.Group,
+        }
+      : transformApiResponseToForm(initialValues),
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
+
+  useSyncExternalFormErrors(form, externalErrors);
   const [showAllTip, setShowAllTip] = useState(true);
 
   const method = useWatch({ name: 'method', control: form.control });
@@ -252,8 +279,21 @@ const TitleChunkerForm = ({
 
   const hierarchyOptions = useDynamicHierarchyOptions(form, activeRulesName);
 
+  const handleValuesChange = useCallback(
+    (values: any) => {
+      if (!pinMethodGroup) {
+        onValuesChange?.(values);
+        return;
+      }
+      onValuesChange?.(
+        omit(values, ['include_heading_content', 'chunk_token_cap']),
+      );
+    },
+    [pinMethodGroup, onValuesChange],
+  );
+
   useWatchFormChange(node?.id, form);
-  useFormChangeCallback(form, onValuesChange);
+  useFormChangeCallback(form, handleValuesChange);
 
   const handleToggleShowAllTip = useCallback(() => {
     setShowAllTip((prev) => !prev);
@@ -262,24 +302,26 @@ const TitleChunkerForm = ({
   return (
     <Form {...form}>
       <FormWrapper>
-        <RenderField
-          field={{
-            name: 'method',
-            type: FormFieldType.Segmented,
-            label: '',
-            options: [
-              {
-                label: t('flow.hierarchy'),
-                value: TitleChunkerMethod.Hierarchy,
-              },
-              // { label: t('flow.tree', 'Tree'), value: 'tree' },
-              {
-                label: t('flow.group', 'Group'),
-                value: TitleChunkerMethod.Group,
-              },
-            ],
-          }}
-        />
+        {!pinMethodGroup && (
+          <RenderField
+            field={{
+              name: 'method',
+              type: FormFieldType.Segmented,
+              label: '',
+              options: [
+                {
+                  label: t('flow.hierarchy'),
+                  value: TitleChunkerMethod.Hierarchy,
+                },
+                // { label: t('flow.tree', 'Tree'), value: 'tree' },
+                {
+                  label: t('flow.group', 'Group'),
+                  value: TitleChunkerMethod.Group,
+                },
+              ],
+            }}
+          />
+        )}
         <div
           className={`text-xs text-text-secondary w-full cursor-pointer `}
           onClick={handleToggleShowAllTip}
@@ -302,16 +344,18 @@ const TitleChunkerForm = ({
             </div>
           </div>
         </div>
-        <SliderInputFormField
-          name="chunk_token_cap"
-          max={8000}
-          min={128}
-          label={t('flow.chunkTokenCap', 'Chunk token cap')}
-          tooltip={t(
-            'flow.chunkTokenCapTip',
-            'Maximum tokens per chunk. Chunks exceeding the cap are re-split on sentence boundaries (Chinese/English period, exclamation mark, question mark, newline). 0 disables the cap.',
-          )}
-        />
+        {!pinMethodGroup && (
+          <SliderInputFormField
+            name="chunk_token_cap"
+            max={8000}
+            min={128}
+            label={t('flow.chunkTokenCap', 'Chunk token cap')}
+            tooltip={t(
+              'flow.chunkTokenCapTip',
+              'Maximum tokens per chunk. Chunks exceeding the cap are re-split on sentence boundaries (Chinese/English period, exclamation mark, question mark, newline). 0 disables the cap.',
+            )}
+          />
+        )}
         <RAGFlowFormItem
           name={'hierarchyHierarchy'}
           label={''}
@@ -346,26 +390,10 @@ const TitleChunkerForm = ({
               )}
             </RAGFlowFormItem>
 
-            <RAGFlowFormItem
-              name="root_chunk_as_heading"
-              label={t('flow.rootAsHeading', 'Use root as heading')}
-              tooltip={t(
-                'flow.rootAsHeadingTip',
-                'Treat the root node as a H0 heading when building the hierarchy',
-              )}
-              horizontal={true}
-              labelClassName="w-full"
-              valueClassName="w-8"
-            >
-              {(field) => (
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            </RAGFlowFormItem>
+            <RootChunkAsHeadingItem />
           </>
         )}
+        {pinMethodGroup && <RootChunkAsHeadingItem />}
         <div
           className={
             method === TitleChunkerMethod.Hierarchy ? 'block' : 'hidden'

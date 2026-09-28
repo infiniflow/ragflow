@@ -35,14 +35,6 @@ export function WebhookResponse() {
             <WebHookResponseStatusFormField
               name={'response.status'}
             ></WebHookResponseStatusFormField>
-            {/* <DynamicResponse
-              name="response.headers_template"
-              label={t('flow.webhook.headersTemplate')}
-            ></DynamicResponse> */}
-            {/* <DynamicResponse
-              name="response.body_template"
-              label={t('flow.webhook.bodyTemplate')}
-            ></DynamicResponse> */}
             <RAGFlowFormItem
               name="response.body_template"
               label={t('flow.webhook.bodyTemplate')}

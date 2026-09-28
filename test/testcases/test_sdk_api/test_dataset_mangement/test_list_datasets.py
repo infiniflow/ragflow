@@ -21,6 +21,55 @@ from configs import HOST_ADDRESS, INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESS
 from ragflow_sdk import RAGFlow
 
 
+class _ListDatasetsResponse:
+    def json(self):
+        return {"code": 0, "data": []}
+
+
+class TestListDatasetsArgumentValidation:
+    @pytest.fixture(autouse=True)
+    def set_tenant_info(self):
+        return None
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params",
+        [{"id": "dataset-id", "ids": ["dataset-id"]}, {"id": "dataset-id", "ids": [""]}],
+    )
+    def test_rejects_conflicting_id_and_ids_before_get(self, monkeypatch, params):
+        client = RAGFlow("token", HOST_ADDRESS)
+        get_calls = []
+        monkeypatch.setattr(client, "get", lambda *_args, **_kwargs: get_calls.append((_args, _kwargs)))
+
+        with pytest.raises(ValueError, match="^Cannot use both 'id' and 'ids' parameters at the same time\\.$"):
+            client.list_datasets(**params)
+
+        assert get_calls == []
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "params",
+        [{"id": "dataset-id"}, {"ids": ["dataset-id"]}, {"id": None, "ids": None}, {"id": "dataset-id", "ids": []}, {"id": "", "ids": ["dataset-id"]}],
+    )
+    def test_preserves_nonconflicting_id_and_ids(self, monkeypatch, params):
+        client = RAGFlow("token", HOST_ADDRESS)
+        get_calls = []
+
+        def _get(path, params=None, json=None):
+            get_calls.append((path, params, json))
+            return _ListDatasetsResponse()
+
+        monkeypatch.setattr(client, "get", _get)
+        assert client.list_datasets(**params) == []
+        assert get_calls == [
+            (
+                "/datasets",
+                {"page": 1, "page_size": 30, "orderby": "create_time", "desc": True, "id": params.get("id"), "ids": params.get("ids"), "name": None},
+                None,
+            )
+        ]
+
+
 class TestAuthorization:
     @pytest.mark.p2
     @pytest.mark.parametrize(

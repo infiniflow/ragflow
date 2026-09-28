@@ -199,7 +199,9 @@ func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel,
 		return []interface{}{matchText}
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}}, embModel.APIConfig, embeddingConfig, nil)
+	// Query: true — matchText is the search query (Python get_vector →
+	// encode_queries), not a document.
+	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
 	if err != nil || len(embeddings) == 0 {
 		return []interface{}{matchText}
 	}

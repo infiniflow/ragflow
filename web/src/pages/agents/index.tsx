@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
@@ -41,9 +42,12 @@ export default function Agents() {
     pagination,
     setPagination,
     searchString,
+    setSearchString,
     handleInputChange,
     filterValue,
+    setFilterValue,
     handleFilterSubmit,
+    checkValue,
   } = useFetchAgentListByPage();
 
   const { navigateToAgentTemplates } = useNavigatePage();
@@ -77,13 +81,23 @@ export default function Agents() {
 
   const filters = useSelectFilters();
 
+  useEffect(() => {
+    checkValue(filters);
+  }, [filters, checkValue]);
+
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
       setPagination({ page, pageSize });
     },
     [setPagination],
   );
-  useGoToPreviousPageOnEmpty(data?.length, listLoading);
+  useGoToPreviousPageOnEmpty(data?.length, listLoading, {
+    deletionKey: ListDeletionKey.AgentList,
+    searchString,
+    setSearchString,
+    filterValue,
+    setFilterValue,
+  });
 
   const handleEditCompilation = useCallback(
     (id: string) => () => {

@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.27.0"
+version = "0.27.2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -39,6 +39,7 @@ dependencies = [
     "elasticsearch-dsl==8.12.0",
     "exceptiongroup>=1.3.0,<2.0.0",
     "feedparser>=6.0.11,<7.0.0",
+    "trafilatura>=2.0.0",
     "extract-msg>=0.39.0",
     "ffmpeg-python>=0.2.0",
     "flasgger>=0.9.7.1,<0.10.0",
@@ -73,9 +74,9 @@ dependencies = [
     "moodlepy>=0.23.0",
     "mypy-boto3-s3==1.40.26",
     "Office365-REST-Python-Client==2.6.2",
-    "ollama>=0.5.0",
-    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
-    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
+    "ollama>=0.5.1",
+    "onnxruntime==1.23.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",  # Python-side only; versioned independently of the Go native ORT static lib (internal/common.DeepDocORTVersion)
+    "onnxruntime-gpu==1.23.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",  # Python-side only; versioned independently of the Go native ORT static lib (internal/common.DeepDocORTVersion)
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
     "opendal>=0.45.0,<0.46.0",
@@ -90,7 +91,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf>=6.15.0",
+    "pypdf>=6.16.1",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "paramiko>=3.5.1",
@@ -106,6 +107,7 @@ dependencies = [
     "ranx==0.3.20",
     "rapidfuzz==3.14.5",
     "readability-lxml>=0.8.4,<1.0.0",
+    "regex>=2025.11.3",
     "replicate==0.31.0",
     "reportlab>=4.4.1",
     "roman-numbers==1.0.2",
@@ -272,6 +274,10 @@ override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
     # attrs 23.x is backward-compatible; moodlepy works fine at runtime with it.
     "attrs>=23.2.0",
+    # numpy 1.26.x has no cp313 wheels on PyPI; uv then builds from source (often fails on
+    # Windows, see infiniflow/ragflow#19928). graspologic pins numpy<2 but works on 2.x.
+    # Cap at <2.4: numba (via hyppo/graspologic) requires numpy<=2.3.
+    "numpy>=2.1.0,<2.4.0",
 ]
 # trio 0.26+ (Python 3.13 compatible) is not yet on the Aliyun mirror.
 # Mark PyPI as explicit so it is used only for packages listed in [tool.uv.sources].
@@ -306,7 +312,7 @@ packages = [
 
 [tool.ruff]
 line-length = 200
-exclude = [".venv", "rag/svr/discord_svr.py"]
+exclude = [".venv"]
 
 [tool.ruff.lint]
 extend-select = ["ASYNC", "ASYNC1"]

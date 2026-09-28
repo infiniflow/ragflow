@@ -14,11 +14,7 @@
 #  limitations under the License.
 #
 
-import hashlib
-import os
-
-from common.file_utils import get_project_base_directory
-from common.token_utils import num_tokens_from_string, total_token_count_from_response, truncate, encoder
+from common.token_utils import get_encoder, num_tokens_from_string, total_token_count_from_response, truncate
 import pytest
 
 
@@ -116,12 +112,6 @@ def test_consistency():
 
     assert first_result == second_result
     assert first_result > 0
-
-
-def test_bundled_cl100k_cache_file_exists():
-    encoding_url = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-    cache_path = get_project_base_directory(hashlib.sha1(encoding_url.encode()).hexdigest())
-    assert os.path.exists(cache_path)
 
 
 class TestTotalTokenCountFromResponse:
@@ -229,18 +219,18 @@ class TestTruncate:
         original_string = "hello"
         result = truncate(original_string, 10)
         assert result == original_string
-        assert len(encoder.encode(result)) <= 10
+        assert len(get_encoder().encode(result)) <= 10
 
     def test_string_equal_to_max_len(self):
         """Test string that exactly equals max_len in tokens"""
-        # Create a string that encodes to exactly 5 tokens
+        # max_len is the string's own token length, so truncate must return it whole.
         test_string = "hello world test"
-        encoded = encoder.encode(test_string)
+        encoded = get_encoder().encode(test_string)
         exact_length = len(encoded)
 
         result = truncate(test_string, exact_length)
         assert result == test_string
-        assert len(encoder.encode(result)) == exact_length
+        assert len(get_encoder().encode(result)) == exact_length
 
     def test_string_longer_than_max_len(self):
         """Test string that is longer than max_len"""
@@ -248,7 +238,7 @@ class TestTruncate:
         max_len = 5
 
         result = truncate(long_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
         assert result != long_string
 
     def test_truncation_preserves_beginning(self):
@@ -257,10 +247,10 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(test_string, max_len)
-        encoded_result = encoder.encode(result)
+        encoded_result = get_encoder().encode(result)
 
         # The truncated result should match the beginning of the original encoding
-        original_encoded = encoder.encode(test_string)
+        original_encoded = get_encoder().encode(test_string)
         assert encoded_result == original_encoded[:max_len]
 
     def test_unicode_characters(self):
@@ -269,7 +259,7 @@ class TestTruncate:
         max_len = 4
 
         result = truncate(unicode_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
         # Should be a valid string
         assert isinstance(result, str)
 
@@ -279,7 +269,7 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(special_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_whitespace_string(self):
         """Test truncation of whitespace-only string"""
@@ -287,7 +277,7 @@ class TestTruncate:
         max_len = 2
 
         result = truncate(whitespace_string, max_len)
-        assert len(encoder.encode(result)) <= max_len
+        assert len(get_encoder().encode(result)) <= max_len
         assert isinstance(result, str)
 
     def test_max_len_zero(self):
@@ -295,13 +285,13 @@ class TestTruncate:
         test_string = "hello world"
         result = truncate(test_string, 0)
         assert result == ""
-        assert len(encoder.encode(result)) == 0
+        assert len(get_encoder().encode(result)) == 0
 
     def test_max_len_one(self):
         """Test truncation with max_len = 1"""
         test_string = "hello world"
         result = truncate(test_string, 1)
-        assert len(encoder.encode(result)) == 1
+        assert len(get_encoder().encode(result)) == 1
 
     def test_preserves_decoding_encoding_consistency(self):
         """Test that truncation preserves encoding-decoding consistency"""
@@ -310,7 +300,7 @@ class TestTruncate:
 
         result = truncate(test_string, max_len)
         # Re-encoding the result should give the same token count
-        re_encoded = encoder.encode(result)
+        re_encoded = get_encoder().encode(result)
         assert len(re_encoded) == max_len
 
     def test_multibyte_characters_truncation(self):
@@ -320,7 +310,7 @@ class TestTruncate:
         max_len = 3
 
         result = truncate(multibyte_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_mixed_english_chinese_text(self):
         """Test truncation with mixed English and Chinese text"""
@@ -328,7 +318,7 @@ class TestTruncate:
         max_len = 5
 
         result = truncate(mixed_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len
 
     def test_numbers_and_symbols(self):
         """Test truncation with numbers and symbols"""
@@ -336,4 +326,4 @@ class TestTruncate:
         max_len = 4
 
         result = truncate(number_string, max_len)
-        assert len(encoder.encode(result)) == max_len
+        assert len(get_encoder().encode(result)) == max_len

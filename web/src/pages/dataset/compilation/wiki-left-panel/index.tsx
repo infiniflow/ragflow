@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
 import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 import { IArtifact } from '@/interfaces/database/dataset';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +41,7 @@ export function WikiLeftPanel({
   traceData,
 }: WikiLeftPanelProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
 
   const { open, setOpen, handleConfirm, loading } = useWikiClear({
     onClearWiki,
@@ -50,6 +52,7 @@ export function WikiLeftPanel({
     newlyUploaded,
     removed,
     changed,
+    retryPageCount,
     handleUpdate,
     loading: updateLoading,
   } = useWikiUpdate();
@@ -66,42 +69,45 @@ export function WikiLeftPanel({
 
   return (
     <aside className="size-full flex flex-col p-5">
-      <div className="flex items-center justify-between pb-5">
-        <CompilationUpdateButton
-          traceData={traceData}
-          generateType={GenerateType.Artifact}
-          hasChanges={hasChanges}
-          newlyUploaded={newlyUploaded}
-          removed={removed}
-          changed={changed}
-          loading={updateLoading}
-          tooltip={t('knowledgeCompilation.updateTooltip', {
-            newlyUploaded,
-            removed,
-            changed,
-            defaultValue:
-              '{{newlyUploaded}} new, {{removed}} removed, {{changed}} changed documents found. Click to compile and merge into current Wiki.',
-          })}
-          onClick={handleUpdateClick}
-        />
-        <ConfirmDeleteDialog
-          open={open}
-          onOpenChange={setOpen}
-          title={t('knowledgeCompilation.clearWikiTitle')}
-          content={{ title: t('knowledgeCompilation.clearWikiDescription') }}
-          onOk={handleConfirm}
-        >
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="ml-auto"
-            disabled={loading}
-            data-testid="wiki-clear-trigger"
+      {!isGo && (
+        <div className="flex items-center justify-between pb-5">
+          <CompilationUpdateButton
+            traceData={traceData}
+            generateType={GenerateType.Artifact}
+            hasChanges={hasChanges}
+            newlyUploaded={newlyUploaded}
+            removed={removed}
+            changed={changed}
+            retryPageCount={retryPageCount}
+            loading={updateLoading}
+            tooltip={t('knowledgeCompilation.updateTooltip', {
+              newlyUploaded,
+              removed,
+              changed,
+              defaultValue:
+                '{{newlyUploaded}} new, {{removed}} removed, {{changed}} changed documents found. Click to compile and merge into current Wiki.',
+            })}
+            onClick={handleUpdateClick}
+          />
+          <ConfirmDeleteDialog
+            open={open}
+            onOpenChange={setOpen}
+            title={t('knowledgeCompilation.clearWikiTitle')}
+            content={{ title: t('knowledgeCompilation.clearWikiDescription') }}
+            onOk={handleConfirm}
           >
-            <Trash2 className="size-[1em]" />
-          </Button>
-        </ConfirmDeleteDialog>
-      </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto"
+              disabled={loading}
+              data-testid="wiki-clear-trigger"
+            >
+              <Trash2 className="size-[1em]" />
+            </Button>
+          </ConfirmDeleteDialog>
+        </div>
+      )}
       <Tabs value={tab} onValueChange={onTabChange} className="pb-5">
         <TabsList className="grid grid-cols-2 w-80">
           <TabsTrigger value={LeftPanelTab.Contents}>

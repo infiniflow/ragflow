@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,27 @@ func findRelation(rows []map[string]interface{}, from, to string) map[string]int
 }
 
 const kbForTest = "kb1"
+
+func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
+	w := engineWriter{}
+	p := page("entity", "刘备")
+	p.Summary = "三国演义中的人物"
+
+	rows, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{p})
+	if err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	entity := findEntity(rows, "entity/刘备")
+	if entity == nil {
+		t.Fatal("missing entity")
+	}
+	for _, field := range []string{"title_tks", "title_sm_tks", "content_ltks", "content_sm_ltks"} {
+		value, ok := entity[field].(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			t.Fatalf("entity[%q] = %#v, want non-empty search content", field, entity[field])
+		}
+	}
+}
 
 // TestProjectWikiGraphRowsCrossBatchEdgeSurvives verifies a relation whose two
 // endpoints land in different "batches" (here modeled as two pages) is still

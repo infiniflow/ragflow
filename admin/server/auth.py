@@ -17,11 +17,11 @@
 
 import logging
 import os
+import secrets
 import uuid
 from functools import wraps
 from datetime import datetime
 
-from flask import jsonify, request
 from flask_login import current_user, login_user
 
 from api.common.exceptions import AdminException, UserNotFoundError
@@ -30,11 +30,24 @@ from api.db.services import UserService
 from api.db import UserTenantRole
 from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
-from api.utils.crypt import decrypt
+from common.file_utils import get_project_base_directory
+from api.utils.crypt import CryptPayloadError, decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.connection_utils import sync_construct_response
 from common import settings
+
+
+# Bootstrap password for the default superuser created by init_default_admin().
+# ADMIN_DEFAULT_PASSWORD is admin-server specific; DEFAULT_SUPERUSER_PASSWORD is
+# shared with api/db/init_data.py so a deployment can keep one bootstrap
+# password for both sides. Unlike api/db/init_data.py (which still falls back
+# to the literal "admin"), the admin server falls back to a random password
+# delivered through a 0600 bootstrap file: the admin panel manages sandbox providers
+# (including the "local" provider, i.e. host-level execution), so a guessable
+# default here would effectively be host RCE.
+ADMIN_DEFAULT_PASSWORD_ENV = "ADMIN_DEFAULT_PASSWORD"
+DEFAULT_SUPERUSER_PASSWORD_ENV = "DEFAULT_SUPERUSER_PASSWORD"
 
 
 # The admin server reports DEFAULT_SUPERUSER_EMAIL via
@@ -49,13 +62,12 @@ from common import settings
 #
 # Reject empty env values explicitly: ``os.getenv(name, fallback)``
 # only uses the fallback when the variable is *unset*, so a misconfigured
-# operator setting ``DEFAULT_SUPERUSER_PASSWORD=`` would otherwise
-# persist an empty password — every first login would silently fail with
-# "credentials don't match" instead of a clear startup error. We
-# deliberately preserve the raw value (no whitespace stripping) so a
-# password like ``"  s3cret  "`` keeps its leading/trailing whitespace
-# and isn't silently mutated before being hashed/stored. Email/nickname
-# callers strip separately because whitespace there would be invalid.
+# operator setting ``DEFAULT_SUPERUSER_EMAIL=`` would otherwise
+# propagate an empty email into the bootstrap flow. We deliberately
+# preserve raw password values (no whitespace stripping) so a password
+# like ``"  s3cret  "`` keeps its leading/trailing whitespace and isn't
+# silently mutated before being hashed/stored. Email/nickname strip
+# separately because whitespace there would be invalid.
 def _required_env(name, default):
     value = os.getenv(name, default)
     if not value:
@@ -91,7 +103,12 @@ def _required_env_stripped(name, default):
 
 DEFAULT_SUPERUSER_NICKNAME = _required_env_stripped("DEFAULT_SUPERUSER_NICKNAME", "admin")
 DEFAULT_SUPERUSER_EMAIL = _required_env_stripped("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
-DEFAULT_SUPERUSER_PASSWORD = _required_env("DEFAULT_SUPERUSER_PASSWORD", "admin")
+# NOTE: there is deliberately no DEFAULT_SUPERUSER_PASSWORD module constant
+# here. The bootstrap password resolves at startup via
+# _resolve_bootstrap_admin_password() — ADMIN_DEFAULT_PASSWORD, then
+# DEFAULT_SUPERUSER_PASSWORD, then a random password delivered through a
+# 0600 file — instead of falling back to the literal "admin" that
+# api/db/init_data.py still uses.
 
 
 def setup_auth(login_manager):
@@ -143,13 +160,54 @@ def setup_auth(login_manager):
             return None
 
 
+def _resolve_bootstrap_admin_password() -> tuple[str, str | None]:
+    """Return ``(plain_password, env_var_name)`` for the bootstrap superuser.
+
+    Precedence: ADMIN_DEFAULT_PASSWORD, then DEFAULT_SUPERUSER_PASSWORD (the
+    variable honoured by api/db/init_data.py on the web side), then a random
+    password that is delivered through a 0600 bootstrap file, never the log.
+    """
+    for env_name in (ADMIN_DEFAULT_PASSWORD_ENV, DEFAULT_SUPERUSER_PASSWORD_ENV):
+        value = os.getenv(env_name)
+        if value:
+            return value, env_name
+    return secrets.token_urlsafe(18), None
+
+
+def _write_bootstrap_password_file(password: str) -> str | None:
+    """Write the generated bootstrap password to a 0600 file beside the logs.
+
+    Returns the file path, or None when the file could not be written (the
+    password is then unrecoverable and the operator must set
+    ADMIN_DEFAULT_PASSWORD and recreate the account — failing closed beats
+    leaking the credential into a log stream).
+    """
+    target_dir = os.path.join(get_project_base_directory(), "logs")
+    path = os.path.join(target_dir, "admin_bootstrap_password.txt")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(password + "\n")
+        return path
+    except OSError as e:
+        logging.error(f"Failed to write the admin bootstrap password file {path}: {e}")
+        return None
+
+
 def init_default_admin():
     # Verify that at least one active admin user exists. If not, create a default one.
+    # This runs only from the explicit startup path in admin_server.py; the
+    # authentication handlers below must never create accounts.
     users = UserService.query(is_superuser=True)
     if not users:
+        password, env_name = _resolve_bootstrap_admin_password()
         default_admin = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
+            # UserService.save() hashes this value and both login paths compare
+            # against base64(<plain password>) - same convention as
+            # api/db/init_data.py.
+            "password": encode_to_base64(password),
             "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
             "email": DEFAULT_SUPERUSER_EMAIL,
@@ -159,6 +217,21 @@ def init_default_admin():
         if not UserService.save(**default_admin):
             raise AdminException("Can't init admin.", 500)
         add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+        if env_name:
+            logging.info(f"Created default superuser {DEFAULT_SUPERUSER_EMAIL} with the password from {env_name}. Change it after the first login.")
+        else:
+            password_file = _write_bootstrap_password_file(password)
+            if password_file:
+                logging.warning(
+                    f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set. "
+                    f"Created default superuser {DEFAULT_SUPERUSER_EMAIL}; its randomly generated password was written once to {password_file} (mode 0600). Read it there and change it immediately after the first login."
+                )
+            else:
+                logging.error(
+                    f"No superuser found and neither {ADMIN_DEFAULT_PASSWORD_ENV} nor {DEFAULT_SUPERUSER_PASSWORD_ENV} is set, "
+                    f"and the bootstrap password file could not be written. The randomly generated password for {DEFAULT_SUPERUSER_EMAIL} is NOT recoverable: "
+                    f"delete the account and re-run with {ADMIN_DEFAULT_PASSWORD_ENV} set."
+                )
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
@@ -252,7 +325,15 @@ def login_admin(email: str, password: str):
     users = UserService.query(email=email)
     if not users:
         raise UserNotFoundError(email)
-    decrypted = decrypt(password)
+    try:
+        decrypted = decrypt(password)
+    except CryptPayloadError:
+        # A payload the client could not encode correctly is the client's
+        # failure, not a server fault: answer with the same generic mismatch
+        # as any other credential rejection. Server-side faults
+        # (missing/invalid private key) propagate to the caller instead.
+        logging.info("Admin login with undecryptable password payload.")
+        raise AdminException("Email and password do not match!")
     user = UserService.query_user(email, decrypted)
     if not user:
         raise AdminException("Email and password do not match!")
@@ -270,53 +351,3 @@ def login_admin(email: str, password: str):
     user.save()
     msg = "Welcome back!"
     return sync_construct_response(data=resp, auth=user.get_id(), message=msg)
-
-
-def check_admin(username: str, password: str):
-    users = UserService.query(email=username)
-    if not users:
-        logging.info(f"Username: {username} is not registered!")
-        # On first login with an unrecognised username, fall back to the
-        # env-configured default admin bootstrap so an operator who set
-        # ``DEFAULT_SUPERUSER_EMAIL=me@corp.com`` gets an admin at
-        # ``me@corp.com`` — matching what ``services.EnvironmentsMgr.get_all``
-        # advertises and what the API-side ``init_superuser`` already
-        # does. See infiniflow/ragflow#16876.
-        user_info = {
-            "id": uuid.uuid1().hex,
-            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
-            "nickname": DEFAULT_SUPERUSER_NICKNAME,
-            "is_superuser": True,
-            "email": DEFAULT_SUPERUSER_EMAIL,
-            "creator": "system",
-            "status": "1",
-        }
-        if not UserService.save(**user_info):
-            raise AdminException("Can't init admin.", 500)
-
-    user = UserService.query_user(username, password)
-    if user:
-        return True
-    else:
-        return False
-
-
-def login_verify(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or "username" not in auth.parameters or "password" not in auth.parameters:
-            return jsonify({"code": 401, "message": "Authentication required", "data": None}), 200
-
-        username = auth.parameters["username"]
-        password = auth.parameters["password"]
-        try:
-            if not check_admin(username, password):
-                return jsonify({"code": 500, "message": "Access denied", "data": None}), 200
-        except Exception:
-            logging.exception("An error occurred during admin login verification.")
-            return jsonify({"code": 500, "message": "An internal server error occurred."}), 200
-
-        return f(*args, **kwargs)
-
-    return decorated

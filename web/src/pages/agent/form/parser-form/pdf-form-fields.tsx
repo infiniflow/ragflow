@@ -68,15 +68,6 @@ export function PdfFormFields({ prefix }: CommonProps) {
 
   useSetInitialLanguage({ prefix, languageShown });
 
-  useEffect(() => {
-    if (isEmpty(form.getValues(parseMethodName))) {
-      form.setValue(parseMethodName, ParseDocumentType.DeepDOC, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-    }
-  }, [form, parseMethodName]);
-
   // Set default values for TCADP options when TCADP is selected
   useEffect(() => {
     if (tcadpOptionsShown) {

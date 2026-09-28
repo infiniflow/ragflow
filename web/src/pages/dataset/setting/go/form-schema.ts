@@ -1,3 +1,4 @@
+import { addParserConfigIssues } from '@/components/pipeline-operator-tabs/parser-config-validation';
 import { DESCRIPTION_MAX_LENGTH } from '@/constants/common';
 import { ParseType } from '@/constants/knowledge';
 import { t } from 'i18next';
@@ -7,8 +8,6 @@ export const formSchema = z
   .object({
     parse_type: z.nativeEnum(ParseType).optional(),
     pipeline_id: z.string().optional(),
-    pipeline_name: z.string().optional(),
-    pipeline_avatar: z.string().optional(),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
@@ -47,4 +46,5 @@ export const formSchema = z
         code: 'custom',
       });
     }
+    addParserConfigIssues(data.parser_config, ctx, t);
   });

@@ -897,29 +897,37 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 	if userID != tenantID {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
-	if req.Email == "" {
+	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
 	}
 
 	invitee, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("user not found")
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("user not found")
+		}
+		return nil, common.CodeDataError, err
 	}
 
 	// Reject if already a member or has a pending invitation.
-	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
-	if existing != nil {
-		switch existing.Role {
-		case TenantRoleOwner:
-			return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
-		case TenantRoleNormal, TenantRoleAdmin:
-			return nil, common.CodeDataError, fmt.Errorf("user is already a member")
-		case TenantRoleInvite:
-			return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
+	userTenant, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
+	if err == nil {
+		if userTenant != nil {
+			switch userTenant.Role {
+			case TenantRoleOwner:
+				return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
+			case TenantRoleNormal, TenantRoleAdmin:
+				return nil, common.CodeDataError, fmt.Errorf("user is already a member")
+			case TenantRoleInvite:
+				return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
+			}
 		}
 	}
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, err
+	}
 
-	status := "1"
+	status := string(entity.StatusValid)
 	ut := &entity.UserTenant{
 		ID:        utility.GenerateUUID(),
 		UserID:    invitee.ID,

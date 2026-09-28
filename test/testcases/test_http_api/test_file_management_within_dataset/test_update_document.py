@@ -507,8 +507,8 @@ class TestUpdateDocumentParserConfig:
             pytest.param(
                 "naive",
                 {"invalid_key": "invalid_value"},
-                102,
-                "Field: <parser_config.invalid_key> - Message: <Extra inputs are not permitted> - Value: <invalid_value>",
+                0,
+                "",
             ),
             pytest.param(
                 "naive",

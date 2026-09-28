@@ -33,6 +33,20 @@ logger = logging.getLogger(__name__)
 _LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("LONG_TIME_THREAD_POOL_WORKERS", "1")), thread_name_prefix="long-time")
 
 
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment variable the way the rest of the codebase does.
+
+    Unset keeps the documented default. Anything else is matched against the
+    truthy vocabulary used elsewhere in this file and in common/data_source, so
+    a switch written as "off" or "disabled" turns the feature off instead of
+    being read as its opposite.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_uuid():
     return uuid.uuid1().hex
 

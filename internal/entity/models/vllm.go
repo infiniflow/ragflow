@@ -39,7 +39,7 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -50,6 +50,40 @@ func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (v *VllmModel) Name() string {
 	return "VLLM"
+}
+
+// applyVllmCompatibleThinking maps Qwen3 controls to the chat-template payload
+// expected by vLLM while preserving the generic thinking payload for other models.
+func applyVllmCompatibleThinking(reqBody map[string]interface{}, modelName string, config *ChatConfig) {
+	modelNameLower := strings.ToLower(modelName)
+	if strings.Contains(modelNameLower, "qwen3") {
+		enableThinking := false
+		if config != nil && config.Thinking != nil {
+			enableThinking = *config.Thinking
+		}
+		if strings.Contains(modelNameLower, "-preview") || strings.Contains(modelNameLower, "2.4t-a95b") {
+			enableThinking = true
+		}
+
+		chatTemplateKwargs, ok := reqBody["chat_template_kwargs"].(map[string]interface{})
+		if !ok {
+			chatTemplateKwargs = map[string]interface{}{}
+		}
+		chatTemplateKwargs["enable_thinking"] = enableThinking
+		reqBody["chat_template_kwargs"] = chatTemplateKwargs
+		delete(reqBody, "thinking")
+		delete(reqBody, "enable_thinking")
+		return
+	}
+
+	if config == nil || config.Thinking == nil {
+		return
+	}
+	thinkingType := "disabled"
+	if *config.Thinking {
+		thinkingType = "enabled"
+	}
+	reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -76,27 +110,14 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, chatModelConfig)
 
 	body, err := v.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -121,18 +142,7 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
-
-	if modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
+	applyVllmCompatibleThinking(reqBody, modelName, modelConfig)
 
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 

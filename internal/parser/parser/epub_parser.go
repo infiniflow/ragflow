@@ -82,7 +82,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items := extractEPUBTextItems(reader, opfPath, spineItems)
+	items, detectedEnc := extractEPUBTextItems(reader, opfPath, spineItems)
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
@@ -91,7 +91,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": detectedEnc,
 		},
 		JSON: items,
 	}
@@ -194,10 +194,14 @@ var (
 	epubWSRe     = regexp.MustCompile(`\s+`)
 )
 
-func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) []map[string]any {
+func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string) {
 	var items []map[string]any
+	detectedEncoding := "utf-8"
 	for _, href := range spineHrefs {
-		text := readEPUBContentFile(r, opfDir, href)
+		text, enc := readEPUBContentFile(r, opfDir, href)
+		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
+			detectedEncoding = enc
+		}
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
@@ -206,13 +210,13 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) []m
 			"doc_type_kwd": "text",
 		})
 	}
-	return items
+	return items, detectedEncoding
 }
 
 // readEPUBContentFile resolves a spine href (relative to the OPF
 // directory) inside the ZIP, reads the raw bytes, and strips HTML to
-// return clean text.
-func readEPUBContentFile(r *zip.Reader, opfDir, href string) string {
+// return clean text and detected encoding.
+func readEPUBContentFile(r *zip.Reader, opfDir, href string) (string, string) {
 	// Resolve href relative to the directory containing the OPF.
 	// Use path.Join/Dir (slash separator) because ZIP entry paths are always POSIX.
 	resolved := path.Join(path.Dir(opfDir), href)
@@ -230,15 +234,16 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) string {
 		}
 	}
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer f.Close()
 
 	raw, err := io.ReadAll(f)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return stripHTMLTags(string(raw))
+	decoded, enc := DecodeToUTF8(raw, "application/xhtml+xml")
+	return stripHTMLTags(string(decoded)), enc
 }
 
 // stripHTMLTags removes HTML markup and returns normalized plain text.

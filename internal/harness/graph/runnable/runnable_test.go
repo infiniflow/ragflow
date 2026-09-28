@@ -11,7 +11,7 @@ func TestNewRunnableFunc(t *testing.T) {
 		return "hello " + input, nil
 	}
 	r := NewRunnableFunc(fn)
-	result, err := r.Invoke(context.Background(), "world")
+	result, err := r.Invoke(t.Context(), "world")
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestRunnableFunc_WithOptions(t *testing.T) {
 func TestRunnableFunc_Batch(t *testing.T) {
 	fn := func(ctx context.Context, input int) (int, error) { return input * 2, nil }
 	r := NewRunnableFunc(fn)
-	outputs, errs := r.Batch(context.Background(), []int{1, 2, 3})
+	outputs, errs := r.Batch(t.Context(), []int{1, 2, 3})
 	if len(outputs) != 3 || outputs[0] != 2 || outputs[2] != 6 {
 		t.Errorf("expected [2,4,6], got %v", outputs)
 	}
@@ -42,7 +42,7 @@ func TestRunnableFunc_Batch(t *testing.T) {
 func TestRunnableFunc_Stream(t *testing.T) {
 	fn := func(ctx context.Context, input string) (string, error) { return input, nil }
 	r := NewRunnableFunc(fn)
-	ch := r.Stream(context.Background(), "test")
+	ch := r.Stream(t.Context(), "test")
 	val, ok := <-ch
 	if !ok || val != "test" {
 		t.Errorf("expected 'test', got %v (ok=%v)", val, ok)
@@ -61,7 +61,7 @@ func TestRunnableFunc_Error(t *testing.T) {
 	r := NewRunnableFunc(func(ctx context.Context, input string) (string, error) {
 		return "", &RunnableError{Message: "failed"}
 	})
-	_, err := r.Invoke(context.Background(), "x")
+	_, err := r.Invoke(t.Context(), "x")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -80,7 +80,7 @@ func TestRunnableSeq(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunnableSeq: %v", err)
 	}
-	result, err := seq.Invoke(context.Background(), "start")
+	result, err := seq.Invoke(t.Context(), "start")
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestRunnableParallel(t *testing.T) {
 		return n * 20, nil
 	})
 	par := NewRunnableParallel(map[string]Runnable[any, any]{"r1": r1, "r2": r2})
-	results, err := par.Invoke(context.Background(), 5)
+	results, err := par.Invoke(t.Context(), 5)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRunnableMap(t *testing.T) {
 		func(ctx context.Context, input any) (any, error) { return input, nil },
 		func(ctx context.Context, output any) (any, error) { return output, nil },
 	)
-	result, _ := mapped.Invoke(context.Background(), "data")
+	result, _ := mapped.Invoke(t.Context(), "data")
 	s, _ := result.(string)
 	if s != "proc:data" {
 		t.Errorf("expected 'proc:data', got %s", s)
@@ -141,7 +141,7 @@ func TestRunnableMap_Batch(t *testing.T) {
 		func(ctx context.Context, input any) (any, error) { return input, nil },
 		func(ctx context.Context, output any) (any, error) { return output, nil },
 	)
-	outputs, errs := mapped.Batch(context.Background(), []any{1, 2, 3})
+	outputs, errs := mapped.Batch(t.Context(), []any{1, 2, 3})
 	if len(outputs) != 3 {
 		t.Fatalf("expected 3 outputs, got %d", len(outputs))
 	}
@@ -153,7 +153,7 @@ func TestRunnableBuilder(t *testing.T) {
 		return "built:" + anyToString(input), nil
 	})
 	r := NewRunnableBuilder(base).Build()
-	result, _ := r.Invoke(context.Background(), "value")
+	result, _ := r.Invoke(t.Context(), "value")
 	s, _ := result.(string)
 	if s != "built:value" {
 		t.Errorf("expected 'built:value', got %s", s)
@@ -171,7 +171,7 @@ func TestRunnableBuilder_Then(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Then: %v", err)
 	}
-	result, _ := b.Build().Invoke(context.Background(), "start")
+	result, _ := b.Build().Invoke(t.Context(), "start")
 	s, _ := result.(string)
 	if s != "start_a_b" {
 		t.Errorf("expected 'start_a_b', got %s", s)
@@ -186,7 +186,7 @@ func TestRunnableBuilder_Map(t *testing.T) {
 		func(ctx context.Context, input any) (any, error) { return input, nil },
 		func(ctx context.Context, output any) (any, error) { return output, nil },
 	)
-	result, _ := b.Build().Invoke(context.Background(), "data")
+	result, _ := b.Build().Invoke(t.Context(), "data")
 	s, _ := result.(string)
 	if s != "data_inner" {
 		t.Errorf("expected 'data_inner', got %s", s)
@@ -202,7 +202,7 @@ func TestRunnableFunc_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func(val int) {
 			defer wg.Done()
-			res, _ := r.Invoke(context.Background(), val)
+			res, _ := r.Invoke(t.Context(), val)
 			ch <- res
 		}(i)
 	}

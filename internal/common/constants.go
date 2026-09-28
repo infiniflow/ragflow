@@ -31,12 +31,44 @@ const (
 // task status
 const (
 	CREATED   = "CREATED"
+	SCHEDULED = "SCHEDULED"
 	RUNNING   = "RUNNING"
 	COMPLETED = "COMPLETED"
 	FAILED    = "FAILED"
 	STOPPED   = "STOPPED"
 	STOPPING  = "STOPPING"
 )
+
+// ActiveTaskStatuses contains all in-flight, non-terminal task statuses.
+var ActiveTaskStatuses = []string{CREATED, SCHEDULED, RUNNING, STOPPING}
+
+// IsActiveTaskStatus returns true if the status represents an active (non-terminal) task:
+// CREATED, SCHEDULED, RUNNING, or STOPPING.
+func IsActiveTaskStatus(status string) bool {
+	switch status {
+	case CREATED, SCHEDULED, RUNNING, STOPPING:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsTerminalTaskStatus returns true if the status represents a terminal task state:
+// COMPLETED, STOPPED, or FAILED.
+func IsTerminalTaskStatus(status string) bool {
+	switch status {
+	case COMPLETED, STOPPED, FAILED:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsRunningOrStopping returns true if a worker is actively executing or shutting down:
+// RUNNING or STOPPING.
+func IsRunningOrStopping(status string) bool {
+	return status == RUNNING || status == STOPPING
+}
 
 // StatusDialogValid is the dialog.status value that gates public bot
 // access. Mirrors Python's StatusEnum.VALID.value at

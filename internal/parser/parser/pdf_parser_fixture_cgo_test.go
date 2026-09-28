@@ -7,11 +7,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
+// useMockDocAnalyzer installs a test-only MockDocAnalyzer as the in-process
+// DeepDoc backend. MockDocAnalyzer is test infrastructure and must never sit in
+// the production fallback path; it is injected here through the public factory
+// seam (SetNativeDocAnalyzerFactory) so the parse pipeline can be exercised
+// without a real DeepDoc service or ONNX Runtime models.
+func useMockDocAnalyzer(t *testing.T) {
+	t.Helper()
+	prev := doctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { doctype.NativeDocAnalyzerFactory = prev })
+	doctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true}, true
+	})
+}
+
 func TestPDFParser_ParseWithResult_CGOFixture(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
+	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -39,8 +56,7 @@ func TestPDFParser_ParseWithResult_CGOFixture(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_CGOFixtureMarkdown(t *testing.T) {
-	t.Setenv("DEEPDOC_URL", "")
-	t.Setenv("OSSDEEPDOC_URL", "")
+	useMockDocAnalyzer(t)
 
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
@@ -67,6 +83,8 @@ func TestPDFParser_ParseWithResult_CGOFixtureMarkdown(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_CGOFixturePlainText(t *testing.T) {
+	useMockDocAnalyzer(t)
+
 	path := filepath.Join("..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {

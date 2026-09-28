@@ -268,7 +268,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -296,7 +296,7 @@
                             }
                         },
                         "label": "QAChunker",
-                        "name": "QA Chunker_0"
+                        "name": "QA Chunker"
                     },
                     "id": "QAChunker:TidyCloudsThink",
                     "measured": {
@@ -324,7 +324,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:ColdCloudsDream",
                     "measured": {

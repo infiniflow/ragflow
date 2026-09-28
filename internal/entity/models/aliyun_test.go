@@ -571,3 +571,367 @@ func TestAliyunAudioSpeechWithSenderSendsSingleChunk(t *testing.T) {
 		t.Fatalf("chunks = %v, want [fake-wav-bytes]", chunks)
 	}
 }
+
+// TestAliyunNativeEmbeddingRootMapping pins Python
+// _dashscope_native_http_api_url (embedding_model.py:80-128): an already-native
+// base is kept, known DashScope hosts map to their /api/v1 root, and anything
+// else (private gateways) leaves the compatible endpoint in place.
+func TestAliyunNativeEmbeddingRootMapping(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"https://dashscope.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com/api/v1"},
+		{"https://dashscope-intl.aliyuncs.com/compatible-mode/v1/", "https://dashscope-intl.aliyuncs.com/api/v1"},
+		{"https://dashscope.aliyuncs.com/api/v1", "https://dashscope.aliyuncs.com/api/v1"},
+		{"https://private-gateway.example.com/v1", ""},
+		// Hostname matching, not substring: a crafted query string must not
+		// select the native API.
+		{"https://attacker.example/?u=dashscope.aliyuncs.com", ""},
+	}
+	for _, c := range cases {
+		if got := aliyunNativeEmbeddingRoot(c.in); got != c.want {
+			t.Errorf("aliyunNativeEmbeddingRoot(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestAliyunEmbedIgnoresNonDashScopeHost pins the Python QWenEmbed contract for a
+// base URL that is not a DashScope host: the configured host is IGNORED and the
+// call goes to the dashscope SDK's default native root — still carrying
+// text_type, so the query/document distinction survives — with a single warning
+// naming the ignored host (embedding_model.py:121-127, :134-138, :448-450).
+func TestAliyunEmbedIgnoresNonDashScopeHost(t *testing.T) {
+	withSSRFBypass(t)
+
+	var paths []string
+	var bodies []map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[{"text_index":0,"embedding":[0.5]}]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+	// DASHSCOPE_HTTP_BASE_URL is the SDK endpoint Python leaves in place when the
+	// configured base URL is unrecognized (dashscope/common/env.py:20-23).
+	t.Setenv("DASHSCOPE_HTTP_BASE_URL", srv.URL)
+
+	var warnings []string
+	prev := aliyunWarnSink
+	t.Cleanup(func() { aliyunWarnSink = prev })
+	aliyunWarnSink = func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
+
+	apiKey := "test-key"
+	model := "text-embedding-v4"
+	// A private gateway that is not a DashScope host: it must be ignored, not used.
+	m := NewAliyunModel(map[string]string{"default": "https://ignored-gateway.internal/v1"},
+		URLSuffix{Embedding: "embeddings", Chat: "chat/completions"})
+
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(document): %v", err)
+	}
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"q"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query): %v", err)
+	}
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"q2"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query 2): %v", err)
+	}
+
+	// Every call lands on the native text-embedding path of the SDK endpoint.
+	if len(paths) != 3 {
+		t.Fatalf("requests = %d, want 3 (the ignored host must not be contacted)", len(paths))
+	}
+	for i, p := range paths {
+		if want := "/" + aliyunNativeEmbeddingPath; p != want {
+			t.Errorf("path[%d] = %q, want %q", i, p, want)
+		}
+	}
+	// text_type survives the fallback: document for the plain call, query after.
+	for i, want := range []string{"document", "query", "query"} {
+		params, _ := bodies[i]["parameters"].(map[string]interface{})
+		if params["text_type"] != want {
+			t.Errorf("body[%d] text_type = %v, want %q", i, bodies[i]["parameters"], want)
+		}
+	}
+	// One warning, naming the host that was ignored.
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one (once per host, not per call)", warnings)
+	}
+	if !strings.Contains(warnings[0], "ignored-gateway.internal") {
+		t.Errorf("warning %q does not name the ignored host", warnings[0])
+	}
+}
+
+// TestAliyunBaseURLHostIsHostOnly pins that the warning can only ever log a host:
+// credentials, path and query string from a configured base URL stay out of the
+// log line.
+func TestAliyunBaseURLHostIsHostOnly(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"https://user:secret@gateway.internal/v1?key=abc", "gateway.internal"},
+		{"https://dashscope.aliyuncs.com/compatible-mode/v1", "dashscope.aliyuncs.com"},
+		{"gateway.internal/v1", "gateway.internal"},
+		{"", ""},
+	} {
+		if got := aliyunBaseURLHost(c.in); got != c.want {
+			t.Errorf("aliyunBaseURLHost(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// embedding call used for Tongyi-Qianwen: text_type follows EmbedRequest.Query,
+// inputs are sent in batches of 4 (Python QWenEmbed.encode), and each response's
+// batch-relative text_index is offset back into the caller's slice.
+func TestAliyunEmbedNativeSendsTextTypeAndBatches(t *testing.T) {
+	withSSRFBypass(t)
+	var paths []string
+	var bodies []map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		input, _ := body["input"].(map[string]interface{})
+		texts, _ := input["texts"].([]interface{})
+		parts := make([]string, 0, len(texts))
+		for i := range texts {
+			parts = append(parts, fmt.Sprintf(`{"text_index":%d,"embedding":[%d]}`, i, i))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` + strings.Join(parts, ",") + `]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d", "e"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("requests = %d, want 2 (batch of 4 + 1)", len(paths))
+	}
+	if want := "/" + aliyunNativeEmbeddingPath; paths[0] != want {
+		t.Errorf("path = %q, want %q", paths[0], want)
+	}
+	if params, ok := bodies[0]["parameters"].(map[string]interface{}); !ok || params["text_type"] != "document" {
+		t.Errorf("document text_type = %v, want document", bodies[0]["parameters"])
+	}
+	byIndex := map[int]EmbeddingData{}
+	for _, e := range got {
+		byIndex[e.Index] = e
+	}
+	if len(byIndex) != 5 {
+		t.Fatalf("embeddings cover indexes %v, want 0..4", byIndex)
+	}
+	if _, ok := byIndex[4]; !ok {
+		t.Errorf("second batch's text_index was not offset to the global index 4: %v", byIndex)
+	}
+
+	// The query path flips text_type.
+	if _, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"q"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+		t.Fatalf("embedNative(query): %v", err)
+	}
+	if params, ok := bodies[len(bodies)-1]["parameters"].(map[string]interface{}); !ok || params["text_type"] != "query" {
+		t.Errorf("query text_type = %v, want query", bodies[len(bodies)-1]["parameters"])
+	}
+}
+
+// TestAliyunEmbedNativePlacesVectorsByTextIndex pins that an out-of-order
+// response is reordered onto the caller's inputs: nav_embedder/dataset-utils
+// read the result positionally and discard Index, so placing by text_index is
+// what keeps each vector bound to the right text.
+func TestAliyunEmbedNativePlacesVectorsByTextIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Deliberately reversed: text_index 3,2,1,0 with distinct vectors.
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":3,"embedding":[3]},` +
+			`{"text_index":2,"embedding":[2]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":0,"embedding":[0]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("len = %d, want 4", len(got))
+	}
+	for i, e := range got {
+		if e.Index != i || len(e.Embedding) != 1 || e.Embedding[0] != float64(i) {
+			t.Errorf("got[%d] = {index:%d vec:%v}, want {index:%d vec:[%d]}", i, e.Index, e.Embedding, i, i)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeDuplicateIndexLastWins pins Python QWenEmbed.encode's
+// "embds[e['text_index']] = e['embedding']": a repeated text_index overwrites
+// the earlier vector and the slot left unfilled stays empty — no error.
+func TestAliyunEmbedNativeDuplicateIndexLastWins(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":1,"embedding":[9]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3 (one chunk entry per returned embedding)", len(got))
+	}
+	if len(got[0].Embedding) != 1 || got[0].Embedding[0] != 0 {
+		t.Errorf("got[0] = %v, want [0]", got[0].Embedding)
+	}
+	if len(got[1].Embedding) != 1 || got[1].Embedding[0] != 9 {
+		t.Errorf("got[1] = %v, want the LAST duplicate [9]", got[1].Embedding)
+	}
+	if len(got[2].Embedding) != 0 {
+		t.Errorf("got[2] = %v, want the unfilled slot to stay empty", got[2].Embedding)
+	}
+}
+
+// TestAliyunEmbedNativeShortResponseStaysShort pins that Go mirrors Python's
+// len(resp.embeddings)-sized chunks: a response covering only part of the batch
+// is NOT rejected, it just yields a shorter result (Python's res.extend).
+func TestAliyunEmbedNativeShortResponseStaysShort(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (response count, Python res.extend)", len(got))
+	}
+	if got[0].Embedding[0] != 0 || got[1].Embedding[0] != 1 {
+		t.Errorf("got = %v, want [[0],[1]]", got)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsOutOfRangeIndex pins Python's IndexError: a
+// text_index past the returned chunk is an error.
+func TestAliyunEmbedNativeRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsMissingTextIndexKey pins Python's KeyError on
+// e["text_index"]: an item without the key is an error, not a silent index 0.
+func TestAliyunEmbedNativeRejectsMissingTextIndexKey(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "text_index") {
+		t.Fatalf("err = %v, want missing-text_index error", err)
+	}
+}
+
+// TestAliyunEmbedNativeNegativeIndexCountsFromEnd pins Python list-assignment
+// semantics: a negative text_index indexes from the END of the chunk, so
+// embds[-1] overwrites the last slot.
+func TestAliyunEmbedNativeNegativeIndexCountsFromEnd(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-1,"embedding":[7]},` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	// embds[-1] = [7] lands in the last slot: [[0],[1],[7]].
+	want := []float64{0, 1, 7}
+	for i, w := range want {
+		if len(got[i].Embedding) != 1 || got[i].Embedding[0] != w {
+			t.Errorf("got[%d] = %v, want [%v]", i, got[i].Embedding, w)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeRejectsTooNegativeIndex pins that an index below
+// -len(chunk) raises, exactly like Python's IndexError.
+func TestAliyunEmbedNativeRejectsTooNegativeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}

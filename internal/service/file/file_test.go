@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,16 @@ func (f *fakeStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	panic("not implemented in fakeStorage")
 }
 
+func (f *fakeStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	panic("not implemented in fakeStorage")
+}
+func (f *fakeStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	panic("not implemented in fakeStorage")
+}
+
 func (f *fakeStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	panic("not implemented in fakeStorage")
 }
@@ -185,8 +196,9 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	if len(images) != 0 {
 		t.Fatalf("expected no images, got %v", images)
 	}
-	if len(texts) != 1 || !strings.Contains(texts[0], "allowed content") {
-		t.Fatalf("unexpected texts: %v", texts)
+	want := "\n -----------------\nFile: doc.txt\nContent as following: \nallowed content"
+	if len(texts) != 1 || texts[0] != want {
+		t.Fatalf("texts = %v, want %q", texts, want)
 	}
 }
 
@@ -365,16 +377,16 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	}))
 	defer server.Close()
 
-	origAssert := utility.AssertURLSafe
+	origAssert := common.AssertURLSafe
 	origPinned := utility.PinnedHTTPClient
-	utility.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafe = func(rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		utility.AssertURLSafe = origAssert
+		common.AssertURLSafe = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -412,16 +424,16 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := utility.AssertURLSafe
+	origAssert := common.AssertURLSafe
 	origPinned := utility.PinnedHTTPClient
-	utility.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafe = func(rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		utility.AssertURLSafe = origAssert
+		common.AssertURLSafe = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 

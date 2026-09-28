@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -67,6 +68,25 @@ type mergedWikiPageReader interface {
 
 type documentWikiPageReader interface {
 	LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error)
+}
+
+// enabledDocumentIDs returns the documents that may contribute to dataset-level
+// Wiki products. Wiki staging rows intentionally keep available_int=0 even when
+// their document is disabled, so availability alone cannot identify active
+// contributions.
+//
+// The bool reports whether the database is configured. Offline/unit readers do
+// not have document status available and retain the previous engine-only behavior.
+func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, error) {
+	if kcDB == nil {
+		return nil, false, nil
+	}
+	var ids []string
+	err := kcDB.WithContext(ctx).
+		Model(&entity.Document{}).
+		Where("kb_id = ? AND (status IS NULL OR status <> ?)", datasetID, "0").
+		Pluck("id", &ids).Error
+	return ids, true, err
 }
 
 // engineReader loads the per-document compiled products through the global
@@ -268,10 +288,20 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	if eng == nil || len(slugs) == 0 {
 		return nil, nil
 	}
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled Wiki documents: %w", err)
+	}
+	if statusAvailable && len(enabledIDs) == 0 {
+		return nil, nil
+	}
 	filter := map[string]interface{}{
 		"available_int": 0,
 		"compile_kwd":   compileKwdWikiPage,
 		"slug_kwd":      slugs,
+	}
+	if statusAvailable {
+		filter["doc_id"] = enabledIDs
 	}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {

@@ -27,7 +27,7 @@ from common.decorator import singleton
 from memory.utils.aggregation_utils import aggregate_by_field
 from memory.utils.highlight_utils import get_highlight_from_messages
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
-from common.doc_store.ob_conn_base import OBConnectionBase, get_value_str, vector_search_template
+from common.doc_store.ob_conn_base import OBConnectionBase, get_value_str, validate_column_name, vector_column_pattern, vector_search_template
 from common.float_utils import get_float
 from rag.nlp import is_english
 from rag.nlp.rag_tokenizer import tokenize, fine_grained_tokenize
@@ -52,6 +52,10 @@ COLUMN_DEFINITIONS: list[Column] = [
 ]
 
 COLUMN_NAMES: list[str] = [col.name for col in COLUMN_DEFINITIONS]
+
+# Field names that are valid as convert_field_name() inputs: real columns, plus pseudo-fields used
+# only as dict keys to dispatch query logic (never themselves interpolated into SQL as identifiers).
+_VALID_FIELD_NAMES: frozenset[str] = frozenset(COLUMN_NAMES) | {"_score", "exists", "must_not", "remove"}
 
 # Index columns for creating indexes
 INDEX_COLUMNS: list[str] = [
@@ -121,7 +125,7 @@ class OBConnection(OBConnectionBase):
 
     @staticmethod
     def convert_field_name(field_name: str, use_tokenized_content=False) -> str:
-        """Convert message field name to database column name."""
+        """Convert message field name to database column name, rejecting names outside the known schema."""
         match field_name:
             case "message_type":
                 return "message_type_kwd"
@@ -132,7 +136,7 @@ class OBConnection(OBConnectionBase):
                     return "tokenized_content_ltks"
                 return "content_ltks"
             case _:
-                return field_name
+                return validate_column_name(field_name, _VALID_FIELD_NAMES, vector_column_pattern)
 
     @staticmethod
     def map_message_to_ob_fields(message: dict) -> dict:
@@ -491,7 +495,7 @@ class OBConnection(OBConnectionBase):
         for k, v in update_dict.items():
             if k == "remove":
                 if isinstance(v, str):
-                    set_values.append(f"{v} = NULL")
+                    set_values.append(f"{self.convert_field_name(v)} = NULL")
             elif k == "status":
                 set_values.append(f"status_int = {1 if v else 0}")
             else:

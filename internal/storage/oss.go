@@ -148,6 +148,7 @@ func (o *OSSStorage) Health(ctx context.Context) bool {
 // Put uploads an object to OSS
 func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		// Ensure bucket exists
@@ -156,13 +157,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
+				lastErr = err
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket))
 				o.reconnect(ctx)
-				if err = sleepOrAbort(ctx, time.Second); err != nil {
-					return err
+				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+					return sleepErr
 				}
 				continue
 			}
@@ -176,13 +178,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 			Body:   reader,
 		})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
 			}
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return sleepErr
 			}
 			continue
 		}
@@ -190,12 +193,13 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 		return nil
 	}
 
-	return fmt.Errorf("failed to put object after retries")
+	return lastErr
 }
 
 // Get retrieves an object from OSS
 func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	var lastErr error
 
 	for i := 0; i < 2; i++ {
 		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{
@@ -203,13 +207,14 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
+			lastErr = err
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -221,13 +226,14 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			return err
 		}()
 		if readErr != nil {
+			lastErr = readErr
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return nil, err
+			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
+				return nil, sleepErr
 			}
 			continue
 		}
@@ -235,7 +241,7 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 		return buf.Bytes(), nil
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return nil, lastErr
 }
 
 // Remove removes an object from OSS
@@ -247,6 +253,9 @@ func (o *OSSStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ..
 		Key:    aws.String(fnm),
 	})
 	if err != nil {
+		if isS3NotFound(err) {
+			return nil
+		}
 		common.Error("Failed to remove object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 		return err
 	}
@@ -270,6 +279,18 @@ func (o *OSSStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID 
 	}
 
 	return true
+}
+
+func (o *OSSStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	_, err := o.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3NotFound(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (o *OSSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -338,12 +359,27 @@ func (o *OSSStorage) BucketExists(ctx context.Context, bucket string) bool {
 	return true
 }
 
+func (o *OSSStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	if o.bucket != "" {
+		bucket = o.bucket
+	}
+	_, err := o.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3BucketNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 // RemoveBucket removes a bucket and all its objects
 func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
-	actualBucket := bucket
 	if o.bucket != "" {
-		actualBucket = o.bucket
+		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
 	}
+
+	actualBucket := bucket
 
 	// Check if bucket exists
 	if !o.BucketExists(ctx, actualBucket) {
@@ -388,6 +424,18 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	return nil
+}
+
+// RemoveEmptyBucket removes a physical bucket only when it is empty.
+func (o *OSSStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	if o.bucket != "" {
+		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
+	}
+	_, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	if isS3NotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // Copy copies an object from source to destination

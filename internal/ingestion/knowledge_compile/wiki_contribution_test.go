@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/nav"
 )
 
 func wikiContributionTestProduct(slug, content string, chunkIDs ...string) kccommon.Product {
@@ -66,6 +67,38 @@ func TestDiffWikiDocumentContributionTreatsDisabledDocumentAsRetraction(t *testi
 	}
 }
 
+func TestProcessBatchRetractionWithoutWikiContributionSkipsMerge(t *testing.T) {
+	store := &memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}
+	previousNav := nav.GetNavService()
+	nav.SetNavService(&recordingNavService{})
+	t.Cleanup(func() { nav.SetNavService(previousNav) })
+	fw := &fakeWriter{}
+	factoryCalled := false
+	consumer := NewConsumer(NewFakeScheduler(),
+		WithReader(&fakeReader{}),
+		WithWriter(fw),
+		withWikiContributionStore(store),
+		WithDeduperFactory(func(string) (Deduper, error) {
+			factoryCalled = true
+			return nil, nil
+		}),
+	)
+	if err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "", []BacklogEntry{{
+		DocID: "doc-1", EventType: string(EventTypeDisabled), Variants: []string{"wiki"},
+	}}, []string{kccommon.TaskTypeWiki}); err != nil {
+		t.Fatalf("processBatch failed: %v", err)
+	}
+	if factoryCalled {
+		t.Fatal("retraction-only Wiki event initialized the dataset merge path")
+	}
+	if fw.writeMergedCalls != 0 {
+		t.Fatalf("retraction-only Wiki event wrote %d merged product batches", fw.writeMergedCalls)
+	}
+	if fw.projectWikiGraphCalls != 0 {
+		t.Fatalf("retraction without a Wiki contribution projected graph %d times, want 0", fw.projectWikiGraphCalls)
+	}
+}
+
 func TestProcessBatchSkipsUnchangedWikiOnlyEvent(t *testing.T) {
 	product := wikiContributionTestProduct("cao-cao", "same content", "chunk-1")
 	store := &memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}
@@ -83,7 +116,7 @@ func TestProcessBatchSkipsUnchangedWikiOnlyEvent(t *testing.T) {
 	)
 	if err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "token-1", []BacklogEntry{{
 		DocID: "doc-1", EventType: string(EventTypeCompleted), Variants: []string{"wiki"},
-	}}); err != nil {
+	}}, []string{kccommon.TaskTypeWiki}); err != nil {
 		t.Fatalf("processBatch failed: %v", err)
 	}
 	if factoryCalled {

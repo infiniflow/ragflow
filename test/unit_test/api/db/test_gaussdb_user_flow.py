@@ -74,6 +74,7 @@ print("gaussdb-adapter-ok")
     assert "gaussdb-adapter-ok" in result.stdout
 
 
+@pytest.mark.p3
 def test_gaussdb_empty_string_compatible_fields_are_nullable_only_for_gaussdb():
     """Verify empty-string field behavior across supported metadata databases."""
 

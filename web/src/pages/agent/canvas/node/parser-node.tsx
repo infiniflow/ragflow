@@ -1,15 +1,14 @@
-import { NodeCollapsible } from '@/components/collapse';
 import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NodeHandleId } from '../../constant';
 import { ParserFormSchemaType } from '../../form/parser-form';
-import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
+import { LabelCard } from './card';
 
 function ParserNode({
   id,
@@ -18,6 +17,11 @@ function ParserNode({
   selected,
 }: NodeProps<BaseNode<ParserFormSchemaType>>) {
   const { t } = useTranslation();
+
+  const fileFormats = (data.form?.setups ?? [])
+    .map((setup) => setup.fileFormat)
+    .filter((format): format is string => typeof format === 'string');
+
   return (
     <NodeWrapper selected={selected} id={id}>
       <CommonHandle
@@ -38,18 +42,15 @@ function ParserNode({
         isConnectableEnd={false}
       ></CommonHandle>
       <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
-
-      <NodeCollapsible items={data.form?.setups}>
-        {(x, idx) => (
-          <LabelCard
-            key={idx}
-            className="flex flex-col text-text-primary gap-1"
-          >
-            <span className="text-text-secondary">Parser {idx + 1}</span>
-            {t(`flow.fileFormatOptions.${x.fileFormat}`)}
-          </LabelCard>
-        )}
-      </NodeCollapsible>
+      {fileFormats.length > 0 && (
+        <LabelCard className="flex flex-wrap gap-2">
+          {fileFormats.map((format, index) => (
+            <span key={index} className="italic text-text-secondary">
+              {t(`flow.fileFormatOptions.${format}`)}
+            </span>
+          ))}
+        </LabelCard>
+      )}
     </NodeWrapper>
   );
 }

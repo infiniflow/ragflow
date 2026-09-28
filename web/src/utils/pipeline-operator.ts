@@ -18,20 +18,24 @@ import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
+  initialCompilationValues,
   initialGoExtractorValues,
+  initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  transformCompilationParams,
   transformExtractorParams,
+  transformGeneralChunkerParams,
   transformParserParams,
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
 import { pickByBackend } from '@/utils/backend-variant';
-import { cloneDeep, isEmpty } from 'lodash';
+import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
 
@@ -252,6 +256,17 @@ function transformTokenChunkerConfigToForm(
   return result;
 }
 
+function transformGeneralChunkerConfigToForm(
+  config: Record<string, any> | undefined,
+): Record<string, any> {
+  const result = transformTokenChunkerConfigToForm(config);
+  result.table_context_size = Number(config?.table_context_size ?? 0);
+  result.image_context_size = Number(config?.image_context_size ?? 0);
+  delete result.image_table_context_window;
+  delete result.delimiter_mode;
+  return result;
+}
+
 /**
  * Converts TitleChunker config from API/DSL format to form format.
  * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
@@ -321,11 +336,51 @@ export function transformApiConfigToForm(
       return transformTokenizerConfigToForm(config);
     case Operator.TokenChunker:
       return transformTokenChunkerConfigToForm(config);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
       return config ?? {};
   }
+}
+
+/**
+ * Converts a saved parser_config (API format, keyed by operator id) to the
+ * form format used by the operator tabs. Configs without pipeline keys
+ * (built-in parse type) are returned as-is.
+ *
+ * The dataset-level metadata group is authoritative for Extractor nodes,
+ * mirroring buildOperatorNode, so the values seeded into the outer form match
+ * what the operator tabs initialize from.
+ */
+export function transformSavedParserConfigToForm(
+  parserConfig?: Record<string, any>,
+): Record<string, any> | undefined {
+  if (
+    !parserConfig ||
+    typeof parserConfig !== 'object' ||
+    Array.isArray(parserConfig) ||
+    !Object.keys(parserConfig).some((key) => key.includes(':'))
+  ) {
+    return parserConfig;
+  }
+
+  const formParserConfig: Record<string, any> = {};
+  for (const [operatorId, config] of Object.entries(parserConfig)) {
+    const operatorType = getOperatorType(operatorId);
+    const apiConfig =
+      operatorType === Operator.Extractor &&
+      isDatasetMetadataGroup(parserConfig.metadata)
+        ? { ...config, metadata: parserConfig.metadata }
+        : (config as Record<string, any>);
+    formParserConfig[operatorId] = transformApiConfigToForm(
+      operatorType,
+      apiConfig,
+    );
+  }
+  return formParserConfig;
 }
 
 /**
@@ -343,18 +398,29 @@ export function transformFormConfigToApi(
       return transformParserParams(config as any);
     case Operator.Extractor:
       return transformExtractorParams(config as any);
+    case Operator.Compiler:
+      return transformCompilationParams(config as Record<string, any>);
     case Operator.Tokenizer:
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
       return transformTokenChunkerParams(config as any);
+    case Operator.GeneralChunker:
+      return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
+    case Operator.ManualChunker:
+      // These fields are UI-only for the title chunker and are not read by
+      // the backend ManualChunker component (manual.go pins method=group,
+      // ignores the token cap).
+      return transformTitleChunkerParams(
+        omit(config, ['include_heading_content', 'chunk_token_cap']) as any,
+      );
     default:
       return config;
   }
 }
 
-function normalizeOperatorForm(
+export function normalizeOperatorForm(
   operatorId: string,
   rawForm: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -371,6 +437,7 @@ function normalizeOperatorForm(
       };
     }
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return {
         ...cloneDeep(initialTitleChunkerValues),
         ...rawForm,
@@ -380,9 +447,19 @@ function normalizeOperatorForm(
         ...cloneDeep(initialTokenChunkerValues),
         ...rawForm,
       };
+    case Operator.GeneralChunker:
+      return {
+        ...cloneDeep(initialGeneralChunkerValues),
+        ...rawForm,
+      };
     case Operator.Extractor:
       return {
         ...cloneDeep(getInitialExtractorValues()),
+        ...rawForm,
+      };
+    case Operator.Compiler:
+      return {
+        ...cloneDeep(initialCompilationValues),
         ...rawForm,
       };
     case Operator.Tokenizer:

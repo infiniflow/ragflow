@@ -17,10 +17,61 @@ package knowledge_compile
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
+
+func TestWikiReadersFilterDisabledDocuments(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatalf("migrate documents: %v", err)
+	}
+	activeStatus := "1"
+	disabledStatus := "0"
+	for _, doc := range []*entity.Document{
+		{ID: "active-doc", KbID: "kb1", Status: &activeStatus, ParserConfig: entity.JSONMap{}},
+		{ID: "disabled-doc", KbID: "kb1", Status: &disabledStatus, ParserConfig: entity.JSONMap{}},
+	} {
+		if err := db.Create(doc).Error; err != nil {
+			t.Fatalf("create document %s: %v", doc.ID, err)
+		}
+	}
+	previousDB := kcDB
+	kcDB = db
+	t.Cleanup(func() { kcDB = previousDB })
+
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{{
+		"id": "page-1", "doc_id": "active-doc", "compile_kwd": "wiki_page",
+		"available_int": 0, "kc_payload": "page content", "slug_kwd": "entity/page",
+		"page_type_kwd": "entity", "title_kwd": "page", "source_doc_ids": []string{"active-doc"},
+	}}}
+	r := engineReader{eng: eng}
+	if _, err := r.LoadDocumentWikiPagesBySlugs(t.Context(), "tenant", "kb1", []string{"entity/page"}); err != nil {
+		t.Fatalf("load document Wiki pages: %v", err)
+	}
+	wikiFilter, ok := eng.lastSearchReq.Filter["doc_id"]
+	if !ok || !reflect.DeepEqual(wikiFilter, []string{"active-doc"}) {
+		t.Fatalf("document Wiki filter = %#v, want active document IDs", wikiFilter)
+	}
+
+	w := engineWriter{eng: eng}
+	if _, err := w.loadActiveDocumentWikiPages(t.Context(), "tenant", "kb1"); err != nil {
+		t.Fatalf("load active document Wiki pages: %v", err)
+	}
+	graphFilter, ok := eng.lastSearchReq.Filter["doc_id"]
+	if !ok || !reflect.DeepEqual(graphFilter, []string{"active-doc"}) {
+		t.Fatalf("graph Wiki filter = %#v, want active document IDs", graphFilter)
+	}
+}
 
 // TestSearchSimilarFiltersByVariant asserts the B1/KNN contract: SearchSimilar
 // scopes the engine query to available_int=1 AND compile_kwd=variant, and the

@@ -124,6 +124,8 @@ func isKnownPrimitive(name string) bool {
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
 		return true
+	case "generalchunker":
+		return true
 	}
 	return false
 }
@@ -148,7 +150,7 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 	// downstream components reading via GetStateFromContext see
 	// the upstream outputs the state post handler already wrote.
 	if state != nil {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx); ctxState != nil && ctxState != state {
+		if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil && ctxState != state {
 			localHistory := state.SnapshotHistory()
 			contextHistory := ctxState.SnapshotHistory()
 			localMemory := state.SnapshotMemory()
@@ -219,7 +221,7 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	if cpnID == "" {
 		return out, nil
 	}
-	ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	ctxState, _ := runtime.GetStateFromContext(ctx)
 	for k, v := range out {
 		if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 			continue
@@ -427,7 +429,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
 	genState := func(runCtx context.Context) *CanvasState {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
+		if ctxState, _ := runtime.GetStateFromContext(runCtx); ctxState != nil {
 			st := NewCanvasState(ctxState.RunID, ctxState.SessionID)
 			for cpnID, bucket := range ctxState.Snapshot() {
 				for key, value := range bucket {
@@ -482,12 +484,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					in, _ := input.(map[string]any)
 					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
 				},
 				func(ctx context.Context, loopErr error) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, loopErr)
 				},
 			))
@@ -639,8 +641,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		return nil
 	}
+	wired := make(map[pendingEdge]struct{}, len(pending))
 	first := make(map[string]bool, len(c.Components))
 	for _, e := range pending {
+		// Multiple output handles may converge on the same downstream
+		// node. The DSL keeps one upstream entry per handle, while eino
+		// permits only one control edge for a source/target pair.
+		if _, ok := wired[e]; ok {
+			continue
+		}
+		wired[e] = struct{}{}
 		if e.cpn == e.up {
 			return nil, fmt.Errorf("canvas: self-edge on %q", e.cpn)
 		}
@@ -729,24 +739,30 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	return wf, nil
 }
 
-// directMessageDownstream: only a direct
-// Message child enables lazy Agent execution. Intermediate nodes must not
+// directMessageDownstream reports whether a component may hand a deferred
+// stream to its downstream consumers. Only a direct Message child enables lazy
+// Agent execution, and only when EVERY direct downstream is a Message.
+//
+// A mixed graph (Agent -> [Agent, Message]) must keep eager execution: the
+// deferred stream is opaque to non-Message consumers, which would otherwise
+// observe the lazy object instead of the semantic answer. An empty downstream
+// list keeps eager execution as before. Intermediate nodes must not
 // accidentally change the Agent's execution mode.
 func directMessageDownstream(c *Canvas, cpnID string) bool {
 	if c == nil {
 		return false
 	}
 	comp, ok := c.Components[cpnID]
-	if !ok {
+	if !ok || len(comp.Downstream) == 0 {
 		return false
 	}
 	for _, downID := range comp.Downstream {
 		down, ok := c.Components[downID]
-		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
-			return true
+		if !ok || !strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func wireWorkflowTerminals(
@@ -819,19 +835,4 @@ func wireWorkflowTerminals(
 	}
 	addEndInput(terminalMergeNodeID)
 	return nil
-}
-
-// snapshotOutputs is retained as a thin wrapper around state.Snapshot()
-// for any leftover callers in test/bench files. New code should call
-// state.Snapshot() directly.
-func snapshotOutputs(src map[string]map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(src))
-	for k, v := range src {
-		cp := make(map[string]any, len(v))
-		for kk, vv := range v {
-			cp[kk] = vv
-		}
-		out[k] = cp
-	}
-	return out
 }

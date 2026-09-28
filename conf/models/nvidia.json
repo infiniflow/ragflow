@@ -13,7 +13,7 @@
   "models": [
     {
       "name": "deepseek-ai/deepseek-v4-flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -24,7 +24,7 @@
     },
     {
       "name": "deepseek-ai/deepseek-v4-pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -35,7 +35,7 @@
     },
     {
       "name": "google/diffusiongemma-26b-a4b-it",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -43,7 +43,7 @@
     },
     {
       "name": "google/gemma-4-31b-it",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 262144,
       "model_types": [
         "chat"
@@ -54,7 +54,7 @@
     },
     {
       "name": "meta/llama-3.1-70b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -62,7 +62,7 @@
     },
     {
       "name": "meta/llama-3.1-8b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -70,7 +70,7 @@
     },
     {
       "name": "meta/llama-3.2-11b-vision-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "url":"https://integrate.api.nvidia.com/v1/meta/llama-3.2-11b-vision-instruct",
       "model_types": [
@@ -80,7 +80,7 @@
     },
     {
       "name": "meta/llama-3.2-1b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -88,7 +88,7 @@
     },
     {
       "name": "meta/llama-3.2-3b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -96,7 +96,7 @@
     },
     {
       "name": "meta/llama-3.2-90b-vision-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "url":"https://integrate.api.nvidia.com/v1/meta/llama-3.2-90b-vision-instruct",
       "model_types": [
@@ -110,7 +110,7 @@
     {
       "name": "nvidia/llama-3.2-nemoretriever-500m-rerank-v2",
       "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-3_2-nemoretriever-500m-rerank-v2/reranking",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "rerank"
@@ -119,7 +119,7 @@
     {
       "name": "nvidia/llama-3.2-nv-rerankqa-1b-v1",
       "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-3_2-nv-rerankqa-1b-v1/reranking",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "rerank"
@@ -127,7 +127,7 @@
     },
     {
       "name": "meta/llama-3.3-70b-instruct",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -135,7 +135,7 @@
     },
     {
       "name": "meta/llama-guard-4-12b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -143,7 +143,7 @@
     },
     {
       "name": "minimaxai/minimax-m3",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 16384,
       "model_types": [
         "chat"
@@ -151,7 +151,7 @@
     },
     {
       "name": "mistralai/mistral-medium-3.5-128b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 262144,
       "model_types": [
         "chat",
@@ -163,7 +163,7 @@
     },
     {
       "name": "mistralai/mistral-nemotron",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -174,7 +174,7 @@
     },
     {
       "name": "moonshotai/kimi-k2.6",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 131072,
       "model_types": [
         "chat",
@@ -187,7 +187,7 @@
     {
       "name": "nvidia/embed-qa-4",
       "url": "https://ai.api.nvidia.com/v1/retrieval/nvidia/embeddings",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "embedding"
@@ -195,7 +195,7 @@
     },
     {
       "name": "nvidia/ising-calibration-1.5-31b",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -203,7 +203,7 @@
     },
     {
       "name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -214,7 +214,7 @@
     },
     {
       "name": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -223,7 +223,7 @@
     },
     {
       "name": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -234,7 +234,7 @@
     },
     {
       "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -245,7 +245,7 @@
     },
     {
       "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -268,7 +268,7 @@
     },
     {
       "name": "nvidia/nemotron-3-nano-30b-a3b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -279,7 +279,7 @@
     },
     {
       "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -295,7 +295,7 @@
     },
     {
       "name": "nvidia/nemotron-3-super-120b-a12b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -306,7 +306,7 @@
     },
     {
       "name": "nvidia/nemotron-3-ultra-550b-a55b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -314,7 +314,7 @@
     },
     {
       "name": "nvidia/nemotron-3.5-content-safety",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -322,7 +322,7 @@
     },
     {
       "name": "nvidia/nemotron-mini-4b-instruct",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 4096,
       "model_types": [
         "chat"
@@ -333,7 +333,7 @@
     },
     {
       "name": "nvidia/nemotron-nano-12b-v2-vl",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat",
@@ -358,7 +358,7 @@
     },
     {
       "name": "nvidia/nvidia-nemotron-nano-9b-v2",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -369,7 +369,7 @@
     },
     {
       "name": "nvidia/riva-translate-4b-instruct-v2",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -377,7 +377,7 @@
     },
     {
       "name": "openai/gpt-oss-120b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -388,7 +388,7 @@
     },
     {
       "name": "openai/gpt-oss-20b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -396,7 +396,7 @@
     },
     {
       "name": "poolside/laguna-xs-2.1",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -404,7 +404,7 @@
     },
     {
       "name": "stepfun-ai/step-3.7-flash",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -412,7 +412,7 @@
     },
     {
       "name": "thinkingmachines/inkling",
-      "content_length": 8192,
+      "context_length": 8192,
       "max_output": 8192,
       "model_types": [
         "chat"
@@ -420,7 +420,7 @@
     },
     {
       "name": "z-ai/glm-5.2",
-      "content_length": 1000000,
+      "context_length": 1000000,
       "max_output": 128000,
       "model_types": [
         "chat"

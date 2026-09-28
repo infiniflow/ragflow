@@ -26,7 +26,7 @@
             },
             "Parser:SongsFillAir": {
                 "downstream": [
-                    "TokenChunker:BlueSkiesLaugh"
+                    "OneChunker:BlueSkiesLaugh"
                 ],
                 "obj": {
                     "component_name": "Parser",
@@ -78,7 +78,7 @@
                     "File"
                 ]
             },
-            "TokenChunker:BlueSkiesLaugh": {
+            "OneChunker:BlueSkiesLaugh": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
@@ -117,7 +117,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TokenChunker:BlueSkiesLaugh"
+                    "OneChunker:BlueSkiesLaugh"
                 ],
                 "downstream": [
                     "Tokenizer:KindEyesWatch"
@@ -161,15 +161,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:SongsFillAirstart-TokenChunker:BlueSkiesLaughend",
+                    "id": "xy-edge__Parser:SongsFillAirstart-OneChunker:BlueSkiesLaughend",
                     "source": "Parser:SongsFillAir",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:BlueSkiesLaugh",
+                    "target": "OneChunker:BlueSkiesLaugh",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:BlueSkiesLaughstart-Extractor:AutoExtractDefaultend",
-                    "source": "TokenChunker:BlueSkiesLaugh",
+                    "id": "xy-edge__OneChunker:BlueSkiesLaughstart-Extractor:AutoExtractDefaultend",
+                    "source": "OneChunker:BlueSkiesLaugh",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -233,7 +233,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_audio_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:SongsFillAir",
@@ -261,9 +261,9 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker_audio_0"
+                        "name": "Audio Chunker"
                     },
-                    "id": "TokenChunker:BlueSkiesLaugh",
+                    "id": "OneChunker:BlueSkiesLaugh",
                     "measured": {
                         "height": 74,
                         "width": 200
@@ -289,7 +289,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_audio_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:KindEyesWatch",
                     "measured": {
@@ -313,7 +313,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

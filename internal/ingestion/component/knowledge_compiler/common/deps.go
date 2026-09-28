@@ -23,11 +23,18 @@ type ChatRequest struct {
 	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
 	// so variants set it per call site.
 	Temperature *float64
-	// MaxTokens caps the generated summary length (mirrors Python's
-	// {"max_tokens": max(self._max_token, 512)} config, issue #10235).
+	// MaxTokens is an optional per-call override. Normal knowledge-compilation
+	// calls use the selected model's configured max_output value.
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
+	// DisableThinking asks the driver to turn chain-of-thought OFF. Reasoning
+	// models (MiniMax-M1/M3, kimi, qwen) otherwise spend the completion budget
+	// (and minutes) on visible COT before returning the structured payload —
+	// the fastest way to slow knowledge compilation to a crawl. Providers that
+	// have no thinking control silently ignore it. Defaults to false, so only
+	// call sites that know the model reasons opt in.
+	DisableThinking bool
 	// DisableRetry tells the production ChatInvoker that the caller owns
 	// transient-error retries (GenJSON is such a caller). It is internal
 	// plumbing and is not part of the user-facing model request.
@@ -172,9 +179,7 @@ type Deps struct {
 	TenantID        string
 	DatasetID       string
 	// ModelContextLen is the chat model's context window in tokens
-	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
-	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
-	// quotas (mirrors Python self._llm_model.max_length).
+	// (content_length). Prompt-packing helpers use it to size input quotas.
 	ModelContextLen int
 	// ModelMaxOutput is the chat model's generation cap (max_output), the most
 	// tokens one LLM response may emit. Cross-document merge judging packs many

@@ -194,7 +194,11 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Segmented:
-          fieldSchema = z.string();
+          fieldSchema = field.options?.every(
+            (option) => typeof option.value === 'string',
+          )
+            ? z.string()
+            : z.union([z.string(), z.boolean(), z.number()]);
           break;
         case FormFieldType.Number:
           fieldSchema = z.coerce.number();

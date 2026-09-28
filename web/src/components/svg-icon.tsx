@@ -95,6 +95,7 @@ const svgIcons = [
   LLMFactory.RAGcon,
   LLMFactory.SoMark,
   LLMFactory.NewAPI,
+  LLMFactory.DaoXE,
   LLMFactory.Astraflow,
   LLMFactory.AstraflowCN,
   LLMFactory.FuturMix,
@@ -113,7 +114,9 @@ const svgIcons = [
   LLMFactory.AIMLAPI,
   LLMFactory.GreenPT,
   LLMFactory.Synthorai,
+  LLMFactory.ApiRoute,
   LLMFactory.MWS,
+  LLMFactory.CheaperInference,
 ];
 
 export const LlmIcon = ({

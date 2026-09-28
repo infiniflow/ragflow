@@ -30,6 +30,9 @@ export enum RunningStatus {
   DONE = 'DONE', // need to refresh
   FAIL = 'FAIL', // need to refresh
   SCHEDULE = 'SCHEDULE',
+  // Go ingestion only: the task is enqueued but not started yet
+  // (ingestion_status CREATED / SCHEDULED).
+  QUEUED = 'QUEUED',
 }
 
 export enum RunningStatusOld {
@@ -41,6 +44,18 @@ export enum RunningStatusOld {
   SCHEDULE = '5',
 }
 
+export enum IngestionTaskStatus {
+  // Go backend only: no ingestion task exists yet (e.g. freshly uploaded).
+  UNSTART = 'UNSTART',
+  CREATED = 'CREATED',
+  SCHEDULED = 'SCHEDULED',
+  RUNNING = 'RUNNING',
+  STOPPING = 'STOPPING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
+}
+
 export const RunningStatusMap = {
   [RunningStatus.UNSTART]: 'Pending',
   [RunningStatus.RUNNING]: 'Running',
@@ -48,6 +63,7 @@ export const RunningStatusMap = {
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
   [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.QUEUED]: 'Queued',
 
   [RunningStatusOld.UNSTART]: 'Pending',
   [RunningStatusOld.RUNNING]: 'Running',
@@ -142,6 +158,11 @@ export enum ProcessingType {
   timeline = 'Timeline',
   sessionEssence = 'Session_Essence',
   sessionGraph = 'Session_Graph',
+  // Task types written by the Go knowledge-compile pipeline
+  // (kccommon.TaskType*); they intentionally match the frontend categories.
+  wiki = 'Wiki',
+  tree = 'Tree',
+  pageIndex = 'PageIndex',
 }
 
 export const ProcessingTypeMap = {

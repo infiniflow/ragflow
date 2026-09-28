@@ -1,6 +1,6 @@
 export interface ITestRetrievalRequestBody {
   question: string;
-  size: number;
+  page_size: number;
   rerank_candidates_count: number;
   similarity_threshold: number;
   vector_similarity_weight: number;
@@ -28,11 +28,11 @@ export interface IFetchKnowledgeListRequestParams {
   id?: string;
   page?: number;
   page_size?: number;
-  ext?: {
-    keywords?: string;
-    owner_ids?: string[];
-    parser_id?: string;
-  };
+  keywords?: string;
+  owner_ids?: string[];
+  parser_id?: string;
+  // Viewing a shared canvas: fetch the canvas owner's datasets instead.
+  tenant_id?: string;
 }
 
 export interface IFetchDocumentListRequestBody {

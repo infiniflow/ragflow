@@ -128,7 +128,8 @@ class QWeather(ToolBase, ABC):
 
             try:
                 lookup = requests.get(
-                    url="https://geoapi.qweather.com/v2/city/lookup?location=" + location + "&key=" + self._param.web_apikey,
+                    url="https://geoapi.qweather.com/v2/city/lookup",
+                    params={"location": location, "key": self._param.web_apikey},
                     timeout=DEFAULT_TIMEOUT,
                 ).json()
 

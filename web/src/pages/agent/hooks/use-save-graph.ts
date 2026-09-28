@@ -23,6 +23,9 @@ export const useSaveGraph = (
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
+  // Saving is always allowed, even with unresolved canvas issues — those live
+  // in the canvas checklist (useCanvasChecklist) which gates the
+  // publish/run/embed/explore entry points instead.
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
@@ -47,7 +50,7 @@ export const useSaveGraph = (
 
       return setAgent(params);
     },
-    [setAgent, data, id, buildDslData],
+    [id, data.title, buildDslData, setAgent],
   );
 
   return { saveGraph, loading };

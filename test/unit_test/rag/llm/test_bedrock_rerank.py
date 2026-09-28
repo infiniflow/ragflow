@@ -18,7 +18,7 @@
 
 ``BedrockRerank`` talks to the ``bedrock-agent-runtime`` Rerank API via boto3.
 These tests patch ``boto3.client`` so no AWS call is made, and verify the
-score-by-index mapping, per-model document truncation and key/ARN handling.
+score-by-index mapping, document token limiting and key/ARN handling.
 """
 
 import json
@@ -69,19 +69,13 @@ def test_model_arn_is_built_from_region_and_name():
     assert mdl.model_arn == "arn:aws:bedrock:eu-central-1::foundation-model/cohere.rerank-v3-5:0"
 
 
-def test_doc_window_depends_on_model():
-    cohere, _ = _make(model_name="cohere.rerank-v3-5:0")
-    amazon, _ = _make(model_name="amazon.rerank-v1:0")
-    assert cohere.doc_max_tokens == 2048
-    assert amazon.doc_max_tokens == 8192
-
-
-def test_documents_are_truncated_before_send():
-    mdl, client = _make(model_name="cohere.rerank-v3-5:0")  # cap 2048
+def test_documents_are_truncated_to_configured_max_tokens_before_send():
+    mdl, client = _make(model_name="cohere.rerank-v3-5:0")
+    mdl.max_token = 2048
     client.rerank.return_value = _rerank_response([(0, 0.5)])
     mdl.similarity("q", ["mot " * 5000])  # > 2048 tokens
     sent = client.rerank.call_args.kwargs["sources"][0]["inlineDocumentSource"]["textDocument"]["text"]
-    assert num_tokens_from_string(sent) <= 2048
+    assert num_tokens_from_string("q") + num_tokens_from_string(sent) <= 2048
 
 
 def test_number_of_results_covers_all_documents():
@@ -135,25 +129,7 @@ def test_empty_input_short_circuits_without_calling_bedrock(query, texts):
     client.rerank.assert_not_called()
 
 
-def test_document_is_capped_at_32000_chars():
-    # RerankTextDocument.text is hard-capped at 32,000 chars; a longer doc would
-    # otherwise be rejected by the API. Amazon's 8k-token window can exceed it.
-    mdl, client = _make(model_name="amazon.rerank-v1:0")
-    client.rerank.return_value = _rerank_response([(0, 0.5)])
-    mdl.similarity("q", ["word " * 30000])  # 150k chars -> ~41k after token truncation
-    sent = client.rerank.call_args.kwargs["sources"][0]["inlineDocumentSource"]["textDocument"]["text"]
-    assert len(sent) == 32000
-
-
-def test_query_is_capped_at_32000_chars():
-    mdl, client = _make(model_name="amazon.rerank-v1:0")
-    client.rerank.return_value = _rerank_response([(0, 0.5)])
-    mdl.similarity("q " * 30000, ["doc"])  # oversize query
-    sent = client.rerank.call_args.kwargs["queries"][0]["textQuery"]["text"]
-    assert len(sent) == 32000
-
-
-def test_short_document_is_not_char_capped():
+def test_document_is_sent_unchanged_within_token_limit():
     mdl, client = _make(model_name="amazon.rerank-v1:0")
     client.rerank.return_value = _rerank_response([(0, 0.5)])
     mdl.similarity("q", ["short document"])

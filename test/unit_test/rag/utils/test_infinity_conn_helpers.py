@@ -31,7 +31,9 @@ pool and exercise the routing logic. Run with::
 import logging
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 
 pytestmark = pytest.mark.p2
 
@@ -53,6 +55,33 @@ def _resolve_infinity_class():
 
 
 _Inf = _resolve_infinity_class()
+
+
+def test_dense_search_keeps_scope_filter_without_fulltext():
+    conn = _Inf.__new__(_Inf)
+    conn.dbName = "default_db"
+    conn.logger = logging.getLogger("test.infinity_dense_scope")
+    conn.equivalent_condition_to_str = lambda *_args: "doc_id IN ('doc-1') AND available_int=1"
+
+    builder = MagicMock()
+    for method in ("match_dense", "offset", "limit", "option"):
+        getattr(builder, method).return_value = builder
+    builder.to_df.return_value = (pd.DataFrame([{"id": "chunk-1", "SIMILARITY": 0.9, "pagerank_fea": 0.0}]), {"total_hits_count": 1})
+    table = MagicMock()
+    table.output.return_value = builder
+    db = MagicMock()
+    db.get_table.return_value = table
+    inf_conn = MagicMock()
+    inf_conn.get_database.return_value = db
+    conn.connPool = MagicMock()
+    conn.connPool.get_conn.return_value = inf_conn
+
+    dense = MatchDenseExpr("q_2_vec", [0.1, 0.2], "float", "cosine", 7, {"similarity": 0.17, "num_candidates": 19})
+    conn.search(["id"], [], {"doc_id": ["doc-1"], "available_int": 1}, [dense], OrderByExpr(), 0, 5, "ragflow_tenant", ["kb-1"])
+
+    options = builder.match_dense.call_args.args[-1]
+    assert options["filter"] == "doc_id IN ('doc-1') AND available_int=1"
+    assert "filter_fulltext" not in options["filter"]
 
 
 # ---------------------------------------------------------------------------

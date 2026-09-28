@@ -24,7 +24,7 @@
 // traceparent headers.
 //
 // SSRF guard (PR #15426): every outbound URL is validated against
-// the shared utility.AssertURLSafe before any network I/O. Both the
+// the shared common.AssertURLSafe before any network I/O. Both the
 // target URL and an optional proxy URL are checked — the proxy
 // vector matters because the Go transport hands the request to the
 // proxy host, which would otherwise re-resolve the original host
@@ -44,6 +44,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -85,10 +86,10 @@ func (i *InvokeComponent) Name() string { return i.name }
 
 // Invoke executes a single HTTP request and returns its response text as
 // `result`, matching the Python Invoke component. See Inputs() for the
-// param contract.
+// param
 //
 // SSRF flow (PR #15426):
-//  1. Validate the target URL via utility.AssertURLSafe (loopback /
+//  1. Validate the target URL via common.AssertURLSafe (loopback /
 //     link-local / RFC1918 / metadata / unresolvable are rejected).
 //  2. Validate the optional proxy URL the same way (the proxy
 //     re-resolves the target host; an unsafe proxy would defeat
@@ -136,7 +137,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 
 	// Step 1: SSRF guard for the target URL. The validated
 	// hostname + resolved public IP are reused for DNS pinning.
-	host, pinnedIP, err := utility.AssertURLSafe(rawURL)
+	host, pinnedIP, err := common.AssertURLSafe(rawURL)
 	if err != nil {
 		return invokeSSRFError("url", rawURL, err), nil
 	}
@@ -175,7 +176,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return invokeSSRFError("url", rawURL,
 				fmt.Errorf("Invoke: proxy mode requires a literal-IP target URL (hostnames are unsafe because the proxy re-resolves them)")), nil
 		}
-		ph, pip, perr := utility.AssertURLSafe(proxyStr)
+		ph, pip, perr := common.AssertURLSafe(proxyStr)
 		if perr != nil {
 			return invokeSSRFError("proxy", proxyStr, perr), nil
 		}
@@ -354,15 +355,22 @@ func invokeHeaders(raw any) (map[string]any, error) {
 		return headers, nil
 	}
 	text, ok := raw.(string)
-	if !ok || strings.TrimSpace(text) == "" {
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: unsupported type", zap.String("type", fmt.Sprintf("%T", raw)))
 		return nil, nil
 	}
-	var headers map[string]any
-	if err := json.Unmarshal([]byte(text), &headers); err != nil {
-		return nil, fmt.Errorf("Invoke: headers must be a JSON object: %w", err)
+	if strings.TrimSpace(text) == "" {
+		return nil, nil
 	}
-	if headers == nil {
-		return nil, errors.New("Invoke: headers must be a JSON object")
+	var decoded any
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		zap.L().Warn("Invoke headers ignored: invalid JSON", zap.Error(err))
+		return nil, nil
+	}
+	headers, ok := decoded.(map[string]any)
+	if !ok {
+		zap.L().Warn("Invoke headers ignored: decoded type", zap.String("type", fmt.Sprintf("%T", decoded)))
+		return nil, nil
 	}
 	return headers, nil
 }

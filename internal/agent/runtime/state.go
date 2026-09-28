@@ -147,7 +147,7 @@ type canvasStateJSON struct {
 
 // MarshalJSON serialises the CanvasState for eino's StatePre/Post
 // handler chain (which JSON-encodes the state on every node boundary
-// when a StateSerializer is wired) and for Redis-backed CheckPointStore
+// when a StateSerializer is wired) and for Kvrocks-backed CheckPointStore
 // payloads.
 //
 // Eino's interrupt path hit "failed to marshal state: unknown

@@ -46,7 +46,7 @@ export function CompilationTemplateCard({
           <section className="flex items-center justify-between gap-2">
             <TruncatedText
               as="h3"
-              className="flex-1 min-w-0 truncate"
+              className="flex-1 min-w-0 truncate text-base font-bold leading-snug"
               tooltip={data.name}
             >
               {data.name}

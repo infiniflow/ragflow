@@ -29,39 +29,15 @@ func TestNewPictureParser(t *testing.T) {
 	if p.OutputFormat != "" {
 		t.Errorf("OutputFormat = %q, want empty", p.OutputFormat)
 	}
-	if p.VLMModelID != "" {
-		t.Errorf("VLMModelID = %q, want empty", p.VLMModelID)
-	}
-	if p.ImageContextSize != 0 {
-		t.Errorf("ImageContextSize = %d, want 0", p.ImageContextSize)
-	}
 }
 
 func TestPictureParser_ConfigureFromSetup(t *testing.T) {
 	p := NewPictureParser()
 	p.ConfigureFromSetup(map[string]any{
-		"vlm": map[string]any{
-			"llm_id": "gpt-4-vision",
-		},
-		"output_format":      "text",
-		"image_context_size": float64(3),
-		"layout_recognize":   "@PaddleOCR",
-		"video_prompt":       "summarize",
+		"output_format": "text",
 	})
-	if p.VLMModelID != "gpt-4-vision" {
-		t.Errorf("VLMModelID = %q, want gpt-4-vision", p.VLMModelID)
-	}
 	if p.OutputFormat != "text" {
 		t.Errorf("OutputFormat = %q, want text", p.OutputFormat)
-	}
-	if p.ImageContextSize != 3 {
-		t.Errorf("ImageContextSize = %d, want 3", p.ImageContextSize)
-	}
-	if p.LayoutRecognize != "@PaddleOCR" {
-		t.Errorf("LayoutRecognize = %q, want @PaddleOCR", p.LayoutRecognize)
-	}
-	if p.VideoPrompt != "summarize" {
-		t.Errorf("VideoPrompt = %q, want summarize", p.VideoPrompt)
 	}
 }
 

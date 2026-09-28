@@ -88,6 +88,7 @@ export function SimilaritySliderFormField({
         layout={FormLayout.Vertical}
         tooltip={isTooltipShown && t('similarityThresholdTip')}
         numberInputClassName={numberInputClassName}
+        percentage
       ></SliderInputFormField>
       <FormField
         control={form.control}

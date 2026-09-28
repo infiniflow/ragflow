@@ -244,7 +244,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -272,7 +272,7 @@
                             }
                         },
                         "label": "PageChunker",
-                        "name": "Presentation Chunker_0"
+                        "name": "Presentation Chunker"
                     },
                     "id": "PageChunker:HappyHillsGlow",
                     "measured": {
@@ -300,7 +300,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:TallTreesDance",
                     "measured": {
@@ -324,7 +324,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

@@ -77,7 +77,7 @@ type TTSDispatcher interface {
 //
 //   - ModelProviderRequest.ModelName (from req.Engine)  → modelName
 //     The Engine field is repurposed as a model identifier hint
-//     in the audio package's contract. Built-in engine selectors
+//     in the audio package's  Built-in engine selectors
 //     ("gtts" / "edge-tts" / "custom") and an empty hint fall
 //     through to the tenant's default TTS model; any other value
 //     is passed as an explicit model name to the by-name lookup.

@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"ragflow/internal/common"
 
@@ -51,17 +52,37 @@ func init() {
 // loaded without a digest check (defense-in-depth, not a hard gate).
 //
 // NOTE: this is the digest of the file *contents*, not the tiktoken cache
-// filename. tiktoken-go names its cached file by sha1(bpeURL)
+// filename. The loader names its cached file after the URL
 // (223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7 for
 // cl100k_base); that value identifies the path, while the value below verifies
 // the bytes we actually load. Compute it from the table shipped by
-// ragflow_deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
+// ragflow_deps/download_go_deps.py: `sha1sum cl100k_base.tiktoken`.
 var expectedBpeHashes = map[string]string{
 	"https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken": "6494e42d5aad2bbb441ea9793af9e7db335c8d9c",
 }
 
 // localBpeLoader resolves tiktoken BPE tables from the local filesystem.
 type localBpeLoader struct{}
+
+// cl100kTablePath records the table file the loader accepted, for diagnostics: the
+// availability report (CounterStatuses) prints it, which is how an operator sees which
+// copy of the table is in use.
+var (
+	cl100kTablePathMu sync.Mutex
+	cl100kTablePath   string
+)
+
+func recordCl100kTablePath(path string) {
+	cl100kTablePathMu.Lock()
+	cl100kTablePath = path
+	cl100kTablePathMu.Unlock()
+}
+
+func cl100kTableSource() string {
+	cl100kTablePathMu.Lock()
+	defer cl100kTablePathMu.Unlock()
+	return cl100kTablePath
+}
 
 // LoadTiktokenBpe implements tiktoken.BpeLoader.
 //
@@ -96,6 +117,7 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 			// name collision. Continuing to the next candidate would mask it.
 			return nil, fmt.Errorf("BPE table %s is malformed: %w", candidate, err)
 		}
+		recordCl100kTablePath(candidate)
 		return ranks, nil
 	}
 
@@ -138,7 +160,13 @@ func bpeCandidatePaths(bpeURL string) []string {
 		}
 	}
 
-	for _, root := range searchRoots() {
+	// MODEL_ASSETS_DIR: the shared model-asset root (see common.ModelAssetCandidates).
+	// Listed before the working-directory walk because it is an explicit instruction.
+	for _, candidate := range common.ModelAssetCandidates(bundledName) {
+		add(candidate)
+	}
+
+	for _, root := range bpeSearchRoots() {
 		// Same layout the Dockerfile creates: the table sits in the
 		// installation root under its sha1 name.
 		add(filepath.Join(root, cacheName))
@@ -170,6 +198,25 @@ func searchRoots() []string {
 		}
 	}
 	return roots
+}
+
+// bpeSearchRoots is the directory set the loader walks for the table. It
+// defaults to searchRoots (working + executable dirs and their ancestors) so
+// the production image finds the table dropped into the install root. Tests
+// override it with SetBpeSearchRootsForTest to isolate from the host
+// filesystem — without that, a tiktoken cache leaked into /tmp (an ancestor of
+// any temp working dir) would be picked up and make "missing table" tests
+// non-deterministic.
+var bpeSearchRoots = searchRoots
+
+// SetBpeSearchRootsForTest replaces the directory set the loader searches.
+// Pass nil to restore the default. Test-only; it mutates package state.
+func SetBpeSearchRootsForTest(roots []string) {
+	if roots == nil {
+		bpeSearchRoots = searchRoots
+		return
+	}
+	bpeSearchRoots = func() []string { return roots }
 }
 
 func startingDirs() []string {

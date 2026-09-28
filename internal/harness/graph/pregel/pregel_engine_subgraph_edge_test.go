@@ -20,7 +20,7 @@ import (
 
 func TestEngine_BasicExecution(t *testing.T) {
 	result, err := NewEngine(newSimpleGraph(t), WithRecursionLimit(10)).
-		RunSync(context.Background(), map[string]any{"value": "start"})
+		RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestEngine_BinOpAggregate(t *testing.T) {
 	_ = sg.AddEdge("add10", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestEngine_TopicChannel(t *testing.T) {
 	_ = sg.AddEdge("emit2", constants.End)
 
 	engine := NewEngine(sg, WithRecursionLimit(10))
-	_, err := engine.RunSync(context.Background(), map[string]any{})
+	_, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestEngine_WithCheckpointer(t *testing.T) {
 		WithCheckpointer(ms),
 		WithConfig(cfg),
 	)
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "start"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "start"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestEngine_UntrackedValue(t *testing.T) {
 		WithConfig(cfg),
 	)
 
-	result, err := engine.RunSync(context.Background(), map[string]any{})
+	result, err := engine.RunSync(t.Context(), map[string]any{})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestEngine_ReuseDiffConfig(t *testing.T) {
 			WithCheckpointer(ms),
 			WithConfig(cfg),
 		)
-		_, err := engine.RunSync(context.Background(), map[string]any{"value": "reuse"})
+		_, err := engine.RunSync(t.Context(), map[string]any{"value": "reuse"})
 		if err != nil {
 			t.Fatalf("iteration %d: %v", i, err)
 		}
@@ -179,7 +179,7 @@ func TestEngine_ManyParallelRuns(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		wg.Go(func() {
 			engine := NewEngine(newSimpleGraph(t), WithRecursionLimit(10))
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "par"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "par"})
 			if err != nil {
 				t.Errorf("RunSync: %v", err)
 			}
@@ -208,7 +208,7 @@ func TestEngine_SharedMemorySaver50(t *testing.T) {
 				WithCheckpointer(ms),
 				WithConfig(cfg),
 			)
-			_, err := engine.RunSync(context.Background(), map[string]any{"value": "shared"})
+			_, err := engine.RunSync(t.Context(), map[string]any{"value": "shared"})
 			if err != nil {
 				t.Errorf("engine %d: %v", idx, err)
 			}
@@ -226,7 +226,7 @@ func TestEngine_DebugMode(t *testing.T) {
 		WithRecursionLimit(10),
 		WithDebug(true),
 	)
-	result, err := engine.RunSync(context.Background(), map[string]any{"value": "debug"})
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": "debug"})
 	if err != nil {
 		t.Fatalf("RunSync: %v", err)
 	}

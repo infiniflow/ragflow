@@ -22,7 +22,9 @@ import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import PdfPreview from '../document-preview/pdf-preview';
+import { getExtension } from '@/utils/document-util';
+import { get } from 'lodash';
+import DocumentPreview from '../document-preview';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 
 interface IProps extends IModalProps<any> {
@@ -42,6 +44,11 @@ export const PdfSheet = ({
   const getDocumentUrl = useGetDocumentUrl(documentId);
   const url = getDocumentUrl(documentId);
   const { highlights, setWidthAndHeight } = useGetChunkHighlights(chunk);
+  const fileType = getExtension(
+    get(chunk, 'document_name', '') || get(chunk, 'docnm_kwd', '') || 'pdf',
+  );
+  const positions = Array.isArray(chunk?.positions) ? chunk.positions : [];
+
   return (
     <Sheet open onOpenChange={hideModal}>
       <SheetContent
@@ -55,12 +62,14 @@ export const PdfSheet = ({
           <SheetTitle>Document Previewer</SheetTitle>
         </SheetHeader>
         {url && documentId && (
-          <PdfPreview
+          <DocumentPreview
             className={'p-0 !h-[calc(100vh-80px)] w-full'}
+            fileType={fileType || 'pdf'}
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}
             url={url}
-          ></PdfPreview>
+            positions={positions}
+          />
         )}
       </SheetContent>
     </Sheet>

@@ -31,6 +31,8 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/pipeline"
@@ -62,6 +64,18 @@ import (
 func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	requireTokenizerPool(t)
 	mustLoadTaskTestConfig(t)
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the PDF pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend). The page-cap assertion below relies
+	// on pdfium reading the capped/uncapped number of pages — not on layout
+	// inference — so a mock analyzer preserves the behaviour under test.
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	origDB := dao.DB
 	realDB := mustOpenTaskTestDB(t)

@@ -115,9 +115,23 @@ func newStubEmbedder(dim int) *stubEmbedder {
 // (["full_text","embedding"]); callers that need a different mode construct
 // the component directly via NewTokenizerComponent(NewTokenizerComponentWithResolver).
 func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
+	// Non-empty: the per-chunk cache is skipped unless the dataset reports an
+	// embd_id, so an empty value here would silently disable the cache.
+	embdID := "embd-test"
+	return withStubEmbedderEmbdID(t, dim, &embdID)
+}
+
+// withStubEmbedderEmbdID builds a TokenizerComponent whose resolver reports the
+// value pointed to by embdID at call time. The per-chunk embedding cache keys on
+// that id, so mutating *embdID between two embedChunks passes models "the
+// dataset's embedding model was rebound" — the two passes must then share no
+// cache entry, which is exactly what a stale vector would otherwise cause.
+func withStubEmbedderEmbdID(t *testing.T, dim int, embdID *string) (*TokenizerComponent, *stubEmbedder) {
 	t.Helper()
 	stub := newStubEmbedder(dim)
-	comp, err := NewTokenizerComponentWithResolver(nil, func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
+	comp, err := NewTokenizerComponentWithResolver(nil, func(ctx context.Context, _, _ string) (Embedder, string, error) {
+		return stub, *embdID, nil
+	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -152,7 +166,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
 
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
@@ -181,7 +195,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 	})
 	if err != nil {
@@ -196,13 +210,13 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"search_method": []any{"embedding"},
-	}, func(ctx context.Context, _, _, _ string) (Embedder, error) {
-		return newStubEmbedder(4), nil
+	}, func(ctx context.Context, _, _ string) (Embedder, string, error) {
+		return newStubEmbedder(4), "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
+	out, err := cIntf.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -226,11 +240,75 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	}
 }
 
+func TestTokenizerComponent_FullTextIncludesMediaContext(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	comp, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"name":          "report.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{
+				"text":          "table body",
+				"context_above": "above ",
+				"context_below": " below",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if got := chunks[0]["content_ltks"]; got != "above table body below" {
+		t.Fatalf("content_ltks = %q, want contextual text", got)
+	}
+	if got := chunks[0]["content_sm_ltks"]; got != "above table body below" {
+		t.Fatalf("content_sm_ltks = %q, want contextual text", got)
+	}
+}
+
+func TestTokenizerComponent_EmbeddingIncludesMediaContext(t *testing.T) {
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []any{"embedding"}},
+		func(context.Context, string, string) (Embedder, string, error) {
+			return stub, "", nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	_, err = comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"text":          "table body",
+			"context_above": "above ",
+			"context_below": " below",
+		}},
+		"kb_id": "kb-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) != 1 || len(stub.callInputs[0]) != 1 {
+		t.Fatalf("embedder calls = %#v, want one content input", stub.callInputs)
+	}
+	if got := stub.callInputs[0][0]; got != "above table body below" {
+		t.Fatalf("embedding input = %q, want contextual text", got)
+	}
+}
+
 // TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero uses an
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"kb_id":         "kb-1",
 		"output_format": "chunks",
@@ -460,7 +538,7 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 	stub := newStubEmbedder(3)
 	comp, err := NewTokenizerComponentWithResolver(
 		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
-		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+		func(ctx context.Context, _, _ string) (Embedder, string, error) { return stub, "", nil },
 	)
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -473,7 +551,7 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 			{"text": "second chunk", "doc_type_kwd": "text"},
 		},
 	}
-	out, err := comp.Invoke(context.Background(), nil, inputs)
+	out, err := comp.Invoke(t.Context(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -493,33 +571,26 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 }
 
 // TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers A5 at the
-// pipeline level: a chunk is dropped only when BOTH text and
-// content_with_weight are empty. Blocks that carry only image / summary /
-// questions / nothing are dropped (they produce no retrievable content),
-// while a content_with_weight-only block is kept (Parser path; normalize
-// backfills text). Deliberate deviation from Python's "filter None only"
-// rule — user value (retrievable content) wins.
+// pipeline level: a chunk is dropped when canonical "text" is empty.
 func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
-	// JSON path: 6 items. Only the text block and the content_with_weight
-	// block survive; the other four are dropped by the A5 gate.
 	items := []map[string]any{
 		{"text": "valid chunk", "doc_type_kwd": "text"}, // keep
-		{"image": "data:image/png;base64,abc"},          // drop: no text, no content_with_weight
+		{"image": "data:image/png;base64,abc"},          // drop
 		{"summary": "a summary"},                        // drop
 		{"questions": "q1"},                             // drop
-		{"content_with_weight": "weighted"},             // keep (text backfilled by normalize)
+		{"content_with_weight": "weighted"},             // drop: storage field, not canonical text
 		{},                                              // drop: empty
 	}
 	// Use embedding-only mode to avoid CGo tokenizer dependency.
 	stub := newStubEmbedder(3)
 	comp, err := NewTokenizerComponentWithResolver(
 		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
-		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+		func(ctx context.Context, _, _ string) (Embedder, string, error) { return stub, "", nil },
 	)
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "json",
 		"json":          items,
@@ -528,16 +599,41 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks := out["chunks"].([]map[string]any)
-	// A5 keeps only the text block and the content_with_weight block.
-	if len(chunks) != 2 {
-		t.Fatalf("want 2 chunks (4 phantoms filtered), got %d: %#v", len(chunks), chunks)
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk (5 phantoms filtered), got %d: %#v", len(chunks), chunks)
 	}
-	// Surviving chunks, in upstream order.
 	if chunks[0]["text"] != "valid chunk" {
 		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
 	}
-	if chunks[1]["text"] != "weighted" {
-		t.Errorf("chunk 1 text = %q, want %q (content_with_weight backfilled to text)", chunks[1]["text"], "weighted")
+}
+
+func TestTokenizerComponent_KeepsContextOnlyMediaChunk(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	comp, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := comp.(*TokenizerComponent).Invoke(t.Context(), nil, map[string]any{
+		"name":          "report.pdf",
+		"output_format": "chunks",
+		"chunks": []map[string]any{{
+			"image":         "data:image/png;base64,placeholder",
+			"context_above": "figure description",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want context-bearing media chunk retained", chunks)
+	}
+	if got := chunks[0]["content_ltks"]; got != "figure description" {
+		t.Fatalf("content_ltks = %q, want media context", got)
 	}
 }
 
@@ -584,12 +680,12 @@ func TestChunkOrderInt_AllPathsUnconditional(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			comp, err := NewTokenizerComponentWithResolver(
 				map[string]any{"search_method": tc.searchMethod, "fields": []string{"text"}},
-				func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+				func(ctx context.Context, _, _ string) (Embedder, string, error) { return stub, "", nil },
 			)
 			if err != nil {
 				t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 			}
-			out, err := comp.Invoke(context.Background(), nil, tc.inputs)
+			out, err := comp.Invoke(t.Context(), nil, tc.inputs)
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
@@ -627,7 +723,7 @@ func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
 	stub := newStubEmbedder(8)
 	comp, err := NewTokenizerComponentWithResolver(
 		map[string]any{"search_method": []string{"full_text", "embedding"}, "fields": []string{"text"}},
-		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+		func(ctx context.Context, _, _ string) (Embedder, string, error) { return stub, "", nil },
 	)
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -638,7 +734,7 @@ func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
 		{"questions": "orphan question"}, // dropped: no retrievable content
 		{"text": "second"},
 	}
-	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        items,
@@ -685,7 +781,7 @@ func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenizerComponent: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "kw1,kw2;kw3，kw4"},
@@ -738,7 +834,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	}
 
 	// Middle empty element must be preserved (["a","","b"]), not dropped.
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "a,,b"},
@@ -769,7 +865,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	// non-empty keywords field (tokenizer.go:682), so important_kwd is left
 	// unset (nil) rather than materialized as an empty array. Downstream
 	// indexing treats a missing important_kwd as "no keywords", which is safe.
-	outEmpty, err := c.Invoke(context.Background(), nil, map[string]any{
+	outEmpty, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": ""},
@@ -853,7 +949,7 @@ func TestTokenizerComponent_ImportantKwd_Bounded(t *testing.T) {
 	}
 
 	oversized := strings.Repeat("x", 40000)
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "doc body", "keywords": "normal," + oversized + ",中文字"},

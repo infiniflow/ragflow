@@ -341,7 +341,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	if errors.As(err, &codedErr) {
 		code, message = codedErr.Code, codedErr.Message
 	}
-	status, errorType := openAICompatErrorResponse(code, err)
+	status, errorType := openAICompatErrorResponse(code)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"message": message,
@@ -350,11 +350,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	})
 }
 
-func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return http.StatusConflict, "invalid_request_error"
-	}
-
+func openAICompatErrorResponse(code common.ErrorCode) (int, string) {
 	switch code {
 	case common.CodeArgumentError, common.CodeDataError, common.CodeBadRequest, common.CodeParamError:
 		return http.StatusBadRequest, "invalid_request_error"

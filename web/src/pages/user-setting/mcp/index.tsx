@@ -24,7 +24,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { pick } from 'lodash';
 import {
@@ -50,11 +52,16 @@ export default function McpServer() {
     data,
     setPagination,
     searchString,
+    setSearchString,
     handleInputChange,
     pagination,
     loading: listLoading,
   } = useListMcpServer();
-  useGoToPreviousPageOnEmpty(data.mcp_servers?.length, listLoading);
+  useGoToPreviousPageOnEmpty(data.mcp_servers?.length, listLoading, {
+    deletionKey: ListDeletionKey.McpServerList,
+    searchString,
+    setSearchString,
+  });
   const { editVisible, showEditModal, hideEditModal, handleOk, id, loading } =
     useEditMcp();
   const {
@@ -65,6 +72,7 @@ export default function McpServer() {
     handleSelectAll,
     resetSelection,
   } = useBulkOperateMCP(data.mcp_servers);
+  useClearSelectionOnPageChange(pagination, resetSelection);
   const { t } = useTranslation();
   const {
     importVisible,

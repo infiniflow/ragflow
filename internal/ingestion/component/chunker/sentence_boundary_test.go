@@ -39,11 +39,12 @@ func TestSentenceBoundary_SharedRegexMatchesPython(t *testing.T) {
 
 // TestSentenceBoundary_TokenTextPathDelimiterDistinct pins sentenceDelimiter
 // (the token-chunker TEXT path / naive_merge port) to Python naive_merge's
-// production delimiter "\n!?。；！？" — deliberately WITHOUT the English ". "
-// boundary. The two constants mirror two distinct Python delimiters; asserting
-// the exact difference documents that this is intentional, not a drift.
+// production default DEFAULT_DELIMITER ("\n!?;。；！？", rag/nlp/delim.py) —
+// deliberately WITHOUT the English ". " boundary. The two constants mirror two
+// distinct Python delimiters; asserting the exact difference documents that
+// this is intentional, not a drift.
 func TestSentenceBoundary_TokenTextPathDelimiterDistinct(t *testing.T) {
-	const want = `(\n|[!?。；！？])`
+	const want = `(\n|[!?;。；！？])`
 	if got := sentenceDelimiter.String(); got != want {
 		t.Errorf("sentenceDelimiter = %q, want %q (Python naive_merge delimiter)", got, want)
 	}
@@ -51,6 +52,11 @@ func TestSentenceBoundary_TokenTextPathDelimiterDistinct(t *testing.T) {
 	// (matching Python naive_merge), while the shared regex does.
 	if sentenceDelimiter.MatchString("Hello. World") {
 		t.Error("sentenceDelimiter split on '. ' but naive_merge's delimiter has no '. ' boundary")
+	}
+	// The text-path delimiter must split on the ASCII semicolon, matching the
+	// unified Python default (issue #18562: the "; " omission was drift).
+	if !sentenceDelimiter.MatchString("one; two") {
+		t.Error("sentenceDelimiter should split on ';': naive_merge's default includes ';'")
 	}
 	if !sentenceBoundaryRe.MatchString("Hello. World") {
 		t.Error("sentenceBoundaryRe should split on '. '")

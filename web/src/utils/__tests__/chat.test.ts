@@ -1,4 +1,56 @@
-import { preprocessLaTeX, replaceThinkToSection } from '../chat';
+import {
+  mergeAnswerChunk,
+  preprocessLaTeX,
+  replaceThinkToSection,
+} from '../chat';
+
+describe('mergeAnswerChunk', () => {
+  it.each([
+    ['First fact. Second fact.', 'First fact.[ID:0] Second fact.[ID:1]'],
+    ['A fact.[ID:0-1]', 'A fact.[ID:0][ID:1]'],
+  ])('replaces %s with the final cited answer', (previous, answer) => {
+    expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(answer);
+  });
+
+  it('keeps streamed thinking when replacing the visible answer', () => {
+    const streamed = [
+      { start_to_think: true },
+      { answer: 'Checking sources.' },
+      { end_to_think: true },
+      { answer: '## First fact. ' },
+      { answer: 'Second fact.' },
+    ].reduce(mergeAnswerChunk, '');
+    expect(streamed).toBe(
+      '<think>Checking sources.</think>\n\n## First fact. Second fact.',
+    );
+    const answer = mergeAnswerChunk(streamed, {
+      answer: '## First fact.[ID:0] Second fact.[ID:1]',
+      final: true,
+    });
+
+    expect(answer).toBe(
+      '<think>Checking sources.</think>\n\n## First fact.[ID:0] Second fact.[ID:1]',
+    );
+    expect(mergeAnswerChunk(answer, { answer, final: true })).toBe(answer);
+  });
+
+  it.each(['', undefined])(
+    'keeps the answer for an empty final chunk (%s)',
+    (answer) => {
+      const previous = '<think>Checking sources.</think>A fact.[ID:0]';
+      expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(
+        previous,
+      );
+    },
+  );
+
+  it('accepts a single-shot final answer without duplicating a repeated one', () => {
+    const chunk = { answer: 'A fact.[ID:0]', final: true };
+    const answer = mergeAnswerChunk('', chunk);
+    expect(answer).toBe(chunk.answer);
+    expect(mergeAnswerChunk(answer, chunk)).toBe(answer);
+  });
+});
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
@@ -31,6 +83,28 @@ describe('preprocessLaTeX', () => {
     const content = 'First \\[ a \\] then \\[ b \\right] c \\]';
     const result = preprocessLaTeX(content);
     expect(result).toBe('First $$a$$ then $$ b \\right] c $$');
+  });
+
+  it('handles double-escaped inline LaTeX', () => {
+    expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe(
+      '$\\Delta = b^2$',
+    );
+  });
+
+  it('handles double-escaped block LaTeX', () => {
+    expect(preprocessLaTeX('\\\\[E = mc^2\\\\]')).toBe('$$E = mc^2$$');
+  });
+
+  it('decodes HTML entities', () => {
+    expect(preprocessLaTeX('a &lt; b &amp; c &gt; d')).toBe('a < b & c > d');
+  });
+
+  it('handles mixed double-escaped delimiters with HTML entities', () => {
+    expect(preprocessLaTeX('\\\\(x &lt; y\\\\)')).toBe('$x < y$');
+  });
+
+  it('passes through already correct single-escaped delimiters unchanged', () => {
+    expect(preprocessLaTeX('\\(x = 1\\)')).toBe('$x = 1$');
   });
 });
 

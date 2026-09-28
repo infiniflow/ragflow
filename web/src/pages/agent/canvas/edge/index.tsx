@@ -5,13 +5,13 @@ import {
   EdgeProps,
   getBezierPath,
 } from '@xyflow/react';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import useGraphStore from '../../store';
 
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { useMemo } from 'react';
+import { PointerEvent as ReactPointerEvent } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 
 function InnerButtonEdge({
@@ -59,7 +59,10 @@ function InnerButtonEdge({
       : {};
   }, [isTargetPlaceholder]);
 
-  const onEdgeClick = () => {
+  const onEdgeClick = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    // pointerdown: React Flow may swallow click inside group nodes.
+    event.stopPropagation();
+    event.preventDefault();
     deleteEdgeById(id);
   };
 
@@ -82,15 +85,21 @@ function InnerButtonEdge({
     return {};
   }, [flowDetail?.dsl?.path, source, target]);
 
-  const visible = useMemo(() => {
+  const showDelete = useMemo(() => {
     return (
-      data?.isHovered &&
+      (selected || data?.isHovered) &&
       sourceHandleId !== NodeHandleId.Tool &&
-      sourceHandleId !== NodeHandleId.AgentBottom && // The connection between the agent node and the tool node does not need to display the delete button
+      sourceHandleId !== NodeHandleId.AgentBottom &&
       !target.startsWith(Operator.Tool) &&
       !isTargetPlaceholder
     );
-  }, [data?.isHovered, isTargetPlaceholder, sourceHandleId, target]);
+  }, [
+    data?.isHovered,
+    isTargetPlaceholder,
+    selected,
+    sourceHandleId,
+    target,
+  ]);
 
   const activeMarkerEnd =
     selected || !isEmpty(showHighlight) || isTargetPlaceholder
@@ -111,32 +120,28 @@ function InnerButtonEdge({
         className={cn('text-text-disabled')}
       />
 
-      <EdgeLabelRenderer>
-        <div
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            fontSize: 12,
-            // everything inside EdgeLabelRenderer has no pointer events by default
-            // if you have an interactive element, set pointer-events: all
-            pointerEvents: 'all',
-            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
-          }}
-          className="nodrag nopan"
-        >
-          <button
-            className={cn(
-              'size-3.5 border border-state-error text-state-error rounded-full leading-none bg-bg-canvas outline outline-bg-canvas',
-              'invisible',
-              { visible },
-            )}
-            type="button"
-            onClick={onEdgeClick}
+      {showDelete ? (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              fontSize: 12,
+              pointerEvents: 'auto',
+              zIndex: 1002,
+            }}
+            className="nodrag nopan"
           >
-            ×
-          </button>
-        </div>
-      </EdgeLabelRenderer>
+            <button
+              className="size-5 border border-state-error text-state-error rounded-full leading-none bg-bg-canvas outline outline-bg-canvas"
+              type="button"
+              onPointerDown={onEdgeClick}
+            >
+              ×
+            </button>
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
     </>
   );
 }

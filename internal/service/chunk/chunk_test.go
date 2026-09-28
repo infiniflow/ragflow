@@ -3,9 +3,11 @@ package chunk
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	"image/png"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -46,7 +48,7 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 		{"id": "c2", "vector": []float64{4, 5, 6}},
 	}
 	// No zero vectors → nothing to hydrate.
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	if !reflect.DeepEqual(chunks[0]["vector"], []float64{1, 2, 3}) {
 		t.Error("non-zero vector should not be changed")
 	}
@@ -57,15 +59,15 @@ func TestHydrateChunkVectors_AllNonZero(t *testing.T) {
 
 func TestHydrateChunkVectors_EmptyChunks(t *testing.T) {
 	// Should not panic on empty or nil.
-	hydrateChunkVectors(context.Background(), nil, nil, nil, nil)
-	hydrateChunkVectors(context.Background(), nil, []map[string]interface{}{}, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, nil, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, []map[string]interface{}{}, nil, nil)
 }
 
 func TestHydrateChunkVectors_MissingIDs(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"vector": []float64{1.0}}, // no id — skipped
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, nil, nil)
+	hydrateChunkVectors(t.Context(), nil, chunks, nil, nil)
 	// Should not change anything when engine is nil (FetchChunkVectors returns zero vectors).
 	// The function doesn't panic — it just can't hydrate because dim is 0.
 	// With nil engine, FetchChunkVectors returns zero vectors, so the zero stays zero.
@@ -75,7 +77,7 @@ func TestHydrateChunkVectors_NoDim(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"id": "c1", "vector": []float64{}},
 	}
-	hydrateChunkVectors(context.Background(), nil, chunks, []string{"kb1"}, []string{"t1"})
+	hydrateChunkVectors(t.Context(), nil, chunks, []string{"kb1"}, []string{"t1"})
 	// Empty vectors have dim=0 → early return. No crash.
 }
 
@@ -199,12 +201,6 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
-	if doc.Run == nil {
-		t.Fatalf("expected doc run to remain nil, got %q", *doc.Run)
-	}
-	if *doc.Run != "0" {
-		t.Fatalf("expected doc run status is '1', got %q", *doc.Run)
-	}
 	if doc.ChunkNum != 7 {
 		t.Fatalf("expected chunk_num to remain 7, got %d", doc.ChunkNum)
 	}
@@ -289,10 +285,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	datasetID := "kb-1"
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, "doc-1", datasetID)
-	running := string(entity.TaskStatusRunning)
-	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("run", running).Error; err != nil {
-		t.Fatalf("mark doc running: %v", err)
-	}
+	insertChunkTestIngestionTask(t, "task-1", userID, "doc-1", datasetID, common.RUNNING)
 
 	svc := newParseTestService(t)
 	ctx := t.Context()
@@ -303,7 +296,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "currently being processed") {
+	if !strings.Contains(err.Error(), "ingestion task is RUNNING") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -343,6 +336,9 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	if engine.searchReq == nil {
 		t.Fatal("expected Search to be called")
 	}
+	if !engine.searchReq.IncludeUnavailable {
+		t.Fatal("management chunk list must include disabled parent chunks")
+	}
 	if engine.searchReq.OrderBy == nil {
 		t.Fatal("expected OrderBy to be set")
 	}
@@ -354,6 +350,241 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	}
 	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
 		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
+	}
+}
+
+// TestListScopesSearchToDocumentDataset pins the dataset scope of the
+// management chunk list: only the document's own KB may be searched. Passing
+// every KB of the tenant made a document of dataset A list chunks that were
+// written under dataset B's KB context (chunk rows carry img_id
+// "<kb_id>-<chunk_id>"), which the UI surfaced as "occasionally seeing another
+// dataset's chunks".
+func TestListScopesSearchToDocumentDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		documentDAO:   dao.NewDocumentDAO(),
+	}
+
+	ctx := t.Context()
+	page := 1
+	size := 30
+	if _, err := svc.List(ctx, &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if engine.searchReq == nil {
+		t.Fatal("expected Search to be called")
+	}
+	if !reflect.DeepEqual(engine.searchReq.KbIDs, []string{datasetID}) {
+		t.Fatalf("KbIDs = %#v, want the document's dataset only (%q)", engine.searchReq.KbIDs, datasetID)
+	}
+}
+
+// TestGetScopesChunkLookupToDocumentDataset pins the detail endpoint's scope:
+// the chunk is read from the dataset named in the route only, never from every
+// KB of the tenant.
+func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"id":                  "chunk-1",
+		"doc_id":              documentID,
+		"kb_id":               datasetID,
+		"docnm_kwd":           "doc.txt",
+		"content_with_weight": "invoice body",
+		"content_ltks":        []string{"invoice", "body"},
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !reflect.DeepEqual(engine.datasetIDs, []string{datasetID}) {
+		t.Fatalf("datasetIDs = %#v, want the route's dataset only (%q)", engine.datasetIDs, datasetID)
+	}
+	if engine.chunkID != "chunk-1" {
+		t.Fatalf("chunkID = %q, want chunk-1", engine.chunkID)
+	}
+	if engine.indexName != "ragflow_"+tenantID {
+		t.Fatalf("indexName = %q, want ragflow_%s", engine.indexName, tenantID)
+	}
+	if got := resp.Chunk["content_with_weight"]; got != "invoice body" {
+		t.Fatalf("content_with_weight = %#v, want invoice body", got)
+	}
+	// Python returns the stored row (minus runtime fields), so the row identity
+	// fields survive the round trip.
+	if got := resp.Chunk["id"]; got != "chunk-1" {
+		t.Fatalf("id = %#v, want chunk-1", got)
+	}
+	if got := resp.Chunk["docnm_kwd"]; got != "doc.txt" {
+		t.Fatalf("docnm_kwd = %#v, want doc.txt", got)
+	}
+	if _, ok := resp.Chunk["content_ltks"]; ok {
+		t.Fatal("content_ltks should be stripped like Python's _strip_chunk_runtime_fields")
+	}
+}
+
+// TestGetRejectsChunkOfAnotherDocument pins the doc_id guard: holding a chunk id
+// is not authority to read it through a different document.
+func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: documentID,
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("Get() error = %v, want chunk not found", err)
+	}
+}
+
+// TestGetRequiresDocumentInRouteDataset pins the document guard: the chunk is
+// only readable through a document that exists in the route's dataset,
+// mirroring Python's DocumentService.query(id=document_id, kb_id=dataset_id).
+func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	otherDatasetID := "kb-2"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestKB(t, otherDatasetID, tenantID)
+	insertChunkTestDoc(t, "doc-2", otherDatasetID)
+
+	engine := &getChunkTestEngine{chunk: map[string]interface{}{
+		"doc_id":              "doc-2",
+		"content_with_weight": "other dataset document body",
+	}}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-missing",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document not found") {
+		t.Fatalf("Get() error = %v, want document not found", err)
+	}
+
+	_, err = svc.Get(t.Context(), &service.GetChunkRequest{
+		DatasetID:  datasetID,
+		DocumentID: "doc-2",
+		ChunkID:    "chunk-1",
+	}, userID)
+	if err == nil || !strings.Contains(err.Error(), "document does not belong to this dataset") {
+		t.Fatalf("Get() error = %v, want document does not belong to this dataset", err)
+	}
+}
+
+// TestIsChunkRuntimeField pins the strip rule's Python-parity semantics
+// (_vec$|_sm_|_tks|_ltks — only _vec is end-anchored): tokenized/vector runtime
+// fields are dropped, stored fields survive.
+func TestIsChunkRuntimeField(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"content_ltks", true},
+		{"content_sm_ltks", true},
+		{"tokenized_content_ltks", true},
+		{"title_tks", true},
+		{"title_sm_tks", true},
+		{"authors_sm_tks", true},
+		{"important_tks", true},
+		{"question_tks", true},
+		{"name_tks", true},
+		{"tags_tks", true},
+		{"q_1024_vec", true},
+		{"q_2_vec", true},
+		// Only _vec is anchored at the end, so an index-shaped name is kept.
+		{"q_2_vec_idx", false},
+		{"content_with_weight", false},
+		{"content", false},
+		{"docnm_kwd", false},
+		{"doc_id", false},
+		{"kb_id", false},
+		{"important_kwd", false},
+		{"question_kwd", false},
+		{"compile_kwd", false},
+		{"tag_kwd", false},
+		{"tag_feas", false},
+		{"mom_id", false},
+		{"position_int", false},
+		{"img_id", false},
+		{"available_int", false},
+	}
+	for _, tc := range cases {
+		if got := isChunkRuntimeField(tc.name); got != tc.want {
+			t.Errorf("isChunkRuntimeField(%q) = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -383,6 +614,7 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
 		Page:      &page,
 		Size:      &size,
 		Keywords:  "  invoice terms  ",
@@ -404,6 +636,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	}
 	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
 		t.Fatalf("doc_id filter = %#v, want %q", got, documentID)
+	}
+	if got := engine.searchReq.Filter["id"]; !reflect.DeepEqual(got, []string{"chunk-1", "chunk-2"}) {
+		t.Fatalf("id filter = %#v, want %#v", got, []string{"chunk-1", "chunk-2"})
 	}
 	mustNot, ok := engine.searchReq.Filter["must_not"].(map[string]interface{})
 	if !ok || mustNot["exists"] != "compile_kwd" {
@@ -427,12 +662,343 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	if !ok {
 		t.Fatalf("MatchExprs[0] = %T, want *types.MatchTextExpr", engine.searchReq.MatchExprs[0])
 	}
-	if matchText.MatchingText != "invoice terms" {
-		t.Fatalf("MatchingText = %q, want %q", matchText.MatchingText, "invoice terms")
+	if matchText.MatchingText == "invoice terms" || !strings.Contains(matchText.MatchingText, "invoice") || !strings.Contains(matchText.MatchingText, "terms") {
+		t.Fatalf("MatchingText = %q, want a tokenized query containing invoice and terms", matchText.MatchingText)
 	}
-	if matchText.TopN != size {
-		t.Fatalf("TopN = %d, want %d", matchText.TopN, size)
+	if matchText.TopN != 100 {
+		t.Fatalf("TopN = %d, want 100", matchText.TopN)
 	}
+	if got := matchText.ExtraOptions["original_query"]; got != "invoice terms" {
+		t.Fatalf("original_query = %#v, want %q", got, "invoice terms")
+	}
+	if got := matchText.ExtraOptions["minimum_should_match"]; got != 0.3 {
+		t.Fatalf("minimum_should_match = %#v, want 0.3", got)
+	}
+}
+
+func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	insertChunkTestDoc(t, "doc-b", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err == nil {
+		t.Fatal("expected UpdateChunk to reject a chunk from another document")
+	}
+	if !strings.Contains(err.Error(), "chunk not found") {
+		t.Fatalf("UpdateChunk error = %q, want chunk not found", err)
+	}
+	if len(engine.updateCalls) != 0 {
+		t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+	}
+}
+
+func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:  "kb-1",
+		DocumentID: "doc-a",
+		ChunkID:    "chunk-1",
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	call := engine.updateCalls[0]
+	if !reflect.DeepEqual(call.condition, map[string]interface{}{
+		"id":     "chunk-1",
+		"doc_id": "doc-a",
+	}) {
+		t.Fatalf("UpdateChunks condition = %#v", call.condition)
+	}
+	if call.indexName != "ragflow_tenant-1" || call.datasetID != "kb-1" {
+		t.Fatalf("UpdateChunks target index=%q dataset=%q", call.indexName, call.datasetID)
+	}
+}
+
+func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     *string
+		wantMode string
+	}{
+		{"mode defaults to append", nil, imageUpdateModeAppend},
+		{"mode is normalized", strPtr(" REPLACE "), imageUpdateModeReplace},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			var storedBucket, storedChunkID, storedMode string
+			var storedBinary []byte
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
+					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
+					return nil
+				},
+			}
+
+			imageBase64 := base64.StdEncoding.EncodeToString([]byte("image-bytes"))
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     &imageBase64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err != nil {
+				t.Fatalf("UpdateChunk() error = %v", err)
+			}
+
+			if storedBucket != "kb-1" || storedChunkID != "chunk-1" || storedMode != tc.wantMode {
+				t.Fatalf("store args = %q/%q/%q, want kb-1/chunk-1/%s", storedBucket, storedChunkID, storedMode, tc.wantMode)
+			}
+			if string(storedBinary) != "image-bytes" {
+				t.Fatalf("stored binary = %q, want image-bytes", storedBinary)
+			}
+
+			if len(engine.updateCalls) != 1 {
+				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+			}
+			updated := engine.updateCalls[0].newValue
+			if updated["img_id"] != "kb-1-chunk-1" {
+				t.Fatalf("img_id = %#v, want kb-1-chunk-1", updated["img_id"])
+			}
+			if updated["doc_type_kwd"] != "image" {
+				t.Fatalf("doc_type_kwd = %#v, want image", updated["doc_type_kwd"])
+			}
+		})
+	}
+}
+
+func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	order := &[]string{}
+	engine := &orderedUpdateChunkTestEngine{
+		updateChunkTestEngine: updateChunkTestEngine{
+			existingChunk: map[string]interface{}{
+				"doc_id":              "doc-a",
+				"content_with_weight": "existing content",
+			},
+		},
+		order: order,
+	}
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		storeChunkImageFunc: func(string, string, []byte, string) error {
+			t.Fatal("remove mode must not store an image")
+			return nil
+		},
+		removeChunkImageFunc: func(bucket, chunkID string) error {
+			*order = append(*order, "storage")
+			if bucket != "kb-1" || chunkID != "chunk-1" {
+				t.Fatalf("remove args = %q/%q, want kb-1/chunk-1", bucket, chunkID)
+			}
+			return nil
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateChunk() error = %v", err)
+	}
+
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	updated := engine.updateCalls[0].newValue
+	if imgID, ok := updated["img_id"]; !ok || imgID != "" {
+		t.Fatalf("img_id = %#v, want empty string", updated["img_id"])
+	}
+	if updated["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", updated["doc_type_kwd"])
+	}
+	if !reflect.DeepEqual(*order, []string{"index", "storage"}) {
+		t.Fatalf("call order = %#v, want index before storage removal", *order)
+	}
+}
+
+// A request that changes content and drops the image must still schedule the
+// Wiki refresh when the stored object cannot be deleted: the index update has
+// already committed by then.
+func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	engine := &updateChunkTestEngine{
+		existingChunk: map[string]interface{}{
+			"doc_id":              "doc-a",
+			"content_with_weight": "existing content",
+		},
+	}
+	wikiCalls := 0
+	svc := &ChunkService{
+		docEngine:     engine,
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+		removeChunkImageFunc: func(string, string) error {
+			return errors.New("storage unavailable")
+		},
+		markWikiDirtyFunc: func(tenantID, datasetID, documentID string, chunkIDs []string) {
+			wikiCalls++
+		},
+	}
+
+	removeMode := imageUpdateModeRemove
+	content := "updated content"
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID:       "kb-1",
+		DocumentID:      "doc-a",
+		ChunkID:         "chunk-1",
+		Content:         &content,
+		ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if err == nil || !strings.Contains(err.Error(), "Failed to remove chunk image") {
+		t.Fatalf("UpdateChunk() error = %v, want the removal failure", err)
+	}
+	if len(engine.updateCalls) != 1 {
+		t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+	}
+	if wikiCalls != 1 {
+		t.Fatalf("markWikiDirty calls = %d, want 1 (the index update already committed)", wikiCalls)
+	}
+}
+
+func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
+	cases := []struct {
+		name      string
+		imageB64  *string
+		mode      *string
+		wantError string
+	}{
+		{"undecodable base64", strPtr("not base64!!"), nil, "invalid `image_base64`"},
+		{"empty base64", strPtr(""), nil, "`image_base64` must be a non-empty string"},
+		{"unknown mode", strPtr("aGVsbG8="), strPtr("grow"), "`image_update_mode` must be one of: append, replace, remove"},
+		{"empty mode", strPtr("aGVsbG8="), strPtr(""), "`image_update_mode` must be one of: append, replace, remove"},
+		{"append without base64", nil, strPtr(imageUpdateModeAppend), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+		{"replace without base64", nil, strPtr(imageUpdateModeReplace), "`image_base64` is required when `image_update_mode` is `append` or `replace`"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+				storeChunkImageFunc: func(string, string, []byte, string) error {
+					t.Fatal("invalid input must not reach storage")
+					return nil
+				},
+			}
+
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:       "kb-1",
+				DocumentID:      "doc-a",
+				ChunkID:         "chunk-1",
+				ImageBase64:     tc.imageB64,
+				ImageUpdateMode: tc.mode,
+			}, "user-1")
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("UpdateChunk() error = %v, want %q", err, tc.wantError)
+			}
+			var coded interface {
+				Code() common.ErrorCode
+			}
+			if !errors.As(err, &coded) || coded.Code() != common.CodeDataError {
+				t.Fatalf("error code = %v, want %d (Python: DATA_ERROR)", err, common.CodeDataError)
+			}
+			if len(engine.updateCalls) != 0 {
+				t.Fatalf("UpdateChunks calls = %d, want 0", len(engine.updateCalls))
+			}
+		})
+	}
+}
+
+type orderedUpdateChunkTestEngine struct {
+	updateChunkTestEngine
+	order *[]string
+}
+
+func (e *orderedUpdateChunkTestEngine) UpdateChunks(ctx context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	*e.order = append(*e.order, "index")
+	return e.updateChunkTestEngine.UpdateChunks(ctx, condition, newValue, indexName, datasetID)
 }
 
 func TestAddChunkSuccess(t *testing.T) {
@@ -484,7 +1050,6 @@ func TestAddChunkSuccess(t *testing.T) {
 		Content:           "chunk body",
 		ImportantKeywords: []string{"k1"},
 		Questions:         []string{" q1 ", ""},
-		TagKwd:            []string{"tag1"},
 		TagFeas:           map[string]interface{}{"tag1": float64(0.5)},
 	}, userID)
 	if err != nil {
@@ -608,10 +1173,13 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 			return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 		},
 		incrementChunkStatsFunc: func(string, string, int64, int64, float64) error { return nil },
-		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte) error {
+		storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
 			storeCalls++
 			if bucket != datasetID || chunkID == "" || len(imageBinary) == 0 {
 				t.Fatalf("unexpected store args bucket=%s chunkID=%s len=%d", bucket, chunkID, len(imageBinary))
+			}
+			if mode != imageUpdateModeAppend {
+				t.Fatalf("store mode = %q, want %q", mode, imageUpdateModeAppend)
 			}
 			return nil
 		},
@@ -731,11 +1299,140 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeAppend); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
 		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	merged, format, err := image.Decode(bytes.NewReader(mockStorage.lastPut))
+	if err != nil {
+		t.Fatalf("decode stored image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("stored format = %q, want jpeg", format)
+	}
+	// Append stacks the new image below the old one.
+	if got, want := merged.Bounds().Dy(), 3; got != want {
+		t.Fatalf("merged height = %d, want %d", got, want)
+	}
+}
+
+func TestStoreChunkImageReplaceOverwritesExistingImage(t *testing.T) {
+	oldImage := mustEncodePNG(t, image.Rect(0, 0, 2, 2))
+	newImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: oldImage,
+	}
+	ctx := t.Context()
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage, imageUpdateModeReplace); err != nil {
+		t.Fatalf("storeChunkImage() error = %v", err)
+	}
+	if mockStorage.putCalls != 1 {
+		t.Fatalf("put calls = %d, want 1", mockStorage.putCalls)
+	}
+	if !bytes.Equal(mockStorage.lastPut, newImage) {
+		t.Fatalf("replace stored %d bytes, want the new image verbatim (%d bytes)", len(mockStorage.lastPut), len(newImage))
+	}
+}
+
+func TestRemoveChunkImageSkipsMissingObject(t *testing.T) {
+	mockStorage := &chunkImageStorage{exists: false}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	svc := &ChunkService{}
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0 for a missing object", mockStorage.removeCalls)
+	}
+
+	mockStorage.exists = true
+	if err := svc.removeChunkImage(t.Context(), "kb-1", "chunk-1"); err != nil {
+		t.Fatalf("removeChunkImage() error = %v", err)
+	}
+	if mockStorage.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", mockStorage.removeCalls)
+	}
+}
+
+// Every image mode has to serialize on the chunk's per-chunk lock: without it a
+// replace (or a remove) can land between an append's read and write and be
+// overwritten by the merged image.
+func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
+	chunkID := "chunk-locked"
+	mockStorage := &chunkImageStorage{
+		exists:    true,
+		oldBinary: mustEncodePNG(t, image.Rect(0, 0, 2, 2)),
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() {
+		factory.SetStorage(originalStorage)
+	})
+
+	lockKey := "kb-1/" + chunkID
+	lock := acquireChunkImageLock(lockKey)
+	lock.mu.Lock()
+	defer releaseChunkImageLock(lockKey)
+
+	type result struct {
+		op  string
+		err error
+	}
+	svc := &ChunkService{}
+	ctx := t.Context()
+	appendedImage := mustEncodePNG(t, image.Rect(0, 0, 1, 1))
+	replacedImage := mustEncodePNG(t, image.Rect(0, 0, 3, 3))
+
+	done := make(chan result, 3)
+	run := func(op string, fn func() error) {
+		go func() { done <- result{op: op, err: fn()} }()
+	}
+	run("append", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, appendedImage, imageUpdateModeAppend)
+	})
+	run("replace", func() error {
+		return svc.storeChunkImage(ctx, "kb-1", chunkID, replacedImage, imageUpdateModeReplace)
+	})
+	run("remove", func() error {
+		return svc.removeChunkImage(ctx, "kb-1", chunkID)
+	})
+
+	select {
+	case got := <-done:
+		lock.mu.Unlock()
+		t.Fatalf("%s finished while the chunk's image lock was held", got.op)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	lock.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		select {
+		case got := <-done:
+			if got.err != nil {
+				t.Fatalf("%s: %v", got.op, got.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("an image operation did not finish after the lock was released")
+		}
 	}
 }
 
@@ -1195,6 +1892,28 @@ type listChunksSearchEngine struct {
 	searchReq *types.SearchRequest
 }
 
+type getChunkTestEngine struct {
+	parseTestDocEngine
+	chunk      map[string]interface{}
+	err        error
+	indexName  string
+	chunkID    string
+	datasetIDs []string
+}
+
+func (e *getChunkTestEngine) GetChunk(_ context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+	e.indexName = baseName
+	e.chunkID = chunkID
+	e.datasetIDs = datasetIDs
+	if e.err != nil {
+		return nil, e.err
+	}
+	if e.chunk == nil {
+		return nil, nil
+	}
+	return e.chunk, nil
+}
+
 func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchReq = req
 	return &types.SearchResult{
@@ -1210,22 +1929,46 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 	}, nil
 }
 
+type updateChunkTestEngine struct {
+	parseTestDocEngine
+	existingChunk interface{}
+	updateCalls   []updateChunksCall
+}
+
+func (e *updateChunkTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return e.existingChunk, nil
+}
+
+func (e *updateChunkTestEngine) UpdateChunks(_ context.Context, condition, newValue map[string]interface{}, indexName, datasetID string) error {
+	e.updateCalls = append(e.updateCalls, updateChunksCall{
+		condition: copyMap(condition),
+		newValue:  copyMap(newValue),
+		indexName: indexName,
+		datasetID: datasetID,
+	})
+	return nil
+}
+
 type chunkImageStorage struct {
-	exists    bool
-	oldBinary []byte
-	putCalls  int
+	exists      bool
+	oldBinary   []byte
+	putCalls    int
+	removeCalls int
+	lastPut     []byte
 }
 
 func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
 func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
 func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
+	s.lastPut = binary
 	return nil
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	s.removeCalls++
 	return nil
 }
 func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
@@ -1239,8 +1982,15 @@ func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tena
 func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (s *chunkImageStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return s.exists, nil
+}
+func (s *chunkImageStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	return false
 }
@@ -1614,7 +2364,7 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1") // owner = user-1, Accessible passes
 	insertChunkTestDoc(t, "doc-1", "kb-1")
-	// StopParsing now checks the IngestionTask status (not doc.Run).
+	// StopParsing checks the IngestionTask status.
 	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
@@ -1672,9 +2422,9 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 
 	svc := newParseTestService(t)
 	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
-		// Simulate CancelDocParse: set doc.run=CANCEL.
-		return dao.DB.Model(&entity.Document{}).Where("id = ?", doc.ID).
-			Update("run", string(entity.TaskStatusCancel)).Error
+		// Simulate CancelDocParse: stop task.
+		return dao.DB.Model(&entity.IngestionTask{}).Where("document_id = ?", doc.ID).
+			Update("status", common.STOPPED).Error
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine

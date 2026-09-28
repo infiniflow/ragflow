@@ -183,3 +183,39 @@ def test_topn_operation_alias_normalizes_to_head(monkeypatch):
     param.operations = "topN"
     param.check()
     assert param.operations == "head"
+
+
+def _make_invoke_component(module, *, resolved):
+    component = module.ListOperations.__new__(module.ListOperations)
+    component._canvas = SimpleNamespace(get_variable_value=lambda _ref: resolved)
+    component._param = SimpleNamespace(
+        query="cpn_0@result",
+        operations="nth",
+        n=1,
+        strict=False,
+        outputs={
+            "result": {"value": []},
+            "first": {"value": None},
+            "last": {"value": None},
+        },
+    )
+    return component
+
+
+@pytest.mark.p2
+def test_invoke_treats_missing_variable_as_empty_list(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_invoke_component(module, resolved=None)
+    component._invoke()
+    assert component.inputs == []
+    assert component._param.outputs["result"]["value"] == []
+    assert component._param.outputs["first"]["value"] is None
+    assert component._param.outputs["last"]["value"] is None
+
+
+@pytest.mark.p2
+def test_invoke_still_raises_for_non_list_input(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    component = _make_invoke_component(module, resolved="not-a-list")
+    with pytest.raises(TypeError, match="should be an array"):
+        component._invoke()

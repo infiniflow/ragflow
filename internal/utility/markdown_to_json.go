@@ -88,10 +88,13 @@ type kv struct {
 }
 type OMap []kv
 
-// Node is one shaped mind-map node (Python's {"id", "children"} shape).
+// Node is one shaped mind-map node. SourceChunkIDs is populated by the Go
+// mindmap compiler when the model returns provenance in its JSON response;
+// legacy Markdown shaping leaves it empty.
 type Node struct {
-	ID       string
-	Children []*Node
+	ID             string
+	SourceChunkIDs []string
+	Children       []*Node
 }
 
 type blockType int

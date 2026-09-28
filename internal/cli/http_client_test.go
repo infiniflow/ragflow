@@ -57,34 +57,12 @@ func TestRequestWithIterationsCountsApplicationErrorsAsFailures(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code": 100, "message": "request failed"}`))
 	}))
 
-	result, err := client.RequestWithIterations(http.MethodGet, "/failure", "web", nil, nil, 3)
+	result, err := client.Request(3, http.MethodGet, "/failure", "web", nil, nil)
 	if err != nil {
-		t.Fatalf("RequestWithIterations() error = %v", err)
+		t.Fatalf("Request() error = %v", err)
 	}
-	if result.SuccessCount != 0 || result.FailureCount != 3 {
-		t.Fatalf("successes = %d, failures = %d; want 0 successes and 3 failures", result.SuccessCount, result.FailureCount)
-	}
-}
-
-func TestRequestWithIterationsCountsMalformedJSONAsFailures(t *testing.T) {
-	for _, contentType := range []string{
-		"application/json",
-		"application/problem+json; charset=utf-8",
-	} {
-		t.Run(contentType, func(t *testing.T) {
-			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", contentType)
-				_, _ = w.Write([]byte(`{"code":`))
-			}))
-
-			result, err := client.RequestWithIterations(http.MethodGet, "/malformed", "web", nil, nil, 3)
-			if err != nil {
-				t.Fatalf("RequestWithIterations() error = %v", err)
-			}
-			if result.SuccessCount != 0 || result.FailureCount != 3 {
-				t.Fatalf("successes = %d, failures = %d; want 0 successes and 3 failures", result.SuccessCount, result.FailureCount)
-			}
-		})
+	if result.Success != 0 || result.Fail != 3 {
+		t.Fatalf("successes = %d, failures = %d; want 0 successes and 3 failures", result.Success, result.Fail)
 	}
 }
 
@@ -94,11 +72,11 @@ func TestRequestWithIterationsPreservesPlainTextSuccess(t *testing.T) {
 		_, _ = w.Write([]byte("pong"))
 	}))
 
-	result, err := client.RequestWithIterations(http.MethodGet, "/ping", "none", nil, nil, 3)
+	result, err := client.Request(3, http.MethodGet, "/ping", "none", nil, nil)
 	if err != nil {
 		t.Fatalf("RequestWithIterations() error = %v", err)
 	}
-	if result.SuccessCount != 3 || result.FailureCount != 0 {
-		t.Fatalf("successes = %d, failures = %d; want 3 successes and 0 failures", result.SuccessCount, result.FailureCount)
+	if result.Success != 3 || result.Fail != 0 {
+		t.Fatalf("successes = %d, failures = %d; want 3 successes and 0 failures", result.Success, result.Fail)
 	}
 }

@@ -114,7 +114,8 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	}
 
 	// create the 'doc'
-	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, copyJSONMap(kb.ParserConfig), input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
+	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), copyJSONMap(kb.ParserConfig))
+	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, parserID, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	doc.ID = input.DocumentID
 
 	// put 'file' in mysql `document`

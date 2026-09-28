@@ -72,18 +72,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/tokenizer"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -234,12 +234,12 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		// simply skips cropping.
 		engine, engErr := newPDFEngineFromUpstream(ctx, db, upstream)
 		if engErr != nil {
-			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
+			common.Warn("TokenChunker: could not open PDF for on-demand cropping", zap.Error(engErr))
 		}
 		if engine != nil {
 			defer engine.Close()
 		}
-		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine), nil
+		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine, upstream.FileType), nil
 	}
 }
 
@@ -356,7 +356,10 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 	}
 	textDocs := make([]schema.ChunkDoc, 0, len(cleaned))
 	for _, s := range cleaned {
-		textDocs = append(textDocs, schema.ChunkDoc{Text: s, DocType: "text", CKType: "text"})
+		// Python's unstructured text path emits only text here. Keep CKType for
+		// Go's downstream crop dispatch, but do not synthesize structured-input
+		// metadata such as doc_type_kwd.
+		textDocs = append(textDocs, schema.ChunkDoc{Text: s, CKType: "text"})
 	}
 	docs := applyChildrenDelimText(textDocs, childrenPattern)
 	return chunkOutputs(docs)
@@ -364,14 +367,15 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 
 // sentenceDelimiter is the token-chunker TEXT-path sentence delimiter (the
 // naive_merge port). It mirrors the delimiter Python's naive_merge receives in
-// production: rag/app/naive.py passes "\n!?。；！？", which includes ASCII "!"
-// and "?" plus the CJK punctuation "。；！？" but NOT an English ". " boundary.
+// production: rag/app/naive.py passes DEFAULT_DELIMITER ("\n!?;。；！？", defined
+// once in rag/nlp/delim.py), which includes ASCII "!", "?" and ";" plus the CJK
+// punctuation "。；！？" but NOT an English ". " boundary.
 //
 // The Title chunker and the token chunker's JSON path use the shared
 // sentenceBoundaryRe instead (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE,
 // which adds ". "). The two constants mirror two distinct Python delimiters and
 // differ only in that English boundary, exactly as Python does.
-var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
+var sentenceDelimiter = regexp.MustCompile(`(\n|[!?;。；！？])`)
 
 // overlapCut returns the visible-text rune offset where the overlap prefix
 // begins, mirroring the cut computed inside computeOverlapPrefix. It is split
@@ -516,7 +520,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
-		ch.Text = removeTag(strings.TrimSpace(ch.Text))
+		setChunkText(&ch, removeTag(strings.TrimSpace(ch.Text)))
 		if ch.Text == "" {
 			continue
 		}
@@ -528,7 +532,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 
 // invokeJSONPayload handles structured upstream input. Items fan
 // across 4 goroutines; merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine) map[string]any {
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine, fileType string) map[string]any {
 	if len(items) == 0 {
 		return emptyOutputs()
 	}
@@ -541,6 +545,12 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	lanes := partition(len(items), workers)
 	perItem := make([][]schema.ChunkDoc, len(items))
+	dataTables := make(map[string]struct{})
+	for _, item := range items {
+		if item.CKType == "table_row" {
+			dataTables[spreadsheetTableKey(item)] = struct{}{}
+		}
+	}
 
 	var wg sync.WaitGroup
 	for w := 0; w < workers; w++ {
@@ -553,7 +563,20 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 					perItem[i] = nil
 					continue
 				}
-				perItem[i] = chunkFromItem(items[i], delimPattern)
+				if items[i].CKType == "table_header" {
+					if _, hasRows := dataTables[spreadsheetTableKey(items[i])]; hasRows {
+						// The typed header is metadata carried by every row. It
+						// must not become an independent TokenChunker chunk when
+						// row IR is consumed by a legacy pipeline.
+						perItem[i] = nil
+						continue
+					}
+				}
+				if isTextParserSentenceFallback(fileType, c.param.Delimiters, items[i]) {
+					perItem[i] = splitTextParserSentences(items[i])
+				} else {
+					perItem[i] = chunkFromItem(items[i], delimPattern)
+				}
 			}
 		}(lane.start, lane.end)
 	}
@@ -566,45 +589,115 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		}
 	}
 
-	// Attach surrounding media context (token_chunker.py:358).
-	attached := attachMediaContext(perItem, c.param.TableContextSize, c.param.ImageContextSize)
+	// Surrounding media context is attached on the flattened chunk list,
+	// mirroring Python's _attach_context_to_media_chunks (token_chunker.py:537,
+	// :545): the units are flat there, so a media block collects the text units
+	// around it across item boundaries. Attaching per upstream item instead
+	// leaves every media chunk without neighbours, because one item rarely
+	// yields more than one chunk.
+	flat := flatten(perItem)
+	// perItem is no longer needed once flattened: drop the [][]ChunkDoc
+	// scaffolding (its sub-slice backing arrays) so it can be collected. The
+	// ChunkDoc values now live solely in flat.
+	perItem = nil
 
 	// Python's naive_merge: custom (backtick) delimiters produce one
 	// chunk per segment — no token-size merge (naive_merge:1194-1213).
 	// Otherwise split-then-merge: delimiter-split segments are greedily
 	// merged to chunk_token_size with optional overlap.
-	if !hasCustomDelim(c.param.Delimiters) {
+	customDelim := hasCustomDelim(c.param.Delimiters)
+	if !customDelim {
+		// Attach before the merge — Python's non-delimiter branch collects the
+		// context from the pre-merge text units. The merge only joins text
+		// chunks, so a media chunk keeps what it collected.
+		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 		// Python _merge_text_chunks_by_token_size merges adjacent text
-		// chunks across JSON items into one global token budget. Flatten the
-		// per-item structure into a single sequence first so the merge is
-		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+		// chunks across JSON items into one global token budget.
+		flat = flatten(mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flat}, c.param.ChunkTokenSize, c.param.OverlappedPercent))
 	}
 
-	flat := flatten(attached)
 	if childrenPattern != nil {
 		flat = splitByChildren(flat, childrenPattern)
+	}
+	if customDelim {
+		// Python's delimiter branch splits by children first, then attaches.
+		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 	}
 
 	// Crop image/table chunks on demand when a PDF engine is available.
 	flat = cropImageChunks(ctx, engine, flat)
 
-	out := make([]schema.ChunkDoc, 0, len(flat))
+	// Fuse the keep-filter and the media-context materialisation into a single
+	// pass. The previous code built `out` (a full []ChunkDoc copy of the kept
+	// chunks) and then chunkOutputs copied it again into `materialized`. Building
+	// `materialized` directly removes one full-document-scale slice allocation
+	// from the chunker's peak (the 3266-page PDF holds millions of fine-grained
+	// ChunkDocs at this point).
+	materialized := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {
 		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
-		m.Text = removeTag(m.Text)
-		if m.Text == "" {
+		setChunkText(&m, removeTag(m.Text))
+		// Drop a chunk only when nothing about it is retrievable. A media chunk
+		// may carry no body of its own and still be indexed through its
+		// surrounding context: Python's _finalize_json_chunks strips the merged
+		// text and applies the check to it — remove_tag(context_above + text +
+		// context_below) then .strip() — so a context that carries nothing but
+		// a position tag counts as empty. The context is folded into Text once,
+		// at chunkOutputs, so the decision is made on that merged text here
+		// without duplicating the fold.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
 			continue
 		}
-		out = append(out, m)
+		materialized = append(materialized, materializeMediaContext(m))
 	}
-	if len(out) == 0 {
+	// flat has been consumed; release it before we build the output map.
+	flat = nil
+	if len(materialized) == 0 {
 		return emptyOutputs()
 	}
-	return chunkOutputs(out)
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        schema.ChunkDocsToMaps(materialized),
+	}
+}
+
+// isTextParserSentenceFallback restores the semantic sentence units that the
+// shared TextParser used to emit. Parser boundaries remain owned by the
+// chunker: this only applies the text/code parser's default sentence grammar
+// before TokenChunker merges units by its configured token budget.
+func isTextParserSentenceFallback(fileType string, delimiters []string, item schema.ChunkDoc) bool {
+	if itemDocType(item) != "text" || len(delimiters) != 1 || delimiters[0] != "\n" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fileType)) {
+	case "txt", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt", "sql":
+		return true
+	default:
+		return false
+	}
+}
+
+func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
+	text := itemTextOrFallback(item)
+	if !sentenceDelimiter.MatchString(text) {
+		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
+	}
+	parts := splitSentencesLossless(text)
+	out := make([]schema.ChunkDoc, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || strings.TrimSpace(sentenceDelimiter.ReplaceAllString(part, "")) == "" {
+			continue
+		}
+		out = append(out, buildChunkDoc(item, "text", part, "", ""))
+	}
+	if len(out) == 0 {
+		return []schema.ChunkDoc{buildChunkDoc(item, "text", text, "", "")}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +706,14 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 
 // chunkFromItem mirrors _build_json_chunks for a single item.
 func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.ChunkDoc {
+	if it.CKType == "table_row" {
+		row := cloneChunkDoc(it)
+		row.DocType = "text"
+		row.CKType = "table_row"
+		row.Text = itemTextOrFallback(it)
+		row.TKNums = intPtr(tokenizeStr(row.Text))
+		return []schema.ChunkDoc{row}
+	}
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
 	if ckType != "text" {
@@ -625,15 +726,58 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	out := make([]schema.ChunkDoc, 0, len(parts))
+	// Collect non-empty parts first so we can slice positions proportionally.
+	var kept []string
 	for _, p := range parts {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		kept = append(kept, p)
 	}
-	if len(out) == 0 {
+	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
+	}
+	// If the item carries PDF positions, slice them proportionally so each
+	// delimiter-split piece's screenshot crops only its own region instead of
+	// the whole item bbox (fix for chunk-screenshot mismatch).
+	if len(it.PDFPositions) == 0 && len(it.Positions) == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	// Visible-text ratio: parser tags (@@...##) carry no visual height
+	// and must not shift crop boundaries. Mirrors the overlap logic
+	// which already counts on removeTag'd text.
+	runCount := 0
+	for _, p := range kept {
+		runCount += utf8.RuneCountInString(removeTag(p))
+	}
+	if runCount == 0 {
+		out := make([]schema.ChunkDoc, 0, len(kept))
+		for _, p := range kept {
+			out = append(out, buildChunkDoc(it, "text", p, "", ""))
+		}
+		return out
+	}
+	out := make([]schema.ChunkDoc, 0, len(kept))
+	cumRunes := 0
+	for _, p := range kept {
+		pcRunes := utf8.RuneCountInString(removeTag(p))
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
+		ck := buildChunkDoc(it, "text", p, "", "")
+		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
+		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
+		if len(ck.PDFPositions) == 0 && len(it.PDFPositions) > 0 {
+			ck.PDFPositions = it.PDFPositions
+		}
+		if len(ck.Positions) == 0 && len(it.Positions) > 0 {
+			ck.Positions = it.Positions
+		}
+		out = append(out, ck)
+		cumRunes += pcRunes
 	}
 	return out
 }
@@ -709,37 +853,37 @@ func partition(n, parts int) []lane {
 	return out
 }
 
-func attachMediaContext(perItem [][]schema.ChunkDoc, tableCtx, imageCtx int) [][]schema.ChunkDoc {
+// attachMediaContext writes the surrounding context onto the media chunks of a
+// flat chunk list. Mirrors token_chunker.py:_attach_context_to_media_chunks,
+// which runs on the flat chunk list as well: a media block collects the text
+// units around it, up to the token budget, across upstream item boundaries.
+func attachMediaContext(chunks []schema.ChunkDoc, tableCtx, imageCtx int) []schema.ChunkDoc {
 	if tableCtx <= 0 && imageCtx <= 0 {
-		return perItem
+		return chunks
 	}
-	for idx := range perItem {
-		chunks := perItem[idx]
-		if len(chunks) == 0 {
+	for i, ck := range chunks {
+		ckType := ck.CKType
+		if ckType != "table" && ckType != "image" {
 			continue
 		}
-		for i, ck := range chunks {
-			ckType := ck.CKType
-			if ckType != "table" && ckType != "image" {
-				continue
-			}
-			ctx := imageCtx
-			if ckType == "table" {
-				ctx = tableCtx
-			}
-			if ctx <= 0 {
-				continue
-			}
-			chunks[i].ContextAbove = collectContext(chunks, i, ctx, true)
-			chunks[i].ContextBelow = collectContext(chunks, i, ctx, false)
+		ctx := imageCtx
+		if ckType == "table" {
+			ctx = tableCtx
 		}
+		if ctx <= 0 {
+			continue
+		}
+		chunks[i].ContextAbove = collectContext(chunks, i, ctx, true)
+		chunks[i].ContextBelow = collectContext(chunks, i, ctx, false)
 	}
-	return perItem
+	return chunks
 }
 
 // collectContext walks chunks around `i` (above when direction==true,
 // below when false), pulling text chunks while remaining token budget
 // stays positive. Matches token_chunker.py:_attach_context_to_media_chunks.
+// A neighbour that does not fit is truncated on a sentence boundary
+// (takeContextSentences), not at an arbitrary rune.
 func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) string {
 	var parts []string
 	remain := ctxTokens
@@ -751,7 +895,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append([]string{takeFromEnd(txt, remain)}, parts...)
+					parts = append([]string{takeContextSentences(txt, remain, true)}, parts...)
 					remain = 0
 					break
 				}
@@ -767,7 +911,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append(parts, takeFromStart(txt, remain))
+					parts = append(parts, takeContextSentences(txt, remain, false))
 					remain = 0
 					break
 				}
@@ -778,39 +922,6 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 		}
 	}
 	return strings.Join(parts, "")
-}
-
-// takeFromEnd returns the smallest tail of text whose token count is >=
-// tokens, counted exactly via tokenizeStr  The previous
-// 4-bytes-per-token heuristic over-counted for CJK text.
-func takeFromEnd(text string, tokens int) string {
-	runes := []rune(text)
-	// The tail runes[i:] grows as i decreases, so the first (largest i,
-	// i.e. smallest tail) that meets the budget is the answer.
-	for i := len(runes); i > 0; i-- {
-		cand := string(runes[i:])
-		if tokenizeStr(cand) >= tokens {
-			return cand
-		}
-	}
-	return text
-}
-
-// takeFromStart returns the smallest prefix of text whose token count is >=
-// tokens, counted exactly via tokenizeStr
-func takeFromStart(text string, tokens int) string {
-	runes := []rune(text)
-	best := text
-	// Prefix grows as i increases; the first (smallest) qualifying prefix
-	// is the answer.
-	for i := 1; i <= len(runes); i++ {
-		cand := string(runes[:i])
-		if tokenizeStr(cand) >= tokens {
-			best = cand
-			break
-		}
-	}
-	return best
 }
 
 // mergeUnits is the single, unified token-merge core shared by BOTH the text
@@ -857,41 +968,79 @@ type mergeItem struct {
 	Positions    json.RawMessage
 }
 
-// overlapTailPositions returns the coordinate boxes of the previous chunk's
-// source items whose visible span intersects the overlap tail
-// [overlapStart, total). PDF positions are per-item (coarse), so an item is
-// included wholesale once any part of it falls in the overlap tail. This keeps
-// the overlap prefix highlighted without over-inflating the box set with the
-// previous chunk's non-overlap (head) coordinates (#18148). Offsets are in
-// rune units to match computeOverlapPrefix's visible-text indexing.
-func overlapTailPositions(prevItems []mergeItem, overlapStart int, joinSep string) (json.RawMessage, json.RawMessage) {
+// overlapTailItems returns the previous chunk's source items whose visible span
+// intersects the overlap tail [overlapStart, total), each truncated to exactly
+// the portion that lies within the overlap tail. Storing them as SEPARATE
+// merged_items entries (alongside cur) lets the next overlap select only the
+// true tail and converge to a sliding window, instead of carrying the previous
+// chunk's HEAD coordinates forward again -- the chained over-carry defect that
+// the old fused single-item storage (superseded by this function, #18148)
+// suffers from.
+//
+// Offset model: the overlap path stores the previous chunk's merged_items as
+// [tailItems..., cur] and builds cp.Text = overlap + cp.Text. So the source
+// items are concatenated with joinSep BETWEEN consecutive items, but there is
+// NO separator before the final (cur) item. The offsets below reproduce exactly
+// that layout for an overlap-built predecessor, so they line up with
+// overlapCut/overlapFitPrefix, which carve the overlap from removeTag'd text.
+// Inserting a separator before cur (as the raw "concatenate all items with
+// joinSep" model does) would inflate the offsets by one rune on the JSON path
+// (joinSep="\n") and over-truncate the tail -- the chained-overlap convergence
+// defect flagged by CodeRabbit #1 on #19068.
+//
+// Limitation: a chunk may also have been built via the non-overlap merge path
+// (mergeUnits appends cur with "prev.Text + joinSep + ck.Text"), in which case
+// its items DO carry a joinSep before the final cur item. For such a
+// predecessor the last item's reconstructed start is short by one rune
+// (joinSep length), so a final item that is partially inside the overlap tail
+// is truncated one rune too short. This is a 1-rune approximation of the
+// highlight box only; it does not affect the head-exclusion property this
+// function exists to enforce.
+func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) []mergeItem {
 	if len(prevItems) == 0 {
-		return nil, nil
+		return nil
 	}
-	// Items are concatenated with joinSep (a single "\n" for the JSON path),
-	// matching the merge join at mergeUnits. Offsets are measured on the
-	// TAG-FREE visible text so they line up with overlapCut/overlapFitPrefix,
-	// which carve the overlap from removeTag'd text; a coordinate tag in an
-	// earlier item must not shift the boundaries of later items.
+	// Measure the TAG-FREE visible text of each item so a coordinate tag in an
+	// earlier item does not shift the boundaries of later items.
 	visible := make([]string, len(prevItems))
-	total := 0
 	for i, it := range prevItems {
 		visible[i] = removeTag(it.Text)
-		total += utf8.RuneCountInString(visible[i]) + utf8.RuneCountInString(joinSep)
 	}
-	total -= utf8.RuneCountInString(joinSep)
-	var pdfAcc, posAcc json.RawMessage
+	n := len(prevItems)
+	sepLen := utf8.RuneCountInString(joinSep)
+	// Reconstruct prev.Text: items joined by joinSep between consecutive items,
+	// but with NO separator before the final (cur) item.
+	starts := make([]int, n)
+	ends := make([]int, n)
 	offset := 0
-	for i, it := range prevItems {
-		start := offset
-		end := offset + utf8.RuneCountInString(visible[i])
-		if start < total && end > overlapStart {
-			pdfAcc = extendRawJSONArray(pdfAcc, it.PDFPositions)
-			posAcc = extendRawJSONArray(posAcc, it.Positions)
+	for i := 0; i < n; i++ {
+		if i > 0 && i < n-1 {
+			offset += sepLen
 		}
-		offset = end + utf8.RuneCountInString(joinSep)
+		starts[i] = offset
+		ends[i] = offset + utf8.RuneCountInString(visible[i])
+		offset = ends[i]
 	}
-	return pdfAcc, posAcc
+	total := offset
+	var out []mergeItem
+	for i, it := range prevItems {
+		start := starts[i]
+		end := ends[i]
+		if start < total && end > overlapStart {
+			lo := start
+			if lo < overlapStart {
+				lo = overlapStart
+			}
+			hi := end
+			if hi > total {
+				hi = total
+			}
+			runes := []rune(visible[i])
+			slice := string(runes[lo-start : hi-start])
+			out = append(out, mergeItem{Text: slice, PDFPositions: it.PDFPositions, Positions: it.Positions})
+		}
+	}
+	return out
 }
 
 func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
@@ -967,13 +1116,24 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 				// trimmed to fit so the hard cap still holds.
 				overlap, _ := computeOverlapPrefix(prev.Text, overlapPct)
 				overlap, trimRunes := overlapFitPrefix(overlap, cp.Text, target)
-				pdfTail, posTail := overlapTailPositions(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				// Keep the previous chunk's tail as SEPARATE merged_items
+				// entries (truncated to the overlap portion, #18148) so the
+				// next overlap selects only the true tail and the window
+				// converges instead of accumulating head coordinates (chained
+				// over-carry fix). The flattened tail boxes are still carried
+				// into the output chunk so the overlap region stays highlighted.
+				tailItems := overlapTailItems(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
+				var pdfTail, posTail json.RawMessage
+				for _, it := range tailItems {
+					pdfTail = extendRawJSONArray(pdfTail, it.PDFPositions)
+					posTail = extendRawJSONArray(posTail, it.Positions)
+				}
 				cp.Text = overlap + cp.Text
 				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
 				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
-				mergedItems = append(mergedItems, []mergeItem{{Text: cp.Text, PDFPositions: cp.PDFPositions, Positions: cp.Positions}})
+				mergedItems = append(mergedItems, append(append([]mergeItem{}, tailItems...), cur))
 				prevIdx = len(merged) - 1
 				continue
 			}
@@ -1133,13 +1293,67 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	// Every sub-piece inherits the source unit's metadata (coarse positions +
 	// item attributes); each is built from a clone so every ChunkDoc field
-	// survives the split and each piece keeps its page-region preview.
-	for i := range pieces {
+	// survives the split. PDF positions are proportionally sliced vertically so
+	// each piece's screenshot crops only its own region instead of the whole
+	// paragraph (fix for chunk-screenshot mismatch).
+	if len(ck.PDFPositions) == 0 && len(ck.Positions) == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	// Ratio basis: rune counts of the real source content. The synthetic
+	// leading "\n" glue (text-path units are built as "\n"+paragraph) carries
+	// no visual height, so it is excluded from the first piece's count to keep
+	// the slice proportions aligned with the original text. Parser tags
+	// (@@...##) also carry no visual height and are stripped before counting.
+	counts := make([]int, len(pieces))
+	runCount := 0
+	for i, p := range pieces {
+		n := utf8.RuneCountInString(removeTag(p.Text))
+		if i == 0 && lead != "" {
+			n -= utf8.RuneCountInString(lead)
+			if n < 0 {
+				n = 0
+			}
+		}
+		counts[i] = n
+		runCount += n
+	}
+	if runCount == 0 {
+		for i := range pieces {
+			inherited := cloneChunkDoc(ck)
+			inherited.Text = pieces[i].Text
+			inherited.TKNums = pieces[i].TKNums
+			inherited.CKType = "text"
+			pieces[i] = inherited
+		}
+		return pieces
+	}
+	cumRunes := 0
+	for i, p := range pieces {
+		startRatio := float64(cumRunes) / float64(runCount)
+		endRatio := float64(cumRunes+counts[i]) / float64(runCount)
 		inherited := cloneChunkDoc(ck)
-		inherited.Text = pieces[i].Text
-		inherited.TKNums = pieces[i].TKNums
+		inherited.Text = p.Text
+		inherited.TKNums = p.TKNums
 		inherited.CKType = "text"
+		inherited.PDFPositions = slicePositionsByTextRatio(ck.PDFPositions, startRatio, endRatio)
+		inherited.Positions = slicePositionsByTextRatio(ck.Positions, startRatio, endRatio)
+		// Fall back to original positions if slicing produced nothing (e.g.
+		// malformed matrix) so the piece still gets a preview rather than none.
+		if len(inherited.PDFPositions) == 0 && len(ck.PDFPositions) > 0 {
+			inherited.PDFPositions = ck.PDFPositions
+		}
+		if len(inherited.Positions) == 0 && len(ck.Positions) > 0 {
+			inherited.Positions = ck.Positions
+		}
 		pieces[i] = inherited
+		cumRunes += counts[i]
 	}
 	return pieces
 }
@@ -1170,17 +1384,137 @@ func splitSentencesLossless(text string) []string {
 }
 
 // hardSplitPiece hard token-splits a boundary-less run into <= target pieces.
-// Each piece is a true character prefix of the remaining text (U+FFFD tail
-// trimmed), so the concatenated pieces reproduce the input exactly. A token
-// cut never lands inside a @@...## coordinate tag: the cut is extended past
-// the closing "##" when the budget allows, otherwise backed off to before the
-// "@@" — so a tag is never split across two pieces.
+// The run is encoded once and the token array walked in target-sized steps,
+// each slice decoded straight back to its exact byte range — O(L) overall,
+// where the former loop re-encoded a shrinking remainder every round and went
+// quadratic on long boundary-less inputs. Pieces concatenate back to the input
+// exactly, and every cut lands on an original token boundary, so a piece is a
+// true byte prefix of the remainder (a cut may leave raw UTF-8 continuation
+// bytes at the tail when the boundary splits a multibyte rune; the next
+// piece's head repairs them). A token cut never lands inside a @@...##
+// coordinate tag: the cut is extended past the closing "##" when the budget
+// allows, otherwise backed off to before the "@@" — so a tag is never split
+// across two pieces.
+//
+// When the encoder is unavailable, hardSplitPieceByteLoop (the former
+// per-round-trim loop) takes over and degrades to byte-length trimming.
 func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
+	if text == "" {
+		return nil
+	}
+	tokens, ok := encodeTokens(text)
+	if !ok {
+		return hardSplitPieceByteLoop(text, docType, target)
+	}
+	if target <= 0 || len(tokens) <= target {
+		// target <= 0 is unreachable from validated configs; the byte loop
+		// would emit the whole text as one piece, so mirror that here.
+		return []schema.ChunkDoc{{Text: text, DocType: docType, TKNums: intPtr(tokenizeStr(text)), CKType: "text"}}
+	}
+
+	// offsets[i] = byte length of the first i tokens decoded. Token ids repeat
+	// heavily in natural text, so per-id byte lengths are memoized.
+	offsets := make([]int, len(tokens)+1)
+	lens := make(map[int]int, len(tokens)/2)
+	for i, tok := range tokens {
+		l, seen := lens[tok]
+		if !seen {
+			l = len(decodeTokens(tokens[i : i+1]))
+			lens[tok] = l
+		}
+		offsets[i+1] = offsets[i] + l
+	}
+	if offsets[len(tokens)] != len(text) {
+		// Unreachable with a byte-level BPE (decode∘encode is the identity on
+		// the byte string); a mismatch here would corrupt every piece, so
+		// degrade to the byte loop instead of emitting it.
+		return hardSplitPieceByteLoop(text, docType, target)
+	}
+
+	// @@...## tag spans in byte offsets. The leftmost-first scan with the
+	// resume index mirrors adjustCutPastTag's paired-tag search; spans come
+	// out sorted and non-overlapping.
+	type tagSpan struct{ start, end int }
+	var tags []tagSpan
+	for i := 0; i < len(text); {
+		s := strings.Index(text[i:], "@@")
+		if s < 0 {
+			break
+		}
+		s += i
+		eRel := strings.Index(text[s+2:], "##")
+		if eRel < 0 {
+			break
+		}
+		tags = append(tags, tagSpan{s, s + 2 + eRel + 2})
+		i = tags[len(tags)-1].end
+	}
+
+	var out []schema.ChunkDoc
+	p, tagIdx := 0, 0
+	for p < len(tokens) {
+		q := p + target
+		if q > len(tokens) {
+			q = len(tokens)
+		}
+		// Consume tags that end at or before the cut; they can no longer
+		// matter. A tag the cut lands inside is resolved below and
+		// deliberately not consumed: after a back-off the next cut can
+		// re-enter the same tag.
+		for tagIdx < len(tags) && tags[tagIdx].end <= offsets[q] {
+			tagIdx++
+		}
+		if tagIdx < len(tags) && tags[tagIdx].start < offsets[q] && offsets[q] < tags[tagIdx].end {
+			tag := tags[tagIdx]
+			endTok := q
+			for endTok < len(tokens) && offsets[endTok] < tag.end {
+				endTok++
+			}
+			startTok := q
+			for startTok > p && offsets[startTok] > tag.start {
+				startTok--
+			}
+			// Extend past the tag when the piece stays within budget, or when
+			// the tag starts the piece and backing off would stall; otherwise
+			// back off to the last token boundary at or before the "@@".
+			// startTok == p exactly when the piece begins at (or inside) the
+			// tag, so the forced extension of adjustCutPastTag's leading-tag
+			// case is preserved.
+			if endTok-p <= target || startTok == p {
+				q = endTok
+			} else {
+				q = startTok
+			}
+		}
+		if q <= p {
+			q = p + 1 // never stall (defensive; unreachable above)
+		}
+		piece := text[offsets[p]:offsets[q]]
+		out = append(out, schema.ChunkDoc{Text: piece, DocType: docType, TKNums: intPtr(tokenizeStr(piece)), CKType: "text"})
+		p = q
+	}
+	return out
+}
+
+// hardSplitPieceByteLoop is the pre-O(L) body of hardSplitPiece, kept as the
+// encoder-unavailable fallback. With the encoder dead, trimToTokenLimit
+// degrades to a UTF-8-safe byte-length trim and the loop still emits bounded,
+// lossless pieces.
+func hardSplitPieceByteLoop(text string, docType string, target int) []schema.ChunkDoc {
 	var out []schema.ChunkDoc
 	rest := text
-	for tokenizeStr(rest) > target {
-		head := tokenizer.TrimContentToTokenLimit(rest, target)
-		if head == "" || head == rest {
+	for {
+		// One BPE pass per iteration instead of two: trimToTokenLimit (the
+		// package-level tokenizer seam, see title_cap.go) returns rest
+		// unchanged exactly when rest fits within target tokens, so its
+		// result doubles as the loop-exit condition. The shrinking remainder
+		// is still re-encoded from scratch each round — one encode per
+		// iteration, not two.
+		head := trimToTokenLimit(rest, target)
+		if head == rest {
+			break // rest already fits; the trailing append emits it
+		}
+		if head == "" {
 			break // cannot shrink further; avoid an infinite loop
 		}
 		// TrimContentToTokenLimit decodes a token prefix; if that lands on a
@@ -1302,15 +1636,59 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 // extendRawJSONArray concatenates two JSON array payloads, mirroring
 // Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
 // empty; the result is always a valid JSON array (or an empty raw message).
+//
 // It is used to accumulate PDF coordinate lists (`_pdf_positions`,
 // `positions`) when text chunks are merged (diffs 2.5 / 2.3).
+//
+// Fast path (compact arrays): the positions that flow through here are always
+// json.Marshal'd parser output, i.e. compact `[...]` arrays with no internal
+// whitespace. Instead of the old per-step json.Unmarshal + json.Marshal
+// (which re-serialised the ENTIRE growing array on every merge step — O(n^2)
+// bytes plus reflection — and dominated the chunker's wall time / heap peak on
+// large PDFs, see the 10k-unit benchmark: ~11 GB allocated per merge), we strip
+// the outer brackets and append the element bytes directly. Appending into `a`'s
+// (re)growing buffer is O(n) total. The merged coordinate list is semantically
+// identical (extend, not replace) and byte-for-byte equal to the old path for
+// compact input.
+//
+// Slow path: for any non-compact-array / malformed operand we fall back to the
+// exact prior behaviour (unmarshal + marshal), so output never diverges from the
+// historical contract.
+//
+// Mutation contract (append-like): the fast path grows `a`'s backing buffer in
+// place to accumulate the result, so the returned slice may alias / reuse `a`'s
+// storage and `a` must be treated as consumed after the call. Callers that pass
+// a shared or reused buffer as `a` must copy it first; the merge path satisfies
+// this naturally because `pdfTail`/`posTail` are dedicated accumulators that own
+// their buffers. When `a` is empty the result is a fresh COPY of `b` (never `b`
+// itself) so the first extension never aliases the caller's source coordinate
+// bytes.
 func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
 	if len(a) == 0 {
-		return b
+		// Return a COPY of b, not b itself: the caller stores the result and
+		// the fast path may later mutate its backing array in place. Returning
+		// b directly would alias the caller's (possibly shared) source bytes,
+		// e.g. the overlap branch re-extends the same growing buffer and would
+		// corrupt the original unit coordinate list (see #18148 overlap chain).
+		return append(json.RawMessage(nil), b...)
 	}
 	if len(b) == 0 {
+		return append(json.RawMessage(nil), a...)
+	}
+	if a[0] == '[' && a[len(a)-1] == ']' && b[0] == '[' && b[len(b)-1] == ']' {
+		innerA := a[1 : len(a)-1]
+		innerB := b[1 : len(b)-1]
+		// Drop a's trailing ']' and append b's elements followed by a fresh
+		// ']'. append reuses/grows a's buffer (amortised O(n) total).
+		a = a[:len(a)-1]
+		if len(innerA) > 0 && len(innerB) > 0 {
+			a = append(a, ',')
+		}
+		a = append(a, innerB...)
+		a = append(a, ']')
 		return a
 	}
+	// Slow path (unchanged semantics).
 	var arrA, arrB []json.RawMessage
 	if err := json.Unmarshal(a, &arrA); err != nil {
 		return b
@@ -1351,7 +1729,11 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 				continue
 			}
 			cp := cloneChunkDoc(ck)
-			cp.Text = p
+			// The count describes the child's own text. The delimiter branch
+			// attaches the media context after this split, and that walk is
+			// charged with TKNums, so an inherited parent count would spend the
+			// configured window on the first neighbour.
+			setChunkText(&cp, p)
 			cp.Mom = mom
 			out = append(out, cp)
 		}
@@ -1387,11 +1769,13 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitDroppingDelim(t, pattern) {
-			if strings.TrimSpace(child) == "" {
+		for _, text := range splitDroppingDelim(t, pattern) {
+			if strings.TrimSpace(text) == "" {
 				continue
 			}
-			out = append(out, schema.ChunkDoc{Text: child, Mom: strings.TrimPrefix(t, "\n")})
+			child := schema.ChunkDoc{CKType: d.CKType, Mom: strings.TrimPrefix(t, "\n")}
+			setChunkText(&child, text)
+			out = append(out, child)
 		}
 	}
 	return out

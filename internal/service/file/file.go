@@ -18,15 +18,20 @@ package file
 
 import (
 	"context"
+	"errors"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
 
+// ErrNoAuthorization indicates the current user cannot access the target file.
+var ErrNoAuthorization = errors.New("no authorization")
+
 var (
 	// assertURLSafe and pinnedHTTPClient are aliased from utility so tests
 	// can override them for mock injection.
-	assertURLSafe    = utility.AssertURLSafe
+	assertURLSafe    = common.AssertURLSafe
 	pinnedHTTPClient = utility.PinnedHTTPClient
 )
 

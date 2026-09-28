@@ -133,7 +133,7 @@ func TestPythonPhysicalTableNameContract(t *testing.T) {
 func TestLegacyChunkEncodingContract(t *testing.T) {
 	document := map[string]interface{}{
 		"id": "chunk-1", "kb_id": []string{"kb-1"}, "doc_id": "doc-1",
-		"available_int": nil, "removed_kwd": nil, "chunk_order_int": 7,
+		"available_int": 0, "removed_kwd": nil, "chunk_order_int": 7, "mom_id": "parent-1",
 		"metadata":      map[string]interface{}{"_group_id": "group-1", "_title": "renamed"},
 		"important_kwd": []string{" alpha\t", "beta\n"},
 		"q_3_vec":       []float64{0.1, 0.2, 0.3},
@@ -143,7 +143,7 @@ func TestLegacyChunkEncodingContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["kb_id"] != "kb-1" || got["available_int"] != 1 || got["removed_kwd"] != "N" || got["_order_id"] != 7 {
+	if got["kb_id"] != "kb-1" || got["available_int"] != 0 || got["removed_kwd"] != "N" || got["_order_id"] != 7 || got["mom_id"] != "parent-1" {
 		t.Fatalf("legacy scalar/default encoding changed: %#v", got)
 	}
 	if got["group_id"] != "group-1" || got["docnm_kwd"] != "renamed" {
@@ -237,6 +237,33 @@ func TestDBMSHybridBodyMatchesPythonSemantics(t *testing.T) {
 	}
 	if must["minimum_should_match"] != "30%" || query["boost"] != 0.25 {
 		t.Fatalf("hybrid text leg = %#v", query)
+	}
+	knn, ok := body["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid knn leg = %#v", body["knn"])
+	}
+	if knn["k"] != 8 || knn["num_candidates"] != 16 || knn["similarity"] != 0.42 {
+		t.Fatalf("hybrid vector leg = %#v", knn)
+	}
+}
+
+func TestDBMSHybridBodyMinimumShouldMatchHalfUp(t *testing.T) {
+	plan := searchPlan{
+		text:   &types.MatchTextExpr{MatchingText: "hello", TopN: 10, ExtraOptions: map[string]interface{}{"minimum_should_match": 0.285}},
+		dense:  &types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, EmbeddingDataType: "float", TopN: 8, ExtraOptions: map[string]interface{}{"similarity": 0.42}},
+		fusion: &types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": "0.25,0.75"}},
+	}
+	body, ok := buildDBMSBody("chunk", map[string]interface{}{"kb_id": []string{"kb-1"}, "available_int": 0}, &types.SearchRequest{
+		Offset: 2, Limit: 5, RankFeature: map[string]float64{"pagerank_fea": 0.1},
+	}, plan)
+	if !ok {
+		t.Fatal("hybrid body unexpectedly required SQL fallback")
+	}
+	root := body["query"].(map[string]interface{})
+	query := root["bool"].(map[string]interface{})
+	must := query["must"].([]interface{})[0].(map[string]interface{})["query_string"].(map[string]interface{})
+	if got := must["minimum_should_match"]; got != "29%" {
+		t.Fatalf("minimum_should_match for 0.285 = %q, want 29%%", got)
 	}
 	knn, ok := body["knn"].(map[string]interface{})
 	if !ok {

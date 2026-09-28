@@ -12,7 +12,7 @@ import (
 )
 
 func TestMemoryEventStore_AppendAndStream(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 
 	ev1 := &Event{ID: "e1", Type: EventGraphStart, Clock: 1, Timestamp: time.Now(), TraceID: "trace-1"}
@@ -41,7 +41,7 @@ func TestMemoryEventStore_AppendAndStream(t *testing.T) {
 }
 
 func TestMemoryEventStore_Get(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	s.Append(ctx, &Event{ID: "find-me", Type: EventNodeStart, Clock: 1, TraceID: "t"})
 
@@ -63,7 +63,7 @@ func TestMemoryEventStore_Get(t *testing.T) {
 }
 
 func TestMemoryEventStore_Range(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	for i := 1; i <= 10; i++ {
 		s.Append(ctx, &Event{ID: EventID(fmt.Sprintf("e%d", i)), Clock: uint64(i), Type: EventStepStart, Timestamp: time.Now(), TraceID: "t"})
@@ -82,7 +82,7 @@ func TestMemoryEventStore_Range(t *testing.T) {
 }
 
 func TestMemoryEventStore_Seek(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	for i := 1; i <= 5; i++ {
 		s.Append(ctx, &Event{ID: EventID(fmt.Sprintf("e%d", i)), Clock: uint64(i), Type: EventStepStart, TraceID: "t"})
@@ -99,7 +99,7 @@ func TestMemoryEventStore_Seek(t *testing.T) {
 }
 
 func TestMemoryEventStore_Length(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	n, _ := s.Length(ctx)
 	if n != 0 {
@@ -149,7 +149,7 @@ func TestMemoryEventStore_Filter(t *testing.T) {
 
 func TestLocalFileEventStore_GC_RetainsSurvivingEvents(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s, err := NewLocalFileEventStore(dir)
 	if err != nil {
@@ -196,7 +196,7 @@ func TestLocalFileEventStore_GC_RetainsSurvivingEvents(t *testing.T) {
 }
 
 func TestMemoryEventStore_GC(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	old := &Event{ID: "old", Clock: 1, Type: EventGraphStart, Timestamp: time.Now().Add(-2 * time.Hour), TraceID: "t"}
 	s.Append(ctx, old)
@@ -216,7 +216,7 @@ func TestMemoryEventStore_GC(t *testing.T) {
 
 func TestLocalFileEventStore_AppendAndReopen(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s, err := NewLocalFileEventStore(dir)
 	if err != nil {
@@ -249,7 +249,7 @@ func TestLocalFileEventStore_AppendAndReopen(t *testing.T) {
 
 func TestLocalFileEventStore_SegmentRotation(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Use small maxSize to force rotation.
 	s := &LocalFileEventStore{
@@ -338,7 +338,7 @@ func TestEvent_Seal(t *testing.T) {
 }
 
 func TestMemoryEventStore_Snapshot(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	s := NewMemoryEventStore()
 	s.Append(ctx, &Event{ID: "s1", Clock: 1, Type: EventGraphStart, TraceID: "snap-trace", Timestamp: time.Now()})
 	s.Append(ctx, &Event{ID: "s2", Clock: 2, Type: EventGraphEnd, TraceID: "snap-trace", Timestamp: time.Now()})
@@ -375,7 +375,7 @@ func TestLogicalClock(t *testing.T) {
 }
 
 func TestEventRecorder_GraphCallback(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewMemoryEventStore()
 	r := NewEventRecorder(store, WithTraceID("rec-trace"), WithThreadID("rec-thread"))
 
@@ -407,7 +407,7 @@ func TestEventRecorder_GraphCallback(t *testing.T) {
 }
 
 func TestEventRecorder_ModelAndToolCalls(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewMemoryEventStore()
 	r := NewEventRecorder(store, WithTraceID("mt-trace"))
 
@@ -434,7 +434,7 @@ func TestEventRecorder_ModelAndToolCalls(t *testing.T) {
 }
 
 func TestEventRecorder_FineGrained(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewMemoryEventStore()
 	r := NewEventRecorder(store, WithTraceID("fine"))
 
@@ -464,7 +464,7 @@ func TestEventRecorder_FineGrained(t *testing.T) {
 }
 
 func TestEventRecorder_ContextHelpers(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewMemoryEventStore()
 	r := NewEventRecorder(store, WithTraceID("ctx-test"))
 
@@ -478,14 +478,14 @@ func TestEventRecorder_ContextHelpers(t *testing.T) {
 	}
 
 	// Context without recorder should return nil.
-	ctx2 := context.Background()
+	ctx2 := t.Context()
 	if RecorderFromContext(ctx2) != nil {
 		t.Fatal("expected nil from context without recorder")
 	}
 }
 
 func TestSubAgentAndSessionEvents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := NewMemoryEventStore()
 	r := NewEventRecorder(store, WithTraceID("sub-session"))
 

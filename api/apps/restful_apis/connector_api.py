@@ -25,7 +25,7 @@ from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
-from api.db.services.connector_service import ConnectorService, SyncLogsService
+from api.db.services.connector_service import ConnectorAuthorizationError, ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from common.constants import FileSource, RetCode, TaskStatus
@@ -88,10 +88,23 @@ async def update_connector(connector_id):
 
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("name", "source", "config")
 async def create_connector():
     """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
+
+        def _parse_frequency(value):
+            if isinstance(value, bool) or isinstance(value, float) and not value.is_integer():
+                raise ValueError(f"not an integer: {value!r}")
+            return int(value)
+
+        try:
+            refresh_freq = _parse_frequency(req.get("refresh_freq", 5))
+            prune_freq = _parse_frequency(req.get("prune_freq", 5))
+            timeout_secs = _parse_frequency(req.get("timeout_secs", 60 * 29))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="refresh_freq, prune_freq and timeout_secs must be integers")
         req["id"] = get_uuid()
         conn = {
             "id": req["id"],
@@ -100,9 +113,9 @@ async def create_connector():
             "source": req["source"],
             "input_type": InputType.POLL,
             "config": req["config"],
-            "refresh_freq": int(req.get("refresh_freq", 5)),
-            "prune_freq": int(req.get("prune_freq", 5)),
-            "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
+            "refresh_freq": refresh_freq,
+            "prune_freq": prune_freq,
+            "timeout_secs": timeout_secs,
             "status": TaskStatus.UNSTART,
         }
         ConnectorService.save(**conn)
@@ -160,7 +173,11 @@ async def rebuild(connector_id):
     if "kb_id" not in req:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
 
-    err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
+    kb_id = req["kb_id"]
+    try:
+        err = ConnectorService.rebuild(kb_id, connector_id, current_user.id)
+    except ConnectorAuthorizationError as exc:
+        return get_json_result(data=False, message=str(exc), code=RetCode.AUTHENTICATION_ERROR)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)

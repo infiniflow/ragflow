@@ -17,6 +17,7 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
+import { decodeBlobText } from '@/utils/file-util';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
 
@@ -25,6 +26,31 @@ export const TxtPreviewer = ({ className, url }: TxtPreviewerProps) => {
   // const url = useGetDocumentUrl();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<string>('');
+
+  // Business errors come back as HTTP 200 JSON bodies (e.g.
+  // {"code":102,"message":"document not found"}). Detect that shape and
+  // surface the message instead of painting raw JSON as file content.
+  const extractBusinessError = (text: string): string | null => {
+    try {
+      const parsed = JSON.parse(text) as {
+        code?: unknown;
+        message?: unknown;
+      };
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof parsed.code === 'number' &&
+        parsed.code !== 0 &&
+        typeof parsed.message === 'string'
+      ) {
+        return parsed.message;
+      }
+    } catch {
+      // Plain text document content.
+    }
+    return null;
+  };
+
   const fetchTxt = async () => {
     setLoading(true);
     const res = await request(url, {
@@ -35,15 +61,17 @@ export const TxtPreviewer = ({ className, url }: TxtPreviewerProps) => {
         console.error('Error loading file:', err);
       },
     });
-    // blob to string
-    const reader = new FileReader();
-    reader.readAsText(res.data);
-    reader.onload = () => {
-      setData(reader.result as string);
+    // Handles UTF-8/UTF-16 (BOM) as well as GB2312/GBK files
+    const text = await decodeBlobText(res.data);
+    const businessError = extractBusinessError(text);
+    if (businessError) {
+      message.error(businessError);
+      setData('');
       setLoading(false);
-      console.log('file loaded successfully', reader.result);
-    };
-    console.log('file data:', res);
+      return;
+    }
+    setData(text);
+    setLoading(false);
   };
   useEffect(() => {
     if (url) {

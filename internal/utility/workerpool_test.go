@@ -14,11 +14,11 @@ func TestWorkerPoolSubmitAndStats(t *testing.T) {
 	})
 	defer pool.StopWait()
 
-	f1, err := pool.Submit(context.Background(), 2)
+	f1, err := pool.Submit(t.Context(), 2)
 	if err != nil {
 		t.Fatalf("Submit(2): %v", err)
 	}
-	f2, err := pool.Submit(context.Background(), 3)
+	f2, err := pool.Submit(t.Context(), 3)
 	if err != nil {
 		t.Fatalf("Submit(3): %v", err)
 	}
@@ -64,7 +64,7 @@ func TestWorkerPoolSubmitToCanceledTaskReturnsContextError(t *testing.T) {
 	defer pool.StopWait()
 
 	firstCh := make(chan WorkerPoolResult[int, int], 1)
-	if err := pool.SubmitTo(context.Background(), 1, firstCh); err != nil {
+	if err := pool.SubmitTo(t.Context(), 1, firstCh); err != nil {
 		t.Fatalf("SubmitTo(first): %v", err)
 	}
 	<-started
@@ -133,7 +133,7 @@ func TestStopWaitConcurrentSubmitDoesNotPanic(t *testing.T) {
 						return
 					default:
 					}
-					if _, err := pool.Submit(context.Background(), seed+i); err != nil {
+					if _, err := pool.Submit(t.Context(), seed+i); err != nil {
 						if err != ErrWorkerPoolStopped {
 							t.Errorf("unexpected submit error: %v", err)
 						}
@@ -175,7 +175,7 @@ func TestStopWaitWaitsForInFlightTask(t *testing.T) {
 	closeRelease := func() { closeReleaseOnce.Do(func() { close(release) }) }
 	defer closeRelease()
 
-	f, err := pool.Submit(context.Background(), 42)
+	f, err := pool.Submit(t.Context(), 42)
 	if err != nil {
 		t.Fatalf("Submit: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestSubmitAfterStopWaitReturnsStopped(t *testing.T) {
 		return in, nil
 	})
 	pool.StopWait()
-	if _, err := pool.Submit(context.Background(), 1); err != ErrWorkerPoolStopped {
+	if _, err := pool.Submit(t.Context(), 1); err != ErrWorkerPoolStopped {
 		t.Fatalf("Submit after StopWait = %v, want ErrWorkerPoolStopped", err)
 	}
 }
@@ -258,7 +258,7 @@ func TestStopWaitWithBlockedSubmitNoDeadlock(t *testing.T) {
 		return in, nil
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	if _, err := pool.Submit(ctx, 1); err != nil {
 		t.Fatalf("first Submit: %v", err)
 	}

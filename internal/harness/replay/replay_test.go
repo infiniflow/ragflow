@@ -1,7 +1,6 @@
 package replay
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -9,7 +8,7 @@ import (
 )
 
 func TestReplayEngine_EmptyTrace(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 
 	engine := NewReplayEngine(store)
@@ -28,7 +27,7 @@ func TestReplayEngine_EmptyTrace(t *testing.T) {
 }
 
 func TestReplayEngine_ExactReplay(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 
 	// Record a simple trace.
@@ -59,7 +58,7 @@ func TestReplayEngine_ExactReplay(t *testing.T) {
 }
 
 func TestReplayEngine_ModelOverride(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("mo"))
 	rec.RecordModelCall(ctx, "gpt-4", "openai", []any{"hi"}, "original", events.TokenUsage{}, 100, 0)
@@ -85,7 +84,7 @@ func TestReplayEngine_ModelOverride(t *testing.T) {
 }
 
 func TestReplayEngine_ToolOverride(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("to"))
 	rec.RecordToolCall(ctx, "calc", map[string]any{"expr": "1+1"}, "2", 50, 0, "")
@@ -107,7 +106,7 @@ func TestReplayEngine_ToolOverride(t *testing.T) {
 }
 
 func TestReplayEngine_StateOverride(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("so"))
 	rec.RecordStateWrite(ctx, "messages", nil, "initial", "append")
@@ -132,7 +131,7 @@ func TestReplayEngine_StateOverride(t *testing.T) {
 }
 
 func TestReplayEngine_OutputStore(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("out"))
 	rec.RecordModelCall(ctx, "gpt-4", "openai", nil, "resp", events.TokenUsage{}, 100, 0)
@@ -156,7 +155,7 @@ func TestReplayEngine_OutputStore(t *testing.T) {
 }
 
 func TestReplayEngine_MultipleRuns(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("multi"))
 	for i := 0; i < 5; i++ {
@@ -176,7 +175,7 @@ func TestReplayEngine_MultipleRuns(t *testing.T) {
 }
 
 func TestFork_FromEvent(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("fork-test"))
 	rec.RecordModelCall(ctx, "gpt-4", "openai", nil, "resp1", events.TokenUsage{}, 100, 0)
@@ -209,7 +208,7 @@ func TestFork_FromEvent(t *testing.T) {
 }
 
 func TestDiff_IdenticalTraces(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("diff-a"))
 	rec.RecordToolCall(ctx, "search", nil, "res", 50, 0, "")
@@ -232,7 +231,7 @@ func TestDiff_IdenticalTraces(t *testing.T) {
 }
 
 func TestDiff_DifferentTraces(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("left"))
 	rec.RecordToolCall(ctx, "search", nil, "res1", 50, 0, "")
@@ -252,7 +251,7 @@ func TestDiff_DifferentTraces(t *testing.T) {
 }
 
 func TestReplayResult_Metrics(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("metrics"))
 	rec.RecordToolCall(ctx, "t1", nil, "r1", 10, 0, "")
@@ -279,7 +278,7 @@ func TestReplayResult_Metrics(t *testing.T) {
 }
 
 func TestEventsContains_FindByType(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("find"))
 	rec.OnNodeStart(ctx, "n1", 0)
@@ -348,7 +347,7 @@ func TestReplayExactTools(t *testing.T) {
 }
 
 func TestIntegration_RecordReplayRoundTrip(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("rtt"))
 
@@ -391,7 +390,7 @@ func TestIntegration_RecordReplayRoundTrip(t *testing.T) {
 }
 
 func TestIntegration_ForkThenReplay(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("fork-rtt"))
 
@@ -441,7 +440,7 @@ func TestIntegration_ForkThenReplay(t *testing.T) {
 // ---- True replay: BuildCheckpoint ----
 
 func TestBuildCheckpoint_StateWrite(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("cp-test"))
 
@@ -492,7 +491,7 @@ func TestBuildCheckpoint_EmptyEvents(t *testing.T) {
 // ---- True replay: Fork with Engine ----
 
 func TestFork_WithEngine(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("fork-eng"))
 
@@ -538,7 +537,7 @@ func TestFork_WithEngine(t *testing.T) {
 }
 
 func TestFork_EventNotFound(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := events.NewMemoryEventStore()
 	engine := NewReplayEngine(store)
 
@@ -555,7 +554,7 @@ func TestFork_EventNotFound(t *testing.T) {
 // ---- bench ----
 
 func BenchmarkReplay(b *testing.B) {
-	ctx := context.Background()
+	ctx := b.Context()
 	store := events.NewMemoryEventStore()
 	rec := events.NewEventRecorder(store, events.WithTraceID("bench-replay"))
 

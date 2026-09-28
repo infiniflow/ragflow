@@ -26,7 +26,6 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -175,7 +174,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 	svc := NewBotService(nil, nil)
 
 	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
-	title, _, _, _, _, code, err := svc.AgentbotInputs(context.Background(),
+	title, _, _, _, _, code, err := svc.AgentbotInputs(t.Context(),
 		"tenant-B", "agent-victim")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
@@ -239,7 +238,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 
 	svc := NewBotService(nil, nil)
 	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
-		context.Background(), "owner-1", "agent-1")
+		t.Context(), "owner-1", "agent-1")
 	if err != nil {
 		t.Fatalf("AgentbotInputs: %v", err)
 	}
@@ -409,7 +408,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// llmService is nil — any attempt to reach the LLM path would
 	// fail loudly, so a successful run proves the LLM was skipped.
 	svc := NewBotService(nil, nil)
-	frames, code, err := svc.ChatbotCompletion(context.Background(),
+	frames, code, err := svc.ChatbotCompletion(t.Context(),
 		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
 	if err != nil {
 		t.Fatalf("ChatbotCompletion: %v", err)
@@ -515,7 +514,17 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		"chunks":   []any{map[string]any{"chunk_id": "c1"}},
 		"doc_aggs": []any{},
 	}
-	if err := svc.persistChatbotTurn(ctx, sess, "What is Go?", "A language.", "msg-p1", ref); err != nil {
+	if err := svc.persistChatbotQuestion(ctx, sess, "What is Go?", "msg-p1", 2); err != nil {
+		t.Fatalf("persist question: %v", err)
+	}
+	questionRow, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1")
+	if err != nil || questionRow == nil {
+		t.Fatalf("read pending question: %v", err)
+	}
+	if turns := parseChatbotTurns(questionRow.Message); len(turns) != 2 || turns[1]["role"] != "user" || turns[1]["created_at"] != float64(2) {
+		t.Fatalf("question must be persisted before completion: %+v", turns)
+	}
+	if err := svc.persistChatbotTurn(ctx, sess, "What is Go?", "A language.", "msg-p1", ref, 3); err != nil {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
@@ -534,6 +543,9 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 	}
 	if turns[2]["role"] != "assistant" || turns[2]["content"] != "A language." || turns[2]["id"] != "msg-p1" {
 		t.Errorf("assistant turn: %+v", turns[2])
+	}
+	if turns[1]["created_at"] != float64(2) || turns[2]["created_at"] != float64(3) {
+		t.Fatalf("question and answer timestamps must remain separate: %+v", turns)
 	}
 
 	var refs []map[string]any
@@ -563,7 +575,10 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 	}
 
 	svc := NewBotService(nil, nil)
-	if err := svc.persistChatbotTurn(ctx, sess, "q", "a", "msg-p2", nil); err != nil {
+	if err := svc.persistChatbotQuestion(ctx, sess, "q", "msg-p2", 2); err != nil {
+		t.Fatalf("persist question: %v", err)
+	}
+	if err := svc.persistChatbotTurn(ctx, sess, "q", "a", "msg-p2", nil, 3); err != nil {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
@@ -616,7 +631,11 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 		wg.Add(1)
 		go func(i int, q, a string) {
 			defer wg.Done()
-			if err := svc.persistChatbotTurn(ctx, sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil); err != nil {
+			if err := svc.persistChatbotQuestion(ctx, sess, q, fmt.Sprintf("msg-p3-%d", i), 2); err != nil {
+				t.Errorf("persist question %d: %v", i, err)
+				return
+			}
+			if err := svc.persistChatbotTurn(ctx, sess, q, a, fmt.Sprintf("msg-p3-%d", i), nil, 3); err != nil {
 				t.Errorf("persistChatbotTurn %d: %v", i, err)
 			}
 		}(i, turn[0], turn[1])
@@ -657,9 +676,13 @@ func (r *recordingResponseWriter) WriteHeader(_ int) {}
 
 // seedStreamTurnSession creates a persisted api_4_conversation row the
 // streamChatbotTurn tests can append to.
-func seedStreamTurnSession(t *testing.T, id string) {
+func seedStreamTurnSession(t *testing.T, id, question, messageID string) {
 	t.Helper()
-	sess := &entity.API4Conversation{ID: id, DialogID: "dlg-s1", UserID: "tenant-1"}
+	raw, err := json.Marshal([]map[string]any{{"role": "user", "content": question, "id": messageID, "created_at": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &entity.API4Conversation{ID: id, DialogID: "dlg-s1", UserID: "tenant-1", Message: raw}
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, sess); err != nil {
 		t.Fatalf("seed session: %v", err)
 	}
@@ -682,7 +705,7 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s1")
+	seedStreamTurnSession(t, "sess-s1", "q1", "msg-s1")
 	svc := NewBotService(nil, nil)
 
 	ref := map[string]any{
@@ -740,7 +763,7 @@ func TestStreamChatbotTurn_ThinkMarkersPersistedAsTags(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s2")
+	seedStreamTurnSession(t, "sess-s2", "q2", "msg-s2")
 	svc := NewBotService(nil, nil)
 
 	results := make(chan AsyncChatResult, 5)
@@ -776,7 +799,7 @@ func TestStreamChatbotTurn_SingleShotFinalKeepsText(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s3")
+	seedStreamTurnSession(t, "sess-s3", "q3", "msg-s3")
 	svc := NewBotService(nil, nil)
 
 	ref := map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
@@ -813,7 +836,7 @@ func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s4")
+	seedStreamTurnSession(t, "sess-s4", "q4", "msg-s4")
 	svc := NewBotService(nil, nil)
 
 	results := make(chan AsyncChatResult, 1)
@@ -836,8 +859,8 @@ func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
-	if turns := parseChatbotTurns(row.Message); len(turns) != 0 {
-		t.Errorf("error turns must not persist, got %+v", turns)
+	if turns := parseChatbotTurns(row.Message); len(turns) != 1 || turns[0]["role"] != "user" {
+		t.Errorf("error must retain only the user question, got %+v", turns)
 	}
 }
 
@@ -851,7 +874,7 @@ func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s5")
+	seedStreamTurnSession(t, "sess-s5", "q5", "msg-s5")
 	svc := NewBotService(nil, nil)
 
 	results := make(chan AsyncChatResult, 2)
@@ -878,8 +901,8 @@ func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
-	if turns := parseChatbotTurns(row.Message); len(turns) != 0 {
-		t.Errorf("error turns must not persist, got %+v", turns)
+	if turns := parseChatbotTurns(row.Message); len(turns) != 1 || turns[0]["role"] != "user" {
+		t.Errorf("error must retain only the user question, got %+v", turns)
 	}
 }
 
@@ -895,7 +918,7 @@ func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	seedStreamTurnSession(t, "sess-s6")
+	seedStreamTurnSession(t, "sess-s6", "q6", "msg-s6")
 	svc := NewBotService(nil, nil)
 
 	results := make(chan AsyncChatResult, 5)

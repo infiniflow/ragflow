@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	parserchunk "ragflow/internal/parser/chunk"
 
 	"go.uber.org/zap"
 )
@@ -21,6 +22,8 @@ var llmRuntimeParamKeys = map[string]struct{}{
 	"presence_penalty":        {},
 	"frequency_penalty":       {},
 	"outputs":                 {},
+	"parameter":               {},
+	"thinking":                {},
 	"temperatureEnabled":      {},
 	"topPEnabled":             {},
 	"presencePenaltyEnabled":  {},
@@ -36,6 +39,27 @@ var extractorValidParamKeys = func() map[string]struct{} {
 	}
 	return keys
 }()
+
+// componentParamSchemaKeys maps a DSL component_name (lower-cased) to the
+// param keys its param schema declares. CleanComponentParams unions these with
+// the keys a template already bakes, so a param the component can read is
+// never dropped just because a template — or a canvas snapshot saved before
+// the param existed — does not carry it.
+//
+// Components whose accepted keys are defined by the DSL itself (Parser file
+// families) or whose param struct is not part of the schema package
+// (GeneralChunker, QAChunker) stay out of this table; Extractor and Compiler
+// keep their cpnID-prefixed dynamic whitelists.
+var componentParamSchemaKeys = map[string]map[string]struct{}{
+	"titlechunker": extractJSONTags(schema.TitleChunkerParam{}),
+	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
+	// from the token cap, so method, chunk_token_cap and include_heading_content
+	// (hierarchy-only) are accepted here but ignored by the component — the
+	// operator form omits them for the same reason.
+	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
+	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
+}
 
 // extractJSONTags returns all top-level json tag names from a struct.
 func extractJSONTags(v any) map[string]struct{} {
@@ -73,19 +97,33 @@ func isExtractorComponent(cpnID, componentName string) bool {
 		strings.HasPrefix(lowerID, "extractor_")
 }
 
+// isCompilerComponent returns true if the component ID indicates a Compiler
+// component, whose LLM-backed runtime parameters follow the same surface as
+// the Extractor's.
+func isCompilerComponent(cpnID string) bool {
+	lowerID := strings.ToLower(cpnID)
+	return strings.HasPrefix(lowerID, "compiler:") ||
+		strings.HasPrefix(lowerID, "compiler_")
+}
+
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	if isExtractorComponent(cpnID, "") {
 		return extractorValidParamKeys, true
+	}
+	if isCompilerComponent(cpnID) {
+		return llmRuntimeParamKeys, true
 	}
 	return nil, false
 }
 
 // CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
 // Keys containing ':' are treated as component IDs; they are kept only when both
-// the cpnID AND the param name exist in the DSL schema or the component's dynamic
-// parameter schema (e.g. Extractor modular features). Keys without ':' (legacy
-// flat fields) are dropped with a warning.
+// the cpnID AND the param name exist in one of the accepted-key sources: the DSL
+// schema (the params the template bakes), the schema-derived per-component table
+// (componentParamSchemaKeys), or the component's dynamic parameter schema (e.g.
+// Extractor modular features). Keys without ':' (legacy flat fields) are dropped
+// with a warning.
 func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
 	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
@@ -95,12 +133,23 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 	}
 
 	validCPNs := make(map[string]map[string]struct{}, len(schemas))
+	componentNames := make(map[string]string, len(schemas))
 	for _, s := range schemas {
 		keys := make(map[string]struct{}, len(s.ParamsDefaults))
 		for k := range s.ParamsDefaults {
 			keys[k] = struct{}{}
 		}
+		if s.ComponentName == "GeneralChunker" {
+			keys["delimiters"] = struct{}{}
+		}
+		if IsChunkerComponent(s.CpnID) {
+			keys["enable_children"] = struct{}{}
+		}
+		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
+			keys[k] = struct{}{}
+		}
 		validCPNs[s.CpnID] = keys
+		componentNames[s.CpnID] = s.ComponentName
 	}
 
 	result := make(map[string]interface{}, len(rawConfig))
@@ -120,8 +169,11 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if !ok {
 			continue
 		}
+		if componentNames[key] == "GeneralChunker" {
+			params = normalizeGeneralComponentParams(params)
+		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
-		if hasDynamic {
+		if isExtractorComponent(key, "") {
 			params = NormalizeExtractorParams(params)
 		}
 		cleaned := make(map[string]any, len(params))
@@ -145,6 +197,35 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 	}
 	return result
+}
+
+func normalizeGeneralComponentParams(params map[string]any) map[string]any {
+	var normalized map[string]any
+	clone := func() map[string]any {
+		if normalized == nil {
+			normalized = make(map[string]any, len(params)+1)
+			for key, value := range params {
+				normalized[key] = value
+			}
+		}
+		return normalized
+	}
+	if _, hasCanonical := params["delimiters"]; !hasCanonical {
+		if value, ok := params["delimiter"].(string); ok {
+			normalizedParams := clone()
+			normalizedParams["delimiters"] = parserchunk.ParseDelimiterField(value)
+			delete(normalizedParams, "delimiter")
+		}
+	} else if value, ok := params["delimiters"].(string); ok {
+		clone()["delimiters"] = parserchunk.ParseDelimiterField(value)
+	}
+	if value, ok := params["children_delimiters"].(string); ok {
+		clone()["children_delimiters"] = parserchunk.ParseDelimiterField(value)
+	}
+	if normalized == nil {
+		return params
+	}
+	return normalized
 }
 
 // NormalizeExtractorParams normalizes a raw Extractor parameters map into the canonical modular format.
@@ -233,6 +314,47 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		result[cpnID] = base
 	}
 	return result
+}
+
+// ApplyParentChildChunkerConfig derives runtime children_delimiters from the
+// top-level parent_child setting unless the request explicitly configures the
+// chunker itself.
+func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
+	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	componentConfig["parent_child"] = parentChild
+	useParentChild, _ := parentChild["use_parent_child"].(bool)
+	childrenDelimiters := []string{}
+	if useParentChild {
+		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+		}
+	}
+
+	for componentID, value := range componentConfig {
+		if !IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := rawConfig[componentID].(map[string]interface{}); ok {
+			if _, provided := requested["children_delimiters"]; provided {
+				continue
+			}
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		params["children_delimiters"] = childrenDelimiters
+	}
+}
+
+// IsChunkerComponent reports whether a pipeline component can split parent
+// chunks into children.
+func IsChunkerComponent(componentID string) bool {
+	lowerID := strings.ToLower(componentID)
+	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
 }
 
 // ResolveComponentParamsDefaults takes DSL JSON bytes and returns the

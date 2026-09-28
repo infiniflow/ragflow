@@ -23,7 +23,7 @@ from datetime import date
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
-from common.misc_utils import pip_install_torch
+from common.misc_utils import env_flag, pip_install_torch
 from common.constants import SVR_QUEUE_NAME, Storage
 
 import rag.utils
@@ -182,6 +182,9 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# Allow OAuth/OIDC just-in-time user provisioning (independent of local signup).
+OAUTH_AUTO_REGISTER = True
+
 # SSO-only mode: hide password login form
 DISABLE_PASSWORD_LOGIN = False
 
@@ -321,6 +324,9 @@ def init_settings():
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
     except Exception:
         pass
+
+    global OAUTH_AUTO_REGISTER
+    OAUTH_AUTO_REGISTER = env_flag("OAUTH_AUTO_REGISTER", True)
 
     global DISABLE_PASSWORD_LOGIN
     try:

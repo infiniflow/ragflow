@@ -21,6 +21,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +109,39 @@ func TestTeamsConnectorValidateQueriesTeams(t *testing.T) {
 	}
 	if !probed {
 		t.Fatalf("Validate did not probe /teams")
+	}
+}
+
+func TestTeamsGetJSONReadsBodyBeforeCancel(t *testing.T) {
+	previousAllowAnyHost := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = previousAllowAnyHost })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte(`{"value":[]}`))
+	}))
+	defer server.Close()
+
+	connector := &TeamsConnector{
+		tenantID:     "tenant",
+		clientID:     "client",
+		clientSecret: "secret",
+		batchSize:    defaultTeamsBatchSize,
+		httpClient:   http.DefaultClient,
+		now:          time.Now,
+		acquireAccessToken: func(ctx context.Context) (string, error) {
+			return "token", nil
+		},
+	}
+	var page teamsPage
+	if err := connector.getJSON(context.Background(), server.URL+"/teams", &page); err != nil {
+		t.Fatalf("getJSON failed: %v", err)
 	}
 }
 

@@ -20,14 +20,22 @@ export const buildSectionSchema = (t: (key: string) => string) =>
   z.object({
     description: z.string().optional(),
     fields: z
-      .array(z.record(z.string().min(1, t('knowledgeCompilation.fieldDescriptionRequired'))))
+      .array(
+        z.record(
+          z.string().min(1, t('knowledgeCompilation.fieldDescriptionRequired')),
+        ),
+      )
       .min(1),
   });
 
 export const buildRaptorConfigSchema = (t: (key: string) => string) =>
   z.object({
     prompt: z.string().optional(),
-    max_token: z.number().min(512, t('knowledgeCompilation.maxTokenRequired')).max(2048),
+    claim_prompt: z.string().optional(),
+    max_token: z
+      .number()
+      .min(512, t('knowledgeCompilation.maxTokenRequired'))
+      .max(2048),
     clustering_threshold: z.number().min(0).max(1),
     clustering_ratio: z.number().min(0).max(1),
     rechunk: z.boolean().optional(),

@@ -175,36 +175,7 @@ export const useSelectParserList = (): Array<{
           const translated = t(key);
           return translated !== key ? translated : title;
         };
-        // Order the Go pipeline catalog the same way as the Python
-        // backend's parser_ids (settings.PARSERS), so the chunk-method
-        // dropdown lists commonly used methods first. The Python "naive"
-        // slot corresponds to the Go "general" pipeline. Go-only pipelines
-        // Any backend-only pipelines keep their API order at the end.
-        const pythonParserOrder = [
-          'general', // "naive" in Python parser_ids
-          'qa',
-          'resume',
-          'manual',
-          'table',
-          'paper',
-          'book',
-          'laws',
-          'presentation',
-          'picture',
-          'one',
-          'audio',
-          'email',
-          'tag',
-        ];
-        const order = new Map(
-          pythonParserOrder.map((id, index) => [id, index]),
-        );
-        const sortedList = [...pipelineList].sort(
-          (a, b) =>
-            (order.get(a.id) ?? pythonParserOrder.length) -
-            (order.get(b.id) ?? pythonParserOrder.length),
-        );
-        return sortedList.map((item) => ({
+        return pipelineList.map((item) => ({
           value: item.id,
           label: labelFromAPI(item.id, item.title),
         }));

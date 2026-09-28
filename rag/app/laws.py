@@ -18,44 +18,23 @@ import logging
 import re
 from html import escape as html_escape
 from io import BytesIO
+
 from docx import Document
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
 
-from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
-from deepdoc.parser.utils import get_text
-from rag.nlp import bullets_category, remove_contents_table, make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
-from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
-from rag.app.naive import by_plaintext, PARSERS
+from common.constants import MAXIMUM_PAGE_NUMBER, ParserType
 from common.parser_config_utils import normalize_layout_recognizer
+from deepdoc.parser import DocxParser, HtmlParser, PdfParser
+from deepdoc.parser.utils import get_text
+from rag.app.naive import PARSERS, by_plaintext
+from rag.nlp import DEFAULT_DELIMITER, Node, bullets_category, docx_question_level, make_colon_as_title, rag_tokenizer, remove_contents_table, tokenize_chunks, tree_merge
 
 
 class Docx(DocxParser):
     def __init__(self):
         pass
-
-    def __clean(self, line):
-        line = re.sub(r"\u3000", " ", line).strip()
-        return line
-
-    def old_call(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
-        pn = 0
-        lines = []
-        for p in self.doc.paragraphs:
-            if pn > to_page:
-                break
-            if from_page <= pn < to_page and p.text.strip():
-                lines.append(self.__clean(p.text))
-            for run in p.runs:
-                if "lastRenderedPageBreak" in run._element.xml:
-                    pn += 1
-                    continue
-                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
-                    pn += 1
-        return [line for line in lines if line]
 
     def __table_to_html(self, tb):
         html = "<table>"
@@ -82,7 +61,7 @@ class Docx(DocxParser):
         return html
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
-        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
         level_set = set()
@@ -108,9 +87,14 @@ class Docx(DocxParser):
 
             p = Paragraph(block, self.doc)
             question_level, p_text = docx_question_level(p, bull)
+            # A text box carries no heading level either, so it gets the same sentinel
+            # as a table and stays leaf content of the enclosing section.
+            text_boxes = [(table_level, box_text) for box_text in self.extract_text_boxes(p)]
             if not p_text.strip("\n"):
+                lines.extend(text_boxes)
                 continue
             lines.append((question_level, p_text))
+            lines.extend(text_boxes)
             level_set.add(question_level)
             for run in p.runs:
                 if "lastRenderedPageBreak" in run._element.xml:
@@ -151,16 +135,16 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts: {}".format((timer() - start)))
+        callback(0.67, f"Layout analysis ({timer() - start:.2f}s)")
+        logging.debug(f"layouts: {timer() - start}")
         self._naive_vertical_merge()
 
-        callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
+        callback(0.8, f"Text extraction ({timer() - start:.2f}s)")
 
         return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], None
 
@@ -169,7 +153,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     """
     Supported file formats are docx, pdf, txt.
     """
-    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+    parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": DEFAULT_DELIMITER, "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None

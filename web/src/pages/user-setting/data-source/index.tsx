@@ -20,8 +20,9 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
+import { getAvailableDataSourceKeys } from './backend-adapter';
 import { AddedSourceCard } from './component/added-source-card';
-import { DataSourceKey, useDataSourceInfo } from './constant';
+import { useDataSourceInfo } from './constant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
@@ -76,7 +77,7 @@ const AvailableSourceCard = ({
 const DataSource = () => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
-  const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
+  const dataSourceTemplates = getAvailableDataSourceKeys().map((id) => {
     return {
       id,
       name: dataSourceInfo[id].name,

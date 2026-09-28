@@ -123,7 +123,11 @@ function transformApiResponseToForm(
   }
 
   let chunk_token_cap = apiData.chunk_token_cap;
-  if (chunk_token_cap === undefined || chunk_token_cap === null || chunk_token_cap === '') {
+  if (
+    chunk_token_cap === undefined ||
+    chunk_token_cap === null ||
+    chunk_token_cap === ''
+  ) {
     chunk_token_cap = 512;
   } else {
     chunk_token_cap = Number(chunk_token_cap);

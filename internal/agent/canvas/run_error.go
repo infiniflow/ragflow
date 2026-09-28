@@ -14,7 +14,11 @@
 
 package canvas
 
-import "errors"
+import (
+	"errors"
+
+	"ragflow/internal/agent/runtime"
+)
 
 const (
 	// RunErrorKindInternal marks an error whose cause is safe for server logs
@@ -48,6 +52,10 @@ func (e *internalRunError) Unwrap() error {
 }
 
 func runErrorEvent(err error) ErrorEvent {
+	var userErr *runtime.UserFacingError
+	if errors.As(err, &userErr) {
+		return ErrorEvent{Message: userErr.Error(), Kind: "user"}
+	}
 	var internalErr *internalRunError
 	if errors.As(err, &internalErr) {
 		return ErrorEvent{

@@ -66,10 +66,10 @@ export default function TestingForm({
       ...vectorSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
-      size: z.number().int().min(1).max(100),
+      page_size: z.number().int().min(1).max(100),
       ...rerankCandidatesCountSchema,
     })
-    .refine((values) => values.rerank_candidates_count >= values.size, {
+    .refine((values) => values.rerank_candidates_count >= values.page_size, {
       message: t('chat.rerankCandidatesCountValidation'),
       path: ['rerank_candidates_count'],
     });
@@ -80,7 +80,7 @@ export default function TestingForm({
       ...initialSimilarityThresholdValue,
       ...initialVectorSimilarityWeightValue,
       dataset_ids: [knowledgeBaseId],
-      size: 10,
+      page_size: 10,
       rerank_candidates_count: 64,
     },
   });

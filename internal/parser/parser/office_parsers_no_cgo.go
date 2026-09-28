@@ -62,11 +62,6 @@ func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
 }
 
-func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
-	// No-op in the no-CGO stub: the real implementation in
-	// docx_parser.go reads output_format from setup.
-}
-
 func (p *DOCXParser) String() string {
 	return "DOCXParser(no-cgo)"
 }

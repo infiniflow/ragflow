@@ -57,9 +57,18 @@ JSON_RESPONSE = True
 
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
+    # Independent from _MAX_DATASET_CACHE: the document cache holds per-dataset
+    # document lists (far heavier payloads), so its bound is tuned separately.
+    _MAX_DOCUMENT_CACHE = 32
     _CACHE_TTL = 300
     # Keep in sync with api.utils.pagination_utils.REST_API_MAX_PAGE_SIZE.
     _REST_API_MAX_PAGE_SIZE = 100
+    # Fixed rerank candidate window sent with every retrieval request, so the
+    # ranking cannot shift between pages of one pagination sequence (the backend
+    # reranks this many candidates before slicing the requested page). Requests
+    # whose page * page_size exceeds it are rejected up front. Keep in sync with
+    # mcpRerankCandidatesCount in internal/handler/mcp_server.go.
+    _RERANK_CANDIDATES_COUNT = 512
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -123,11 +132,14 @@ class RAGFlowConnector:
             if self._is_cache_valid(ts):
                 self._document_metadata_cache.move_to_end(dataset_id)
                 return {doc_id: doc_meta for doc_id, doc_meta in data_list}
+            del self._document_metadata_cache[dataset_id]
         return None
 
     def _set_cached_document_metadata_by_dataset(self, dataset_id, doc_id_meta_list):
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
+        if len(self._document_metadata_cache) > self._MAX_DOCUMENT_CACHE:
+            self._document_metadata_cache.popitem(last=False)
 
     async def _fetch_datasets_page(
         self,
@@ -223,7 +235,9 @@ class RAGFlowConnector:
                 break
 
             datasets.extend(page_datasets)
-            total = res_json.get("total")
+            # The REST API reports the dataset total under "total_datasets"
+            # (see api/utils/api_utils.py get_result).
+            total = res_json.get("total_datasets", res_json.get("total"))
             if total is not None and len(datasets) >= total:
                 break
 
@@ -286,6 +300,19 @@ class RAGFlowConnector:
                 logging.info("MCP retrieval found no accessible datasets for current user")
                 raise Exception([types.TextContent(type="text", text="No accessible datasets found.")])
 
+        if page * page_size > self._RERANK_CANDIDATES_COUNT:
+            # Fail here rather than letting the backend reject the request: a
+            # window past the fixed candidate pool cannot be served with a
+            # stable ranking anyway.
+            raise Exception(
+                [
+                    types.TextContent(
+                        type="text",
+                        text=(f"page * page_size ({page * page_size}) exceeds the fixed rerank candidate window ({self._RERANK_CANDIDATES_COUNT}); narrow page or page_size."),
+                    )
+                ]
+            )
+
         data_json = {
             "page": page,
             "page_size": page_size,
@@ -293,6 +320,10 @@ class RAGFlowConnector:
             "vector_similarity_weight": vector_similarity_weight,
             "top_k": top_k,
             "rerank_id": rerank_id,
+            # A fixed window (not page * page_size) keeps the rerank pool — and
+            # therefore the ranking — identical on every page of a pagination
+            # sequence, so pages cannot drift, duplicate, or skip results.
+            "rerank_candidates_count": self._RERANK_CANDIDATES_COUNT,
             "keyword": keyword,
             "question": question,
             "dataset_ids": dataset_ids,
@@ -364,14 +395,15 @@ class RAGFlowConnector:
                     page_size = 30
                     doc_id_meta_list = []
                     docs = {}
+                    pagination_succeeded = True
                     while True:
                         docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}&page_size={page_size}", api_key=api_key)
-                        if not docs_res:
-                            # Transport-level failure: stop without caching a partial result.
+                        if not docs_res or docs_res.status_code != 200:
+                            pagination_succeeded = False
                             break
                         docs_data = docs_res.json()
                         if docs_data.get("code") != 0:
-                            # API error: stop instead of re-requesting the same page forever.
+                            pagination_succeeded = False
                             break
                         page_docs = docs_data.get("data", {}).get("docs") or []
                         for doc in page_docs:
@@ -395,8 +427,6 @@ class RAGFlowConnector:
                             doc_id_meta_list.append((doc_id, doc_meta))
                             docs[doc_id] = doc_meta
 
-                        self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
-
                         # A page smaller than page_size (including an empty one) is the
                         # last page. This terminates empty/exhausted result sets, which
                         # previously looped forever re-requesting the same page (#16248),
@@ -405,6 +435,10 @@ class RAGFlowConnector:
                         if len(page_docs) < page_size:
                             break
                         page += 1
+                    if pagination_succeeded:
+                        self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
+                    else:
+                        docs = {}
                 if docs:
                     document_cache.update(docs)
 

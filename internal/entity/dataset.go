@@ -73,19 +73,6 @@ const (
 	TaskStatusSchedule TaskStatus = "5"
 )
 
-// DocumentModifiableStatuses are the run statuses in which a document's
-// configuration (parser config, chunk method, pipeline id, name, enabled
-// flag, ...) may be edited via UpdateDatasetDocument. Documents that are
-// running ("1") or scheduled ("5") must not be edited — the in-flight parser
-// would race with the config change and the document can get stuck and become
-// undeletable.
-var DocumentModifiableStatuses = map[TaskStatus]bool{
-	TaskStatusUnstart: true,
-	TaskStatusCancel:  true,
-	TaskStatusDone:    true,
-	TaskStatusFail:    true,
-}
-
 // PipelineTaskType represents the type of pipeline task
 type PipelineTaskType string
 
@@ -132,9 +119,9 @@ type Knowledgebase struct {
 	GraphragTaskID         *string    `gorm:"column:graphrag_task_id;size:32;index" json:"graphrag_task_id,omitempty"`
 	GraphragTaskFinishAt   *time.Time `gorm:"column:graphrag_task_finish_at" json:"graphrag_task_finish_at,omitempty"`
 	RaptorTaskID           *string    `gorm:"column:raptor_task_id;size:32;index" json:"raptor_task_id,omitempty"`
-	RaptorTaskFinishAt     *time.Time `gorm:"column:raptor_task_finish_at" json:"raptor_task_finish_at,omitempty"`
+	RaptorTaskFinishAt     *time.Time `gorm:"column:raptor_task_finish_at;type:datetime" json:"raptor_task_finish_at,omitempty"`
 	MindmapTaskID          *string    `gorm:"column:mindmap_task_id;size:32;index" json:"mindmap_task_id,omitempty"`
-	MindmapTaskFinishAt    *time.Time `gorm:"column:mindmap_task_finish_at" json:"mindmap_task_finish_at,omitempty"`
+	MindmapTaskFinishAt    *time.Time `gorm:"column:mindmap_task_finish_at;type:datetime" json:"mindmap_task_finish_at,omitempty"`
 	WikiTaskID             *string    `gorm:"column:wiki_task_id;size:32;index" json:"wiki_task_id,omitempty"`
 	WikiTaskFinishAt       *time.Time `gorm:"column:wiki_task_finish_at" json:"wiki_task_finish_at,omitempty"`
 	SkillTaskID            *string    `gorm:"column:skill_task_id;size:32;index" json:"skill_task_id,omitempty"`

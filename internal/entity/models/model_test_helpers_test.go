@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/utility"
+	"ragflow/internal/common"
 )
 
 // withSSRFBypass enables the test-only SSRF bypass for the duration of a test
@@ -14,9 +14,9 @@ import (
 // its own dedicated coverage in internal/utility/ssrf_test.go.
 func withSSRFBypass(t *testing.T) {
 	t.Helper()
-	prev := utility.AllowAnyHostForTest
-	utility.AllowAnyHostForTest = true
-	t.Cleanup(func() { utility.AllowAnyHostForTest = prev })
+	prev := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
 }
 
 func requireNoSuchMethod(t *testing.T, name string, err error) {

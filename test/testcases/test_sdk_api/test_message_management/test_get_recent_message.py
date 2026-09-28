@@ -44,7 +44,7 @@ class TestGetRecentMessage:
         res = client.get_recent_messages([memory_id])
         assert len(res) == 5, res
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_filter_recent_messages_by_agent(self, client):
         memory_id = self.memory_id
         agent_ids = self.agent_ids

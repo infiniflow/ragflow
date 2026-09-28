@@ -5,12 +5,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AgentCategory } from '@/constants/agent';
+import { IFlowTemplate } from '@/interfaces/database/agent';
 import { BrainCircuit, Route } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
+import { countUnboundRetrieval } from './template-retrieval-binding';
 
 type CreateAgentDialogProps = CreateAgentFormProps & {
   canvasCategory?: AgentCategory;
+  template?: IFlowTemplate;
 };
 
 export function CreateAgentDialog({
@@ -18,8 +22,14 @@ export function CreateAgentDialog({
   onOk,
   loading,
   canvasCategory,
+  template,
 }: CreateAgentDialogProps) {
   const { t } = useTranslation();
+
+  const retrievalBindings = useMemo(
+    () => (template ? countUnboundRetrieval(template.dsl) : undefined),
+    [template],
+  );
 
   const dialogTitle =
     canvasCategory === AgentCategory.DataflowCanvas
@@ -49,6 +59,7 @@ export function CreateAgentDialog({
           onOk={onOk}
           loading={loading}
           showTypeCards={!canvasCategory}
+          retrievalBindings={retrievalBindings}
         ></CreateAgentForm>
       </DialogContent>
     </Dialog>

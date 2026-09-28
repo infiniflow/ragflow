@@ -14,6 +14,10 @@
 #  limitations under the License.
 #
 
+from urllib.parse import parse_qs, urlsplit
+
+import requests
+
 import agent.tools.github as gh_module
 from agent.tools.github import GitHub, GitHubParam
 
@@ -76,3 +80,25 @@ def test_valid_response_returns_items(monkeypatch):
     g._invoke(query="anything")
     assert captured["chunks"] == items
     assert out["json"] == items
+
+
+def test_query_keeps_special_characters_on_the_wire(monkeypatch):
+    # Regression: the search URL was built by string concatenation, so a query such
+    # as "C# parser" ended at the "#" fragment and GitHub received q=C with the
+    # sort, order and per_page controls dropped.
+    sent = {}
+
+    def fake_get(*a, **k):
+        sent.update(k)
+        return _FakeResp({"items": []})
+
+    monkeypatch.setattr(gh_module.requests, "get", fake_get)
+    g, _, _ = _make_tool()
+    g._invoke(query="C# parser")
+
+    wire = requests.Request("GET", sent["url"], params=sent.get("params")).prepare().url
+    query = parse_qs(urlsplit(wire).query)
+    assert query["q"] == ["C# parser"]
+    assert query["sort"] == ["stars"]
+    assert query["order"] == ["desc"]
+    assert query["per_page"] == ["10"]

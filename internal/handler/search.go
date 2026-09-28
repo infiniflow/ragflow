@@ -78,6 +78,7 @@ func getOwnerIDs(c *gin.Context) []string {
 // @Param page query int false "page number"
 // @Param page_size query int false "items per page"
 // @Param orderby query string false "order by field (default: create_time)"
+// @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
 // @Param owner_ids query []string false "owner IDs"
 // @Success 200 {object} service.ListSearchAppsResponse
@@ -113,6 +114,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = descStr != "false"
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ownerIDs := getOwnerIDs(c)
 
@@ -129,7 +131,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 
 	// List search apps with filtering
 	ctx := c.Request.Context()
-	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, orderby, desc, ownerIDs)
+	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -406,7 +408,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")

@@ -17,7 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
@@ -25,14 +25,22 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
-import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
+import {
+  IClaimsResponse,
+  IStructureGraphResponse,
+} from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import {
+  isDocumentProcessing,
+  isDocumentStopping,
+} from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
+import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -44,6 +52,7 @@ import kbService, {
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { buildChunkHighlights } from '@/utils/document-util';
 import {
   keepPreviousData,
@@ -58,12 +67,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams } from 'react-router';
 import {
+  getCancelRequestInterval,
+  markCancelRequested,
+  observeStoppingDocuments,
+} from './cancel-stop-loss';
+import { sendDocumentIngest } from './document-ingest-in-flight';
+import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
 import {
-  extractParserConfigExt,
   isPipelineParserConfig,
+  normalizeParserConfig,
 } from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
@@ -78,8 +93,6 @@ export const enum DocumentStructureApiAction {
   FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
   DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
 }
-
-const documentIngestInFlight = new Map<string, Promise<unknown>>();
 
 export const DocumentStructureKeys = {
   graph: (datasetId: string, documentId: string) =>
@@ -98,6 +111,20 @@ export const DocumentStructureKeys = {
       datasetId,
       documentId,
       keywords,
+    ] as const,
+  claims: (
+    datasetId: string,
+    documentId: string,
+    templateId: string | undefined,
+    chunkIds: string[] | undefined,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+      'claims',
+      templateId,
+      ...(chunkIds ?? []),
     ] as const,
 };
 
@@ -166,21 +193,38 @@ export const useFetchDocumentList = (loop = true) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
 
-  const { data, isFetching: loading } = useQuery<{
+  const {
+    data,
+    isFetching: loading,
+    dataUpdatedAt,
+  } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
+    has_active_tasks?: boolean;
   }>({
     queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
-    initialData: { docs: [], total: 0 },
-    refetchInterval: (query) =>
-      loop &&
-      query.state.data?.docs.some((doc) => doc.run === RunningStatus.RUNNING)
-        ? 5000
-        : false,
+    initialData: { docs: [], total: 0, has_active_tasks: false },
+    refetchInterval: (query) => {
+      if (!loop) return false;
+      const current = query.state.data;
+      if (!current) return false;
+      const stoppingIds = current.docs
+        .filter(isDocumentStopping)
+        .map((doc) => doc.id);
+      if (stoppingIds.length > 0) {
+        return getCancelRequestInterval(stoppingIds);
+      }
+      if (current.has_active_tasks || current.docs.some(isDocumentProcessing)) {
+        return 5000;
+      }
+      return false;
+    },
+    refetchIntervalInBackground: true,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
       let run = [] as any;
@@ -200,7 +244,7 @@ export const useFetchDocumentList = (loop = true) => {
       const ret = await listDocument(
         {
           id: knowledgeId || id,
-          ext: { keywords: debouncedSearchString },
+          keywords: debouncedSearchString,
           page_size: pagination.pageSize,
           page: pagination.current,
         },
@@ -221,6 +265,7 @@ export const useFetchDocumentList = (loop = true) => {
       return {
         docs: [],
         total: 0,
+        has_active_tasks: false,
       };
     },
   });
@@ -238,6 +283,38 @@ export const useFetchDocumentList = (loop = true) => {
     });
   }, [data.docs, queryClient]);
 
+  // Stop-loss: observe the documents on every poll. This starts the window
+  // for cancels first seen here, prunes trackers for observed ids that left
+  // the stopping state, and re-sends one cancel request for the overdue ones.
+  // The effect is keyed on dataUpdatedAt too: structural sharing keeps
+  // data.docs reference-identical while a stopped document's fields no longer
+  // change, which is exactly the stuck case this has to fire in.
+  useEffect(() => {
+    if (!isGo) {
+      return;
+    }
+    const overdueIds = observeStoppingDocuments(
+      data.docs.map((doc) => doc.id),
+      data.docs.filter(isDocumentStopping).map((doc) => doc.id),
+    );
+    if (overdueIds.length === 0) {
+      return;
+    }
+    void sendDocumentIngest(
+      { documentIds: overdueIds, run: 2 },
+      () =>
+        kbService.documentIngest(
+          buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
+        ),
+      { force: true },
+    ).then(
+      () => {
+        queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+      },
+      () => {},
+    );
+  }, [data.docs, dataUpdatedAt, isGo, queryClient]);
+
   return {
     loading,
     searchString,
@@ -251,9 +328,16 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+type RefetchInterval =
+  | number
+  | false
+  | ((query: {
+      state: { data?: { docs: IDocumentInfo[]; total: number } };
+    }) => number | false);
+
 export const useFetchDocumentsByIds = (
   ids: string[],
-  options?: { enabled?: boolean; refetchInterval?: number | false },
+  options?: { enabled?: boolean; refetchInterval?: RefetchInterval },
 ) => {
   const { id: datasetId } = useParams();
   const { enabled, refetchInterval } = options ?? {};
@@ -367,6 +451,7 @@ export const useSetDocumentStatus = () => {
 // This hook is used to run a document by its IDs
 export const useRunDocument = () => {
   const queryClient = useQueryClient();
+  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -383,6 +468,12 @@ export const useRunDocument = () => {
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
     }) => {
+      // Optimistically move started documents into an active state so the
+      // 5s list polling starts immediately and the row leaves its idle
+      // action. Python drives the worker through the legacy run field
+      // (RUNNING); Go has no run field and reports the task lifecycle via
+      // ingestion_status, so CREATED renders as QUEUED until the next poll
+      // observes the real status (SCHEDULED/RUNNING/COMPLETED/...).
       if (run === 1) {
         const documentIdSet = new Set(documentIds);
         queryClient.setQueriesData<{
@@ -398,7 +489,9 @@ export const useRunDocument = () => {
               documentIdSet.has(doc.id)
                 ? {
                     ...doc,
-                    run: RunningStatus.RUNNING,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.CREATED }
+                      : { run: RunningStatus.RUNNING }),
                     progress: 0,
                     process_duration: 0,
                     process_begin_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -408,17 +501,53 @@ export const useRunDocument = () => {
             ),
           };
         });
+      } else if (run === 2) {
+        // Optimistic STOPPING so the row locks immediately; a fast poll then
+        // picks up the real status. Stage timestamps in the same pass so the
+        // list's stop-loss can downgrade the interval and retry an overdue
+        // cancel exactly once.
+        // A list refetch already in flight when the click landed would
+        // resolve with the pre-cancel row and overwrite the optimistic
+        // STOPPING below, so drop it first. This must stay ahead of the
+        // optimistic write: cancelQueries reverts a query to the state it had
+        // when that refetch started, which would roll the write back. The
+        // all() prefix also covers the byIds views, so their in-flight
+        // refetches are dropped the same way.
+        await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
+        if (isGo) {
+          markCancelRequested(documentIds);
+        }
+        const documentIdSet = new Set(documentIds);
+        queryClient.setQueriesData<{
+          docs: IDocumentInfo[];
+          total: number;
+        }>({ queryKey: DocumentKeys.all() }, (current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            docs: current.docs.map((doc) =>
+              documentIdSet.has(doc.id)
+                ? {
+                    ...doc,
+                    ...(isGo
+                      ? { ingestion_status: IngestionTaskStatus.STOPPING }
+                      : { run: RunningStatus.CANCEL }),
+                  }
+                : doc,
+            ),
+          };
+        });
       }
-      if (run !== 1) {
+      if (run !== 1 && run !== 2) {
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
       }
-      const ret = await kbService.documentIngest({
-        doc_ids: documentIds,
-        run,
-        ...(option || {}),
-      });
+      const ret = await kbService.documentIngest(
+        buildDocumentIngestPayload({ documentIds, run, option }),
+      );
       const code = get(ret, 'data.code');
       if (code === 0) {
         // For a start request, keep the optimistic running state until the
@@ -451,27 +580,7 @@ export const useRunDocument = () => {
       documentIds: string[];
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
-    }) => {
-      const key = JSON.stringify({
-        documentIds: [...params.documentIds].sort(),
-        run: params.run,
-        option: params.option || null,
-      });
-      const existingRequest = documentIngestInFlight.get(key);
-      if (existingRequest) {
-        return existingRequest;
-      }
-
-      const request = mutateAsync(params);
-      documentIngestInFlight.set(key, request);
-      const clearRequest = () => {
-        if (documentIngestInFlight.get(key) === request) {
-          documentIngestInFlight.delete(key);
-        }
-      };
-      void request.then(clearRequest, clearRequest);
-      return request;
-    },
+    }) => sendDocumentIngest(params, () => mutateAsync(params)),
     [mutateAsync],
   );
 
@@ -568,7 +677,7 @@ export const useSetDocumentParser = () => {
       }
 
       if (parserConfig) {
-        updateData.parser_config = extractParserConfigExt(parserConfig);
+        updateData.parser_config = normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -633,7 +742,7 @@ export const useSetDocumentPipelineParser = () => {
       if (parserConfig) {
         updateData.parser_config = isPipelineParserConfig(parserConfig)
           ? parserConfig
-          : extractParserConfigExt(parserConfig);
+          : normalizeParserConfig(parserConfig);
       }
 
       const { data } = await changeDocumentParser(
@@ -816,6 +925,43 @@ export function useFetchDocumentStructureGraph(keywords?: string) {
     documentId,
     keywords,
   );
+
+  return { data, loading };
+}
+
+// Claims are fetched per leaf cluster on demand: the tree shows only a count
+// badge, so the payload (statement + verbatim evidence) loads when the user
+// opens that cluster. chunkIds scopes the query server-side.
+export function useFetchDocumentClaims(
+  chunkIds: string[] | undefined,
+  templateId: string | undefined,
+) {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId && !!chunkIds?.length;
+
+  const { data, isFetching: loading } = useQuery<IClaimsResponse | null>({
+    queryKey: DocumentStructureKeys.claims(
+      datasetId,
+      documentId,
+      templateId,
+      chunkIds,
+    ),
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } =
+        await documentStructureService.getDocumentStructureClaims(
+          datasetId,
+          documentId,
+          {
+            chunk_ids: chunkIds?.join(','),
+            template_id: templateId,
+            limit: 100,
+          },
+        );
+      return data?.data ?? null;
+    },
+  });
 
   return { data, loading };
 }

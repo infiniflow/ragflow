@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="24" height="24" fill="none" role="img" aria-label="Sofya">
+  <title>Sofya</title>
+  <g transform="translate(0 -24)">
+    <path d="M 80 400 L 80 300 C 80 220, 140 160, 210 160 L 210 400 Z" fill="#b0b820"/>
+    <path d="M 210 160 L 242 190 L 242 385 L 210 400 Z" fill="#707818"/>
+    <path d="M 302 160 L 270 190 L 270 385 L 302 400 Z" fill="#707818"/>
+    <path d="M 432 400 L 432 300 C 432 220, 372 160, 302 160 L 302 400 Z" fill="#b0b820"/>
+  </g>
+</svg>

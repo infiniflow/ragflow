@@ -291,7 +291,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_0"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
@@ -413,7 +413,7 @@
                             ]
                         },
                         "label": "ManualChunker",
-                        "name": "Manual Chunker_0"
+                        "name": "Manual Chunker"
                     },
                     "id": "ManualChunker:NineInsectsFind",
                     "measured": {
@@ -441,7 +441,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_0"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:FunnyBalloonsGrin",
                     "measured": {
@@ -465,7 +465,7 @@
                     },
                     "data": {
                         "label": "Extractor",
-                        "name": "Extractor_0"
+                        "name": "Extractor"
                     }
                 }
             ]

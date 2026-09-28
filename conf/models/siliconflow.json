@@ -16,7 +16,7 @@
   "models": [
     {
       "name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -31,7 +31,7 @@
     },
     {
       "name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
-      "content_length": 1048576,
+      "context_length": 1048576,
       "max_output": 393216,
       "model_types": [
         "chat"
@@ -46,7 +46,7 @@
     },
     {
       "name": "Pro/moonshotai/Kimi-K2.6",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 65536,
       "model_types": [
         "chat",
@@ -62,7 +62,7 @@
     },
     {
       "name": "Pro/zai-org/GLM-5.1",
-      "content_length": 200000,
+      "context_length": 200000,
       "max_output": 128000,
       "model_types": [
         "chat"
@@ -77,7 +77,7 @@
     },
     {
       "name": "qwen/qwen3-8b",
-      "content_length": 131072,
+      "context_length": 131072,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -88,7 +88,7 @@
     },
     {
       "name": "qwen/qwen3.5-4b",
-      "content_length": 262144,
+      "context_length": 262144,
       "max_output": 32768,
       "model_types": [
         "chat"
@@ -99,7 +99,7 @@
     },
     {
       "name": "tencent/hunyuan-mt-7b",
-      "content_length": 32768,
+      "context_length": 32768,
       "max_output": 8192,
       "model_types": [
         "chat"

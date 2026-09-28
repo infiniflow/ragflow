@@ -103,7 +103,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
-      '^(/api/v1/datasets/search)|^(/api/v1/chat/completions)': {
+      '^(/api/v1/chat/completions)': {
         target: 'http://127.0.0.1:9384/',
         changeOrigin: true,
         ws: true,

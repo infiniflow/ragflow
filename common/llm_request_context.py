@@ -16,11 +16,16 @@
 
 """Per-request identifiers forwarded to upstream LLM providers.
 
-An agent run (or any LLM-issuing flow) installs the originating ``session_id`` /
-``user_id`` here. The chat model layer reads it and forwards an end-user
-identifier as the OpenAI-standard ``user`` request field, which providers such as
-OpenAI and OpenRouter include in the request body. This lets upstream activity be
-correlated back to the session/user that produced it.
+An agent run, chat turn, or document parse/ingest flow installs the originating
+``session_id`` / ``user_id`` here. Chat completions and OpenAI-compatible embedding
+calls read it and forward an end-user identifier as the OpenAI-standard ``user``
+request field. Providers such as OpenAI and OpenRouter include it in the request
+body so upstream activity can be correlated back to the session or user that
+produced it.
+
+Parse workers receive ``user_id`` on the Redis task payload (not the Task table)
+and install it here without a ``session_id``, so ``current_llm_user()`` falls
+back to that value.
 
 The value is a small dict (or ``None`` when no request context is active), e.g.
 ``{"session_id": "...", "user_id": "..."}``.
@@ -32,6 +37,16 @@ import logging
 llm_request_context: contextvars.ContextVar = contextvars.ContextVar("ragflow_llm_request_context", default=None)
 
 
+def normalize_llm_user_id(value) -> str | None:
+    """Sanitize an optional end-user id from an API body or Redis task payload."""
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    return trimmed[:128]
+
+
 def set_llm_request_context(session_id: str | None = None, user_id: str | None = None):
     """Install the current request identifiers and return the reset token.
 
@@ -41,8 +56,9 @@ def set_llm_request_context(session_id: str | None = None, user_id: str | None =
     ctx = {}
     if session_id:
         ctx["session_id"] = str(session_id)[:128]
+    user_id = normalize_llm_user_id(user_id)
     if user_id:
-        ctx["user_id"] = str(user_id)[:128]
+        ctx["user_id"] = user_id
     # Log only presence flags, never the raw identifiers.
     logging.debug("Installing LLM request context (session=%s, user=%s)", bool(session_id), bool(user_id))
     return llm_request_context.set(ctx or None)
@@ -69,3 +85,13 @@ def current_llm_user() -> str | None:
     if not ctx:
         return None
     return ctx.get("session_id") or ctx.get("user_id") or None
+
+
+def openai_user_kwargs() -> dict:
+    """OpenAI ``user`` kwargs when LLM request context is active; otherwise empty.
+
+    Chat completions already forward this field. Embedding calls should use the
+    same helper so upstream gateways can attribute encoding the same way.
+    """
+    user = current_llm_user()
+    return {"user": user} if user else {}

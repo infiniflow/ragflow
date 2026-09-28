@@ -2,33 +2,64 @@ package pdf
 
 import (
 	"context"
+	"fmt"
 	"image"
-	"log/slog"
 	"math"
+	"sort"
+	"strings"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
-	"sort"
-	"strings"
 )
 
-func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string) []pdf.TextBox {
+// recBatchNum is the maximum number of crops recognized in one ONNX Run. It
+// mirrors Python's TextRecognizer.rec_batch_num (=16, deepdoc/vision/ocr.py)
+// so the two code paths share the same sub-batch shape distribution and the
+// same CTC confidence behavior. The OCR loop sorts crops by aspect ratio and
+// chunks them into sub-batches of at most this size, padding each sub-batch
+// only to its own local max width — exactly what the Python reference does.
+const recBatchNum = 16
+
+func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {
 		if err != nil {
-			slog.Warn(logLabel+" OCR detect failed", "page", pageNum, "err", err)
+			reportPageInferenceFailure(ctx, logLabel+" OCR detect failed", pageNum, err)
 		}
 		return nil
 	}
 
-	// detectBoxes returns image-pixel coords; ocrMergeChars divides by
-	// pdf.DlaScale before emitting boxes so downstream layout receives
-	// PDF-point coordinates. ocrDetectAndRecognize must match the same
-	// conversion so both OCR paths produce the same coordinate space.
-	imgW := float64(pageImg.Bounds().Dx()) / pdf.DlaScale
-	imgH := float64(pageImg.Bounds().Dy()) / pdf.DlaScale
+	// detectBoxes returns image-pixel coords; both OCR paths divide by the zoom
+	// the page was rendered at before emitting boxes so downstream layout
+	// receives PDF-point coordinates — the same units as ParseResult.PageHeight.
+	// That zoom is DlaScale for the default render and the retry zoom after a
+	// per-page re-render, so it cannot be a constant.
+	scale := ocrCoordinateScale(zoom)
+	imgW := float64(pageImg.Bounds().Dx()) / scale
+	imgH := float64(pageImg.Bounds().Dy()) / scale
 
-	var result []pdf.TextBox
+	// For each box, de-skew via WarpCrop (layer 1) and build the layer-2
+	// rotation candidates: short/wide crops get one candidate at 0 deg; tall
+	// crops (h >= 1.5x w) get three (0/CW90/CCW90) so the highest-confidence
+	// orientation wins. We remember each box's emitted PDF-point box and the
+	// span of its candidates in the flat crop slice so we can pick the best
+	// candidate per box after recognition.
+	type pendingBox struct {
+		x0, y0, x1, y1 float64
+		spanStart      int
+		spanLen        int
+		pageNum        int
+	}
+	var (
+		result     []pdf.TextBox
+		cropAcc    []image.Image
+		cropBoxIdx []int // box index each crop belongs to (for replay routing)
+		pending    []pendingBox
+	)
 	for i, b := range boxes {
 		x0 := int(math.Min(b.X0, math.Min(b.X1, math.Min(b.X2, b.X3))))
 		y0 := int(math.Min(b.Y0, math.Min(b.Y1, math.Min(b.Y2, b.Y3))))
@@ -37,33 +68,17 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if x0 >= x1 || y0 >= y1 {
 			continue
 		}
-		// De-skew the quad with a perspective transform (WarpCrop, layer 1),
-		// then recognize via ocrRecognizeWithRotation which applies layer-2
-		// score-based 0/CW90/CCW90 selection for tall crops (get_rotate_crop_image
-		// parity), so the recognizer receives a rectangular, horizontal crop
-		// instead of the slanted detection region. The emitted box bounds below
-		// still use the axis-aligned detection bbox (x0..y1); only the crop fed
-		// to recognition is transformed.
 		cropped := util.WarpCrop(pageImg, [4]util.Pt{
 			{X: b.X0, Y: b.Y0},
 			{X: b.X1, Y: b.Y1},
 			{X: b.X2, Y: b.Y2},
 			{X: b.X3, Y: b.Y3},
 		})
-		// Stamp the detect-box index so a replay DocAnalyzer can route this
-		// recognition back to the Python-dumped text for the same box. The
-		// production analyzer ignores the key.
-		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, i)
-		texts, recErr := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
-		if recErr != nil {
-			slog.Warn(logLabel+" OCR recognize failed", "page", pageNum, "err", recErr)
-			continue
-		}
-		// Convert crop bounds back to PDF-point space before emitting.
-		px0 := float64(x0) / pdf.DlaScale
-		py0 := float64(y0) / pdf.DlaScale
-		px1 := float64(x1) / pdf.DlaScale
-		py1 := float64(y1) / pdf.DlaScale
+		// Convert detection bounds to PDF-point space (mirrors detectBoxes).
+		px0 := float64(x0) / scale
+		py0 := float64(y0) / scale
+		px1 := float64(x1) / scale
+		py1 := float64(y1) / scale
 		if px0 < 0 {
 			px0 = 0
 		}
@@ -79,15 +94,78 @@ func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image,
 		if px0 >= px1 || py0 >= py1 {
 			continue
 		}
-		for _, t := range texts {
+		cb := cropped.Bounds()
+		spanStart := len(cropAcc)
+		if float64(cb.Dy()) < 1.5*float64(cb.Dx()) {
+			cropAcc = append(cropAcc, cropped)
+			cropBoxIdx = append(cropBoxIdx, i)
+		} else {
+			cropAcc = append(cropAcc, cropped,
+				util.RotateImageCW(cropped, 90),  // CW90
+				util.RotateImageCW(cropped, 270), // CCW90
+			)
+			cropBoxIdx = append(cropBoxIdx, i, i, i)
+		}
+		pending = append(pending, pendingBox{x0: px0, y0: py0, x1: px1, y1: py1, spanStart: spanStart, spanLen: len(cropAcc) - spanStart, pageNum: pageNum})
+	}
+
+	// Recognize. A batch-capable analyzer recognizes every crop in one
+	// forward pass; everyone else falls back to the per-crop canonical path
+	// (also required by the replay analyzer, which routes by box index in
+	// ctx and is inherently per-crop).
+	if len(cropAcc) == 0 {
+		return nil
+	}
+	// Recognize all crops aligned to Python: sort by aspect ratio and chunk
+	// into sub-batches of at most recBatchNum, each padded to its local max
+	// width. ocrRecognizeBatchAligned is built on top of the upstream batch
+	// API (docSupportsBatchOCR / inferOCRRecognizeBatch); it falls back to the
+	// per-crop canonical path for any sub-batch that fails. The fallback stamps
+	// the detect-box index so a replay DocAnalyzer routes each per-crop
+	// recognition back to the Python-dumped text for the same box; the
+	// production analyzer ignores the key.
+	allTexts := p.ocrRecognizeBatchAligned(ctx, doc, pageNum, cropAcc, func(ci int, c image.Image) ([]pdf.OCRText, error) {
+		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
+		return p.ocrRecognizeWithRotation(recCtx, doc, c)
+	})
+	// Fill any crop the aligned path left uncovered (a fallback error) with the
+	// per-crop canonical path so per-box indexing further down never sees nil.
+	for ci := range cropAcc {
+		if allTexts[ci] != nil {
+			continue
+		}
+		c := cropAcc[ci]
+		recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, cropBoxIdx[ci])
+		texts, rerr := p.ocrRecognizeWithRotation(recCtx, doc, c)
+		if rerr != nil {
+			reportPageInferenceFailure(recCtx, logLabel+" OCR recognize failed", pageNum, rerr)
+			return nil
+		}
+		allTexts[ci] = texts
+	}
+
+	// Per box: pick the highest-confidence candidate (layer-2 winner) and
+	// emit a TextBox for each non-empty recognized line.
+	for _, pb := range pending {
+		var best []pdf.OCRText
+		bestScore := -1.0
+		for k := 0; k < pb.spanLen; k++ {
+			texts := allTexts[pb.spanStart+k]
+			if s := ocrBestScore(texts); s > bestScore {
+				bestScore = s
+				best = texts
+			}
+		}
+		for _, t := range best {
 			if strings.TrimSpace(t.Text) != "" {
 				result = append(result, pdf.TextBox{
-					X0:         px0,
-					X1:         px1,
-					Top:        py0,
-					Bottom:     py1,
-					Text:       t.Text,
-					PageNumber: pageNum,
+					X0:            pb.x0,
+					X1:            pb.x1,
+					Top:           pb.y0,
+					Bottom:        pb.y1,
+					Text:          t.Text,
+					PageNumber:    pb.pageNum,
+					HasPageNumber: true,
 				})
 			}
 		}
@@ -147,6 +225,94 @@ func ocrBestScore(texts []pdf.OCRText) float64 {
 	return best
 }
 
+// cropAspectRatio returns a crop's width/height ratio. Python's
+// TextRecognizer argsorts crops by this ratio before sub-batching.
+func cropAspectRatio(img image.Image) float64 {
+	b := img.Bounds()
+	h := float64(b.Dy())
+	if h <= 0 {
+		return 0
+	}
+	return float64(b.Dx()) / h
+}
+
+// ocrRecognizeBatchAligned recognizes crops in sub-batches that mirror
+// Python's TextRecognizer.__call__ (deepdoc/vision/ocr.py): sort by aspect
+// ratio (W/H) ascending, then recognize chunks of at most recBatchNum (16),
+// each padded to that chunk's own local max width. This matches the Python
+// parity target — which pads only to each sub-batch's max rather than the
+// whole page's widest line — so CTC confidence is not diluted by over-padding
+// narrow lines (which also corrupts layer-2 rotation selection). It shrinks
+// the OCR-rec pool's distinct-shape space, keeping native RSS bounded.
+//
+// Results are returned aligned to the input crop order. A crop is left nil
+// when its sub-batch fails (analyzer error, count mismatch, or an analyzer
+// that does not implement batch OCR); the caller fills nils via fallback,
+// which stamps the box index the replay analyzer needs for routing. fallback
+// is invoked for every crop when doc does not support batch OCR.
+func (p *Parser) ocrRecognizeBatchAligned(ctx context.Context, doc pdf.DocAnalyzer, pageNum int, crops []image.Image, fallback func(ci int, c image.Image) ([]pdf.OCRText, error)) [][]pdf.OCRText {
+	n := len(crops)
+	results := make([][]pdf.OCRText, n)
+	if n == 0 {
+		return results
+	}
+	// Sort crop indices by aspect ratio ascending (np.argsort(width_list)).
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return cropAspectRatio(crops[order[a]]) < cropAspectRatio(crops[order[b]])
+	})
+	// When the analyzer cannot batch, fall back per crop so the caller's
+	// replay routing still works.
+	if !p.docSupportsBatchOCR(doc) {
+		for _, ci := range order {
+			t, err := fallback(ci, crops[ci])
+			if err != nil {
+				reportPageInferenceFailure(ctx, "ocr: per-crop fallback failed (no batch support)", pageNum, err)
+				continue
+			}
+			results[ci] = t
+		}
+		return results
+	}
+	for beg := 0; beg < n; beg += recBatchNum {
+		end := beg + recBatchNum
+		if end > n {
+			end = n
+		}
+		chunk := order[beg:end]
+		imgs := make([]image.Image, len(chunk))
+		for k, ci := range chunk {
+			imgs[k] = crops[ci]
+		}
+		recs, err := p.inferOCRRecognizeBatch(ctx, doc, imgs)
+		if err != nil || len(recs) != len(chunk) {
+			// A sub-batch failure must not corrupt per-box indexing: fall back
+			// to per-crop for just this sub-batch instead of aborting.
+			if err != nil {
+				reportPageInferenceFailure(ctx, "ocr: sub-batch recognize failed; falling back per-crop", pageNum, err)
+			} else {
+				reportPageInferenceFailure(ctx, "ocr: sub-batch recognize returned unexpected count; falling back per-crop", pageNum, fmt.Errorf("got %d want %d", len(recs), len(chunk)))
+			}
+			for _, ci := range chunk {
+				t, ferr := fallback(ci, crops[ci])
+				if ferr != nil {
+					reportPageInferenceFailure(ctx, "ocr: per-crop fallback failed", pageNum, ferr)
+					continue
+				}
+				results[ci] = t
+			}
+			continue
+		}
+		for k, ci := range chunk {
+			results[ci] = recs[k]
+		}
+	}
+	return results
+}
+
 // ocrMergeChars runs full-page detect on a page that has embedded chars,
 // merges the chars into detect regions, and OCRs any regions without chars.
 // Matches Python's __ocr: detect → match chars to boxes → use char text
@@ -160,8 +326,8 @@ type ocrDetectBox struct {
 	srcIdx int
 }
 
-func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int) []pdf.TextBox {
-	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum)
+func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, doc pdf.DocAnalyzer, pageNum int, zoom float64) []pdf.TextBox {
+	boxes, scale, err := p.detectBoxes(ctx, pageImg, doc, pageNum, zoom)
 	if err != nil || len(boxes) == 0 {
 		return nil
 	}
@@ -169,14 +335,30 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 	return p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
 }
 
-func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int) ([]ocrDetectBox, float64, error) {
+// ocrCoordinateScale returns the factor that converts image pixels into PDF
+// points for a page rendered at zoom, falling back to the default DLA scale
+// when the caller supplies none. Detection and recognition must both use it:
+// any other factor leaves the boxes in a scale of their own, and every
+// page-relative comparison downstream — the header/footer zone check in
+// particular — then compares unlike quantities.
+func ocrCoordinateScale(zoom float64) float64 {
+	if zoom > 0 {
+		return zoom
+	}
+	return pdf.DlaScale
+}
+
+func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, zoom float64) ([]ocrDetectBox, float64, error) {
 	ocrDetectBoxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(ocrDetectBoxes) == 0 {
 		return nil, 0, err
 	}
-	slog.Debug("ocrMergeChars detect", "page", pageNum, "boxes", len(ocrDetectBoxes))
+	common.Debug("ocrMergeChars detect", zap.Int("page", pageNum), zap.Int("boxes", len(ocrDetectBoxes)))
 
-	scale := pdf.DlaScale // 3.0
+	// The caller multiplies the returned boxes back by this scale to crop the
+	// original render, so passing the render zoom keeps the round trip exact
+	// and makes the emitted coordinates PDF points (see ocrDetectAndRecognize).
+	scale := ocrCoordinateScale(zoom)
 	imgBounds := pageImg.Bounds()
 	imgW := float64(imgBounds.Dx()) / scale
 	imgH := float64(imgBounds.Dy()) / scale
@@ -204,6 +386,7 @@ func (p *Parser) detectBoxes(ctx context.Context, pageImg image.Image, doc pdf.D
 		}
 		boxes = append(boxes, ocrDetectBox{box: pdf.TextBox{
 			X0: x0, X1: x1, Top: y0, Bottom: y1, PageNumber: pageNum,
+			HasPageNumber: true,
 		}, x0: x0, y0: y0, x1: x1, y1: y1, srcIdx: i})
 	}
 
@@ -462,37 +645,59 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 		result = append(result, tb)
 	}
 	if len(needOCR) > 0 && doc != nil && doc.Health() {
+		// Collect every OCR-hungry box's de-skewed crop and recognize them in
+		// one batched forward pass when the analyzer supports it; otherwise
+		// fall back to the per-crop canonical path (required by the replay
+		// analyzer, which routes by srcIdx in ctx and is inherently per-crop).
+		// Char/table-derived boxes are axis-aligned, so WarpCrop early-exits to
+		// FastCrop and each box yields exactly one 0-deg candidate here, while
+		// still inheriting WarpCrop's bounds-clamp / non-finite guard.
+		type ocrJob struct {
+			boxIdx    int // index into result
+			srcIdx    int // detect-box index for replay routing
+			spanStart int
+			spanLen   int
+		}
+		var crops []image.Image
+		var jobs []ocrJob
 		for _, idx := range needOCR {
-			// De-skew via WarpCrop and recognize via ocrRecognizeWithRotation
-			// the same way ocrDetectAndRecognize does, so all Go OCR paths feed
-			// the recognizer an identical geometry. Char/table-derived boxes are
-			// axis-aligned, so WarpCrop early-exits to FastCrop and
-			// ocrRecognizeWithRotation recognizes once at 0 deg here, while still
-			// inheriting WarpCrop's bounds-clamp / non-finite guard on the
-			// untrusted detector box.
 			cropped := util.WarpCrop(pageImg, [4]util.Pt{
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y0 * scale},
 				{X: boxes[idx].x1 * scale, Y: boxes[idx].y1 * scale},
 				{X: boxes[idx].x0 * scale, Y: boxes[idx].y1 * scale},
 			})
-			// Stamp the source detect-box index so a replay DocAnalyzer routes
-			// this fallback to the same Python-dumped box (detectBoxes may have
-			// re-sorted, so use srcIdx, not the loop index). The production
-			// analyzer ignores the key.
-			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, boxes[idx].srcIdx)
-			texts, err := p.ocrRecognizeWithRotation(recCtx, doc, cropped)
-			if err != nil {
-				slog.Warn("ocr merge: recognize failed", "page", pageNum, "err", err)
-				continue
+			spanStart := len(crops)
+			crops = append(crops, cropped)
+			jobs = append(jobs, ocrJob{boxIdx: idx, srcIdx: boxes[idx].srcIdx, spanStart: spanStart, spanLen: 1})
+		}
+		// Recognize all crops aligned to Python: sort by aspect ratio and
+		// chunk into sub-batches of at most recBatchNum, each padded to its
+		// local max width. The fallback stamps the source detect-box index so
+		// a replay DocAnalyzer routes each per-crop recognition to the same
+		// Python-dumped box (detectBoxes may re-sort, so use srcIdx, not the
+		// loop index); the production analyzer ignores the key.
+		allTexts := p.ocrRecognizeBatchAligned(ctx, doc, pageNum, crops, func(ci int, c image.Image) ([]pdf.OCRText, error) {
+			recCtx := context.WithValue(ctx, ocrBoxIdxCtxKey, jobs[ci].srcIdx)
+			return p.ocrRecognizeWithRotation(recCtx, doc, c)
+		})
+		for _, j := range jobs {
+			var best []pdf.OCRText
+			bestScore := -1.0
+			for k := 0; k < j.spanLen; k++ {
+				texts := allTexts[j.spanStart+k]
+				if s := ocrBestScore(texts); s > bestScore {
+					bestScore = s
+					best = texts
+				}
 			}
 			var ocrParts []string
-			for _, t := range texts {
+			for _, t := range best {
 				if strings.TrimSpace(t.Text) != "" {
 					ocrParts = append(ocrParts, t.Text)
 				}
 			}
-			result[idx].Text = strings.TrimSpace(strings.Join(ocrParts, " "))
+			result[j.boxIdx].Text = strings.TrimSpace(strings.Join(ocrParts, " "))
 		}
 	}
 	filtered := result[:0]
@@ -501,6 +706,6 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 			filtered = append(filtered, tb)
 		}
 	}
-	slog.Debug("ocrMergeChars result", "page", pageNum, "boxes", len(filtered))
+	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }

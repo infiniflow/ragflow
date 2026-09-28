@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
@@ -33,6 +35,16 @@ import (
 func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	prepareTokenizerResourceForIntegration(t)
 	RequireTokenizerPool(t)
+
+	// The production parse path must never degrade to a mock; install a
+	// test-only MockDocAnalyzer as the in-process DeepDoc backend via the
+	// public factory seam so the pipeline runs without a real DeepDoc
+	// service or ONNX Runtime models. Reset to nil on cleanup (this test
+	// binary registers no real backend).
+	t.Cleanup(func() { doctype.SetNativeDocAnalyzerFactory(nil) })
+	doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+		return &pdf.MockDocAnalyzer{Healthy: true}, true
+	})
 
 	cfg := mustLoadRealIntegrationConfig(t)
 	realDB := mustOpenRealMySQL(t, cfg)
@@ -93,7 +105,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	out, err := pipe.Run(context.Background(), map[string]any{
+	out, err := pipe.Run(t.Context(), map[string]any{
 		"doc_id": docID,
 	}, nil)
 	if err != nil {
@@ -109,7 +121,12 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.", "Beta paragraph."}
+	// The GeneralChunker merges the two short paragraphs into one chunk under
+	// the global token-size budget (chunk_token_size=512, no backtick
+	// delimiter): this matches Python's _merge_text_chunks_by_token_size and
+	// is the intended behaviour. TextParser emits one normalized json item;
+	// GeneralChunker owns the delimiter split and collapses the atoms.
+	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -151,18 +168,19 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
 	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 2 {
-		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	for i, wantText := range wantChunkTexts {
+	wantParserTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
+	for i, wantText := range wantParserTexts {
 		if got := jsonItems[i]["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
 
-	chunkerState, ok := state["TokenChunker:SixApplesFall"]
+	chunkerState, ok := state["GeneralChunker:SixApplesFall"]
 	if !ok {
-		t.Fatal("missing TokenChunker:SixApplesFall state")
+		t.Fatal("missing GeneralChunker:SixApplesFall state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -389,7 +407,7 @@ func mustSeedRealPipelineDocument(
 	}).Error; err != nil {
 		t.Fatalf("create kb: %v", err)
 	}
-	if err := stg.Put(context.Background(), bucket, objectPath, []byte(content)); err != nil {
+	if err := stg.Put(t.Context(), bucket, objectPath, []byte(content)); err != nil {
 		t.Fatalf("put real minio object: %v", err)
 	}
 	if err := db.Create(&entity.File{

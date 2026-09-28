@@ -26,6 +26,8 @@ import { MultiSelect } from './ui/multi-select';
 type MemoriesFormFieldProps = {
   label: string;
   name?: string;
+  required?: boolean;
+  ownerTenantId?: string;
 };
 
 function MemoryLabel({ text }: { text: string }) {
@@ -36,10 +38,13 @@ function MemoryLabel({ text }: { text: string }) {
   );
 }
 
-export function useDisableDifferenceEmbeddingMemory(name: string) {
+export function useDisableDifferenceEmbeddingMemory(
+  name: string,
+  ownerTenantId?: string,
+) {
   const form = useFormContext();
   const memoryIds = useWatch({ name, control: form.control });
-  const { data: memoryListOrigin } = useFetchAllMemoryList();
+  const { data: memoryListOrigin } = useFetchAllMemoryList(ownerTenantId);
   const memoryCacheRef = useRef(new Map<string, IMemory>());
 
   const memoryList = useMemo(() => {
@@ -93,12 +98,14 @@ export function useDisableDifferenceEmbeddingMemory(name: string) {
 export function MemoriesFormField({
   label,
   name = 'memory_ids',
+  required = false,
+  ownerTenantId,
 }: MemoriesFormFieldProps) {
   const { t } = useTranslation();
-  const { options } = useDisableDifferenceEmbeddingMemory(name);
+  const { options } = useDisableDifferenceEmbeddingMemory(name, ownerTenantId);
 
   return (
-    <RAGFlowFormItem name={name} label={label}>
+    <RAGFlowFormItem name={name} label={label} required={required}>
       {(field) => (
         <MultiSelect
           options={options}

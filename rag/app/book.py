@@ -38,7 +38,7 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -67,6 +67,9 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     Since a book is long and not all the parts are useful, if it's a PDF,
     please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
+    # Deliberate carve-out from DEFAULT_DELIMITER (#18562): "book" targets
+    # Chinese prose, so this kwargs dict and the naive_merge fallback below
+    # keep their own Chinese-only delimiter sets, not the unified constant.
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
@@ -123,6 +126,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             **kwargs,
         )
 
+        tbls = tables
+
         if not sections and not tables:
             return []
 
@@ -161,6 +166,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sections = [(line, "") for line in sections if line]
             remove_contents_table(sections, eng=is_english(random_choices([t for t, _ in sections], k=200)))
             callback(0.8, "Finish parsing.")
+        else:
+            error_msg = f"tika.parser got empty content from {filename}."
+            callback(0.8, error_msg)
+            logging.warning(error_msg)
+            return []
 
     else:
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")

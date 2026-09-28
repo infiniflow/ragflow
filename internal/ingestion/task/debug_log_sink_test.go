@@ -277,8 +277,8 @@ func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]an
 // wiring a dataflow debug run uses: NewPipelineFromDSL + WithProgressSink
 // (DebugLogSink) + Run. The canvas framework wraps each component in
 // realComponentBody → runtime.TrackProgress, which MUST emit BOTH PhaseEnter
-// ("<comp> Started", progress 0) and PhaseExit ("<comp> Done", progress 1) on
-// success.
+// ("<component name> Started", progress 0) and PhaseExit
+// ("<component name> Done", progress 1) on success.
 //
 // This locks the contract the front-end depends on: every component ends with a
 // Done line, not just a Started line. It is the regression guard for the
@@ -333,7 +333,7 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 	// Every real component (a, b) must show BOTH Started (progress 0) and Done
 	// (progress 1) within its own trace — proving TrackProgress emitted the full
 	// enter→exit lifecycle, not just enter.
-	for _, comp := range []string{"a", "b"} {
+	for comp, componentName := range map[string]string{"a": compA, "b": compB} {
 		var gotStart, gotDone bool
 		for _, el := range arr {
 			if el["component_id"] != comp {
@@ -348,9 +348,9 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 				prog, _ := tm["progress"].(float64)
 				msg, _ := tm["message"].(string)
 				switch {
-				case prog == 0 && msg == comp+" Started":
+				case prog == 0 && msg == componentName+" Started":
 					gotStart = true
-				case prog == 1 && msg == comp+" Done":
+				case prog == 1 && msg == componentName+" Done":
 					gotDone = true
 				}
 			}
@@ -404,7 +404,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	}
 
 	// The executor would call this after Run; here we invoke it directly.
-	resultDSL, err := BuildDebugResultDSL(dsl, output)
+	resultDSL, err := BuildDebugResultDSL(dsl, output, true)
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
@@ -467,8 +467,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 // so it would not catch this. This test closes that end-to-end gap.
 //
 // It also pins the inverse: component "d" (stub returning {"ok":true}) has NO
-// recognized output key, so its params.outputs must be absent — the safe-empty
-// contract the front-end renders as a blank step.
+// recognized output key, so its params.outputs carries no format keys — the
+// safe-empty contract the front-end renders as a blank step (the TrackElapsed
+// bookkeeping pair is still present).
 func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	const (
 		compC = "trace.RealStubChunks"
@@ -501,7 +502,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	resultDSL, err := BuildDebugResultDSL(dsl, output)
+	resultDSL, err := BuildDebugResultDSL(dsl, output, true)
 	if err != nil {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
@@ -557,10 +558,19 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Errorf("c params.setups must be carried from DSL: %#v", cParams)
 	}
 
-	// Component "d" emits {"ok":true} -> no recognized format -> outputs absent.
+	// Component "d" emits {"ok":true} -> no recognized format -> NO format keys
+	// are invented; the TrackElapsed bookkeeping pair the real pipeline run
+	// stamped is still carried so the timeline can show its elapsed time.
 	dParams := components["d"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
-	if _, exists := dParams["outputs"]; exists {
-		t.Errorf("d has no recognized output, outputs must be absent: %#v", dParams)
+	dOutputs, ok := dParams["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("d (no payload format) must still carry bookkeeping outputs: %#v", dParams)
+	}
+	if _, exists := dOutputs["output_format"]; exists {
+		t.Errorf("d has no recognized output, output_format must be absent: %#v", dOutputs)
+	}
+	if _, exists := dOutputs["_elapsed_time"]; !exists {
+		t.Errorf("d outputs._elapsed_time must be carried: %#v", dOutputs)
 	}
 
 	// The END marker MESSAGE must be the JSON dump of the LAST component's

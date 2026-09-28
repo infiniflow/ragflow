@@ -20,11 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
 )
 
 // Dataset-nav constants. These mirror Python's dataset_nav.py: nav rows live in
@@ -45,12 +50,44 @@ const (
 	// the children-search cost when the cluster is plausibly overfull.
 	navMaxFanout         = 64 // max direct children before rebalance
 	navMaxDocsPerCluster = 50 // max docs per leaf cluster before split
+
+	// navTreeReadLimit bounds the single read a search uses to resolve the
+	// ancestor path of its hits. A nav tree is small by construction (fanout,
+	// docs-per-cluster and depth are all capped), so this is a guard against a
+	// pathological dataset rather than a paging budget.
+	navTreeReadLimit = 10000
 )
+
+// navNodeSelectFields are the columns every nav tree read needs: the label
+// (title_kwd), the Python-era name column, the parent edge, the payload
+// (description), and the leaf's document id.
+var navNodeSelectFields = []string{
+	"name", "title_kwd", "parent_kwd", "depth_int",
+	"content_with_weight", "doc_count_int", "type_kwd", "doc_id",
+}
 
 // NavEmbedder embeds text. tenantID lets a production implementation resolve
 // the tenant's embedding model. Kept as an interface so tests inject a stub.
 type NavEmbedder interface {
 	Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error)
+}
+
+// NavQueryEmbedder is the optional query-side counterpart of NavEmbedder
+// (Python LLMBundle.encode_queries). It is implemented by embedders whose model
+// encodes queries and documents asymmetrically (Cohere / Voyage / Jina /
+// NVIDIA); callers embedding a SEARCH QUERY must prefer it and fall back to
+// Encode when it is absent.
+type NavQueryEmbedder interface {
+	EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error)
+}
+
+// encodeNavQuery embeds a search query, using the asymmetric query encoding
+// when the embedder provides one, mirroring Python's encode_queries split.
+func encodeNavQuery(ctx context.Context, emb NavEmbedder, tenantID string, texts []string) ([][]float32, error) {
+	if q, ok := emb.(NavQueryEmbedder); ok {
+		return q.EncodeQueries(ctx, tenantID, texts)
+	}
+	return emb.Encode(ctx, tenantID, texts)
 }
 
 // NavService is the concrete, ES-backed implementation of nav.NavService.
@@ -66,10 +103,10 @@ func NewNavService(embed NavEmbedder) *NavService {
 	return &NavService{embed: embed}
 }
 
-// SetNavMergeLLM installs the optional LLM used for cluster-description merging
-// and summary naming (mirroring Python dataset_nav._llm_merge/_llm_create_summary).
-// When nil (the default), NavService falls back to deterministic naming and
-// concatenated descriptions.
+// SetNavMergeLLM installs the optional LLM used for cluster naming and
+// description merging (mirroring Python dataset_nav._llm_create_summary /
+// _llm_merge). When nil (the default), clusters keep the deterministic
+// "<summary first line> <hash>" name and their existing description.
 func (s *NavService) SetNavMergeLLM(llm nav.NavMergeLLM) {
 	s.llm = llm
 }
@@ -129,18 +166,27 @@ func (s *NavService) navSearch(ctx context.Context, tenantID, kbID string, filte
 	return res.Chunks, res.Total, nil
 }
 
-// ListClusters returns the depth-0 clusters (parent_kwd=root).
-func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID string, page, pageSize int) ([]nav.NavNode, int64, error) {
+// ListClusters returns the depth-0 clusters (parent_kwd=root). When keywords is
+// non-empty it searches the dataset's documents and returns the pruned forest
+// around the hits (see searchNavForest) instead: one tree per root cluster,
+// holding only the cluster path down to each matched nav_doc leaf.
+//
+// The total is a cluster count in both modes: the depth-0 clusters when browsing,
+// the clusters holding a match when searching.
+func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID, keywords string, page, pageSize int) ([]nav.NavNode, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 100
 	}
+	if strings.TrimSpace(keywords) != "" {
+		return s.searchNavForest(ctx, tenantID, kbID, keywords, pageSize)
+	}
 	offset := page * pageSize
-	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{
-			"type_kwd":   []string{"nav_cluster"},
-			"parent_kwd": []string{navRootParent},
-		}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd"}, offset, pageSize, nil)
+	filter := navFilter(map[string]interface{}{
+		"type_kwd":   []string{"nav_cluster"},
+		"parent_kwd": []string{navRootParent},
+	})
+	chunks, total, err := s.navSearch(ctx, tenantID, kbID, filter,
+		navNodeSelectFields, offset, pageSize, navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -151,15 +197,17 @@ func (s *NavService) ListClusters(ctx context.Context, tenantID, kbID string, pa
 	return nodes, total, nil
 }
 
-// ListChildren returns the direct children of a cluster (parent_kwd=name).
-func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name string, page, pageSize int) ([]nav.NavNode, int64, error) {
+// ListChildren returns the direct children of a cluster (parent_kwd=name),
+// optionally filtered by keywords.
+func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name, keywords string, page, pageSize int) ([]nav.NavNode, int64, error) {
 	if pageSize <= 0 {
 		pageSize = 100
 	}
 	offset := page * pageSize
 	chunks, total, err := s.navSearch(ctx, tenantID, kbID,
 		navFilter(map[string]interface{}{"parent_kwd": []string{name}}),
-		[]string{"title_kwd", "content_with_weight", "doc_count_int", "type_kwd", "doc_id"}, offset, pageSize, nil)
+		navNodeSelectFields, offset, pageSize,
+		navKeywordExpressions(keywords))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -175,11 +223,161 @@ func (s *NavService) ListChildren(ctx context.Context, tenantID, kbID, name stri
 	return nodes, total, nil
 }
 
+// searchNavForest resolves a keyword search into the pruned forest the nav tree
+// renders: the matched nav_doc leaves PLUS the cluster path from each match up to
+// its root cluster, so every root cluster stays ONE tree holding only the
+// branches that lead to a match. The rows carry parent_kwd (the tree edge) and
+// matched (hits only), so the caller nests the flat list without another request.
+//
+// The total counts the clusters the hits landed in (see searchNavClusterCount):
+// the same quantity the header shows while browsing. Matching is document-level
+// on purpose (Python's tree search routes to documents too): a cluster appears
+// only as the path above a matched leaf, so a cluster's own summary text alone
+// does not surface a tree.
+func (s *NavService) searchNavForest(ctx context.Context, tenantID, kbID, keywords string, limit int) ([]nav.NavNode, int64, error) {
+	matches, _, err := s.navSearch(ctx, tenantID, kbID,
+		navFilter(map[string]interface{}{"type_kwd": []string{nav.TypeNavDoc}}),
+		navNodeSelectFields, 0, limit, navKeywordExpressions(keywords))
+	if err != nil {
+		return nil, 0, err
+	}
+	total := searchNavClusterCount(matches)
+	if len(matches) == 0 {
+		return []nav.NavNode{}, total, nil
+	}
+	// One read of the dataset's nav rows resolves every ancestor chain at once.
+	// A nav tree is small by construction (fanout, docs-per-cluster and depth are
+	// all capped), so this beats a parent-by-parent walk of navMaxDepth queries.
+	rows, _, err := s.navSearch(ctx, tenantID, kbID, navFilter(nil), navNodeSelectFields, 0, navTreeReadLimit, nil)
+	if err != nil {
+		// The path lookup failed; the hits are still a valid — if flat — answer.
+		common.Warn("datasetnav: nav path lookup for the search forest failed",
+			zap.String("kb_id", kbID), zap.Error(err))
+		return s.navNodesFromRows(matches), total, nil
+	}
+	clusters := make(map[string]map[string]interface{}, len(rows))
+	for _, r := range rows {
+		if firstStringValue(r["type_kwd"]) != nav.TypeNavCluster {
+			continue
+		}
+		if key := navClusterRowKey(r); key != "" {
+			clusters[key] = r
+		}
+	}
+
+	kept := make(map[string]map[string]interface{}, len(matches))
+	hit := make(map[string]bool, len(matches))
+	for _, r := range matches {
+		docID := firstStringValue(r["doc_id"])
+		if docID == "" {
+			continue
+		}
+		key := navDocRowKey(docID)
+		kept[key] = r
+		hit[key] = true
+		// Walk up to (but excluding) the root sentinel. navMaxDepth bounds the
+		// walk so a corrupt parent cycle can never spin.
+		parent := firstStringValue(r["parent_kwd"])
+		for depth := 0; parent != "" && parent != navRootParent && depth < navMaxDepth; depth++ {
+			cluster, ok := clusters[parent]
+			if !ok {
+				break // orphaned edge: the path above it is unknown
+			}
+			kept[navClusterKey(parent)] = cluster
+			parent = firstStringValue(cluster["parent_kwd"])
+		}
+	}
+	// Deterministic order (shallowest first, then by key): the caller re-nests
+	// anyway, but a stable order keeps the response diffable and testable.
+	keys := make([]string, 0, len(kept))
+	for key := range kept {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if di, dj := intValue(kept[keys[i]]["depth_int"]), intValue(kept[keys[j]]["depth_int"]); di != dj {
+			return di < dj
+		}
+		return keys[i] < keys[j]
+	})
+	nodes := make([]nav.NavNode, 0, len(keys))
+	for _, key := range keys {
+		node := s.nodeFromRow(kept[key], "doc")
+		node.Matched = hit[key]
+		nodes = append(nodes, node)
+	}
+	return nodes, total, nil
+}
+
+// searchNavClusterCount returns the number of clusters a search's hits landed in
+// — the header's number in search mode, like the depth-0 cluster count it shows
+// while browsing. A hit leaf sits in exactly one cluster (its parent_kwd), so
+// distinct parents count the clusters touched: two hits in one cluster count
+// once, and an ancestor shared by hits in different sub-clusters is a path row,
+// not a second cluster.
+func searchNavClusterCount(matches []map[string]interface{}) int64 {
+	seen := make(map[string]bool, len(matches))
+	for _, r := range matches {
+		// A leaf with no cluster edge (no writer produces one) has no cluster to
+		// count.
+		if key := firstStringValue(r["parent_kwd"]); key != "" && key != navRootParent {
+			seen[key] = true
+		}
+	}
+	return int64(len(seen))
+}
+
+// navNodesFromRows maps engine rows to NavNodes, all marked as hits (the degrade
+// path of searchNavForest, where no path rows were resolved).
+func (s *NavService) navNodesFromRows(rows []map[string]interface{}) []nav.NavNode {
+	nodes := make([]nav.NavNode, 0, len(rows))
+	for _, r := range rows {
+		node := s.nodeFromRow(r, "doc")
+		node.Matched = true
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+// navClusterRowKey is the key a cluster's children reference through parent_kwd:
+// Python's writer stores it in `name`, Go's in `title_kwd`.
+func navClusterRowKey(row map[string]interface{}) string {
+	if name := firstStringValue(row["name"]); name != "" {
+		return name
+	}
+	return firstStringValue(row["title_kwd"])
+}
+
+// navDocRowKey / navClusterKey namespace the two row identities so a cluster and
+// a document can never collide in the search forest's keyed sets.
+func navDocRowKey(docID string) string { return "doc:" + docID }
+func navClusterKey(name string) string { return "cluster:" + name }
+
+// navKeywordExpressions builds the lexical search expression used by the REST
+// navigation endpoints. These are the same indexed summary fields used by the
+// Python navigation search, with a stronger weight on the main content field.
+func navKeywordExpressions(keywords string) []interface{} {
+	keywords = strings.TrimSpace(keywords)
+	if keywords == "" {
+		return nil
+	}
+	if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+		keywords = tokenized
+	}
+	return []interface{}{&types.MatchTextExpr{
+		Fields:       []string{"content_ltks^10", "content_sm_ltks"},
+		MatchingText: keywords,
+		TopN:         10000,
+	}}
+}
+
 // nodeFromRow converts an engine row into a NavNode.
+//
+// The label is title_kwd — the summary's first line: one column serves both the
+// tree and the model-facing readers (NavHit.Name), so no separate display column
+// is written. An explicit readable `name` column (Python's writer stores one)
+// wins when present.
 func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string) nav.NavNode {
 	name := firstStringValue(row["title_kwd"])
-	// Prefer an explicit readable "name" column (Python rows carry one); fall
-	// back to title_kwd.
 	if n := firstStringValue(row["name"]); n != "" {
 		name = n
 	}
@@ -197,6 +395,7 @@ func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string
 		DocCount: intValue(row["doc_count_int"]),
 		Type:     fallbackType,
 		DocID:    firstStringValue(row["doc_id"]),
+		Parent:   firstStringValue(row["parent_kwd"]),
 	}
 	if t := firstStringValue(row["type_kwd"]); t != "" {
 		if t == "nav_cluster" {
@@ -253,16 +452,17 @@ func isHexString(s string) bool {
 }
 
 // Search runs query KNN over nav rows and returns routed doc ids.
-func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, embd []float32, topK int) ([]nav.NavHit, error) {
+func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]nav.NavHit, error) {
 	if topK <= 0 {
 		topK = 8
 	}
+	allowed := navScopeSet(docScope)
 	vec := embd
 	if len(vec) == 0 {
 		if s.embed == nil {
 			return nil, fmt.Errorf("datasetnav: no embedding available for Search")
 		}
-		embeddings, err := s.embed.Encode(ctx, tenantID, []string{query})
+		embeddings, err := encodeNavQuery(ctx, s.embed, tenantID, []string{query})
 		if err != nil {
 			return nil, err
 		}
@@ -272,15 +472,67 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 		vec = embeddings[0]
 	}
 	f64 := f32ToF64Slice(vec)
+	// An unscoped read takes one mixed KNN read: every row is already in scope,
+	// so the engine's own topK budget cannot starve the result.
+	if len(allowed) == 0 {
+		return s.navScan(ctx, tenantID, kbID, navFilter(nil), f64, topK, nil)
+	}
+	// A scoped read pushes the scope into the query as two type-pinned legs —
+	// nav_doc leaves filter on doc_id, nav_cluster rows on doc_ids_kwd — so the
+	// ENGINE decides what is in scope, not an in-memory pass over a fixed pool.
+	// A fixed pool cannot honor the scope-before-topK contract: a pool of any
+	// size N is exhausted by N higher-ranked out-of-scope rows, which silently
+	// drops in-scope rows that exist (Python hits the same wall — its mixed read
+	// re-checks the scope in memory after a `top_k or 10000` pool, so its typed
+	// leg is the only one that actually pushes the scope: dataset_nav.py:1371-1383,
+	// 1400, 1444-1447).
+	//
+	// Two legs are needed because a single mixed condition cannot express both
+	// keys at once: `_matches_condition` ANDs across fields, so one condition
+	// cannot mean "doc_id IN scope" for leaves and "doc_ids_kwd intersects
+	// scope" for clusters (dataset_nav.py:1374-1383 says exactly this).
+	scope := navScopeList(allowed)
+	leaves, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd": []string{nav.TypeNavDoc},
+		"doc_id":   scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	clusters, err := s.navScan(ctx, tenantID, kbID, navFilter(map[string]interface{}{
+		"type_kwd":    []string{nav.TypeNavCluster},
+		"doc_ids_kwd": scope,
+	}), f64, topK, allowed)
+	if err != nil {
+		return nil, err
+	}
+	// Both legs score the same vector with the same cosine metric, so their
+	// _score values are directly comparable. Taking each leg's top topK and
+	// merging by score yields the global topK of the union: a row ranked below
+	// its own leg's cap is already outranked by topK in-scope rows of that leg.
+	merged := append(leaves, clusters...)
+	sort.SliceStable(merged, func(i, j int) bool { return merged[i].Score > merged[j].Score })
+	if len(merged) > topK {
+		merged = merged[:topK]
+	}
+	return merged, nil
+}
+
+// navScan runs one KNN nav read behind filter, maps the rows to NavHits, and
+// re-checks the scope in memory the way Python does unconditionally
+// (dataset_nav.py:1444). The re-check is belt-and-braces on top of a pushed
+// scope filter, and trims a cluster's coverage to the scoped set. allowed may
+// be nil for an unscoped read.
+func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter map[string]interface{}, f64 []float64, limit int, allowed map[string]struct{}) ([]nav.NavHit, error) {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(nil),
-		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, topK,
+		filter,
+		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
-			TopN:              topK,
+			TopN:              limit,
 			ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 		}})
 	if err != nil {
@@ -289,25 +541,149 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 	hits := make([]nav.NavHit, 0, len(chunks))
 	for _, c := range chunks {
 		h := nav.NavHit{
-			Type:  firstStringValue(c["type_kwd"]),
-			Name:  firstStringValue(c["title_kwd"]),
-			DocID: firstStringValue(c["doc_id"]),
+			Type:   firstStringValue(c["type_kwd"]),
+			Name:   firstStringValue(c["title_kwd"]),
+			DocID:  firstStringValue(c["doc_id"]),
+			DocIDs: firstStringSlice(c["doc_ids_kwd"]),
 		}
 		if sc, ok := c["_score"].(float64); ok {
 			h.Score = sc
 		} else if sc, ok := c["_score"].(float32); ok {
 			h.Score = float64(sc)
 		}
-		if ds, ok := c["doc_ids_kwd"].([]interface{}); ok {
-			for _, d := range ds {
-				if dd, ok := d.(string); ok {
-					h.DocIDs = append(h.DocIDs, dd)
-				}
-			}
+		if !navHitInScope(h, allowed) {
+			continue
+		}
+		if len(allowed) > 0 && len(h.DocIDs) > 0 {
+			// A scoped search must only surface in-scope documents: cut a
+			// cluster's coverage list down to the scoped set so no out-of-scope
+			// doc appears under a cluster that merely overlaps the scope
+			// (dataset_nav.py:1460-1465).
+			h.DocIDs = navIntersectScope(h.DocIDs, allowed)
 		}
 		hits = append(hits, h)
 	}
 	return hits, nil
+}
+
+// navScopeList renders a scope set as a sorted list for an engine filter, so the
+// term order is deterministic run to run (Python sorts its scope the same way:
+// dataset_nav.py:1381-1383).
+func navScopeList(allowed map[string]struct{}) []string {
+	out := make([]string, 0, len(allowed))
+	for d := range allowed {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// navScopeSet normalizes a caller's doc scope the way search_dataset_nav does
+// (dataset_nav.py:1364): trimmed, non-empty, deduped. A nil result means "no
+// restriction".
+func navScopeSet(docScope []string) map[string]struct{} {
+	if len(docScope) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(docScope))
+	for _, d := range docScope {
+		if d = strings.TrimSpace(d); d != "" {
+			out[d] = struct{}{}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// navHitInScope mirrors Python _in_nav_scope (dataset_nav.py:611): a nav_cluster
+// row belongs when it covers at least one scoped document (a non-empty coverage
+// list is the reliable discriminator — a cluster's doc_id is the kb_id, not a
+// document), a nav_doc leaf when its doc_id is in scope.
+func navHitInScope(h nav.NavHit, allowed map[string]struct{}) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if len(h.DocIDs) > 0 {
+		for _, d := range h.DocIDs {
+			if _, ok := allowed[strings.TrimSpace(d)]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	_, ok := allowed[strings.TrimSpace(h.DocID)]
+	return ok
+}
+
+// navIntersectScope keeps only the doc ids that are inside the scope, preserving
+// order.
+func navIntersectScope(docIDs []string, allowed map[string]struct{}) []string {
+	out := make([]string, 0, len(docIDs))
+	for _, d := range docIDs {
+		if _, ok := allowed[strings.TrimSpace(d)]; ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// SummariesByDocIDs returns the nav_doc description — the document's overall
+// summary — keyed by doc_id for the given documents. It mirrors Python
+// dataset_api_service._nav_doc_summaries: it reads the nav_doc rows
+// (compile_kwd=dataset_nav, type_kwd=nav_doc) for the doc_ids and yields, per
+// doc, the payload description. The description wins over the row's label on
+// purpose: callers render this value to the model as the routed document's
+// <summary>, and title_kwd holds only the summary's first line (length-capped).
+// A row whose payload carries no description falls back to its readable label; a
+// document with no nav_doc row is absent from the result.
+func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID string, docIDs []string) map[string]string {
+	if len(docIDs) == 0 {
+		return map[string]string{}
+	}
+	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
+		navFilter(map[string]interface{}{
+			"type_kwd": []string{"nav_doc"},
+			"doc_id":   docIDs,
+		}),
+		[]string{"type_kwd", "name", "title_kwd", "content_with_weight", "doc_id"},
+		0, len(docIDs), nil)
+	if err != nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(chunks))
+	for _, c := range chunks {
+		docID := firstStringValue(c["doc_id"])
+		if docID == "" {
+			continue
+		}
+		summary := ""
+		if payload, ok := c["content_with_weight"].(string); ok {
+			var m map[string]interface{}
+			if json.Unmarshal([]byte(payload), &m) == nil {
+				if d, ok := m["description"].(string); ok {
+					summary = strings.TrimSpace(d)
+				}
+			}
+		}
+		if summary == "" {
+			// No description in the payload: fall back to the stored label
+			// (readable name, else title_kwd), rejecting raw ids — a 32-hex id or
+			// "cluster_<hash>" is not a human label.
+			summary = firstStringValue(c["name"])
+			if summary == "" {
+				summary = firstStringValue(c["title_kwd"])
+			}
+			if graphIsRawID(summary) {
+				summary = ""
+			}
+		}
+		if summary != "" {
+			out[docID] = summary
+		}
+	}
+	return out
 }
 
 // UpsertDoc places one document summary into the nav tree. Minimal closed loop:
@@ -335,20 +711,58 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		}
 		vec = embeddings[0]
 	}
+	contentLtks, err := tokenizer.Tokenize(in.Summary)
+	if err != nil || contentLtks == "" {
+		contentLtks = in.Summary
+	}
+	contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+	if err != nil || contentSmLtks == "" {
+		contentSmLtks = contentLtks
+	}
 
 	// storeGet: skip if a nav_doc for this doc already exists with same summary.
 	existing, _, err := s.navSearch(ctx, in.TenantID, in.KbID,
-		navFilter(map[string]interface{}{"doc_id": []string{in.DocID}}),
-		[]string{"content_with_weight"}, 0, 1, nil)
+		navFilter(map[string]interface{}{
+			"type_kwd": []string{nav.TypeNavDoc},
+			"doc_id":   []string{in.DocID},
+		}),
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
 	if len(existing) > 0 {
+		// The stored label can drift without the summary changing, so a recompile
+		// refreshes it in place instead of leaving a stale row: a row written by an
+		// older label rule (title_kwd holding the file name) goes back to the
+		// summary's first line, or the model-facing readers would keep seeing a
+		// file name. The tokenized text is (re)built when it is missing.
+		title := navDocTitle(in.Summary)
+		titleStale := firstStringValue(existing[0]["title_kwd"]) != title
+		ltksStale := firstStringValue(existing[0]["content_ltks"]) == "" ||
+			firstStringValue(existing[0]["content_sm_ltks"]) == ""
 		if payload, ok := existing[0]["content_with_weight"].(string); ok {
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
 				if d, _ := m["description"].(string); d == in.Summary {
-					return nil // unchanged
+					if !titleStale && !ltksStale {
+						return nil // unchanged
+					}
+					updates := map[string]interface{}{}
+					if titleStale {
+						updates["title_kwd"] = title
+					}
+					if ltksStale {
+						updates["content_ltks"] = contentLtks
+						updates["content_sm_ltks"] = contentSmLtks
+					}
+					return de.UpdateChunks(ctx,
+						map[string]interface{}{
+							"compile_kwd": []string{navCompileKwd},
+							"type_kwd":    []string{nav.TypeNavDoc},
+							"doc_id":      []string{in.DocID},
+							"kb_id":       in.KbID,
+						},
+						updates, s.navIndexName(in.TenantID), in.KbID)
 				}
 			}
 		}
@@ -377,6 +791,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 
 	if bestName != "" && sim >= navMergeThreshold {
 		parent := bestName
+		// Fuse this document's summary into the cluster description and re-embed
+		// the cluster with the merged text (Python upsert_dataset_nav_doc's merge
+		// branch), so the cluster keeps describing every document it holds and the
+		// next placement scores against the merged topic instead of the first
+		// document's summary alone.
+		if err := s.mergeClusterDescription(ctx, de, in.TenantID, in.KbID, bestName, in.Summary); err != nil {
+			return err
+		}
 		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
 			fmt.Sprintf("q_%d_vec", len(vec))); err != nil {
 			return err
@@ -385,15 +807,17 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// deterministic id (hash of the "dataset_nav:doc:{doc_id}" key) so
 		// RemoveDoc / cascade cleanup can locate and delete it precisely,
 		// instead of relying on a doc_id + type filter alone.
-		_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+		row := map[string]interface{}{
 			"id":            navDocID(in.TenantID, in.KbID, in.DocID),
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
 			"type_kwd":      "nav_doc",
-			// The nav_doc's display name is a readable title derived from the summary
-			// (Python _clean_title/_fallback_title) — NOT the raw doc id, which is
-			// meaningless in the UI. The doc_id is still stored for lookups.
-			"title_kwd":  cleanTitle(fallbackTitle(in.Summary)),
+			// The nav_doc's label is a readable title derived from the summary
+			// (Python _clean_title/_fallback_title) — never the raw doc id,
+			// which is meaningless in the UI. The doc_id is still stored for
+			// lookups; NavHit.Name reads this same column, so the tree and the
+			// model-facing readers stay on one label.
+			"title_kwd":  navDocTitle(in.Summary),
 			"parent_kwd": parent,
 			// The nav_doc sits one level below its (possibly nested) parent
 			// cluster, so its depth is parentDepth+1 — not a hard-coded 1.
@@ -401,20 +825,30 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"doc_id":              in.DocID,
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-		}}, idx, in.KbID)
+		}
+		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID)
 		return err
 	}
 
-	// A similar-but-not-mergeable cluster creates a sibling sub-cluster (Python
-	// _MIN_SIM=0.50); otherwise a fresh root cluster. This keeps the nav tree
-	// from degrading into one root per document.
+	// A similar-but-not-mergeable document opens its own cluster (Python
+	// _MIN_SIM=0.50). Where it lands follows the best match's depth:
+	//
+	//   - a ROOT-level best match opens a ROOT-level cluster, beside it. That is
+	//     the case a fresh dataset always reaches, and it is what Python's branch
+	//     does: it attaches the new cluster to `best_parent`, which for a root
+	//     best match is the root sentinel. Hiding the new topic one level down
+	//     instead (what this branch used to do) meant a second topic never showed
+	//     up in the tree's top level.
+	//   - a best match that is itself nested keeps the child semantics: the new
+	//     cluster sits one level deeper, which is what keeps a large tree from
+	//     flattening into one root per topic.
 	parent := navRootParent
 	depth := 0
-	if bestName != "" && sim >= navMinSim {
+	if bestName != "" && sim >= navMinSim && bestDepth > 0 {
 		parent = bestName
-		// A sibling of the (possibly nested) best cluster is one level deeper
-		// than it, so depth = parentDepth+1 — not a hard-coded 1.
 		depth = bestDepth + 1
 	}
 	// New cluster: when an LLM is configured, generate a short name + summary
@@ -424,7 +858,15 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if summary == "" {
 		summary = in.Summary
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	clusterContentLtks, err := tokenizer.Tokenize(summary)
+	if err != nil || clusterContentLtks == "" {
+		clusterContentLtks = summary
+	}
+	clusterContentSmLtks, err := tokenizer.FineGrainedTokenize(clusterContentLtks)
+	if err != nil || clusterContentSmLtks == "" {
+		clusterContentSmLtks = clusterContentLtks
+	}
+	clusterRow := map[string]interface{}{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
 		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
 		"compile_kwd":         navCompileKwd,
@@ -436,8 +878,11 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"doc_count_int":       1,
 		"doc_ids_kwd":         []string{in.DocID},
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"content_ltks":        clusterContentLtks,
+		"content_sm_ltks":     clusterContentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID)
 	if err != nil {
 		return err
 	}
@@ -446,19 +891,22 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	// new root cluster that only folds the doc into doc_ids_kwd would leave the
 	// nav tree with a single cluster and no nav_doc child, so /children returns
 	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
+	docRow := map[string]interface{}{
 		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
 		"compile_kwd":         navCompileKwd,
 		"available_int":       0,
 		"type_kwd":            "nav_doc",
-		"title_kwd":           cleanTitle(fallbackTitle(in.Summary)),
+		"title_kwd":           navDocTitle(in.Summary),
 		"parent_kwd":          name,
 		"depth_int":           depth + 1,
 		"doc_id":              in.DocID,
 		"doc_count_int":       1,
 		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+		"content_ltks":        contentLtks,
+		"content_sm_ltks":     contentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
-	}}, idx, in.KbID)
+	}
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID)
 	return err
 }
 
@@ -529,9 +977,10 @@ func (s *NavService) cleanupEmptyCluster(ctx context.Context, tenantID, kbID, cl
 
 // findBestCluster finds the best-matching cluster via level-by-level descent
 // (mirroring Python _find_best_cluster). It KNNs the current level's clusters
-// and, when the best match is >= recurse threshold, descends into that cluster's
-// children. Returns the best cluster name, similarity, and its depth (0 = root)
-// so callers can assign consistent child depth_int values.
+// and, while the match is >= recurse threshold, descends into that cluster's
+// children. Returns the DEEPEST cluster reached — the strongest match is not
+// kept, exactly like Python — plus its similarity and depth (0 = root), so the
+// caller can assign consistent child depth_int values.
 func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string, vec []float32) (string, float64, int, error) {
 	f64 := f32ToF64Slice(vec)
 	parent := navRootParent
@@ -562,10 +1011,14 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		}
 		name := firstStringValue(chunks[0]["title_kwd"])
 		sim := rowScore(chunks[0])
-		// Keep the STRONGEST match seen so far across all levels, so a strong
-		// ancestor is never displaced by a weaker descendant. Record its depth
-		// so the caller can set consistent child depth_int values.
-		if sim > bestSim {
+		// Adopt-and-overwrite, mirroring Python _find_best_cluster: the result is
+		// the DEEPEST cluster reached while the descent keeps clearing
+		// navRecurse, not the strongest one seen. A strong ancestor therefore
+		// does NOT shadow a weaker-but-recurseable descendant — the placement
+		// then decides on the descendant's own similarity. The root (level 0) is
+		// adopted unconditionally, exactly as Python seeds its `best` with the
+		// top-1 root; a child is adopted only when it still clears the threshold.
+		if level == 0 || sim >= navRecurse {
 			bestName, bestSim, bestDepth = name, sim, level
 		}
 		// Descend only while the current match is strong enough that a deeper
@@ -751,6 +1204,15 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 				spl.count++
 			}
 		}
+		description := "split of " + clusterName
+		contentLtks, err := tokenizer.Tokenize(description)
+		if err != nil || contentLtks == "" {
+			contentLtks = description
+		}
+		contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
+		if err != nil || contentSmLtks == "" {
+			contentSmLtks = contentLtks
+		}
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
 			"compile_kwd":         navCompileKwd,
@@ -761,7 +1223,9 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			"depth_int":           clusterDepth(clusterChunks),
 			"doc_count_int":       spl.count,
 			"doc_ids_kwd":         spl.ids,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": "split of " + clusterName}),
+			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": description}),
+			"content_ltks":        contentLtks,
+			"content_sm_ltks":     contentSmLtks,
 		}
 		// Representative vector: if any reparented child carried a vector, use it
 		// so the split cluster participates in KNN routing. This is a heuristic
@@ -835,16 +1299,89 @@ func clusterDepth(clusterChunks []map[string]interface{}) int {
 	return intValue(clusterChunks[0]["depth_int"])
 }
 
-// llmMergeDescription merges a set of source descriptions into one, using the
-// optional LLM when available (temperature 0.1, mirroring Python _llm_merge);
-// without an LLM it concatenates them deterministically.
+// mergeClusterDescription fuses one document's summary into an existing
+// cluster's description and re-embeds the cluster with the merged text
+// (mirroring Python upsert_dataset_nav_doc's merge branch: _llm_merge, then a
+// re-embed of the changed description). Nothing is written when there is no LLM
+// — Python's _llm_merge returns the existing text when chat_mdl is nil — or when
+// the model reply leaves the description unchanged, so a no-LLM deployment keeps
+// its previous behaviour.
+func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docSummary string) error {
+	docSummary = strings.TrimSpace(docSummary)
+	if docSummary == "" {
+		return nil
+	}
+	rows, _, err := s.navSearch(ctx, tenantID, kbID,
+		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		[]string{"content_with_weight"}, 0, 1, nil)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	payload := map[string]interface{}{}
+	if raw, ok := rows[0]["content_with_weight"].(string); ok {
+		_ = json.Unmarshal([]byte(raw), &payload)
+	}
+	oldDesc := firstStringValue(payload["description"])
+	if oldDesc == "" {
+		// Nothing to fuse with: the row carries no description to preserve.
+		return nil
+	}
+	merged := strings.TrimSpace(s.llmMergeDescription(ctx, tenantID, []string{oldDesc, docSummary}))
+	if merged == "" || merged == oldDesc {
+		return nil
+	}
+	// Mutate the parsed payload so any extra keys a writer stored there (Python
+	// carries keywords/entities/graph_content) survive the rewrite.
+	payload["description"] = merged
+	updates := map[string]interface{}{"content_with_weight": payloadJSONNav(payload)}
+	// The description is part of the cluster's keyword index, so its tokens are
+	// refreshed alongside it.
+	if ltks, err := tokenizer.Tokenize(merged); err == nil && ltks != "" {
+		updates["content_ltks"] = ltks
+		if smLtks, err := tokenizer.FineGrainedTokenize(ltks); err == nil && smLtks != "" {
+			updates["content_sm_ltks"] = smLtks
+		}
+	}
+	if s.embed != nil {
+		if vecs, err := s.embed.Encode(ctx, tenantID, []string{merged}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
+			updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
+		}
+	}
+	return de.UpdateChunks(ctx,
+		map[string]interface{}{
+			"compile_kwd": []string{navCompileKwd},
+			"type_kwd":    []string{"nav_cluster"},
+			"title_kwd":   []string{clusterName},
+			"kb_id":       kbID,
+		}, updates, s.navIndexName(tenantID), kbID)
+}
+
+// llmMergeDescription merges a set of source descriptions into one via the
+// optional LLM (temperature 0.1, mirroring Python _llm_merge). texts is
+// [existing description, new document summary]. Without an LLM — or when the
+// model reply is unusable — the existing description is returned unchanged,
+// mirroring Python's fallback (it keeps the old summary rather than
+// concatenating).
 func (s *NavService) llmMergeDescription(ctx context.Context, tenantID string, texts []string) string {
+	existing := ""
+	if len(texts) > 0 {
+		existing = texts[0]
+	}
 	if s.llm != nil && len(texts) > 0 {
-		if merged, err := s.llm.Merge(ctx, tenantID, texts); err == nil && strings.TrimSpace(merged) != "" {
+		merged, err := s.llm.Merge(ctx, tenantID, texts)
+		if err != nil {
+			// Keep the stored description; the warning is the only signal that the
+			// configured chat model could not be used (Python logs the same way).
+			common.Warn("datasetnav: LLM cluster-description merge failed, keeping the existing description",
+				zap.String("tenant_id", tenantID), zap.Error(err))
+		} else if strings.TrimSpace(merged) != "" {
 			return merged
 		}
 	}
-	return strings.Join(texts, "\n")
+	return existing
 }
 
 // cleanTitle normalizes a raw title/summary into a one-line, length-capped
@@ -872,6 +1409,16 @@ func fallbackTitle(summary string) string {
 	return line
 }
 
+// navDocTitle is the nav_doc leaf's label, stored in title_kwd: the summary's
+// first line (Python _clean_title/_fallback_title). One column serves both
+// readers — nodeFromRow renders it in the tree, and NavHit.Name carries it to
+// the model as the routed document's <summary> (tool_navigation.go) — so it must
+// stay a CONTENT label; a file name here would tell the model nothing about the
+// document.
+func navDocTitle(summary string) string {
+	return cleanTitle(fallbackTitle(summary))
+}
+
 // readableClusterName returns a readable yet unique nav-cluster key of the form
 // "<title> <8-hex>" (mirroring Python dataset_nav._readable_cluster_name): the
 // title keeps the node name human-readable, the short hash of the seed keeps the
@@ -884,14 +1431,24 @@ func readableClusterName(title, seed string) string {
 	return t + " " + shortHash8(seed)
 }
 
-// llmCreateSummary builds a short cluster name + summary for a source text via
-// the optional LLM (mirroring Python _llm_create_summary); without an LLM it
-// falls back to a readable name derived from the summary's first words plus a
-// short hash, so nav clusters are human-readable instead of "cluster_<hash>".
+// llmCreateSummary builds a cluster's name + summary for a source text. The
+// name is always run through readableClusterName, so it keeps the " <8-hex>"
+// suffix that makes it unique per KB and addressable as the cluster key
+// (parent_kwd / row id) — Python does the same in its callers
+// (_readable_cluster_name(new_title, summary)). With an LLM the title part is
+// the model's topic name; without one it is the summary's first line, so nav
+// clusters stay human-readable instead of "cluster_<hash>".
 func (s *NavService) llmCreateSummary(ctx context.Context, tenantID, text string) (name, summary string) {
 	if s.llm != nil {
-		if n, sm, err := s.llm.CreateSummary(ctx, tenantID, text); err == nil && n != "" {
-			return n, sm
+		n, sm, err := s.llm.CreateSummary(ctx, tenantID, text)
+		switch {
+		case err != nil:
+			// Fall back to the deterministic name; the warning is the only signal
+			// that the configured chat model could not be used.
+			common.Warn("datasetnav: LLM cluster naming failed, using the deterministic name",
+				zap.String("tenant_id", tenantID), zap.Error(err))
+		case n != "":
+			return readableClusterName(n, text), sm
 		}
 	}
 	return readableClusterName(fallbackTitle(text), text), text

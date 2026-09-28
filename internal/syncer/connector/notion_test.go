@@ -41,7 +41,7 @@ func TestNotionConnectorOpenSyncReadsRootPageChildrenAndAttachment(t *testing.T)
 		return []byte("pdf-body"), nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestNotionConnectorOpenSyncDefersTraversalUntilNextBatch(t *testing.T) {
 		return []byte("pdf-body"), nil
 	}
 
-	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true})
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 	})
@@ -122,7 +122,7 @@ func TestNotionConnectorOpenSyncUsesIncrementalWindowAndResume(t *testing.T) {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 
-	resumed, err := connector.OpenSync(context.Background(), SyncRequest{
+	resumed, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 		Resume:      batch.Checkpoint,
@@ -144,7 +144,7 @@ func TestNotionConnectorResumeMissingCheckpointFails(t *testing.T) {
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 		Resume:      &SyncCheckpoint{SourceID: "missing"},
@@ -180,7 +180,7 @@ func TestNotionConnectorIncrementalSearchContinuesPastTooNewPages(t *testing.T) 
 		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
 	}
 	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(context.Background(), SyncRequest{
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		WindowStart: &start,
 		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
 	})
@@ -204,7 +204,7 @@ func TestNotionConnectorFileRejectsOversizedBody(t *testing.T) {
 
 	connector := newTestNotionConnector(t)
 	connector.fileMaxBytes = 4
-	_, err := connector.file(context.Background(), server.URL)
+	_, err := connector.file(t.Context(), server.URL)
 	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
 		t.Fatalf("file err = %v, want maximum size error", err)
 	}
@@ -222,7 +222,7 @@ func TestNotionConnectorOpenPruneReturnsPageAndAttachmentIDs(t *testing.T) {
 		}
 		return notionBlockPage{}, nil
 	}
-	session, err := connector.OpenPrune(context.Background(), PruneRequest{})
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune: %v", err)
 	}

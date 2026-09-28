@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 
+import asyncio
 import json
+import types
 from types import SimpleNamespace
 
 import networkx as nx
@@ -638,3 +640,71 @@ class TestFlatUniqList:
         arr = [{"k": [1, 2]}, {"k": 3}]
         result = flat_uniq_list(arr, "k")
         assert set(result) == {1, 2, 3}
+
+
+class _RecordingAsyncio(types.ModuleType):
+    """`asyncio` as a module sees it, with the timeouts handed to `wait_for` recorded."""
+
+    def __init__(self):
+        super().__init__("asyncio")
+        self.timeouts = []
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    def wait_for(self, awaitable, timeout):
+        self.timeouts.append(timeout)
+        return asyncio.wait_for(awaitable, timeout)
+
+
+class _StopAfterPrewarm(Exception):
+    pass
+
+
+class TestSetGraphPrewarmTimeoutFlag:
+    """`ENABLE_TIMEOUT_ASSERTION` decides the timeout of both embedding pre-warms.
+
+    `set_graph` read it with `os.environ.get`, so `false` or `0` armed the
+    3 s timeout on every node and edge batch.
+    """
+
+    async def _prewarm_timeouts(self, monkeypatch, raw):
+        graph = nx.Graph(source_id=["doc1"])
+        graph.add_node("A", source_id=["doc1"])
+        graph.add_node("B", source_id=["doc1"])
+        graph.add_edge("A", "B", description="related")
+        change = GraphChange(added_updated_nodes={"A", "B"}, added_updated_edges={("A", "B")})
+        if raw is None:
+            monkeypatch.delenv("ENABLE_TIMEOUT_ASSERTION", raising=False)
+        else:
+            monkeypatch.setenv("ENABLE_TIMEOUT_ASSERTION", raw)
+
+        async def no_chunk(*_args, **_kwargs):
+            return None
+
+        async def stop(*_args, **_kwargs):
+            # Both pre-warms have run by the time the edge chunks are built.
+            raise _StopAfterPrewarm
+
+        recording = _RecordingAsyncio()
+        monkeypatch.setattr(graphrag_utils, "asyncio", recording)
+        monkeypatch.setattr(graphrag_utils, "_batch_embed_cache_misses", lambda _llm, keys: [True] * len(keys))
+        monkeypatch.setattr(graphrag_utils, "_write_embed_cache_batch", lambda *_args: None)
+        monkeypatch.setattr(graphrag_utils, "graph_node_to_chunk", no_chunk)
+        monkeypatch.setattr(graphrag_utils, "graph_edge_to_chunk", stop)
+        embd_mdl = SimpleNamespace(llm_name="m", encode=lambda texts: (np.zeros((len(texts), 2)), 0))
+
+        with pytest.raises(_StopAfterPrewarm):
+            await graphrag_utils.set_graph("tenant", "kb", embd_mdl, graph, change, callback=None)
+        return recording.timeouts
+
+    @pytest.mark.parametrize("raw", ["false", "0", "off", "no", ""])
+    async def test_a_disabling_value_leaves_both_prewarms_untimed(self, monkeypatch, raw):
+        assert await self._prewarm_timeouts(monkeypatch, raw) == [30000000, 30000000]
+
+    async def test_an_unset_flag_leaves_both_prewarms_untimed(self, monkeypatch):
+        assert await self._prewarm_timeouts(monkeypatch, None) == [30000000, 30000000]
+
+    @pytest.mark.parametrize("raw", ["1", "true", "on"])
+    async def test_an_enabling_value_times_both_prewarms(self, monkeypatch, raw):
+        assert await self._prewarm_timeouts(monkeypatch, raw) == [3, 3]

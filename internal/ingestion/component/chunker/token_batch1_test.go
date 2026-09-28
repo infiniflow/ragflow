@@ -301,33 +301,37 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 	}
 }
 
-// TestTakeFromEndRespectsTokenCount and TestTakeFromStartRespectsTokenCount
-// covers takeFromEnd/takeFromStart used a
-// fixed 4-bytes-per-token heuristic which badly over-counts for CJK text
-// (≈3 bytes/char, 1-2 tokens/char). They must now count tokens exactly via
-// tokenizeStr so the returned slice is close to the requested token budget.
-func TestTakeFromEndRespectsTokenCount(t *testing.T) {
-	const target = 20
-	s := strings.Repeat("中", 60)
-	got := takeFromEnd(s, target)
-	if !strings.HasSuffix(s, got) {
-		t.Fatalf("takeFromEnd result must be a suffix of input")
+// TestTakeContextSentencesCoversBudgetOnSentenceBoundaries pins the truncation
+// rule the token path shares with the general path: whole sentences are taken
+// from the requested end until the budget is reached, so a cut never lands
+// inside a sentence and the run is the smallest one that covers the budget.
+func TestTakeContextSentencesCoversBudgetOnSentenceBoundaries(t *testing.T) {
+	const text = "alpha beta. gamma delta. epsilon zeta."
+	budget := tokenizeStr("gamma delta. epsilon zeta.")
+
+	if got, want := takeContextSentences(text, budget, true), "gamma delta. epsilon zeta."; got != want {
+		t.Errorf("tail context = %q, want %q", got, want)
 	}
-	n := tokenizeStr(got)
-	if n < target-3 || n > target+3 {
-		t.Errorf("takeFromEnd(%d tokens) returned slice with %d tokens (want ~%d)", target, n, target)
+	if got, want := takeContextSentences(text, budget, false), "alpha beta. gamma delta. "; got != want {
+		t.Errorf("prefix context = %q, want %q", got, want)
+	}
+	// One sentence less falls short of the budget, so the walk stopped at the
+	// first sentence run that covers it — the counting itself is exact.
+	if short := tokenizeStr("epsilon zeta."); short >= budget {
+		t.Fatalf("fixture invalid: dropping a sentence still meets the budget (%d >= %d)", short, budget)
 	}
 }
 
-func TestTakeFromStartRespectsTokenCount(t *testing.T) {
-	const target = 20
+// TestTakeContextSentencesKeepsBoundarylessText pins the documented overshoot:
+// a sentence is the smallest unit the window may cut at, so text without a
+// boundary — the CJK case the removed rune-level helper used to slice mid-text
+// — comes back whole.
+func TestTakeContextSentencesKeepsBoundarylessText(t *testing.T) {
 	s := strings.Repeat("中", 60)
-	got := takeFromStart(s, target)
-	if !strings.HasPrefix(s, got) {
-		t.Fatalf("takeFromStart result must be a prefix of input")
+	if got := takeContextSentences(s, 20, true); got != s {
+		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
-	n := tokenizeStr(got)
-	if n < target-3 || n > target+3 {
-		t.Errorf("takeFromStart(%d tokens) returned slice with %d tokens (want ~%d)", target, n, target)
+	if got := takeContextSentences(s, 20, false); got != s {
+		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
 }

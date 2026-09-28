@@ -2,9 +2,20 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
+
+const defaultMaxRerankTokens = 8196
+
+// ErrRerankTokenLimitPolicy identifies invalid token-limit configuration or oversized rerank input.
+var ErrRerankTokenLimitPolicy = errors.New("rerank token limit policy")
 
 // Message represents a chat message with role and content
 //
@@ -83,7 +94,11 @@ type TokenUsage struct {
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
-	// FIXME: add implementation
+	// TokenCount is what this input cost, taken from the provider's reported
+	// usage. Embedding APIs report usage per *request*, not per input, so the
+	// ingest path distributes the request total across the inputs it sent
+	// (internal/ingestion/task/embedder.go). It stays 0 for providers that
+	// report no usage at all — by design, rather than inventing a number.
 	TokenCount int `json:"token_count"`
 }
 
@@ -113,7 +128,7 @@ type OCRFileResponse struct {
 
 type ListModelResponse struct {
 	Name          string         `json:"name"`
-	ContentLength *int           `json:"content_length"`
+	ContextLength *int           `json:"context_length"`
 	MaxOutput     *int           `json:"max_output"`
 	ModelTypes    []string       `json:"model_types"`
 	Thinking      *ModelThinking `json:"thinking"`
@@ -141,9 +156,10 @@ type TaskResponse struct {
 }
 
 type ModelListItem struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
+	ID            string `json:"id"`
+	ContextLength *int   `json:"context_length"`
+	Object        string `json:"object"`
+	OwnedBy       string `json:"owned_by"`
 }
 
 type ModelList struct {
@@ -184,6 +200,7 @@ type ChatConfig struct {
 	Verbosity       *string
 	Tools           interface{}               `json:"tools,omitempty"`
 	ToolChoice      *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue any                       `json:"-"`
 	ToolCallsResult *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
@@ -203,6 +220,12 @@ type EmbedRequest struct {
 	Texts  []string // for text
 	Images [][]byte // for image
 	Urls   []string // for image
+	// Query selects the query-side encoding for providers that embed queries
+	// and documents differently (Python's LLMBundle.encode_queries vs encode):
+	// Cohere/Bedrock-Cohere input_type=search_query, Voyage input_type=query,
+	// Jina task=retrieval.query, NVIDIA input_type=query, DashScope
+	// text_type=query. Providers without an asymmetric mode ignore it.
+	Query bool
 }
 
 type EmbeddingConfig struct {
@@ -276,24 +299,121 @@ func (m *EmbeddingModel) ResolveBatchSize() int {
 	return GetEmbeddingBatchSize(name)
 }
 
+// ResolveMaxTokens is ResolveBatchSize's counterpart for the input window: the
+// model's own declaration wins, then the provider catalog's context_length, then
+// 0, which tells the caller to apply its own default. Deliberately not 8192:
+// the catalog has embedding models with 512-token windows, and overshooting a
+// window is a rejected request while undershooting only truncates.
+func (m *EmbeddingModel) ResolveMaxTokens() int {
+	if m == nil {
+		return 0
+	}
+	if m.MaxTokens > 0 {
+		return m.MaxTokens
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingMaxTokens(name)
+}
+
+// ResolveTokenizerID returns the tokenizer family declared for this model, or ""
+// when the model's own tokenizer is unknown (the caller then counts with cl100k
+// and a calibrated ratio).
+func (m *EmbeddingModel) ResolveTokenizerID() string {
+	if m == nil {
+		return ""
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingTokenizer(name)
+}
+
+// QuotaKey names the deployment this embedding model counts against: endpoint,
+// region, model name and an API-key prefix. The tokenizer belongs to the model, but
+// what a provider accepts is per deployment - the same model behind two endpoints
+// can have different windows - so everything that learns a real/own token ratio
+// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
+// has to key that ratio the same way; otherwise each path re-learns the same
+// rejection and none of them tightens for the others.
+func (m *EmbeddingModel) QuotaKey() string {
+	if m == nil {
+		return ""
+	}
+	var baseURL, region, apiKey, modelName string
+	if cfg := m.APIConfig; cfg != nil {
+		if cfg.BaseURL != nil {
+			baseURL = *cfg.BaseURL
+		}
+		if cfg.Region != nil {
+			region = *cfg.Region
+		}
+		if cfg.ApiKey != nil {
+			apiKey = *cfg.ApiKey
+		}
+	}
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
+}
+
 // RerankModel wraps a ModelDriver with rerank-specific configuration
 type RerankModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	MaxTokens   int
 }
 
 // NewRerankModel creates a new RerankModel
-func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *RerankModel {
+func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int) *RerankModel {
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
+		MaxTokens:   maxTokens,
 	}
 }
 
 // Rerank calculates similarity between query and texts
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	maxTokens := r.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxRerankTokens
+	}
+	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
+	if mode == "" {
+		mode = "truncate"
+	}
+	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
+		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
+	}
+	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
+		queryTokens := tokenizer.NumTokensFromString(request.Query)
+		if mode == "truncate" {
+			documentTokens := max(maxTokens-queryTokens, 0)
+			documents := make([]string, len(request.Documents))
+			for i, document := range request.Documents {
+				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+			}
+			request.Documents = documents
+		} else {
+			for i, document := range request.Documents {
+				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
+				if inputTokens > maxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				}
+			}
+		}
+	}
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 
@@ -303,6 +423,12 @@ type ToolConfig struct {
 	MaxRounds       int             // max tool-calling rounds (default: 5)
 	MaxRetries      int             // max retries on failure (default: 3)
 	ToolCallSession ToolCallSession // session that executes tool calls
+	// TerminalTools names tools whose successful result is already the final
+	// answer. When a round executes one of them, the loop stops and returns
+	// that result instead of feeding it back for another model round. Mirrors
+	// Python's chat_mdl.terminal_tools short-circuit (chat_model.py:619-627).
+	// Empty disables the short-circuit (existing behaviour).
+	TerminalTools map[string]struct{}
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration
@@ -311,10 +437,6 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
-	// LastUsage holds the token usage (prompt/completion/total) of the most
-	// recent chat call. Consumed by callers for accurate Langfuse reporting
-	// and per-run token aggregation. Reset before each call.
-	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel
@@ -347,4 +469,19 @@ func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {
 		MaxRetries:      defaultMaxRetries,
 		ToolCallSession: session,
 	}
+}
+
+// SetTerminalTools marks the named tools as terminal: once one executes
+// successfully, the tool loop stops and returns its result as the final answer
+// rather than re-invoking the model. Mirrors Python
+// `chat_mdl.mdl.terminal_tools = {...}`. Call after BindTools.
+func (cm *ChatModel) SetTerminalTools(names ...string) {
+	if cm.ToolConfig == nil {
+		return
+	}
+	term := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		term[n] = struct{}{}
+	}
+	cm.ToolConfig.TerminalTools = term
 }

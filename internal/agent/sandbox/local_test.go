@@ -101,6 +101,19 @@ func TestLocal_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestLocal_ConfigUsesCanonicalLowercaseKeys(t *testing.T) {
+	p := newLocalProviderFromConfig(map[string]any{
+		"python_bin": "/custom/python", "work_dir": "/custom/work", "timeout": 12,
+	})
+	if p.pythonBin != "/custom/python" || p.workDir != "/custom/work" || p.timeout != 12 {
+		t.Fatalf("lowercase config was not applied: %#v", p)
+	}
+	legacy := newLocalProviderFromConfig(map[string]any{"PYTHON_BIN": "/legacy"})
+	if legacy.pythonBin == "/legacy" {
+		t.Fatal("uppercase configuration unexpectedly accepted")
+	}
+}
+
 func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	workDir := filepath.Join(t.TempDir(), "nested", "workdir")
 	if _, err := os.Stat(workDir); !os.IsNotExist(err) {

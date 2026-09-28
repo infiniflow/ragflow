@@ -26,12 +26,34 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// unsupportedProviders lists catalog providers that the server cannot serve
+// yet. They are hidden from the "available" provider listing so the UI never
+// offers them for configuration.
+var unsupportedProviders = map[string]struct{}{
+	"MinerU.Net": {},
+}
+
+// filterUnsupportedProviders drops providers that the server cannot serve yet.
+func filterUnsupportedProviders(providers []map[string]interface{}) []map[string]interface{} {
+	filtered := make([]map[string]interface{}, 0, len(providers))
+	for _, provider := range providers {
+		if name, ok := provider["name"].(string); ok {
+			if _, unsupported := unsupportedProviders[name]; unsupported {
+				continue
+			}
+		}
+		filtered = append(filtered, provider)
+	}
+	return filtered
+}
 
 // ProviderHandler provider handler
 type ProviderHandler struct {
@@ -66,6 +88,7 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 			return
 		}
 
+		providers = filterUnsupportedProviders(providers)
 		for _, provider := range providers {
 			delete(provider, "url_suffix")
 			delete(provider, "tags")
@@ -177,7 +200,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		}
 	}
 
-	canFetchRemote := apiKey != "" && baseURL != ""
+	canFetchRemote := baseURL != ""
 	if bedrockProvider {
 		// Bedrock's existing SigV4 modes keep using the static catalog. Only
 		// API-key auth needs a live catalog scoped to the supplied credential.
@@ -222,13 +245,13 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		remoteNames := make(map[string]struct{}, len(remoteModels))
 		for _, model := range remoteModels {
 			if name, ok := model["name"].(string); ok {
-				remoteNames[name] = struct{}{}
+				remoteNames[providerModelKey(name)] = struct{}{}
 			}
 		}
 		filtered := staticModels[:0]
 		for _, model := range staticModels {
 			if name, ok := model["name"].(string); ok {
-				if _, exists := remoteNames[name]; exists {
+				if _, exists := remoteNames[providerModelKey(name)]; exists {
 					filtered = append(filtered, model)
 				}
 			}
@@ -242,47 +265,82 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	// 4. Merge: static as base, remote overrides on name conflicts
-	merged := make(map[string]map[string]interface{})
+	// 4. Merge: static as base, remote overrides on name conflicts.
+	result := mergeProviderModels(staticModels, remoteModels)
+
+	// 5. Fill missing model types using only the merged list.
+	fillProviderModelMapTypes(result)
+
+	common.SuccessWithData(c, result, "success")
+}
+
+// mergeProviderModels collapses the bundled catalog listing and a live upstream
+// listing into a single entry per model, sorted by name.
+//
+// Names are matched case-insensitively and trimmed — an upstream listing can
+// spell a model differently from the catalog (e.g. "GPT-4o" vs "gpt-4o"), and
+// both must collapse instead of showing up as two rows. The first spelling seen
+// wins, so a model already saved under the catalog's name keeps it.
+//
+// Remote entries override the catalog entry, with two exceptions: a remote
+// entry that carries no model types inherits the catalog's types, and
+// `max_tokens` always comes from the catalog when the catalog declares one —
+// an upstream listing reports the provider's ceiling, which is not the value
+// RAGFlow is configured to send.
+func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
+	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
 		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
 			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
 				m["max_tokens"] = maxOutput
 			}
 		}
-		if name, ok := m["name"].(string); ok {
-			merged[name] = m
+		name, ok := m["name"].(string)
+		if !ok {
+			continue
 		}
+		key := providerModelKey(name)
+		if key == "" {
+			continue
+		}
+		m["name"] = strings.TrimSpace(name)
+		merged[key] = m
 	}
 	for _, m := range remoteModels {
-		if name, ok := m["name"].(string); ok {
-			if existing, exists := merged[name]; exists {
-				if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
-					m["model_types"] = existing["model_types"]
-				}
-				if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
-					m["max_tokens"] = maxTokens
-				}
-			}
-			merged[name] = m
+		name, ok := m["name"].(string)
+		if !ok {
+			continue
 		}
+		key := providerModelKey(name)
+		if key == "" {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if existing, exists := merged[key]; exists {
+			if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
+				m["model_types"] = existing["model_types"]
+			}
+			if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
+				m["max_tokens"] = maxTokens
+			}
+			if existingName, ok := existing["name"].(string); ok {
+				name = existingName
+			}
+		}
+		m["name"] = name
+		merged[key] = m
 	}
 
-	// 5. Fill missing model types using only the merged list.
 	result := make([]map[string]interface{}, 0, len(merged))
 	for _, m := range merged {
 		result = append(result, m)
 	}
-	fillProviderModelMapTypes(result)
-
-	// 6. Sort by name
 	sort.Slice(result, func(i, j int) bool {
 		ni, _ := result[i]["name"].(string)
 		nj, _ := result[j]["name"].(string)
-		return ni < nj
+		return providerModelKey(ni) < providerModelKey(nj)
 	})
-
-	common.SuccessWithData(c, result, "success")
+	return result
 }
 
 func fillProviderModelMapTypes(result []map[string]interface{}) {
@@ -304,6 +362,13 @@ func fillProviderModelMapTypes(result []map[string]interface{}) {
 	for i, model := range list {
 		result[indexes[i]]["model_types"] = model.ModelTypes
 	}
+}
+
+// providerModelKey is the identity of a model name. Upstream listings and the
+// bundled catalog can spell the same model with different case or padding, so
+// everything that merges or matches models compares this normalized form.
+func providerModelKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 func providerModelMapTypes(model map[string]interface{}) []string {
@@ -351,6 +416,22 @@ type CreateProviderInstanceRequest struct {
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
+// instanceNamePattern restricts an instance name to digits, underscores,
+// hyphens, and ASCII letters in both cases.
+var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
+
+// validateInstanceName rejects an empty instance name or one carrying any
+// character outside digits, underscores, hyphens, and ASCII letters.
+func validateInstanceName(instanceName string) error {
+	if instanceName == "" {
+		return errors.New("instance name is required")
+	}
+	if !instanceNamePattern.MatchString(instanceName) {
+		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
+	}
+	return nil
+}
+
 // normalizeAPIKey accepts api_key as either a JSON string or a JSON object
 // (credential bundles such as XunFei Spark's
 // {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
@@ -381,6 +462,11 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req CreateProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	if err := validateInstanceName(req.InstanceName); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
@@ -641,7 +727,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 }
 
 type DropProviderInstanceRequest struct {
-	Instances []string `json:"instances" binding:"required"`
+	Instances []string `json:"instances" binding:"required,min=1,dive,required"`
 }
 
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
@@ -873,6 +959,8 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 }
 
 type ChatToModelRequest struct {
+	Question     string                   `json:"question,omitempty"`
+	Query        string                   `json:"query,omitempty"`
 	ProviderName *string                  `json:"provider_name"`
 	InstanceName *string                  `json:"instance_name"`
 	ModelName    *string                  `json:"model_name"`
@@ -893,6 +981,17 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	}
+	if len(req.Messages) > 0 {
+		req.Messages = req.Messages[len(req.Messages)-1:]
+	}
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -951,7 +1050,7 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1013,7 +1112,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	// Non-stream response
 	var response *models.ChatResponse
 	var errorCode common.ErrorCode
-	var err error
 
 	// Convert []map[string]interface{} to []models.Message
 	messages := make([]models.Message, len(req.Messages))
@@ -1236,7 +1334,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1344,7 +1442,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	// Check if it's a stream request
 	if req.Stream {
 		// Set SSE headers
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")

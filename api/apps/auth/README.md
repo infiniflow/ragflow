@@ -1,6 +1,6 @@
 # Auth
 
-The Auth module provides implementations of OAuth2 and OpenID Connect (OIDC) authentication for integration with third-party identity providers. 
+The Auth module provides implementations of OAuth2 and OpenID Connect (OIDC) authentication for integration with third-party identity providers.
 
 **Features**
 
@@ -37,7 +37,7 @@ github_config = {
     "type": "github"
     "client_id": "your_client_id",
     "client_secret": "your_client_secret",
-    "redirect_uri": "https://your-app.com/v1/user/oauth/callback/<channel>"
+    "redirect_uri": "https://your-app.com/api/v1/auth/oauth/<channel>/callback"
 }
 
 # Get client instance

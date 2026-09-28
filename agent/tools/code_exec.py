@@ -323,6 +323,9 @@ class CodeExec(ToolBase, ABC):
     component_name = "CodeExec"
     _lifecycle_configured = False
 
+    def param_refs(self) -> list[str]:
+        return list(self._param.arguments.values())
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("CodeExec processing"):

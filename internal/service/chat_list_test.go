@@ -20,7 +20,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.Chat{},
 		&entity.Tenant{},
 		&entity.User{},
@@ -34,7 +34,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { dao.DB = origDB })
 
 	status := string(entity.StatusValid)
-	if err := db.Create(&entity.Tenant{
+	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
 		LLMID:     "model-a",
 		EmbdID:    "embd-a",
@@ -44,7 +44,7 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
 
-	if err := db.Create(&entity.User{
+	if err = db.Create(&entity.User{
 		ID:       "user-1",
 		Nickname: "tester",
 		Status:   sptr("1"),
@@ -83,7 +83,7 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 
 	svc := NewChatService()
 	ctx := t.Context()
-	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, nil)
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestChatServiceListChatsFiltersByOwnerIDs(t *testing.T) {
 
 	svc := NewChatService()
 	ctx := t.Context()
-	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, []string{"tenant-2"})
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-2"})
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 	svc := NewChatService()
 
 	ctx := t.Context()
-	exactResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword_1", 0, 0, "create_time", true, nil)
+	exactResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword_1", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats keyword exact failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 		t.Fatalf("expected chat name 'list_keyword_1', got %+v", exactResult.Chats[0].Name)
 	}
 
-	unknownResult, err := svc.ListChats(ctx, "user-1", "1", "unknown_keyword", 0, 0, "create_time", true, nil)
+	unknownResult, err := svc.ListChats(ctx, "user-1", "1", "unknown_keyword", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats unknown keyword failed: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 		t.Fatalf("expected 0 chats for unknown keyword, got %d", len(unknownResult.Chats))
 	}
 
-	partialResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword", 0, 0, "create_time", true, nil)
+	partialResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats partial keyword failed: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestChatServiceListChatsPagination(t *testing.T) {
 	svc := NewChatService()
 
 	ctx := t.Context()
-	page1, err := svc.ListChats(ctx, "user-1", "1", "", 1, 2, "create_time", true, nil)
+	page1, err := svc.ListChats(ctx, "user-1", "1", "", 1, 2, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats page 1 failed: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestChatServiceListChatsPagination(t *testing.T) {
 		t.Fatalf("expected total=5, got %d", page1.Total)
 	}
 
-	page3, err := svc.ListChats(ctx, "user-1", "1", "", 3, 2, "create_time", true, nil)
+	page3, err := svc.ListChats(ctx, "user-1", "1", "", 3, 2, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats page 3 failed: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestChatServiceListChatsExcludesDeletedChats(t *testing.T) {
 
 	svc := NewChatService()
 	ctx := t.Context()
-	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, nil)
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}

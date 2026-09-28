@@ -22,7 +22,6 @@ import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  EmptyResponseField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
@@ -38,9 +37,11 @@ export const FormSchema = z.object({
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
+  const ownerTenantId = useOwnerTenantId();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
+    { ownerTenantId },
   );
 
   const form = useForm({
@@ -54,8 +55,6 @@ const RetrievalForm = () => {
   useWatchFormChange(form);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
-
-  const ownerTenantId = useOwnerTenantId();
 
   return (
     <Form {...form}>
@@ -80,7 +79,6 @@ const RetrievalForm = () => {
               </>
             )}
 
-            <EmptyResponseField></EmptyResponseField>
             {hideKnowledgeGraphField || (
               <>
                 <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>

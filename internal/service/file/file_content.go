@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -145,7 +146,8 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 			}
 			images = append(images, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
 		} else {
-			texts = append(texts, parseFileContent(ctx, name, data))
+			content := parseFileContent(ctx, name, data)
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", name, content))
 		}
 	}
 	return texts, images, nil
@@ -210,14 +212,31 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 		if res.Err != nil {
 			return "", res.Err
 		}
-		switch res.OutputFormat {
-		case "text":
-			content = res.Text
-		case "markdown":
-			content = res.Markdown
-		case "html":
-			content = res.HTML
-		case "json":
+		parsed, err := parseResultText(res)
+		if err != nil {
+			return "", err
+		}
+		content = parsed
+	}
+	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+// parseResultText converts a parser result into the readable text expected by
+// sys.files. JSON results are flattened in item order, preferring each item's
+// text field and serializing items without one as a final fallback.
+func parseResultText(res parser.ParseResult) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
+	case "text":
+		return res.Text, nil
+	case "markdown":
+		return res.Markdown, nil
+	case "html":
+		return res.HTML, nil
+	case "json":
+		if len(res.JSON) > 0 {
+			if rendered, ok := renderSpreadsheetJSON(res.JSON); ok {
+				return rendered, nil
+			}
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
@@ -230,10 +249,178 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 				}
 				parts = append(parts, string(raw))
 			}
-			content = strings.Join(parts, "\n")
+			return strings.Join(parts, "\n"), nil
 		}
+		// Some legacy parsers mark the result as JSON while only populating a
+		// rendered companion field. Preserve that content instead of returning
+		// an empty sys.files value.
+		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+			if fallback != "" {
+				return fallback, nil
+			}
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
 	}
-	return fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n%s", filename, content), nil
+}
+
+func renderSpreadsheetJSON(items []map[string]any) (string, bool) {
+	parts := make([]string, 0, len(items))
+	rendered := false
+	for i := 0; i < len(items); {
+		if !isSpreadsheetRowItem(items[i]) {
+			if text, ok := items[i]["text"].(string); ok {
+				parts = append(parts, text)
+			} else {
+				raw, err := json.Marshal(items[i])
+				if err != nil {
+					return "", false
+				}
+				parts = append(parts, string(raw))
+			}
+			i++
+			continue
+		}
+
+		start := i
+		i = spreadsheetTableEnd(items, start)
+		parts = append(parts, renderSpreadsheetTable(items[start:i]))
+		rendered = true
+	}
+	if !rendered {
+		return "", false
+	}
+	return strings.Join(parts, "\n"), true
+}
+
+func isSpreadsheetRowItem(item map[string]any) bool {
+	kind, _ := item["ck_type"].(string)
+	return kind == "table_header" || kind == "table_row"
+}
+
+func spreadsheetTableKey(item map[string]any) string {
+	if tableID, _ := item["table_id"].(string); strings.TrimSpace(tableID) != "" {
+		return "table:" + tableID
+	}
+	if sheetIndex, ok := item["sheet_index"].(float64); ok {
+		return fmt.Sprintf("sheet-index:%g", sheetIndex)
+	}
+	if sheetIndex, ok := item["sheet_index"].(int); ok {
+		return fmt.Sprintf("sheet-index:%d", sheetIndex)
+	}
+	if sheet, _ := item["sheet"].(string); strings.TrimSpace(sheet) != "" {
+		return "sheet:" + sheet
+	}
+	return ""
+}
+
+func spreadsheetTableEnd(items []map[string]any, start int) int {
+	key := spreadsheetTableKey(items[start])
+	if key != "" {
+		i := start
+		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
+			i++
+		}
+		return i
+	}
+
+	// Without a stable table identity, do not merge unrelated row sequences.
+	// A header can still own the following anonymous rows until the next
+	// anonymous header; anonymous row-only inputs are kept as separate tables
+	// because their table boundary cannot be inferred safely.
+	if kind, _ := items[start]["ck_type"].(string); kind == "table_header" {
+		i := start + 1
+		for i < len(items) && isSpreadsheetRowItem(items[i]) {
+			if nextKind, _ := items[i]["ck_type"].(string); nextKind == "table_header" {
+				break
+			}
+			if spreadsheetTableKey(items[i]) != "" {
+				break
+			}
+			i++
+		}
+		return i
+	}
+	return start + 1
+}
+
+func renderSpreadsheetTable(items []map[string]any) string {
+	if len(items) == 0 {
+		return ""
+	}
+	var header []string
+	if kind, _ := items[0]["ck_type"].(string); kind == "table_header" {
+		header = spreadsheetStringSlice(items[0]["cells"])
+		if len(header) == 0 {
+			header = spreadsheetStringSlice(items[0]["text"])
+		}
+	} else {
+		// Row IR carries the logical column names separately from its cells.
+		// Use those names as a preview header without consuming the first row.
+		header = spreadsheetStringSlice(items[0]["headers"])
+	}
+
+	sheet, _ := items[0]["sheet"].(string)
+	var builder strings.Builder
+	builder.WriteString("<table>")
+	if strings.TrimSpace(sheet) != "" {
+		builder.WriteString("<caption>")
+		builder.WriteString(html.EscapeString(strings.TrimSpace(sheet)))
+		builder.WriteString("</caption>")
+	}
+	if len(header) > 0 {
+		builder.WriteString("<tr>")
+		for _, cell := range header {
+			builder.WriteString("<th>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</th>")
+		}
+		builder.WriteString("</tr>")
+	}
+	for _, item := range items {
+		kind, _ := item["ck_type"].(string)
+		if kind == "table_header" {
+			continue
+		}
+		cells := spreadsheetStringSlice(item["cells"])
+		if len(cells) == 0 {
+			cells = spreadsheetStringSlice(item["text"])
+		}
+		builder.WriteString("<tr>")
+		for _, cell := range cells {
+			builder.WriteString("<td>")
+			builder.WriteString(html.EscapeString(cell))
+			builder.WriteString("</td>")
+		}
+		builder.WriteString("</tr>")
+	}
+	builder.WriteString("</table>")
+	return builder.String()
+}
+
+func spreadsheetStringSlice(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		out := make([]string, len(values))
+		for i, value := range values {
+			out[i] = strings.TrimSpace(value)
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			out = append(out, strings.TrimSpace(fmt.Sprint(value)))
+		}
+		return out
+	case string:
+		if strings.TrimSpace(values) == "" {
+			return nil
+		}
+		return []string{strings.TrimSpace(values)}
+	default:
+		return nil
+	}
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -251,16 +438,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if res.Err != nil {
 		return string(data)
 	}
-	switch res.OutputFormat {
-	case "text":
-		return res.Text
-	case "markdown":
-		return res.Markdown
-	case "html":
-		return res.HTML
-	case "json":
-		return string(data)
-	default:
+	content, err := parseResultText(res)
+	if err != nil {
 		return string(data)
 	}
+	return content
 }

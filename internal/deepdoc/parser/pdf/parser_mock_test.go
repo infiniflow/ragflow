@@ -3,10 +3,10 @@ package pdf
 import (
 	"fmt"
 	"image"
-	inf "ragflow/internal/deepdoc/parser/pdf/inference"
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"strings"
 	"testing"
 )
@@ -94,10 +94,6 @@ func TestEnrichOnePageWithDeepDoc_Mock(t *testing.T) {
 	if len(tbl.Cells) != 4 {
 		t.Errorf("expected 4 cells, got %d", len(tbl.Cells))
 	}
-	// Rows populated later by constructTable via extractTableAndReplace.
-	if tbl.ImageB64 == "" {
-		t.Error("ImageB64 empty")
-	}
 	if len(tbl.Positions) != 2 {
 		t.Errorf("expected 2 Positions, got %d", len(tbl.Positions))
 	}
@@ -162,10 +158,7 @@ func TestEnrichOnePageWithDeepDoc_TSRError(t *testing.T) {
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 1 {
-		t.Fatalf("TSR failure: expected 1 pdf.TableItem with image+positions, got %d", len(tables))
-	}
-	if tables[0].ImageB64 == "" {
-		t.Error("should have image despite TSR failure")
+		t.Fatalf("TSR failure: expected 1 pdf.TableItem with positions, got %d", len(tables))
 	}
 	if len(tables[0].Positions) == 0 {
 		t.Error("should have positions despite TSR failure")
@@ -452,7 +445,7 @@ func TestMockDocAnalyzer_OCRDetectError_DoesNotCrash(t *testing.T) {
 	// Parse should succeed — the page with OCRDetect error is just skipped.
 }
 
-// TestTSRLabels verifies Go inf.DefaultTSRLabels() matches Python's table_structure_recognizer.py labels.
+// TestTSRLabels verifies Go doctype.DefaultTSRLabels() matches Python's table_structure_recognizer.py labels.
 // Order must be exact — the ONNX model returns class IDs that index into this array.
 func TestTSRLabels(t *testing.T) {
 	want := []string{
@@ -460,12 +453,12 @@ func TestTSRLabels(t *testing.T) {
 		"table column header", "table projected row header",
 		"table spanning cell",
 	}
-	if len(inf.DefaultTSRLabels()) != len(want) {
-		t.Fatalf("inf.DefaultTSRLabels() length %d, want %d", len(inf.DefaultTSRLabels()), len(want))
+	if len(doctype.DefaultTSRLabels()) != len(want) {
+		t.Fatalf("doctype.DefaultTSRLabels() length %d, want %d", len(doctype.DefaultTSRLabels()), len(want))
 	}
 	for i := range want {
-		if inf.DefaultTSRLabels()[i] != want[i] {
-			t.Errorf("inf.DefaultTSRLabels()[%d] = %q, want %q", i, inf.DefaultTSRLabels()[i], want[i])
+		if doctype.DefaultTSRLabels()[i] != want[i] {
+			t.Errorf("doctype.DefaultTSRLabels()[%d] = %q, want %q", i, doctype.DefaultTSRLabels()[i], want[i])
 		}
 	}
 }

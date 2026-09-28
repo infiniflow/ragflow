@@ -81,3 +81,23 @@ func TestParseListModelAssignsModelTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestParseListModelPrefersRemoteContextLength(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "moonshot.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	remoteContextLength := 123456
+	got := ParseListModel(ModelList{Models: []ModelListItem{
+		{ID: "kimi-k2.6", ContextLength: &remoteContextLength},
+	}})
+	if len(got) != 1 {
+		t.Fatalf("ParseListModel returned %d entries, want 1", len(got))
+	}
+	if got[0].ContextLength == nil || *got[0].ContextLength != remoteContextLength {
+		t.Fatalf("ContextLength = %v, want remote %d", got[0].ContextLength, remoteContextLength)
+	}
+}

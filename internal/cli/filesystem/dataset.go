@@ -369,9 +369,9 @@ func (p *DatasetProvider) searchWithRetrieval(ctx stdctx.Context, opts *SearchOp
 func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{}, kbIDToName map[string]string) *Node {
 	// Extract chunk content - try multiple field names
 	content := ""
-	if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
+	if v, ok := chunk["content"].(string); ok && v != "" {
 		content = v
-	} else if v, ok := chunk["content"].(string); ok && v != "" {
+	} else if v, ok := chunk["content_with_weight"].(string); ok && v != "" {
 		content = v
 	} else if v, ok := chunk["content_ltks"].(string); ok && v != "" {
 		content = v
@@ -381,15 +381,17 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 
 	// Get chunk_id for URI
 	chunkID := ""
-	if v, ok := chunk["chunk_id"].(string); ok {
+	if v, ok := chunk["id"].(string); ok {
 		chunkID = v
-	} else if v, ok := chunk["id"].(string); ok {
+	} else if v, ok := chunk["chunk_id"].(string); ok {
 		chunkID = v
 	}
 
 	// Get document name and ID
 	docName := ""
-	if v, ok := chunk["docnm_kwd"].(string); ok && v != "" {
+	if v, ok := chunk["document_keyword"].(string); ok && v != "" {
+		docName = v
+	} else if v, ok := chunk["docnm_kwd"].(string); ok && v != "" {
 		docName = v
 	} else if v, ok := chunk["docnm"].(string); ok && v != "" {
 		docName = v
@@ -398,7 +400,9 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 	}
 
 	docID := ""
-	if v, ok := chunk["doc_id"].(string); ok && v != "" {
+	if v, ok := chunk["document_id"].(string); ok && v != "" {
+		docID = v
+	} else if v, ok := chunk["doc_id"].(string); ok && v != "" {
 		docID = v
 	}
 
@@ -407,7 +411,9 @@ func (p *DatasetProvider) chunkToNodeWithKBMapping(chunk map[string]interface{},
 	datasetID := ""
 
 	// First try to get kb_id from chunk (could be string or array)
-	if v, ok := chunk["kb_id"].(string); ok && v != "" {
+	if v, ok := chunk["dataset_id"].(string); ok && v != "" {
+		datasetID = v
+	} else if v, ok := chunk["kb_id"].(string); ok && v != "" {
 		datasetID = v
 	} else if v, ok := chunk["kb_id"].([]interface{}); ok && len(v) > 0 {
 		if s, ok := v[0].(string); ok {

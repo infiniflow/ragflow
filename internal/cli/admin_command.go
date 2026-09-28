@@ -26,20 +26,9 @@ import (
 
 // PingServer pings the server to check if it's alive
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/ping", "web", nil, nil, iterations)
-	}
-
+func (c *CLI) PingAdmin(commandCount int, cmd *Command) (ResponseIf, error) {
 	// Single mode
-	resp, err := c.AdminServerClient.Request("GET", "/admin/ping", "web", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ping", "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Server is down")
@@ -50,8 +39,8 @@ func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminPingStoreCommand ping object store
-func (c *CLI) AdminPingStoreCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/admin/store", "admin", nil, nil)
+func (c *CLI) AdminPingStoreCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/store", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping object store: %w", err)
 	}
@@ -60,8 +49,8 @@ func (c *CLI) AdminPingStoreCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminPingEngineCommand ping document engine
-func (c *CLI) AdminPingEngineCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/admin/engine", "admin", nil, nil)
+func (c *CLI) AdminPingEngineCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/engine", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping document engine: %w", err)
 	}
@@ -70,8 +59,8 @@ func (c *CLI) AdminPingEngineCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminPingMQCommand ping message queue
-func (c *CLI) AdminPingMQCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/admin/queue", "admin", nil, nil)
+func (c *CLI) AdminPingMQCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/queue", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping message queue: %w", err)
 	}
@@ -80,8 +69,8 @@ func (c *CLI) AdminPingMQCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminPingCacheCommand ping cache
-func (c *CLI) AdminPingCacheCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/admin/cache", "web", nil, nil)
+func (c *CLI) AdminPingCacheCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/cache", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping cache: %w", err)
 	}
@@ -90,8 +79,8 @@ func (c *CLI) AdminPingCacheCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminLiveServerCommand GET /live
-func (c *CLI) AdminLiveServerCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/live", "none", nil, nil)
+func (c *CLI) AdminLiveServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/live", "none", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show live server: %w", err)
 	}
@@ -99,8 +88,8 @@ func (c *CLI) AdminLiveServerCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminHealthServerCommand GET /healthz
-func (c *CLI) AdminHealthServerCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/healthz", "none", nil, nil)
+func (c *CLI) AdminHealthServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/healthz", "none", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show health server: %w", err)
 	}
@@ -108,8 +97,8 @@ func (c *CLI) AdminHealthServerCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowVersionCommand show RAGFlow admin version
-func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
-	resp, err := c.AdminServerClient.Request("GET", "/admin/version", "web", nil, nil)
+func (c *CLI) AdminShowVersionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show admin version: %w", err)
 	}
@@ -118,12 +107,12 @@ func (c *CLI) AdminShowVersionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminListResourcesCommand to list resources command (admin mode only)
-func (c *CLI) AdminListResourcesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListResourcesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/roles/resource", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/roles/resource", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}
@@ -132,23 +121,12 @@ func (c *CLI) AdminListResourcesCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminListRolesCommand to list roles command (admin mode only)
-func (c *CLI) AdminListRolesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListRolesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/roles", "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", "/admin/roles", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/roles", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list roles: %w", err)
 	}
@@ -175,14 +153,14 @@ func (c *CLI) AdminListRolesCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminListProvidersCommand to list providers command (admin mode only)
-func (c *CLI) AdminListProvidersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListProvidersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	apiURL := fmt.Sprintf("/admin/providers")
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -191,7 +169,7 @@ func (c *CLI) AdminListProvidersCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminCreateRoleCommand creates a new role (admin mode only)
-func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminCreateRoleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -209,7 +187,7 @@ func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 		payload["description"] = description
 	}
 
-	resp, err := c.AdminServerClient.Request("POST", "/admin/roles", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", "/admin/roles", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create role: %w", err)
 	}
@@ -218,7 +196,7 @@ func (c *CLI) AdminCreateRoleCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDropRoleCommand deletes the role (admin mode only)
-func (c *CLI) AdminDropRoleCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDropRoleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -228,7 +206,7 @@ func (c *CLI) AdminDropRoleCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop role: %w", err)
 	}
@@ -237,7 +215,7 @@ func (c *CLI) AdminDropRoleCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminAlterRole alters the role rights (admin mode only)
-func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminAlterRole(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -255,7 +233,7 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 		payload["description"] = description
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter role: %w", err)
 	}
@@ -264,7 +242,7 @@ func (c *CLI) AdminAlterRole(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminGrantUserAdminCommand grants admin privileges to a user (admin mode only)
-func (c *CLI) AdminGrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminGrantUserAdminCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -277,7 +255,7 @@ func (c *CLI) AdminGrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant admin: %w", err)
 	}
@@ -286,7 +264,7 @@ func (c *CLI) AdminGrantUserAdminCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminRevokeUserAdminCommand revokes admin privileges from a user (admin mode only)
-func (c *CLI) AdminRevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRevokeUserAdminCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -299,7 +277,7 @@ func (c *CLI) AdminRevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/admin", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke admin: %w", err)
 	}
@@ -308,7 +286,7 @@ func (c *CLI) AdminRevokeUserAdminCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminGrantRolePermissionCommand grants permission to role (admin mode only)
-func (c *CLI) AdminGrantRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminGrantRolePermissionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -335,7 +313,7 @@ func (c *CLI) AdminGrantRolePermissionCommand(cmd *Command) (ResponseIf, error) 
 
 	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
 
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to grant permission to role: %w", err)
 	}
@@ -344,7 +322,7 @@ func (c *CLI) AdminGrantRolePermissionCommand(cmd *Command) (ResponseIf, error) 
 }
 
 // AdminRevokeRolePermissionCommand revokes permission from role (admin mode only)
-func (c *CLI) AdminRevokeRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRevokeRolePermissionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -371,7 +349,7 @@ func (c *CLI) AdminRevokeRolePermissionCommand(cmd *Command) (ResponseIf, error)
 
 	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to revoke permission from role: %w", err)
 	}
@@ -380,7 +358,7 @@ func (c *CLI) AdminRevokeRolePermissionCommand(cmd *Command) (ResponseIf, error)
 }
 
 // AdminShowRolePermissionCommand shows admin privileges from a user (admin mode only)
-func (c *CLI) AdminShowRolePermissionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowRolePermissionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -392,7 +370,7 @@ func (c *CLI) AdminShowRolePermissionCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show role permission: %w", err)
 	}
@@ -401,7 +379,7 @@ func (c *CLI) AdminShowRolePermissionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminCreateUserCommand creates a new user (admin mode only)
-func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminCreateUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -433,7 +411,7 @@ func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
 		"role":     "user",
 	}
 
-	resp, err := c.AdminServerClient.Request("POST", "/admin/users", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", "/admin/users", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -442,7 +420,7 @@ func (c *CLI) AdminCreateUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminCreateUserAPIKeyCommand creates a new user API key (admin mode only)
-func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminCreateUserAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -456,7 +434,7 @@ func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API key: %w", err)
 	}
@@ -483,7 +461,7 @@ func (c *CLI) AdminCreateUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminActivateUser activates or deactivates a user (admin mode only)
-func (c *CLI) AdminActivateUser(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminActivateUser(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -510,7 +488,7 @@ func (c *CLI) AdminActivateUser(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/activate", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update user status: %w", err)
 	}
@@ -519,7 +497,7 @@ func (c *CLI) AdminActivateUser(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminAlterUserPassword changes a user's password (admin mode only)
-func (c *CLI) AdminAlterUserPassword(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminAlterUserPassword(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -552,7 +530,7 @@ func (c *CLI) AdminAlterUserPassword(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/password", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to change user password: %w", err)
 	}
@@ -567,12 +545,12 @@ type listServicesResponse struct {
 }
 
 // AdminListServicesCommand lists all services (admin mode only)
-func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListServicesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/services", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/services", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
@@ -581,7 +559,7 @@ func (c *CLI) AdminListServicesCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminStartServiceCommand starts a service (admin mode only)
-func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStartServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -593,7 +571,7 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
-	resp, err := c.AdminServerClient.Request("POST", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
@@ -602,7 +580,7 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminRestartServiceCommand restarts a service (admin mode only)
-func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRestartServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -614,7 +592,7 @@ func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
-	resp, err := c.AdminServerClient.Request("PUT", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to restart service: %w", err)
 	}
@@ -623,7 +601,7 @@ func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShutdownServiceCommand shuts down a service (admin mode only)
-func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShutdownServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -635,7 +613,7 @@ func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to shutdown service: %w", err)
 	}
@@ -644,7 +622,7 @@ func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowService show service (admin mode only)
-func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowService(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -656,7 +634,7 @@ func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show service: %w", err)
 	}
@@ -678,12 +656,12 @@ func normalizeVariableRows(rows []map[string]interface{}) {
 }
 
 // AdminListVariablesCommand lists all system variables (admin mode only).
-func (c *CLI) AdminListVariablesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListVariablesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/variables", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/variables", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list variables: %w", err)
 	}
@@ -707,12 +685,12 @@ func (c *CLI) AdminListVariablesCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminListConfigsCommand lists all system configs (admin mode only).
-func (c *CLI) AdminListConfigsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListConfigsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/configs", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/configs", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
@@ -736,12 +714,12 @@ func (c *CLI) AdminListConfigsCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminListEnvironmentsCommand lists all system environments (admin mode only).
-func (c *CLI) AdminListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListEnvironmentsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/environments", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/environments", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
@@ -750,7 +728,7 @@ func (c *CLI) AdminListEnvironmentsCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowVariable shows system variables by exact name or name prefix (admin mode only).
-func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowVariable(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -764,7 +742,7 @@ func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/variables/%s", encodedVarName)
 
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show variable: %w", err)
 	}
@@ -787,7 +765,7 @@ func (c *CLI) AdminShowVariable(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminSetLicenseCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -800,7 +778,7 @@ func (c *CLI) AdminSetLicenseCommand(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"license": license,
 	}
-	resp, err := c.AdminServerClient.Request("POST", "/admin/system/license", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", "/admin/system/license", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set license: %w", err)
 	}
@@ -808,7 +786,7 @@ func (c *CLI) AdminSetLicenseCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "set license")
 }
 
-func (c *CLI) AdminSetSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetSoftFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -821,7 +799,7 @@ func (c *CLI) AdminSetSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"fingerprint": softFingerprint,
 	}
-	resp, err := c.AdminServerClient.Request("POST", "/admin/system/soft-fingerprint", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", "/admin/system/soft-fingerprint", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set soft fingerprint: %w", err)
 	}
@@ -829,7 +807,7 @@ func (c *CLI) AdminSetSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "set soft fingerprint")
 }
 
-func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetLicenseConfigCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -847,7 +825,7 @@ func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
 		"value1": value1,
 		"value2": value2,
 	}
-	resp, err := c.AdminServerClient.Request("PUT", "/admin/system/license/config", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/system/license/config", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set license config: %w", err)
 	}
@@ -856,7 +834,7 @@ func (c *CLI) AdminSetLicenseConfigCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminSetVariableCommand updates a system variable (admin mode only).
-func (c *CLI) AdminSetVariableCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetVariableCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -874,7 +852,7 @@ func (c *CLI) AdminSetVariableCommand(cmd *Command) (ResponseIf, error) {
 		"var_name":  varName,
 		"var_value": varValue,
 	}
-	resp, err := c.AdminServerClient.Request("PUT", "/admin/variables", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/variables", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set variable: %w", err)
 	}
@@ -897,7 +875,7 @@ func (c *CLI) AdminSetVariableCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminSetRoleDefaultModelsCommand set role default models (admin mode only).
-func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetRoleDefaultModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -931,7 +909,7 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error)
 
 	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
 
-	resp, err := c.AdminServerClient.Request("PATCH", endPoint, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PATCH", endPoint, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set role default models: %w", err)
 	}
@@ -940,7 +918,7 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error)
 }
 
 // AdminSetLogLevelCommand set log level (admin mode only).
-func (c *CLI) AdminSetLogLevelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminSetLogLevelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -954,7 +932,7 @@ func (c *CLI) AdminSetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 		"level": logLevel,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", "/admin/config/log", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/config/log", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to change log level: %w", err)
 	}
@@ -963,7 +941,7 @@ func (c *CLI) AdminSetLogLevelCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminResetRoleDefaultModelsCommand reset role default models (admin mode only).
-func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminResetRoleDefaultModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -984,7 +962,7 @@ func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, erro
 
 	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reset role default models: %w", err)
 	}
@@ -993,7 +971,7 @@ func (c *CLI) AdminResetRoleDefaultModelsCommand(cmd *Command) (ResponseIf, erro
 }
 
 // AdminDropUserCommand deletes a user (admin mode only)
-func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDropUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1006,7 +984,7 @@ func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop user: %w", err)
 	}
@@ -1015,7 +993,7 @@ func (c *CLI) AdminDropUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDropUserAPIKeyCommand drops an API key for a user (admin mode only)
-func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDropUserAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1033,7 +1011,7 @@ func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/keys/%s", encodedUserName, apiKey)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop API key: %w", err)
 	}
@@ -1043,7 +1021,7 @@ func (c *CLI) AdminDropUserAPIKeyCommand(cmd *Command) (ResponseIf, error) {
 
 // ListUserDatasets lists datasets for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListUserDatasets(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1053,21 +1031,10 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("user_name not provided")
 	}
 
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
 
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", apiURL, "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -1100,7 +1067,7 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowUserPermission shows user's permissions (admin mode only)
-func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowUserPermission(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1113,7 +1080,7 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/permission", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show user permission: %w", err)
 	}
@@ -1140,12 +1107,12 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListAdminTasks(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/tasks", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/tasks", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
@@ -1153,11 +1120,11 @@ func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list tasks")
 }
 
-func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListAdminIngestors(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
-	resp, err := c.AdminServerClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ingestors", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ingestors: %w", err)
 	}
@@ -1165,12 +1132,12 @@ func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list ingestors")
 }
 
-func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListAdminIngestionTasks(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/ingestion/tasks", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ingestion/tasks", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
 	}
@@ -1178,7 +1145,7 @@ func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list admin tasks")
 }
 
-func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStopIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1191,7 +1158,7 @@ func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 		"tasks": tasks,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", "/admin/ingestion/tasks", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
 	}
@@ -1199,7 +1166,7 @@ func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "stop ingestion")
 }
 
-func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRemoveIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1212,7 +1179,7 @@ func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
 		"tasks": tasks,
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove ingestion: %w", err)
 	}
@@ -1220,7 +1187,7 @@ func (c *CLI) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "remove ingestion")
 }
 
-func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShutdownIngestor(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1233,7 +1200,7 @@ func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
 		"ingestor_name": ingestorName,
 	}
 
-	resp, err := c.AdminServerClient.Request("DELETE", "/admin/ingestors", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", "/admin/ingestors", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to shutdown ingestor: %w", err)
 	}
@@ -1241,7 +1208,7 @@ func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "shutdown ingestor")
 }
 
-func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) UserListMessageQueueCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1254,7 +1221,7 @@ func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 		"pending": pending,
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/queue/messages", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list message queue: %w", err)
 	}
@@ -1262,7 +1229,7 @@ func (c *CLI) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "list message queue")
 }
 
-func (c *CLI) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) UserPublishMessageCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1275,7 +1242,7 @@ func (c *CLI) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
 		"message": message,
 	}
 
-	resp, err := c.AdminServerClient.Request("POST", "/admin/queue/messages", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish message: %w", err)
 	}
@@ -1297,7 +1264,7 @@ func (c *CLI) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) UserPullMessageCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1316,7 +1283,7 @@ func (c *CLI) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
 		"ack_policy":    ackPolicy,
 	}
 
-	resp, err := c.AdminServerClient.Request("PUT", "/admin/queue/messages", "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull message: %w", err)
 	}
@@ -1324,12 +1291,12 @@ func (c *CLI) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, "pull message")
 }
 
-func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) UserShowMessageQueueCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/queue", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/queue", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show message queue: %w", err)
 	}
@@ -1338,14 +1305,14 @@ func (c *CLI) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminCheckLicenseCommand check license command (admin mode only)
-func (c *CLI) AdminCheckLicenseCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminCheckLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	apiURL := fmt.Sprintf("/admin/system/license?check=true")
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check license: %w", err)
 	}
@@ -1354,14 +1321,14 @@ func (c *CLI) AdminCheckLicenseCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowFingerprintCommand show fingerprint command (admin mode only)
-func (c *CLI) AdminShowFingerprintCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	apiURL := fmt.Sprintf("/admin/system/fingerprint")
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show fingerprint: %w", err)
 	}
@@ -1370,14 +1337,14 @@ func (c *CLI) AdminShowFingerprintCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowSoftFingerprintCommand show soft fingerprint command (admin mode only)
-func (c *CLI) AdminShowSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowSoftFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	apiURL := fmt.Sprintf("/admin/system/soft-fingerprint")
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show soft fingerprint: %w", err)
 	}
@@ -1386,14 +1353,14 @@ func (c *CLI) AdminShowSoftFingerprintCommand(cmd *Command) (ResponseIf, error) 
 }
 
 // AdminShowLicenseCommand show license command (admin mode only)
-func (c *CLI) AdminShowLicenseCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	apiURL := fmt.Sprintf("/admin/system/license")
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show license: %w", err)
 	}
@@ -1402,7 +1369,7 @@ func (c *CLI) AdminShowLicenseCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowUserCommand show user command (admin mode only)
-func (c *CLI) AdminShowUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1415,16 +1382,16 @@ func (c *CLI) AdminShowUserCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show user: %w", err)
 	}
 
-	return HandleCommonDataResponse(resp, "show user")
+	return HandleCommonResponse(resp, "show user")
 }
 
 // AdminShowRoleCommand show role command (admin mode only)
-func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowRoleCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1433,7 +1400,7 @@ func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/roles/%s/", roleName)
 
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show role: %w", err)
 	}
@@ -1442,7 +1409,7 @@ func (c *CLI) AdminShowRoleCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminShowRoleDefaultModelsCommand show role default models command (admin mode only)
-func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowRoleDefaultModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1451,7 +1418,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error
 
 	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
 
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show role default models: %w", err)
 	}
@@ -1459,7 +1426,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(cmd *Command) (ResponseIf, error
 	return HandleCommonResponse(resp, "show role default models")
 }
 
-func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserActivityCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1483,7 +1450,7 @@ func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/activity", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user activity: %w", err)
 	}
@@ -1491,7 +1458,7 @@ func (c *CLI) AdminShowUserActivityCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get user activity")
 }
 
-func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1504,7 +1471,7 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/summary", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get statistics: %w", err)
 	}
@@ -1526,7 +1493,7 @@ func (c *CLI) AdminShowUserSummaryCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserDatasetCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1549,7 +1516,7 @@ func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/dataset", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user dataset: %w", err)
 	}
@@ -1557,7 +1524,7 @@ func (c *CLI) AdminShowUserDatasetCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get user dataset")
 }
 
-func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserStorageCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1571,7 +1538,7 @@ func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/storage", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user storage: %w", err)
 	}
@@ -1593,7 +1560,7 @@ func (c *CLI) AdminShowUserStorageCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserQuotaCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1607,7 +1574,7 @@ func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/quota", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user storage: %w", err)
 	}
@@ -1629,7 +1596,7 @@ func (c *CLI) AdminShowUserQuotaCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserIndexCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1643,7 +1610,7 @@ func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/index", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user storage: %w", err)
 	}
@@ -1665,7 +1632,7 @@ func (c *CLI) AdminShowUserIndexCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUserPermissionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1679,7 +1646,7 @@ func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(email)
 	apiURL := fmt.Sprintf("/admin/users/%s/permission", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user permission: %w", err)
 	}
@@ -1687,7 +1654,7 @@ func (c *CLI) AdminShowUserPermissionCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get user permission")
 }
 
-func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUsersSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1695,7 +1662,7 @@ func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/users/summary"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users summary: %w", err)
 	}
@@ -1717,7 +1684,7 @@ func (c *CLI) AdminShowUsersSummaryCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUsersActivityCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1739,7 +1706,7 @@ func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/users/activity"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users activity: %w", err)
 	}
@@ -1747,7 +1714,7 @@ func (c *CLI) AdminShowUsersActivityCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "get users activity")
 }
 
-func (c *CLI) AdminShowUsersPlanSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUsersPlanSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1755,7 +1722,7 @@ func (c *CLI) AdminShowUsersPlanSummaryCommand(cmd *Command) (ResponseIf, error)
 
 	apiURL := "/admin/users/plan/summary"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users activity: %w", err)
 	}
@@ -1763,7 +1730,7 @@ func (c *CLI) AdminShowUsersPlanSummaryCommand(cmd *Command) (ResponseIf, error)
 	return HandleCommonDataResponse(resp, "get users plan")
 }
 
-func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowUsersPlanQuotaCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1776,7 +1743,7 @@ func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/users/plan?quota=%d", quota)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users plan quota: %w", err)
 	}
@@ -1785,7 +1752,7 @@ func (c *CLI) AdminShowUsersPlanQuotaCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminStatsUserCommand stats user token usage
-func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStatsUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1813,7 +1780,7 @@ func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
 
 	baseUrl := fmt.Sprintf("/admin/stats/token?%s", q.Encode())
 
-	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", baseUrl, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats user: %w", err)
 	}
@@ -1822,7 +1789,7 @@ func (c *CLI) AdminStatsUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminStatsUsersCommand stats users token usage
-func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStatsUsersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1845,7 +1812,7 @@ func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
 
 	baseURL := fmt.Sprintf("/admin/stats/token/users?%s", q.Encode())
 
-	resp, err := c.AdminServerClient.Request("GET", baseURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", baseURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats: %w", err)
 	}
@@ -1854,7 +1821,7 @@ func (c *CLI) AdminStatsUsersCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminStatsSummaryCommand stats summary token usage
-func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStatsSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
@@ -1872,7 +1839,7 @@ func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	baseUrl := fmt.Sprintf("/admin/stats/token/summary?%s", q.Encode())
 
-	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", baseUrl, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats summary: %w", err)
 	}
@@ -1882,23 +1849,12 @@ func (c *CLI) AdminStatsSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUsersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.AdminServerClient.RequestWithIterations("GET", "/admin/users", "admin", nil, nil, iterations)
-	}
-
-	resp, err := c.AdminServerClient.Request("GET", "/admin/users", "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/users", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
@@ -1924,7 +1880,7 @@ func (c *CLI) AdminListUsersCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUsersConditionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1958,7 +1914,7 @@ func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 		apiURL = fmt.Sprintf("%s?%s", apiURL, encoded)
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}
@@ -1980,7 +1936,7 @@ func (c *CLI) AdminListUsersConditionCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowDataSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -1988,7 +1944,7 @@ func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/data/summary"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get data summary: %w", err)
 	}
@@ -2010,7 +1966,7 @@ func (c *CLI) AdminShowDataSummaryCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowDataOrphanCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowDataOrphanCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2018,7 +1974,7 @@ func (c *CLI) AdminShowDataOrphanCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/data/orphan"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get orphan data: %w", err)
 	}
@@ -2040,7 +1996,7 @@ func (c *CLI) AdminShowDataOrphanCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowDataStorageCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2048,7 +2004,7 @@ func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/data/storage"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get data storage: %w", err)
 	}
@@ -2070,7 +2026,7 @@ func (c *CLI) AdminShowDataStorageCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowDataIndexCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2078,7 +2034,7 @@ func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/data/index"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get data index: %w", err)
 	}
@@ -2100,7 +2056,7 @@ func (c *CLI) AdminShowDataIndexCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowQuotaSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2108,7 +2064,7 @@ func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/users/quota/summary"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users quota summary: %w", err)
 	}
@@ -2130,7 +2086,7 @@ func (c *CLI) AdminShowQuotaSummaryCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminShowTasksSummaryCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowTasksSummaryCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2138,7 +2094,7 @@ func (c *CLI) AdminShowTasksSummaryCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/ingestion/tasks/summary"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tasks summary: %w", err)
 	}
@@ -2160,7 +2116,7 @@ func (c *CLI) AdminShowTasksSummaryCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminPurgeOrphanCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminPurgeOrphanCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2177,7 +2133,7 @@ func (c *CLI) AdminPurgeOrphanCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/data/orphan"
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to purge orphan data: %w", err)
 	}
@@ -2185,7 +2141,7 @@ func (c *CLI) AdminPurgeOrphanCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "purge orphan data")
 }
 
-func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminPurgeUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2207,7 +2163,7 @@ func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/data", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to purge user %s: %w", userName, err)
 	}
@@ -2215,7 +2171,7 @@ func (c *CLI) AdminPurgeUserCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, fmt.Sprintf("purge user %s", userName))
 }
 
-func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminPurgeUsersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2258,7 +2214,7 @@ func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := "/admin/users/data"
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to purge users data: %w", err)
 	}
@@ -2266,7 +2222,7 @@ func (c *CLI) AdminPurgeUsersCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "purge users data")
 }
 
-func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2288,7 +2244,7 @@ func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 
 	apiURL := "/admin/ingestion/tasks"
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s ingestion tasks: %w", userName, err)
 	}
@@ -2310,7 +2266,7 @@ func (c *CLI) AdminListUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 	return &result, nil
 }
 
-func (c *CLI) AdminListUserDatasetsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2324,14 +2280,14 @@ func (c *CLI) AdminListUserDatasetsCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s datasets: %w", userName, err)
 	}
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s datasets", userName))
 }
-func (c *CLI) AdminListUserAgentsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserAgentsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2345,14 +2301,14 @@ func (c *CLI) AdminListUserAgentsCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s agents: %w", userName, err)
 	}
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s agents", userName))
 }
-func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserChatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2366,7 +2322,7 @@ func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/chats", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s chats: %w", userName, err)
 	}
@@ -2374,7 +2330,7 @@ func (c *CLI) AdminListUserChatsCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s chats", userName))
 }
 
-func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserSearchesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2388,7 +2344,7 @@ func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/searches", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s searches: %w", userName, err)
 	}
@@ -2396,7 +2352,7 @@ func (c *CLI) AdminListUserSearchesCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s searches", userName))
 }
 
-func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2410,7 +2366,7 @@ func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/models", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s models: %w", userName, err)
 	}
@@ -2418,7 +2374,7 @@ func (c *CLI) AdminListUserModelsCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s models", userName))
 }
 
-func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserFilesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2432,7 +2388,7 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/files", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s files: %w", userName, err)
 	}
@@ -2440,7 +2396,7 @@ func (c *CLI) AdminListUserFilesCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s files", userName))
 }
 
-func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserKeysCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2454,7 +2410,7 @@ func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/keys", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s keys: %w", userName, err)
 	}
@@ -2485,7 +2441,7 @@ func (c *CLI) AdminListUserKeysCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AdminListUserProvidersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserProvidersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2499,7 +2455,7 @@ func (c *CLI) AdminListUserProvidersCommand(cmd *Command) (ResponseIf, error) {
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/providers", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s providers: %w", userName, err)
 	}
@@ -2507,7 +2463,7 @@ func (c *CLI) AdminListUserProvidersCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s providers", userName))
 }
 
-func (c *CLI) AdminListUserProviderInstancesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserProviderInstancesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2526,7 +2482,7 @@ func (c *CLI) AdminListUserProviderInstancesCommand(cmd *Command) (ResponseIf, e
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances", encodedUserName, providerName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s providers: %w", userName, err)
 	}
@@ -2534,7 +2490,7 @@ func (c *CLI) AdminListUserProviderInstancesCommand(cmd *Command) (ResponseIf, e
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s provider instances", userName))
 }
 
-func (c *CLI) AdminListUserProviderInstanceModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserProviderInstanceModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2556,7 +2512,7 @@ func (c *CLI) AdminListUserProviderInstanceModelsCommand(cmd *Command) (Response
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances/%s/models", encodedUserName, providerName, instanceName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s provider instance models: %w", userName, err)
 	}
@@ -2564,7 +2520,7 @@ func (c *CLI) AdminListUserProviderInstanceModelsCommand(cmd *Command) (Response
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s provider instance models", userName))
 }
 
-func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserDefaultModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2578,7 +2534,7 @@ func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error
 	encodedUserName := url.PathEscape(userName)
 	apiURL := fmt.Sprintf("/admin/users/%s/default-models", encodedUserName)
 
-	resp, err := c.AdminServerClient.Request("GET", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s default models: %w", userName, err)
 	}
@@ -2587,7 +2543,7 @@ func (c *CLI) AdminListUserDefaultModelsCommand(cmd *Command) (ResponseIf, error
 }
 
 // AdminListUserLogsCommand list user operation logs
-func (c *CLI) AdminListUserLogsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListUserLogsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2609,7 +2565,7 @@ func (c *CLI) AdminListUserLogsCommand(cmd *Command) (ResponseIf, error) {
 
 	baseUrl := fmt.Sprintf("/admin/logs?%s", q.Encode())
 
-	resp, err := c.AdminServerClient.Request("GET", baseUrl, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", baseUrl, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user %s logs: %w", userName, err)
 	}
@@ -2617,7 +2573,7 @@ func (c *CLI) AdminListUserLogsCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s logs", userName))
 }
 
-func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminStopUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2639,7 +2595,7 @@ func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 
 	apiURL := "/admin/ingestion/tasks"
 
-	resp, err := c.AdminServerClient.Request("PUT", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: %w", userName, err)
 	}
@@ -2647,7 +2603,7 @@ func (c *CLI) AdminStopUserIngestionTasksCommand(cmd *Command) (ResponseIf, erro
 	return HandleCommonResponse(resp, fmt.Sprintf("stop user %s ingestion tasks", userName))
 }
 
-func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminRemoveUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2669,7 +2625,7 @@ func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, er
 
 	apiURL := "/admin/ingestion/tasks"
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: %w", userName, err)
 	}
@@ -2678,7 +2634,7 @@ func (c *CLI) AdminRemoveUserIngestionTasksCommand(cmd *Command) (ResponseIf, er
 }
 
 // AdminAddProviderCommand add provider
-func (c *CLI) AdminAddProviderCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminAddProviderCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2695,7 +2651,7 @@ func (c *CLI) AdminAddProviderCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers")
 
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider %s: %w", providerName, err)
 	}
@@ -2704,7 +2660,7 @@ func (c *CLI) AdminAddProviderCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminAddModelInstanceCommand add model instance
-func (c *CLI) AdminAddModelInstanceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminAddModelInstanceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2726,7 +2682,7 @@ func (c *CLI) AdminAddModelInstanceCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers/%s/instances", providerName)
 
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add model instance %s: %w", instanceName, err)
 	}
@@ -2735,7 +2691,7 @@ func (c *CLI) AdminAddModelInstanceCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminAddModelsCommand add models
-func (c *CLI) AdminAddModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminAddModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2762,7 +2718,7 @@ func (c *CLI) AdminAddModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.AdminServerClient.Request("POST", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add models %s: %w", modelNames, err)
 	}
@@ -2771,7 +2727,7 @@ func (c *CLI) AdminAddModelsCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDeleteProvidersCommand delete providers
-func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDeleteProvidersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2788,7 +2744,7 @@ func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers/")
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove providers %s: %w", providerNames, err)
 	}
@@ -2797,7 +2753,7 @@ func (c *CLI) AdminDeleteProvidersCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDeleteInstancesCommand delete instances
-func (c *CLI) AdminDeleteInstancesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDeleteInstancesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2819,7 +2775,7 @@ func (c *CLI) AdminDeleteInstancesCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers/%s/instances", providerName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove instance %s: %w", instanceNames, err)
 	}
@@ -2828,7 +2784,7 @@ func (c *CLI) AdminDeleteInstancesCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDeleteModelsCommand delete models
-func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDeleteModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2855,7 +2811,7 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 
 	apiURL := fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove model %s: %w", modelNames, err)
 	}
@@ -2864,7 +2820,7 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // AdminDeleteSoftFingerprintCommand delete soft fingerprint
-func (c *CLI) AdminDeleteSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminDeleteSoftFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2872,7 +2828,7 @@ func (c *CLI) AdminDeleteSoftFingerprintCommand(cmd *Command) (ResponseIf, error
 
 	apiURL := fmt.Sprintf("/admin/system/soft-fingerprint")
 
-	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove soft fingerprint: %w", err)
 	}
@@ -2880,13 +2836,13 @@ func (c *CLI) AdminDeleteSoftFingerprintCommand(cmd *Command) (ResponseIf, error
 	return HandleSimpleResponse(resp, fmt.Sprintf("remove soft fingerprint"))
 }
 
-func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminShowLogLevelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	resp, err := c.AdminServerClient.Request("GET", "/admin/config/log", "web", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/config/log", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get log level config: %w", err)
 	}
@@ -2894,7 +2850,7 @@ func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, fmt.Sprintf("get log level config"))
 }
 
-func (c *CLI) AdminListBucketObjects(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AdminListBucketObjects(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2907,7 +2863,7 @@ func (c *CLI) AdminListBucketObjects(cmd *Command) (ResponseIf, error) {
 
 	endPoint := fmt.Sprintf("/admin/bucket/%s/objects", bucketID)
 
-	resp, err := c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get bucket objects: %w", err)
 	}
