@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func newVoxellForgeForTest(baseURL string) *VoxellForgeModel {
@@ -57,7 +59,9 @@ func TestVoxellForgeEmbed(t *testing.T) {
 				}
 				var body map[string]any
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatalf("decode request: %v", err)
+					t.Errorf("decode request: %v", err)
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
 				}
 				if body["model"] != "turbo" {
 					t.Errorf("model=%v", body["model"])
@@ -96,6 +100,77 @@ func TestVoxellForgeEmbed(t *testing.T) {
 				t.Fatalf("embeddings=%#v", embeddings)
 			}
 		})
+	}
+}
+
+// Forge's edge rejects any input over 32,000 characters and any request over
+// 256,000, so Embed must cap each input and split the texts across requests,
+// returning indexes that refer to the caller's slice.
+func TestVoxellForgeEmbedRespectsSizeLimits(t *testing.T) {
+	withSSRFBypass(t)
+	var requests [][]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		total := 0
+		for _, text := range body.Input {
+			n := len(utf16.Encode([]rune(text)))
+			if n > voxellForgeMaxInputChars {
+				t.Errorf("input of %d chars exceeds %d", n, voxellForgeMaxInputChars)
+			}
+			total += n
+		}
+		if total > voxellForgeMaxRequestChars {
+			t.Errorf("request of %d chars exceeds %d", total, voxellForgeMaxRequestChars)
+		}
+		requests = append(requests, body.Input)
+		data := make([]map[string]any, len(body.Input))
+		for i := range body.Input {
+			data[i] = map[string]any{"object": "embedding", "embedding": []float64{0.1}, "index": i}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+	}))
+	defer srv.Close()
+
+	// Twelve inputs of 40,000 characters: each is capped to 32,000, and eight
+	// capped inputs fill one 256,000-character request, so two requests go out.
+	// The emoji is two UTF-16 code units, the unit the edge counts in.
+	texts := make([]string, 12)
+	for i := range texts {
+		texts[i] = strings.Repeat("\U0001F600", 20000)
+	}
+	modelName := "turbo"
+	embeddings, err := newVoxellForgeForTest(srv.URL).Embed(
+		t.Context(),
+		&modelName,
+		EmbedRequest{Texts: texts},
+		&APIConfig{ApiKey: &testAPIKey},
+		nil,
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(requests) != 2 || len(requests[0]) != 8 || len(requests[1]) != 4 {
+		sizes := make([]int, len(requests))
+		for i, r := range requests {
+			sizes[i] = len(r)
+		}
+		t.Fatalf("request sizes=%v, want [8 4]", sizes)
+	}
+	if len(embeddings) != len(texts) {
+		t.Fatalf("got %d embeddings, want %d", len(embeddings), len(texts))
+	}
+	for i, e := range embeddings {
+		if e.Index != i {
+			t.Errorf("embeddings[%d].Index=%d", i, e.Index)
+		}
 	}
 }
 

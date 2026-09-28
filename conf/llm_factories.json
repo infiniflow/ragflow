@@ -5816,14 +5816,14 @@
                 },
                 {
                     "llm_name": "pro",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
+                    "tags": "TEXT EMBEDDING,2048",
+                    "max_tokens": 2048,
                     "model_type": "embedding"
                 },
                 {
                     "llm_name": "ultra",
-                    "tags": "TEXT EMBEDDING,512",
-                    "max_tokens": 512,
+                    "tags": "TEXT EMBEDDING,2048",
+                    "max_tokens": 2048,
                     "model_type": "embedding"
                 }
             ]

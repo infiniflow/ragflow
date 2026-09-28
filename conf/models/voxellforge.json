@@ -23,7 +23,7 @@
     },
     {
       "name": "pro",
-      "max_tokens": 512,
+      "max_tokens": 2048,
       "max_dimension": 2560,
       "dimensions": [
         2560
@@ -35,7 +35,7 @@
     },
     {
       "name": "ultra",
-      "max_tokens": 512,
+      "max_tokens": 2048,
       "max_dimension": 4096,
       "dimensions": [
         4096

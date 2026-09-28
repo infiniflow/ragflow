@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
+	"unicode/utf16"
 )
 
 // VoxellForgeModel drives Voxell Forge, a hosted text-embedding API that
@@ -66,9 +67,37 @@ func (m *VoxellForgeModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 	return models, nil
 }
 
+// Forge's edge answers 413 for any single input over 32,000 characters or any
+// request over 256,000 characters in total, counted in UTF-16 code units. Forge
+// itself reads only the first 2048 tokens of each input, so capping an input
+// at 32,000 characters never drops text the model would have used.
+const (
+	voxellForgeMaxInputChars   = 32000
+	voxellForgeMaxRequestChars = 256000
+)
+
+// voxellForgeCapInput cuts text to at most voxellForgeMaxInputChars UTF-16 code
+// units, on a rune boundary. It returns the cut text and its length in code units.
+func voxellForgeCapInput(text string) (string, int) {
+	n := 0
+	for i, r := range text {
+		w := utf16.RuneLen(r)
+		if w < 0 {
+			w = 1
+		}
+		if n+w > voxellForgeMaxInputChars {
+			return text[:i], n
+		}
+		n += w
+	}
+	return text, n
+}
+
 // Embed calls POST /embeddings. Forge embeds queries and documents
 // differently, so input_type is sent on both paths: "query" for
-// encode_queries, "document" for everything indexed.
+// encode_queries, "document" for everything indexed. Each input is capped at
+// the edge's per-input limit and the texts are split into as many requests as
+// the per-request limit needs; indexes in the result refer to request.Texts.
 func (m *VoxellForgeModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -92,9 +121,40 @@ func (m *VoxellForgeModel) Embed(ctx context.Context, modelName *string, request
 	if request.Query {
 		inputType = "query"
 	}
+
+	texts := make([]string, len(request.Texts))
+	sizes := make([]int, len(request.Texts))
+	for i, text := range request.Texts {
+		texts[i], sizes[i] = voxellForgeCapInput(text)
+	}
+
+	embeddings := make([]EmbeddingData, 0, len(texts))
+	for start := 0; start < len(texts); {
+		end, total := start, 0
+		for end < len(texts) && (end == start || total+sizes[end] <= voxellForgeMaxRequestChars) {
+			total += sizes[end]
+			end++
+		}
+		batch, err := m.embedBatch(ctx, url, *modelName, inputType, texts[start:end], apiConfig, embeddingConfig)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range batch {
+			item.Index += start
+			embeddings = append(embeddings, item)
+		}
+		start = end
+	}
+
+	return embeddings, nil
+}
+
+// embedBatch sends one POST /embeddings request for texts, which must already
+// fit Forge's per-input and per-request limits.
+func (m *VoxellForgeModel) embedBatch(ctx context.Context, url, modelName, inputType string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	reqBody := map[string]interface{}{
-		"model":      *modelName,
-		"input":      request.Texts,
+		"model":      modelName,
+		"input":      texts,
 		"input_type": inputType,
 	}
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
