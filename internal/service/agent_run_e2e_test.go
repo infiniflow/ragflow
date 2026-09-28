@@ -1002,6 +1002,13 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if err := json.Unmarshal(raw, &dsl); err != nil {
 		t.Fatalf("parse all.json: %v", err)
 	}
+	components := dsl["components"].(map[string]any)
+	loopParams := components["Loop:InputUntil1"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	loopParams["loop_variables"] = []any{
+		map[string]any{"variable": "vlaue", "input_mode": "constant", "value": "1", "type": "string"},
+	}
+	messageParams := components["Message:LoopDone"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	messageParams["content"] = []any{"loop={Loop:InputUntil1@vlaue}; input={UserFillUp:LoopInput@value}"}
 	makeCanvasWithDSL(t, "canvas-all", "user-1", "tenant-1", "v-all", dsl)
 
 	tracker, mr := newRunTrackerForTest(t, 30*24*time.Hour)
@@ -1090,11 +1097,8 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	if len(messages2) != 1 {
 		t.Fatalf("run 3: expected 1 message event after resume, got %d", len(messages2))
 	}
-	if !strings.Contains(messages2[0].Content, "循环结束") {
-		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "循环结束")
-	}
-	if !strings.Contains(messages2[0].Content, "1") {
-		t.Errorf("run 2: Content = %q, want substring %q", messages2[0].Content, "1")
+	if messages2[0].Content != "loop=1; input=1" {
+		t.Errorf("run 3: Content = %q, want %q", messages2[0].Content, "loop=1; input=1")
 	}
 }
 

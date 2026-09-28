@@ -2,6 +2,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,7 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		Content: "# Alpha\n\nBody",
 		Vector:  []float32{0.1, 0.2, 0.3},
 		Meta: map[string]any{
+			"kind":             "page",
 			"slug":             "entity/alpha",
 			"title":            "Alpha",
 			"page_type":        "entity",
@@ -85,13 +87,16 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 
 	cases := map[string]string{
 		"slug_kwd":            "entity/alpha",
-		"artifact_slug_kwd":   "entity/alpha",
 		"title_kwd":           "Alpha",
 		"page_type_kwd":       "entity",
 		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
-		"plan_kwd":            "run-abc",
-		"input_hash_kwd":      "hash-123",
+		// The wiki page body goes to md_with_weight, the column Python writes
+		// and reads (wiki_incremental.py:2190); artifact_slug_kwd was a Go-only
+		// column that exists in no engine mapping.
+		"md_with_weight": "# Alpha\n\nBody",
+		"plan_kwd":       "run-abc",
+		"input_hash_kwd": "hash-123",
 	}
 	// The wall-clock audit fields must be stamped from `now`, not omitted.
 	if m["create_time"] != now.Format("2006-01-02 15:04:05") {
@@ -111,8 +116,12 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	if m["doc_id"] != "kb1" || m["available_int"] != 1 {
 		t.Errorf("merged flags wrong: doc_id=%v available_int=%v", m["doc_id"], m["available_int"])
 	}
-	if _, ok := m["kc_merged"]; ok {
-		t.Errorf("merged row must not persist undefined kc_merged field")
+	// No kc_* key may be persisted: they exist in no engine mapping, and
+	// Infinity rejects an insert that carries an unknown column.
+	for k := range m {
+		if strings.HasPrefix(k, "kc_") {
+			t.Errorf("merged row must not persist the non-schema field %q", k)
+		}
 	}
 	if m["q_3_vec"] == nil {
 		t.Errorf("vector column missing")
@@ -127,8 +136,7 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 		"id":                   "wiki/1",
 		"doc_id":               "d1",
 		"compile_kwd":          "wiki_page",
-		"content_with_weight":  "# Alpha",
-		"kc_payload":           "# Alpha\n\nBody",
+		"content_with_weight":  "# Alpha\n\nBody",
 		"slug_kwd":             "entity/alpha",
 		"page_type_kwd":        "entity",
 		"topic_kwd":            "Alpha",
@@ -136,7 +144,7 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 		"summary_with_weight":  "A page about Alpha",
 		"entity_names_kwd":     []interface{}{"Alpha"},
 		"related_kb_pages_kwd": []interface{}{"entity/beta"},
-		"section_level_int":    float64(2),
+		"depth_int":            float64(2),
 	}
 	p, ok := productFromChunkMap(c, "t1", kccommon.VariantWiki)
 	if !ok {

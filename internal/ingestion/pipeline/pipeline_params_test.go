@@ -231,6 +231,190 @@ func TestBuildParserConfig_ShallowMerge_NestedParam(t *testing.T) {
 	}
 }
 
+// A canvas saved by the Python frontend — and parser_config rows derived
+// from it — nest the Parser's per-family setups under a "setups" key. Both
+// the DSL defaults and the incoming overrides must be flattened so the
+// stored parser_config carries file families at the top level.
+func TestBuildParserConfig_FlattensNestedParserSetups(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+						"setups": map[string]any{
+							"pdf":         map[string]any{"parse_method": "deepdoc", "lang": "Chinese"},
+							"spreadsheet": map[string]any{"parse_method": "deepdoc"},
+						},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	// Legacy nested override, as stored in an upgraded document's parser_config.
+	overrides := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{
+				"pdf": map[string]any{"parse_method": "vision"},
+			},
+		},
+	}
+
+	result := BuildParserConfig(dslJSON, overrides)
+	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["setups"]; ok {
+		t.Error("nested \"setups\" key must be flattened away")
+	}
+	pdf, ok := parser["pdf"].(map[string]any)
+	if !ok {
+		t.Fatal("expected flattened pdf family in result")
+	}
+	if pdf["parse_method"] != "vision" {
+		t.Errorf("pdf parse_method = %v, want vision from override", pdf["parse_method"])
+	}
+	// BuildParserConfig shallow-merges per top-level key: the override's pdf
+	// family replaces the defaults' pdf family outright (the semantics locked
+	// by TestBuildParserConfig_ShallowMerge_NestedParam).
+	if _, ok := pdf["lang"]; ok {
+		t.Error("pdf lang should not survive: the override family replaces the default family")
+	}
+	// Families the override does not touch keep their DSL defaults.
+	spreadsheet, ok := parser["spreadsheet"].(map[string]any)
+	if !ok {
+		t.Fatal("spreadsheet family from DSL defaults missing")
+	}
+	if spreadsheet["parse_method"] != "deepdoc" {
+		t.Errorf("spreadsheet parse_method = %v, want deepdoc from DSL defaults", spreadsheet["parse_method"])
+	}
+}
+
+// CleanComponentParams must flatten a legacy nested "setups" group before
+// filtering, otherwise the lifted families are dropped as unknown params
+// against the (flat) DSL schema keys.
+func TestCleanComponentParams_FlattensNestedParserSetups(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"setups": map[string]any{
+							"pdf": map[string]any{"parse_method": "deepdoc"},
+						},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl: %v", err)
+	}
+
+	rawConfig := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{
+				"pdf": map[string]any{"parse_method": "vision"},
+			},
+		},
+	}
+
+	result := CleanComponentParams(dslJSON, rawConfig)
+	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["setups"]; ok {
+		t.Error("nested \"setups\" key must be flattened away")
+	}
+	pdf, ok := parser["pdf"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected flattened pdf family, got %T", parser["pdf"])
+	}
+	if pdf["parse_method"] != "vision" {
+		t.Errorf("pdf parse_method = %v, want vision", pdf["parse_method"])
+	}
+}
+
+// The runtime passes Doc.ParserConfig as override_params, where top-level
+// keys from the override replace the DSL-baked ones. A legacy nested Parser
+// entry must be lifted BEFORE that merge — otherwise the DSL's flat families
+// win over the user's override once FlattenLegacyParserSetups applies its
+// top-level-wins rule inside NewParserComponent.
+func TestNormalizeParserConfigSetups(t *testing.T) {
+	raw := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{
+				"pdf": map[string]any{"parse_method": "vision"},
+			},
+		},
+		"Extractor:AutoExtractDefault": map[string]any{"llm_id": "llm-a"},
+		"metadata":                     map[string]any{"enabled": true},
+	}
+
+	out := NormalizeParserConfigSetups(raw)
+
+	parser, ok := out["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["setups"]; ok {
+		t.Error("nested \"setups\" key must be flattened away")
+	}
+	pdf, ok := parser["pdf"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected flattened pdf family, got %T", parser["pdf"])
+	}
+	if pdf["parse_method"] != "vision" {
+		t.Errorf("pdf parse_method = %v, want vision", pdf["parse_method"])
+	}
+
+	// Non-Parser entries and dataset-level keys pass through untouched.
+	if got := out["Extractor:AutoExtractDefault"].(map[string]any)["llm_id"]; got != "llm-a" {
+		t.Errorf("extractor llm_id = %v, want llm-a (must not be touched)", got)
+	}
+	if _, ok := out["metadata"].(map[string]any)["enabled"]; !ok {
+		t.Error("dataset-level metadata entry lost")
+	}
+
+	// Flat entries and nil maps are idempotent and nil-safe.
+	flat := NormalizeParserConfigSetups(map[string]any{
+		"Parser:Flat": map[string]any{"pdf": map[string]any{"parse_method": "deepdoc"}},
+	})
+	if _, ok := flat["Parser:Flat"].(map[string]any)["pdf"]; !ok {
+		t.Error("flat Parser entry must pass through unchanged")
+	}
+	if got := NormalizeParserConfigSetups(nil); got != nil {
+		t.Errorf("nil input must return nil, got %v", got)
+	}
+}
+
+// An empty nested "setups" map must still be lifted away: leaving the key in
+// place would create a bogus "setups" file family downstream.
+func TestNormalizeParserConfigSetups_EmptyNestedMap(t *testing.T) {
+	out := NormalizeParserConfigSetups(map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"setups": map[string]any{},
+		},
+	})
+	parser, ok := out["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["setups"]; ok {
+		t.Error("empty nested \"setups\" key must be removed")
+	}
+}
+
 func TestBuildParserConfig_ScalarOverridePreservesOtherDefaults(t *testing.T) {
 	dslJSON := generalDSL(t)
 	overrides := map[string]any{

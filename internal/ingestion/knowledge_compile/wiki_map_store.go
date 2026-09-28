@@ -76,7 +76,6 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	row := map[string]interface{}{
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
-		"tenant_id":           state.TenantID,
 		"kb_id":               state.DatasetID,
 		"compile_kwd":         wikiMapActiveCompileKWD,
 		"scope_kwd":           "doc",
@@ -86,13 +85,6 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	}
 	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID)
 	return err
-}
-
-// NewWikiMapVersionStore returns the DocStore-backed immutable Wiki MAP cache.
-// Its rows remain non-searchable through available_int=0 and the compile
-// discriminator, while preserving every chunk/hash version for reuse.
-func NewWikiMapVersionStore(docEngine engine.DocEngine) kccommon.WikiMapVersionStore {
-	return &wikiMapVersionStore{engine: docEngine}
 }
 
 // NewWikiMapVersionStoreWithVectorSizeResolver creates a Wiki MAP store that
@@ -236,7 +228,6 @@ func wikiMapVersionRow(version kccommon.WikiMapVersion) map[string]interface{} {
 		// Keep immutable MAP history in a separate document namespace so source
 		// document deletion cannot remove a reusable chunk/hash version.
 		"doc_id":              wikiMapCacheDocID(version.DocumentID),
-		"tenant_id":           version.TenantID,
 		"kb_id":               version.DatasetID,
 		"compile_kwd":         wikiMapExtractCompileKWD,
 		"scope_kwd":           "doc",

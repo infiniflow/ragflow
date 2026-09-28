@@ -136,6 +136,9 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		normalizeParserOutputFormats(s)
 		return &ParserComponent{setups: s}, nil
 	}
+	// Canvases saved by the Python-era frontend nest the per-family setups
+	// under a "setups" key; lift them so every family lands at the top level.
+	params = schema.FlattenLegacyParserSetups(params)
 	for k, raw := range params {
 		if k == "outputs" || k == "allowed_output_format" {
 			continue

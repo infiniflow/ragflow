@@ -11,8 +11,8 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
 import {
+  collectUnboundRetrievalBindings,
   countUnboundModel,
-  countUnboundRetrieval,
 } from './template-retrieval-binding';
 
 type CreateAgentDialogProps = CreateAgentFormProps & {
@@ -30,7 +30,8 @@ export function CreateAgentDialog({
   const { t } = useTranslation();
 
   const retrievalBindings = useMemo(
-    () => (template ? countUnboundRetrieval(template.dsl) : undefined),
+    () =>
+      template ? collectUnboundRetrievalBindings(template.dsl) : undefined,
     [template],
   );
   const modelBindings = useMemo(
