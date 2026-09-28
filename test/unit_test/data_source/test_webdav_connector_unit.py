@@ -223,6 +223,15 @@ class _FakeClient:
         buffer.write(b"hello webdav")
 
 
+class _ListingClient(_FakeClient):
+    def __init__(self, items):
+        super().__init__()
+        self._items = items
+
+    def ls(self, path, detail=True):
+        return self._items
+
+
 def _stub_files(files):
     def _list_files_recursive(*args, **kwargs):
         return files
@@ -286,6 +295,35 @@ def test_get_size_bytes_falls_back_across_keys():
     assert WebDAVConnector._get_size_bytes({"size": None, "content_length": 256}) == 256
     assert WebDAVConnector._get_size_bytes({"size": "bad", "content_length": 256}) == 256
     assert WebDAVConnector._get_size_bytes({"content_length": None, "getcontentlength": "256"}) == 256
+
+
+@pytest.mark.p1
+def test_poll_source_includes_files_when_server_mtime_lags_watermark():
+    """Regression for #19955: slow WebDAV Last-Modified must not fall below the poll window."""
+    watermark = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 21, 12, 10, tzinfo=timezone.utc)
+    skewed_modified = datetime(2026, 9, 21, 4, 0, tzinfo=timezone.utc)
+
+    connector = WebDAVConnector("https://webdav.example", batch_size=10)
+    connector.client = _ListingClient(
+        [
+            {
+                "name": "/test.txt",
+                "type": "file",
+                "size": 10,
+                "modified": skewed_modified,
+            }
+        ]
+    )
+
+    batches = list(
+        connector.poll_source(
+            int(watermark.timestamp()),
+            int(end.timestamp()),
+        )
+    )
+
+    assert [doc.semantic_identifier for batch in batches for doc in batch] == ["test.txt"]
 
 
 @pytest.mark.p1
