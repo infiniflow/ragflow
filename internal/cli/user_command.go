@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/parser/parser"
@@ -182,11 +183,15 @@ func (c *CLI) APIListDatasetDocumentsCommand(commandCount int, cmd *Command) (Re
 		return nil, fmt.Errorf("no dataset id")
 	}
 
-	page := 1
-	pageSize := 10
-	keywords := ""
-	returnEmptyMetadata := "true"
-	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+	// Build the query with url.Values rather than Sprintf: datasetID is
+	// caller-supplied, and string interpolation would let it inject extra
+	// query params or escape the path segment.
+	query := netUrl.Values{}
+	query.Set("page", "1")
+	query.Set("page_size", "10")
+	query.Set("keywords", "")
+	query.Set("return_empty_metadata", "true")
+	url := fmt.Sprintf("/datasets/%s/documents?%s", netUrl.PathEscape(datasetID), query.Encode())
 
 	// Normal mode
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
@@ -227,7 +232,7 @@ func (c *CLI) APIListDatasetFilesCommand(commandCount int, cmd *Command) (Respon
 		return nil, fmt.Errorf("failed to get dataset id: %w", err)
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents", datasetID)
+	url := utils.APIPath("/datasets", datasetID, "documents")
 
 	// Normal mode
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
@@ -362,47 +367,6 @@ func (c *CLI) APIListMemoriesCommand(commandCount int, cmd *Command) (ResponseIf
 	var result ListMemoriesResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list memories failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
-
-	return &result, nil
-}
-
-// ListDatasetDocumentUserCommand lists dataset documents
-func (c *CLI) ListDatasetDocumentUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	httpClient, err := c.apiModeClient()
-	if err != nil {
-		return nil, err
-	}
-
-	datasetID, ok := cmd.Params["dataset_id"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no dataset id")
-	}
-
-	page := 1
-	pageSize := 10
-	keywords := ""
-	returnEmptyMetadata := "true"
-	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
-
-	// Normal mode
-	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result ListDocumentsResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -877,7 +841,7 @@ func (c *CLI) APIDeleteAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("key not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", fmt.Sprintf("/system/keys/%s", apiKey), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", utils.APIPath("/system/keys", apiKey), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete key: %w", err)
 	}
@@ -1303,7 +1267,7 @@ func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s", providerName)
+	url := utils.APIPath("/providers", providerName)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1327,7 +1291,7 @@ func (c *CLI) APIDropDatasetCommand(commandCount int, cmd *Command) (ResponseIf,
 
 	datasetID, err := c.getDatasetIDByName(datasetName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dataset ID: %w by dataset name: %s", err, datasetName)
+		return nil, fmt.Errorf("failed to get dataset ID by name %q: %w", datasetName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1357,7 +1321,7 @@ func (c *CLI) APIDropAgentCommand(commandCount int, cmd *Command) (ResponseIf, e
 
 	agentID, err := c.getAgentIDByName(agentName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agent ID: %w by agent name: %s", err, agentName)
+		return nil, fmt.Errorf("failed to get agent ID by name %q: %w", agentName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1387,7 +1351,7 @@ func (c *CLI) APIDropChatCommand(commandCount int, cmd *Command) (ResponseIf, er
 
 	chatID, err := c.getChatIDByName(chatName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chat ID: %w by chat name: %s", err, chatName)
+		return nil, fmt.Errorf("failed to get chat ID by name %q: %w", chatName, err)
 	}
 
 	payload := map[string]interface{}{
@@ -1417,10 +1381,10 @@ func (c *CLI) APIDropSearchCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	searchID, err := c.getSearchIDByName(searchName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get search ID: %w by search name: %s", err, searchName)
+		return nil, fmt.Errorf("failed to get search ID by name %q: %w", searchName, err)
 	}
 
-	endPoint := fmt.Sprintf("/searches/%s", searchID)
+	endPoint := utils.APIPath("/searches", searchID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1444,10 +1408,10 @@ func (c *CLI) APIDropMemoryCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	memoryID, err := c.getMemoryIDByName(memoryName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get memory ID: %w by memory name: %s", err, memoryName)
+		return nil, fmt.Errorf("failed to get memory ID by name %q: %w", memoryName, err)
 	}
 
-	endPoint := fmt.Sprintf("/memories/%s", memoryID)
+	endPoint := utils.APIPath("/memories", memoryID)
 
 	resp, err := httpClient.Request(commandCount, "DELETE", endPoint, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -1490,7 +1454,7 @@ func (c *CLI) APIAddProviderInstanceCommand(commandCount int, cmd *Command) (Res
 		region = ""
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances", providerName)
+	url := utils.APIPath("/providers", providerName, "instances")
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
@@ -1528,7 +1492,7 @@ func (c *CLI) APIDeleteProviderInstanceCommand(commandCount int, cmd *Command) (
 		"instances": []string{instanceName},
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances", providerName)
+	url := utils.APIPath("/providers", providerName, "instances")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -1564,7 +1528,7 @@ func (c *CLI) APIDeleteProviderInstanceModelCommand(commandCount int, cmd *Comma
 		"models": modelNames,
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "models")
 
 	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -2491,7 +2455,7 @@ func (c *CLI) APIListModelInstanceTasksCommand(commandCount int, cmd *Command) (
 		return nil, fmt.Errorf("no instance name")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "tasks")
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2523,7 +2487,7 @@ func (c *CLI) APIShowProviderInstanceTaskCommand(commandCount int, cmd *Command)
 		return nil, fmt.Errorf("task id not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "tasks", taskID)
 
 	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
 	if err != nil {
@@ -2602,7 +2566,7 @@ func (c *CLI) APIAddCustomModelCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("model name not provided")
 	}
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+	url := utils.APIPath("/providers", providerName, "instances", instanceName, "models")
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
@@ -2714,7 +2678,7 @@ func (c *CLI) DevGetChunkCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
-	resp, err := httpClient.Request(commandCount, "GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "GET", utils.APIPath("/datasets", datasetID, "documents", docID, "chunks", chunkID), httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk: %w", err)
 	}
@@ -2928,7 +2892,7 @@ func (c *CLI) APIParseDocumentsCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("documents not provided")
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
+	url := utils.APIPath("/datasets", datasetID, "documents", "parse")
 
 	payload := map[string]interface{}{
 		"documents": documents,
@@ -3181,7 +3145,7 @@ func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (Response
 		"dataset_id": datasetID,
 	}
 
-	url := fmt.Sprintf("/datasets/%s/documents/parse", datasetID)
+	url := utils.APIPath("/datasets", datasetID, "documents", "parse")
 
 	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
 	if err != nil {
@@ -3331,7 +3295,7 @@ func (c *CLI) APIOpenaiChatCommand(commandCount int, cmd *Command) (ResponseIf, 
 	}
 
 	chatID, _ := cmd.Params["chat_id"].(string)
-	url := fmt.Sprintf("/openai/%s/chat/completions", chatID)
+	url := utils.APIPath("/openai", chatID, "chat", "completions")
 
 	stream, _ := cmd.Params["stream"].(bool)
 	if stream {
