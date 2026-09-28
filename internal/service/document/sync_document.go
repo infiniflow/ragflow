@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -285,10 +286,22 @@ func syncDocumentFilename(name, extension, fallback string) string {
 	ext := filepath.Ext(name)
 	baseLimit := 255 - len(ext)
 	if baseLimit < 1 {
-		return name[:255]
+		return truncateUTF8Bytes(name, 255)
 	}
 
-	return name[:baseLimit] + ext
+	return truncateUTF8Bytes(name, baseLimit) + ext
+}
+
+// truncateUTF8Bytes cuts s to at most limit bytes without splitting a
+// multi-byte character.
+func truncateUTF8Bytes(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit]
 }
 
 // syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.
