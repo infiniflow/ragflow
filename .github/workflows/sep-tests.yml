@@ -687,10 +687,6 @@ jobs:
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
-
       - name: Start ragflow:nightly for Infinity
         run: |
           set -euo pipefail
@@ -1254,10 +1250,6 @@ jobs:
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
-
       - name: Start ragflow:nightly for Elasticsearch
         run: |
           COMPOSE_FILE=docker/docker-compose.yml
@@ -1754,10 +1746,6 @@ jobs:
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
-
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
 
       - name: Start ragflow CI service stack (infinity)
         # COMPOSE_PROFILES (set in .env by the prepare step) drops `cpu`, so the
