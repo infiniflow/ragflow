@@ -30,8 +30,8 @@
 //     field is not parsed in Go; only the []string list API is consumed.)
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
-//     splitDroppingDelim helper; emitted chunks carry the parent
-//     ("mom") and the split child ("text") keys, with the delimiter dropped.
+//     splitByDelim helper; emitted chunks carry the parent ("mom") and the
+//     split child ("text") keys, with the delimiter retained (lossless).
 //
 //   - MODE "delimiter" uses the regex-aware delimiter pattern to split
 //     text into segments; unlike token_size, these segments are NOT
@@ -338,18 +338,23 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // chunk per segment with no token-size merge. Mirrors Python naive_merge's
 // has_custom branch (token_chunker.py:1194-1213).
 func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, childrenPattern *regexp.Regexp) map[string]any {
-	parts := splitDroppingDelim(text, delimPattern)
+	parts := splitByDelim(text, delimPattern, true)
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
-		// Python's text path keeps only the even-index (text) parts from
-		// _split_text_by_pattern and then .strip()s each one
-		// (token_chunker.py:316-338), so the delimiter is dropped and
-		// surrounding whitespace is trimmed.
-		trimmed := strings.TrimSpace(p)
-		if trimmed == "" {
+		// A delimiter is a split hint, not a delete instruction: the retained
+		// delimiter (and any surrounding whitespace) stays with its segment so
+		// the emitted chunks reproduce the source exactly. A whitespace-only
+		// segment between consecutive delimiters (e.g. the blank line of
+		// "# Title\n\nParagraph") is NOT dropped — its retained delimiters are
+		// folded into the preceding segment, so the source blank line survives
+		// and no empty chunk is emitted.
+		if strings.TrimSpace(p) == "" {
+			if len(cleaned) > 0 {
+				cleaned[len(cleaned)-1] += p
+			}
 			continue
 		}
-		cleaned = append(cleaned, trimmed)
+		cleaned = append(cleaned, p)
 	}
 	if len(cleaned) == 0 {
 		return emptyOutputs()
@@ -443,11 +448,11 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 	// Build the merge units.
 	//
 	// When a bare (non-custom) delimiter is active we split the text into
-	// paragraphs (the delimiter is DROPPED, mirroring Python naive_merge) and
-	// use each paragraph VERBATIM as a unit. This preserves the original
-	// inter-paragraph whitespace, so the merged text matches the source (and
-	// Python naive_merge). An oversized paragraph is re-split by the hard-cap
-	// expansion in mergeUnits.
+	// paragraphs, each paragraph KEEPING its trailing delimiter (lossless), and
+	// use it VERBATIM as a unit. Because the delimiter stays attached, the
+	// merged text reproduces the source exactly — no "\n" is synthesized, and a
+	// sentence period such as "。" is preserved rather than deleted. An
+	// oversized paragraph is re-split by the hard-cap expansion in mergeUnits.
 	//
 	// Otherwise (no active delimiter) the whole text is a single section and
 	// oversized sections are re-split on production sentence delimiters, which
@@ -456,19 +461,17 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 	useDelimSplit := hasActiveDelimiter(delimPattern) && !hasCustomDelim(c.param.Delimiters)
 	var units []schema.ChunkDoc
 	if useDelimSplit {
-		// Mirror Python naive_merge's default path (rag/nlp/__init__.py:1406-1415):
-		// split on the delimiter, DROP the delimiter text, and prepend "\n" to
-		// each kept paragraph. The sub-sec keeps its original surrounding
-		// whitespace (e.g. the trailing space before the delimiter); only the
-		// delimiter itself is removed. No sentence re-split is performed here —
-		// an oversized paragraph is re-split later by the hard-cap expansion in
-		// mergeUnits.
-		for _, sub := range splitDroppingDelim(text, delimPattern) {
+		// Split on the delimiter and KEEP it attached to the preceding
+		// paragraph (lossless). The paragraph retains its original surrounding
+		// whitespace; only a truly empty segment is skipped. No "\n" is
+		// prepended — that used to compensate for the dropped delimiter and is
+		// now wrong (it would double a "\n" or inject a stray newline before a
+		// "。").
+		for _, sub := range splitByDelim(text, delimPattern, true) {
 			if sub == "" {
 				continue
 			}
-			t := "\n" + sub
-			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+			units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
 		}
 	} else {
 		sections := []string{text}
@@ -612,7 +615,13 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// chunks, so a media chunk keeps what it collected.
 		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 		// Python _merge_text_chunks_by_token_size merges adjacent text
-		// chunks across JSON items into one global token budget.
+		// chunks across JSON items into one global token budget. The join
+		// separator is "" because each unit already carries its own retained
+		// delimiter (splitByDelim keeps it), so concatenating reproduces the
+		// source exactly. A "\n" separator would have been needed when the
+		// delimiter was dropped, but would now double-insert it; the upstream
+		// JSON items themselves carry no inter-item separator, so "" is the
+		// faithful lossless join.
 		flat = flatten(mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flat}, c.param.ChunkTokenSize, c.param.OverlappedPercent))
 	}
 
@@ -722,7 +731,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	parts := splitDroppingDelim(txt, delimPattern)
+	parts := splitByDelim(txt, delimPattern, true)
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -1175,10 +1184,12 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 		}
 		// All text units in the sequence are merged with the unified
 		// JSON-strategy core. Non-text units pass through and reset the merge
-		// run (see mergeUnits). Join separator is "\n" to mirror
-		// token_chunker.py:_merge_text_chunks_by_token_size, which joins
-		// adjacent item text with "\n".
-		perItem[idx] = mergeUnits(perItem[idx], chunkTokens, overlappedPct, "\n")
+		// run (see mergeUnits). Join separator is "" because each unit already
+		// carries its own trailing delimiter (splitByDelim keeps it), so an
+		// empty separator reproduces the source exactly. A "\n" separator would
+		// have been needed when the delimiter was dropped, but would now
+		// double-insert it.
+		perItem[idx] = mergeUnits(perItem[idx], chunkTokens, overlappedPct, "")
 	}
 	return perItem
 }
@@ -1723,7 +1734,7 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			continue
 		}
 		mom := strings.TrimPrefix(ck.Text, "\n")
-		parts := splitDroppingDelim(ck.Text, pattern)
+		parts := splitByDelim(ck.Text, pattern, true)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
@@ -1769,7 +1780,7 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, text := range splitDroppingDelim(t, pattern) {
+		for _, text := range splitByDelim(t, pattern, true) {
 			if strings.TrimSpace(text) == "" {
 				continue
 			}

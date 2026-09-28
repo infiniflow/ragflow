@@ -194,9 +194,10 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// Python's _split_text_by_pattern drops the matched delimiter and
-	// .strip()s each segment: "the" | "and End and END come"
-	want := []string{"the", "and End and END come"}
+	// The custom (backtick) delimiter "end" is retained on the chunk it ends;
+	// only the lowercase "end" matches, so "End"/"END" stay intact. After
+	// trimming, the two segments are "the end" and "and End and END come".
+	want := []string{"the end", "and End and END come"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
@@ -232,9 +233,9 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 			got = append(got, text)
 		}
 	}
-	// "B" + "a" glued → "Ba"; remainder "Ab". Python drops the matched
-	// delimiter and .strip()s, leaving "B" | "Ab".
-	want := []string{"B", "Ab"}
+	// The custom (backtick) delimiter "a" is retained on the chunk it ends:
+	// "BaAb" splits into "Ba" + "Ab".
+	want := []string{"Ba", "Ab"}
 	if len(got) != len(want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}

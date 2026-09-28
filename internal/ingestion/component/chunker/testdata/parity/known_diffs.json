@@ -38,6 +38,16 @@
       "permanent": false,
       "tracking": "Go TokenChunker hard-cap merge (方案 B). Python token_chunker still uses OVER_CAP; adopt the hard-cap contract on the Python side to resolve these rules.",
       "reason": "Go TokenChunker now enforces a hard cap (UNDER_CAP merge + oversized-unit re-split), so chunk boundaries shift relative to Python's OVER_CAP merge-then-close on default-delimiter inputs: Go closes a chunk when the projected join would exceed the target, while Python merges the overflowing unit then closes. Same chunk count, different boundaries."
+    },
+    {
+      "id": "token-lossless-delimiter-retention",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__html_backtick", "token__json_backtick", "token__json_children_delim", "token__json_two_item", "token__markdown_backtick", "token__text_backtick"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker lossless delimiter retention. Python token_chunker still drops the matched delimiter via _split_text_by_pattern (keeps only even-index text parts); adopt retention on the Python side to resolve this rule.",
+      "reason": "Go TokenChunker now retains the matched delimiter on the chunk it ends (splitByDelim keep mode): a delimiter is a hint for where the chunker MAY break, never a character to delete, so 。/./\\n and other delimiters are reproduced in the chunk text exactly as they appear in the source. Python's _split_text_by_pattern discards the delimiter, so for backtick-wrapped (custom) and children delimiters Go's chunk text carries the trailing delimiter that Python's does not."
     }
   ]
 }

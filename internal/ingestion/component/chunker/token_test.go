@@ -197,10 +197,11 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 			t.Errorf("chunk[%d] is the bare delimiter %q", i, text)
 		}
 	}
-	if got, want := chunks[0]["text"], "alpha section"; got != want {
+	// The custom (backtick) delimiter "666" is retained on the chunk it ends.
+	if got, want := chunks[0]["text"], "alpha section\n666"; got != want {
 		t.Errorf("chunk[0] text = %q, want %q", got, want)
 	}
-	if got, want := chunks[1]["text"], "beta section"; got != want {
+	if got, want := chunks[1]["text"], "\nbeta section"; got != want {
 		t.Errorf("chunk[1] text = %q, want %q", got, want)
 	}
 }
@@ -314,7 +315,7 @@ func TestTokenChunkerTextParserJSONKeepsSentenceBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TokenChunker.Invoke: %v", err)
 	}
-	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!\nsecond!"}) {
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first!second!"}) {
 		t.Fatalf("text parser JSON chunks = %q, want sentence boundary between parser units", texts)
 	}
 }
@@ -557,8 +558,9 @@ func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
 	if media == nil {
 		t.Fatalf("table chunk missing: %+v", out)
 	}
-	// Each child is 3 tokens, so the 7-token window holds both of them.
-	assertMaterializedMediaContext(t, media, "gamma deltaalpha beta.")
+	// Each child is 3 tokens, so the 7-token window holds both of them. The
+	// children delimiter ". " is retained, so the materialized context keeps it.
+	assertMaterializedMediaContext(t, media, "gamma delta. alpha beta.")
 }
 
 // TestMaterializeMediaContextKeepsTokenCountInSync pins the invariant the fold

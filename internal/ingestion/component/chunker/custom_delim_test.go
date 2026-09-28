@@ -6,20 +6,14 @@ import (
 	"testing"
 )
 
-// custom_delim_test pins the backtick-wrapped newline delimiter behavior of
-// TokenChunker against Python's rag/flow/chunker/token_chunker.py.
+// custom_delim_test pins the backtick-wrapped delimiter behavior of
+// TokenChunker against the lossless contract: a delimiter is a split hint, not a
+// delete instruction, so every emitted chunk KEEPS its delimiter and the
+// concatenation of all chunk texts reproduces the source exactly.
 //
-// All delimiter paths (primary and children, text/markdown/html and JSON)
-// must DROP the captured delimiter from each chunk's text, matching Python's
-// _split_text_by_pattern (token_chunker.py:79-90, used by both _build_json_chunks
-// and _split_chunk_docs_by_children). Go's splitDroppingDelim reproduces this.
-//
-// The JSON primary path is the one most prone to regress: Python's
-// _build_json_chunks (token_chunker.py:121) splits each item through
-// _split_text_by_pattern, which keeps only the even-index (text) parts and
-// DISCARDS the captured delimiter. So a "first segment line one\n" item yields
-// "first segment line one" with the newline dropped. Go's chunkFromItem does
-// the same via splitDroppingDelim, matching the Python reference.
+// All delimiter paths (primary and children, text/markdown/html and JSON) must
+// retain the captured delimiter (Go's splitByDelim with keepDelim=true), so
+// "第一句内容。" stays "第一句内容。" rather than becoming "第一句内容".
 //
 // Plain text/markdown/html inputs must not gain doc_type_kwd merely because a
 // custom delimiter is configured: Python emits only text for those paths.
@@ -70,7 +64,8 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 }
 
 // TestCustomDelimTextChildrenKeepCKType covers primary and child splitting in
-// combination: child chunks remain unstructured but retain Go's live CKType.
+// combination: child chunks remain unstructured but retain Go's live CKType,
+// and every delimiter (primary "::" and children "--") is kept.
 func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
 	params := map[string]any{
 		"chunk_token_size":    float64(128),
@@ -83,14 +78,19 @@ func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	want := []string{"alpha", "beta", "gamma", "delta"}
+	if got := joinedText(chunks); got != "alpha--beta::gamma--delta" {
+		t.Fatalf("lossless reconstruction failed: got %q", got)
+	}
+	want := []string{"alpha--", "beta::", "gamma--", "delta"}
 	if got := chunkTexts(chunks); !slices.Equal(got, want) {
 		t.Fatalf("chunk texts: want %v got %v", want, got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimTextDropsDelimiter reproduces token__text_backtick.
+// TestCustomDelimTextKeepsDelimiter reproduces token__text_backtick under the
+// lossless contract: the backtick-newline delimiter is retained at the end of
+// every segment.
 func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -99,7 +99,7 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	want := []string{"first sentence here", "second sentence here", "third sentence here"}
+	want := []string{"first sentence here\n", "second sentence here\n", "third sentence here"}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}
@@ -112,9 +112,9 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimJSONDropsDelimiter reproduces token__json_backtick: the
-// primary (custom backtick) delimiter is dropped from every chunk text,
-// matching Python's _split_text_by_pattern.
+// TestCustomDelimJSONKeepsDelimiter reproduces token__json_backtick under the
+// lossless contract: the primary (custom backtick) delimiter is kept on every
+// chunk text, and the joined output reproduces the source exactly.
 func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -126,17 +126,16 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	}
 	chunks := invokeTokenChunks(t, params, input)
 
-	want := []string{
-		"first segment line one", "first segment line two",
-		"second segment line one", "second segment line two",
+	if got := joinedText(chunks); got != "first segment line one\nfirst segment line twosecond segment line one\nsecond segment line two" {
+		t.Fatalf("lossless reconstruction failed: got %q", got)
 	}
-	if len(chunks) != len(want) {
-		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
-	}
-	for i, w := range want {
+	for i, w := 0, []string{
+		"first segment line one\n", "first segment line two",
+		"second segment line one\n", "second segment line two",
+	}; i < len(w); i++ {
 		got := chunks[i]["text"].(string)
-		if got != w {
-			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
+		if got != w[i] {
+			t.Errorf("chunk[%d] text: want %q got %q", i, w[i], got)
 		}
 	}
 	for i, chunk := range chunks {
@@ -146,8 +145,10 @@ func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	}
 }
 
-// TestCustomDelimMarkdownDropsDelimiter reproduces token__markdown_backtick:
-// the delimiter is dropped and no chunk text ends with a newline.
+// TestCustomDelimMarkdownKeepsDelimiter reproduces token__markdown_backtick
+// under the lossless contract: the markdown text is split on the
+// backtick-newline delimiter and every chunk keeps its delimiter, so the joined
+// output reproduces the markdown source exactly.
 func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -155,23 +156,14 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	// The upstream decode normalizes Markdown block boundaries into the
-	// backtick-newline delimiter, so the text path must split into exactly
-	// three trimmed chunks with the delimiter dropped (no trailing newline).
-	want := []string{"# Title", "Paragraph one.", "Paragraph two."}
-	if len(chunks) != len(want) {
-		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
-	}
-	for i, w := range want {
-		got := chunks[i]["text"].(string)
-		if got != w {
-			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
-		}
+	if got := joinedText(chunks); got != "# Title\n\nParagraph one.\n\nParagraph two." {
+		t.Fatalf("lossless reconstruction failed: got %q", got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
 
-// TestCustomDelimHTMLDropsDelimiter reproduces token__html_backtick.
+// TestCustomDelimHTMLKeepsDelimiter reproduces token__html_backtick under the
+// lossless contract.
 func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
@@ -179,15 +171,8 @@ func TestCustomDelimHTMLDropsDelimiter(t *testing.T) {
 		"html": "<p>one</p>\n<p>two</p>\n<p>three</p>",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	want := []string{"<p>one</p>", "<p>two</p>", "<p>three</p>"}
-	if len(chunks) != len(want) {
-		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
-	}
-	for i, w := range want {
-		got := chunks[i]["text"].(string)
-		if got != w {
-			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
-		}
+	if got := joinedText(chunks); got != "<p>one</p>\n<p>two</p>\n<p>three</p>" {
+		t.Fatalf("lossless reconstruction failed: got %q", got)
 	}
 	assertPlainCustomDelimiterMetadata(t, chunks)
 }
