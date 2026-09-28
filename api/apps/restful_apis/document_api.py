@@ -73,7 +73,7 @@ from api.utils.validation_utils import (
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.llm_request_context import normalize_llm_user_id
-from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
+from common.metadata_utils import convert_conditions, legacy_ingestion_metadata_config, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.file_response import apply_preview_file_response_headers
@@ -1530,8 +1530,10 @@ def _run_sync(user_id: str, req):
                 if not e:
                     raise LookupError("Can't find this dataset!")
                 doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
-                doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
-                doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                enabled, metadata, built_in = legacy_ingestion_metadata_config(kb.parser_config or {})
+                doc.parser_config["enable_metadata"] = enabled
+                doc.parser_config["metadata"] = metadata
+                doc.parser_config["built_in_metadata"] = built_in
                 DocumentService.update_parser_config(doc.id, doc.parser_config)
             doc_dict = doc.to_dict()
             DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map, user_id=normalize_llm_user_id(req.get("user_id")))
