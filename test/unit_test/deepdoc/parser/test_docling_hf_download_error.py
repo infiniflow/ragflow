@@ -107,6 +107,7 @@ class TestClassifyBySubstring:
         )
         assert hint is not None
         assert "DOCLING" in hint or "docling" in hint
+        assert "HF_TOKEN" in hint
 
     def test_gated_repo_message_is_recognised(self, monkeypatch):
         hint = _hint(
@@ -116,6 +117,16 @@ class TestClassifyBySubstring:
         )
         assert hint is not None
         assert "HF_TOKEN" in hint
+
+
+def test_wrapped_download_error_uses_cause_hint(monkeypatch):
+    module = _load_docling_parser(monkeypatch)
+    inner = _make_exception("FileMetadataError", "Distant resource does not seem to be on huggingface.co.")
+    outer = _make_exception("LocalEntryNotFoundError", "No local entry")
+    outer.__cause__ = inner
+    hint = module._classify_hf_download_error(outer)
+    assert hint is not None
+    assert "HF_HUB_OFFLINE" in hint
 
 
 # Class-name fallback ----------------------------------------------------

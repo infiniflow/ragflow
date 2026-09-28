@@ -67,7 +67,7 @@ _HF_DOWNLOAD_ERROR_HINTS = (
     ),
     (
         "Repository Not Found",
-        "docling's model repository was not found on huggingface.co. The repo may have moved or been renamed; check DOCLING_* env vars and the docling release notes.",
+        "docling's model repository was not found on huggingface.co. The repo may have moved, been renamed, or require access; check DOCLING_* env vars, the docling release notes, and HF_TOKEN permissions.",
     ),
     (
         "Access to this resource is restricted",
@@ -77,16 +77,18 @@ _HF_DOWNLOAD_ERROR_HINTS = (
 
 
 def _classify_hf_download_error(exc: BaseException) -> str | None:
-    msg = str(exc) or ""
-    needle = msg.lower()
-    for substr, hint in _HF_DOWNLOAD_ERROR_HINTS:
-        if substr.lower() in needle:
-            return hint
-    # Fallback: detect by exception class name (covers RepositoryNotFoundError,
-    # GatedRepoError, etc.) so future additions don't need a string table.
-    cls = exc.__class__.__name__
-    if cls in {"FileMetadataError", "RepositoryNotFoundError", "GatedRepoError", "RevisionNotFoundError", "EntryNotFoundError"}:
-        return f"docling model download from huggingface.co failed ({cls}: {msg}). Check proxy / firewall / HF_TOKEN / HF_HUB_OFFLINE settings; the underlying error is re-raised after this message."
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        msg = str(exc) or ""
+        needle = msg.lower()
+        for substr, hint in _HF_DOWNLOAD_ERROR_HINTS:
+            if substr.lower() in needle:
+                return hint
+        cls = exc.__class__.__name__
+        if cls in {"FileMetadataError", "RepositoryNotFoundError", "GatedRepoError", "RevisionNotFoundError", "EntryNotFoundError"}:
+            return f"docling model download from huggingface.co failed ({cls}: {msg}). Check proxy / firewall / HF_TOKEN / HF_HUB_OFFLINE settings; the underlying error is re-raised after this message."
+        exc = exc.__cause__ or exc.__context__
     return None
 
 
