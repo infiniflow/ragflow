@@ -448,9 +448,13 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{
-			"docnm_kwd":    newName,
-			"title_tks":    titleTks,
-			"title_sm_tks": titleSmTks,
+			"docnm_kwd": newName,
+			// Fold title_tks / title_sm_tks to lowercase so the ES whitespace
+			// analyzer matches the lowercased query text emitted by
+			// internal/service/nlp.QueryBuilder.Question (line 240). Same
+			// pattern as content_ltks (cycle 85).
+			"title_tks":    strings.ToLower(titleTks),
+			"title_sm_tks": strings.ToLower(titleSmTks),
 		},
 		indexName,
 		doc.KbID,
