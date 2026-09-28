@@ -3624,7 +3624,8 @@ export default {
       directoryRule: 'ルール',
       skillFolders: 'スキル',
       skillEmpty: '利用可能なスキルがありません',
-      representationEmpty: '利用可能な表現テンプレートがありません。',
+      representationEmpty:
+        'パイプラインのコンパイラが設定されていないか、アーティファクトが抽出されていません。',
       representationUnsupported: 'この表現形式にはまだ対応していません。',
       claimsPanelTitle: 'アサーション · {{name}}',
       claimsTotal: '全 {{count}} 件',

@@ -2541,7 +2541,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navDeleteNodeTitle: 'Düğümü sil',
       navDeleteNodeDescription:
         'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
-      representationEmpty: 'Kullanılabilir artifact şablonu yok.',
+      representationEmpty:
+        'Pipeline derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
       claimsPanelTitle: 'İddia · {{name}}',
       claimsTotal: 'Toplam {{count}}',
