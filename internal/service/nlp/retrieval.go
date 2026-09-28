@@ -1446,7 +1446,7 @@ func markKnownTerms(content string, terms []string) string {
 		cursor = span[1]
 		lastEnd = span[1]
 	}
-	if !accepted && !strings.Contains(strings.ToLower(content), "<em>") {
+	if !accepted && !emTermPattern.MatchString(content) {
 		return ""
 	}
 	b.WriteString(content[cursor:])
@@ -1471,6 +1471,9 @@ func markupState(content string, pos int) (bool, int) {
 		}
 		tagEnd := htmlTagEnd(content, i)
 		if tagEnd < 0 {
+			if i+1 >= len(content) || isTagStart(content[i+1]) {
+				return true, emDepth
+			}
 			i++
 			continue
 		}
@@ -1490,12 +1493,16 @@ func markupState(content string, pos int) (bool, int) {
 	return false, emDepth
 }
 
+func isTagStart(next byte) bool {
+	return (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '/' || next == '!'
+}
+
 func htmlTagEnd(content string, start int) int {
 	if start+1 >= len(content) {
 		return -1
 	}
 	next := content[start+1]
-	if !((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '/' || next == '!') {
+	if !isTagStart(next) {
 		return -1
 	}
 	quote := byte(0)

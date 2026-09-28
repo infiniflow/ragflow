@@ -98,8 +98,9 @@ def _highlight_parent_content(store, content: str, children: list[dict]) -> str:
         return ""
     highlighter = getattr(store, "highlight", None)
     if callable(highlighter):
-        highlighted = highlighter(content, "", " ".join(terms), terms)
-        return highlighted or ""
+        highlighted = highlighter(content, "", " ".join(terms), terms) or ""
+        if re.search(r"<em>[^<]+</em>", highlighted, flags=re.IGNORECASE):
+            return highlighted
     return _mark_terms_outside_em(content, terms)
 
 
@@ -141,6 +142,8 @@ def _markup_state(content: str, pos: int) -> tuple[bool, int]:
             continue
         tag_end = _html_tag_end(content, i)
         if tag_end < 0:
+            if i + 1 >= len(content) or content[i + 1].isalpha() or content[i + 1] in "/!":
+                return True, em_depth
             i += 1
             continue
         if tag_end >= pos:
@@ -1162,6 +1165,7 @@ class Dealer:
 
         vector_size = 1024
         id2idx = {ck["chunk_id"]: i for i, ck in enumerate(chunks)}
+        known_terms = _highlight_terms(chunks)
         for cid, sim in ids:
             if cid in id2idx:
                 chunks[id2idx[cid]]["similarity"] += sim
@@ -1190,6 +1194,10 @@ class Dealer:
                     d["vector"] = chunk[k]
                     vector_size = len(chunk[k])
                     break
+            if known_terms:
+                highlighted = _mark_terms_outside_em(chunk.get("content_with_weight") or "", known_terms)
+                if highlighted:
+                    d["highlight"] = highlighted
             chunks.append(d)
 
         return sorted(chunks, key=lambda x: x["similarity"] * -1)[:topn]
