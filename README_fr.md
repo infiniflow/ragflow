@@ -230,65 +230,11 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
    _Le spectacle commence !_
 
-## 🔧 Configurations
+### ⚙️ Configuration Docker
 
-En ce qui concerne les configurations système, vous devrez gérer les fichiers suivants :
+Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks comme cache compatible avec le protocole Redis et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents, la source des images de modèles et les options GPU, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
 
-- [.env](./docker/.env) : Conserve les paramètres de base du système, tels que `SVR_HTTP_PORT`, `MYSQL_PASSWORD` et `MINIO_PASSWORD`.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template) : Configure les services back-end. Les variables d'environnement dans ce fichier seront automatiquement renseignées au démarrage du conteneur Docker. Toutes les variables d'environnement définies dans le conteneur Docker seront disponibles, vous permettant de personnaliser le comportement du service en fonction de l'environnement de déploiement.
-- [docker-compose.yml](./docker/docker-compose.yml) : Le système s'appuie sur [docker-compose.yml](./docker/docker-compose.yml) pour démarrer.
-
-> Le fichier [./docker/README](./docker/README.md) fournit une description détaillée des paramètres d'environnement et des configurations de services qui peuvent être utilisés comme `${ENV_VARS}` dans le fichier [service_conf.yaml.template](./docker/service_conf.yaml.template).
-
-Pour mettre à jour le port HTTP de service par défaut (80), accédez à [docker-compose.yml](./docker/docker-compose.yml) et changez `80:80` en `<YOUR_SERVING_PORT>:80`.
-
-Les mises à jour des configurations ci-dessus nécessitent un redémarrage de tous les conteneurs pour prendre effet :
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Passer du moteur de documents Elasticsearch à Infinity
-
-RAGFlow utilise Elasticsearch par défaut pour stocker le texte intégral et les vecteurs. Pour passer à [Infinity](https://github.com/infiniflow/infinity/), suivez ces étapes :
-
-1. Arrêtez tous les conteneurs en cours d'exécution :
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> `-v` supprimera les volumes des conteneurs Docker, et les données existantes seront effacées.
-
-2. Définissez `DOC_ENGINE` dans **docker/.env** sur `infinity`.
-3. Démarrez les conteneurs :
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Le passage à Infinity sur une machine Linux/arm64 n'est pas encore officiellement pris en charge.
-
-## 🔧 Construire une image Docker
-
-Cette image fait environ 2 Go et dépend de services LLM et d'embedding externes.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Ou si vous êtes derrière un proxy, vous pouvez passer des arguments de proxy :
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
+Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 
 ## 🔨 Lancer le service depuis les sources pour le développement
 
