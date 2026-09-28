@@ -185,3 +185,28 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 		t.Errorf("want nil component on error, got %T", c)
 	}
 }
+
+func TestNewParserComponentVisionEnhancementSetting(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		params  map[string]any
+		enabled bool
+	}{
+		{name: "absent", params: nil},
+		{name: "explicit false", params: map[string]any{"enable_vision_enhancement": false}},
+		{name: "explicit true", params: map[string]any{"enable_vision_enhancement": true}, enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			component, err := NewParserComponent(test.params)
+			if err != nil {
+				t.Fatalf("NewParserComponent: %v", err)
+			}
+			if got := component.(*ParserComponent).enableVisionEnhancement; got != test.enabled {
+				t.Fatalf("enableVisionEnhancement = %v, want %v", got, test.enabled)
+			}
+		})
+	}
+	if _, err := NewParserComponent(map[string]any{"enable_vision_enhancement": "true"}); err == nil || !strings.Contains(err.Error(), "must be a boolean") {
+		t.Fatalf("string switch error = %v, want boolean validation", err)
+	}
+}

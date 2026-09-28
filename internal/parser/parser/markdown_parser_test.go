@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -475,6 +476,46 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}
 	if encoded != "" || string(result) != "fake-png-bytes" {
 		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+}
+
+func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
+	previous := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = previous })
+
+	var fetches atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("abc"))
+	}))
+	defer server.Close()
+
+	markdown := "![first](" + server.URL + "/1)\n\n" +
+		"![second](" + server.URL + "/2)\n\n" +
+		"![third](" + server.URL + "/3)\n"
+	doc := markdownNew().Parse([]byte(markdown))
+	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
+	var items []map[string]any
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, budget); unresolved != 0 {
+		t.Fatalf("unresolved images = %d, want 0", unresolved)
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("remote fetches = %d, want 2 before the item limit", got)
+	}
+	if len(items) != 3 || items[0]["image"] != base64.StdEncoding.EncodeToString([]byte("abc")) {
+		t.Fatalf("first image was not retained: %+v", items)
+	}
+	for _, index := range []int{1, 2} {
+		if items[index]["image"] != nil || items[index]["media_omitted"] != true {
+			t.Fatalf("image %d = %+v, want omitted payload", index, items[index])
+		}
+	}
+	warnings := strings.Join(budget.warnings(), "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte document image budget") ||
+		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item document limit") {
+		t.Fatalf("warnings = %q, want document byte and item limit warnings", warnings)
 	}
 }
 

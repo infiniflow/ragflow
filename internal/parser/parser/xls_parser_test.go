@@ -3,10 +3,16 @@ package parser
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
 func createTestExcelBytes(t *testing.T) []byte {
@@ -110,5 +116,102 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	}
 	if len(resHTML.JSON) == 0 {
 		t.Errorf("resHTML.JSON should have items")
+	}
+}
+
+func TestXLSParser_ImagesUseLocalOCRBudget(t *testing.T) {
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	imageBytes := imageData.Bytes()
+	f := excelize.NewFile()
+	defer f.Close()
+	if err := f.AddPictureFromBytes("Sheet1", "C3", &excelize.Picture{
+		Extension: ".png",
+		File:      imageBytes,
+		Format:    &excelize.GraphicOptions{AltText: "sheet image"},
+	}); err != nil {
+		t.Fatalf("AddPictureFromBytes: %v", err)
+	}
+	var workbook bytes.Buffer
+	if err := f.Write(&workbook); err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+
+	previous := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = previous })
+	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true, OCRDetectErr: errors.New("xls OCR sentinel")}, true
+	})
+
+	p, err := NewXLSParser("excelize")
+	if err != nil {
+		t.Fatalf("NewXLSParser: %v", err)
+	}
+	result := p.ParseWithResult(t.Context(), "with-image.xls", workbook.Bytes())
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	var imageItem map[string]any
+	for _, item := range result.JSON {
+		if item["doc_type_kwd"] == "image" {
+			imageItem = item
+			break
+		}
+	}
+	if imageItem == nil || imageItem["image"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(imageBytes) {
+		t.Fatalf("image item = %+v, want retained picture payload", imageItem)
+	}
+	if warnings := strings.Join(result.Warnings, "\n"); !strings.Contains(warnings, "xls OCR sentinel") {
+		t.Fatalf("warnings = %q, want local OCR failure from the XLS path", warnings)
+	}
+}
+
+func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatalf("encode fixture: %v", err)
+	}
+	f := excelize.NewFile()
+	defer f.Close()
+	for i := 0; i <= maxEmbeddedMediaItems; i++ {
+		cell, err := excelize.CoordinatesToCellName(3, i+1)
+		if err != nil {
+			t.Fatalf("cell %d: %v", i, err)
+		}
+		if err := f.AddPictureFromBytes("Sheet1", cell, &excelize.Picture{Extension: ".png", File: imageData.Bytes()}); err != nil {
+			t.Fatalf("AddPictureFromBytes(%s): %v", cell, err)
+		}
+	}
+	var workbook bytes.Buffer
+	if err := f.Write(&workbook); err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+
+	previous := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = previous })
+	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true}, true
+	})
+	p, err := NewXLSParser("excelize")
+	if err != nil {
+		t.Fatalf("NewXLSParser: %v", err)
+	}
+	result := p.ParseWithResult(t.Context(), "many-images.xls", workbook.Bytes())
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	imageCount := 0
+	for _, item := range result.JSON {
+		if item["doc_type_kwd"] == "image" {
+			imageCount++
+		}
+	}
+	if imageCount != maxEmbeddedMediaItems {
+		t.Fatalf("image items = %d, want %d", imageCount, maxEmbeddedMediaItems)
+	}
+	if warnings := strings.Join(result.Warnings, "\n"); !strings.Contains(warnings, "stopped extracting embedded images after the 256-item document limit") {
+		t.Fatalf("warnings = %q, want image-count limit warning", warnings)
 	}
 }

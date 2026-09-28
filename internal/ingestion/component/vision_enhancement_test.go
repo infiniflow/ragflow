@@ -33,6 +33,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -125,6 +127,66 @@ func visionTestPNGBase64(t *testing.T) string {
 		t.Fatalf("encode image: %v", err)
 	}
 	return base64.StdEncoding.EncodeToString(encoded.Bytes())
+}
+
+func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T) {
+	previousAnalyzer := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = previousAnalyzer })
+	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true}, true
+	})
+
+	resolverCalls := 0
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolverCalls++
+		return fakeResolver(ctx, db, tenantID, modelType)
+	}, invoker.invoke, fakePrompt)
+	inputs := func() map[string]any {
+		return map[string]any{
+			"binary":    []byte(`<p><img src="data:image/png;base64,` + visionTestPNGBase64(t) + `" alt="figure"></p>`),
+			"file_type": "html",
+			"name":      "figure.html",
+			"tenant_id": "tenant-1",
+		}
+	}
+
+	defaultComponent, err := NewParserComponent(nil)
+	if err != nil {
+		t.Fatalf("NewParserComponent(nil): %v", err)
+	}
+	withoutVision, err := defaultComponent.Invoke(t.Context(), nil, inputs())
+	if err != nil {
+		t.Fatalf("default Invoke: %v", err)
+	}
+	if resolverCalls != 0 || len(invoker.images) != 0 {
+		t.Fatalf("default-off enhancement used model: %d resolves, %d VLM calls", resolverCalls, len(invoker.images))
+	}
+	withoutItems, ok := withoutVision["json"].([]map[string]any)
+	if !ok || len(withoutItems) == 0 {
+		t.Fatalf("default JSON = %T/%v", withoutVision["json"], withoutVision["json"])
+	}
+
+	enabledComponent, err := NewParserComponent(map[string]any{"enable_vision_enhancement": true})
+	if err != nil {
+		t.Fatalf("NewParserComponent(enabled): %v", err)
+	}
+	withVision, err := enabledComponent.Invoke(t.Context(), nil, inputs())
+	if err != nil {
+		t.Fatalf("enabled Invoke: %v", err)
+	}
+	if resolverCalls != 1 || len(invoker.images) != 1 {
+		t.Fatalf("enabled enhancement used model %d/%d times, want 1/1", resolverCalls, len(invoker.images))
+	}
+	withItems, ok := withVision["json"].([]map[string]any)
+	if !ok || len(withItems) == 0 {
+		t.Fatalf("enabled JSON = %T/%v", withVision["json"], withVision["json"])
+	}
+	withoutText, _ := withoutItems[0]["text"].(string)
+	withText, _ := withItems[0]["text"].(string)
+	if strings.Contains(withoutText, "a diagram of a pipeline") || !strings.Contains(withText, "a diagram of a pipeline") {
+		t.Fatalf("image texts without/with enhancement = %q / %q", withoutText, withText)
+	}
 }
 
 func TestVisionEnhancement_AppendsVLMToParserOCRText(t *testing.T) {
