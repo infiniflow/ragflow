@@ -29,9 +29,7 @@ import {
 
 import FormSheet from '../form-sheet/next';
 import { useIsPipeline } from '../hooks/use-is-pipeline';
-import {
-  hasPipelineNextOperators,
-} from '../utils/pipeline-connection';
+import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';

@@ -33,15 +33,15 @@ describe('isValidPipelineConnection', () => {
   });
 
   it('rejects a Parser feeding any non-chunker operator', () => {
-    expect(
-      isValidPipelineConnection(Operator.Parser, Operator.Tokenizer),
-    ).toBe(false);
-    expect(
-      isValidPipelineConnection(Operator.Parser, Operator.Extractor),
-    ).toBe(false);
-    expect(
-      isValidPipelineConnection(Operator.Parser, Operator.Compiler),
-    ).toBe(false);
+    expect(isValidPipelineConnection(Operator.Parser, Operator.Tokenizer)).toBe(
+      false,
+    );
+    expect(isValidPipelineConnection(Operator.Parser, Operator.Extractor)).toBe(
+      false,
+    );
+    expect(isValidPipelineConnection(Operator.Parser, Operator.Compiler)).toBe(
+      false,
+    );
     expect(isValidPipelineConnection(Operator.Parser, Operator.Parser)).toBe(
       false,
     );
@@ -115,10 +115,7 @@ describe('buildPipelineNextOperators', () => {
   });
 
   it('offers Compiler only when none is on the canvas', () => {
-    const offered = buildPipelineNextOperators(
-      undefined,
-      noOperator,
-    ).operators;
+    const offered = buildPipelineNextOperators(undefined, noOperator).operators;
     expect(offered).toContain(Operator.Compiler);
 
     const hasCompiler = (operator: Operator) => operator === Operator.Compiler;
@@ -139,10 +136,7 @@ describe('buildPipelineNextOperators', () => {
   });
 
   it('offers both chunker variants while the chunker slot is free', () => {
-    const result = buildPipelineNextOperators(
-      Operator.Tokenizer,
-      noOperator,
-    );
+    const result = buildPipelineNextOperators(Operator.Tokenizer, noOperator);
     expect(result.showChunker).toBe(true);
     expect(result.chunkerOperators).toEqual([
       Operator.TokenChunker,

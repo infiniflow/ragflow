@@ -118,13 +118,7 @@ export function useBulkOperateDataset({
         option,
       });
     },
-    [
-      documents,
-      runDocumentByIds,
-      selectedRowKeys,
-      t,
-      findDocumentParseGaps,
-    ],
+    [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
   const handleRunClick = useCallback(

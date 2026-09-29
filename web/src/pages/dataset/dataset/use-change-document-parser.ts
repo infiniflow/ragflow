@@ -5,8 +5,7 @@ import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
 
 export const useChangeDocumentParser = () => {
-  const { setDocumentPipelineParser, loading } =
-    useSetDocumentPipelineParser();
+  const { setDocumentPipelineParser, loading } = useSetDocumentPipelineParser();
   const [record, setRecord] = useState<IDocumentInfo>({} as IDocumentInfo);
 
   const {
@@ -33,7 +32,12 @@ export const useChangeDocumentParser = () => {
         }
       }
     },
-    [record?.id, record?.dataset_id, setDocumentPipelineParser, hideChangeParserModal],
+    [
+      record?.id,
+      record?.dataset_id,
+      setDocumentPipelineParser,
+      hideChangeParserModal,
+    ],
   );
 
   const handleShowChangeParserModal = useCallback(

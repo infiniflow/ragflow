@@ -21,11 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  StructureKind,
-  ViewMode,
-  ViewModeGenerateTypeMap,
-} from './constants';
+import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
 import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';

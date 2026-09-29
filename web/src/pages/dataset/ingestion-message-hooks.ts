@@ -78,13 +78,7 @@ export const useIngestionMessages = (
   newestIdRef.current = newestId;
 
   useEffect(() => {
-    if (
-      !enabled ||
-      !datasetId ||
-      !logId ||
-      terminal ||
-      finishing
-    ) {
+    if (!enabled || !datasetId || !logId || terminal || finishing) {
       return;
     }
     const interval = setInterval(async () => {
@@ -161,13 +155,7 @@ export const useIngestionMessages = (
   }, [datasetId, logId]);
 
   useEffect(() => {
-    if (
-      !terminal ||
-      finishingRef.current ||
-      !enabled ||
-      !datasetId ||
-      !logId
-    ) {
+    if (!terminal || finishingRef.current || !enabled || !datasetId || !logId) {
       return;
     }
     finishingRef.current = true;

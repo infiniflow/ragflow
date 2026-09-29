@@ -1,8 +1,5 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import {
-  DynamicForm,
-  DynamicFormRef,
-} from '@/components/dynamic-form';
+import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
 import { DialogProps } from '@radix-ui/react-dialog';
 import { memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';

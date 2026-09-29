@@ -101,9 +101,7 @@ describe('ParsingStatusCell', () => {
     });
     expect(getSection(container)).toHaveAttribute('data-state', 'running');
     expect(container.querySelector('svg.lucide-circle-x')).toBeInTheDocument();
-    expect(
-      container.querySelector('button[disabled]'),
-    ).not.toBeInTheDocument();
+    expect(container.querySelector('button[disabled]')).not.toBeInTheDocument();
   });
 
   it('masks the progress area with a loading overlay while STOPPING', () => {

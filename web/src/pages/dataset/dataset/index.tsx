@@ -92,10 +92,10 @@ export default function Dataset() {
 
   const { list, handleRunClick: handleOperationIconClick } =
     useBulkOperateDataset({
-    documents,
-    rowSelection,
-    setRowSelection,
-  });
+      documents,
+      rowSelection,
+      setRowSelection,
+    });
 
   const { selectedIds: selectedRowKeys } = useSelectedIds(
     rowSelection,

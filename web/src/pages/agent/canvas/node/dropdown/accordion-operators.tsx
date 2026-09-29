@@ -153,9 +153,7 @@ export function PipelineAccordionOperators({
   const { findNodeByName, getOperatorTypeFromId } = useGraphStore(
     (state) => state,
   );
-  const sourceOperator = getOperatorTypeFromId(nodeId) as
-    | Operator
-    | undefined;
+  const sourceOperator = getOperatorTypeFromId(nodeId) as Operator | undefined;
 
   const { operators, chunkerOperators, showChunker } = useMemo(
     () =>

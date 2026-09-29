@@ -7,6 +7,5 @@
  * agent canvas runs the agent/chat, not an ingestion debug preview, so it
  * must never show this tooltip.
  */
-export const debugRunLimitsTooltipKey = (
-  isPipeline: boolean,
-): string | null => (isPipeline ? 'flow.debugRunLimits' : null);
+export const debugRunLimitsTooltipKey = (isPipeline: boolean): string | null =>
+  isPipeline ? 'flow.debugRunLimits' : null;

@@ -32,8 +32,7 @@ export function NavTreeView() {
   } = useCompilationNav();
 
   const compiling =
-    navStatus === GenerateStatus.Running ||
-    navStatus === GenerateStatus.Failed;
+    navStatus === GenerateStatus.Running || navStatus === GenerateStatus.Failed;
   // First compile: no tree content to show yet, so replace the panels with
   // the progress board. A keywords-filtered empty result keeps the panels so
   // the user can keep editing the filter.
