@@ -907,6 +907,22 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
+	if len(req.ChunkIDs) > 0 {
+		requested := make(map[string]struct{}, len(req.ChunkIDs))
+		for _, id := range req.ChunkIDs {
+			requested[id] = struct{}{}
+		}
+		filtered := searchResp.Chunks[:0]
+		for _, chunk := range searchResp.Chunks {
+			if id, ok := chunk["id"].(string); ok {
+				if _, wanted := requested[id]; wanted {
+					filtered = append(filtered, chunk)
+				}
+			}
+		}
+		searchResp.Chunks = filtered
+		searchResp.Total = int64(len(filtered))
+	}
 
 	chunks := make([]map[string]interface{}, 0, len(searchResp.Chunks))
 	for _, chunk := range searchResp.Chunks {
