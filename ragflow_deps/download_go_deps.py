@@ -56,10 +56,10 @@ import hashlib
 import os
 import shutil
 import sys
+import tarfile
 import zipfile
 
 import requests
-from office_oxide_native import OFFICE_OXIDE_ARCHIVE, extract_office_oxide
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
 # FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_deps.py,
@@ -79,6 +79,7 @@ from office_oxide_native import OFFICE_OXIDE_ARCHIVE, extract_office_oxide
 # sidecar and re-download/re-extract, so a stale local copy never silently
 # lingers.
 ORT_VERSION = "1.29.0"
+OFFICE_OXIDE_ARCHIVE = "office_oxide-v0.1.12-linux-x86_64.tar.gz"
 
 
 def _ort_asset_name(version):
@@ -475,8 +476,6 @@ if __name__ == "__main__":
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
     native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
-    import tarfile
-
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
@@ -490,7 +489,9 @@ if __name__ == "__main__":
             continue
         target = os.path.join(native_deps_dir, subdir)
         if subdir == "office_oxide":
-            extract_office_oxide(archive_path, target)
+            os.makedirs(target, exist_ok=True)
+            with tarfile.open(archive_path) as tf:
+                tf.extractall(target)
             print(f"  Extracted {archive} → {target}")
             continue
         if os.path.isdir(target):
