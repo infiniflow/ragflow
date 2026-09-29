@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -197,5 +198,38 @@ func TestOpenAICompleteReturnsSuccessPayload(t *testing.T) {
 	}
 	if resp.TotalTokens != resp.PromptTokens+resp.CompletionTokens {
 		t.Fatalf("usage is inconsistent: %+v", resp)
+	}
+}
+
+func TestOpenAIStreamCancellationClosesProducer(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	results := make(chan AsyncChatResult)
+	pipelineStopped := make(chan struct{})
+	pipeline := &stubOpenAIPipeline{results: results}
+	svc := newOpenAIContractService(pipeline)
+
+	stream, err := svc.Stream(ctx, "user-1", "chat-1", validOpenAIChatRequest())
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	go func() {
+		<-pipeline.ctx.Done()
+		close(results)
+		close(pipelineStopped)
+	}()
+	cancel()
+
+	select {
+	case <-pipelineStopped:
+	case <-time.After(time.Second):
+		t.Fatal("pipeline did not receive cancellation")
+	}
+	select {
+	case _, ok := <-stream.Events:
+		if ok {
+			t.Fatal("unexpected event after cancellation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stream producer did not close its channel")
 	}
 }

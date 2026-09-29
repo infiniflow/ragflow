@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/entity"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -203,17 +204,27 @@ func (s *OpenAIChatService) Complete(
 
 	var finalResult AsyncChatResult
 	found := false
-	for result := range prepared.results {
-		if result.Final {
-			finalResult = result
-			found = true
-			break
+	for {
+		select {
+		case <-prepared.ctx.Done():
+			return nil, prepared.ctx.Err()
+		case result, ok := <-prepared.results:
+			if !ok {
+				if !found {
+					return nil, common.NewCodedError(common.CodeDataError, "AsyncChat returned no final result")
+				}
+				goto completed
+			}
+			if result.Final {
+				finalResult = result
+				found = true
+				drainOpenAIResults(prepared.results)
+				goto completed
+			}
 		}
 	}
-	if !found {
-		return nil, common.NewCodedError(common.CodeDataError, "AsyncChat returned no final result")
-	}
 
+completed:
 	content := strings.TrimSpace(finalResult.Answer)
 	completionTokens := tokenizer.NumTokensFromString(content)
 	resp := &OpenAICompletionResponse{
@@ -457,10 +468,15 @@ func (s *OpenAIChatService) prepare(
 		}
 	}
 
-	runCtx, finish := s.withLangfuse(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	langfuseCtx, shutdown := s.withLangfuse(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	runCtx, cancel := context.WithCancel(langfuseCtx)
+	finish := openAIFinish(cancel, shutdown)
 	asyncResults, asyncErr := s.pipeline.AsyncChat(runCtx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		finish()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, common.NewCodedError(common.CodeDataError, asyncErr.Error())
 	}
 	if asyncResults == nil {
@@ -478,6 +494,18 @@ func (s *OpenAIChatService) prepare(
 }
 
 func (s *OpenAIChatService) produceStream(prepared *preparedOpenAIChat, events chan<- OpenAIStreamEvent, chatID string) {
+	send := func(event OpenAIStreamEvent) bool {
+		if prepared.ctx.Err() != nil {
+			return false
+		}
+		select {
+		case events <- event:
+			return true
+		case <-prepared.ctx.Done():
+			return false
+		}
+	}
+
 	defer close(events)
 	defer prepared.finish()
 	defer common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
@@ -490,76 +518,98 @@ func (s *OpenAIChatService) produceStream(prepared *preparedOpenAIChat, events c
 		lastResult     AsyncChatResult
 	)
 
-	for result := range prepared.results {
-		lastResult = result
-
-		if result.Final {
-			finalReference = []FormattedChunk{}
-			if ref, ok := result.Reference["chunks"]; ok {
-				if chunks, ok := ref.([]map[string]interface{}); ok {
-					finalReference = formatChunks(chunks)
-				}
-			}
-			s.enrichChunksWithDocumentMetadata(
-				prepared.ctx,
-				finalReference,
-				prepared.request.Chat.TenantID,
-				prepared.request.IncludeRefMetadata,
-				prepared.request.MetadataFields,
-			)
-			completionTok = tokenizer.NumTokensFromString(result.Answer)
-			events <- OpenAIStreamEvent{
-				Kind:             OpenAIEventFinal,
-				FinalAnswer:      strings.TrimSpace(result.Answer),
-				FinalReference:   finalReference,
-				PromptTokens:     prepared.promptTokens,
-				CompletionTokens: completionTok,
-				TotalTokens:      prepared.promptTokens + completionTok,
-			}
+	for {
+		if prepared.ctx.Err() != nil {
+			drainOpenAIResults(prepared.results)
 			return
 		}
+		select {
+		case <-prepared.ctx.Done():
+			drainOpenAIResults(prepared.results)
+			return
+		case result, ok := <-prepared.results:
+			if !ok {
+				if finalReference == nil && prepared.request.NeedReference {
+					finalReference = []FormattedChunk{}
+					if ref, ok := lastResult.Reference["chunks"]; ok {
+						if chunks, ok := ref.([]map[string]interface{}); ok {
+							finalReference = formatChunks(chunks)
+						}
+					}
+				}
+				s.enrichChunksWithDocumentMetadata(
+					prepared.ctx,
+					finalReference,
+					prepared.request.Chat.TenantID,
+					prepared.request.IncludeRefMetadata,
+					prepared.request.MetadataFields,
+				)
+				_ = send(OpenAIStreamEvent{
+					Kind:             OpenAIEventFinal,
+					FinalAnswer:      strings.TrimSpace(fullContent),
+					FinalReference:   finalReference,
+					PromptTokens:     prepared.promptTokens,
+					CompletionTokens: completionTok,
+					TotalTokens:      prepared.promptTokens + completionTok,
+				})
+				return
+			}
+			lastResult = result
 
-		if result.Reasoning != "" {
-			completionTok += tokenizer.NumTokensFromString(result.Reasoning)
-			events <- OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}
-		}
+			if result.Final {
+				finalReference = []FormattedChunk{}
+				if ref, ok := result.Reference["chunks"]; ok {
+					if chunks, ok := ref.([]map[string]interface{}); ok {
+						finalReference = formatChunks(chunks)
+					}
+				}
+				s.enrichChunksWithDocumentMetadata(
+					prepared.ctx,
+					finalReference,
+					prepared.request.Chat.TenantID,
+					prepared.request.IncludeRefMetadata,
+					prepared.request.MetadataFields,
+				)
+				completionTok = tokenizer.NumTokensFromString(result.Answer)
+				if !send(OpenAIStreamEvent{
+					Kind:             OpenAIEventFinal,
+					FinalAnswer:      strings.TrimSpace(result.Answer),
+					FinalReference:   finalReference,
+					PromptTokens:     prepared.promptTokens,
+					CompletionTokens: completionTok,
+					TotalTokens:      prepared.promptTokens + completionTok,
+				}) {
+					drainOpenAIResults(prepared.results)
+					return
+				}
+				drainOpenAIResults(prepared.results)
+				return
+			}
 
-		if result.Answer != "" {
-			fullContent += result.Answer
-			completionTok += tokenizer.NumTokensFromString(result.Answer)
-			events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: result.Answer}
-			if deltaCount < 3 {
-				common.Debug("OpenAI first content delta",
-					zap.Int("delta_index", deltaCount),
-					zap.String("delta", result.Answer),
-					zap.Int("delta_len", len(result.Answer)))
-				deltaCount++
+			if result.Reasoning != "" {
+				completionTok += tokenizer.NumTokensFromString(result.Reasoning)
+				if !send(OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}) {
+					drainOpenAIResults(prepared.results)
+					return
+				}
+			}
+
+			if result.Answer != "" {
+				fullContent += result.Answer
+				completionTok += tokenizer.NumTokensFromString(result.Answer)
+				if !send(OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: result.Answer}) {
+					drainOpenAIResults(prepared.results)
+					return
+				}
+				if deltaCount < 3 {
+					common.Debug("OpenAI first content delta",
+						zap.Int("delta_index", deltaCount),
+						zap.String("delta", result.Answer),
+						zap.Int("delta_len", len(result.Answer)))
+					deltaCount++
+				}
 			}
 		}
-	}
-
-	if finalReference == nil && prepared.request.NeedReference {
-		finalReference = []FormattedChunk{}
-		if ref, ok := lastResult.Reference["chunks"]; ok {
-			if chunks, ok := ref.([]map[string]interface{}); ok {
-				finalReference = formatChunks(chunks)
-			}
-		}
-	}
-	s.enrichChunksWithDocumentMetadata(
-		prepared.ctx,
-		finalReference,
-		prepared.request.Chat.TenantID,
-		prepared.request.IncludeRefMetadata,
-		prepared.request.MetadataFields,
-	)
-	events <- OpenAIStreamEvent{
-		Kind:             OpenAIEventFinal,
-		FinalAnswer:      strings.TrimSpace(fullContent),
-		FinalReference:   finalReference,
-		PromptTokens:     prepared.promptTokens,
-		CompletionTokens: completionTok,
-		TotalTokens:      prepared.promptTokens + completionTok,
 	}
 }
 
@@ -576,10 +626,27 @@ func (s *OpenAIChatService) withLangfuse(
 	}
 	runCtx := context.WithValue(ctx, langfuseCtxKey, client)
 	return runCtx, func() {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 		_ = client.Shutdown(shutdownCtx)
 	}
+}
+
+func openAIFinish(cancel context.CancelFunc, shutdown func()) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			shutdown()
+		})
+	}
+}
+
+func drainOpenAIResults(results <-chan AsyncChatResult) {
+	go func() {
+		for range results {
+		}
+	}()
 }
 
 // MergeGenerationConfig merges request config into dialog.LLMSetting (mutating).
