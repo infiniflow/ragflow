@@ -1136,8 +1136,7 @@ RAGFlow.retrieve(
   rerank_id: str | None = None,
   keyword: bool = False,
   cross_languages: list[str] | None = None,
-  metadata_condition: dict | None = None,
-  toc_enhance: bool = False)
+  metadata_condition: dict | None = None)
 ```
 
 Retrieves chunks from specified datasets.
@@ -1194,10 +1193,6 @@ The languages that should be translated into, in order to achieve keywords retri
 ##### metadata_condition: `dict`
 
 filter condition for `meta_fields`.
-
-##### toc_enhance: `bool`
-
-Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
 
 #### Returns
 
