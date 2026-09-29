@@ -20,9 +20,17 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
-	if err != nil {
+	// Tenant authorization: GetByIDAndTenantID compares the dataset's tenant_id
+	// to its second argument, but here the caller passes userID. Resolve the
+	// ownership via Accessible (matches DeleteDocuments / GetDocumentPreview)
+	// and load the kb separately so subsequent code can keep using kb.TenantID
+	// (#20411).
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("can't find this dataset")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -108,8 +116,16 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	tenantID := userID
-	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenantID)
+	// Tenant authorization: GetByIDAndTenantID compares the dataset's tenant_id
+	// to its second argument; the previous code passed userID through a variable
+	// named tenantID, which only happened to work when userID happened to equal
+	// the dataset's tenant_id. Resolve ownership via Accessible (matches
+	// DeleteDocuments / GetDocumentPreview) and load the kb separately so the
+	// rest of the function can keep using kb.TenantID (#20411).
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("you don't own the dataset")
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("you don't own the dataset")
