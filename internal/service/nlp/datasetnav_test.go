@@ -288,13 +288,9 @@ func (stubNavEmbedder) Encode(_ context.Context, _ string, texts []string) ([][]
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
 		// The ES document index template (mapping.json, the ragflow_*
-		// dynamic_templates) maps q_<dim>_vec to a dense_vector field only for
-		// the standard embedding dimensions 512/768/1024/1536. The integration
-		// test runs NavService.Search as a real knn query against that index,
-		// so the synthetic vector must use one of those dimensions — otherwise
-		// ES dynamically maps q_<dim>_vec as a plain float array and the knn
-		// query fails with "[knn] queries are only supported on [dense_vector]
-		// fields". 1024 is the canonical RAGFlow embedding size.
+		// dynamic_templates) maps any q_<dim>_vec field to dense_vector, so the
+		// synthetic vector may use any dimension. 1024 is the canonical
+		// RAGFlow embedding size.
 		dim := 1024
 		v := make([]float32, dim)
 		for d := 0; d < dim; d++ {
