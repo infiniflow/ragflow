@@ -143,19 +143,25 @@ export const normalizeParserConfig = (
   }
   if (chunk_token_num !== undefined && chunk_token_num !== null) {
     scoped['GeneralChunker:SixApplesFall'] = {
-      ...(scoped['GeneralChunker:SixApplesFall'] as Record<string, any> | undefined),
+      ...(scoped['GeneralChunker:SixApplesFall'] as
+        | Record<string, any>
+        | undefined),
       chunk_token_size: chunk_token_num,
     };
   }
   if (metadata && typeof metadata === 'object') {
     scoped['Extractor:AutoExtractDefault'] = {
-      ...(scoped['Extractor:AutoExtractDefault'] as Record<string, any> | undefined),
+      ...(scoped['Extractor:AutoExtractDefault'] as
+        | Record<string, any>
+        | undefined),
       metadata,
     };
   }
   if (parentChild) {
     scoped['GeneralChunker:SixApplesFall'] = {
-      ...(scoped['GeneralChunker:SixApplesFall'] as Record<string, any> | undefined),
+      ...(scoped['GeneralChunker:SixApplesFall'] as
+        | Record<string, any>
+        | undefined),
       parent_child: parentChild,
     };
   }

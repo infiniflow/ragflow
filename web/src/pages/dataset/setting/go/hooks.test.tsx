@@ -64,7 +64,9 @@ describe('useSaveDatasetSetting parser_config metadata scoping', () => {
     // key is emitted, and the extractor node's own metadata wins over any stale
     // top-level copy present in the form payload.
     expect(payload.parser_config).not.toHaveProperty('metadata');
-    expect(payload.parser_config['Extractor:AutoExtractDefault'].metadata).toEqual({
+    expect(
+      payload.parser_config['Extractor:AutoExtractDefault'].metadata,
+    ).toEqual({
       enabled: true,
       metadata: [],
       built_in_metadata: [{ key: 'update_time', type: 'time' }],
