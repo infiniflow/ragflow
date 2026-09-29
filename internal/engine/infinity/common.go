@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
+	"unicode"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
 
@@ -158,6 +159,28 @@ func fieldKeyword(fieldName string) bool {
 	return false
 }
 
+// keywordFilterCondition renders a filter for a *_kwd column.
+//
+// Infinity declares these columns as analyzed varchars, so filter_fulltext()
+// tokenizes the query and a multi-token value matches NOTHING. Every navigation
+// cluster name is multi-token, so on Infinity the nav child lookup
+// (parent_kwd=<cluster name>), the cluster merge/member updates and
+// cleanupEmptyCluster all silently matched no row. Elasticsearch answers such
+// filters exactly — its dynamic template maps *_kwd to keyword and the ES engine
+// emits term/terms — so a value containing whitespace uses the exact form too.
+// That cannot narrow an existing match (a whitespace-bearing value matched no
+// row before); single-token values keep filter_fulltext for the legacy
+// ###-joined columns whose filter relies on token matching (see fieldJSONList).
+func keywordFilterCondition(field string, value string) string {
+	escaped := escapeFilterValue(value)
+	// unicode.IsSpace, not an ASCII set: a full-width or non-breaking space
+	// tokenizes the same way and would hit the same silent no-match.
+	if strings.ContainsFunc(value, unicode.IsSpace) {
+		return fmt.Sprintf("%s = '%s'", convertMatchingField(field), escaped)
+	}
+	return fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(field), escaped)
+}
+
 // fieldJSON reports fields stored as Infinity JSON columns. The Infinity Go
 // SDK expects JSON columns as encoded strings, not Go slices or maps. Column
 // names are matched case-insensitively so the write path (transformChunkFields)
@@ -185,6 +208,36 @@ func fieldJSONList(fieldName string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// joinBalanced renders a boolean chain as a balanced tree instead of the flat,
+// left-deep chain strings.Join produces. Infinity's filter string is parsed by
+// the SDK into a Thrift expression tree (infinity-go-sdk expression_parser.go)
+// and sent as that tree, so a left-deep chain of N terms nests N levels deep: a
+// filter with 22 OR'ed filter_fulltext(...) clauses (the wiki contribution and
+// graph reads build exactly that) made Infinity abort the connection with
+//
+//	Thrift: ... TProtocolException: Exceeded depth limit
+//
+// which our callers then see as "InfinityException(7018, Failed to execute
+// query: EOF)". A balanced tree keeps the depth at log2(N) — 22 terms pass
+// against a live Infinity, verified — while matching exactly the same rows.
+// The parenthesization is boolean-equivalent to the flat chain (a single term
+// needs no parentheses).
+func joinBalanced(parts []string, op string) string {
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		// Keep the single-element form parenthesized: callers (and tests) relied
+		// on a self-contained group, e.g. "(1=0)" for a never-matching list.
+		return "(" + parts[0] + ")"
+	case 2:
+		return "(" + parts[0] + op + parts[1] + ")"
+	default:
+		mid := (len(parts) + 1) / 2
+		return "(" + joinBalanced(parts[:mid], op) + op + joinBalanced(parts[mid:], op) + ")"
 	}
 }
 
@@ -333,38 +386,37 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 		// JSON-list fields use member containment. Legacy tables stored these
 		// columns as ###-joined varchar values, so retain their full-text fallback.
 		if fieldJSONList(k) && tableColumns != nil {
-			jsonConditions := jsonListFilterConditions(k, v, tableColumns)
-			if len(jsonConditions) > 0 {
-				conditions = append(conditions, "("+strings.Join(jsonConditions, " OR ")+")")
+			if jsonConditions := jsonListFilterConditions(k, v, tableColumns); len(jsonConditions) > 0 {
+				conditions = append(conditions, joinBalanced(jsonConditions, " OR "))
 			}
 			continue
 		}
 
-		// Handle keyword fields -> filter_fulltext with converted field name
+		// Handle keyword fields -> exact match, or filter_fulltext for the
+		// single-token values Infinity can tokenize (see keywordFilterCondition).
 		if fieldKeyword(k) {
 			var orConds []string
-			addFullText := func(item string) {
-				item = strings.ReplaceAll(item, "'", "''")
-				orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), item))
+			addKeyword := func(item string) {
+				orConds = append(orConds, keywordFilterCondition(k, item))
 			}
 
 			switch val := v.(type) {
 			case []string:
 				for _, item := range val {
-					addFullText(item)
+					addKeyword(item)
 				}
 			case []interface{}:
 				for _, item := range val {
-					addFullText(fmt.Sprintf("%v", item))
+					addKeyword(fmt.Sprintf("%v", item))
 				}
 			case string:
-				addFullText(val)
+				addKeyword(val)
 			default:
-				addFullText(fmt.Sprintf("%v", val))
+				addKeyword(fmt.Sprintf("%v", val))
 			}
 
 			if len(orConds) > 0 {
-				conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
+				conditions = append(conditions, joinBalanced(orConds, " OR "))
 			}
 			continue
 		}
