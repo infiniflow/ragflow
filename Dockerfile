@@ -249,7 +249,7 @@ RUN rm -f /etc/nginx/sites-enabled/default
 
 
 COPY conf conf
-COPY agent/templates agent/templates
+COPY internal/agent/templates agent/templates
 COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
