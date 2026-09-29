@@ -247,7 +247,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
    如果服务启动异常，再查看对应容器日志：
 
    ```bash
-   docker compose -f docker-compose.yml logs --tail 50 ragflow-cpu
+   docker logs --tail 50 ragflow-cpu
    ```
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
