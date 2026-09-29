@@ -15,51 +15,90 @@
  */
 
 import {
+  AdminAuthorization,
+  AdminToken,
+  AdminUserInfo,
   Authorization,
   ThinkingLevel,
   Token,
   UserInfo,
 } from '@/constants/authorization';
 import { getSearchValue } from './common-util';
-const KeySet = [Authorization, Token, UserInfo];
 
-const storage = {
-  getAuthorization: () => {
-    return localStorage.getItem(Authorization);
-  },
-  getToken: () => {
-    return localStorage.getItem(Token);
-  },
-  getUserInfo: () => {
-    return localStorage.getItem(UserInfo);
-  },
-  getUserInfoObject: () => {
-    const userInfoStr = localStorage.getItem(UserInfo);
-    return userInfoStr ? JSON.parse(userInfoStr) : null;
-  },
-  setAuthorization: (value: string) => {
-    localStorage.setItem(Authorization, value);
-  },
-  setToken: (value: string) => {
-    localStorage.setItem(Token, value);
-  },
-  setUserInfo: (value: string | Record<string, unknown>) => {
-    const valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
-    localStorage.setItem(UserInfo, valueStr);
-  },
-  setItems: (pairs: Record<string, string>) => {
-    Object.entries(pairs).forEach(([key, value]) => {
-      localStorage.setItem(key, value);
-    });
-  },
-  removeAuthorization: () => {
-    localStorage.removeItem(Authorization);
-  },
-  removeAll: () => {
-    KeySet.forEach((x) => {
-      localStorage.removeItem(x);
-    });
-  },
+type SessionStorage = {
+  getAuthorization: () => string | null;
+  getToken: () => string | null;
+  getUserInfo: () => string | null;
+  getUserInfoObject: () => Record<string, unknown> | null;
+  setAuthorization: (value: string) => void;
+  setToken: (value: string) => void;
+  setUserInfo: (value: string | Record<string, unknown>) => void;
+  setItems: (pairs: Record<string, string>) => void;
+  removeAuthorization: () => void;
+  removeAll: () => void;
+};
+
+function createSessionStorage(
+  authKey: string,
+  tokenKey: string,
+  userInfoKey: string,
+): SessionStorage {
+  const keySet = [authKey, tokenKey, userInfoKey];
+
+  const logicalToPhysicalKey: Record<string, string> = {
+    [Authorization]: authKey,
+    [Token]: tokenKey,
+    [UserInfo]: userInfoKey,
+    [AdminAuthorization]: authKey,
+    [AdminToken]: tokenKey,
+    [AdminUserInfo]: userInfoKey,
+  };
+
+  return {
+    getAuthorization: () => localStorage.getItem(authKey),
+    getToken: () => localStorage.getItem(tokenKey),
+    getUserInfo: () => localStorage.getItem(userInfoKey),
+    getUserInfoObject: () => {
+      const userInfoStr = localStorage.getItem(userInfoKey);
+      return userInfoStr ? JSON.parse(userInfoStr) : null;
+    },
+    setAuthorization: (value: string) => {
+      localStorage.setItem(authKey, value);
+    },
+    setToken: (value: string) => {
+      localStorage.setItem(tokenKey, value);
+    },
+    setUserInfo: (value: string | Record<string, unknown>) => {
+      const valueStr =
+        typeof value !== 'string' ? JSON.stringify(value) : value;
+      localStorage.setItem(userInfoKey, valueStr);
+    },
+    setItems: (pairs: Record<string, string>) => {
+      Object.entries(pairs).forEach(([key, value]) => {
+        const storageKey = logicalToPhysicalKey[key] ?? key;
+        localStorage.setItem(storageKey, value);
+      });
+    },
+    removeAuthorization: () => {
+      localStorage.removeItem(authKey);
+    },
+    removeAll: () => {
+      keySet.forEach((key) => {
+        localStorage.removeItem(key);
+      });
+    },
+  };
+}
+
+const userStorage = createSessionStorage(Authorization, Token, UserInfo);
+
+export const adminStorage = createSessionStorage(
+  AdminAuthorization,
+  AdminToken,
+  AdminUserInfo,
+);
+
+const languageStorage = {
   setLanguage: (lng: string) => {
     localStorage.setItem('lng', lng);
   },
@@ -74,19 +113,27 @@ const storage = {
   },
 };
 
+const storage = {
+  ...userStorage,
+  ...languageStorage,
+};
+
 export const getAuthorization = () => {
   const auth = getSearchValue('auth');
   const authorization = auth
     ? 'Bearer ' + auth
-    : storage.getAuthorization() || '';
+    : userStorage.getAuthorization() || '';
 
   return authorization;
+};
+
+export const getAdminAuthorization = () => {
+  return adminStorage.getAuthorization() || '';
 };
 
 export default storage;
 
 // Will not jump to the login page
 export function redirectToLogin() {
-  // const env = import.meta.env;
   window.location.href = location.origin + `/login`;
 }
