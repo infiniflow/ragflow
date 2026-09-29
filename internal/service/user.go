@@ -841,29 +841,30 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
+// setTenantInfoFields lists the tenant columns SetTenantInfo accepts from the
+// request. The matching tenant_*_id columns are resolved server-side from the
+// caller's own models.
+var setTenantInfoFields = []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
+
 // SetTenantInfo updates tenant model configuration
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	_ = userID
-	tenantDAO := dao.NewTenantDAO()
-	updates := make(map[string]interface{})
-
-	for key, value := range req.Raw {
-		if key == "tenant_id" {
-			continue
-		}
-		updates[key] = value
+	if req.TenantID == nil || *req.TenantID != userID {
+		return common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
-	tenantID := ""
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
+	tenantDAO := dao.NewTenantDAO()
+	updates := make(map[string]interface{})
+	for _, key := range setTenantInfoFields {
+		if value, ok := req.Raw[key]; ok {
+			updates[key] = value
+		}
 	}
 
 	tenantLLMService := NewTenantLLMService()
-	updates = tenantLLMService.EnsureTenantModelIDForParams(ctx, tenantID, updates)
+	updates = tenantLLMService.EnsureTenantModelIDForParams(ctx, userID, updates)
 
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
+		if err := tenantDAO.Update(ctx, dao.DB, userID, updates); err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
