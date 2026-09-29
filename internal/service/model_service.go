@@ -125,7 +125,23 @@ func splitRightAnchoredModelName(compositeName string) (modelName, instanceName,
 		return parts[0], "", ""
 	}
 	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
+}
+
+// maskAPIKey returns a display-safe representation of a model-provider
+// API key: the first 3 chars + "***" + the last 4 chars. The full key
+// must never appear in a user-facing response — see PR #20277 for the
+// same pattern on the user-profile endpoint. Empty input returns "" so
+// callers can use the result unconditionally.
+func maskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 7 {
+		// Too short to safely expose even the prefix; show a constant mask.
+		return "***"
+	}
+	return key[:3] + "***" + key[len(key)-4:]
 }
 
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
@@ -969,7 +985,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"provider_id":   provider.ID,
 		"region":        extraFields["region"],
 		"base_url":      extraFields["base_url"],
-		"api_key":       instance.APIKey,
+		"api_key":       maskAPIKey(instance.APIKey),
 		"status":        instance.Status,
 	}
 
