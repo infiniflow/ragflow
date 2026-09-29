@@ -64,6 +64,7 @@ type IMAPConnector struct {
 	password      string
 	batchSize     int
 	sizeThreshold int64
+	pollRangeDays int
 
 	dial func(ctx context.Context, host string, port int, username, password string) (imapClient, error)
 }
@@ -93,6 +94,7 @@ func NewIMAPConnector(config map[string]any) (*IMAPConnector, error) {
 		password:      stringConfig(credentials["imap_password"]),
 		batchSize:     configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultIMAPBatchSize),
 		sizeThreshold: threshold,
+		pollRangeDays: configInt(config["poll_range"], 0),
 		dial:          dialRealIMAPClient,
 	}, nil
 }
@@ -137,11 +139,16 @@ func (c *IMAPConnector) OpenSync(ctx context.Context, request SyncRequest) (Sync
 	if err != nil {
 		return nil, err
 	}
+	windowStart := request.WindowStart
+	if windowStart == nil && c.pollRangeDays > 0 && !request.WindowEnd.IsZero() {
+		start := request.WindowEnd.AddDate(0, 0, -c.pollRangeDays)
+		windowStart = &start
+	}
 	session := &imapSyncSession{
 		connector:   c,
 		client:      client,
 		batchSize:   c.batchSize,
-		windowStart: request.WindowStart,
+		windowStart: windowStart,
 		windowEnd:   request.WindowEnd,
 		hasMore:     true,
 	}

@@ -646,3 +646,79 @@ func TestIMAPPruneReturnsSlimDocs(t *testing.T) {
 		t.Fatalf("prune fetch = %v, want [1 2]", client.fetched)
 	}
 }
+
+func imapFullSyncIDs(t *testing.T, config map[string]any, client *fakeIMAPClient, end time.Time) []string {
+	t.Helper()
+	connector, err := NewIMAPConnector(config)
+	if err != nil {
+		t.Fatalf("NewIMAPConnector failed: %v", err)
+	}
+	connector.dial = func(ctx context.Context, host string, port int, username, password string) (imapClient, error) {
+		return client, nil
+	}
+	session, err := connector.OpenSync(context.Background(), SyncRequest{FromBeginning: true, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	var ids []string
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if err == io.EOF {
+			return ids
+		}
+		if err != nil {
+			t.Fatalf("NextBatch failed: %v", err)
+		}
+		for _, doc := range batch.Documents {
+			ids = append(ids, doc.SourceID)
+		}
+	}
+}
+
+func TestIMAPFullSyncHonorsPollRange(t *testing.T) {
+	end := mustTime(t, "2026-03-01T00:00:00Z")
+	newClient := func() *fakeIMAPClient {
+		return &fakeIMAPClient{
+			mailboxes:       []string{"INBOX"},
+			searchByMailbox: map[string][]uint32{"INBOX": {1, 2}},
+			rawBySeq: map[uint32][]byte{
+				1: rawIMAPEmail("old", "Old mail", "Thu, 1 Jan 2026 09:00:00 +0000", "old body"),
+				2: rawIMAPEmail("new", "New mail", "Fri, 20 Feb 2026 09:00:00 +0000", "new body"),
+			},
+		}
+	}
+	config := map[string]any{
+		"imap_host":    "imap.example.com",
+		"imap_port":    993,
+		"imap_mailbox": []any{"INBOX"},
+		"poll_range":   float64(45),
+		"credentials":  map[string]any{"imap_username": "user", "imap_password": "pass"},
+	}
+
+	client := newClient()
+	ids := imapFullSyncIDs(t, config, client, end)
+	if len(ids) != 1 || ids[0] != "<new@example.com>" {
+		t.Fatalf("synced %v, want only <new@example.com> (poll_range is 45 days)", ids)
+	}
+	wantSince := end.AddDate(0, 0, -45)
+	if len(client.searchCalls) == 0 {
+		t.Fatalf("no IMAP search was issued")
+	}
+	for _, call := range client.searchCalls {
+		if !call.since.Equal(wantSince) {
+			t.Fatalf("search since = %v, want %v", call.since, wantSince)
+		}
+	}
+
+	delete(config, "poll_range")
+	client = newClient()
+	ids = imapFullSyncIDs(t, config, client, end)
+	if len(ids) != 2 {
+		t.Fatalf("synced %v without poll_range, want both messages", ids)
+	}
+	for _, call := range client.searchCalls {
+		if !call.since.IsZero() {
+			t.Fatalf("search since = %v without poll_range, want an unbounded search", call.since)
+		}
+	}
+}
