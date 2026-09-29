@@ -1,0 +1,85 @@
+{
+  "components": {
+            "begin": {
+                "obj":{
+                    "component_name": "Begin",
+                    "params": {
+                      "prologue": "Hi there!"
+                    }
+                },
+                "downstream": ["categorize:0"],
+                "upstream": []
+            },
+            "categorize:0": {
+                "obj": {
+                    "component_name": "Categorize",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "category_description": {
+                        "product_related": {
+                          "description": "The question is about the product usage, appearance and how it works.",
+                          "to": ["agent:0"]
+                        },
+                        "others": {
+                          "description": "The question is not about the product usage, appearance and how it works.",
+                          "to": ["message:0"]
+                        }
+                      }
+                    }
+                },
+                "downstream": [],
+                "upstream": ["begin"]
+            },
+            "message:0": {
+                "obj":{
+                    "component_name": "Message",
+                    "params": {
+                      "content": [
+                        "Sorry, I don't know. I'm an AI bot."
+                      ]
+                    }
+                },
+                "downstream": [],
+                "upstream": ["categorize:0"]
+            },
+            "agent:0": {
+                "obj": {
+                    "component_name": "Agent",
+                    "params": {
+                      "llm_id": "deepseek-chat",
+                      "sys_prompt": "You are a smart researcher. You could generate proper queries to search. According to the search results, you could deside next query if the result is not enough.",
+                      "temperature": 0.2,
+                      "llm_enabled_tools": [
+                        {
+                            "component_name": "TavilySearch",
+                            "params": {
+                              "api_key": "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"
+                            }
+                        }
+                      ]
+                    }
+                },
+                "downstream": ["message:1"],
+                "upstream": ["categorize:0"]
+            },
+            "message:1": {
+                "obj": {
+                    "component_name": "Message",
+                    "params": {
+                      "content": ["{agent:0@content}"]
+                    }
+                },
+                "downstream": [],
+                "upstream": ["agent:0"]
+            }
+  },
+  "history": [],
+  "path": [],
+  "retrieval": {"chunks": [], "doc_aggs": []},
+  "globals": {
+    "sys.query": "",
+    "sys.user_id": "",
+    "sys.conversation_turns": 0,
+    "sys.files": []
+  }
+}

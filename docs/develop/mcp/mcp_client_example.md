@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 13
 title: RAGFlow MCP Client Examples
 sidebar_label: RAGFlow MCP Client Examples
 slug: /mcp_client
@@ -7,96 +7,240 @@ sidebar_custom_props: {
   categoryIcon: LucideBookMarked
 }
 ---
-
 # RAGFlow MCP Client Examples
 
-These clients call the MCP endpoint provided by RAGFlow's Go API server. To use tools from an external MCP server inside a RAGFlow Agent, see [Connect an External MCP Server to RAGFlow](./connect_an_external_mcp_to_ragflow.md).
+Python and curl MCP client examples.
 
-The examples use the built-in Go API route at `http://127.0.0.1:9380/api/v1/mcp`. Replace the host or port if your API is exposed through a reverse proxy. [Acquire a RAGFlow API key](../acquire_ragflow_api_key.md) and send it as `Authorization: Bearer <RAGFLOW_API_KEY>`.
+To use third-party tools inside a RAGFlow agent, see [Connect external MCP tools](./connect_external_mcp_servers.md).
 
-## Python client
+------
 
-This example targets version 2 of the MCP Python SDK, which requires Python 3.10 or later:
+## Example MCP Python Client
 
-```bash
-python -m pip install 'mcp>=2,<3'
-```
+We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
-The current SDK uses `streamable_http_client`. HTTP headers belong on an `httpx2.AsyncClient` passed to that transport:
+:::info IMPORTANT
+If your MCP server is running in host mode, include your acquired API key in your client's `headers` when connecting asynchronously to it:
 
 ```python
-import asyncio
-
-import httpx2
-from mcp import Client
-from mcp.client.streamable_http import streamable_http_client
-
-
-async def main() -> None:
-    async with httpx2.AsyncClient(
-        headers={"Authorization": "Bearer <RAGFLOW_API_KEY>"},
-        timeout=httpx2.Timeout(30.0, read=300.0),
-    ) as http_client:
-        transport = streamable_http_client(
-            "http://127.0.0.1:9380/api/v1/mcp",
-            http_client=http_client,
-        )
-        async with Client(transport) as client:
-            tools = await client.list_tools()
-            print([tool.name for tool in tools.tools])
-
-            result = await client.call_tool(
-                "ragflow_retrieval",
-                {"question": "How do I install Neovim?"},
-            )
-            print(result.content)
-
-
-asyncio.run(main())
+async with sse_client("http://localhost:9382/sse", headers={"api_key": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
 ```
 
-Entering the `Client` context negotiates the supported MCP protocol automatically. The Go server currently supports `2025-11-25`, `2025-06-18`, `2025-03-26`, and `2024-11-05`.
+Alternatively, to comply with [OAuth 2.1 Section 5](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-12#section-5), you can run the following code *instead* to connect to your MCP server:
 
-## curl smoke checks
+```python
+async with sse_client("http://localhost:9382/sse", headers={"Authorization": "YOUR_KEY_HERE"}) as streams:
+    # Rest of your code...
+```
+:::
 
-The Go Streamable HTTP handler is stateless: each POST uses a temporary MCP session with default initialization parameters. The following commands are therefore **independent smoke checks**. The initialization request demonstrates protocol negotiation; it does not create a reusable session for the later commands.
+## Use Curl to Interact with the RAGFlow MCP Server
 
-### Initialize
+When interacting with the MCP server via HTTP requests, follow this initialization sequence:
+
+1. **The client sends an `initialize` request** with protocol version and capabilities.
+2. **The server replies with an `initialize` response**, including the supported protocol and capabilities.
+3. **The client confirms readiness with an `initialized` notification**.
+   _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
+
+:::tip NOTE
+For more information about this initialization process, see [here](https://modelcontextprotocol.io/docs/concepts/architecture#1-initialization).
+:::
+
+In the following sections, we will walk you through a complete tool calling process.
+
+### 1. Obtain a Session ID
+
+Each curl request with the MCP server must include a session ID:
 
 ```bash
-curl -sS http://127.0.0.1:9380/api/v1/mcp \
-  -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+$ curl -N -H "api_key: YOUR_API_KEY" http://127.0.0.1:9382/sse
 ```
 
-A successful response contains `result.serverInfo.name` set to `ragflow-mcp-server` and a negotiated `protocolVersion`.
+:::tip NOTE
+See [here](../acquire_ragflow_api_key.md) for information about acquiring an API key.
+:::
 
-### List tools
+#### Transport
+
+The transport will stream messages such as tool results, server responses, and keep-alive pings.
+
+_The server returns the session ID:_
 
 ```bash
-curl -sS http://127.0.0.1:9380/api/v1/mcp \
-  -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+event: endpoint
+data: /messages/?session_id=5c6600ef61b845a788ddf30dceb25c54
 ```
 
-The response lists `ragflow_retrieval`, `ragflow_list_datasets`, and `ragflow_list_chats`. A normal MCP SDK client performs initialization and sends the initialized notification automatically; raw stateless smoke checks do not need to reuse that state.
+### 2. Send an `Initialize` Request
 
-### Call a tool
+The client sends an `initialize` request with protocol version and capabilities:
 
 ```bash
-curl -sS http://127.0.0.1:9380/api/v1/mcp \
-  -H 'Authorization: Bearer <RAGFLOW_API_KEY>' \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"ragflow_retrieval","arguments":{"question":"How do I install Neovim?"}}}'
+session_id="5c6600ef61b845a788ddf30dceb25c54" && \
+
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "1.0",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "ragflow-mcp-client",
+        "version": "0.1"
+      }
+    }
+  }' && \
 ```
 
-The MCP result contains a text content item whose text is the JSON retrieval result. Add `dataset_ids` or other supported arguments under `arguments` when needed. See [RAGFlow MCP Tools](./mcp_tools.md) for the complete schemas.
+#### Transport
 
-## Legacy SSE clients
+_The server replies with an `initialize` response, including the supported protocol and capabilities:_
 
-The built-in `/api/v1/mcp` route does not provide SSE. When SSE is enabled on the optional listener, legacy clients connect to `http://127.0.0.1:9382/sse`; the server provides the corresponding `/messages/` URL. Use an MCP SDK to manage the SSE session and include the same authentication header on both requests.
+```bash
+event: message
+data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{"headers":{"host":"127.0.0.1:9382","user-agent":"curl/8.7.1","accept":"*/*","api_key":"ragflow-xxxxxxxxxxxx","accept-encoding":"gzip"}},"tools":{"listChanged":false}},"serverInfo":{"name":"docker-ragflow-cpu-1","version":"1.9.4"}}}
+```
+
+### 3. Acknowledge Readiness
+
+The client confirms readiness with an `initialized` notification:
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized",
+    "params": {}
+  }' && \
+```
+
+ _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
+
+### 4. Tool Listing
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/list",
+    "params": {}
+  }' && \
+```
+
+#### Transport
+
+```bash
+event: message
+data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"ragflow_retrieval","description":"Retrieve relevant chunks from the RAGFlow retrieve interface based on the question, using the specified dataset_ids and optionally document_ids. Below is the list of all available datasets, including their descriptions and IDs. If you're unsure which datasets are relevant to the question, simply pass all dataset IDs to the function.","inputSchema":{"type":"object","properties":{"dataset_ids":{"type":"array","items":{"type":"string"}},"document_ids":{"type":"array","items":{"type":"string"}},"question":{"type":"string"}},"required":["dataset_ids","question"]}}]}}
+
+```
+
+### 5. Tool Calling
+
+```bash
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "ragflow_retrieval",
+      "arguments": {
+        "question": "How to install neovim?",
+        "dataset_ids": ["DATASET_ID_HERE"],
+        "document_ids": []
+      }
+    }
+  }'
+```
+
+#### Transport
+
+```bash
+event: message
+data: {"jsonrpc":"2.0","id":4,"result":{...}}
+
+```
+
+### A Complete Curl Example
+
+```bash
+session_id="YOUR_SESSION_ID" && \
+
+# Step 1: Initialize request
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "1.0",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "ragflow-mcp-client",
+        "version": "0.1"
+      }
+    }
+  }' && \
+
+sleep 2 && \
+
+# Step 2: Initialized notification
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "notifications/initialized",
+    "params": {}
+  }' && \
+
+sleep 2 && \
+
+# Step 3: Tool listing
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/list",
+    "params": {}
+  }' && \
+
+sleep 2 && \
+
+# Step 4: Tool call
+curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
+  -H "api_key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "ragflow_retrieval",
+      "arguments": {
+        "question": "How to install neovim?",
+        "dataset_ids": ["DATASET_ID_HERE"],
+        "document_ids": []
+      }
+    }
+  }'
+
+```

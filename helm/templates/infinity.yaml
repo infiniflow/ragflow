@@ -1,0 +1,122 @@
+{{- if eq .Values.env.DOC_ENGINE "infinity" -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  {{- with .Values.infinity.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.infinity.storage.capacity }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: infinity
+  {{- with .Values.infinity.deployment.strategy }}
+  updateStrategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: infinity
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      {{- if or .Values.global.imagePullSecrets .Values.infinity.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.infinity.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: infinity
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.infinity.image.repository) }}:{{ .Values.infinity.image.tag }}
+        {{- with .Values.infinity.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+        ports:
+          - containerPort: 23817
+            name: thrift
+          - containerPort: 23820
+            name: http
+          - containerPort: 5432
+            name: psql
+        volumeMounts:
+          - mountPath: /var/infinity
+            name: infinity-data
+        {{- with .Values.infinity.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+        securityContext:
+          capabilities:
+            add:
+              - "NET_BIND_SERVICE"
+          seccompProfile:
+            type: RuntimeDefault
+        livenessProbe:
+          httpGet:
+            path: /admin/node/current
+            port: 23820
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 120
+      volumes:
+        - name: infinity-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-infinity
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-infinity
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: infinity
+spec:
+  selector:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: infinity
+  ports:
+    - protocol: TCP
+      port: 23817
+      targetPort: thrift
+      name: thrift
+    - protocol: TCP
+      port: 23820
+      targetPort: http
+      name: http
+    - protocol: TCP
+      port: 5432
+      targetPort: psql
+      name: psql
+  type: {{ .Values.infinity.service.type }}
+{{- end -}}

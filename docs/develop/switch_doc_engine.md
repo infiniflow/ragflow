@@ -15,24 +15,24 @@ Switch your doc engine from Elasticsearch to Infinity.
 
 RAGFlow uses Elasticsearch by default for storing full text and vectors. To switch to [Infinity](https://github.com/infiniflow/infinity/), follow these steps:
 
-1. Back up the existing deployment before switching engines. Switching engines creates a new document-index store; reindex the documents after startup.
+:::caution WARNING
+Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
+:::
 
-2. Stop the Go deployment:
+1. Stop all running containers:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml down
+   $ docker compose -f docker/docker-compose.yml down -v
    ```
 
 :::caution WARNING
-Do not add `-v` unless you intentionally want to delete the deployment's data volumes.
+`-v` will delete the docker container volumes, and the existing data will be cleared.
 :::
 
-3. Set `DOC_ENGINE=infinity` in **docker/.env**.
+2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
 
-4. Start the Go deployment:
+3. Start the containers:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+   $ docker compose -f docker-compose.yml up -d
    ```
-
-5. Reindex the documents and verify retrieval before retiring the previous document-engine data.

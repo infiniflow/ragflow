@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Configure the Indexer Component
 
-The **Indexer** component indexes data for optimal retrieval. It is the final step, writing processed data into the configured document engine.
+The **Indexer** component indexes data for optimal retrieval. It is the final step, writing processed data into search engines such as Infinity, Elasticsearch and OpenSearch.
 
 Key configurations:
 

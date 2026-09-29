@@ -9,679 +9,590 @@ sidebar_custom_props: {
 ---
 # RAGFlow CLI
 
-RAGFlow CLI is the Go command-line client for administering RAGFlow. In Admin mode it connects to the Go Admin Service, manages users and system settings, and shows the health of dependencies and registered RAGFlow processes.
+The RAGFlow CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
 
-## Install and start
+## Using the RAGFlow CLI
 
-For regular use, install the prebuilt Go CLI from the latest RAGFlow GitHub Release. The installer detects the operating system and CPU architecture, downloads the matching binary, verifies it against `SHA256SUMS`, and then installs it.
+1. Ensure the Admin Service is running.
 
-Default installation on Linux and macOS:
+2. Install ragflow-cli.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | sh
-```
+   ```bash
+   pipx install ragflow-cli==0.27.2
+   ```
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.27.2`.
 
-When `VERSION` is omitted, the installer resolves the latest GitHub Release and installs the CLI that matches the current operating system and CPU architecture. To install a specific version, pass `VERSION` to the installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh \
-  | VERSION=v1.0.0-rc1 sh
-```
+3. Launch the CLI client:
 
-Both forms are supported. Pin a version for production or reproducible installations so that a later Release does not change the installed version.
+   ```bash
+   ragflow-cli -h 127.0.0.1 -p 9381
+   ```
 
-The default installation path is `/usr/local/bin/ragflow-cli`. If the current user cannot write to that directory, the installer requests `sudo` permission. To install into a user-writable directory instead, set `INSTALL_DIR` and ensure that directory is on `PATH`:
+    You will be prompted to enter the superuser's password to log in.
+    See [Default Administrative Account](#default-administrative-account) for how the initial password is chosen.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
-```
+    **Parameters:**
 
-Default installation on Windows PowerShell:
+    - -h: RAGFlow admin server host address
 
-```powershell
-irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 | iex
-```
+    - -p: RAGFlow admin server port
 
-When no version is specified, the Windows installer also uses the latest GitHub Release. To install a specific version, download the script and pass `-Version`:
+## Default Administrative Account
 
-```powershell
-irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 -OutFile install.ps1
-./install.ps1 -Version v1.0.0-rc1
-```
+- Username: admin@ragflow.io
+- Password: the value of the `ADMIN_DEFAULT_PASSWORD` (or `DEFAULT_SUPERUSER_PASSWORD`) environment variable; if neither is set when the admin server first starts, a random password is generated and written once to `logs/admin_bootstrap_password.txt` (mode 0600). Change it after the first login.
 
-The Windows installer installs `ragflow-cli.exe` under `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds that directory to the user `PATH`. Restart the terminal if the installer reports that `PATH` was updated.
+## Supported Commands
 
-Verify the installation:
+Commands are case-insensitive and must be terminated with a semicolon(;).
 
-```bash
-ragflow-cli --version
-```
+### Service Manage Commands
 
-The installation scripts are maintained in [`tools/scripts/install.sh`](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/install.sh) and [`tools/scripts/install.ps1`](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/install.ps1).
+`LIST SERVICES;`
 
-If you are developing or modifying the CLI, build the Go server and CLI binaries from the repository root instead:
+- Lists all available services within the RAGFlow system.
 
-```bash
-bash build.sh --all
-```
+- [Example](#example-list-services)
 
-Use `--all` for the initial build from a fresh checkout. After the native libraries and C++ bindings are available, use `bash build.sh --go` for subsequent Go-only rebuilds.
+`SHOW SERVICE <id>;`
 
-Before starting Admin, start the required dependencies and complete the standalone database migration as described in [Start supporting services](../../develop/launch_ragflow_from_source.md#2-start-supporting-services) and [Migrate and launch the Go backend](../../develop/launch_ragflow_from_source.md#3-migrate-and-launch-the-go-backend). The CLI does not start or migrate the server for you.
+- Shows detailed status information for the service identified by **id**.
+- [Example](#example-show-service)
 
-For a source-development checkout, start the Admin Service with `RAGFLOW_DEV_MODE=true` to bypass the code and database version downgrade check. This setting does not run database migrations or change the schema. Do not set it in production. Start Admin before the API server, ingestors, and syncers:
+`SHOW VERSION;`
 
-```bash
-RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
-```
+- Shows RAGFlow version.
+- [Example](#example-show-version)
 
-If this creates the first superuser, its email is `admin@ragflow.io` and its initial password is `admin`. Change that password immediately after the first login. The option does not reset an existing superuser's password.
+### User Management Commands
 
-Then start the CLI in Admin mode. It connects to `127.0.0.1:9381` by default:
+`LIST USERS;`
 
-```bash
-ragflow-cli --admin
-```
+- Lists all users known to the system.
+- [Example](#example-list-users)
 
-When using a binary built from source, replace `ragflow-cli` with `./bin/ragflow-cli` in the following examples.
+`SHOW USER <username>;`
 
-To connect to another Admin Service, pass a `host:port` value:
+- Shows details and permissions for the user specified by **email**. The username must be enclosed in single or double quotes.
+- [Example](#example-show-user)
 
-```bash
-ragflow-cli --admin --host 192.0.2.10:9381
-```
+`CREATE USER <username> <password>;`
 
-To log in when starting the CLI, provide the administrator email address and enter the password at the prompt:
+- Create user by username and password. The username and password must be enclosed in single or double quotes.
+- [Example](#example-create-user)
 
-```bash
-ragflow-cli --admin \
-  --host 127.0.0.1:9381 \
-  --user admin@ragflow.io
-```
+`DROP USER <username>;`
 
-Avoid passing a real password with `--password`: command-line arguments can be visible to other local processes and may be retained in shell history. If you used the initial password, change it after logging in with `ALTER USER PASSWORD 'admin@ragflow.io' '<new_password>';`.
+- Removes the specified user from the system. Use with caution.
+- [Example](#example-drop-user)
 
-| Option | Description |
-| --- | --- |
-| `--admin`, `-admin` | Start in Admin mode. |
-| `-h`, `--host <host:port>` | Admin Service address. The default is `127.0.0.1:9381`. |
-| `-u`, `--user <email>` | Administrator email address. |
-| `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
-| `-k`, `--key <path>` | Key file used by the client. |
-| `-o`, `--output <format>` | Output format: `table`, `plain`, or `json`. |
-| `-v`, `--verbose` | Enable verbose output. |
+`ALTER USER PASSWORD <username> <new_password>;`
 
-## Commands
+- Changes the password for the specified user.
+- [Example](#example-alter-user-password)
 
-### Syntax conventions
+`ALTER USER ACTIVE <username> <on/off>;`
 
-- `<parameter>` is required and must be replaced with an actual value.
-- `[OPTION '<value>']` is optional. Omit the entire segment when it is not needed.
-- Command keywords are case-insensitive and are shown in uppercase.
-- Keep the quotation marks around string values.
-- End SQL-like commands with a semicolon (`;`).
-- `RAGFlow(admin)>` is the interactive prompt. Enter only the command after the prompt.
-- Commands that access protected Admin resources require an authenticated administrator session. `LOGIN ADMIN`, `PING`, `SHOW VERSION`, `SHOW CURRENT`, `SHOW ADMIN SERVER`, `LIST API SERVER`, `SHOW API SERVER`, and meta-commands do not require an existing login.
+- Changes the user to active or inactive.
+- [Example](#example-alter-user-active)
 
-### 1. Session and server commands
+`GENERATE KEY FOR USER <username>;`
 
-#### 1.1 LOGIN ADMIN
+- Generates a new API key for the specified user.
+- [Example](#example-generate-key)
 
-Logs in to the Admin Service with an administrator account. If `PASSWORD` is omitted, the CLI prompts for the password.
+`LIST KEYS OF <username>;`
 
-**Syntax**
+- Lists all API keys associated with the specified user.
+- [Example](#example-list-keys)
 
-```sql
-LOGIN ADMIN '<email>' [PASSWORD '<password>'];
-```
+`DROP KEY <key> OF <username>;`
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Administrator email address. |
-| `[PASSWORD '<password>']` | No | Administrator password. Omit this segment to enter the password interactively. |
+- Deletes a specific API key for the specified user.
+- [Example](#example-drop-key)
 
-**Example**
+### Data and Agent Commands
 
-```text
-RAGFlow(admin)> LOGIN ADMIN 'admin@ragflow.io' PASSWORD '<password>';
-```
+`LIST DATASETS OF <username>;`
 
-#### 1.2 LOGOUT
+- Lists the datasets associated with the specified user.
+- [Example](#example-list-datasets-of-user)
 
-Logs out of the current Admin session and clears the login token.
+`LIST AGENTS OF <username>;`
 
-**Syntax**
+- Lists the agents associated with the specified user.
+- [Example](#example-list-agents-of-user)
 
-```sql
-LOGOUT;
-```
+### System Info
 
-**Example**
+`SHOW VERSION;`
+- Display the current RAGFlow version.
+- [Example](#example-show-version)
 
-```text
-RAGFlow(admin)> LOGOUT;
-SUCCESS
-```
+`GRANT ADMIN <username>`
+- Grant administrator privileges to the specified user.
+- [Example](#example-grant-admin)
 
-#### 1.3 PING
+`REVOKE ADMIN <username>`
+- Revoke administrator privileges from the specified user.
+- [Example](#example-revoke-admin)
 
-Checks whether the Admin Service is reachable.
+`LIST VARS`
+- List all system settings.
+- [Example](#example-list-vars)
 
-**Syntax**
+`SHOW VAR <var_name>`
+- Display the content of a specific system configuration/setting by its name or name prefix.
+- [Example](#example-show-var)
 
-```sql
-PING;
-```
+`SET VAR <var_name> <var_value>`
+- Set the value for a specified configuration item.
+- [Example](#example-set-var)
 
-**Example**
+`LIST CONFIGS`
+- List all system configurations.
+- [Example](#example-list-configs)
 
-```text
-RAGFlow(admin)> PING;
-SUCCESS
-```
+`LIST ENVS`
+- List all system environments which can accessed by Admin service.
+- [Example](#example-list-environments)
 
-#### 1.4 SHOW VERSION
+### Meta-Commands
 
-Shows the RAGFlow version and edition reported by the Admin Service.
+- \? or \help
+  Shows help information for the available commands.
+- \q or \quit
+  Exits the CLI application.
+- [Example](#example-meta-commands)
 
-**Syntax**
+### Examples
 
-```sql
-SHOW VERSION;
-```
+<span id="example-list-services"></span>
 
-**Example**
+- List all available services.
 
-```text
-RAGFlow(admin)> SHOW VERSION;
 ```
+ragflow> list services;
+command: list services;
+Listing all services
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
+| extra                                                                                     | host      | id | name          | port  | service_type   | status  |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
+| {}                                                                                        | 0.0.0.0   | 0  | ragflow_0     | 9380  | ragflow_server | Timeout |
+| {'meta_type': 'mysql', 'password': 'infini_rag_flow', 'username': 'root'}                 | localhost | 1  | mysql         | 5455  | meta_data      | Alive   |
+| {'password': 'infini_rag_flow', 'store_type': 'minio', 'user': 'rag_flow'}                | localhost | 2  | minio         | 9000  | file_store     | Alive   |
+| {'password': 'infini_rag_flow', 'retrieval_type': 'elasticsearch', 'username': 'elastic'} | localhost | 3  | elasticsearch | 1200  | retrieval      | Alive   |
+| {'db_name': 'default_db', 'retrieval_type': 'infinity'}                                   | localhost | 4  | infinity      | 23817 | retrieval      | Timeout |
+| {'database': 1, 'mq_type': 'redis', 'password': 'infini_rag_flow'}                        | localhost | 5  | redis         | 6379  | message_queue  | Alive   |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
 
-#### 1.5 SHOW CURRENT
+```
 
-Shows the current CLI mode, server connection, authentication state, and output format.
+<span id="example-show-service"></span>
 
-**Syntax**
+- Show ragflow_server.
 
-```sql
-SHOW CURRENT;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW CURRENT;
+ragflow> show service 0;
+command: show service 0;
+Showing service: 0
+Service ragflow_0 is alive. Detail:
+Confirm elapsed: 26.0 ms.
 ```
-
-#### 1.6 SHOW ADMIN SERVER
 
-Shows the Admin Service connection stored by the CLI.
+- Show mysql.
 
-**Syntax**
-
-```sql
-SHOW ADMIN SERVER;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW ADMIN SERVER;
+ragflow> show service 1;
+command: show service 1;
+Showing service: 1
+Service mysql is alive. Detail:
++---------+----------+------------------+------+------------------+------------------------+-------+-----------------+
+| command | db       | host             | id   | info             | state                  | time  | user            |
++---------+----------+------------------+------+------------------+------------------------+-------+-----------------+
+| Daemon  | None     | localhost        | 5    | None             | Waiting on empty queue | 16111 | event_scheduler |
+| Sleep   | rag_flow | 172.18.0.1:40046 | 1610 | None             |                        | 2     | root            |
+| Query   | rag_flow | 172.18.0.1:35882 | 1629 | SHOW PROCESSLIST | init                   | 0     | root            |
++---------+----------+------------------+------+------------------+------------------------+-------+-----------------+
 ```
-
-### 2. Service commands
-
-The Admin Service combines dependency health checks with heartbeat registrations from Go API servers, ingestors, and file syncers. The runtime service types are `api_server`, `ingestor`, and `file_syncer`. The former `task_executor` service type is not used.
-
-#### 2.1 LIST SERVICES
 
-Lists infrastructure dependencies and runtime services registered through heartbeats.
+- Show minio.
 
-**Syntax**
-
-```sql
-LIST SERVICES;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST SERVICES;
+ragflow> show service 2;
+command: show service 2;
+Showing service: 2
+Service minio is alive. Detail:
+Confirm elapsed: 2.1 ms.
 ```
 
-The result can include MySQL, Elasticsearch, MinIO, the Kvrocks cache, the NATS message queue, Go API servers, ingestors, and file syncers.
+- Show elasticsearch.
 
-#### 2.2 SHOW SERVICE
-
-Shows the current status of one service. Use the service name returned by `LIST SERVICES`, not a numeric ID.
-
-**Syntax**
-
-```sql
-SHOW SERVICE '<service_name>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<service_name>` | Yes | Service name returned by `LIST SERVICES`, such as `mysql`. |
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW SERVICE 'mysql';
+ragflow> show service 3;
+command: show service 3;
+Showing service: 3
+Service elasticsearch is alive. Detail:
++----------------+------+--------------+---------+----------------+--------------+---------------+--------------+------------------------------+----------------------------+-----------------+-------+---------------+---------+-------------+---------------------+--------+------------+--------------------+
+| cluster_name   | docs | docs_deleted | indices | indices_shards | jvm_heap_max | jvm_heap_used | jvm_versions | mappings_deduplicated_fields | mappings_deduplicated_size | mappings_fields | nodes | nodes_version | os_mem  | os_mem_used | os_mem_used_percent | status | store_size | total_dataset_size |
++----------------+------+--------------+---------+----------------+--------------+---------------+--------------+------------------------------+----------------------------+-----------------+-------+---------------+---------+-------------+---------------------+--------+------------+--------------------+
+| docker-cluster | 717  | 86           | 37      | 42             | 3.76 GB      | 1.74 GB       | 21.0.1+12-29 | 6575                         | 48.0 KB                    | 8521            | 1     | ['8.11.3']    | 7.52 GB | 4.55 GB     | 61                  | green  | 4.60 MB    | 4.60 MB            |
++----------------+------+--------------+---------+----------------+--------------+---------------+--------------+------------------------------+----------------------------+-----------------+-------+---------------+---------+-------------+---------------------+--------+------------+--------------------+
 ```
-
-### 3. User commands
-
-#### 3.1 LIST USERS
 
-Lists RAGFlow users.
+- Show infinity.
 
-**Syntax**
-
-```sql
-LIST USERS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST USERS;
+ragflow> show service 4;
+command: show service 4;
+Showing service: 4
+Fail to show service, code: 500, message: Infinity is not in use.
 ```
-
-#### 3.2 SHOW USER
 
-Shows details for one user.
+- Show redis.
 
-**Syntax**
-
-```sql
-SHOW USER '<email>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW USER 'alice@example.com';
+ragflow> show service 5;
+command: show service 5;
+Showing service: 5
+Service redis is alive. Detail:
++-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
+| blocked_clients | connected_clients | instantaneous_ops_per_sec | mem_fragmentation_ratio | redis_version | server_mode | total_commands_processed | total_system_memory | used_memory |
++-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
+| 0               | 2                 | 1                         | 10.41                   | 7.2.4         | standalone  | 10446                    | 30.84G              | 1.10M       |
++-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
 ```
-
-#### 3.3 CREATE USER
+<span id="example-show-version"></span>
 
-Creates a user with the standard `user` role.
+- Show RAGFlow version
 
-**Syntax**
-
-```sql
-CREATE USER '<email>' '<password>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Email address for the new user. |
-| `<password>` | Yes | Initial password for the new user. |
-
-**Example**
-
-```text
-RAGFlow(admin)> CREATE USER 'alice@example.com' 'Alice@123456';
-SUCCESS
+ragflow> show version;
++-----------------------+
+| version               |
++-----------------------+
+| v0.21.0-241-gc6cf58d5 |
++-----------------------+
 ```
 
-#### 3.4 ALTER USER ACTIVE
+<span id="example-list-users"></span>
 
-Activates or deactivates a user.
+- List all user.
 
-**Syntax**
-
-```sql
-ALTER USER ACTIVE '<email>' <on|off>;
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
-| `<on\|off>` | Yes | `on` activates the user; `off` deactivates the user. |
-
-**Example**
-
-```text
-RAGFlow(admin)> ALTER USER ACTIVE 'alice@example.com' off;
-SUCCESS
+ragflow> list users;
+command: list users;
+Listing all users
++-------------------------------+----------------------+-----------+----------+
+| create_date                   | email                | is_active | nickname |
++-------------------------------+----------------------+-----------+----------+
+| Mon, 22 Sep 2025 10:59:04 GMT | admin@ragflow.io     | 1         | admin    |
+| Sun, 14 Sep 2025 17:36:27 GMT | lynn_inf@hotmail.com | 1         | Lynn     |
++-------------------------------+----------------------+-----------+----------+
 ```
 
-#### 3.5 ALTER USER PASSWORD
+<span id="example-show-user"></span>
 
-Changes a user's password.
+- Show specified user.
 
-**Syntax**
-
-```sql
-ALTER USER PASSWORD '<email>' '<new_password>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
-| `<new_password>` | Yes | New password. |
-
-**Example**
-
-```text
-RAGFlow(admin)> ALTER USER PASSWORD 'alice@example.com' 'NewPassword@123';
-SUCCESS
+ragflow> show user "admin@ragflow.io";
+command: show user "admin@ragflow.io";
+Showing user: admin@ragflow.io
++-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
+| create_date                   | email            | is_active | is_anonymous | is_authenticated | is_superuser | language | last_login_time | login_channel | status | update_date                   |
++-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
+| Mon, 22 Sep 2025 10:59:04 GMT | admin@ragflow.io | 1         | 0            | 1                | True         | Chinese  | None            | None          | 1      | Mon, 22 Sep 2025 10:59:04 GMT |
++-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
 ```
-
-#### 3.6 DROP USER
 
-Deletes a user and associated data.
+<span id="example-create-user"></span>
 
-An active user cannot be deleted. Run `ALTER USER ACTIVE '<email>' off;` before `DROP USER`. Otherwise, the Admin Service returns `user is active and can't be deleted. Please deactivate the user first`.
+- Create new user.
 
-**Syntax**
-
-```sql
-DROP USER '<email>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Email address of a deactivated user. |
-
-**Example**
-
-```text
-RAGFlow(admin)> ALTER USER ACTIVE 'alice@example.com' off;
-SUCCESS
-RAGFlow(admin)> DROP USER 'alice@example.com';
-SUCCESS
+ragflow> create user "example@ragflow.io" "psw";
+command: create user "example@ragflow.io" "psw";
+Create user: example@ragflow.io, password: psw, role: user
++----------------------------------+--------------------+----------------------------------+--------------+---------------+----------+
+| access_token                     | email              | id                               | is_superuser | login_channel | nickname |
++----------------------------------+--------------------+----------------------------------+--------------+---------------+----------+
+| 5cdc6d1e9df111f099b543aee592c6bf | example@ragflow.io | 5cdc6ca69df111f099b543aee592c6bf | False        | password      |          |
++----------------------------------+--------------------+----------------------------------+--------------+---------------+----------+
 ```
 
-### 4. Configuration commands
+<span id="example-alter-user-password"></span>
 
-#### 4.1 SHOW VAR
+- Alter user password.
 
-Shows a runtime setting by its exact name or name prefix.
-
-**Syntax**
-
-```sql
-SHOW VAR '<name>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<name>` | Yes | Setting name or prefix, such as `mail.timeout`. |
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW VAR 'mail.timeout';
+ragflow> alter user password "example@ragflow.io" "newpsw";
+command: alter user password "example@ragflow.io" "newpsw";
+Alter user: example@ragflow.io, password: newpsw
+Password updated successfully!
 ```
-
-#### 4.2 LIST VARS
 
-Lists runtime settings.
+<span id="example-alter-user-active"></span>
 
-**Syntax**
+- Alter user active, turn off.
 
-```sql
-LIST VARS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST VARS;
+ragflow> alter user active "example@ragflow.io" off;
+command: alter user active "example@ragflow.io" off;
+Alter user example@ragflow.io activate status, turn off.
+Turn off user activate status successfully!
 ```
 
-#### 4.3 LIST CONFIGS
+<span id="example-drop-user"></span>
 
-Lists the effective Admin Service configuration. This command does not list service health; use `LIST SERVICES` for that purpose.
+- Drop user.
 
-**Syntax**
-
-```sql
-LIST CONFIGS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST CONFIGS;
+ragflow> Drop user "example@ragflow.io";
+command: Drop user "example@ragflow.io";
+Drop user: example@ragflow.io
+Successfully deleted user. Details:
+Start to delete owned tenant.
+- Deleted 2 tenant-LLM records.
+- Deleted 0 langfuse records.
+- Deleted 1 tenant.
+- Deleted 1 user-tenant records.
+- Deleted 1 user.
+Delete done!
 ```
 
-#### 4.4 LIST ENVS
+Delete user's data at the same time.
 
-Lists the environment summary visible to the Admin Service.
+<span id="example-generate-key"></span>
 
-**Syntax**
+- Generate API key for user.
 
-```sql
-LIST ENVS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST ENVS;
+admin> generate key for user "example@ragflow.io";
+Generating API key for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| beta                             | create_date                   | create_time   | tenant_id                        | token                                               | update_date | update_time |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | None        | None        |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
 ```
-
-### 5. Ingestion commands
-
-#### 5.1 LIST INGESTORS
 
-Lists ingestors that have registered with the Admin Service through heartbeats.
+<span id="example-list-keys"></span>
 
-**Syntax**
+- List all API keys for user.
 
-```sql
-LIST INGESTORS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST INGESTORS;
+admin> list keys of "example@ragflow.io";
+Listing API keys for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| beta                             | create_date                   | create_time   | dialog_id | source | tenant_id                        | token                                               | update_date                   | update_time   |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | None      | None   | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
 ```
 
-#### 5.2 LIST INGESTION TASKS
+<span id="example-drop-key"></span>
 
-Lists ingestion tasks known to the Admin Service.
+- Drop API key for user.
 
-**Syntax**
-
-```sql
-LIST INGESTION TASKS;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST INGESTION TASKS;
+admin> drop key "ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus" of "example@ragflow.io";
+Dropping API key for user: example@ragflow.io
+API key deleted successfully
 ```
-
-### 6. API server commands
-
-`LIST API SERVER` and `SHOW API SERVER` inspect API server connections saved in the CLI configuration. They do not query the Admin Service heartbeat registry. To find running Go API servers registered by heartbeat, use `LIST SERVICES` and look for `type=api_server`.
-
-#### 6.1 LIST API SERVER
 
-Lists API server connections saved in the local CLI configuration.
+<span id="example-list-datasets-of-user"></span>
 
-**Syntax**
+- List the specified user's dataset.
 
-```sql
-LIST API SERVER;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> LIST API SERVER;
+ragflow> list datasets of "lynn_inf@hotmail.com";
+command: list datasets of "lynn_inf@hotmail.com";
+Listing all datasets of user: lynn_inf@hotmail.com
++-----------+-------------------------------+---------+----------+---------------+------------+--------+-----------+-------------------------------+
+| chunk_num | create_date                   | doc_num | language | name          | permission | status | token_num | update_date                   |
++-----------+-------------------------------+---------+----------+---------------+------------+--------+-----------+-------------------------------+
+| 29        | Mon, 15 Sep 2025 11:56:59 GMT | 12      | Chinese  | test_dataset  | me         | 1      | 12896     | Fri, 19 Sep 2025 17:50:58 GMT |
+| 4         | Sun, 28 Sep 2025 11:49:31 GMT | 6       | Chinese  | dataset_share | team       | 1      | 1121      | Sun, 28 Sep 2025 14:41:03 GMT |
++-----------+-------------------------------+---------+----------+---------------+------------+--------+-----------+-------------------------------+
 ```
-
-An empty local configuration produces `No data to print` even when a Go API server is running and registered with the Admin Service.
 
-#### 6.2 SHOW API SERVER
+<span id="example-list-agents-of-user"></span>
 
-Shows one API server connection from the local CLI configuration.
+- List the specified user's agents.
 
-**Syntax**
-
-```sql
-SHOW API SERVER '<server_name>';
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<server_name>` | Yes | Local API server configuration name, such as `default`. |
-
-**Example**
-
-```text
-RAGFlow(admin)> SHOW API SERVER 'default';
+ragflow> list agents of "lynn_inf@hotmail.com";
+command: list agents of "lynn_inf@hotmail.com";
+Listing all agents of user: lynn_inf@hotmail.com
++-----------------+-------------+------------+-----------------+
+| canvas_category | canvas_type | permission | title           |
++-----------------+-------------+------------+-----------------+
+| agent           | None        | team       | research_helper |
++-----------------+-------------+------------+-----------------+
 ```
 
-If the name does not exist in the local configuration, the command returns `api_server=N/A`.
+<span id="example-show-version"></span>
 
-### 7. Message queue commands
+- Display the current RAGFlow version.
 
-The MQ commands operate on the NATS JetStream task stream used by ingestors. When an ingestor is running, it can consume a published test message before a subsequent `MQ LIST` or `MQ PULL` command observes it.
-
-#### 7.1 MQ SHOW
+```
+ragflow> show version;
+show_version
++-----------------------+
+| version               |
++-----------------------+
+| v0.25.4-24-g6f60e9f9e |
++-----------------------+
+```
 
-Shows message queue statistics, including consumer, message, pending, waiting, and acknowledgement counts.
+<span id="example-grant-admin"></span>
 
-**Syntax**
+- Grant administrator privileges to the specified user.
 
-```sql
-MQ SHOW;
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> MQ SHOW;
+ragflow> grant admin "anakin.skywalker@ragflow.io";
+Grant successfully!
 ```
-
-#### 7.2 MQ LIST
 
-Lists messages currently retained in the task stream. The optional `PENDING` keyword is accepted by the CLI.
+<span id="example-revoke-admin"></span>
 
-**Syntax**
+- Revoke administrator privileges from the specified user.
 
-```sql
-MQ LIST [PENDING];
 ```
+ragflow> revoke admin "anakin.skywalker@ragflow.io";
+Revoke successfully!
+```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `[PENDING]` | No | Requests the pending-message form of the command. |
+<span id="example-list-vars"></span>
 
-**Example**
+- List all system settings.
 
-```text
-RAGFlow(admin)> MQ LIST;
 ```
-
-#### 7.3 MQ PUBLISH
+ragflow> list vars;
++-----------+---------------------+--------------+-----------+
+| data_type | name                | setting_type | value     |
++-----------+---------------------+--------------+-----------+
+| string    | default_role        | config       | user      |
+| bool      | enable_whitelist    | config       | true      |
+| string    | mail.default_sender | config       |           |
+| string    | mail.password       | config       |           |
+| integer   | mail.port           | config       | 15        |
+| string    | mail.server         | config       | localhost |
+| integer   | mail.timeout        | config       | 10        |
+| bool      | mail.use_ssl        | config       | true      |
+| bool      | mail.use_tls        | config       | false     |
+| string    | mail.username       | config       |           |
++-----------+---------------------+--------------+-----------+
+```
 
-Publishes a test message to the ingestion task subject.
+<span id="example-show-var"></span>
 
-**Syntax**
+- Display the content of a specific system configuration/setting by its name or name prefix.
 
-```sql
-MQ PUBLISH '<message>';
 ```
+ragflow> show var mail.server;
++-----------+-------------+--------------+-----------+
+| data_type | name        | setting_type | value     |
++-----------+-------------+--------------+-----------+
+| string    | mail.server | config       | localhost |
++-----------+-------------+--------------+-----------+
+```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<message>` | Yes | String stored as the test task identifier. |
+<span id="example-set-var"></span>
 
-**Example**
+- Set the value for a specified configuration item.
 
-```text
-RAGFlow(admin)> MQ PUBLISH 'manual-ingestion-test';
-SUCCESS
 ```
-
-A successful response confirms that NATS JetStream accepted the message. If an ingestor is waiting for work, it can consume and acknowledge the message immediately.
+ragflow> set var mail.server 127.0.0.1;
+Set variable successfully
+```
 
-#### 7.4 MQ PULL
 
-Manually pulls messages from the ingestion task consumer. The default count is `1`. By default, pulled messages are acknowledged; `NOACK` negatively acknowledges them so that they can be redelivered.
+<span id="example-list-configs"></span>
 
-**Syntax**
+- List all system configurations.
 
-```sql
-MQ PULL [<count>] [NOACK];
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `[<count>]` | No | Number of messages to pull, from `1` through `100`. The default is `1`. |
-| `[NOACK]` | No | Negatively acknowledges pulled messages instead of acknowledging them. |
-
-**Example**
-
-```text
-RAGFlow(admin)> MQ PULL 1 NOACK;
+ragflow> list configs;
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
+| extra                                                                                     | host      | id | name          | port  | service_type   |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
+| {}                                                                                        | 0.0.0.0   | 0  | ragflow_0     | 9380  | ragflow_server |
+| {'meta_type': 'mysql', 'password': 'infini_rag_flow', 'username': 'root'}                 | localhost | 1  | mysql         | 5455  | meta_data      |
+| {'password': 'infini_rag_flow', 'store_type': 'minio', 'user': 'rag_flow'}                | localhost | 2  | minio         | 9000  | file_store     |
+| {'password': 'infini_rag_flow', 'retrieval_type': 'elasticsearch', 'username': 'elastic'} | localhost | 3  | elasticsearch | 1200  | retrieval      |
+| {'db_name': 'default_db', 'retrieval_type': 'infinity'}                                   | localhost | 4  | infinity      | 23817 | retrieval      |
+| {'database': 1, 'mq_type': 'redis', 'password': 'infini_rag_flow'}                        | localhost | 5  | redis         | 6379  | message_queue  |
+| {'message_queue_type': 'redis'}                                                           |           | 6  | task_executor | 0     | task_executor  |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
 ```
 
-### 8. Meta-commands
+<span id="example-list-environments"></span>
 
-#### 8.1 HELP
+- List all system environments which can accessed by Admin service.
 
-Shows CLI help.
-
-**Syntax**
-
-```text
-\?
-\h
-\help
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> \help
+ragflow> list envs;
++-------------------------+------------------+
+| env                     | value            |
++-------------------------+------------------+
+| DOC_ENGINE              | elasticsearch    |
+| DEFAULT_SUPERUSER_EMAIL | admin@ragflow.io |
+| DB_TYPE                 | mysql            |
+| DEVICE                  | cpu              |
+| STORAGE_IMPL            | MINIO            |
++-------------------------+------------------+
 ```
 
-#### 8.2 PWD
 
-Shows the current working directory.
+<span id="example-meta-commands"></span>
 
-**Syntax**
+- Show help information.
 
-```text
-\pwd
 ```
+ragflow> \help
+command: \help
 
-**Example**
+Commands:
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
-```text
-RAGFlow(admin)> \pwd
+Meta Commands:
+  \?, \h, \help     Show this help
+  \q, \quit, \exit   Quit the CLI
 ```
 
-#### 8.3 QUIT
+- Exit
 
-Exits the CLI.
-
-**Syntax**
-
-```text
-\q
-\quit
-\exit
 ```
-
-**Example**
-
-```text
-RAGFlow(admin)> \q
+ragflow> \q
+command: \q
 Goodbye!
 ```
