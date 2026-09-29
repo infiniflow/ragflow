@@ -708,7 +708,7 @@ Success:
         "token_num": 0,
         "update_date": "2025-04-28T18:40:41",
         "update_time": 1745836841611,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
     },
 }
 ```
@@ -1018,7 +1018,7 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1059,7 +1059,7 @@ Success (with `include_parsing_status=true`):
             "unstart_count": 0,
             "update_date": "2026-03-09T18:59:32",
             "update_time": 1773053972723,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -2764,7 +2764,6 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
         "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "prompt_type": "simple",
@@ -2903,7 +2902,6 @@ Success: returns the full updated chat assistant object.
             "parameters": [{"key": "knowledge", "optional": false}]
         },
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
         "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "top_k": 1024,
@@ -2984,7 +2982,6 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
         "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "status": "1",
@@ -3267,7 +3264,6 @@ Success:
                 },
                 "rerank_id": "",
                 "similarity_threshold": 0.2,
-                "vector_similarity_weight": 0.3,
                 "keywords_similarity_weight": 0.7,
                 "top_n": 6,
                 "prompt_type": "simple",
