@@ -404,7 +404,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 				return fmt.Errorf("delete dataset error for %s", kb.ID)
 			}
 			if len(fileIDs) > 0 {
-				if err := tx.Unscoped().Where("id IN ?", fileIDs).Delete(&entity.File{}).Error; err != nil {
+				if err := tx.Unscoped().Where("id IN ? AND source_type = ?", fileIDs, string(entity.FileSourceKnowledgebase)).Delete(&entity.File{}).Error; err != nil {
 					return fmt.Errorf("delete dataset error for %s", kb.ID)
 				}
 			}

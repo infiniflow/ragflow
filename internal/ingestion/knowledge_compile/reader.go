@@ -129,8 +129,9 @@ var compiledSelectFields = []string{
 // LoadDocProducts reconstructs products with an empty Vector, so merged rows
 // carry no embedding and the dataset-level KNN dedup (SearchSimilar on
 // available_int=1 + q_<dim>_vec) can never match an existing wiki page — the
-// graph keeps accumulating cross-run duplicates. ES accepts the wildcard in
-// both _source includes and the fields parameter.
+// graph keeps accumulating cross-run duplicates. ES takes the wildcard verbatim
+// in _source; the Infinity engine expands it against the table's real columns
+// because Infinity's SQL binder rejects a partial wildcard (3013).
 var wikiSelectFields = []string{
 	"page_type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
 	"entity_names_kwd", "summary_with_weight",
