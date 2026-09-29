@@ -2766,9 +2766,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'All parsed sections will be merged in order into a single chunk.',
-      flattenMediaToText: 'Disable vision model',
-      flattenMediaToTextTip:
-        'Treat image and table sections as plain text and skip vision enhancement.',
+      enableVisionEnhancement: 'Enable vision enhancement',
+      enableVisionEnhancementTip:
+        'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
