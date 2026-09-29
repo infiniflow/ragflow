@@ -284,6 +284,27 @@ func TestMergeMarkdownUnitsStripsFoldedHeadingFromTableContextAbove(t *testing.T
 	}
 }
 
+func TestMergeMarkdownUnitsStripsOnlyFoldedHeadingFromTableContextAbove(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "intro", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "## Section", DocType: "text", CKType: "heading", TKNums: intPtr(1)},
+		{
+			Text:         "<table></table>",
+			DocType:      "table",
+			CKType:       "table",
+			ContextAbove: "intro\n## Section",
+			TKNums:       intPtr(1),
+		},
+	}
+	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	if len(got) != 2 {
+		t.Fatalf("chunks = %#v, want intro text and table", got)
+	}
+	if got[1].ContextAbove != "intro" {
+		t.Fatalf("ContextAbove = %q, want intro only", got[1].ContextAbove)
+	}
+}
+
 func TestMergeMarkdownUnitsKeepsImageWithMediaContextStandalone(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "before", DocType: "text", CKType: "text", TKNums: intPtr(1)},

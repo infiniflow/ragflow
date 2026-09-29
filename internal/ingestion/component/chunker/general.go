@@ -625,6 +625,9 @@ func stripTextLinesFromMediaContextAbove(contextAbove, folded string) string {
 	return strings.Join(filtered, "\n")
 }
 
+// markdownImageUnitHasMediaContext reports whether attachGeneralMediaContext
+// populated context on a markdown image unit. Such units stay out of the text
+// merge so ContextAbove and ContextBelow survive until materialization.
 func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
 	return unit.ContextAbove != "" || unit.ContextBelow != ""
 }
@@ -633,7 +636,8 @@ func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
 // ordinary units use a projected token cap, while a short heading is always
 // kept with the following unit. Markdown images are block attachments rather
 // than standalone media chunks, so image-bearing units participate in the
-// text merge and retain their image payload.
+// text merge and retain their image payload. Images with configured media
+// context are emitted as standalone chunks instead.
 func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
 	overlapPct = max(0, min(100, overlapPct))
 	merged := make([]schema.ChunkDoc, 0, len(units))
