@@ -191,25 +191,6 @@ COPY build.sh ./
 COPY ragflow_deps/download_go_deps.py ragflow_deps/download_deps.py ./ragflow_deps/
 COPY Dockerfile ./
 
-# The runner image may still carry an older office_oxide release. Seed the
-# version required by build.sh in the user cache before it copies from /opt.
-ARG OFFICE_OXIDE_VERSION=0.1.12
-ARG OFFICE_OXIDE_SHA256=492c48d8fc11f37588d5014e352f920c3f25743300a447d8b113c0bfa52ca087
-RUN set -eux; \
-    _system_lib=/opt/ragflow-native-libs/office_oxide/lib/liboffice_oxide.a; \
-    if [ -f "${_system_lib}" ] && strings "${_system_lib}" | grep -Fxq "${OFFICE_OXIDE_VERSION}"; then \
-      echo "office_oxide v${OFFICE_OXIDE_VERSION} is preseeded"; \
-    else \
-      _archive=/tmp/office_oxide-native.tar.gz; \
-      curl -fsSL --connect-timeout 15 --max-time 120 --retry 2 \
-        -o "${_archive}" \
-        "https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"; \
-      echo "${OFFICE_OXIDE_SHA256}  ${_archive}" | sha256sum -c -; \
-      mkdir -p "${HOME}/ragflow-native-libs/office_oxide"; \
-      tar -xzf "${_archive}" -C "${HOME}/ragflow-native-libs/office_oxide"; \
-      rm "${_archive}"; \
-    fi
-
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
 # static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).
 # The github_action_runner base image pre-bakes them at /opt/ragflow-native-libs,

@@ -25,7 +25,7 @@
 #
 # Typical workflow:
 #
-#   uv run ragflow_deps/download_go_deps.py                    # download
+#   uv run python3 ragflow_deps/download_go_deps.py            # download
 #   cd ragflow_deps
 #   docker build -f Dockerfile -t infiniflow/ragflow_deps .
 #
@@ -56,15 +56,18 @@ import hashlib
 import os
 import shutil
 import sys
-import tarfile
 import zipfile
 
 import requests
 
-# Mirrors internal/common.DeepDocORTVersion (Go in-process backend). Keep this
-# Go downloader, download_deps.py, and Dockerfile's ORT_VERSION aligned with
-# that Go constant; build.sh --check-ort-version checks the four locations.
-# The Python pip onnxruntime pin in pyproject.toml is independent.
+# Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
+# FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_deps.py,
+# and ARG ORT_VERSION in Dockerfile_go) that must carry the same ONNX Runtime
+# native release for the statically-linked Go DeepDoc backend. There is no
+# single source of truth — keep all four equal. build.sh --check-ort-version
+# greps this file (and the other three) to fail fast on drift. (The Python pip
+# onnxruntime== pin in pyproject.toml is versioned independently and is not
+# part of this check.)
 #
 # Source of the native static archives: infiniflow/ragflow-build (our own
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
@@ -331,7 +334,7 @@ def download_go_models(use_china_mirrors=False):
             '"no in-process DeepDoc backend serving". To recover:\n'
             "  - re-run this script (a transient HF/network error usually clears);\n"
             "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
-            "  - or run `uv run ragflow_deps/download_go_deps.py`, which snapshots\n"
+            "  - or run `uv run python3 ragflow_deps/download_deps.py`, which snapshots\n"
             f"    all of {DEEPDOC_REPO} (it also provides the Python-side .onnx);\n"
             "  - or copy the missing files into that directory by hand.",
             file=sys.stderr,
@@ -472,6 +475,8 @@ if __name__ == "__main__":
     # Extract native static libraries to ~/ragflow-native-libs for Go build.
     # Ensures build.sh can find them without network access.
     native_deps_dir = os.path.expanduser("~/ragflow-native-libs")
+    import tarfile
+
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
