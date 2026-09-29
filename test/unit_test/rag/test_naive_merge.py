@@ -89,30 +89,34 @@ def test_oversized_section_is_split_at_sentence_boundaries():
 
 
 @pytest.mark.p2
-def test_small_section_is_split_at_delimiter_boundary():
-    # A small section (well under chunk_token_num) that contains a delimiter
-    # must still be broken at the delimiter: the delimiter is a chunk boundary
-    # and its text must never leak into a chunk. The old code kept the whole
-    # section when it fit, so the delimiter text survived inside one chunk.
+def test_small_section_retains_delimiter_and_content():
+    # A small section (well under chunk_token_num) that contains a delimiter is
+    # broken at the delimiter into paragraphs; per the #20276 parity fix the
+    # bare delimiter is RETAINED (attached to the preceding paragraph) instead
+    # of being dropped. Concatenating the emitted chunks reproduces the source.
     small_section = "first part。second part。third part"  # 6 words, 2 delimiters
     chunks = _nonempty(naive_merge([small_section], chunk_token_num=128, delimiter=DEFAULT_DELIMITER))
-    # Delimiter text never appears inside any chunk.
-    assert all("。" not in c for c in chunks)
-    # Every delimiter-separated piece is present (content preserved).
     joined = "".join(chunks)
+    # Bare delimiter text is preserved (not dropped).
+    assert "。" in joined
+    # Content is preserved exactly: rejoining reproduces the source.
+    assert joined.lstrip("\n") == small_section, joined
+    # Every delimiter-separated piece is present.
     assert "first part" in joined and "second part" in joined and "third part" in joined
 
 
 @pytest.mark.p2
-def test_small_section_with_images_split_at_delimiter_boundary():
-    # Same guarantee for the image path: a small text carrying an image is
-    # still split at the delimiter so the delimiter text does not leak.
+def test_small_section_with_images_retains_delimiter():
+    # Same guarantee for the image path: a small text carrying an image keeps
+    # the bare delimiter instead of dropping it (#20276 parity).
     small_section = "alpha。beta。gamma"  # 3 words, 2 delimiters
     texts = [(small_section, "")]
     images = [object()]
     chunks, imgs = naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAULT_DELIMITER)
     nonempty = _nonempty(chunks)
-    assert all("。" not in c for c in nonempty)
+    joined = "".join(nonempty)
+    assert "。" in joined
+    assert joined.lstrip("\n") == small_section, joined
     # The single image travels with its (split) text.
     assert len(chunks) == len(imgs)
 

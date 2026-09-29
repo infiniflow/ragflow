@@ -1372,12 +1372,18 @@ def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, si
     time (not captured at definition) so tests can monkeypatch the tokenizer
     deterministically via ``rag.nlp.num_tokens_from_string``.
 
-    Chunking contract (refs #17799)
+    Chunking contract (refs #17799, #20276)
     --------------------------------
-    * **Delimiter is a chunk boundary.** The delimiter text specified by the
-      user never enters a chunk. ``naive_merge`` / ``naive_merge_with_images``
-      split every section on the delimiter (except the empty-delimiter
-      size-only mode) so boundary text cannot leak into a chunk.
+    * **Bare delimiters are retained losslessly.** ``naive_merge`` /
+      ``naive_merge_with_images`` split every section on the delimiter and
+      attach each *bare* delimiter to the paragraph that precedes it, so
+      concatenating the emitted chunks reproduces the source exactly
+      (sentence punctuation such as `。；！？` / `.` / `!` is kept, and no
+      spurious newline is synthesized — Python parity with the Go TokenChunker,
+      #20276).
+    * **Custom (backtick-wrapped) delimiters are dropped.** When the delimiter
+      field contains a backtick-wrapped token, every segment becomes its own
+      chunk and the delimiter text is not retained.
     * **``token_size`` is a soft target + merge strategy.** There is no
       atom-split: a paragraph larger than ``token_size`` stands alone as its own
       chunk and is truncated later by the model layer.
@@ -1447,6 +1453,36 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
     return out
 
 
+def _split_segments_retain_delimiter(sec, dels):
+    """Split ``sec`` on the delimiter pattern, keeping each bare delimiter.
+
+    The delimiter that ends a piece is attached to that piece, so the pieces
+    reproduce ``sec`` when concatenated (lossless — #20276 Python parity with
+    the Go TokenChunker). Consecutive delimiters and whitespace-only pieces are
+    folded into an adjacent piece so no empty chunk is emitted and source blank
+    lines survive.
+
+    ``dels`` is the compiled delimiter pattern (empty means no split).
+    """
+    if not dels:
+        return [sec]
+    parts = re.split(r"(" + dels + r")", sec, flags=re.DOTALL)
+    segs = []
+    cur = ""
+    for i, part in enumerate(parts):
+        cur += part
+        # Odd indices are the delimiter captures; a capture closes the current
+        # piece. Even indices are text pieces (the final one is flushed below).
+        if i % 2 == 1 and cur.strip():
+            segs.append(cur)
+            cur = ""
+        # When the capture so far is whitespace-only (e.g. a blank line), fold
+        # it into the next piece by leaving `cur` accumulating.
+    if cur.strip():
+        segs.append(cur)
+    return segs
+
+
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
@@ -1484,25 +1520,31 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DEL
                 cks.append(text)
         return cks
 
-    # Default path: split every section on the delimiter into paragraphs (no
-    # delimiter text), then group paragraphs with the chosen merge strategy.
-    # No atom-split is performed: a paragraph larger than ``chunk_token_num``
-    # becomes its own chunk; the model layer truncates oversize units.
+    # Default path: split every section on the delimiter into paragraphs,
+    # retaining each bare delimiter by attaching it to the paragraph that
+    # precedes it (#20276 Python parity with the Go TokenChunker). A paragraph
+    # is the text up to and including the delimiter that ends it; the final
+    # paragraph carries no trailing delimiter. Concatenating the emitted chunks
+    # therefore reproduces the source exactly, instead of dropping sentence
+    # punctuation (e.g. `。；！？` / `.` / `!`) and synthesizing spurious "\n".
     #
-    # A section is split on the delimiter whenever one is present -- even when
-    # the whole section already fits ``chunk_token_num``. The delimiter is a
-    # chunk boundary and its text must never leak into a chunk; only the
-    # empty-delimiter (size-only) mode below skips splitting.
+    # Only the first paragraph of each section is prefixed with "\n" so that the
+    # paragraph break between original sections survives; within a section the
+    # retained delimiter already separates the pieces, so no extra newline is
+    # injected. Bare delimiters are kept; custom (backtick-wrapped) delimiters
+    # are dropped by the `has_custom` branch above.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos)
-    for sec, pos in sections:
+    for sec_idx, (sec, pos) in enumerate(sections):
         if not dels:
+            # Empty delimiter: size-only mode. The whole section is one
+            # paragraph; every section keeps its leading "\n" so the
+            # inter-section separation survives (matches naive_merge_with_images).
             paragraphs.append(("\n" + sec, pos))
             continue
-        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            paragraphs.append(("\n" + sub_sec, pos))
+        for j, ptext in enumerate(_split_segments_retain_delimiter(sec, dels)):
+            prefix = "\n" if j == 0 else ""
+            paragraphs.append((prefix + ptext, pos))
 
     groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks = [_reconstruct_text_chunk(paragraphs, g) for g in groups]
@@ -1545,11 +1587,11 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAUL
                 result_images.append(image)
         return cks, result_images
 
-    # Default path: split every text on the delimiter into paragraphs (no
-    # delimiter text) carrying its image, then group with the merge strategy.
-    # Images of merged paragraphs are concatenated; no atom-split is performed.
-    # As in ``naive_merge``, a small text is still split on the delimiter so
-    # the boundary text never leaks into a chunk; only empty-delimiter skips.
+    # Default path: split every text on the delimiter into paragraphs,
+    # retaining each bare delimiter (lossless — #20276 Python parity). Only the
+    # first paragraph of each text is prefixed with "\n"; the retained
+    # delimiter already separates pieces within a text, so no extra newline is
+    # synthesized. Images of merged paragraphs are concatenated; no atom-split.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos, image)
     for text, image in zip(texts, images):
@@ -1564,10 +1606,9 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAUL
         if not dels:
             paragraphs.append(("\n" + text_str, text_pos, image))
             continue
-        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            paragraphs.append(("\n" + sub_sec, text_pos, image))
+        for j, ptext in enumerate(_split_segments_retain_delimiter(text_str, dels)):
+            prefix = "\n" if j == 0 else ""
+            paragraphs.append((prefix + ptext, text_pos, image))
 
     groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks, result_images = [], []
@@ -1648,7 +1689,10 @@ def _build_cks(sections, delimiter):
     """Split ``(text, image, table)`` sections into typed chunks.
 
     Text is buffered and split on the parsed ``delimiter`` field; each table
-    or image section becomes its own chunk. Returns
+    or image section becomes its own chunk. A *bare* delimiter is retained by
+    attaching it to the text segment that precedes it (lossless, #20276 parity
+    with the Go TokenChunker — sentence punctuation such as `。；！？` is kept);
+    a *custom* (backtick-wrapped) delimiter is dropped. Returns
     ``(cks, tables, images, has_custom)``.
     """
     cks = []
@@ -1736,32 +1780,51 @@ def _build_cks(sections, delimiter):
                 # ① matched delimiter (exact capture; do not strip — wrapped
                 # whitespace delimiters such as `` ` ` `` or `\n` must match here)
                 if re.fullmatch(split_pattern, sub_sec):
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter: drop it and flush the preceding
+                        # buffer as its own chunk (matches naive_merge's
+                        # custom-delimiter path).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter: retain it by attaching it to the
+                        # preceding segment, so punctuation such as `。；！？`
+                        # is kept — lossless, the #20276 parity with the Go
+                        # TokenChunker. Concatenating the emitted text chunks
+                        # reproduces the source exactly.
+                        seg += sub_sec
                     continue
 
-                # ② empty or whitespace-only ordinary segment → flush current buffer
+                # ② empty or whitespace-only ordinary segment
                 if not sub_sec.strip():
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter mode: drop the buffered text between
+                        # delimiters (matches the flush above).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter mode: fold the whitespace into the
+                        # buffer so it is not lost between consecutive
+                        # delimiters (lossless).
+                        seg += sub_sec
                     continue
 
                 # ③ normal text content → accumulate
