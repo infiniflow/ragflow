@@ -962,7 +962,12 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					err = validateEmbeddingModel(model, requestedDimension, 1)
 				}
 				if err == nil {
-					_, err = driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
+					maxTokens := 0
+					if model.MaxTokens != nil {
+						maxTokens = *model.MaxTokens
+					}
+					embeddingModel := modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+					_, err = embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{"test"}}, nil, nil)
 				}
 			case "rerank":
 				rerankRequest := modelModule.RerankRequest{
