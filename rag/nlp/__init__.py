@@ -1688,7 +1688,10 @@ def _build_cks(sections, delimiter):
     """Split ``(text, image, table)`` sections into typed chunks.
 
     Text is buffered and split on the parsed ``delimiter`` field; each table
-    or image section becomes its own chunk. Returns
+    or image section becomes its own chunk. A *bare* delimiter is retained by
+    attaching it to the text segment that precedes it (lossless, #20276 parity
+    with the Go TokenChunker — sentence punctuation such as `。；！？` is kept);
+    a *custom* (backtick-wrapped) delimiter is dropped. Returns
     ``(cks, tables, images, has_custom)``.
     """
     cks = []
@@ -1776,32 +1779,51 @@ def _build_cks(sections, delimiter):
                 # ① matched delimiter (exact capture; do not strip — wrapped
                 # whitespace delimiters such as `` ` ` `` or `\n` must match here)
                 if re.fullmatch(split_pattern, sub_sec):
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter: drop it and flush the preceding
+                        # buffer as its own chunk (matches naive_merge's
+                        # custom-delimiter path).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter: retain it by attaching it to the
+                        # preceding segment, so punctuation such as `。；！？`
+                        # is kept — lossless, the #20276 parity with the Go
+                        # TokenChunker. Concatenating the emitted text chunks
+                        # reproduces the source exactly.
+                        seg += sub_sec
                     continue
 
-                # ② empty or whitespace-only ordinary segment → flush current buffer
+                # ② empty or whitespace-only ordinary segment
                 if not sub_sec.strip():
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter mode: drop the buffered text between
+                        # delimiters (matches the flush above).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter mode: fold the whitespace into the
+                        # buffer so it is not lost between consecutive
+                        # delimiters (lossless).
+                        seg += sub_sec
                     continue
 
                 # ③ normal text content → accumulate
