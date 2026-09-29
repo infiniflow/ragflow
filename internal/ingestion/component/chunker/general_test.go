@@ -578,6 +578,79 @@ func TestGeneralChunkerMarkdownAttachesMediaContext(t *testing.T) {
 	assertMaterializedMediaContext(t, table, "before<table><tr><td>A</td></tr></table>after")
 }
 
+func TestGeneralChunkerMarkdownTableDoesNotDuplicateShortHeadingInContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	want := "## Section\n<table><tr><td>A</td></tr></table>"
+	assertMaterializedMediaContext(t, table, want)
+	if strings.Count(table["text"].(string), "## Section") != 1 {
+		t.Fatalf("heading repeated in table chunk: %q", table["text"])
+	}
+}
+
+func TestGeneralChunkerMarkdownImageKeepsMediaContextWhenConfigured(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"image_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "figure", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var image map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "image" {
+			image = ck
+			break
+		}
+	}
+	if image == nil {
+		t.Fatalf("image chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, image, "beforefigureafter")
+}
+
 func TestGeneralChunkerHTMLAttachesMediaContext(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size":   10,

@@ -607,6 +607,28 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 	return result
 }
 
+// stripTextLinesFromMediaContextAbove removes folded unit text from collected
+// media context so materializeMediaContext does not emit it twice.
+func stripTextLinesFromMediaContextAbove(contextAbove, folded string) string {
+	folded = strings.TrimSpace(folded)
+	if folded == "" || contextAbove == "" {
+		return contextAbove
+	}
+	parts := strings.Split(contextAbove, "\n")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == folded {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return strings.Join(filtered, "\n")
+}
+
+func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
+	return unit.ContextAbove != "" || unit.ContextBelow != ""
+}
+
 // mergeMarkdownUnits mirrors the Markdown branch of Python naive.chunk:
 // ordinary units use a projected token cap, while a short heading is always
 // kept with the following unit. Markdown images are block attachments rather
@@ -641,6 +663,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				table.Image = mergedImage
 				table.DocType = "table"
 				table.CKType = "table"
+				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
 				merged[current] = table
 				current = -1
 				currentTokens = 0
@@ -649,6 +672,21 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 			merged = append(merged, cloneChunkDoc(unit))
 			current = -1
 			currentTokens = 0
+			continue
+		}
+
+		if itemDocType(unit) == "image" && markdownImageUnitHasMediaContext(unit) {
+			if current >= 0 {
+				current = -1
+				currentTokens = 0
+			}
+			standalone := cloneChunkDoc(unit)
+			standalone.DocType = "image"
+			if standalone.CKType == "" {
+				standalone.CKType = "image"
+			}
+			standalone.TKNums = intPtr(generalUnitTokens(standalone))
+			merged = append(merged, standalone)
 			continue
 		}
 
