@@ -50,23 +50,24 @@ type SearchBotMindMapRequest struct {
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
 type SearchBotRetrievalTestRequest struct {
-	KbIDs                  common.StringSlice     `json:"kb_ids" binding:"required"`
-	Question               string                 `json:"question" binding:"required"`
-	Page                   *int                   `json:"page,omitempty"`
-	Size                   *int                   `json:"size,omitempty"`
-	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
-	DocIDs                 []string               `json:"doc_ids,omitempty"`
-	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
-	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
-	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
-	RerankID               *string                `json:"rerank_id,omitempty"`
-	Keyword                *bool                  `json:"keyword,omitempty"`
-	Highlight              *bool                  `json:"highlight,omitempty"`
-	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+	KbIDs                    common.StringSlice     `json:"kb_ids" binding:"required"`
+	Question                 string                 `json:"question" binding:"required"`
+	Page                     *int                   `json:"page,omitempty"`
+	Size                     *int                   `json:"size,omitempty"`
+	RerankCandidatesCount    *int                   `json:"rerank_candidates_count,omitempty"`
+	DocIDs                   []string               `json:"doc_ids,omitempty"`
+	UseKG                    *bool                  `json:"use_kg,omitempty"`
+	TopK                     *int                   `json:"top_k,omitempty"`
+	CrossLanguages           []string               `json:"cross_languages,omitempty"`
+	SearchID                 *string                `json:"search_id,omitempty"`
+	MetaDataFilter           map[string]interface{} `json:"meta_data_filter,omitempty"`
+	TenantRerankID           *string                `json:"tenant_rerank_id,omitempty"`
+	RerankID                 *string                `json:"rerank_id,omitempty"`
+	Keyword                  *bool                  `json:"keyword,omitempty"`
+	Highlight                *bool                  `json:"highlight,omitempty"`
+	SimilarityThreshold      *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
+	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 }
 
 // UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
@@ -193,6 +194,13 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
 		return
 	}
+
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 
 	applyRetrievalDefaults(&req)
 

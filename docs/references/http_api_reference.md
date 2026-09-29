@@ -2472,7 +2472,8 @@ Retrieves chunks from specified datasets.
   - `"page"`: `integer`
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
-  - `"vector_similarity_weight"`: `float`
+  - `"keywords_similarity_weight"`: `float`
+  - `"vector_similarity_weight"`: `float` (legacy fallback)
   - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
   - `"knn_top_k"`: `integer`
   - `"knn_num_candidates"`: `integer`
@@ -2533,8 +2534,10 @@ curl --request POST \
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
-  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
+  Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: (*Body parameter*), `integer`
   **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
 - `"knn_top_k"`: (*Body parameter*), `integer`
@@ -2713,7 +2716,8 @@ curl --request POST \
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2761,6 +2765,7 @@ Success:
         "rerank_id": "",
         "similarity_threshold": 0.2,
         "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "prompt_type": "simple",
         "status": "1",
@@ -2828,7 +2833,7 @@ curl --request PUT \
                "quote":true
           },
           "similarity_threshold":0.2,
-          "vector_similarity_weight":0.3,
+          "keywords_similarity_weight":0.7,
           "top_n":6,
           "top_k":1024,
           "rerank_id":""
@@ -2861,7 +2866,8 @@ curl --request PUT \
     Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2898,6 +2904,7 @@ Success: returns the full updated chat assistant object.
         },
         "similarity_threshold": 0.2,
         "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "top_k": 1024,
         "rerank_id": "",
@@ -2978,6 +2985,7 @@ Success:
         "rerank_id": "",
         "similarity_threshold": 0.2,
         "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
@@ -3260,6 +3268,7 @@ Success:
                 "rerank_id": "",
                 "similarity_threshold": 0.2,
                 "vector_similarity_weight": 0.3,
+                "keywords_similarity_weight": 0.7,
                 "top_n": 6,
                 "prompt_type": "simple",
                 "status": "1",
