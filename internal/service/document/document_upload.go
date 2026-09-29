@@ -364,9 +364,6 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 // maps, so a component entry written for one document would otherwise be
 // written for the dataset and every sibling document too.
 func cloneParserConfigForDocument(config entity.JSONMap) entity.JSONMap {
-	if config == nil {
-		return nil
-	}
 	return entity.JSONMap(common.DeepMergeMaps(config, nil))
 }
 

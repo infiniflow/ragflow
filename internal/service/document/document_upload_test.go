@@ -10,8 +10,8 @@ import (
 // hands out, so writing a component entry onto one document's config cannot
 // leak into the dataset's config or a sibling document's config.
 func TestCloneParserConfigForDocument(t *testing.T) {
-	if cloneParserConfigForDocument(nil) != nil {
-		t.Fatal("nil config must clone to nil")
+	if clone := cloneParserConfigForDocument(nil); clone == nil || len(clone) != 0 {
+		t.Fatalf("nil config must clone to an empty object, got %#v", clone)
 	}
 
 	original := entity.JSONMap{
