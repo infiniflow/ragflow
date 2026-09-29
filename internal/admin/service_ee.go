@@ -73,7 +73,6 @@ func (s *Service) ShowRole(ctx context.Context, roleName string) (map[string]int
 	}
 
 	return result, nil
-
 }
 
 // UpdateRole update role
@@ -189,17 +188,11 @@ func (s *Service) ResetRoleDefaultModel(ctx context.Context, roleName, modelType
 
 // ListModelProviders list model providers
 func (s *Service) ListModelProviders(ctx context.Context) ([]map[string]interface{}, error) {
-	return []map[string]interface{}{
-		{
-			"command": "list_model_providers",
-			"error":   "'list model providers' is not supported",
-		},
-	}, nil
+	return dao.GetModelProviderManager().ListProviders()
 }
 
 // AddModelProvider Add model provider
 func (s *Service) AddModelProvider(ctx context.Context, userID, providerName string) (map[string]interface{}, error) {
-
 	return map[string]interface{}{
 		"command":     "add_model_provider",
 		"user_id":     userID,
@@ -220,7 +213,6 @@ func (s *Service) DeleteModelProviders(ctx context.Context, userID string, provi
 
 // ListModelInstances list model instances
 func (s *Service) ListModelInstances(ctx context.Context, userID, providerName string) ([]map[string]interface{}, error) {
-
 	return []map[string]interface{}{
 		{
 			"command":     "list_model_instances",
@@ -233,7 +225,6 @@ func (s *Service) ListModelInstances(ctx context.Context, userID, providerName s
 
 // ShowProviderInstance show provider instance
 func (s *Service) ShowProviderInstance(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
-
 	return map[string]interface{}{
 		"command":       "show_provider_instance",
 		"user_id":       userID,
@@ -292,7 +283,6 @@ func (s *Service) AlterProviderInstance(ctx context.Context, userID, providerNam
 
 // AddModelInstance Add model instance
 func (s *Service) AddModelInstance(ctx context.Context, userID, providerName, instanceName string) (map[string]interface{}, error) {
-
 	return map[string]interface{}{
 		"command":       "add_model_instance",
 		"user_id":       userID,
@@ -327,7 +317,6 @@ func (s *Service) ListInstanceModels(ctx context.Context, userID, providerName, 
 }
 
 func (s *Service) EnableOrDisableModel(ctx context.Context, userID, providerName, instanceName, modelName, modelID, status string) (map[string]interface{}, error) {
-
 	return map[string]interface{}{
 		"command":       "enable_or_disable_model",
 		"user_id":       userID,
@@ -344,7 +333,6 @@ func (s *Service) EnableOrDisableModel(ctx context.Context, userID, providerName
 
 // AddModels Add models
 func (s *Service) AddModels(ctx context.Context, userID, providerName, instanceName string, modelNames []string) (map[string]interface{}, error) {
-
 	return map[string]interface{}{
 		"command":       "add_model",
 		"user_id":       userID,
@@ -387,7 +375,6 @@ func (s *Service) ShowSystemLicense(ctx context.Context, check bool) (map[string
 			"command": "check_system_license",
 			"error":   "'check system license' is not supported",
 		}
-
 	} else {
 		result = map[string]interface{}{
 			"command": "show_system_license",
@@ -879,7 +866,6 @@ func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name
 
 // ListUsersReports list users reports for enterprise edition
 func (s *Service) ListUsersReports(ctx context.Context, pageIndex, pageSize int, status, plan *string, days *int) (map[string]interface{}, error) {
-
 	statusStr := "all"
 	if status != nil {
 		statusStr = *status
@@ -908,7 +894,6 @@ func (s *Service) ListUsersReports(ctx context.Context, pageIndex, pageSize int,
 
 // ListUsersStorage list users storage for enterprise edition
 func (s *Service) ListUsersStorage(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"page_index": pageIndex,
 		"page_size":  pageSize,
@@ -922,7 +907,6 @@ func (s *Service) ListUsersStorage(ctx context.Context, pageIndex, pageSize, top
 
 // ListUsersDocuments list users documents for enterprise edition
 func (s *Service) ListUsersDocuments(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"page_index": pageIndex,
 		"page_size":  pageSize,
@@ -936,7 +920,6 @@ func (s *Service) ListUsersDocuments(ctx context.Context, pageIndex, pageSize, t
 
 // ListUsersIndex list users index for enterprise edition
 func (s *Service) ListUsersIndex(ctx context.Context, pageIndex, pageSize, top int) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"page_index": pageIndex,
 		"page_size":  pageSize,
@@ -950,7 +933,6 @@ func (s *Service) ListUsersIndex(ctx context.Context, pageIndex, pageSize, top i
 
 // ListUsersQuota list users quota for enterprise edition
 func (s *Service) ListUsersQuota(ctx context.Context, pageIndex, pageSize, top int, quotaThreshold *int, plan *string, days *int) (map[string]interface{}, error) {
-
 	quotaThresholdInt := 0
 	if quotaThreshold != nil {
 		quotaThresholdInt = *quotaThreshold
@@ -980,7 +962,6 @@ func (s *Service) ListUsersQuota(ctx context.Context, pageIndex, pageSize, top i
 
 // ShowUsersPlanSummary show users plan summary for enterprise edition
 func (s *Service) ShowUsersPlanSummary(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_users_plan_summary",
 		"error":   "'Show users plan summary' is not supported",
@@ -991,7 +972,6 @@ func (s *Service) ShowUsersPlanSummary(ctx context.Context) (map[string]interfac
 
 // ShowUsersPlanQuota show users plan quota for enterprise edition
 func (s *Service) ShowUsersPlanQuota(ctx context.Context, quota int) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"quota":   quota,
 		"command": "show_users_plan_quota",
@@ -1003,7 +983,6 @@ func (s *Service) ShowUsersPlanQuota(ctx context.Context, quota int) (map[string
 
 // ShowUsersQuotaSummary show users quota summary for enterprise edition
 func (s *Service) ShowUsersQuotaSummary(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_users_quota_summary",
 		"error":   "'Show users quota summary' is not supported",
@@ -1014,7 +993,6 @@ func (s *Service) ShowUsersQuotaSummary(ctx context.Context) (map[string]interfa
 
 // ShowIngestionTasksSummary show ingestion tasks summary for enterprise edition
 func (s *Service) ShowIngestionTasksSummary(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_ingestion_tasks_summary",
 		"error":   "'Show ingestion tasks summary' is not supported",
@@ -1025,7 +1003,6 @@ func (s *Service) ShowIngestionTasksSummary(ctx context.Context) (map[string]int
 
 // ShowDataSummary show data summary for enterprise edition
 func (s *Service) ShowDataSummary(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_data_summary",
 		"error":   "'Show data summary' is not supported",
@@ -1036,7 +1013,6 @@ func (s *Service) ShowDataSummary(ctx context.Context) (map[string]interface{}, 
 
 // ShowDataOrphan show data orphan for enterprise edition
 func (s *Service) ShowDataOrphan(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_data_orphan",
 		"error":   "'Show data orphan' is not supported",
@@ -1047,7 +1023,6 @@ func (s *Service) ShowDataOrphan(ctx context.Context) (map[string]interface{}, e
 
 // ShowDataStorage show data storage for enterprise edition
 func (s *Service) ShowDataStorage(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_data_storage",
 		"error":   "'Show data storage' is not supported",
@@ -1058,7 +1033,6 @@ func (s *Service) ShowDataStorage(ctx context.Context) (map[string]interface{}, 
 
 // ShowDataIndex show data index for enterprise edition
 func (s *Service) ShowDataIndex(ctx context.Context) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "show_data_index",
 		"error":   "'Show data index' is not supported",
@@ -1069,7 +1043,6 @@ func (s *Service) ShowDataIndex(ctx context.Context) (map[string]interface{}, er
 
 // PurgeOrphanData purge orphan data for enterprise edition
 func (s *Service) PurgeOrphanData(ctx context.Context, preview bool) (map[string]interface{}, error) {
-
 	result := map[string]interface{}{
 		"command": "purge_orphan_data",
 		"preview": preview,
@@ -1100,7 +1073,6 @@ func (s *Service) PurgeUserData(ctx context.Context, email string, preview bool)
 
 // PurgeUsersData purge users data for enterprise edition
 func (s *Service) PurgeUsersData(ctx context.Context, preview bool, days int, userPlan *string, userActivity *string) (map[string]interface{}, error) {
-
 	plan := "all"
 	activity := "all"
 	if userPlan != nil {
@@ -1124,7 +1096,6 @@ func (s *Service) PurgeUsersData(ctx context.Context, preview bool, days int, us
 
 // GenerateUserAPIKey create tenant API key for tenant
 func (s *Service) GenerateUserAPIKey(ctx context.Context, username string) (map[string]interface{}, error) {
-
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
@@ -1142,7 +1113,6 @@ func (s *Service) GenerateUserAPIKey(ctx context.Context, username string) (map[
 
 // DeleteUserAPIKey delete user API key
 func (s *Service) DeleteUserAPIKey(ctx context.Context, username, key string) (map[string]interface{}, error) {
-
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
@@ -1161,7 +1131,6 @@ func (s *Service) DeleteUserAPIKey(ctx context.Context, username, key string) (m
 
 // ListUserAPIKeys list user API keys
 func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[string]interface{}, error) {
-
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
@@ -1180,7 +1149,6 @@ func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[s
 }
 
 func (s *Service) ListIngestionTasksByCondition(ctx context.Context, email, status *string) ([]map[string]interface{}, error) {
-
 	if email == nil && status == nil {
 		return nil, fmt.Errorf("email or status are required")
 	}
@@ -1201,7 +1169,6 @@ func (s *Service) ListIngestionTasksByCondition(ctx context.Context, email, stat
 }
 
 func (s *Service) StopIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
 	if email == nil && status == nil {
 		return nil, fmt.Errorf("email or status are required")
 	}
@@ -1223,7 +1190,6 @@ func (s *Service) StopIngestionTasksByCondition(ctx context.Context, tasks []str
 }
 
 func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
 	if email == nil && status == nil {
 		return nil, fmt.Errorf("email or status are required")
 	}

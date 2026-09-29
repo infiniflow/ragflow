@@ -19,11 +19,12 @@ package admin
 import (
 	"errors"
 	"net/http"
-	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
 
 	"github.com/gin-gonic/gin"
 )
@@ -308,15 +309,6 @@ func (h *Handler) ResetRoleDefaultModel(c *gin.Context) {
 }
 
 func (h *Handler) ListModelProviders(c *gin.Context) {
-
-	keywords := ""
-	if queryKeywords := c.Query("available"); queryKeywords != "" {
-		keywords = queryKeywords
-	}
-
-	// convert keywords to small case
-	keywords = strings.ToLower(keywords)
-
 	ctx := c.Request.Context()
 	result, err := h.service.ListModelProviders(ctx)
 	if err != nil {
@@ -1362,7 +1354,6 @@ func (h *Handler) ListUsersReports(c *gin.Context) {
 
 // ListUsersStorage handle show users storage
 func (h *Handler) ListUsersStorage(c *gin.Context) {
-
 	var err error
 	pageIndex := 0
 	pageIndexStr := c.Param("page")
@@ -1403,7 +1394,6 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 
 // ListUsersDocuments handle show users documents
 func (h *Handler) ListUsersDocuments(c *gin.Context) {
-
 	var err error
 	pageIndex := 0
 	pageIndexStr := c.Param("page")
@@ -1444,7 +1434,6 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 
 // ListUsersIndex handle show users index
 func (h *Handler) ListUsersIndex(c *gin.Context) {
-
 	var err error
 	pageIndex := 0
 	pageIndexStr := c.Param("page")
@@ -2006,7 +1995,6 @@ func (h *Handler) BatchDeleteWhiteList(c *gin.Context) {
 
 // GetTokenStats returns API token statistics for the current user's tenant.
 func (h *Handler) GetTokenStats(c *gin.Context) {
-
 	userName := c.Query("user_name")
 	if userName == "" {
 		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
