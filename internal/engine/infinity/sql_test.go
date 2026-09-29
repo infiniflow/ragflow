@@ -662,6 +662,22 @@ func TestKeywordFilterConditionExactForWhitespaceValues(t *testing.T) {
 		// one and would hit the same silent no-match.
 		{"ideographic space", "title_kwd", "忠臣进谏　与托孤遗志",
 			`title_kwd = '忠臣进谏　与托孤遗志'`},
+		// Fields convertMatchingField maps to a full-text index reference are NOT
+		// columns: `= ` on the reference makes Infinity reject the whole statement,
+		// so a multi-token value is phrased through the index instead (that index
+		// is what gives tag/toc the membership match ES gets from its array).
+		{"tag multi-token", "tag_kwd", "machine learning",
+			`filter_fulltext('tag_kwd@ft_tag_kwd_whitespace__', '"machine learning"')`},
+		{"toc multi-token", "toc_kwd", "第 一章",
+			`filter_fulltext('toc_kwd@ft_toc_kwd_whitespace__', '"第 一章"')`},
+		{"tag single token", "tag_kwd", "nlp",
+			`filter_fulltext('tag_kwd@ft_tag_kwd_whitespace__', 'nlp')`},
+		// A value that cannot be phrased compares the raw column, which is at
+		// least addressable (the index reference is not).
+		{"tag with a quote", "tag_kwd", `say "hi" now`,
+			`tag_kwd = 'say "hi" now'`},
+		// A *_kwd field with no index variant stays on the raw column.
+		{"source_id", "source_id", "a b", `source_id = 'a b'`},
 		// A quote stays escaped in both renderings.
 		{"quoted multi-token", "title_kwd", "O'Brien cluster", `title_kwd = 'O''Brien cluster'`},
 		{"quoted single token", "type_kwd", "o'brien", `filter_fulltext('type_kwd', 'o''brien')`},
@@ -704,5 +720,29 @@ func TestKeywordFilterRenderingBothPaths(t *testing.T) {
 	if got := equivalentConditionToStr(map[string]interface{}{"parent_kwd": []string{"root"}}, nil); got !=
 		`(filter_fulltext('parent_kwd', 'root'))` {
 		t.Errorf("root clusters must keep the single-token rendering, got %q", got)
+	}
+
+	// Blank entries are dropped by BOTH paths. Infinity rejects an empty
+	// full-text query ("Trying to match:  on fields: <column> failed", 3052) and
+	// fails the whole statement — including UpdateChunks/DeleteChunks, which the
+	// update path feeds.
+	blankMixed := map[string]interface{}{"from_kwd": []string{"", "  ", "x"}}
+	wantMixed := `(filter_fulltext('from_kwd', 'x'))`
+	if got := equivalentConditionToStr(blankMixed, nil); got != wantMixed {
+		t.Errorf("search path with blank entries = %q, want %q", got, wantMixed)
+	}
+	if got := buildFilterFromCondition(blankMixed, nil); got != wantMixed {
+		t.Errorf("update/delete path with blank entries = %q, want %q", got, wantMixed)
+	}
+
+	// Every entry blank: the search path contributes no clause, while the update
+	// path yields "1=1" so the caller's unconstrained-statement guard refuses it
+	// instead of running an unscoped update or delete.
+	allBlank := map[string]interface{}{"from_kwd": []string{"", "  "}}
+	if got := equivalentConditionToStr(allBlank, nil); got != "" {
+		t.Errorf("search path with only blank entries = %q, want no clause", got)
+	}
+	if got := buildFilterFromCondition(allBlank, nil); got != "1=1" {
+		t.Errorf("update/delete path with only blank entries = %q, want '1=1'", got)
 	}
 }

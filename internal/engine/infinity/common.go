@@ -162,23 +162,40 @@ func fieldKeyword(fieldName string) bool {
 // keywordFilterCondition renders a filter for a *_kwd column.
 //
 // Infinity declares these columns as analyzed varchars, so filter_fulltext()
-// tokenizes the query and a multi-token value matches NOTHING. Every navigation
-// cluster name is multi-token, so on Infinity the nav child lookup
-// (parent_kwd=<cluster name>), the cluster merge/member updates and
-// cleanupEmptyCluster all silently matched no row. Elasticsearch answers such
-// filters exactly — its dynamic template maps *_kwd to keyword and the ES engine
-// emits term/terms — so a value containing whitespace uses the exact form too.
-// That cannot narrow an existing match (a whitespace-bearing value matched no
-// row before); single-token values keep filter_fulltext for the legacy
-// ###-joined columns whose filter relies on token matching (see fieldJSONList).
+// tokenizes the query and a multi-token value matches NOTHING — while every
+// navigation cluster name is multi-token, so nav's child lookup (parent_kwd=…),
+// its cluster updates and cleanupEmptyCluster all silently matched no row.
+// Elasticsearch matches a plain *_kwd column exactly (keyword + term/terms), so
+// a whitespace-bearing value becomes `col = 'value'`: it matched no row before,
+// so this cannot narrow an existing match, and single-token values keep
+// filter_fulltext for the legacy ###-joined columns (see fieldJSONList).
+//
+// tag_kwd and toc_kwd are the exception: convertMatchingField turns them into a
+// full-text index reference ("tag_kwd@ft_tag_kwd_whitespace__"), which is not a
+// column and cannot be compared with `=` (Infinity rejects the whole statement).
+// Their cells hold several ###-joined values, and that index is what gives them
+// the membership match ES gets from its keyword array, so a multi-token value is
+// matched as a quoted phrase through it.
 func keywordFilterCondition(field string, value string) string {
 	escaped := escapeFilterValue(value)
-	// unicode.IsSpace, not an ASCII set: a full-width or non-breaking space
-	// tokenizes the same way and would hit the same silent no-match.
-	if strings.ContainsFunc(value, unicode.IsSpace) {
-		return fmt.Sprintf("%s = '%s'", convertMatchingField(field), escaped)
+	multiToken := strings.ContainsFunc(value, unicode.IsSpace)
+	indexRef := convertMatchingField(field)
+
+	if indexRef == field {
+		if multiToken {
+			return fmt.Sprintf("%s = '%s'", field, escaped)
+		}
+		return fmt.Sprintf("filter_fulltext('%s', '%s')", field, escaped)
 	}
-	return fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(field), escaped)
+	if !multiToken {
+		return fmt.Sprintf("filter_fulltext('%s', '%s')", indexRef, escaped)
+	}
+	if strings.Contains(value, `"`) {
+		// Cannot be phrased: compare the raw column so the value still matches a
+		// single-valued cell instead of failing the statement.
+		return fmt.Sprintf("%s = '%s'", field, escaped)
+	}
+	return fmt.Sprintf("filter_fulltext('%s', '\"%s\"')", indexRef, escaped)
 }
 
 // fieldJSON reports fields stored as Infinity JSON columns. The Infinity Go
@@ -397,6 +414,16 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 		if fieldKeyword(k) {
 			var orConds []string
 			addKeyword := func(item string) {
+				// Blank entries are dropped exactly as the search path drops them:
+				// Infinity rejects an empty full-text query ("Trying to match:  on
+				// fields: <column> failed", 3052) and fails the whole
+				// UpdateChunks/DeleteChunks statement, so one empty element in a
+				// list built from optional values must not poison it. A condition
+				// left with no clause at all is refused by the callers' "1=1"
+				// guard, so this cannot widen an update or delete.
+				if strings.TrimSpace(item) == "" {
+					return
+				}
 				orConds = append(orConds, keywordFilterCondition(k, item))
 			}
 

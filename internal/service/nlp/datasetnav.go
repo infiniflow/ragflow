@@ -949,6 +949,36 @@ func navClusterCondition(tenantID, kbID, clusterName string) map[string]interfac
 	})
 }
 
+// navChildRehomeCondition builds the condition that moves one split child under
+// its new parent, or nil when the child cannot be addressed at all.
+//
+// The row id is preferred: the label is empty for rows the Infinity write path
+// folded into docnm, and two children can share a summary's first line, so a
+// label filter can miss the row or hit a sibling. A nav_doc leaf without a row id
+// is still identifiable by its document. Nothing else is safe — with blank
+// keywords dropped, a type-only condition would match every row of that type in
+// the dataset.
+func navChildRehomeCondition(child map[string]interface{}, kbID string) map[string]interface{} {
+	typ := firstStringValue(child["type_kwd"])
+	if typ == "" {
+		return nil
+	}
+	cond := map[string]interface{}{
+		"compile_kwd": []string{navCompileKwd},
+		"kb_id":       kbID,
+	}
+	if rowID := firstStringValue(child["id"]); rowID != "" {
+		cond["id"] = []string{rowID}
+		return cond
+	}
+	if docID := firstStringValue(child["doc_id"]); typ == "nav_doc" && docID != "" {
+		cond["type_kwd"] = []string{typ}
+		cond["doc_id"] = []string{docID}
+		return cond
+	}
+	return nil
+}
+
 // cleanupEmptyCluster deletes a nav_cluster that holds no docs and no child
 // clusters, then recurses to its parent (cascade, mirroring Python
 // _cleanup_empty_cluster). It is called by RemoveDoc after deleting a nav_doc so
@@ -1146,23 +1176,23 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		ids   []string
 		vec   []float32
 	}{}
+	// Every child must be addressable before the first write. The rehome points
+	// children at splitA/splitB, and those rows are only inserted after the
+	// original cluster is deleted, so a child that cannot be rehomed would be left
+	// hanging off a name no query can reach — refuse the split instead of
+	// half-moving the subtree.
+	for _, child := range children {
+		if navChildRehomeCondition(child, kbID) == nil {
+			return fmt.Errorf("datasetnav: refusing to split cluster %q: child %q carries no row id, document id or type",
+				clusterName, navRowLabel(child))
+		}
+	}
 	for i, child := range children {
 		acc := &accA
 		if i%2 == 1 {
 			acc = &accB
 		}
-		title := navRowLabel(child)
 		typ := firstStringValue(child["type_kwd"])
-		childID := firstStringValue(child["id"])
-		if title == "" && childID == "" {
-			continue
-		}
-		if typ == "" {
-			// The engine returned a child without a type discriminator; skip it
-			// so we never rehome with an empty-type filter that matches nothing
-			// (leaving the child orphaned under a deleted cluster name).
-			continue
-		}
 		// Aggregate this child's doc count + doc ids into the target split.
 		if c := intValue(child["doc_count_int"]); c > 0 {
 			acc.count += c
@@ -1175,34 +1205,15 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			childDocIDs = append(childDocIDs, firstStringValue(child["doc_id"]))
 		}
 		acc.ids = appendUnique(acc.ids, childDocIDs)
-		// Rehome the child by its row id — the id this search just returned.
-		// A label filter is not a usable key here: it is empty for rows the
-		// Infinity write path folded into docnm before title_kwd was kept as its
-		// own column, two children can share a summary's first line, and Infinity
-		// cannot match a multi-token value on a *_kwd column at all (see
-		// engine/infinity keywordFilterCondition). Any of those no-ops left the
-		// child under the original cluster name while the original cluster is
-		// deleted below, orphaning the whole subtree.
-		upd := map[string]interface{}{"parent_kwd": accTarget(i, splitA, splitB)}
-		childCond := map[string]interface{}{
-			"compile_kwd": []string{navCompileKwd},
-			"kb_id":       kbID,
+		childCond := navChildRehomeCondition(child, kbID)
+		if childCond == nil {
+			// Unreachable after the pre-pass above; kept so a future caller
+			// cannot fall through to a condition that matches the whole dataset.
+			return fmt.Errorf("datasetnav: refusing to rehome %s child %q", typ, navRowLabel(child))
 		}
-		if childID != "" {
-			childCond["id"] = []string{childID}
-		} else if docID := firstStringValue(child["doc_id"]); typ == "nav_doc" && docID != "" {
-			// No row id came back: a nav_doc leaf is still identifiable by its
-			// document. A label filter would be wrong here — navRowLabel may have
-			// taken the label from docnm, not title_kwd.
-			childCond["type_kwd"] = []string{typ}
-			childCond["doc_id"] = []string{docID}
-		} else {
-			// Last resort: keep the label fallback rather than skipping the
-			// rehome (which would leave the child under the cluster being deleted).
-			childCond["type_kwd"] = []string{typ}
-			childCond["title_kwd"] = []string{title}
-		}
-		if err := de.UpdateChunks(ctx, childCond, upd, s.navIndexName(tenantID), kbID); err != nil {
+		if err := de.UpdateChunks(ctx, childCond,
+			map[string]interface{}{"parent_kwd": accTarget(i, splitA, splitB)},
+			s.navIndexName(tenantID), kbID); err != nil {
 			return err
 		}
 	}

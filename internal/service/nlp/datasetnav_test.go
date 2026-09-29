@@ -1800,6 +1800,98 @@ func TestNavService_MultiTokenClusterUpdatesByRowID(t *testing.T) {
 	}
 }
 
+// TestNavService_MaybeSplitClusterRefusesUnidentifiableChild pins the guard that
+// dropping blank keyword values made necessary: a child with neither a row id nor
+// a document id must abort the split. Falling back to a label would leave a
+// type-only condition, and with the blank label dropped before rendering that
+// condition reparents every row of that type in the dataset instead of failing.
+func TestNavService_MaybeSplitClusterRefusesUnidentifiableChild(t *testing.T) {
+	const clusterName = "overfull_no_ids"
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navClusterID("t1", "kb1", clusterName), "kb_id": "kb1",
+		"compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+		"title_kwd": clusterName, "docnm_kwd": clusterName,
+		"parent_kwd": navRootParent, "depth_int": 1,
+		"doc_count_int": navMaxDocsPerCluster + 1, "doc_ids_kwd": []string{},
+	})
+	// Directly seeded (not via InsertChunks) so they carry NO row id, and no
+	// doc_id either: every fallback the rehome could use is unavailable.
+	for i := 0; i <= navMaxDocsPerCluster; i++ {
+		eng.rows = append(eng.rows, map[string]interface{}{
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"title_kwd": fmt.Sprintf("kid %02d", i), "parent_kwd": clusterName,
+			"depth_int": 2, "doc_count_int": 1,
+		})
+	}
+	ns := newTestNav(eng)
+
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+		t.Fatal("a child without a row id or document id must abort the split")
+	}
+	// Nothing may be reparented, and the original cluster must still be there.
+	reparented := 0
+	originalPresent := false
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == clusterName {
+			originalPresent = true
+		}
+		if p, _ := row["parent_kwd"].(string); strings.HasSuffix(p, ":A") || strings.HasSuffix(p, ":B") {
+			reparented++
+		}
+	}
+	if reparented != 0 {
+		t.Errorf("%d rows were reparented by a type-only condition", reparented)
+	}
+	if !originalPresent {
+		t.Error("the original cluster must not be deleted when the split aborts")
+	}
+}
+
+// TestNavService_MaybeSplitClusterValidatesEveryChildFirst pins the pre-pass: an
+// unaddressable child anywhere in the list must stop the split before the first
+// write. The rehome points children at splitA/splitB, whose rows are inserted
+// only after the original cluster is deleted, so aborting mid-loop would leave
+// the already-moved children hanging off a name no query can reach.
+func TestNavService_MaybeSplitClusterValidatesEveryChildFirst(t *testing.T) {
+	const clusterName = "overfull_second_child_broken"
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navClusterID("t1", "kb1", clusterName), "kb_id": "kb1",
+		"compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+		"title_kwd": clusterName, "docnm_kwd": clusterName,
+		"parent_kwd": navRootParent, "depth_int": 1,
+		"doc_count_int": navMaxDocsPerCluster + 1, "doc_ids_kwd": []string{},
+	})
+	// The first child IS addressable, so a loop that validated lazily would have
+	// reparented it before reaching the broken child below.
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navDocID("t1", "kb1", "d0"), "kb_id": "kb1", "compile_kwd": navCompileKwd,
+		"type_kwd": "nav_doc", "title_kwd": "good child", "doc_id": "d0",
+		"parent_kwd": clusterName, "depth_int": 2, "doc_count_int": 1,
+	})
+	for i := 1; i <= navMaxDocsPerCluster; i++ {
+		eng.rows = append(eng.rows, map[string]interface{}{
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"title_kwd": fmt.Sprintf("broken %02d", i), "parent_kwd": clusterName,
+			"depth_int": 2, "doc_count_int": 1,
+		})
+	}
+	ns := newTestNav(eng)
+
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+		t.Fatal("an unaddressable child must abort the split")
+	}
+	for _, row := range eng.rows {
+		if p, _ := row["parent_kwd"].(string); strings.HasSuffix(p, ":A") || strings.HasSuffix(p, ":B") {
+			t.Fatalf("row %v was reparented before every child had been validated", row["id"])
+		}
+	}
+	if navRowByID(eng, navClusterID("t1", "kb1", clusterName)) == nil {
+		t.Error("the original cluster must not be deleted when the split aborts")
+	}
+}
+
 // navRowByID returns the stored row with the given id, or nil.
 func navRowByID(eng *memNavEngine, id string) map[string]interface{} {
 	for _, r := range eng.rows {
