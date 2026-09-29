@@ -226,21 +226,30 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    docker compose -f docker-compose.yml up -d
    ```
 
+   Dalam konfigurasi MySQL default, entrypoint image Go menjalankan migrasi database terlebih dahulu, lalu memulai Syncer, Admin, API, dan Ingestor melalui `bin/ragflow_server`.
+
 > Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
 
-1. Periksa status server setelah server aktif dan berjalan:
+4. Periksa status layanan dan kesiapan API setelah startup:
 
    ```bash
    docker ps
+   ```
+
+   Perintah di atas menampilkan status dependensi. RAGFlow tidak mendefinisikan healthcheck Compose; konfirmasikan kesiapan melalui API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
+   Respons HTTP 200 menunjukkan bahwa layanan siap. Jika Anda mengubah `SVR_WEB_HTTP_PORT`, gunakan port tersebut dalam URL pemeriksaan kesehatan. Jika startup gagal, periksa log layanan terkait dengan `docker logs --tail 50 <service>`.
+
+5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
 
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
    >
-3. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
+6. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
    >

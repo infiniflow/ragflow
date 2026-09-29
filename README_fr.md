@@ -223,13 +223,19 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
    Avec la configuration MySQL par défaut, le point d’entrée de l’image exécute d’abord les migrations, puis démarre Syncer, Admin, API et Ingestor via `bin/ragflow_server`. Dans RAGFlow open-source 1.0, DeepDoc utilise l’inférence CPU pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
 
-4. Vérifiez l’état des dépendances avec `docker ps`, puis confirmez que RAGFlow est prêt avec l’interface HTTP (le conteneur RAGFlow ne définit pas de healthcheck Compose) :
+4. Vérifiez l’état des services et la disponibilité de l’API après le démarrage :
+
+   ```bash
+   docker ps
+   ```
+
+   La commande ci-dessus affiche l’état des dépendances. RAGFlow ne définit pas de healthcheck Compose ; confirmez sa disponibilité via son API :
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Une réponse HTTP 200 indique que le service est prêt. Si `SVR_WEB_HTTP_PORT` a été modifié, utilisez ce port dans l’URL. En cas d’échec du démarrage, consultez les journaux du service concerné avec Compose.
+   Une réponse HTTP 200 indique que le service est prêt. Si `SVR_WEB_HTTP_PORT` a été modifié, utilisez ce port dans l’URL de vérification. En cas d’échec du démarrage, consultez les journaux du service concerné avec `docker logs --tail 50 <service>`.
    >
 5. Dans votre navigateur web, entrez l'adresse IP de votre serveur et connectez-vous à RAGFlow.
 

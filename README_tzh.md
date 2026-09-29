@@ -233,19 +233,19 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 
 > RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理。
 
-4. 檢查相依服務狀態及 API 是否就緒：
+4. 啟動後檢查服務狀態和 API 是否就緒：
 
    ```bash
    docker ps
    ```
 
-   相依服務顯示健康且 RAGFlow 容器持續執行後，請透過 HTTP 介面確認 RAGFlow 是否就緒（RAGFlow 容器本身未定義 Compose healthcheck）：
+   上述命令會顯示相依服務的狀態。RAGFlow 本身未定義 Compose healthcheck；請透過 API 確認是否就緒：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請將健康檢查網址中的連接埠替換為對應值。啟動異常時，請使用 Compose 查看對應服務日誌。
+   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請在健康檢查網址中使用對應的連接埠。啟動失敗時，請使用 `docker logs --tail 50 <service>` 查看對應服務日誌。
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
    > 上面這個範例中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過設定則無需輸入連接埠（預設的 HTTP 服務連接埠 80）。

@@ -226,14 +226,23 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    docker compose -f docker-compose.yml up -d
    ```
 
+   Varsayılan MySQL yapılandırmasında Go imajı giriş noktası önce veritabanı geçişlerini çalıştırır, ardından `bin/ragflow_server` aracılığıyla Syncer, Admin, API ve Ingestor hizmetlerini başlatır.
+
 > RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
 
-4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
+4. Başlatma sonrasında hizmet durumunu ve API hazır olma durumunu kontrol edin:
 
    ```bash
    docker ps
+   ```
+
+   Yukarıdaki komut bağımlılıkların durumunu gösterir. RAGFlow bir Compose healthcheck tanımlamaz; hazır olma durumunu API üzerinden doğrulayın:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
+
+   HTTP 200 yanıtı hazır olunduğunu gösterir. `SVR_WEB_HTTP_PORT` değerini değiştirdiyseniz sağlık kontrolü URL'sinde bu portu kullanın. Başlatma başarısız olursa ilgili hizmetin günlüklerini `docker logs --tail 50 <service>` ile inceleyin.
 
 5. Web tarayıcınıza sunucunuzun IP adresini girin ve RAGFlow'a giriş yapın.
 
