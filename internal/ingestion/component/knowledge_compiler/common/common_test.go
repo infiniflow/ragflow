@@ -2,8 +2,35 @@ package common
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+	"time"
+
+	"ragflow/internal/agent/runtime"
 )
+
+func TestRetryFailureReporterCoalescesRepeatedErrors(t *testing.T) {
+	reporter := RetryFailureReporter{}
+	err := errors.New("429 rate limit")
+
+	if message, ok := reporter.FailureMessage(1, 6, time.Second, err, false); !ok || !strings.Contains(message, "attempt 1/6") {
+		t.Fatalf("first failure = (%q, %v), want an emitted attempt message", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(2, 6, 2*time.Second, err, false); ok || message != "" {
+		t.Fatalf("second repeated failure = (%q, %v), want suppressed", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(3, 6, 4*time.Second, err, false); ok || message != "" {
+		t.Fatalf("third repeated failure = (%q, %v), want suppressed", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(4, 6, 8*time.Second, err, false); !ok || !strings.Contains(message, "3 repeated failures") {
+		t.Fatalf("fourth failure = (%q, %v), want a coalesced retry update", message, ok)
+	}
+	if message, ok := reporter.RecoveryMessage(5); !ok || !strings.Contains(message, "recovered after 4 failures") {
+		t.Fatalf("recovery = (%q, %v), want recovery summary", message, ok)
+	}
+}
 
 type captureChat struct{ req ChatRequest }
 
@@ -19,6 +46,56 @@ func TestGenJSONDisablesInvokerRetry(t *testing.T) {
 	}
 	if !chat.req.DisableRetry {
 		t.Fatal("GenJSON must disable retries in the underlying ChatInvoker")
+	}
+}
+
+func TestRepairJSONTextRepairsMalformedResponse(t *testing.T) {
+	got, err := RepairJSONText("Here is the result: {id: 'root', children: [{id: 'child',},]}")
+	if err != nil {
+		t.Fatalf("RepairJSONText: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("repaired JSON is invalid: %v", err)
+	}
+	if parsed["id"] != "root" {
+		t.Errorf("repaired id = %v, want root", parsed["id"])
+	}
+}
+
+type failingChat struct{ err error }
+
+func (c failingChat) Chat(context.Context, ChatRequest) (*ChatResponse, error) {
+	return nil, c.err
+}
+
+func TestGenJSONReportsLLMFailure(t *testing.T) {
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) {
+		if component != "Compiler" {
+			t.Fatalf("component = %q, want Compiler", component)
+		}
+		messages = append(messages, message)
+	})
+	err := errors.New("API request failed with status 401:\ninvalid key")
+	if _, gotErr := GenJSON(ctx, failingChat{err: err}, ChatRequest{}, 0); !errors.Is(gotErr, err) {
+		t.Fatalf("GenJSON error = %v, want %v", gotErr, err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages = %v, want one error message", messages)
+	}
+	if !strings.Contains(messages[0], "[ERROR] LLM call failed (attempt 1/1)") || strings.Contains(messages[0], "\n") {
+		t.Fatalf("unexpected progress message: %q", messages[0])
+	}
+}
+
+func TestCompactErrorRedactsCredentials(t *testing.T) {
+	got := CompactError(errors.New(`status=401 api_key="sk-secret-value" password=topsecret`))
+	if strings.Contains(got, "sk-secret-value") || strings.Contains(got, "topsecret") {
+		t.Fatalf("CompactError leaked credentials: %q", got)
+	}
+	if !strings.Contains(got, "api_key=[REDACTED]") || !strings.Contains(got, "password=[REDACTED]") {
+		t.Fatalf("CompactError did not redact credential fields: %q", got)
 	}
 }
 

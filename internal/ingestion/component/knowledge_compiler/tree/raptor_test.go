@@ -116,13 +116,17 @@ func TestSummarizeTextsFailsAfterMaxRetries(t *testing.T) {
 	}
 }
 
-func TestSummarizeTextsPassesMaxTokens(t *testing.T) {
+func TestSummarizeTextsUsesSoftMaxTokenGuidance(t *testing.T) {
 	f := &fakeChat{responses: []*common.ChatResponse{{Content: "title\nbody"}}}
 	if _, err := summarizeTexts(context.Background(), depsWithChat(f), "llm", "sys", "user", 1024); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if f.lastReq.MaxTokens == nil || *f.lastReq.MaxTokens != 1024 {
-		t.Fatalf("MaxTokens not passed through: %v", f.lastReq.MaxTokens)
+	if f.lastReq.MaxTokens != nil {
+		t.Fatalf("summary should not set a provider max_tokens cap: %v", *f.lastReq.MaxTokens)
+	}
+	wantPrompt := "user Keep the summary concise and target approximately 1024 tokens."
+	if f.lastReq.UserPrompt != wantPrompt {
+		t.Fatalf("soft length guidance not added to prompt: got %q, want %q", f.lastReq.UserPrompt, wantPrompt)
 	}
 }
 
@@ -163,7 +167,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 		{Text: "beta", Vector: []float32{0, 1, 0, 0}},
 	}
 	var products []common.Product
-	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products); err != nil {
+	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
 		t.Fatalf("buildTree returned unexpected error: %v", err)
 	}
 	if len(products) != 0 {
@@ -173,11 +177,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 
 // TestDefaultRaptorPromptMatchesTreeYAML locks the default summary prompt to the
 // production tree.yaml template. It must equal the Python tree compilation
-// template prompt (api/db/init_data/compilation_templates/tree.yaml), NOT the
-// compiler.py:128 fallback. Critically, the YAML literal block carries a base
-// indent of 6 spaces before {cluster_content}; those 6 spaces are part of the
-// prompt and must be preserved (Python does self._prompt.format(...), splicing
-// the cluster text after the 6-space indent).
+// template prompt.
 func TestDefaultRaptorPromptMatchesTreeYAML(t *testing.T) {
 	want := "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 	if defaultRaptorPrompt != want {

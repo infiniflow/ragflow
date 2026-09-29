@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
@@ -16,6 +18,32 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		valid   bool
+	}{
+		{name: "missing", payload: `{}`, valid: false},
+		{name: "empty", payload: `{"instances":[]}`, valid: false},
+		{name: "empty element", payload: `{"instances":[""]}`, valid: false},
+		{name: "instance", payload: `{"instances":["instance-a"]}`, valid: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req DropProviderInstanceRequest
+			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
+				t.Fatal(err)
+			}
+			err := binding.Validator.ValidateStruct(&req)
+			if (err == nil) != tt.valid {
+				t.Fatalf("validation error = %v, valid = %v", err, tt.valid)
+			}
+		})
+	}
+}
 
 func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -84,6 +112,139 @@ func decodeProviderHandlerResponse(t *testing.T, recorder *httptest.ResponseReco
 	return body
 }
 
+func TestFilterUnsupportedProviders(t *testing.T) {
+	providers := []map[string]interface{}{
+		{"name": "OpenAI"},
+		{"name": "MinerU.Net"},
+		{"name": "MinerU"},
+	}
+
+	got := filterUnsupportedProviders(providers)
+
+	names := make([]string, 0, len(got))
+	for _, provider := range got {
+		name, ok := provider["name"].(string)
+		if !ok {
+			t.Fatalf("provider without name: %v", provider)
+		}
+		names = append(names, name)
+	}
+	want := []string{"OpenAI", "MinerU"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+}
+
+// indexProviderModels keys a merged list by its normalized name.
+func indexProviderModels(t *testing.T, list []map[string]interface{}) map[string]map[string]interface{} {
+	t.Helper()
+	indexed := make(map[string]map[string]interface{}, len(list))
+	for _, m := range list {
+		name, ok := m["name"].(string)
+		if !ok {
+			t.Fatalf("model without name: %v", m)
+		}
+		key := providerModelKey(name)
+		if _, dup := indexed[key]; dup {
+			t.Fatalf("duplicate model %q in merged list", name)
+		}
+		indexed[key] = m
+	}
+	return indexed
+}
+
+func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "gpt-4o", "model_types": []string{"chat"}, "max_tokens": 4096},
+		{"name": "text-embedding", "model_types": []string{"embedding"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "GPT-4o", "model_types": []string{"chat"}, "max_tokens": 128000},
+		{"name": "gpt-4o-mini ", "model_types": []string{"chat"}, "max_tokens": 16384},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if len(got) != 3 {
+		t.Fatalf("merged %d models, want 3: %v", len(got), got)
+	}
+
+	merged := got["gpt-4o"]
+	if name := merged["name"]; name != "gpt-4o" {
+		t.Errorf("name = %v, want the catalog spelling gpt-4o", name)
+	}
+	if maxTokens := merged["max_tokens"]; maxTokens != 4096 {
+		t.Errorf("max_tokens = %v, want the catalog value 4096", maxTokens)
+	}
+
+	trimmed, ok := got["gpt-4o-mini"]
+	if !ok {
+		t.Fatalf("remote-only model not kept: %v", got)
+	}
+	if name := trimmed["name"]; name != "gpt-4o-mini" {
+		t.Errorf("name = %v, want trimmed gpt-4o-mini", name)
+	}
+}
+
+func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
+	}
+	remote := []map[string]interface{}{{"name": "Rerank-1"}}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	merged, ok := got["rerank-1"]
+	if !ok {
+		t.Fatalf("merged = %v, want a single rerank-1 entry", got)
+	}
+	if types := providerModelMapTypes(merged); !reflect.DeepEqual(types, []string{"rerank"}) {
+		t.Errorf("model_types = %v, want [rerank]", types)
+	}
+	if maxTokens := merged["max_tokens"]; maxTokens != 1024 {
+		t.Errorf("max_tokens = %v, want 1024", maxTokens)
+	}
+}
+
+func TestValidateInstanceName(t *testing.T) {
+	tests := []struct {
+		name  string
+		valid bool
+	}{
+		{name: "my_instance", valid: true},
+		{name: "Instance123", valid: true},
+		{name: "_123", valid: true},
+		{name: "my-instance", valid: true},
+		{name: "-my-instance-1", valid: true},
+		{name: "", valid: false},
+		{name: "my instance", valid: false},
+		{name: "实例", valid: false},
+		{name: "instância", valid: false},
+		{name: "instance!", valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			}
+		})
+	}
+}
+
+func TestProviderHandlerCreateProviderInstanceRejectsInvalidInstanceName(t *testing.T) {
+	ctx, recorder := newProviderHandlerRequest(
+		t,
+		map[string]interface{}{"instance_name": "my instance!"},
+		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
+	)
+
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).CreateProviderInstance(ctx)
+
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
+		t.Fatalf("code = %v, want %v", body["code"], common.CodeBadRequest)
+	}
+}
+
 func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
@@ -92,7 +253,7 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 		gin.Param{Key: "instance_id_or_name", Value: "default"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -112,7 +273,7 @@ func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -136,7 +297,7 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())

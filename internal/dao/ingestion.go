@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type IngestionTaskDAO struct{}
@@ -59,9 +60,13 @@ func (dao *IngestionTaskDAO) Create(ctx context.Context, db *gorm.DB, ingestionT
 	return ingestionTask, nil
 }
 
-func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm.DB, taskID, fromStatus, toStatus string) (bool, error) {
+// UpdateStatusIfCurrent updates the task status if its current status matches any of the given fromStatuses.
+func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm.DB, taskID string, fromStatuses []string, toStatus string) (bool, error) {
+	if len(fromStatuses) == 0 {
+		return false, nil
+	}
 	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
-		Where("id = ? AND status = ?", taskID, fromStatus).
+		Where("id = ? AND status IN (?)", taskID, fromStatuses).
 		Update("status", toStatus)
 	if result.Error != nil {
 		return false, result.Error
@@ -73,6 +78,20 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm
 // graph. It is the authoritative denominator for progress percentage.
 func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.DB, taskID string, total int) error {
 	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
+}
+
+// UpdatePipelineLogID binds the task to the pipeline_operation_log row its
+// current run owns. The terminal writer updates exactly that row, so a
+// superseded run whose row was deleted or replaced cannot adopt the
+// replacement run's row.
+func (dao *IngestionTaskDAO) UpdatePipelineLogID(ctx context.Context, db *gorm.DB, taskID, logID string) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", logID).Error
+}
+
+// ClearPipelineLogID detaches a terminal task from its completed run before a
+// user-initiated retry receives a new immutable run identity.
+func (dao *IngestionTaskDAO) ClearPipelineLogID(ctx context.Context, db *gorm.DB, taskID string) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", nil).Error
 }
 
 type TaskInfo struct {
@@ -197,6 +216,18 @@ func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string
 	return task, err
 }
 
+// GetByIDForUpdate fetches and locks a task for a short ownership-establishment
+// transaction. Callers must pass a transaction and keep metadata lookups and
+// message publishing outside the lock.
+func (dao *IngestionTaskDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
+	var task *entity.IngestionTask
+	err := db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).
+		First(&task).Error
+	return task, err
+}
+
 // GetByDocumentID returns the latest ingestion task for a document. Historical
 // retries are ordered by create_time and then ID to match document-list state.
 func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, documentId string) (*entity.IngestionTask, error) {
@@ -214,6 +245,29 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 		return nil, nil
 	}
 	return tasks[0], nil
+}
+
+// GetLatestByDocumentIDs returns a map of documentID -> latest IngestionTask.
+func (dao *IngestionTaskDAO) GetLatestByDocumentIDs(ctx context.Context, db *gorm.DB, documentIDs []string) (map[string]*entity.IngestionTask, error) {
+	if len(documentIDs) == 0 {
+		return map[string]*entity.IngestionTask{}, nil
+	}
+	var tasks []*entity.IngestionTask
+	err := db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Order("COALESCE(create_time, 0) DESC").
+		Order("id DESC").
+		Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*entity.IngestionTask, len(documentIDs))
+	for _, task := range tasks {
+		if _, exists := result[task.DocumentID]; !exists {
+			result[task.DocumentID] = task
+		}
+	}
+	return result, nil
 }
 
 // CountActiveByDatasetID returns the number of ingestion tasks for the
@@ -236,7 +290,7 @@ func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gor
 						AND newer_ingestion_task.id > ingestion_task.id
 					)
 				  )
-			)`, datasetID, []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING}).
+			)`, datasetID, common.ActiveTaskStatuses).
 		Count(&count).Error
 	return count, err
 }
@@ -259,6 +313,25 @@ func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, 
 
 type IngestionTaskLogDAO struct{}
 
+// IngestionEventPage is one keyset-paginated segment of an immutable run's
+// event stream. Events are always returned in ascending ID order so callers
+// can append or prepend them without re-sorting.
+type IngestionEventPage struct {
+	Events        []*entity.IngestionTaskLog
+	HasMoreBefore bool
+	HasMoreAfter  bool
+}
+
+// Event types stored in ingestion_task_log.event_type. Only lifecycle events
+// participate in component progress aggregation; the remaining kinds are the
+// immutable run event stream rendered by the UI.
+const (
+	EventTypeLifecycle = iota
+	EventTypeMessage
+	EventTypeTerminal
+	EventTypeSystem
+)
+
 func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
 	return &IngestionTaskLogDAO{}
 }
@@ -271,16 +344,142 @@ func (dao *IngestionTaskLogDAO) Update(ctx context.Context, db *gorm.DB, ingesti
 	return db.WithContext(ctx).Save(ingestionLog).Error
 }
 
-// ListLogsByTaskID returns the task's logs in chronological (write) order.
-// Ordering is by auto-increment `id ASC` (NOT `create_time`) because
-// create_time has only second-level resolution and would tie-break
-// arbitrarily; `id` is monotonic and always reflects write order. This
-// feeds the frontend log stream (GET .../logs), which renders each row by
-// phase (0 started / 1 done / -1 failed).
-func (dao *IngestionTaskLogDAO) ListLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) ([]*entity.IngestionTaskLog, error) {
+// ListLogsByPipelineLogID returns one run's events in chronological write
+// order. The pipeline log id is the immutable run identity; task ids are
+// reusable across retries and must not be used to reconstruct a run.
+func (dao *IngestionTaskLogDAO) ListLogsByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
+	err := db.WithContext(ctx).Where("pipeline_log_id = ?", pipelineLogID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
+}
+
+// LatestEventsByPipelineLogIDs returns each requested run's latest persisted
+// event in one query. It never falls back to task_id because a task can be
+// reused by a later run.
+func (dao *IngestionTaskLogDAO) LatestEventsByPipelineLogIDs(ctx context.Context, db *gorm.DB, pipelineLogIDs []string) (map[string]*entity.IngestionTaskLog, error) {
+	if len(pipelineLogIDs) == 0 {
+		return map[string]*entity.IngestionTaskLog{}, nil
+	}
+	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Select("MAX(id)").
+		Where("pipeline_log_id IN ?", pipelineLogIDs).
+		Group("pipeline_log_id")
+	var events []*entity.IngestionTaskLog
+	if err := db.WithContext(ctx).Where("id IN (?)", latestIDs).Find(&events).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]*entity.IngestionTaskLog, len(events))
+	for _, event := range events {
+		if event != nil && event.PipelineLogID != nil && *event.PipelineLogID != "" {
+			result[*event.PipelineLogID] = event
+		}
+	}
+	return result, nil
+}
+
+// ListEventsPageByPipelineLogID returns one page for a run's immutable event
+// stream. afterID and beforeID are mutually exclusive keyset cursors; callers
+// validate public request parameters before invoking this DAO method.
+func (dao *IngestionTaskLogDAO) ListEventsPageByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string, limit int, afterID, beforeID *int) (*IngestionEventPage, error) {
+	if limit <= 0 {
+		return nil, errors.New("ingestion event page limit must be positive")
+	}
+	if afterID != nil && beforeID != nil {
+		return nil, errors.New("ingestion event page cursors are mutually exclusive")
+	}
+
+	query := db.WithContext(ctx).Where("pipeline_log_id = ?", pipelineLogID)
+	descending := false
+	switch {
+	case afterID != nil:
+		query = query.Where("id > ?", *afterID).Order("id ASC")
+	case beforeID != nil:
+		query = query.Where("id < ?", *beforeID).Order("id DESC")
+		descending = true
+	default:
+		query = query.Order("id DESC")
+		descending = true
+	}
+
+	var events []*entity.IngestionTaskLog
+	if err := query.Limit(limit + 1).Find(&events).Error; err != nil {
+		return nil, err
+	}
+	page := &IngestionEventPage{}
+	if len(events) > limit {
+		if descending {
+			page.HasMoreBefore = true
+		} else {
+			page.HasMoreAfter = true
+		}
+		events = events[:limit]
+	}
+	if descending {
+		for left, right := 0, len(events)-1; left < right; left, right = left+1, right-1 {
+			events[left], events[right] = events[right], events[left]
+		}
+	}
+	page.Events = events
+
+	if len(events) == 0 {
+		switch {
+		case afterID != nil:
+			var err error
+			page.HasMoreBefore, err = dao.hasEventBeforeOrEqual(ctx, db, pipelineLogID, *afterID)
+			if err != nil {
+				return nil, err
+			}
+		case beforeID != nil:
+			var err error
+			page.HasMoreAfter, err = dao.hasEventAfterOrEqual(ctx, db, pipelineLogID, *beforeID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return page, nil
+	}
+
+	oldestID := events[0].ID
+	newestID := events[len(events)-1].ID
+	if !page.HasMoreBefore {
+		var err error
+		page.HasMoreBefore, err = dao.hasEventBefore(ctx, db, pipelineLogID, oldestID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !page.HasMoreAfter {
+		var err error
+		page.HasMoreAfter, err = dao.hasEventAfter(ctx, db, pipelineLogID, newestID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return page, nil
+}
+
+func (dao *IngestionTaskLogDAO) hasEventBefore(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id < ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventAfter(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id > ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventBeforeOrEqual(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id <= ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEventAfterOrEqual(ctx context.Context, db *gorm.DB, pipelineLogID string, id int) (bool, error) {
+	return dao.hasEvent(ctx, db, pipelineLogID, "id >= ?", id)
+}
+
+func (dao *IngestionTaskLogDAO) hasEvent(ctx context.Context, db *gorm.DB, pipelineLogID, condition string, id int) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND "+condition, pipelineLogID, id).
+		Limit(1).Count(&count).Error
+	return count > 0, err
 }
 
 // TaskProgress is the server-side aggregate of a task's component progress,
@@ -294,22 +493,13 @@ type TaskProgress struct {
 	Percent float64 `json:"percent"`
 }
 
-// AggregateProgress computes {total, done, failed, running, percent} for a
-// task purely in SQL. It takes each component's latest row (max id per
-// component) and classifies by its phase:
-//
-//	done    = latest phase is exit/success   (1)
-//	failed  = latest phase is error/failure  (-1 legacy, or 2 after 1c)
-//	running = anything else (started, 0)
-//
-// `total` is the authoritative denominator from ingestion_task.component_total.
-// The classification is forward-compatible with the §5.1 ProgressPhase
-// renumbering (exit=1 stays; error moves -1 -> 2).
-func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.DB, taskID string, total int) (*TaskProgress, error) {
-	// Latest row id per component for this task.
+// AggregateProgressByPipelineLogID computes component progress for one run.
+// Detailed messages and terminal/system events deliberately do not affect a
+// component's latest lifecycle state.
+func (dao *IngestionTaskLogDAO) AggregateProgressByPipelineLogID(ctx context.Context, db *gorm.DB, pipelineLogID string, total int) (*TaskProgress, error) {
 	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
 		Select("MAX(id)").
-		Where("task_id = ?", taskID).
+		Where("pipeline_log_id = ? AND event_type = ? AND component <> ?", pipelineLogID, EventTypeLifecycle, "").
 		Group("component")
 
 	type phaseRow struct {
@@ -325,11 +515,11 @@ func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.
 	}
 
 	progress := &TaskProgress{Total: total}
-	for _, r := range rows {
+	for _, row := range rows {
 		switch {
-		case r.Phase == 1:
+		case row.Phase == 1:
 			progress.Done++
-		case r.Phase < 0 || r.Phase == 2:
+		case row.Phase < 0 || row.Phase == 2:
 			progress.Failed++
 		default:
 			progress.Running++
@@ -341,39 +531,8 @@ func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.
 	return progress, nil
 }
 
-func (dao *IngestionTaskLogDAO) LatestLogByTaskID(ctx context.Context, db *gorm.DB, taskID string) (*entity.IngestionTaskLog, error) {
-	var task *entity.IngestionTaskLog
-	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
-	return task, err
-}
-
 func (dao *IngestionTaskLogDAO) GetLogByLogID(ctx context.Context, db *gorm.DB, logID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
 	err := db.WithContext(ctx).Where("id = ?", logID).First(&task).Error
 	return task, err
-}
-
-func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteComponentLogsByTaskID removes component lifecycle rows from a new run
-// while preserving checkpoint rows such as run_count for task history.
-func (dao *IngestionTaskLogDAO) DeleteComponentLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
-	var logs []*entity.IngestionTaskLog
-	if err := db.WithContext(ctx).Where("task_id = ?", taskID).Find(&logs).Error; err != nil {
-		return 0, err
-	}
-	ids := make([]int, 0, len(logs))
-	for _, log := range logs {
-		if log != nil && len(log.Checkpoint) == 0 {
-			ids = append(ids, log.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.IngestionTaskLog{})
-	return result.RowsAffected, result.Error
 }

@@ -16,15 +16,13 @@
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { isDatasetId } from '@/utils/dataset-util';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
-  IArtifactAlteration,
   IArtifactGraph,
   IArtifactPage,
   IArtifactTopic,
@@ -47,10 +45,9 @@ import {
 } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  checkEmbedding,
   clearWiki,
-  deleteArtifactsStructure,
   deleteKnowledgeGraph,
-  getArtifactsAlteration,
   getArtifactGraph,
   getArtifactPage,
   getArtifactsStructure,
@@ -66,7 +63,6 @@ import kbService, {
   listWikiCommits,
   removeTag,
   renameTag,
-  runIndex,
   updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
@@ -92,7 +88,6 @@ import {
   normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
-import { DatasetGenerateKeys } from './use-dataset-generate';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
@@ -119,12 +114,29 @@ export const enum KnowledgeApiAction {
   DeleteDatasetStructure = 'deleteDatasetStructure',
   FetchArtifactAlteration = 'fetchArtifactAlteration',
   RunArtifactIndex = 'runArtifactIndex',
+  CheckKbEmbedding = 'checkKbEmbedding',
 }
 
 export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
   return (id as string) || '';
+};
+
+export const useCheckKbEmbedding = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { mutateAsync, isPending } = useMutation({
+    mutationKey: [KnowledgeApiAction.CheckKbEmbedding],
+    mutationFn: async (embedId: string) => {
+      const { data } = await checkEmbedding(knowledgeBaseId || '', {
+        embd_id: embedId,
+      });
+      return data;
+    },
+  });
+
+  return { checkKbEmbedding: mutateAsync, checking: isPending };
 };
 
 export const useTestRetrieval = () => {
@@ -137,7 +149,7 @@ export const useTestRetrieval = () => {
       ...values,
       kb_id: values?.kb_id || knowledgeBaseId,
       page: 1,
-      doc_ids: filterValue.doc_ids,
+      document_ids: filterValue.doc_ids,
       highlight: true,
       include_knowledge_compilation: false,
     };
@@ -164,7 +176,7 @@ export const useTestRetrieval = () => {
       if (mutation.data && queryParams.question) {
         const newParams = {
           ...queryParams,
-          doc_ids: value.doc_ids ?? [],
+          document_ids: value.doc_ids ?? [],
           page: 1,
         };
         mutation.mutate(newParams);
@@ -473,28 +485,6 @@ export const ArtifactTopicKeys = {
   listByDataset: (datasetId: string) =>
     [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
 };
-
-export const ArtifactAlterationKeys = {
-  detail: (datasetId: string, kind: string) =>
-    [KnowledgeApiAction.FetchArtifactAlteration, datasetId, kind] as const,
-};
-
-export function useFetchArtifactAlteration(kind: string) {
-  const knowledgeBaseId = useKnowledgeBaseId();
-
-  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
-    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-    initialData: null,
-    enabled: !!knowledgeBaseId && !!kind,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await getArtifactsAlteration(knowledgeBaseId, kind);
-      return data?.data ?? null;
-    },
-  });
-
-  return { data, loading };
-}
 
 const wikiCommitKeys = {
   list: (datasetId: string, pageType: string, slug: string) =>
@@ -862,31 +852,6 @@ export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
   return { data, loading };
 }
 
-export const useDeleteDatasetStructure = () => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
-    mutationFn: async (kind: string) => {
-      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
-        });
-      }
-      return data?.code;
-    },
-  });
-
-  return { data, loading, deleteDatasetStructure: mutateAsync };
-};
-
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
     Record<string, Record<string, string[]>>
@@ -980,11 +945,7 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
-export const useRunArtifactIndex = (kind: string) => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
-
+export const useRunArtifactIndex = () => {
   const {
     data,
     isPending: loading,
@@ -992,33 +953,11 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
-      // Go: wiki compilation is auto-driven by the scheduler; there is no
-      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
-      // update can't be mistaken for a real re-merge (the UI hides/disables the
-      // update control — plan v4.1 §4.2).
-      if (isGo) {
-        throw new Error(i18n.t('message.compileNotSupported'));
-      }
-      const { data } = await runIndex(knowledgeBaseId, 'wiki');
-      if (data?.code === 0) {
-        message.success(i18n.t('message.operated'));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: DatasetGenerateKeys.traceById(
-            GenerateType.Artifact,
-            knowledgeBaseId,
-          ),
-        });
-      }
-      return data;
+      // Wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a
+      // wiki update can't be mistaken for a real re-merge (the UI hides/
+      // disables the update control).
+      throw new Error(i18n.t('message.compileNotSupported'));
     },
   });
 
@@ -1032,21 +971,29 @@ export const KnowledgeListKeys = {
     shouldFilterListWithoutDocument: boolean,
     keywords: string,
     pageSize: number,
+    ownerTenantId?: string,
   ) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
       shouldFilterListWithoutDocument,
       keywords,
       pageSize,
+      ownerTenantId,
     ] as const,
-  byIds: (ids: string[]) =>
-    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids] as const,
+  byIds: (ids: string[], ownerTenantId?: string) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      'byIds',
+      ids,
+      ownerTenantId,
+    ] as const,
 };
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
   pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
+  ownerTenantId?: string,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -1061,6 +1008,7 @@ export const useFetchKnowledgeList = (
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
+        // ownerTenantId,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1070,6 +1018,8 @@ export const useFetchKnowledgeList = (
           page,
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
+          // Viewing a shared canvas: list the canvas owner's datasets.
+          // ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1126,8 +1076,14 @@ export const useFetchKnowledgeList = (
  * users pick variables alongside datasets); those are not resolvable ids and
  * are dropped before the request is built.
  */
-export const useFetchDatasetsByIds = (ids: string[]) => {
-  const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
+export const useFetchDatasetsByIds = (
+  ids: string[],
+  ownerTenantId?: string,
+) => {
+  const sortedIds = useMemo(
+    () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
+    [ids],
+  );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
@@ -1151,7 +1107,10 @@ export const useFetchDatasetsByIds = (ids: string[]) => {
  * empty while the lookup is in flight so consumers can hold off validation
  * until it settles; `settled` flips true once the lookup has finished.
  */
-export const useStaleDatasetIds = (datasetIds?: string[]) => {
+export const useStaleDatasetIds = (
+  datasetIds?: string[],
+  ownerTenantId?: string,
+) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
   // below and get misreported as stale.
@@ -1159,7 +1118,10 @@ export const useStaleDatasetIds = (datasetIds?: string[]) => {
     () => (datasetIds ?? []).filter(isDatasetId),
     [datasetIds],
   );
-  const { data: datasets, loading } = useFetchDatasetsByIds(persistedIds);
+  const { data: datasets, loading } = useFetchDatasetsByIds(
+    persistedIds,
+    ownerTenantId,
+  );
 
   const staleDatasetIds = useMemo(() => {
     if (loading) {
@@ -1295,7 +1257,7 @@ export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         page,
-        size: pageSize,
+        page_size: pageSize,
       });
       if (data.code === 0) {
         const res = data.data;
@@ -1338,9 +1300,9 @@ export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
       const { data } = await kbService.retrievalTest({
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
-        doc_ids: [],
+        document_ids: [],
         page,
-        size: pageSize,
+        page_size: pageSize,
       });
       if (data.code === 0) {
         const res = data.data;

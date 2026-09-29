@@ -153,8 +153,7 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 	for _, p := range prods {
 		id, _ := p.GetExtraString("id")
 		docID, _ := p.GetExtraString("doc_id")
-		tenant, _ := p.GetExtraString("tenant_id")
-		if id == "" || docID == "" || tenant == "" || p.Text == "" {
+		if id == "" || docID == "" || p.Text == "" {
 			t.Fatalf("structure: product missing schema fields: %+v", p)
 		}
 		if !chunkHasVector(p) {
@@ -162,10 +161,12 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 		}
 	}
 
-	// Exactly one graph product summarizing {nodes, edges}.
+	// Entity and relation products are emitted without a graph summary (the
+	// compact graph blob was removed by #19474).
 	graphCount, nodeCount, edgeCount := 0, 0, 0
 	for _, p := range prods {
-		kind, _ := p.GetExtraString("kc_kind")
+		// knowledge_graph_kwd discriminates the structure graph rows.
+		kind, _ := p.GetExtraString("knowledge_graph_kwd")
 		switch kind {
 		case "graph":
 			graphCount++
@@ -175,8 +176,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 			edgeCount++
 		}
 	}
-	if graphCount != 1 {
-		t.Fatalf("structure: graphCount = %d, want 1", graphCount)
+	if graphCount != 0 {
+		t.Fatalf("structure: graphCount = %d, want 0 (graph blob removed by #19474)", graphCount)
 	}
 	if nodeCount == 0 || edgeCount == 0 {
 		t.Fatalf("structure: expected entities+relations, got nodes=%d edges=%d", nodeCount, edgeCount)
@@ -198,8 +199,7 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 	for _, p := range prods {
 		id, _ := p.GetExtraString("id")
 		docID, _ := p.GetExtraString("doc_id")
-		tenant, _ := p.GetExtraString("tenant_id")
-		if id == "" || docID == "" || tenant == "" || p.Text == "" {
+		if id == "" || docID == "" || p.Text == "" {
 			t.Fatalf("wiki: product missing schema fields: %+v", p)
 		}
 		if !chunkHasVector(p) {
@@ -209,7 +209,8 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 
 	foundPage := false
 	for _, p := range prods {
-		if kind, _ := p.GetExtraString("kc_kind"); kind == "page" {
+		// compile_kwd=wiki_page is the page/section discriminator.
+		if kwd, _ := p.GetExtraString("compile_kwd"); kwd == "wiki_page" {
 			foundPage = true
 		}
 	}

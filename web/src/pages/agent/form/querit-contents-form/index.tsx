@@ -8,7 +8,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { buildOptions } from '@/utils/form';
@@ -85,7 +85,7 @@ function QueritContentsForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('format')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     {...field}
                     options={buildOptions(QueritContentFormat)}
                   />

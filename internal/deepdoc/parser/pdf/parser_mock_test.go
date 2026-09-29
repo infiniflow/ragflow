@@ -94,10 +94,6 @@ func TestEnrichOnePageWithDeepDoc_Mock(t *testing.T) {
 	if len(tbl.Cells) != 4 {
 		t.Errorf("expected 4 cells, got %d", len(tbl.Cells))
 	}
-	// Rows populated later by constructTable via extractTableAndReplace.
-	if tbl.ImageB64 == "" {
-		t.Error("ImageB64 empty")
-	}
 	if len(tbl.Positions) != 2 {
 		t.Errorf("expected 2 Positions, got %d", len(tbl.Positions))
 	}
@@ -162,10 +158,7 @@ func TestEnrichOnePageWithDeepDoc_TSRError(t *testing.T) {
 	dummy := image.NewRGBA(image.Rect(0, 0, 2000, 3000))
 	_, tables, _ := p.enrichOnePageWithDeepDoc(t.Context(), dummy, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
 	if len(tables) != 1 {
-		t.Fatalf("TSR failure: expected 1 pdf.TableItem with image+positions, got %d", len(tables))
-	}
-	if tables[0].ImageB64 == "" {
-		t.Error("should have image despite TSR failure")
+		t.Fatalf("TSR failure: expected 1 pdf.TableItem with positions, got %d", len(tables))
 	}
 	if len(tables[0].Positions) == 0 {
 		t.Error("should have positions despite TSR failure")

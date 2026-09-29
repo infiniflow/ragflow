@@ -51,13 +51,18 @@ type MarkdownParser struct {
 	OutputFormat       string
 	VLM                map[string]any
 	FlattenMediaToText bool
+	// FetchRemoteImages controls whether HTTP(S) Markdown images are
+	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
+	// callers normalizing untrusted backend responses may disable it.
+	FetchRemoteImages bool
 }
 
 func NewMarkdownParser(libType string) (*MarkdownParser, error) {
 	switch libType {
 	case GoMarkdown:
 		return &MarkdownParser{
-			libType: GoMarkdown,
+			libType:           GoMarkdown,
+			FetchRemoteImages: true,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported Markdown library type: %s", libType)
@@ -103,16 +108,30 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText)
+	mediaBudget := newEmbeddedMediaBudget()
+	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+	}
+	warnings := mediaBudget.warnings()
+	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+		warnings = append(warnings, "Markdown image processing reached the document time budget")
+	}
+	if unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
 	}
 	return ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 		},
-		JSON: items,
+		JSON:     items,
+		Warnings: warnings,
 	}
 }
 
@@ -123,7 +142,25 @@ func (p *MarkdownParser) String() string {
 // markdownNew is a thin constructor so the extension set is owned
 // in one place (both Parse and ParseWithResult consume it).
 func markdownNew() *mdparser.Parser {
-	extensions := mdparser.CommonExtensions | mdparser.AutoHeadingIDs | mdparser.NoEmptyLineBeforeBlock
+	// MathJax is masked out on purpose. CommonExtensions enables `$...$`
+	// inline math, whose payload lives on ast.Math rather than on a Text
+	// child; a real-world document that uses `$` as a currency symbol (a
+	// billing report, a price list) therefore had every span between two
+	// `$` silently deleted from the parsed text - with two far-apart `$`
+	// the whole middle of the document disappears. Python's markdown
+	// library has no math extension, so masking it also keeps the Go and
+	// Python parsers in parity. walkLeaf still handles ast.Math /
+	// ast.MathBlock defensively so that turning the extension back on
+	// cannot lose text again.
+	// OrderedListStart is not part of CommonExtensions, and without it the parser leaves
+	// ast.List.Start at zero for every ordered list: listEntries then falls back to 1 and
+	// renumbers the entries 1..N, so a list that the source spells "996. graphql: ..." is
+	// indexed as "1. graphql: ...". The numbers are then gone from the index (a query for
+	// "996" cannot match anything, and the gap counts against coverage), while Python's
+	// _extract_list_block keeps the raw lines - markers included - verbatim. Enabling it
+	// makes Start carry the number the source wrote (gomarkdown normalises a literal 1 to 0,
+	// which the fallback in listEntries turns back into 1).
+	extensions := mdparser.CommonExtensions&^mdparser.MathJax | mdparser.AutoHeadingIDs | mdparser.NoEmptyLineBeforeBlock | mdparser.OrderedListStart
 	return mdparser.NewWithExtensions(extensions)
 }
 
@@ -158,7 +195,7 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
 				i++
 			}
-			tableHTML := markdownlib.ToHTML([]byte(strings.Join(lines[start:i], "")), markdownNew(), nil)
+			tableHTML := markdownlib.ToHTML([]byte(strings.Join(balanceTableColumns(lines[start:i]), "")), markdownNew(), nil)
 			// Wrap the inlined <table> HTML in blank lines so gomarkdown
 			// keeps it as a single HTML block (one item) instead of
 			// re-parsing it into scattered cell text. See
@@ -173,6 +210,84 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 		i++
 	}
 	return buf.String(), changed
+}
+
+// balanceTableColumns pads the header row and its separator up to the widest row's cell
+// count, and returns the lines unchanged when no row is wider.
+//
+// This is a deliberate deviation from GFM, which ignores every cell beyond the header's
+// column count. The corpus is Wikipedia-derived and its rows carry unescaped pipes inside a
+// cell - an image spec such as "150x150px|alt=..." - so a row legitimately has more cells
+// than its header, and GFM therefore drops the tail of the row without a word. On a list of
+// World Heritage Sites that tail is the Year and Description columns: the words are in the
+// file and nowhere in the index. Measured on the production index, tables of this shape cost
+// 514 documents and 18,185 words that no query can reach.
+//
+// Padding the header keeps every cell, at the price of a few empty <th> elements. The
+// alternative - matching GFM exactly - is to keep losing the text, and the indexed text is
+// what this parser exists to preserve.
+func balanceTableColumns(tableLines []string) []string {
+	if len(tableLines) < 2 {
+		return tableLines
+	}
+	cells := func(line string) int {
+		s := strings.TrimRight(line, "\n")
+		pipes, escaped := 0, false
+		for i := 0; i < len(s); i++ {
+			switch {
+			case escaped:
+				escaped = false
+			case s[i] == '\\':
+				escaped = true
+			case s[i] == '|':
+				pipes++
+			}
+		}
+		trimmed := strings.TrimSpace(s)
+		if strings.HasPrefix(trimmed, "|") {
+			pipes--
+		}
+		if strings.HasSuffix(trimmed, "|") {
+			pipes--
+		}
+		if pipes < 0 {
+			return 0
+		}
+		return pipes + 1
+	}
+
+	head := cells(tableLines[0])
+	widest := head
+	for _, line := range tableLines[1:] {
+		if n := cells(line); n > widest {
+			widest = n
+		}
+	}
+	if widest <= head {
+		return tableLines
+	}
+	add := widest - head
+
+	out := make([]string, len(tableLines))
+	copy(out, tableLines)
+	pad := func(line string, separator bool) string {
+		nl := ""
+		if strings.HasSuffix(line, "\n") {
+			nl, line = "\n", strings.TrimRight(line, "\n")
+		}
+		cell := " |"
+		if separator {
+			cell = "---|"
+		}
+		line = strings.TrimRight(line, " \t")
+		if !strings.HasSuffix(line, "|") {
+			line += "|"
+		}
+		return line + strings.Repeat(cell, add) + nl
+	}
+	out[0] = pad(out[0], false)
+	out[1] = pad(out[1], true)
+	return out
 }
 
 // renderMarkdownTablesInlineText renders every GFM/HTML table inline as an
@@ -275,7 +390,8 @@ func markdownTableCells(line string) []string {
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
 // (<div>, <style>, …) are emitted as ordinary text with no ck_type.
-func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten bool) {
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
+	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
 		var ckType string
 		var docTypeKwd string
@@ -291,9 +407,21 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 			ckType = "text"
 			docTypeKwd = "text"
 		case *ast.List:
-			txt = leafText(n)
-			ckType = "list"
-			docTypeKwd = "text"
+			// Python's _markdown keeps one item per list entry, marker included
+			// ("- Eat a light diet before the exam?"), so a list never collapses into one blob.
+			// Emit the same shape: the reconstructed marker plus the entry's own text, one item
+			// each. The boundaries matter beyond alignment - the marker lives in the list node
+			// rather than in any leaf literal, and concatenating entries glued their words
+			// ("ChinaChina"), which destroys the word boundaries the tokenizer and the retrieval
+			// index depend on.
+			for _, entry := range listEntries(n) {
+				*out = append(*out, map[string]any{
+					"text":         entry,
+					"doc_type_kwd": "text",
+					"ck_type":      "list",
+				})
+			}
+			continue
 		case *ast.CodeBlock:
 			txt = leafText(n)
 			ckType = "code"
@@ -342,16 +470,48 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten b
 		// flatten is true, keep doc_type_kwd="text" (Python
 		// parser.py:1034: flatten_media_to_text overrides image).
 		if imgURL, ok := findBlockImage(child); ok {
-			if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
-				item["image"] = imgData
-				if !flatten {
-					item["doc_type_kwd"] = "image"
+			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
+			if fetchRemoteImages || !isRemote {
+				switch {
+				case isRemote && ctx.Err() != nil:
+					item["media_omitted"] = true
+				case !budget.reserveItem():
+					item["media_omitted"] = true
+				default:
+					encoded, raw, resolved := resolveImageURL(ctx, imgURL)
+					if !resolved {
+						unresolvedImages++
+						break
+					}
+					size := len(raw)
+					if raw == nil {
+						encodedBytes := len(encoded) - strings.Count(encoded, "\r") - strings.Count(encoded, "\n")
+						decodedSize, ok := base64DecodedSize(encoded, encodedBytes)
+						if !ok {
+							unresolvedImages++
+							break
+						}
+						size = int(decodedSize)
+					}
+					if !budget.includeReservedSize(size) {
+						item["media_omitted"] = true
+						break
+					}
+					if raw != nil {
+						item["image"] = base64.StdEncoding.EncodeToString(raw)
+					} else {
+						item["image"] = encoded
+					}
+					if !flatten {
+						item["doc_type_kwd"] = "image"
+					}
 				}
 			}
 		}
 
 		*out = append(*out, item)
 	}
+	return unresolvedImages
 }
 
 // isTableHTML reports whether block text is an outer <table> element (the
@@ -386,44 +546,53 @@ func findBlockImage(n ast.Node) (string, bool) {
 	return url, found
 }
 
-// resolveImageURL resolves a Markdown image URL to its base64-encoded data.
+// resolveImageURL resolves a Markdown image URL to an encoded payload or raw
+// bytes.
 // Supports:
-//   - data:image/... URIs → decoded directly
+//   - data:image/... URIs → validated encoded payload
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
 // Local / relative paths are not fetched (security). Returns
-// (base64String, true) on success, ("", false) when resolution fails.
-func resolveImageURL(imageURL string) (string, bool) {
-	if strings.HasPrefix(imageURL, dataURIPrefix) {
+// exactly one of encoded and raw populated on success.
+func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, ok bool) {
+	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
 		// data:image/png;base64,xxxx
 		idx := strings.Index(imageURL, "base64,")
 		if idx < 0 {
-			return "", false
+			idx = strings.Index(strings.ToLower(imageURL), "base64,")
 		}
-		return imageURL[idx+len("base64,"):], true
+		if idx < 0 {
+			return "", nil, false
+		}
+		encoded = imageURL[idx+len("base64,"):]
+		if !validBase64ImagePayload(encoded, MaxImagePayloadBytes) {
+			return "", nil, false
+		}
+		return encoded, nil, true
 	}
 	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
-		b64, err := fetchImageAsBase64(imageURL)
+		raw, err := fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", false
+			return "", nil, false
 		}
-		return b64, true
+		return "", raw, true
 	}
 	// Local / relative paths — not fetched for security.
-	return "", false
+	return "", nil, false
 }
 
-// fetchImageAsBase64 fetches an HTTP(S) image URL and returns its
-// content as a base64-encoded string. Local/private addresses and
-// redirects to them are rejected (SSRF guard). Hostnames are resolved
-// once and the validated IP is pinned in a custom DialContext to
-// prevent DNS-rebinding TOCTOU attacks.
-func fetchImageAsBase64(rawURL string) (string, error) {
+// fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses
+// and redirects to them are rejected (SSRF guard). Hostnames are resolved
+// once and the validated IP is pinned in a custom DialContext to prevent
+// DNS-rebinding TOCTOU attacks.
+func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	rawURL = strings.TrimSpace(rawURL)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("markdown: invalid image URL: %w", err)
+		return nil, fmt.Errorf("markdown: invalid image URL: %w", err)
 	}
 
 	// pinned maps hostname (without port) → validated IP. The hostname
@@ -433,7 +602,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	pinned := make(map[string]net.IP)
 
 	pinHost := func(host string) error {
-		ip, err := resolveAndValidateHost(host)
+		ip, err := resolveAndValidateHost(ctx, host)
 		if err != nil {
 			return err
 		}
@@ -448,7 +617,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	}
 
 	if err := pinHost(parsed.Host); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	transport := &http.Transport{
@@ -478,32 +647,36 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("markdown: create image request: %w", err)
+		return nil, fmt.Errorf("markdown: create image request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
+		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024)) // 32 MiB cap
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("markdown: read image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	return base64.StdEncoding.EncodeToString(body), nil
+	if len(body) > MaxImagePayloadBytes {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
+	}
+	return body, nil
 }
 
 // resolveAndValidateHost resolves a host (which may include a port),
 // validates none of its IPs are internal/private, and returns the
 // first public IP for connection pinning.
-func resolveAndValidateHost(host string) (net.IP, error) {
+func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
@@ -518,7 +691,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return ip, nil
 	}
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), hostname)
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
@@ -535,14 +708,23 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 	return addrs[0].IP, nil
 }
 
-// headingText returns the inline-text of a heading node by
-// concatenating every Leaf / Text child. Empty headings emit "".
+// headingText returns a canonical ATX heading (marker plus inline text).
+// Keeping the marker in the parser payload preserves the Markdown structure
+// for GeneralChunker and downstream LLM prompts; ck_type alone does not carry
+// the heading level.
 func headingText(h *ast.Heading) string {
 	var buf bytes.Buffer
 	for _, c := range h.GetChildren() {
 		buf.WriteString(leafText(c))
 	}
-	return strings.TrimSpace(buf.String())
+	text := strings.TrimSpace(buf.String())
+	if h.Level <= 0 {
+		return text
+	}
+	if text == "" {
+		return strings.Repeat("#", h.Level)
+	}
+	return strings.Repeat("#", h.Level) + " " + text
 }
 
 // leafText mirrors gomarkdown's leaf walker: walks every descendant
@@ -552,6 +734,59 @@ func leafText(n ast.Node) string {
 	var buf bytes.Buffer
 	walkLeaf(n, &buf)
 	return strings.TrimSpace(buf.String())
+}
+
+// listEntries renders a list's entries the way the source spells them: the marker first, then the
+// entry text, one string per entry (Python's _markdown shape, see the en golden). The marker has to
+// be reconstructed because the AST keeps it on the list node - BulletChar for bullet lists,
+// Start/Delimiter for ordered ones - rather than in any leaf literal.
+func listEntries(list *ast.List) []string {
+	entries := make([]string, 0, len(list.GetChildren()))
+	ordered := list.ListFlags&ast.ListTypeOrdered != 0
+	for i, item := range list.GetChildren() {
+		text := strings.TrimSpace(leafText(item))
+		if text == "" {
+			continue
+		}
+		var marker string
+		switch {
+		case ordered:
+			start := list.Start
+			if start == 0 {
+				start = 1
+			}
+			delim := list.Delimiter
+			if delim == 0 {
+				delim = '.'
+			}
+			marker = fmt.Sprintf("%d%c ", start+i, delim)
+		default:
+			// The markdown parser records the bullet on the ITEM (parser/block.go sets
+			// ListItem.BulletChar), not on the list, so read it there first.
+			bullet := list.BulletChar
+			if li, ok := item.(*ast.ListItem); ok && li.BulletChar != 0 {
+				bullet = li.BulletChar
+			}
+			if bullet != 0 {
+				marker = string(bullet) + " "
+			}
+		}
+		entries = append(entries, marker+text)
+	}
+	return entries
+}
+
+// writeListItems emits a list's items separated by a newline. Without the separator the item texts
+// run together ("bullet onebullet two"), because the marker lives in the list structure rather than
+// in the item's leaf text - the same defect that merged table rows showed as "ChinaChina" in the
+// indexed chunks.
+func writeListItems(list *ast.List, buf *bytes.Buffer) {
+	for i, item := range list.GetChildren() {
+		if i > 0 {
+			buf.WriteByte('\n')
+		}
+		walkLeaf(item, buf)
+	}
 }
 
 func walkLeaf(n ast.Node, buf *bytes.Buffer) {
@@ -571,6 +806,43 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 		// markup in Content, the markdown-block path in Literal. Emit both.
 		buf.Write(t.Literal)
 		buf.Write(t.Content)
+	case *ast.Math:
+		// Inline math (`$...$`) keeps its payload on the node literal, not in a
+		// child Text node, so an unhandled ast.Math silently drops the whole
+		// span. Emit the literal so the text can never be lost, even if the
+		// MathJax extension is re-enabled (markdownNew masks it off because
+		// `$` is currency in real documents far more often than it is math).
+		buf.Write(t.Literal)
+	case *ast.MathBlock:
+		// Display math (`$$...$$`) stores its payload the same way.
+		buf.Write(t.Literal)
+	case *ast.HTMLSpan:
+		// Inline raw HTML (a <table> that is glued to surrounding prose with no
+		// blank line around it, <sub>/<sup>, <div>, …) is an HTMLSpan: the
+		// markup AND the text inside it live on the node literal, with no child
+		// Text nodes. Dropping it deleted whole regions of a document - a 664k
+		// character CDC report lost 397k characters across 14 such spans. Emit
+		// the literal (and Content for the paths that use it) so the text
+		// survives verbatim, exactly as the source file spells it.
+		buf.Write(t.Literal)
+		buf.Write(t.Content)
+	case *ast.List:
+		// A list marker is structure, not a leaf: the item's own Text literal
+		// carries neither the bullet nor a trailing newline, so concatenating the
+		// items glued the last word of one item to the first word of the next
+		// ("ChinaChina", "HathiTrustThe"). That is not a cosmetic difference: it
+		// destroys the word boundaries the tokenizer and the retrieval index rely
+		// on, so a query for "China" can no longer match the merged token. Python's
+		// _markdown keeps the source lines, so a newline between items restores
+		// parity and keeps the words separate.
+		writeListItems(t, buf)
+	case *ast.ListItem:
+		for i, c := range t.GetChildren() {
+			if i > 0 {
+				buf.WriteByte('\n')
+			}
+			walkLeaf(c, buf)
+		}
 	default:
 		for _, c := range n.GetChildren() {
 			walkLeaf(c, buf)

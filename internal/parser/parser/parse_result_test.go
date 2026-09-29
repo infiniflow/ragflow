@@ -21,6 +21,17 @@ import (
 	"testing"
 )
 
+func TestNewTableJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
+	item := NewTableJSONItem("<table><tr><td>value</td></tr></table>", "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+
+	if got, want := item[DocTypeKey], DocTypeTable; got != want {
+		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
+	}
+	if got, want := item["ck_type"], DocTypeTable; got != want {
+		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
+	}
+}
+
 // TestParseResult_Contract pins the wire-shape guarantees
 // port-rag-flow-pipeline-to-go.md §6.5 requires:
 //

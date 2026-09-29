@@ -273,8 +273,11 @@ func (r *Runner) Run(
 		return out
 	}
 
-	// Generate the message identifier the RunFunc and SSE envelope need.
-	messageID := utility.GenerateToken()
+	// Reuse a persisted question's identifier for the RunFunc and SSE envelope.
+	messageID, _ := root["__message_id__"].(string)
+	if messageID == "" {
+		messageID = utility.GenerateToken()
+	}
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,
@@ -494,51 +497,4 @@ func safeEventJSON(v any) string {
 // nowUnix returns the current Unix timestamp in seconds.
 func nowUnix() int64 {
 	return time.Now().Unix()
-}
-
-// extractAnswerFromState is kept for reference but is no longer called
-// by the Runner — answer extraction now happens in buildRunFunc.
-// Remove in a follow-up cleanup pass once all tests pass.
-func extractAnswerFromState(state *CanvasState) (string, []interface{}) {
-	if state == nil {
-		return "", nil
-	}
-	snap := state.Snapshot()
-	var answer string
-	var reference []interface{}
-	// First pass: look for an "answer" key (preferred).
-	for _, bucket := range snap {
-		if a, ok := bucket["answer"].(string); ok && a != "" {
-			answer = a
-			break
-		}
-	}
-	// Second pass: fall back to "result" then "content" if
-	// no "answer" was found.
-	if answer == "" {
-		for _, bucket := range snap {
-			if r, ok := bucket["result"].(string); ok && r != "" {
-				answer = r
-				break
-			}
-		}
-	}
-	if answer == "" {
-		for _, bucket := range snap {
-			if c, ok := bucket["content"].(string); ok && c != "" {
-				answer = c
-				break
-			}
-		}
-	}
-	// Collect references (best-effort, no precedence).
-	for _, bucket := range snap {
-		if r, ok := bucket["reference"].([]interface{}); ok {
-			reference = append(reference, r...)
-		}
-	}
-	if answer == "" {
-		answer = "Run completed with no surfaceable answer."
-	}
-	return answer, reference
 }

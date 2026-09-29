@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,20 @@ import (
 func fixturesDir(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("testdata")
+}
+
+func TestNormalizeForRunDoesNotMutateNestedDSLValues(t *testing.T) {
+	in := map[string]any{
+		"globals":   map[string]any{"nested": map[string]any{"value": "{IterationItem:x@item}"}},
+		"variables": []any{map[string]any{"value": "{IterationItem:x@index}"}},
+	}
+	original := deepCopyAny(in).(map[string]any)
+
+	_ = NormalizeForRun(in)
+
+	if !reflect.DeepEqual(in, original) {
+		t.Fatalf("NormalizeForRun mutated nested input: got %#v, want %#v", in, original)
+	}
 }
 
 // loadFixture reads a JSON file from internal/agent/dsl/testdata into a
@@ -46,6 +61,12 @@ func loadFixture(t *testing.T, name string) map[string]any {
 		t.Fatalf("[%s] parse: %v", name, err)
 	}
 	return m
+}
+
+func TestComponentNameToNodeTypeRecognizesGeneralChunker(t *testing.T) {
+	if got := componentNameToNodeType("GeneralChunker"); got != "chunkerNode" {
+		t.Fatalf("GeneralChunker node type = %q, want chunkerNode", got)
+	}
 }
 
 // TestNormalize_NoopWhenGraphPresent guards against accidentally
@@ -530,7 +551,7 @@ func TestNormalizeForCanvas_RepairsLeakedParallelShape(t *testing.T) {
 }
 
 // TestNormalize_DoesNotMutateInput pins the documented
-// "never mutates its input" contract. The original DSL map's
+// "never mutates its input"  The original DSL map's
 // graph.edges[*].sourceHandle / targetHandle, components
 // entries, and components[*].obj.component_name must all be
 // unchanged after NormalizeForCanvas returns.

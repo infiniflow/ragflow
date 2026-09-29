@@ -64,11 +64,11 @@ func TestProjectRelation_FallsBackToKwdColumns(t *testing.T) {
 	}
 }
 
-// TestDedupEntities_OrderPreserving verifies dedup by (lowercased name, type).
+// TestDedupEntities_OrderPreserving verifies dedup by lowercased name.
 func TestDedupEntities_OrderPreserving(t *testing.T) {
 	in := []StructureGraphNode{
 		{"name": "A", "type": "x"},
-		{"name": "a", "type": "x"}, // dup (case-insensitive)
+		{"name": "a", "type": "other"}, // dup despite case and type differences
 		{"name": "B", "type": "y"},
 		{"name": ""}, // dropped (empty name)
 	}
@@ -103,5 +103,41 @@ func TestRowTemplateID_FromList(t *testing.T) {
 	row := map[string]interface{}{"compilation_template_ids": []interface{}{"", "tid1", "tid2"}}
 	if got := rowTemplateID(row); got != "tid1" {
 		t.Errorf("rowTemplateID = %q, want tid1", got)
+	}
+}
+
+// TestResolveGraphBucket_UsesRawStructureMetadata covers the post-#19474
+// storage shape: entity/relation rows carry the template stamp, with no
+// synthetic knowledge_graph_kwd="graph" row available for discovery.
+func TestResolveGraphBucket_UsesRawStructureMetadata(t *testing.T) {
+	row := map[string]interface{}{
+		"knowledge_graph_kwd":           "entity",
+		"compilation_template_ids":      []string{"tree-1"},
+		"compilation_template_kind_kwd": "tree",
+		"compile_kwd":                   "tree",
+	}
+	meta, scope := resolveGraphBucket(row, map[string]map[string]interface{}{
+		"tree-1": {"template_name": "Tree", "kind": "tree"},
+	}, "doc-1")
+	if meta["template_id"] != "tree-1" || meta["template_name"] != "Tree" {
+		t.Fatalf("meta = %#v, want resolved template metadata", meta)
+	}
+	if got := scope["compilation_template_ids"].([]string); len(got) != 1 || got[0] != "tree-1" {
+		t.Fatalf("scope = %#v, want template-scoped raw-row filter", scope)
+	}
+}
+
+func TestBuildDocumentGraphTemplateShells_PreservesTemplateMetadata(t *testing.T) {
+	templates := buildDocumentGraphTemplateShells([]string{"tree-1"}, map[string]map[string]interface{}{
+		"tree-1": {"template_name": "Tree", "kind": "tree"},
+	})
+	if len(templates) != 1 {
+		t.Fatalf("got %d templates, want 1", len(templates))
+	}
+	if templates[0].TemplateID != "tree-1" || templates[0].TemplateName != "Tree" || templates[0].Kind != "tree" {
+		t.Fatalf("template = %#v, want metadata for tree-1", templates[0])
+	}
+	if templates[0].Entities == nil || templates[0].Relations == nil {
+		t.Fatal("empty template collections must be non-nil")
 	}
 }

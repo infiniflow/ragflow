@@ -78,7 +78,7 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 				t.Fatalf("OutputFormat = %q, want %q", got, want)
 			}
 			if len(res.JSON) != 1 {
-				t.Fatalf("JSON item count = %d, want 1", len(res.JSON))
+				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
 			}
 			text, _ := res.JSON[0]["text"].(string)
 			if !strings.Contains(text, tc.cellValue) {
@@ -120,6 +120,9 @@ func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
 	if image["image"] != "data:image/png;base64,"+pngBase64 {
 		t.Fatalf("image data = %v, want data URL", image["image"])
 	}
+	if image["sheet_index"] != 1 || image["row_start"] != 3 || image["row_end"] != 3 || image["col_start"] != 3 || image["col_end"] != 3 {
+		t.Fatalf("image coordinates = %#v, want Sheet1!C3", image)
+	}
 }
 
 func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
@@ -157,7 +160,8 @@ func mustDecodeBase64(t *testing.T, encoded string) []byte {
 }
 
 // TestCSVParser_DeepDocParseMethod asserts the CSV parser accepts the
-// default "deepdoc" parse_method and renders the default HTML table.
+// default "deepdoc" parse_method and emits the segmented HTML table wire
+// shape.
 func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
@@ -167,11 +171,14 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if !strings.Contains(res.HTML, "<table>") {
-		t.Fatalf("HTML = %q, want a rendered <table>", res.HTML)
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
+	}
+	if res.JSON[0]["ck_type"] != "table" {
+		t.Fatalf("JSON item = %#v, want a table item", res.JSON[0])
 	}
 }
 

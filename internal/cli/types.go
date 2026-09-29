@@ -106,6 +106,8 @@ const (
 	TokenAgent
 	TokenMemories
 	TokenMemory
+	TokenCores
+	TokenConcurrency
 	TokenRetrieve
 	TokenCurrent
 	TokenSoft
@@ -159,7 +161,6 @@ const (
 	TokenMax
 	TokenLS
 	TokenCat
-	TokenInsert
 	TokenFile
 	TokenMetadata
 	TokenTable
@@ -171,7 +172,6 @@ const (
 	TokenChunks
 	TokenDocument
 	TokenDocuments
-	TokenTag
 	TokenRegion
 	TokenURL
 	TokenTask
@@ -200,6 +200,7 @@ const (
 	TokenDays
 	TokenWindow
 	TokenActivity
+	TokenHardware
 	TokenData
 	TokenPurge
 	TokenPlan

@@ -168,7 +168,7 @@ export const useTestChunkRetrieval = (
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
-        size: pageSize,
+        page_size: pageSize,
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
@@ -218,7 +218,7 @@ export const useTestChunkAllRetrieval = (
     mutationFn: async (values: any) => {
       const { data } = await retrievalTestFunc({
         page,
-        size: pageSize,
+        page_size: pageSize,
         ...values,
         kb_id: values.kb_id ?? knowledgeBaseId,
         tenant_id: tenantId,
@@ -265,9 +265,11 @@ export const useTestRetrieval = (
       kb_id: kbIds,
       highlight: true,
       question: q,
-      doc_ids: Array.isArray(selectedDocumentIds) ? selectedDocumentIds : [],
+      document_ids: Array.isArray(selectedDocumentIds)
+        ? selectedDocumentIds
+        : [],
       page: pagination.current,
-      size: pagination.pageSize,
+      page_size: pagination.pageSize,
     });
   }, [
     sendingLoading,
@@ -368,7 +370,7 @@ export const useSendQuestion = (
         highlight: true,
         question: q,
         page: 1,
-        size: pageSize,
+        page_size: pageSize,
         search_id: searchId,
       });
 
@@ -415,9 +417,9 @@ export const useSendQuestion = (
         kb_id: kbIds,
         highlight: true,
         question: q,
-        doc_ids: documentIds ?? selectedDocumentIds,
+        document_ids: documentIds ?? selectedDocumentIds,
         page,
-        size,
+        page_size: size,
         search_id: searchId,
       });
 
@@ -425,9 +427,9 @@ export const useSendQuestion = (
         kb_id: kbIds,
         highlight: true,
         question: q,
-        doc_ids: [],
+        document_ids: [],
         page,
-        size,
+        page_size: size,
         search_id: searchId,
       });
     },

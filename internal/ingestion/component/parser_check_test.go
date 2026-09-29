@@ -23,17 +23,17 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TestParserComponent_Check covers the construction-time business
-// validation that mirrors the applicable subset of Python
-// ParserParam.check() (rag/flow/parser/parser.py:251-321).
+// TestParserComponent_Check covers construction-time validation for parser
+// methods that require language configuration.
 //
-// Go does NOT validate audio/video vlm.llm_id because media_dispatch
-// resolves tenant default models via resolveTenantModelByType, not
-// setup["vlm"]["llm_id"]. See plan: quantum-forging-curie-sZ_7zRZb.
+// audio/video vlm.llm_id is not validated: Python's check() has no
+// such branch, and audio resolves its model at dispatch time with a
+// tenant-default fallback.
 func TestParserComponent_Check(t *testing.T) {
 	cases := []struct {
 		name    string
 		setups  map[string]schema.ParserSetup
+		enhance bool
 		wantErr string // non-empty substring expected in error; empty means no error
 	}{
 		// --- PDF family (parser.py:252-261) ---
@@ -56,6 +56,14 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "PLAIN_TEXT"}},
 		},
 		{
+			name:   "pdf: Plain Text (UI spelling of the plain-text option) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "Plain Text"}},
+		},
+		{
+			name:   "pdf: plaintext (UI spelling, no space) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "plaintext"}},
+		},
+		{
 			name:   "pdf: tcadp parser (whitelist with space) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "tcadp parser"}},
 		},
@@ -72,6 +80,10 @@ func TestParserComponent_Check(t *testing.T) {
 			name:   "pdf: paddleocr (whitelist) without lang → pass",
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "paddleocr"}},
 		},
+		{
+			name:   "pdf: monkeyocrv2 (whitelist) without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "monkeyocrv2"}},
+		},
 
 		// --- image family (parser.py:283-287) ---
 		{
@@ -85,6 +97,7 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:    "image: non-ocr without lang → error",
 			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": ""}},
+			enhance: true,
 			wantErr: "image VLM language",
 		},
 		{
@@ -96,17 +109,17 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"image": {"lang": "English"}},
 		},
 
-		// --- audio/video: vlm.llm_id NOT validated in Go ---
+		// --- audio/video: vlm.llm_id not validated (matches Python check()) ---
 		{
-			name:   "audio: no vlm field → pass (Go uses tenant default ASR)",
+			name:   "audio: no vlm field → pass (model falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"output_format": "text"}},
 		},
 		{
-			name:   "video: no vlm field → pass (Go uses tenant default VISION)",
+			name:   "video: no vlm field → pass",
 			setups: map[string]schema.ParserSetup{"video": {"output_format": "text"}},
 		},
 		{
-			name:   "audio: vlm.llm_id empty → pass (Go ignores vlm.llm_id)",
+			name:   "audio: vlm.llm_id empty → pass (empty falls back to tenant default)",
 			setups: map[string]schema.ParserSetup{"audio": {"vlm": map[string]any{"llm_id": ""}}},
 		},
 
@@ -127,7 +140,7 @@ func TestParserComponent_Check(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ParserComponent{Setups: tc.setups, Param: schema.ParserParam{}.Defaults()}
+			c := &ParserComponent{setups: tc.setups, enableVisionEnhancement: tc.enhance}
 			err := c.Check()
 			if tc.wantErr != "" {
 				if err == nil {
@@ -170,5 +183,30 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 	}
 	if c != nil {
 		t.Errorf("want nil component on error, got %T", c)
+	}
+}
+
+func TestNewParserComponentVisionEnhancementSetting(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		params  map[string]any
+		enabled bool
+	}{
+		{name: "absent", params: nil},
+		{name: "explicit false", params: map[string]any{"enable_vision_enhancement": false}},
+		{name: "explicit true", params: map[string]any{"enable_vision_enhancement": true}, enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			component, err := NewParserComponent(test.params)
+			if err != nil {
+				t.Fatalf("NewParserComponent: %v", err)
+			}
+			if got := component.(*ParserComponent).enableVisionEnhancement; got != test.enabled {
+				t.Fatalf("enableVisionEnhancement = %v, want %v", got, test.enabled)
+			}
+		})
+	}
+	if _, err := NewParserComponent(map[string]any{"enable_vision_enhancement": "true"}); err == nil || !strings.Contains(err.Error(), "must be a boolean") {
+		t.Fatalf("string switch error = %v, want boolean validation", err)
 	}
 }

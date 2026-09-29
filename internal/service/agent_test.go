@@ -407,6 +407,33 @@ func TestWorkflowOutputs_WithAttachment(t *testing.T) {
 	}
 }
 
+func TestWorkflowOutputsFromTerminalUsesMessageContent(t *testing.T) {
+	output := map[string]any{
+		"content":   "****\nvisible answer\n++++",
+		"downloads": []any{},
+	}
+	if got := workflowOutputsFromTerminal(output); got != "****\nvisible answer\n++++" {
+		t.Fatalf("workflowOutputsFromTerminal = %#v, want complete Message content", got)
+	}
+}
+
+func TestPartialAssistantOutputExcludesMessagePresentation(t *testing.T) {
+	state := canvas.NewCanvasState("run-history", "session-history")
+	appendAssistantHistory(state, partialAssistantOutput("model answer", nil, nil))
+
+	history := state.SnapshotHistory()
+	if len(history) != 1 {
+		t.Fatalf("history length = %d, want 1", len(history))
+	}
+	if history[0]["content"] != "model answer" {
+		t.Fatalf("history content = %#v, want raw Agent answer", history[0]["content"])
+	}
+	payload, _ := history[0]["payload"].(map[string]any)
+	if _, ok := payload["downloads"]; ok {
+		t.Fatalf("history payload unexpectedly contains Message presentation fields: %#v", payload)
+	}
+}
+
 // TestGetVersion_Success verifies getting a specific version by ID.
 func TestGetVersion_Success(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -659,7 +686,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	ctx := t.Context()
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		ctx,
+		WithAgentSessionID(ctx, "test-session"),
 		"user-1",
 		"canvas-empty",
 		"test-session",
@@ -712,6 +739,43 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		case <-deadline:
 			t.Fatal("placeholder channel did not close within 5s — driver deadlocked?")
 		}
+	}
+}
+
+func TestRunAgentRejectsUntrustedSessionContinuation(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+	createAgentSessionTestCanvas(t, "canvas-2", "user-1")
+	createAgentSessionTestConversation(t, "session-other-agent", "canvas-2", "user-1", 1000)
+	createAgentSessionTestConversation(t, "session-other-user", "canvas-1", "user-2", 1000)
+	createAgentSessionTestConversation(t, "session-valid", "canvas-1", "user-1", 1000)
+
+	svc := NewAgentService()
+	for _, tc := range []struct {
+		name      string
+		sessionID string
+		userID    string
+		wantErr   bool
+	}{
+		{name: "unknown", sessionID: "session-missing", userID: "user-1", wantErr: true},
+		{name: "wrong agent", sessionID: "session-other-agent", userID: "user-1", wantErr: true},
+		{name: "foreign owner", sessionID: "session-other-user", userID: "user-1", wantErr: true},
+		{name: "valid resume", sessionID: "session-valid", userID: "user-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events, err := svc.RunAgent(t.Context(), tc.userID, "canvas-1", tc.sessionID, "", "hello", nil)
+			if tc.wantErr {
+				if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+					t.Fatalf("RunAgent error = %v, want ErrUserCanvasNotFound", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RunAgent valid resume failed: %v", err)
+			}
+			for range events {
+			}
+		})
 	}
 }
 
@@ -880,7 +944,7 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
-	if err := dao.DB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    userID,
@@ -892,7 +956,7 @@ func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string
 			UpdateTime: ptr(updateTime),
 			UpdateDate: &updateDate,
 		},
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -1902,7 +1966,7 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 		t.Fatalf("failed to seed released version: %v", err)
 	}
 	ctx := t.Context()
-	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -1931,11 +1995,49 @@ func TestListAgentsIncludesReleaseTime(t *testing.T) {
 	}
 }
 
+// TestListAgents_MultiCategoryFilter verifies that a comma-separated
+// canvas_category query (the agents page multi-select filter) returns the
+// union of the selected categories instead of an exact string match.
+func TestListAgents_MultiCategoryFilter(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	canvases := []entity.UserCanvas{
+		{ID: "canvas-wf-1", UserID: "user-1", Title: sptr("Workflow One"), CanvasCategory: "agent_canvas"},
+		{ID: "canvas-wf-2", UserID: "user-1", Title: sptr("Workflow Two"), CanvasCategory: "agent_canvas"},
+		{ID: "canvas-df-1", UserID: "user-1", Title: sptr("Pipeline One"), CanvasCategory: "dataflow_canvas"},
+	}
+	for i := range canvases {
+		if err := dao.DB.Create(&canvases[i]).Error; err != nil {
+			t.Fatalf("failed to create canvas %s: %v", canvases[i].ID, err)
+		}
+	}
+
+	ctx := t.Context()
+	resp, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "dataflow_canvas,agent_canvas", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
+	}
+	if resp.Total != 3 || len(resp.Canvas) != 3 {
+		t.Fatalf("multi-category filter returned total=%d rows=%d, want 3/3", resp.Total, len(resp.Canvas))
+	}
+
+	single, code, err := NewAgentService().ListAgents(ctx, "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "agent_canvas", "", nil)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListAgents (single category) failed: code=%v err=%v", code, err)
+	}
+	if single.Total != 2 || len(single.Canvas) != 2 {
+		t.Fatalf("single-category filter returned total=%d rows=%d, want 2/2", single.Total, len(single.Canvas))
+	}
+}
+
 // TestListAgents_MergesCompilationTemplateGroups verifies that a compilation
 // template group owned by the caller appears in the merged /agents list
 // (no canvas_category filter), carrying the "compilation_template_group" type
-// discriminator and its title = name. Built-in catalogue groups (empty tenant)
-// must NOT leak in.
+// discriminator and its title = name. Groups without the caller's tenant
+// ownership must NOT leak in.
 func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -1955,7 +2057,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	}
 	// The caller's own group (must appear), updated before the canvas.
 	createAgentSessionTestCompilationGroup(t, "group-own", "user-1", groupUpdate)
-	// A built-in catalogue group with empty tenant_id (must NOT appear).
+	// An unowned group with empty tenant_id (must NOT appear).
 	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
 		ID: "group-builtin", TenantID: "", Name: "Built-in templates",
 		Scope: "file", BaseModel: entity.BaseModel{CreateTime: &base},
@@ -1963,7 +2065,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 		t.Fatalf("failed to seed builtin group: %v", err)
 	}
 
-	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, "create_time", true, nil, "", "", nil)
+	resp, code, err := NewAgentService().ListAgents(t.Context(), "user-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil, "", "", nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListAgents failed: code=%v err=%v", code, err)
 	}
@@ -2362,6 +2464,13 @@ func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
 	}
 }
 
+func TestAgentRunQueryUsesConversationQueryFromNamedInputs(t *testing.T) {
+	query := agentRunQuery(map[string]any{"name": "Alice", "query": "Hello"})
+	if query != "Hello" {
+		t.Fatalf("query = %v, want Hello", query)
+	}
+}
+
 func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 	messages := []map[string]interface{}{
 		{"role": "system", "content": "Be concise."},
@@ -2378,5 +2487,87 @@ func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 	}
 	if !reflect.DeepEqual(history, want) {
 		t.Fatalf("prior history = %#v, want %#v", history, want)
+	}
+}
+
+// Shared-agent readonly rule: deleting a session is a write, so only the
+// canvas owner or the session's creator may do it. Team members who can
+// read the shared agent see its sessions readonly.
+func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sessionID, sessionOwner string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         canvasOwner,
+		Title:          sptr("Shared Agent"),
+		CanvasCategory: "agent_canvas",
+		Permission:     string(entity.TenantPermissionTeam),
+	}).Error; err != nil {
+		t.Fatalf("failed to create canvas: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "ut-" + teammate + "-" + canvasOwner,
+		UserID:   teammate,
+		TenantID: canvasOwner,
+		Role:     "normal",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create user tenant: %v", err)
+	}
+	createAgentSessionTestConversation(t, sessionID, "canvas-1", sessionOwner, 1000)
+}
+
+func TestDeleteAgentSessionItem_SharedSessionReadonlyForTeammate(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "owner-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "user-1", "canvas-1", "session-1")
+	if err == nil || err.Error() != "shared session is readonly" {
+		t.Fatalf("err=%v", err)
+	}
+	if code != common.CodeAuthenticationError {
+		t.Fatalf("code=%v", code)
+	}
+	if deleted {
+		t.Fatal("shared session must not be deleted by a team member")
+	}
+
+	var count int64
+	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count session: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("session should remain, count=%d", count)
+	}
+}
+
+func TestDeleteAgentSessionItem_SessionCreatorCanDeleteOwnSession(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "user-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "user-1", "canvas-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if !deleted {
+		t.Fatal("session creator should be able to delete their own session")
+	}
+}
+
+func TestDeleteAgentSessionItem_CanvasOwnerCanDeleteAnySession(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "user-1")
+
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "owner-1", "canvas-1", "session-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code=%v", code)
+	}
+	if !deleted {
+		t.Fatal("canvas owner should be able to delete any session of the shared agent")
 	}
 }

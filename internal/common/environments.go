@@ -19,6 +19,7 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -30,10 +31,42 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// SandboxArtifactBucket is the object-storage bucket that holds
+// code-exec sandbox artifacts, served back through
+// /api/v1/documents/artifact/<name>.
+func SandboxArtifactBucket() string {
+	if bucket := GetEnv(EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+// SandboxArtifactContentTypes maps the sandbox-artifact file extensions
+// the /api/v1/documents/artifact route serves to response content
+// types. Artifact publication derives storage-name extensions from the
+// same table so every published URL resolves to a servable type.
+var SandboxArtifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
+func IsLLMDebugEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
+	return err == nil && enabled
+}
+
 // environment variables
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
+	EnvRAGFlowDevMode                    = "RAGFLOW_DEV_MODE"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
+	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
@@ -98,6 +131,7 @@ const (
 	EnvOpenAIAPIKey                      = "OPENAI_API_KEY"
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
+	EnvLLMDebug                          = "LLM_DEBUG"
 	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
@@ -160,6 +194,8 @@ const (
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
+	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
+	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
@@ -213,30 +249,58 @@ const (
 
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	// the RAGFlow default model dir (rag/res/deepdoc).
 	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
 	// EnvDeepDocDropScore overrides the confidence threshold below which the
 	// in-process (Go) DeepDoc backend blanks recognized text while preserving
-	// the real score. It MUST match the Python inference service's
-	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
-	// backends apply the same text-blanking contract.
+	// the real score. It defaults to 0.5, matching the historical DeepDoc
+	// recognizer drop_score, so recognized text is blanked consistently.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
+	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
+	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
+	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
+	// total cores inference may occupy is at most N. It overrides the
+	// ingestor.inference_concurrency config key and is itself overridden by the
+	// --deepdoc-inference-concurrency CLI flag.
+	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// ingestor runs in parallel (the NATS consumer worker count). It overrides
+	// the ingestor.max_concurrent_workers config key and is itself overridden
+	// by the --ingestor-max-concurrent-workers CLI flag.
+	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// EnvIngestorPageConcurrency bounds how many pages of a single document are
+	// parsed concurrently inside one ingestor worker. It overrides the
+	// ingestor.page_concurrency config key and is itself overridden by the
+	// --ingestor-page-concurrency CLI flag.
+	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
+	// in-process inference (0 = all cores). It overrides the
+	// ingestor.inference_cpu_cores config key and is itself overridden by the
+	// --deepdoc-inference-cpu-cores CLI flag.
+	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
-// in-process (Go) DeepDoc backend and the Python DeepDoc service both
-// require. cmd/ resolves the model directory against it; infnative
-// validates file presence against it. Order is insignificant (callers do
-// set-membership checks); keep it stable so logs and diffs stay readable.
+// in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
+// the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
+// into the Go binary supports .ort only, not the protobuf .onnx format, so
+// this slice must NOT re-add the .onnx names; it is the Go presence check,
+// not a shared list.
+// cmd/ resolves the model directory against it; the native analyzer validates
+// file presence against it via HasModelFiles. Order is insignificant (callers
+// do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - .github/workflows/deepdoc-drift.yml  (MODEL_FILES)
-//   - deepdoc/server/download_deps.py      (FILES)
+//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//     (it fetches the files one by one, so it MUST be edited by hand when this
+//     slice changes);
+//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
+//     (so .ort lands in the model dir automatically — no FILES edit needed).
 var DeepDocModelFiles = []string{
-	"det.onnx",
-	"layout.onnx",
-	"tsr.onnx",
-	"rec.onnx",
+	"det.ort",
+	"layout.ort",
+	"tsr.ort",
+	"rec.ort",
 	"ocr.res",
 }
 
@@ -254,23 +318,28 @@ func HasModelFiles(dir string) bool {
 }
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
-// DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
-// THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
-// — NOT a single source of truth. The download URL and extracted dir name are
-// built from those ORT_VERSION constants, not from this one. The Go binding
+// DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
+// FOUR raw version declarations that must stay equal (the other three are
+// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py,
+// and ARG ORT_VERSION in Dockerfile_go) — NOT a single source of truth. The
+// download URL and extracted dir name are built from those ORT_VERSION
+// constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
-// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// (v1.29.0 <-> ORT 1.29.x) and is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, ALL of the following must change together (drift breaks the
-// static link or the runtime OrtGetApiBase lookup):
-//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
-//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
-//   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
-//     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
+// To bump ORT, the four Go-side native pins above must change together
+// (drift breaks the static link or the runtime OrtGetApiBase lookup):
+//   - DeepDocORTVersion (here, Go)
+//   - ORT_VERSION in ragflow_deps/download_go_deps.py
+//   - ORT_VERSION in ragflow_deps/download_deps.py
+//   - ARG ORT_VERSION in Dockerfile_go
+//
+// Separately, keep these on the same ORT minor line but version them
+// independently of the Go native lib (see pyproject.toml / development.md):
+//   - the onnxruntime== / onnxruntime-gpu== pins in pyproject.toml (Python side)
 //   - the onnxruntime_go binding minor in go.mod.
-const DeepDocORTVersion = "1.23.2"
+const DeepDocORTVersion = "1.29.0"

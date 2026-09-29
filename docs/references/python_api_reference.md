@@ -22,17 +22,40 @@ pip install ragflow-sdk
 
 ## ERROR CODES
 
----
+RAGFlow responses may contain both an HTTP status code and a business code in the JSON response body. These codes should be checked separately.
 
-| Code | Message               | Description                |
-|------|-----------------------|----------------------------|
-| 400  | Bad Request           | Invalid request parameters |
-| 401  | Unauthorized          | Unauthorized access        |
-| 403  | Forbidden             | Access denied              |
-| 404  | Not Found             | Resource not found         |
-| 500  | Internal Server Error | Server internal error      |
-| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
-| 1002 | Chunk Update Failed   | Chunk update failed        |
+### HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | The HTTP request was processed successfully. Check the response body `code` for the business result. |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Internal server error |
+
+### Response body codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 10 | Not effective |
+| 100 | Exception error |
+| 101 | Invalid request argument |
+| 102 | Invalid or missing data |
+| 103 | Operation error |
+| 105 | Connection error |
+| 106 | Operation still running |
+| 108 | Permission error |
+| 109 | Authentication error |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Server error |
 
 ---
 
@@ -192,7 +215,7 @@ The chunking method of the dataset to create. Available options:
 The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
 
 - `chunk_method`=`"naive"`:
-  `{"chunk_token_num":512,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
+  `{"chunk_token_num":512,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
 - `chunk_method`=`"qa"`:
   `{"raptor": {"use_raptor": False}}`
 - `chunk_method`=`"manual"`:
@@ -489,7 +512,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\\n"}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
@@ -659,7 +682,7 @@ A `Document` object contains the following attributes:
 - `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\\n","html4excel":False,"layout_recognize":True,"raptor":{"use_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
@@ -797,9 +820,9 @@ print("Async bulk parsing initiated.")
 DataSet.parse_documents(document_ids: list[str]) -> list[tuple[str, str, int, int]]
 ```
 
-*Asynchronously* parses documents in the current dataset.
+Starts parsing documents in the current dataset and synchronously waits for the results.
 
-This method encapsulates `async_parse_documents()`. It awaits the completion of all parsing tasks before returning detailed results, including the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), all pending parsing tasks will be canceled gracefully.
+This method calls `async_parse_documents()` and blocks while polling until all requested documents reach a terminal state or report complete progress. It then returns the parsing status and statistics for each document. If a keyboard interruption occurs (e.g., `Ctrl+C`), it requests cancellation for the requested documents and continues polling for their final statuses. If a status request fails or a requested document is no longer found, the method raises an exception instead of continuing to poll.
 
 #### Parameters
 
@@ -817,7 +840,7 @@ A list of tuples with detailed parsing results:
   ...
 ]
 ```
-- `status`: The final parsing state (e.g., `success`, `failed`, `cancelled`).
+- `status`: The final parsing state (e.g., `DONE`, `FAIL`, `CANCEL`). If a document has not reached a terminal state but reports `progress >= 1.0`, its status is returned as `DONE`.
 - `chunk_count`: The number of content chunks created from the document.
 - `token_count`: The total number of tokens processed.
 
@@ -835,8 +858,6 @@ try:
     finished = dataset.parse_documents(ids)
     for doc_id, status, chunk_count, token_count in finished:
         print(f"Document {doc_id} parsing finished with status: {status}, chunks: {chunk_count}, tokens: {token_count}")
-except KeyboardInterrupt:
-    print("\nParsing interrupted by user. All pending tasks have been cancelled.")
 except Exception as e:
     print(f"Parsing failed: {e}")
 ```
@@ -1115,22 +1136,20 @@ RAGFlow.retrieve(
   rerank_id: str | None = None,
   keyword: bool = False,
   cross_languages: list[str] | None = None,
-  metadata_condition: dict | None = None,
-  use_kg: bool = False,
-  toc_enhance: bool = False)
+  metadata_condition: dict | None = None)
 ```
 
 Retrieves chunks from specified datasets.
 
 #### Parameters
 
-##### question: `string`, *Required*
+##### question: `string`
 
-The user query or query keywords. Defaults to `""`.
+The user query or query keywords. Defaults to `""`. When an empty string is provided, the API returns an empty retrieval result.
 
 ##### dataset_ids: `list[str]`, *Required*
 
-The IDs of the datasets to search. Defaults to `None`.
+The IDs of the datasets to search. At least one dataset ID must be provided.
 
 ##### document_ids: `list[str]`
 
@@ -1138,11 +1157,11 @@ The IDs of the documents to search. Defaults to `None`. You must ensure all sele
 
 ##### page: `int`
 
-The starting index for the documents to retrieve. Defaults to `1`.
+The page number of the chunk retrieval results. Defaults to `1`.
 
 ##### page_size: `int`
 
-The maximum number of chunks to retrieve. Defaults to `30`.
+The maximum number of chunks returned on each page. Defaults to `30`.
 
 ##### similarity_threshold: `float`
 
@@ -1174,14 +1193,6 @@ The languages that should be translated into, in order to achieve keywords retri
 ##### metadata_condition: `dict`
 
 filter condition for `meta_fields`.
-
-##### use_kg: `bool`
-
-Whether to enable graph-assisted retrieval for multi-hop queries. Defaults to `False`.
-
-##### toc_enhance: `bool`
-
-Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
 
 #### Returns
 
@@ -1631,102 +1642,6 @@ assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 assistant.delete_sessions(ids=["id_1","id_2"])
 assistant.delete_sessions(delete_all=True)
-```
-
----
-
-### Converse with chat assistant
-
-```python
-Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message, iter[Message]]
-```
-
-Asks a specified chat assistant a question to start an AI-powered conversation.
-
-:::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgment.
-:::
-
-#### Parameters
-
-##### question: `string`, *Required*
-
-The question to start an AI-powered conversation. Default to `""`
-
-##### stream: `bool`
-
-Indicates whether to output responses in a streaming way:
-
-- `True`: Enable streaming (default).
-- `False`: Disable streaming.
-
-##### **kwargs
-
-The parameters in prompt(system).
-
-#### Returns
-
-- A `Message` object containing the response to the question if `stream` is set to `False`.
-- An iterator containing multiple `message` objects (`iter[Message]`) if `stream` is set to `True`
-
-The following shows the attributes of a `Message` object:
-
-##### id: `string`
-
-The auto-generated message ID.
-
-##### content: `string`
-
-The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
-
-##### reference: `list[Chunk]`
-
-A list of `Chunk` objects representing references to the message, each containing the following attributes:
-
-- `id` `string`
-  The chunk ID.
-- `content` `string`
-  The content of the chunk.
-- `img_id` `string`
-  The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `string`
-  The ID of the referenced document.
-- `document_name` `string`
-  The name of the referenced document.
-- `document_metadata` `dict`
-  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
-- `position` `list[str]`
-  The location information of the chunk within the referenced document.
-- `dataset_id` `string`
-  The ID of the dataset to which the referenced document belongs.
-- `similarity` `float`
-  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
-- `vector_similarity` `float`
-  A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
-- `term_similarity` `float`
-  A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
-
-#### Examples
-
-```python
-from ragflow_sdk import RAGFlow
-
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag_object.list_chats(name="Miss R")
-assistant = assistant[0]
-session = assistant.create_session()
-
-print("\n==================== Miss R =====================\n")
-print("Hello. What can I do for you?")
-
-while True:
-    question = input("\n==================== User =====================\n> ")
-    print("\n==================== Miss R =====================\n")
-
-    cont = ""
-    for ans in session.ask(question, stream=True):
-        print(ans.content[len(cont):], end='', flush=True)
-        cont = ans.content
 ```
 
 ---
@@ -2338,9 +2253,9 @@ Configurations to update. Available configurations:
 
 - `memory_size`: `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: `enum<string>`, *Optional*
 

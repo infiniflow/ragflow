@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
@@ -59,6 +60,8 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 		return NewTableChunker(params)
 	case ComponentNamePageChunker:
 		return NewPageChunker(params)
+	case ComponentNameGeneralChunker:
+		return NewGeneralChunker(params)
 	default:
 		return nil, fmt.Errorf("chunker: unknown component %q", name)
 	}
@@ -89,19 +92,28 @@ func stringListFromAny(in []any) []string {
 // content. invokeTextPayload decides whether an active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
-// parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// Legacy single-string parsing is performed by GeneralChunker at its
+// configuration boundary; the shared regex helper only consumes canonical
+// delimiter lists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
-// splitDroppingDelim mirrors Python's _split_text_by_pattern
-// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
-// glued to a segment: re.split with a captured group keeps delimiters at odd
-// indices, and only the even-index (text) parts are kept. This is the
-// behavior every delimiter path (primary and children, text/markdown/html
-// and JSON) must reproduce so a split chunk reads "first sentence here"
-// without the trailing delimiter.
-func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
+// splitByDelim splits text on every match of pattern.
+//
+// When keepDelim is true the matched delimiter is preserved by gluing it to the
+// end of the segment that precedes it, so concatenating the returned segments
+// reproduces text exactly: "a。b。" yields ["a。", "b。"] and a leading or
+// trailing delimiter stays attached to its neighbour. This is the lossless
+// TokenChunker contract — a delimiter is a hint for where the chunker MAY
+// break, never a character to delete, so "。" must not vanish (or be swapped
+// for "\n") after chunking.
+//
+// When keepDelim is false the delimiter is DISCARDED (mirroring Python's
+// _split_text_by_pattern, which keeps only the even-index text parts); that
+// mode is used by the GeneralChunker legacy paths that still match Python's
+// drop behaviour, and by any caller that needs the historical contract.
+func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -109,19 +121,37 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if len(idxs) == 0 {
 		return []string{text}
 	}
+	if !keepDelim {
+		// Drop mode: keep only the text between delimiters, skipping any
+		// delimiter that sits at the very start (no preceding text).
+		var out []string
+		cursor := 0
+		for _, idx := range idxs {
+			start, end := idx[0], idx[1]
+			if start == cursor {
+				cursor = end
+				continue
+			}
+			out = append(out, text[cursor:start])
+			cursor = end
+		}
+		if cursor < len(text) {
+			out = append(out, text[cursor:])
+		}
+		return out
+	}
+	// Keep mode: attach each delimiter to the segment ending just before it so
+	// the concatenation is lossless. Trailing text with no trailing delimiter
+	// is appended as the final segment.
 	var out []string
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		if start == cursor {
-			cursor = end
-			continue
-		}
-		out = append(out, text[cursor:start])
+		out = append(out, text[cursor:start]+text[start:end])
 		cursor = end
 	}
-	if cursor < len(text) {
-		out = append(out, text[cursor:])
+	if tail := text[cursor:]; tail != "" {
+		out = append(out, tail)
 	}
 	return out
 }
@@ -130,14 +160,24 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 // chunk-doc helpers
 // ---------------------------------------------------------------------------
 
-// itemText returns the text payload from a JSON-style chunk item,
-// preferring "text", then "content_with_weight".
+// requireChunkText enforces the pre-index wire contract before chunk-id
+// generation or image upload.
+func requireChunkText(ck map[string]any) (string, error) {
+	textRaw, exists := ck["text"]
+	if !exists {
+		return "", fmt.Errorf("chunk missing required string text field")
+	}
+	text, ok := textRaw.(string)
+	if !ok {
+		return "", fmt.Errorf("chunk text must be string, got %T", textRaw)
+	}
+	return text, nil
+}
+
+// itemText returns the canonical pre-index text payload from a chunk item.
 func itemText(it schema.ChunkDoc) (string, bool) {
 	if it.Text != "" {
 		return it.Text, true
-	}
-	if it.ContentWithWeight != "" {
-		return it.ContentWithWeight, true
 	}
 	return "", false
 }
@@ -153,6 +193,18 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
+// isMediaChunk reports whether a chunk is an image or table region. It checks
+// CKType first (general/token paths set it) and falls back to DocType
+// (group/hierarchy forward parser output that carries only doc_type_kwd), so
+// it classifies media regardless of which chunker produced the chunk.
+func isMediaChunk(ck schema.ChunkDoc) bool {
+	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
+	if typ == "" {
+		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
+	}
+	return typ == "image" || typ == "table"
+}
+
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
@@ -165,6 +217,16 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 // Table/Image context attachment. Lives here so we can centrally
 // swizzle the count strategy in one place if needed.
 func tokenizeStr(s string) int { return tokenizer.NumTokensFromString(s) }
+
+// setChunkText replaces a chunk's body together with the token count that
+// describes it, so a caller cannot leave the two out of sync. TKNums is read as
+// a budget by the media window walk and by the merge thresholds, and it is
+// emitted as tk_nums, so a body replaced on its own silently misreports the
+// chunk's size. Merge paths that join several units keep their summed count.
+func setChunkText(ck *schema.ChunkDoc, text string) {
+	ck.Text = text
+	ck.TKNums = intPtr(tokenizeStr(text))
+}
 
 // toString normalises a chunk-map field to a string. Empty strings
 // for missing fields.
@@ -193,11 +255,72 @@ func emptyOutputs() map[string]any {
 // model resolution) is NOT re-emitted here — it lives in the workflow-wide
 // CanvasState.Globals bag (seeded at pipeline start, published by the File
 // component) and read directly from ctx. See runtime.CanvasState.Globals.
+//
+// Media context is materialized into the chunk body here, the chunker's last
+// step: every variant passes through this builder, so the folded text is what
+// the chunk id, the extractor, the tokenizer and the index write all see.
 func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
+	materialized := make([]schema.ChunkDoc, len(chunks))
+	for i := range chunks {
+		materialized[i] = materializeMediaContext(chunks[i])
+	}
 	return map[string]any{
 		"output_format": "chunks",
-		"chunks":        schema.ChunkDocsToMaps(chunks),
+		"chunks":        schema.ChunkDocsToMaps(materialized),
 	}
+}
+
+// canonicalChunkText returns the normalized text a chunk id is derived
+// from. It folds media context (when present) and strips position tags,
+// matching exactly the text the decorator keys on after
+// finalizeGeneralChunks runs removeTag and chunkOutputs materializes
+// context. Routing every chunk id through this one function — instead of
+// recomputing the text at each consumption point — guarantees the streamed
+// crop-upload key and the decorator's ck["id"] can never diverge, including
+// for image/table chunks whose text still carries position tags when there
+// is no media context.
+func canonicalChunkText(ck schema.ChunkDoc) string {
+	return removeTag(materializeMediaContext(ck).Text)
+}
+
+// canonicalChunkID returns the deterministic chunk id: the single identity
+// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
+// over canonicalChunkText) is centralized here, so the text normalization
+// that feeds the hash lives in exactly one place. The decorator in
+// register.go re-derives ck["id"] from the same already-finalized text as a
+// fallback for chunks that bypassed the streamed crop-upload path; the two
+// routes cannot disagree because a chunk is either stamped by crop-upload
+// (and the decorator reuses that id) or computed by the decorator fallback —
+// never both — and both hash the normalized chunk body.
+func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	return common.ChunkID(docID, canonicalChunkText(ck))
+}
+
+// materializeMediaContext folds a media chunk's surrounding context into its
+// body and clears the two fields that carried it. Python's chunker emits the
+// same shape — its finalize builds remove_tag(context_above + text +
+// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
+// 359) — which is why Python persists the context inside the chunk body.
+// Folding here also puts the context into the chunk id (ChunkID hashes the
+// body), matching Python's id, which hashes the context-bearing body.
+//
+// Tag stripping runs after the merge, as in Python: the payload was already
+// stripped by the chunker, so this only covers the context, which is collected
+// from neighbouring units.
+//
+// The body goes through setChunkText, so TKNums keeps describing the body the
+// chunk carries now instead of the bare payload it replaced.
+//
+// Only media chunks carry context (attachMediaContext and
+// attachGeneralMediaContext write it), so text chunks pass through untouched.
+func materializeMediaContext(ck schema.ChunkDoc) schema.ChunkDoc {
+	if ck.ContextAbove == "" && ck.ContextBelow == "" {
+		return ck
+	}
+	setChunkText(&ck, removeTag(schema.ContextualText(ck)))
+	ck.ContextAbove = ""
+	ck.ContextBelow = ""
+	return ck
 }
 
 // withName returns a shallow copy of inputs with name set, so a component can

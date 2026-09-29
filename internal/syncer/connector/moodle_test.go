@@ -14,16 +14,16 @@ import (
 
 func withMoodleTestHooks(t *testing.T) {
 	t.Helper()
-	origLoopback := restAPISSRFAllowLoopback
+	origLoopback := connectorAllowLoopbackForTest
 	origTries := moodleRetryTries
 	origBaseDelay := moodleRetryBaseDelay
 	origBackoff := moodleRetryBackoff
-	restAPISSRFAllowLoopback = true
+	connectorAllowLoopbackForTest = true
 	moodleRetryTries = 2
 	moodleRetryBaseDelay = time.Millisecond
 	moodleRetryBackoff = 2
 	t.Cleanup(func() {
-		restAPISSRFAllowLoopback = origLoopback
+		connectorAllowLoopbackForTest = origLoopback
 		moodleRetryTries = origTries
 		moodleRetryBaseDelay = origBaseDelay
 		moodleRetryBackoff = origBackoff
@@ -525,9 +525,9 @@ func TestAddMoodleToken(t *testing.T) {
 
 func TestValidateMoodleURLForSSRF(t *testing.T) {
 	withMoodleTestHooks(t)
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = false
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	if err := validateMoodleURLForSSRF("ftp://example.com"); err == nil {
 		t.Fatalf("expected scheme rejection")
@@ -640,9 +640,9 @@ func TestMoodleConnectorMetadataRedactsFileURL(t *testing.T) {
 }
 
 func TestMoodleAssertURLSafeRejectsCrossOrigin(t *testing.T) {
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = false
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	_, _, err := moodleAssertURLSafe(context.Background(), "https://evil.com/api", "https://example.com")
 	if err == nil {
@@ -651,9 +651,9 @@ func TestMoodleAssertURLSafeRejectsCrossOrigin(t *testing.T) {
 }
 
 func TestMoodleAssertURLSafeLoopbackAllAddresses(t *testing.T) {
-	origLoopback := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = origLoopback }()
+	origLoopback := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = origLoopback }()
 
 	// All loopback → allowed.
 	_, _, err := moodleAssertURLSafe(context.Background(), "http://127.0.0.1/path", "http://127.0.0.1")

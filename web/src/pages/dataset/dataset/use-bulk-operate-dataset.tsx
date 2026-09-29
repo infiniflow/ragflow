@@ -1,4 +1,4 @@
-import { useSetModalState } from '@/hooks/common-hooks';
+import { Modal } from '@/components/ui/modal/modal';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -22,6 +22,8 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { DocumentType } from './constant';
+import { buildParserGapModalContent } from './parser-gap-content';
+import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
 
 export function useBulkOperateDataset({
@@ -41,18 +43,7 @@ export function useBulkOperateDataset({
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
-  const { visible, showModal, hideModal } = useSetModalState();
-
-  const chunkNum = useMemo(() => {
-    if (!documents.length) {
-      return 0;
-    }
-    return documents
-      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
-      ?.reduce((acc, cur) => {
-        return acc + cur.chunk_count;
-      }, 0);
-  }, [documents, selectedRowKeys]);
+  const { findDocumentParseGaps } = useParserGapValidation();
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -65,14 +56,69 @@ export function useBulkOperateDataset({
         toast.error(t('Please select a non-empty file list'));
         return;
       }
+
+      // Starting a parse requires each file type to be supported by the
+      // Parser operator its document actually runs with; cancelling is
+      // always allowed.
+      if (run === 1) {
+        const selectedDocuments = documents.filter((x) =>
+          nonVirtualKeys.includes(x.id),
+        );
+        const gaps = findDocumentParseGaps(selectedDocuments);
+        if (gaps.length > 0) {
+          hideModal();
+          const failingNames = new Set(gaps.map((gap) => gap.name));
+          const validIds = selectedDocuments
+            .filter((x) => !failingNames.has(x.name))
+            .map((x) => x.id);
+
+          if (validIds.length === 0) {
+            Modal.error({
+              title: t('knowledgeDetails.parseBlockedTitle'),
+              content: buildParserGapModalContent(t, gaps, {
+                missingModel: 'knowledgeDetails.addModelToParseHint',
+                unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+              }),
+              showCancel: false,
+              okText: t('common.cancel'),
+              closable: false,
+            });
+            return;
+          }
+
+          Modal.warning({
+            title: t('knowledgeDetails.parseBlockedPartialTitle'),
+            content: (
+              <div className="space-y-2">
+                {buildParserGapModalContent(t, gaps, {
+                  missingModel: 'knowledgeDetails.addModelToParseHint',
+                  unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+                })}
+                <p>
+                  {t('knowledgeDetails.parseValidFilesNote', {
+                    count: validIds.length,
+                  })}
+                </p>
+              </div>
+            ),
+            okText: t('knowledgeDetails.parseValidFiles'),
+            cancelText: t('common.cancel'),
+            closable: false,
+            onOk: async () => {
+              await runDocumentByIds({ documentIds: validIds, run, option });
+            },
+          });
+          return;
+        }
+      }
+
       await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
         option,
       });
-      hideModal();
     },
-    [documents, runDocumentByIds, selectedRowKeys, hideModal, t],
+    [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
   const handleRunClick = useCallback(
@@ -121,6 +167,18 @@ export function useBulkOperateDataset({
 
   const list = [
     {
+      id: 'run',
+      label: t('knowledgeDetails.run'),
+      icon: <LucidePlayCircle />,
+      onClick: handleRunClick,
+    },
+    {
+      id: 'cancel',
+      label: t('knowledgeDetails.cancel'),
+      icon: <LucideCircleX />,
+      onClick: handleCancelClick,
+    },
+    {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),
       icon: <LucideToggleRight />,
@@ -132,18 +190,7 @@ export function useBulkOperateDataset({
       icon: <LucideToggleLeft />,
       onClick: handleDisableClick,
     },
-    {
-      id: 'run',
-      label: t('knowledgeDetails.run'),
-      icon: <LucidePlayCircle />,
-      onClick: () => showModal(),
-    },
-    {
-      id: 'cancel',
-      label: t('knowledgeDetails.cancel'),
-      icon: <LucideCircleX />,
-      onClick: handleCancelClick,
-    },
+
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),
@@ -162,5 +209,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { chunkNum, list, visible, hideModal, showModal, handleRunClick };
+  return { list, handleRunClick };
 }

@@ -24,31 +24,40 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestValidateDocumentModifiable_RunStatuses pins the allowed/disallowed run
-// statuses for editing a document via UpdateDatasetDocument. RUNNING ("1") and
-// SCHEDULE ("5") must be rejected; UNSTART/CANCEL/DONE/FAIL may be edited.
-// A nil Run (gorm default "0" UNSTART) is treated as editable.
-func TestValidateDocumentModifiable_RunStatuses(t *testing.T) {
+// TestValidateDocumentModifiable_TaskStatuses pins the allowed/disallowed task
+// statuses for editing a document via UpdateDatasetDocument.
+// CREATED, SCHEDULED, RUNNING, and STOPPING must be rejected;
+// no task, COMPLETED, STOPPED, and FAILED may be edited.
+func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 	cases := []struct {
-		name     string
-		run      *string
-		wantCode common.ErrorCode
-		wantErr  bool
+		name       string
+		taskStatus *string
+		wantCode   common.ErrorCode
+		wantErr    bool
 	}{
-		{"nil run defaults to unstart", nil, common.CodeSuccess, false},
-		{"unstart editable", sptr(string(entity.TaskStatusUnstart)), common.CodeSuccess, false},
-		{"cancel editable", sptr(string(entity.TaskStatusCancel)), common.CodeSuccess, false},
-		{"done editable", sptr(string(entity.TaskStatusDone)), common.CodeSuccess, false},
-		{"fail editable", sptr(string(entity.TaskStatusFail)), common.CodeSuccess, false},
-		{"running rejected", sptr(string(entity.TaskStatusRunning)), common.CodeDataError, true},
-		{"schedule rejected", sptr(string(entity.TaskStatusSchedule)), common.CodeDataError, true},
+		{"no task defaults to unstart", nil, common.CodeSuccess, false},
+		{"created rejected", sptr(common.CREATED), common.CodeDataError, true},
+		{"scheduled rejected", sptr(common.SCHEDULED), common.CodeDataError, true},
+		{"running rejected", sptr(common.RUNNING), common.CodeDataError, true},
+		{"stopping rejected", sptr(common.STOPPING), common.CodeDataError, true},
+		{"completed editable", sptr(common.COMPLETED), common.CodeSuccess, false},
+		{"stopped editable", sptr(common.STOPPED), common.CodeSuccess, false},
+		{"failed editable", sptr(common.FAILED), common.CodeSuccess, false},
 	}
 
-	svc := &DocumentService{}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := &entity.Document{Run: tc.run}
-			code, err := svc.validateDocumentModifiable(doc)
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			if tc.taskStatus != nil {
+				insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", *tc.taskStatus)
+			}
+			svc := testDocumentService(t)
+			ctx := t.Context()
+			doc := &entity.Document{ID: "doc-1"}
+			code, err := svc.validateDocumentModifiable(ctx, doc)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -71,20 +80,21 @@ func TestValidateDocumentModifiable_RunStatuses(t *testing.T) {
 	}
 }
 
-// updateDatasetDocumentRejected asserts that editing a document in the given
-// run status with the supplied request is rejected by the run-state guard.
-func updateDatasetDocumentRejected(t *testing.T, run string, req *UpdateDatasetDocumentRequest, present map[string]bool) {
+// updateDatasetDocumentRejected asserts that editing a document with the given
+// task status is rejected by the modifiable guard.
+func updateDatasetDocumentRejected(t *testing.T, status string, req *UpdateDatasetDocumentRequest, present map[string]bool) {
 	t.Helper()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", run, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
 	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", req, present)
 	if err == nil {
-		t.Fatalf("expected run-state rejection, got nil error (code=%v)", code)
+		t.Fatalf("expected task-state rejection, got nil error (code=%v)", code)
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
@@ -94,15 +104,17 @@ func updateDatasetDocumentRejected(t *testing.T, run string, req *UpdateDatasetD
 	}
 }
 
-// updateDatasetDocumentAllowed asserts that editing a document in an editable
-// run status with the supplied request is NOT blocked by the run-state guard
-// (it may still fail later validation, but not with the run-state error).
-func updateDatasetDocumentAllowed(t *testing.T, run string, req *UpdateDatasetDocumentRequest, present map[string]bool) {
+// updateDatasetDocumentAllowed asserts that editing a document with an editable
+// task status is NOT blocked by the modifiable guard.
+func updateDatasetDocumentAllowed(t *testing.T, status string, req *UpdateDatasetDocumentRequest, present map[string]bool) {
 	t.Helper()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", run, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	if status != "" {
+		insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+	}
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -116,75 +128,76 @@ func updateDatasetDocumentAllowed(t *testing.T, run string, req *UpdateDatasetDo
 }
 
 func TestUpdateDatasetDocumentRejectsRunningParserConfig(t *testing.T) {
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusRunning),
+	updateDatasetDocumentRejected(t, common.RUNNING,
 		&UpdateDatasetDocumentRequest{ParserConfig: map[string]any{"chunk_token_num": float64(128)}},
 		map[string]bool{"parser_config": true})
 }
 
 func TestUpdateDatasetDocumentRejectsRunningChunkMethod(t *testing.T) {
 	cm := "naive"
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusRunning),
+	updateDatasetDocumentRejected(t, common.RUNNING,
 		&UpdateDatasetDocumentRequest{ChunkMethod: &cm},
 		map[string]bool{"chunk_method": true})
 }
 
 func TestUpdateDatasetDocumentRejectsRunningRename(t *testing.T) {
 	name := "renamed.txt"
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusRunning),
+	updateDatasetDocumentRejected(t, common.RUNNING,
 		&UpdateDatasetDocumentRequest{Name: &name},
 		map[string]bool{"name": true})
 }
 
 func TestUpdateDatasetDocumentRejectsRunningEnabled(t *testing.T) {
 	enabled := 0
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusRunning),
+	updateDatasetDocumentRejected(t, common.RUNNING,
 		&UpdateDatasetDocumentRequest{Enabled: &enabled},
 		map[string]bool{"enabled": true})
 }
 
 func TestUpdateDatasetDocumentRejectsScheduledRename(t *testing.T) {
 	name := "renamed.txt"
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusSchedule),
+	updateDatasetDocumentRejected(t, common.SCHEDULED,
 		&UpdateDatasetDocumentRequest{Name: &name},
 		map[string]bool{"name": true})
 }
 
 func TestUpdateDatasetDocumentAllowsDoneEnabled(t *testing.T) {
 	enabled := 0
-	updateDatasetDocumentAllowed(t, string(entity.TaskStatusDone),
+	updateDatasetDocumentAllowed(t, common.COMPLETED,
 		&UpdateDatasetDocumentRequest{Enabled: &enabled},
 		map[string]bool{"enabled": true})
 }
 
 func TestUpdateDatasetDocumentAllowsCancelEnabled(t *testing.T) {
 	enabled := 0
-	updateDatasetDocumentAllowed(t, string(entity.TaskStatusCancel),
+	updateDatasetDocumentAllowed(t, common.STOPPED,
 		&UpdateDatasetDocumentRequest{Enabled: &enabled},
 		map[string]bool{"enabled": true})
 }
 
 func TestUpdateDatasetDocumentAllowsFailEnabled(t *testing.T) {
 	enabled := 0
-	updateDatasetDocumentAllowed(t, string(entity.TaskStatusFail),
+	updateDatasetDocumentAllowed(t, common.FAILED,
 		&UpdateDatasetDocumentRequest{Enabled: &enabled},
 		map[string]bool{"enabled": true})
 }
 
 func TestUpdateDatasetDocumentAllowsUnstartEnabled(t *testing.T) {
 	enabled := 0
-	updateDatasetDocumentAllowed(t, string(entity.TaskStatusUnstart),
+	updateDatasetDocumentAllowed(t, "",
 		&UpdateDatasetDocumentRequest{Enabled: &enabled},
 		map[string]bool{"enabled": true})
 }
 
 // TestUpdateDatasetDocumentRunningEmptyPresentNotRejected locks the
 // len(present) > 0 gate: an empty PATCH (no fields) on a RUNNING doc must not
-// be rejected by the run-state guard (it is a no-op, not an edit).
+// be rejected by the modifiable guard (it is a no-op, not an edit).
 func TestUpdateDatasetDocumentRunningEmptyPresentNotRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -201,18 +214,19 @@ func TestUpdateDatasetDocumentRunningEmptyPresentNotRejected(t *testing.T) {
 // TestUpdateDatasetDocumentRejectsRunningMetaFields pins that every editable
 // field is blocked while RUNNING, including meta_fields.
 func TestUpdateDatasetDocumentRejectsRunningMetaFields(t *testing.T) {
-	updateDatasetDocumentRejected(t, string(entity.TaskStatusRunning),
+	updateDatasetDocumentRejected(t, common.RUNNING,
 		&UpdateDatasetDocumentRequest{MetaFields: map[string]any{"author": "x"}},
 		map[string]bool{"meta_fields": true})
 }
 
 // TestUpdateDatasetDocumentAllowsDoneRename proves an editable status is not
-// over-restricted: renaming a DONE document succeeds (no run-state error).
+// over-restricted: renaming a DONE document succeeds.
 func TestUpdateDatasetDocumentAllowsDoneRename(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "orig.txt", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
 	name := "renamed.txt"
 	svc := testDocumentService(t)

@@ -359,6 +359,11 @@ func TestSplitCompositeLLMID(t *testing.T) {
 		{"gpt-4o", "gpt-4o", "", false},
 		{"gpt-4o@OpenAI", "gpt-4o", "OpenAI", true},
 		{"Qwen/Qwen3-8B@default@SILICONFLOW", "Qwen/Qwen3-8B", "SILICONFLOW", true},
+		// Model names may themselves contain '@' (e.g. LM Studio quant
+		// suffixes): the provider is the LAST segment and the model name
+		// keeps its embedded '@'. Mirrors Python's rsplit("@", 2).
+		{"model@q8_0@lmstudio@LM-Studio", "model@q8_0", "LM-Studio", true},
+		{"a@b@c@d@e", "a@b@c", "e", true},
 	}
 	for _, tc := range cases {
 		gotModel, gotDrv, gotOK := splitCompositeLLMID(tc.in)
@@ -410,6 +415,61 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	}
 	if stub.captured.BaseURL != "https://instance.example" {
 		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "https://instance.example")
+	}
+}
+
+// TestCategorize_ResolvesInstanceCredentialsModelNameWithAt covers a
+// composite llm_id whose model name itself contains '@' — e.g. LM Studio's
+// "model@q8_0" ids produce "model@q8_0@instance@provider". The provider must
+// be taken from the LAST segment (Python split_model_name uses rsplit); a
+// left-anchored split resolves provider "q8_0" and no credentials are found.
+func TestCategorize_ResolvesInstanceCredentialsModelNameWithAt(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "LM-Studio",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "lmstudio",
+		APIKey:       "lm-studio-key",
+		Status:       "active",
+		Extra:        `{"base_url":"http://localhost:1234/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "support", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewCategorizeComponent(CategorizeParam{
+		ModelID:         "text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio",
+		Categories:      []string{"sales", "support"},
+		DefaultCategory: "support",
+	})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if stub.captured.Driver != "LM-Studio" {
+		t.Fatalf("Driver=%q, want %q", stub.captured.Driver, "LM-Studio")
+	}
+	if stub.captured.ModelName != "text-embedding-nomic-embed-text-v1.5@q8_0" {
+		t.Fatalf("ModelName=%q, want %q", stub.captured.ModelName, "text-embedding-nomic-embed-text-v1.5@q8_0")
+	}
+	if stub.captured.APIKey != "lm-studio-key" {
+		t.Fatalf("APIKey=%q, want %q", stub.captured.APIKey, "lm-studio-key")
+	}
+	if stub.captured.BaseURL != "http://localhost:1234/v1" {
+		t.Fatalf("BaseURL=%q, want %q", stub.captured.BaseURL, "http://localhost:1234/v1")
 	}
 }
 

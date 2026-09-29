@@ -59,11 +59,11 @@ var defaultPDFLatinFontPaths = []string{
 }
 
 var defaultPDFCJKFontPaths = []string{
+	// Use the language-specific Noto CJK Variable TTF shipped by Dockerfile_go.
+	// gopdf uses its default variation instance; it does not expose variable
+	// font axes, so this is used as the regular CJK face.
+	"/usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf",
 	"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-	"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
-	"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
-	"/usr/share/fonts/truetype/arphic/uming.ttc",
-	"/usr/share/fonts/truetype/arphic/ukai.ttc",
 }
 
 type pdfFontSet struct {
@@ -95,12 +95,16 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	pdf.SetX(bodyX)
 	pdf.SetY(bodyY)
 	pageNumber := 1
+	closePage := func() {
+		drawWatermark(pdf, fonts, opts)
+		drawFooter(pdf, fonts, opts, pageNumber)
+	}
 
 	for _, line := range splitLines(content) {
 		if line == "" {
 			bodyY += lineHeight
 			if bodyY > 760 {
-				drawFooter(pdf, fonts, opts, pageNumber)
+				closePage()
 				pdf.AddPage()
 				drawHeader(pdf, fonts, opts)
 				bodyY = 72.0
@@ -111,7 +115,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 			continue
 		}
 		if bodyY > 760 {
-			drawFooter(pdf, fonts, opts, pageNumber)
+			closePage()
 			pdf.AddPage()
 			drawHeader(pdf, fonts, opts)
 			bodyY = 72.0
@@ -125,10 +129,7 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 		bodyY += lineHeight
 	}
 
-	if opts.WatermarkText != "" {
-		drawWatermark(pdf, fonts, opts)
-	}
-	drawFooter(pdf, fonts, opts, pageNumber)
+	closePage()
 
 	return writePDFToBytes(pdf)
 }

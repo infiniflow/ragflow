@@ -20,15 +20,6 @@
       "reason": "Python builds both fields internally (token_chunker.py:141,144) but _finalize_json_chunks (token_chunker.py:256-259) whitelists only text/doc_type_kwd/_pdf_positions/mom/img_id, dropping them. Go keeps them because they are still live downstream: needsCrop (pdfcrop_cgo.go:151) reads ck_type, and tokenizer.go:615 forwards tk_nums. The divergence follows from Go cropping after the chunker returns, whereas Python crops inside _invoke (token_chunker.py:370) before finalizing."
     },
     {
-      "id": "token-custom-delim-newline-and-field",
-      "tag": "go_bug",
-      "kind": "chunk_text",
-      "applies_to": ["token__text_backtick", "token__markdown_backtick", "token__html_backtick"],
-      "owner_fix_side": "go",
-      "tracking": "TODO: file issue — Go emits an extra doc_type_kwd:'text' field on the text/markdown/html backtick path where Python emits only {'text': ...}",
-      "reason": "With a backtick-wrapped delimiter (e.g. `\\n`, _compile_delimiter_pattern, token_chunker.py:70-76) Python takes the custom-pattern branch. On that branch Python's _split_text_by_pattern (rag/flow/chunker/token_chunker.py:80-95) discards the delimiter, and the text path emits a list of {'text': ...} with no doc_type_kwd (token_chunker.py:341). Go no longer keeps the delimiter either: since #17868 it uses splitDroppingDelim, so chunk text matches Python exactly. The remaining Go-only behaviour is an extra doc_type_kwd:'text' field — invokeTextPayload (token.go:323, 338-341) defaults every chunk to DocType:'text', which Python's text-path output never includes."
-    },
-    {
       "id": "token-hardcap-chunk-count",
       "tag": "go_intentional",
       "kind": "chunk_count",
@@ -47,6 +38,26 @@
       "permanent": false,
       "tracking": "Go TokenChunker hard-cap merge (方案 B). Python token_chunker still uses OVER_CAP; adopt the hard-cap contract on the Python side to resolve these rules.",
       "reason": "Go TokenChunker now enforces a hard cap (UNDER_CAP merge + oversized-unit re-split), so chunk boundaries shift relative to Python's OVER_CAP merge-then-close on default-delimiter inputs: Go closes a chunk when the projected join would exceed the target, while Python merges the overflowing unit then closes. Same chunk count, different boundaries."
+    },
+    {
+      "id": "token-lossless-delimiter-retention",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__json_children_delim"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker retains the children (bare) delimiter on the chunk it ends (splitByDelim keep mode); Python's _split_text_by_pattern drops it. The user-selected lossless contract (PR #20276 follow-up) keeps bare (non-backtick) delimiters, so this diverges intentionally; resolve by dropping the children delimiter on the Python side.",
+      "reason": "Go TokenChunker retains the children delimiter '。' on each child chunk text; Python's _split_text_by_pattern discards it. Bare (non-backtick) delimiters are preserved losslessly by design, so the divergence is intentional. NOTE: the backtick-wrapped (custom) primary delimiters html/json/markdown/text_backtick were previously enrolled here but now DROP like Python and have been removed."
+    },
+    {
+      "id": "token-json-interitem-join",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__json_two_item"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker merges JSON items with a '' join (each item already carries its own retained delimiter, so '' reproduces the source); Python's _merge_text_chunks_by_token_size inserts '\\n' between items. Align the Go join on the Python side to resolve.",
+      "reason": "Go TokenChunker concatenates the two JSON items with no inter-item separator ('alpha ... omegaanother long item ...'), while Python inserts a '\\n' ('alpha ... omega\\nanother long item ...'). The source JSON items carry no separator, so '' is the faithful lossless join; the divergence is intentional pending a Python-side join alignment. (Enrolled under the old delimiter-retention rule by mistake; split out here.)"
     }
   ]
 }

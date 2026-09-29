@@ -21,10 +21,14 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -38,13 +42,262 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // value parsing.
 var numericCellRe = regexp.MustCompile(`^[\$\+\-]?[\d,]+(\.\d+)?%?$`)
 
-const defaultTableChunkRows = 256
+// spreadsheetSegmentRow is one emitted data row: its cells for the markup
+// and its row-aligned position tuple.
+type spreadsheetSegmentRow struct {
+	cells    []string
+	tuple    []float64
+	rowNum   int
+	colStart int
+}
+
+// renderTableHTML renders one sheet segment in the spreadsheet wire format: a
+// captioned <table> whose header row is <th> cells and whose data rows are
+// <td> cells, one row per line. It is the byte contract every consumer reads —
+// the chunkers parse this shape back row by row (see
+// internal/ingestion/component/chunker/html_rows.go), and the positions matrix
+// emitted next to it is aligned one tuple per <tr>, header included.
+func renderSpreadsheetTable(sheet string, header []string, rows [][]string) string {
+	var builder strings.Builder
+	builder.WriteString("<table><caption>")
+	builder.WriteString(html.EscapeString(sheet))
+	builder.WriteString("</caption>\n<tr>")
+	for _, cell := range header {
+		builder.WriteString("<th>")
+		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
+		builder.WriteString("</th>")
+	}
+	builder.WriteString("</tr>\n")
+	for _, row := range rows {
+		builder.WriteString("<tr>")
+		for _, cell := range row {
+			builder.WriteString("<td>")
+			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
+			builder.WriteString("</td>")
+		}
+		builder.WriteString("</tr>\n")
+	}
+	builder.WriteString("</table>\n")
+	return builder.String()
+}
+
+// buildSheetItems renders one sheet into its wire items: HTML <table>
+// segments split at image anchor boundaries, interleaved with the anchored
+// image items in document order. Every segment repeats the header row (so
+// segment 2+ never loses column names) and carries a row-aligned position
+// matrix — one tuple per <tr> in strict markup order, header included — so
+// row-level consumers index positions by <tr> number with no side channel.
+//
+// An image lands after the last row whose (row, colStart) sorts at or before
+// its anchor; rows before the header's anchor keep the header in front of
+// the image (a header-only lead segment); fully empty rows are skipped from
+// both markup and matrix.
+//
+// Segmentation is semantic only — sheet boundaries and image anchors, never a
+// size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
+// ignored the user's chunk size; that budget belongs to the chunker (see the
+// chunker's splitSpreadsheetTable).
+//
+// Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
+// colEnd]. The same `positions` field carries PDF layout boxes
+// ([page, left, right, top, bottom]) on PDF items, so a consumer must key the
+// vocabulary off sheet_index / ck_type and never reinterpret one as the other.
+func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
+	sortImagesByAnchor(images)
+	if len(records) == 0 {
+		return images
+	}
+	if headerRow <= 0 {
+		headerRow = 1
+	}
+	header := append([]string(nil), records[0]...)
+	headerColEnd := len(header)
+	if headerColEnd == 0 {
+		for _, row := range records {
+			if len(row) > headerColEnd {
+				headerColEnd = len(row)
+			}
+		}
+	}
+	if headerColEnd == 0 {
+		headerColEnd = 1
+	}
+	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)} // [sheet, rowStart, rowEnd, colStart, colEnd]
+
+	rows := make([]spreadsheetSegmentRow, 0, len(records)-1)
+	for i, source := range records[1:] {
+		cells := append([]string(nil), source...)
+		colStart, colEnd := nonEmptyColumnRange(cells)
+		if colStart == 0 {
+			continue
+		}
+		rowNum := headerRow + i + 1
+		if len(dataRows) == len(records)-1 {
+			rowNum = dataRows[i]
+		}
+		rows = append(rows, spreadsheetSegmentRow{
+			cells:    cells,
+			tuple:    []float64{float64(sheetIndex), float64(rowNum), float64(rowNum), float64(colStart), float64(colEnd)},
+			rowNum:   rowNum,
+			colStart: colStart,
+		})
+	}
+
+	anchored := make([]struct {
+		cut int
+		img map[string]any
+	}, 0, len(images))
+	for _, img := range images {
+		row, _ := numericItemInt(img["row_start"])
+		col, _ := numericItemInt(img["col_start"])
+		cut := 0
+		for cut < len(rows) {
+			r := rows[cut]
+			if r.rowNum > row || (r.rowNum == row && r.colStart > col) {
+				break
+			}
+			cut++
+		}
+		anchored = append(anchored, struct {
+			cut int
+			img map[string]any
+		}{cut, img})
+	}
+	sort.SliceStable(anchored, func(i, j int) bool {
+		if anchored[i].cut != anchored[j].cut {
+			return anchored[i].cut < anchored[j].cut
+		}
+		ri, _ := numericItemInt(anchored[i].img["row_start"])
+		rj, _ := numericItemInt(anchored[j].img["row_start"])
+		if ri != rj {
+			return ri < rj
+		}
+		ci, _ := numericItemInt(anchored[i].img["col_start"])
+		cj, _ := numericItemInt(anchored[j].img["col_start"])
+		return ci < cj
+	})
+
+	items := make([]map[string]any, 0, len(rows)+len(images))
+	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
+		cells := make([][]string, 0, len(body))
+		matrix := make([][]float64, 0, len(body)+1)
+		matrix = append(matrix, headerTuple)
+		for _, r := range body {
+			cells = append(cells, r.cells)
+			matrix = append(matrix, r.tuple)
+		}
+		item := NewTableJSONItem(renderSpreadsheetTable(sheet, header, cells), sheet, matrix)
+		item["sheet_index"] = sheetIndex
+		return item
+	}
+
+	prev := 0
+	headerLeadUsed := false
+	for i := 0; i < len(anchored); {
+		cut := anchored[i].cut
+		if cut == 0 && !headerLeadUsed {
+			// A cut at 0 keeps the header in front of the image, matching the
+			// old IR's always-first header record: emit a header-only lead
+			// segment, the data rows follow in the next segment.
+			items = append(items, newSegment(nil))
+			headerLeadUsed = true
+		} else if cut > prev {
+			items = append(items, newSegment(rows[prev:cut]))
+			prev = cut
+		}
+		for i < len(anchored) && anchored[i].cut == cut {
+			items = append(items, anchored[i].img)
+			i++
+		}
+	}
+	if prev < len(rows) || !headerLeadUsed && len(rows) == 0 && len(anchored) == 0 {
+		// A header-only sheet (no data rows, no images) still emits its
+		// header as the only searchable representation of the column schema.
+		items = append(items, newSegment(rows[prev:]))
+	}
+	return items
+}
+
+func sortImagesByAnchor(images []map[string]any) {
+	sort.SliceStable(images, func(i, j int) bool {
+		ri, _ := numericItemInt(images[i]["row_start"])
+		rj, _ := numericItemInt(images[j]["row_start"])
+		if ri != rj {
+			return ri < rj
+		}
+		ci, _ := numericItemInt(images[i]["col_start"])
+		cj, _ := numericItemInt(images[j]["col_start"])
+		return ci < cj
+	})
+}
+
+func nonEmptyColumnRange(row []string) (int, int) {
+	start, end := 0, 0
+	for i, cell := range row {
+		if strings.TrimSpace(cell) == "" {
+			continue
+		}
+		col := i + 1
+		if start == 0 {
+			start = col
+		}
+		end = col
+	}
+	return start, end
+}
+
+func numericItemInt(value any) (int, bool) {
+	switch n := value.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
+		return parsed, err == nil
+	default:
+		return 0, false
+	}
+}
+
+// deprecatedChunkRows reports the removed parser-side chunking option. Row
+// segmentation is now owned by the parser's semantic segments and the
+// selected chunker owns token-budget splitting; silently accepting
+// chunk_rows would make an existing configuration look effective when it is
+// not.
+func deprecatedChunkRows(setup map[string]any, parserName string) {
+	raw, exists := setup["chunk_rows"]
+	if !exists {
+		return
+	}
+	rows, ok := numericItemInt(raw)
+	if !ok {
+		common.Warn("spreadsheet parser ignored invalid chunk_rows; configure row merging on the chunker",
+			zap.String("parser", parserName), zap.Any("chunk_rows", raw))
+		return
+	}
+	common.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker",
+		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
+}
+
+// deprecatedHTML4Excel reports the retired html4excel option. Both
+// spreadsheet builders collapsed into the segmented-HTML wire, so the flag
+// selects nothing anymore. Only an enabled flag warns: false is the default
+// every parser config carries, and warning there would be noise.
+func deprecatedHTML4Excel(setup map[string]any, parserName string) {
+	if enabled, ok := setup["html4excel"].(bool); ok && enabled {
+		common.Warn("spreadsheet parser ignored deprecated html4excel; spreadsheet tables are always emitted as segmented HTML",
+			zap.String("parser", parserName))
+	}
+}
 
 // extractXLSXImages returns the floating and in-cell images anchored to a
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
 // scanning the worksheet's entire coordinate space.
-func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []string) {
+func extractXLSXImages(f *excelize.File, sheet string, budget *embeddedMediaBudget) ([]map[string]any, []string) {
 	cells, err := f.GetPictureCells(sheet)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
@@ -55,6 +308,7 @@ func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []stri
 
 	items := make([]map[string]any, 0, len(cells))
 	warnings := make([]string, 0)
+cellLoop:
 	for _, cell := range cells {
 		pictures, err := f.GetPictures(sheet, cell)
 		if err != nil {
@@ -70,19 +324,37 @@ func extractXLSXImages(f *excelize.File, sheet string) ([]map[string]any, []stri
 				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
 				continue
 			}
-			encoded := base64.StdEncoding.EncodeToString(picture.File)
+			included, keepWalking := true, true
+			if budget != nil {
+				included, keepWalking = budget.include(picture.File)
+			}
+			if !keepWalking {
+				break cellLoop
+			}
 			alt := cell
 			if picture.Format != nil && picture.Format.AltText != "" {
 				alt = picture.Format.AltText
 			}
-			items = append(items, map[string]any{
+			row, col := axisToRC(cell)
+			item := map[string]any{
 				"text":         alt,
 				"doc_type_kwd": "image",
 				"ck_type":      "image",
-				"image":        "data:" + mimeType + ";base64," + encoded,
 				"sheet":        sheet,
 				"cell":         cell,
-			})
+				"row_start":    row,
+				"row_end":      row,
+				"col_start":    col,
+				"col_end":      col,
+			}
+			if included {
+				encoded := base64.StdEncoding.EncodeToString(picture.File)
+				item["image"] = "data:" + mimeType + ";base64," + encoded
+			} else {
+				item["image"] = nil
+				item["media_omitted"] = true
+			}
+			items = append(items, item)
 		}
 	}
 	return items, warnings
@@ -134,124 +406,6 @@ func cleanIllegalControlChars(records [][]string) [][]string {
 		for j, cell := range row {
 			out[i][j] = tableIllegalCharsRe.ReplaceAllString(cell, " ")
 		}
-	}
-	return out
-}
-
-// buildHeaderRow renders a row as an HTML <th> header row.
-func buildHeaderRow(row []string) string {
-	var b strings.Builder
-	b.WriteString("<tr>")
-	for _, cell := range row {
-		b.WriteString("<th>")
-		b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		b.WriteString("</th>")
-	}
-	b.WriteString("</tr>\n")
-	return b.String()
-}
-
-// htmlTableChunk is one self-contained <table> chunk with 1-based sheet/row/col
-// coordinates for source location (mirrors Excel position_int semantics).
-type htmlTableChunk struct {
-	HTML     string
-	RowStart int // inclusive, 1-based Excel row of first data row (header-only chunks use headerRowAbs)
-	RowEnd   int // inclusive, 1-based Excel row of last data row
-	ColStart int
-	ColEnd   int
-}
-
-// recordsToHTMLTableChunks renders records as one or more self-contained HTML
-// <table> chunks. The first row is always the header (<th>). Data rows are
-// split into chunks of chunkRows, each chunk being a complete <table> with
-// <caption> and a repeated header row. Chunks are joined with newlines.
-//
-// The tag schema is <table><caption>{caption}</caption><tr><th>…</th></tr>
-// <tr><td>…</td></tr>…</table>. Rows are intentionally NOT wrapped in
-// <thead>/<tbody>, so every <table> is one atomic chunk that downstream
-// chunkers can consume independently.
-func recordsToHTMLTableChunks(records [][]string, chunkRows int, caption string) string {
-	chunks := recordsToHTMLTableChunkList(records, chunkRows, caption, 1)
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, "")
-}
-
-// recordsToHTMLTableChunkList is the structured form of recordsToHTMLTableChunks.
-// headerRowAbs is the 1-based workbook row number of records[0] (normally 1).
-func recordsToHTMLTableChunkList(records [][]string, chunkRows int, caption string, headerRowAbs int) []htmlTableChunk {
-	if headerRowAbs <= 0 {
-		headerRowAbs = 1
-	}
-	colEnd := 1
-	for _, row := range records {
-		if n := len(row); n > colEnd {
-			colEnd = n
-		}
-	}
-	if len(records) == 0 {
-		return []htmlTableChunk{{
-			HTML:     "<table><caption>" + html.EscapeString(caption) + "</caption></table>",
-			RowStart: headerRowAbs,
-			RowEnd:   headerRowAbs,
-			ColStart: 1,
-			ColEnd:   colEnd,
-		}}
-	}
-
-	headerHTML := buildHeaderRow(records[0])
-	dataRows := records[1:]
-	nData := len(dataRows)
-
-	if nData == 0 {
-		return []htmlTableChunk{{
-			HTML:     "<table><caption>" + html.EscapeString(caption) + "</caption>\n" + headerHTML + "</table>",
-			RowStart: headerRowAbs,
-			RowEnd:   headerRowAbs,
-			ColStart: 1,
-			ColEnd:   colEnd,
-		}}
-	}
-
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-
-	nChunks := (nData + chunkRows - 1) / chunkRows
-	out := make([]htmlTableChunk, 0, nChunks)
-	for ci := 0; ci < nChunks; ci++ {
-		start := ci * chunkRows
-		end := start + chunkRows
-		if end > nData {
-			end = nData
-		}
-
-		var b strings.Builder
-		b.WriteString("<table><caption>")
-		b.WriteString(html.EscapeString(caption))
-		b.WriteString("</caption>\n")
-		b.WriteString(headerHTML)
-
-		for _, row := range dataRows[start:end] {
-			b.WriteString("<tr>")
-			for _, cell := range row {
-				b.WriteString("<td>")
-				b.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-				b.WriteString("</td>")
-			}
-			b.WriteString("</tr>\n")
-		}
-		b.WriteString("</table>\n")
-
-		out = append(out, htmlTableChunk{
-			HTML:     b.String(),
-			RowStart: headerRowAbs + start + 1,
-			RowEnd:   headerRowAbs + end,
-			ColStart: 1,
-			ColEnd:   colEnd,
-		})
 	}
 	return out
 }
@@ -400,7 +554,7 @@ func mergeExtentCol(ranges []mergeRange) int {
 }
 
 // padRowToWidth grows a single row to at least maxCol, padding with empty
-// strings. Only the header row is padded (see renderSheetTables): merged-master
+// strings. Only the header row is padded: merged-master
 // text is inherited into the header alone, so data rows must not be widened —
 // widening them would emit a sea of empty <td> cells for every far merge in the
 // sheet and is the memory blow-up flagged in review.
@@ -602,61 +756,13 @@ func isSubtotalRow(row []string) bool {
 	return false
 }
 
-// decodeChunkRows reads the "chunk_rows" setup knob, returning the default when
-// it is absent or non-positive.
-func decodeChunkRows(setup map[string]any) int {
-	if setup == nil {
-		return defaultTableChunkRows
-	}
-	v, ok := setup["chunk_rows"]
-	if !ok {
-		return defaultTableChunkRows
-	}
-	switch n := v.(type) {
-	case float64:
-		rows := int(n)
-		if rows <= 0 {
-			return defaultTableChunkRows
-		}
-		return rows
-	case int:
-		if n <= 0 {
-			return defaultTableChunkRows
-		}
-		return n
-	case int64:
-		rows := int(n)
-		if rows <= 0 {
-			return defaultTableChunkRows
-		}
-		return rows
-	}
-	return defaultTableChunkRows
-}
-
-// renderSheetTables renders a single workbook sheet into one or more
-// self-contained <table> chunks using the shared spreadsheet-HTML contract:
-// detect the header row, inherit merged-master text into the header, and split
-// data into chunkRows-sized atomic tables each repeating the header.
-func renderSheetTables(f *excelize.File, sheet string, chunkRows int) (string, []string, error) {
-	chunks, warnings, err := renderSheetTableChunks(f, sheet, chunkRows)
-	if err != nil {
-		return "", warnings, err
-	}
-	parts := make([]string, len(chunks))
-	for i, ch := range chunks {
-		parts[i] = ch.HTML
-	}
-	return strings.Join(parts, ""), warnings, nil
-}
-
-func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) ([]htmlTableChunk, []string, error) {
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+		return nil, nil, 0, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
 	}
 	if len(rows) == 0 {
-		return nil, nil, nil
+		return nil, nil, 0, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
 
@@ -697,23 +803,5 @@ func renderSheetTableChunks(f *excelize.File, sheet string, chunkRows int) ([]ht
 		absDataRows = append(absDataRows, i+1)
 	}
 
-	chunks := recordsToHTMLTableChunkList(records, chunkRows, sheet, headerRow)
-	if len(chunks) == 0 || len(absDataRows) == 0 {
-		return chunks, warnings, nil
-	}
-	if chunkRows <= 0 {
-		chunkRows = defaultTableChunkRows
-	}
-	for ci := range chunks {
-		start := ci * chunkRows
-		end := start + chunkRows
-		if end > len(absDataRows) {
-			end = len(absDataRows)
-		}
-		if start < end {
-			chunks[ci].RowStart = absDataRows[start]
-			chunks[ci].RowEnd = absDataRows[end-1]
-		}
-	}
-	return chunks, warnings, nil
+	return records, absDataRows, headerRow, warnings, nil
 }

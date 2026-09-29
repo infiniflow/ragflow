@@ -23,8 +23,8 @@ func TestRenameTextToContentWithWeight_Basic(t *testing.T) {
 func TestRenameTextToContentWithWeight_PreservesExisting(t *testing.T) {
 	chunk := map[string]any{"content_with_weight": "already set", "text": "hello"}
 	RenameTextToContentWithWeight(chunk)
-	if chunk["content_with_weight"] != "already set" {
-		t.Errorf("preserved value should not be overwritten")
+	if chunk["content_with_weight"] != "hello" {
+		t.Errorf("text must be authoritative at the storage boundary, got %q", chunk["content_with_weight"])
 	}
 	if _, exists := chunk["text"]; exists {
 		t.Error("text should still be removed")
@@ -108,19 +108,13 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	}
 }
 
-// TestProcessChunksForPipeline_GeneratesIDOnNonStringText pins the id fallback:
-// when ck["id"] is absent and ck["text"] is a non-string (e.g. from a
-// malformed input), the type assertion silently yields "" and
-// component.ChunkID computes a valid id from empty text, rather than erroring.
-func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
+// TestProcessChunksForPipeline_RejectsNonStringText pins the strict contract:
+// non-string text must fail before chunk-id generation.
+func TestProcessChunksForPipeline_RejectsNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
-	if err != nil {
-		t.Fatalf("ProcessChunksForPipeline: %v", err)
-	}
-	id, ok := chunks[0]["id"].(string)
-	if !ok || id == "" {
-		t.Errorf("id should be generated even for non-string text, got %v", chunks[0]["id"])
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject non-string text")
 	}
 }
 
@@ -333,14 +327,22 @@ func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	}
 }
 
-func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
+func TestProcessChunksForPipeline_TextAuthoritativeAtRename(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
-	if chunks[0]["content_with_weight"] != "already set" {
-		t.Errorf("content_with_weight = %q, want \"already set\"", chunks[0]["content_with_weight"])
+	if chunks[0]["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %q, want %q", chunks[0]["content_with_weight"], "hello")
+	}
+}
+
+func TestProcessChunksForPipeline_RejectsMissingText(t *testing.T) {
+	chunks := []map[string]any{{"content_with_weight": "already set"}}
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
+	if err == nil {
+		t.Fatal("ProcessChunksForPipeline should reject chunks without text")
 	}
 }
 
@@ -349,7 +351,7 @@ func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
 		// positions is 1-indexed (parser normalized before we see it)
 		"positions": []float64{1, 100, 50, 200, 150},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -367,7 +369,7 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 			{2, 200, 60, 300, 250},
 		},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -389,7 +391,7 @@ func TestProcessChunkPositions_NoPositions(t *testing.T) {
 		"text":           "hello",
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 	if _, exists := chunk["page_num_int"]; exists {
 		t.Error("page_num_int must not be set when positions is missing")
 	}
@@ -459,5 +461,99 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 	want := []string{"a", "b"}
 	if len(kwd) != len(want) || kwd[0] != "a" || kwd[1] != "b" {
 		t.Fatalf("executor important_kwd = %v, want %v (empty parts dropped)", kwd, want)
+	}
+}
+
+// TestProcessChunksForPipeline_StripsPipelineOnlyFields pins the index boundary
+// against the parser/chunker bookkeeping keys: none of them is a chunk-store
+// column, and a strict engine rejects the whole insert over one of them
+// ("Column ck_type not found in table", InfinityException 3013). ES only
+// swallowed them because its mapping is dynamic.
+func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
+	ck := map[string]any{
+		"text": "hello",
+		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
+		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
+		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"context_above": "above", "context_below": "below", "page_number": 2,
+		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
+		"headers": []string{"h"}, "cells": []string{"c"},
+		"row_start": 0, "row_end": 1, "col_start": 0, "col_end": 1,
+	}
+
+	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "Doc", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+
+	for _, key := range pipelineOnlyFields {
+		if _, exists := ck[key]; exists {
+			t.Errorf("%q must be stripped before persist (no chunk column; a strict engine rejects the insert)", key)
+		}
+	}
+	if ck["content_with_weight"] != "hello" {
+		t.Errorf("content_with_weight = %v, want the chunk text (the strip must not touch persist fields)", ck["content_with_weight"])
+	}
+	if ck["doc_id"] != "doc-1" {
+		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+}
+
+// =============================================================================
+// processChunkPositions — the two position vocabularies
+// =============================================================================
+
+// TestProcessChunkPositions_SpreadsheetKeepsRowIndex: a spreadsheet chunk's
+// positions become position_int (the preview carrier) instead of being decoded
+// as PDF boxes — no page_num_int, and the chunk's own top_int (the QA row
+// index, aligned with Python's beAdoc) survives.
+func TestProcessChunkPositions_SpreadsheetKeepsRowIndex(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]float64{{2, 42, 42, 1, 3}},
+		"top_int":   []int{41},
+	}
+	processChunkPositions(chunk, true)
+
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 2 || matrix[0][4] != 3 {
+		t.Fatalf("position_int = %v, want the sheet tuple", chunk["position_int"])
+	}
+	if _, exists := chunk["page_num_int"]; exists {
+		t.Errorf("page_num_int must not be derived from spreadsheet tuples: %v", chunk["page_num_int"])
+	}
+	if top, ok := chunk["top_int"].([]int); !ok || len(top) != 1 || top[0] != 41 {
+		t.Errorf("top_int = %v, want the chunk's own row index [41]", chunk["top_int"])
+	}
+	if _, exists := chunk["positions"]; exists {
+		t.Error("raw positions must be removed")
+	}
+}
+
+// TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex pins the whole
+// chunk loop: the spreadsheet identity has to be read before
+// stripPipelineOnlyFields removes sheet_index, or the positions of a
+// spreadsheet chunk would be decoded as PDF layout boxes.
+func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T) {
+	chunks := []map[string]any{{
+		"text":        "<table><tr><th>q</th><th>a</th></tr></table>",
+		"sheet_index": 1,
+		"top_int":     []int{41},
+		"positions":   [][]float64{{1, 42, 42, 1, 3}},
+	}}
+	if _, err := ProcessChunksForPipeline(chunks, "doc-1", "doc.xlsx", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	ck := chunks[0]
+	if _, exists := ck["sheet_index"]; exists {
+		t.Error("sheet_index must be stripped at the index boundary")
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 1 || matrix[0][1] != 42 {
+		t.Fatalf("position_int = %v, want the sheet tuple", ck["position_int"])
+	}
+	if _, exists := ck["page_num_int"]; exists {
+		t.Errorf("page_num_int must not be derived from spreadsheet tuples: %v", ck["page_num_int"])
+	}
+	if top, ok := ck["top_int"].([]int); !ok || len(top) != 1 || top[0] != 41 {
+		t.Errorf("top_int = %v, want the chunk's own row index [41]", ck["top_int"])
 	}
 }

@@ -14,6 +14,13 @@ import {
 } from './accordion-operators';
 import { HideModalContext, OnNodeCreatedContext } from './operator-item-list';
 
+// React events from this portal still bubble through the React tree, and the
+// enclosing xyflow <Handle> starts a connection drag on mousedown. Stop press
+// events here so dragging across menu items can't create a placeholder node.
+function stopPropagation(event: React.SyntheticEvent<HTMLElement>) {
+  event.stopPropagation();
+}
+
 export function InnerNextStepDropdown({
   children,
   hideModal,
@@ -94,7 +101,9 @@ export function InnerNextStepDropdown({
     >
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent
-        onClick={(e) => e.stopPropagation()}
+        onClick={stopPropagation}
+        onMouseDown={stopPropagation}
+        onTouchStart={stopPropagation}
         className="w-[300px] font-semibold"
       >
         <DropdownMenuLabel className="text-xs text-text-primary">

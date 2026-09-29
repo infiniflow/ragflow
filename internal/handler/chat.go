@@ -27,6 +27,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
+
+	"go.uber.org/zap"
 )
 
 // ChatHandler chat handler
@@ -95,24 +97,30 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		}
 	}
 
+	// `sort` supersedes the older pair, so a request it can order is not rejected
+	// for the spelling of an `orderby` that will not be read.
+	sortTerms := sortTermsFromQuery(c)
 	orderby := c.DefaultQuery("orderby", "create_time")
-	switch orderby {
-	case "create_time", "update_time", "name":
-	default:
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
-		return
+	if len(sortTerms) == 0 {
+		switch orderby {
+		case "create_time", "update_time", "name":
+		default:
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			return
+		}
 	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
+	terms := orderTerms(sortTerms, orderby, desc)
 
 	ownerIDs := getOwnerIDs(c)
 	ctx := c.Request.Context()
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, page, pageSize, orderby, desc, ownerIDs)
+	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -221,7 +229,8 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
-		jsonInternalError(c, err)
+		common.Warn("mindmap failed", zap.String("error", err.Error()))
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")
@@ -355,33 +364,33 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Build response (same as Python _build_chat_response)
 	// The service already returns GetChatResponse with DatasetIDs and KBNames
 	result := map[string]interface{}{
-		"id":                       chat.ID,
-		"tenant_id":                chat.TenantID,
-		"name":                     chat.Name,
-		"description":              chat.Description,
-		"icon":                     chat.Icon,
-		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
-		"llm_setting":              chat.LLMSetting,
-		"prompt_type":              chat.PromptType,
-		"prompt_config":            chat.PromptConfig,
-		"meta_data_filter":         chat.MetaDataFilter,
-		"similarity_threshold":     chat.SimilarityThreshold,
-		"vector_similarity_weight": chat.VectorSimilarityWeight,
-		"top_n":                    chat.TopN,
-		"rerank_candidates_count":  chat.RerankCandidatesCount,
-		"top_k":                    chat.TopK,
-		"do_refer":                 chat.DoRefer,
-		"rerank_id":                chat.RerankID,
-		"dataset_ids":              chat.DatasetIDs,
-		"kb_names":                 chat.KBNames,
-		"status":                   chat.Status,
-		"create_time":              chat.CreateTime,
-		"create_date":              chat.CreateDate,
-		"update_time":              chat.UpdateTime,
-		"update_date":              chat.UpdateDate,
-		"tenant_llm_id":            chat.TenantLLMID,
-		"tenant_rerank_id":         chat.TenantRerankID,
+		"id":                         chat.ID,
+		"tenant_id":                  chat.TenantID,
+		"name":                       chat.Name,
+		"description":                chat.Description,
+		"icon":                       chat.Icon,
+		"language":                   chat.Language,
+		"llm_id":                     chat.LLMID,
+		"llm_setting":                chat.LLMSetting,
+		"prompt_type":                chat.PromptType,
+		"prompt_config":              chat.PromptConfig,
+		"meta_data_filter":           chat.MetaDataFilter,
+		"keywords_similarity_weight": 1 - chat.VectorSimilarityWeight,
+		"similarity_threshold":       chat.SimilarityThreshold,
+		"top_n":                      chat.TopN,
+		"rerank_candidates_count":    chat.RerankCandidatesCount,
+		"top_k":                      chat.TopK,
+		"do_refer":                   chat.DoRefer,
+		"rerank_id":                  chat.RerankID,
+		"dataset_ids":                chat.DatasetIDs,
+		"kb_names":                   chat.KBNames,
+		"status":                     chat.Status,
+		"create_time":                chat.CreateTime,
+		"create_date":                chat.CreateDate,
+		"update_time":                chat.UpdateTime,
+		"update_date":                chat.UpdateDate,
+		"tenant_llm_id":              chat.TenantLLMID,
+		"tenant_rerank_id":           chat.TenantRerankID,
 	}
 
 	// Return success response

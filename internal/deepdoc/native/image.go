@@ -55,26 +55,19 @@ func checkImageBounds(b image.Rectangle) error {
 	return nil
 }
 
-// Decode reads an image file (any format Go's image package can decode,
-// e.g. PNG/JPEG) and returns it as RGB pixels. Format is auto-detected,
-// matching the Python service's format-agnostic decode.
-func Decode(path string) (*Image, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	if err != nil {
-		return nil, err
-	}
+// rasterRGBA converts a bounds-checked image.Image into the RGB row-major
+// raster the recognizers consume. The source may carry a non-zero Bounds().Min
+// (e.g. an OCR SubImage crop): drawing it into a fresh 0-origin RGBA avoids the
+// negative PixOffset that 0-based indexing into an offset raster would trigger.
+// Decode and FromImage both funnel through this single conversion path.
+func rasterRGBA(img image.Image) (*Image, error) {
 	if err := checkImageBounds(img.Bounds()); err != nil {
 		return nil, err
 	}
 	b := img.Bounds()
-	rgba := image.NewRGBA(b)
-	draw.Draw(rgba, b, img, b.Min, draw.Src)
 	w, h := b.Dx(), b.Dy()
+	rgba := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(rgba, rgba.Bounds(), img, b.Min, draw.Src)
 	pix := make([]byte, w*h*3)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -88,29 +81,28 @@ func Decode(path string) (*Image, error) {
 	return &Image{W: w, H: h, Pix: pix}, nil
 }
 
+// Decode reads an image file (any format Go's image package can decode,
+// e.g. PNG/JPEG) and returns it as RGB pixels. Format is auto-detected,
+// matching the Python service's format-agnostic decode.
+func Decode(path string) (*Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		return nil, err
+	}
+	return rasterRGBA(img)
+}
+
 // FromImage converts a standard library image.Image into the RGB row-major
 // raster the recognizers consume. It is the in-process analogue of Decode
 // (which reads from a file): the Go DeepDoc client and the PDF parser already
 // hold an image.Image, so decoding to disk and back is unnecessary.
 func FromImage(img image.Image) (*Image, error) {
-	b := img.Bounds()
-	if err := checkImageBounds(b); err != nil {
-		return nil, err
-	}
-	rgba := image.NewRGBA(b)
-	draw.Draw(rgba, b, img, b.Min, draw.Src)
-	w, h := b.Dx(), b.Dy()
-	pix := make([]byte, w*h*3)
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			o := rgba.PixOffset(x, y)
-			d := (y*w + x) * 3
-			pix[d] = rgba.Pix[o]     // R
-			pix[d+1] = rgba.Pix[o+1] // G
-			pix[d+2] = rgba.Pix[o+2] // B
-		}
-	}
-	return &Image{W: w, H: h, Pix: pix}, nil
+	return rasterRGBA(img)
 }
 
 // FromImages converts a slice of standard library images into the RGB

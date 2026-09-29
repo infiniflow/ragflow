@@ -37,7 +37,21 @@ type NavNode struct {
 	Type        string `json:"type"`
 	DocID       string `json:"doc_id,omitempty"`
 	HasChildren bool   `json:"has_children"`
+	// Parent is the tree edge: the parent cluster's name, or "root" for a
+	// depth-0 cluster. A search result returns matched leaves TOGETHER with the
+	// cluster path above them, so the caller nests the flat list into one tree
+	// per root cluster instead of rendering every hit as its own tree.
+	Parent string `json:"parent_kwd,omitempty"`
+	// Matched marks a keyword-search HIT; the path rows returned alongside it are
+	// structure only. Rows outside a search never set it.
+	Matched bool `json:"matched,omitempty"`
 }
+
+// Nav row types as stored in the compiled nav index (type_kwd).
+const (
+	TypeNavDoc     = "nav_doc"
+	TypeNavCluster = "nav_cluster"
+)
 
 // NavHit is one KNN hit on a nav row.
 type NavHit struct {
@@ -63,8 +77,11 @@ type UpsertDocInput struct {
 // production chat invoker without an import cycle; nil disables LLM behavior and
 // the implementation falls back to deterministic naming.
 type NavMergeLLM interface {
-	// Merge returns a merged cluster description for one or more source texts
-	// (temperature 0.1, mirroring Python _llm_merge).
+	// Merge fuses a new document summary into a cluster's description
+	// (temperature 0.1, mirroring Python _llm_merge). texts is
+	// [existing description, new document summary]; on failure it must return the
+	// existing description (an error also keeps it), so a model hiccup never
+	// blanks a stored description.
 	Merge(ctx context.Context, tenantID string, texts []string) (string, error)
 	// CreateSummary returns a short cluster name + summary for a source text
 	// (mirroring Python _llm_create_summary). Return name="" to fall back.
@@ -78,17 +95,35 @@ type NavService interface {
 	// UpsertDoc places one document summary into the nav tree (incremental,
 	// ES-backed read-modify-write; deterministic placement in the minimal loop).
 	UpsertDoc(ctx context.Context, in UpsertDocInput) error
-	// RemoveDoc removes a document's nav rows for the given doc. The minimal-loop
-	// implementation deletes the nav_doc row(s) for the doc; empty-cluster
-	// cascade cleanup is NOT yet implemented.
+	// RemoveDoc removes a document's nav rows for the given doc and prunes empty
+	// clusters from the dataset navigation tree.
 	RemoveDoc(ctx context.Context, tenantID, kbID, docID string) error
 
 	// Search runs query KNN over nav rows and returns the routed doc ids.
-	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, topK int) ([]NavHit, error)
-	// ListClusters returns the depth-0 clusters (parent_kwd=root).
-	ListClusters(ctx context.Context, tenantID, kbID string, page, pageSize int) ([]NavNode, int64, error)
-	// ListChildren returns the direct children of a cluster (parent_kwd=name).
-	ListChildren(ctx context.Context, tenantID, kbID, name string, page, pageSize int) ([]NavNode, int64, error)
+	//
+	// docScope restricts the result to the given documents (nil/empty = the whole
+	// dataset), mirroring search_dataset_nav's doc_scope: a nav_doc leaf matches
+	// on its doc_id, a nav_cluster row on coverage (doc_ids_kwd), and a cluster's
+	// returned coverage is trimmed to the scope so no out-of-scope document
+	// surfaces under a cluster that merely overlaps it.
+	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]NavHit, error)
+	// ListClusters returns the depth-0 clusters (parent_kwd=root), or — when
+	// keywords is non-empty — the pruned search forest: the matched leaves plus
+	// the cluster path above each of them. The total is a cluster count in both
+	// modes.
+	ListClusters(ctx context.Context, tenantID, kbID, keywords string, page, pageSize int) ([]NavNode, int64, error)
+	// ListChildren returns the direct children of a cluster (parent_kwd=name),
+	// optionally filtered by keywords.
+	ListChildren(ctx context.Context, tenantID, kbID, name, keywords string, page, pageSize int) ([]NavNode, int64, error)
+	// SummariesByDocIDs returns the nav_doc description — the document's overall
+	// summary, as stored in the row's payload — keyed by doc_id for the given
+	// documents, falling back to the row's readable label when the payload
+	// carries no description. It mirrors Python
+	// dataset_api_service._nav_doc_summaries and backs the chunk_agg
+	// navigation-tree router's document labels, which callers render to the model
+	// as the document's <summary>. A doc without a nav_doc row is absent from the
+	// result.
+	SummariesByDocIDs(ctx context.Context, tenantID, kbID string, docIDs []string) map[string]string
 }
 
 var (

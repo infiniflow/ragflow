@@ -20,16 +20,19 @@
 package component
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -385,7 +388,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) { return wrong, "", nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -525,13 +528,13 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
 			{vectors: [][]float64{{2, 2}}, tokenCount: 5},
 		}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -558,15 +561,12 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	c, stub := withStubEmbedder(t, 2)
 	stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{2, 4}}, tokenCount: 5}}
 
-	var buf bytes.Buffer
-	prevWriter := log.Writer()
-	prevFlags := log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() {
-		log.SetOutput(prevWriter)
-		log.SetFlags(prevFlags)
-	})
+	// The empty-name warning goes through internal/common (zap), so observe it
+	// by swapping the project logger instead of the stdlib global one.
+	oldLogger := common.Logger
+	core, logs := observer.New(zapcore.WarnLevel)
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = oldLogger })
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "   ",
@@ -580,8 +580,8 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	if got := stub.calls.Load(); got != 1 {
 		t.Fatalf("embedder calls = %d, want 1 (content only)", got)
 	}
-	if !strings.Contains(buf.String(), "empty name provided from upstream") {
-		t.Fatalf("log output = %q, want empty-name warning", buf.String())
+	if got := logs.FilterMessageSnippet("empty name provided from upstream").Len(); got != 1 {
+		t.Fatalf("empty-name warnings = %d, want 1 (entries: %v)", got, logs.All())
 	}
 	got, _ := out["chunks"].([]map[string]any)
 	want := []float64{2, 4}
@@ -735,18 +735,18 @@ func floatSliceClose(got, want []float64) bool {
 
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(B): %v", err)

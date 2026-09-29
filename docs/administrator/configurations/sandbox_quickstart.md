@@ -1,0 +1,228 @@
+---
+sidebar_position: 2
+title: Sandbox Quickstart
+sidebar_label: Sandbox Quickstart
+slug: /sandbox_quickstart
+sidebar_custom_props: {
+  categoryIcon: LucideCog
+}
+---
+# Sandbox quickstart
+
+RAGFlow's `CodeExec` agent component needs a sandbox provider to run Python and JavaScript code.
+
+The simplest setup flow is:
+
+1. Start the required sandbox services.
+2. Open the RAGFlow admin page.
+3. Go to **Admin > Sandbox Settings**.
+4. Choose a provider and save the configuration.
+5. Test the connection in the same page.
+
+## Admin page
+
+Configure sandbox providers from the admin page:
+
+- `self_managed`: Uses the executor manager service.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
+
+## Provider options
+
+RAGFlow supports multiple sandbox providers. Configure the active provider in Admin > Sandbox Settings after the services are up.
+
+- `self_managed`: Runs code inside Docker-managed sandbox containers. This is the default provider.
+- `ssh`: Runs code on a remote machine over SSH.
+- `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
+- `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+
+### Tenki
+
+`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
+- `project_id` (required): the Tenki project that sandboxes are created under.
+- `base_url` (optional): override the Tenki API endpoint.
+- `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
+- `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `false` so sandboxed code has no network access; set it to `true` when code needs the network (for example, to install packages).
+- `timeout`, `max_lifetime`, `cpu_cores`, `memory_mb`, `disk_size_gb`, and the output/artifact limits have sensible defaults and can be tuned in the same page.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
+- The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
+
+## Self-Managed prerequisites
+
+The following prerequisites apply only when you use the `self_managed` provider:
+
+- Linux distribution compatible with gVisor.
+- gVisor installed and configured.
+- Docker version 25.0 or higher (API 1.44+). Ensure your executor manager image ships with Docker CLI `29.1.0` or higher to stay compatible with the latest Docker daemons.
+- Docker Compose version 2.26.1 or higher (similar to RAGFlow requirements).
+- uv package and project manager installed.
+- (Optional) GNU Make for simplified command-line management.
+
+:::tip NOTE
+The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use.
+:::
+
+## Build Docker base images
+
+The sandbox uses isolated base images for secure containerized execution environments.
+
+### Option 1: Build from source
+
+Build the runtime base images:
+
+```bash
+docker build -t sandbox-base-python:latest ./sandbox_base_image/python
+docker build -t sandbox-base-nodejs:latest ./sandbox_base_image/nodejs
+```
+
+Alternatively, build all base images at once using the Makefile:
+
+```bash
+make build
+```
+
+Build the executor manager image:
+
+```bash
+docker build -t sandbox-executor-manager:latest ./executor_manager
+```
+
+### Option 2: Pull base images from Docker Hub
+
+If you do not need to customize runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
+
+```bash
+docker pull infiniflow/sandbox-base-python:latest
+docker pull infiniflow/sandbox-base-nodejs:latest
+
+docker tag infiniflow/sandbox-base-python:latest sandbox-base-python:latest
+docker tag infiniflow/sandbox-base-nodejs:latest sandbox-base-nodejs:latest
+```
+
+Then restart the standalone sandbox services:
+
+```bash
+# Stop the standalone Sandbox services before applying the changes.
+docker compose -f docker-compose.yml down
+# Start the standalone Sandbox services in the background.
+docker compose -f docker-compose.yml up -d
+```
+
+## Running with RAGFlow
+
+1. If you use the `self_managed` provider, verify that gVisor is installed and operational.
+
+2. Configure **docker/.env**:
+
+- Include `sandbox` in `COMPOSE_PROFILES` if you want the default `self_managed` executor-manager service.
+- If you use the `ssh` provider, set `RAGFLOW_SSH_KNOWN_HOSTS` to the host `known_hosts` file and keep `SSH_KNOWN_HOSTS` as the path used inside the Go container. The default values are `${HOME}/.ssh/known_hosts` and `/etc/ragflow/ssh_known_hosts`.
+- Keep the self-managed deployment defaults in `.env` if you need to change the sandbox-executor-manager image, pool size, base images, seccomp, memory, or timeout.
+
+3. Add the following entry to your /etc/hosts file to resolve the executor manager service:
+
+    ```bash
+    127.0.0.1 es01 infinity mysql minio kvrocks sandbox-executor-manager
+    ```
+
+4. Start the RAGFlow service as usual.
+5. Open **Admin > Sandbox Settings**.
+6. Select a provider.
+7. Fill in the required fields.
+8. Click **Save**.
+9. Click **Test Connection** if needed.
+
+## Environment variables
+
+The variables in `docker/.env` are grouped by scope.
+
+### System-level variables
+
+These variables apply to the sandbox deployment:
+
+- `COMPOSE_PROFILES`: Include `sandbox` to start the default self-managed executor-manager service.
+- `SANDBOX_ARTIFACT_BUCKET`: MinIO bucket used for files generated by sandbox code.
+
+### Self-managed deployment defaults
+
+These variables are shown in Admin as deployment defaults for `self_managed`. Changing them requires restarting `sandbox-executor-manager`.
+
+- `SANDBOX_EXECUTOR_MANAGER_IMAGE`: Docker image for the executor manager service. Defaults to `infiniflow/sandbox-executor-manager:latest`.
+- `SANDBOX_EXECUTOR_MANAGER_POOL_SIZE`: Number of Python and Node.js sandbox containers kept in each runtime pool. Defaults to `3`.
+- `SANDBOX_BASE_PYTHON_IMAGE`: Python runtime image used by executor-managed containers. Defaults to `infiniflow/sandbox-base-python:latest`.
+- `SANDBOX_BASE_NODEJS_IMAGE`: Node.js runtime image used by executor-managed containers. Defaults to `infiniflow/sandbox-base-nodejs:latest`.
+- `SANDBOX_EXECUTOR_MANAGER_PORT`: Host port exposed by the executor manager. Defaults to `9385` and binds to `127.0.0.1` in the provided Compose configuration.
+- `SANDBOX_ENABLE_SECCOMP`: Enables the optional seccomp profile for sandbox containers. Defaults to `false`.
+- `SANDBOX_MAX_MEMORY`: Memory limit for each sandbox runtime container. Defaults to `256m`; it is not the total memory limit for all sandbox containers.
+- `SANDBOX_CONTAINER_NETWORK`: Docker network attached to each sandbox runtime container. Defaults to `none`, which prevents external network access. Use `bridge` only when sandboxed code needs outbound network access.
+- `SANDBOX_TIMEOUT`: Default execution timeout. Defaults to `10s`.
+- `SANDBOX_EXECUTOR_MANAGER_API_TOKEN`: Shared secret used to authenticate requests from RAGFlow to the executor manager. Set a strong value for network-accessible deployments; the same value is passed to both services by the provided Compose configuration.
+
+### Admin-managed runtime settings
+
+Provider selection and runtime settings are configured in **Admin > Sandbox Settings**.
+
+Examples:
+
+- Choose the active provider
+- Configure `self_managed` runtime settings
+- Configure all `ssh` settings
+
+For `self_managed`:
+
+- Runtime settings are editable in Admin
+- Deployment defaults come from `.env` and are shown as read-only values
+
+## Running standalone
+
+### Manual setup
+
+1. Initialize the environment variables:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+2. Launch the sandbox services with Docker Compose:
+
+    ```bash
+    docker compose -f docker-compose.yml up
+    ```
+
+3. Test the sandbox setup:
+
+    ```bash
+    source .venv/bin/activate
+    export PYTHONPATH=$(pwd)
+    uv pip install -r executor_manager/requirements.txt
+    uv run tests/sandbox_security_tests_full.py
+    ```
+
+### Using Makefile
+
+Run all setup, build, launch, and tests with a single command:
+
+```bash
+make
+```
+
+### Monitoring
+
+To follow logs of the executor manager container:
+
+```bash
+docker logs -f sandbox-executor-manager
+```
+
+Or use the Makefile shortcut:
+
+```bash
+make logs
+```

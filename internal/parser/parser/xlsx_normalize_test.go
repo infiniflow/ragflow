@@ -29,10 +29,10 @@ func TestXLSXParser_NormalizesInvalidSheetName(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 
-	html := xlsxTableHTML(res)
+	text := spreadsheetText(res)
 	for _, want := range []string{"Name", "Amount", "Alice", "100"} {
-		if !strings.Contains(html, want) {
-			t.Fatalf("parsed table = %q, want %q", html, want)
+		if !strings.Contains(text, want) {
+			t.Fatalf("parsed rows = %q, want %q", text, want)
 		}
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "Visible:Data") {
@@ -76,8 +76,8 @@ func TestXLSXParser_NormalizesEmojiSheetNameWithinUTF16Limit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "Alice") {
-		t.Fatalf("parsed table = %q, want Alice", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Alice") {
+		t.Fatalf("parsed rows = %q, want Alice", spreadsheetText(res))
 	}
 }
 
@@ -138,8 +138,8 @@ func TestXLSXParser_WarnsWhenMergedCellsCannotBeRead(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "Alice") {
-		t.Fatalf("parsed table = %q, want sheet data", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Alice") {
+		t.Fatalf("parsed rows = %q, want sheet data", spreadsheetText(res))
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "merged cells") {
 		t.Fatalf("warnings = %v, want merged-cells warning", res.Warnings)
@@ -161,8 +161,8 @@ func TestXLSXParser_WarnsWhenTableMetadataCannotBeRead(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(xlsxTableHTML(res), "Alice") {
-		t.Fatalf("parsed table = %q, want sheet data", xlsxTableHTML(res))
+	if !strings.Contains(spreadsheetText(res), "Alice") {
+		t.Fatalf("parsed rows = %q, want sheet data", spreadsheetText(res))
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "table metadata") {
 		t.Fatalf("warnings = %v, want table-metadata warning", res.Warnings)

@@ -17,7 +17,7 @@
 import { Collapse } from '@/components/collapse';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from 'react-i18next';
 
@@ -38,6 +38,18 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
           <Textarea
             placeholder={t('common.descriptionPlaceholder')}
             rows={8}
+            resize="vertical"
+          />
+        </RAGFlowFormItem>
+
+        <RAGFlowFormItem
+          name={`templates.${index}.config.raptor.claim_prompt`}
+          label={t('knowledgeCompilation.claimExtractionPrompt')}
+          tooltip={t('knowledgeCompilation.claimExtractionPromptTip')}
+        >
+          <Textarea
+            placeholder={t('common.descriptionPlaceholder')}
+            rows={12}
             resize="vertical"
           />
         </RAGFlowFormItem>

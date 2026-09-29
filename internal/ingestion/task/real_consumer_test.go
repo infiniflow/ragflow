@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -41,7 +42,12 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Purge stale messages
 	for {
-		h, _ := natsEngine.GetMessages(1)
+		pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+		h, err := natsEngine.PullMessages(pullCtx, 1)
+		cancel()
+		if err != nil {
+			t.Fatalf("drain queue: %v", err)
+		}
 		if len(h) == 0 {
 			break
 		}
@@ -83,9 +89,11 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Logf("Producer: Published %s", payload)
 
 	// ── 4. Consumer: Mirrors Ingestor.Start():131-189 exactly ──
-	handles, err := natsEngine.GetMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := natsEngine.PullMessages(pullCtx, 1)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(handles))
@@ -102,7 +110,7 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
@@ -160,7 +168,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, common.RUNNING, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, []string{common.RUNNING}, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 

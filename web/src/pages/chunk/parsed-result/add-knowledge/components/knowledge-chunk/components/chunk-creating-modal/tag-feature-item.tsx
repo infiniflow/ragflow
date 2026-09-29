@@ -26,8 +26,20 @@ export const TagFeatureItem = () => {
   const { data: knowledgeConfiguration } = useFetchKnowledgeBaseConfiguration();
   const form = useFormContext();
   const tagKnowledgeIds = useMemo(() => {
-    return knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
-  }, [knowledgeConfiguration?.parser_config?.tag_kb_ids]);
+    const configuredIds =
+      knowledgeConfiguration?.parser_config?.tag_kb_ids ?? [];
+    // The ingestion pipeline keeps the tag vocabulary on the dataset's own
+    // chunks and never writes tag-set references into parser_config.tag_kb_ids,
+    // so fall back to aggregating the current dataset's tags through the
+    // aggregation endpoint (GET /datasets/tags/aggregation).
+    if (configuredIds.length === 0 && knowledgeConfiguration?.id) {
+      return [knowledgeConfiguration.id];
+    }
+    return configuredIds;
+  }, [
+    knowledgeConfiguration?.id,
+    knowledgeConfiguration?.parser_config?.tag_kb_ids,
+  ]);
 
   const options = useMemo(() => {
     return list.map((x) => ({
@@ -76,6 +88,10 @@ export const TagFeatureItem = () => {
                     <FormField
                       control={form.control}
                       name={`${FieldKey}.${name}.tag` as any}
+                      rules={{
+                        validate: (value: string) =>
+                          value ? true : t('knowledgeConfiguration.tagMessage'),
+                      }}
                       render={({ field }) => (
                         <FormItem className="w-2/3">
                           <FormControl className="w-full">
@@ -97,6 +113,22 @@ export const TagFeatureItem = () => {
                     <FormField
                       control={form.control}
                       name={`${FieldKey}.${name}.frequency`}
+                      rules={{
+                        min: {
+                          value: 1,
+                          message: t(
+                            'knowledgeConfiguration.frequencyMinMessage',
+                            { min: 1 },
+                          ),
+                        },
+                        max: {
+                          value: 10,
+                          message: t(
+                            'knowledgeConfiguration.frequencyMaxMessage',
+                            { max: 10 },
+                          ),
+                        },
+                      }}
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>

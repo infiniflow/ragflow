@@ -86,7 +86,7 @@ func (p *userFillUpParam) Update(conf map[string]any) error {
 
 // Check performs parameter validation. UserFillUp has no required
 // fields — any config is accepted and degrades gracefully on missing
-// template data. The method is kept to satisfy the ParamBase contract.
+// template data. The method is kept to satisfy the ParamBase
 func (p *userFillUpParam) Check() error { return nil }
 
 // AsDict returns the param as a plain map for serialization / debug.
@@ -122,7 +122,7 @@ func (u *UserFillUpComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	// tips substitution uses simple {{key}} placeholders resolved
 	// against the form input map. We still extract state so a
 	// nil-state error surfaces early.
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("UserFillUp: %w", err)
 	}
 

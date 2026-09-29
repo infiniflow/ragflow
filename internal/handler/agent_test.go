@@ -36,7 +36,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
-	"ragflow/internal/service/document"
 	"ragflow/internal/tokenizer"
 )
 
@@ -718,14 +717,16 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // event, trailing `data: [DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
-	events    []canvas.RunEvent
-	err       error
-	sessionID string
-	userInput any
+	events           []canvas.RunEvent
+	err              error
+	sessionID        string
+	trustedSessionID string
+	userInput        any
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	s.sessionID = sessionID
+	s.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	s.userInput = userInput
 	if s.err != nil {
 		return nil, s.err
@@ -824,12 +825,37 @@ func TestRunAgent_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.RunAgent(c)
 
+	if runner.sessionID == "" || runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("generated session id = %q, trusted session id = %q", runner.sessionID, runner.trustedSessionID)
+	}
 	body := w.Body.String()
 	if got := strings.Count(body, "data:[DONE]\n\n"); got != 1 {
 		t.Fatalf("expected exactly one [DONE] terminator, got %d in %q", got, body)
 	}
 	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+func TestRunAgent_SuppliedSessionIsNotTrustedFirstTouch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "canvas_id", Value: "a1"}}
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/a1/run?session_id=client-session",
+		strings.NewReader(`{"user_input":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{}
+	(&AgentHandler{chatRunner: runner}).RunAgent(c)
+
+	if runner.sessionID != "client-session" {
+		t.Fatalf("session id = %q, want client-session", runner.sessionID)
+	}
+	if runner.trustedSessionID != "" {
+		t.Fatalf("trusted session id = %q, want empty", runner.trustedSessionID)
 	}
 }
 
@@ -869,6 +895,34 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 	if strings.Contains(body, "data:[DONE]") {
 		t.Errorf("body should not contain [DONE] terminator in non-streaming mode, got %q", body)
+	}
+}
+
+func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{events: []canvas.RunEvent{
+		{Type: "workflow_started", Data: `{"inputs":"hello"}`},
+		{Type: "error", Data: `{"message":"Can't find variable: 'Agent:Deleted@content'","kind":"user"}`},
+	}}
+	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+	var response struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Code != int(common.CodeServerError) || response.Message != "Can't find variable: 'Agent:Deleted@content'" {
+		t.Fatalf("response = %+v, want runner error", response)
 	}
 }
 
@@ -913,11 +967,13 @@ func TestAgentChatCompletions_NonStreamingPreservesThinkMarkers(t *testing.T) {
 }
 
 type emptySessionCaptureRunner struct {
-	sessionID string
+	sessionID        string
+	trustedSessionID string
 }
 
-func (r *emptySessionCaptureRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	r.sessionID = sessionID
+	r.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -939,6 +995,9 @@ func TestAgentChatCompletions_EmptyOutputReturnsGeneratedSession(t *testing.T) {
 
 	if runner.sessionID == "" {
 		t.Fatal("handler passed an empty session id to RunAgent")
+	}
+	if runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("trusted session id = %q, want generated id %q", runner.trustedSessionID, runner.sessionID)
 	}
 	var response map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
@@ -975,10 +1034,10 @@ func TestAgentChatCompletions_DerivesUserInputFromMessages(t *testing.T) {
 	}
 }
 
-// TestAgentChatCompletions_DerivesUserInputFromInputs covers the wait-for-user
-// resume path used by the front-end: the follow-up submit posts `inputs`
-// instead of a top-level `query`. The handler must lift the nested field value
-// and pass it through as the resumed user input.
+// TestAgentChatCompletions_DerivesUserInputFromInputs covers the form-submit
+// path used by the front-end: named inputs must keep their field names even
+// when only one field is present, so Begin can distinguish an explicit update
+// from ordinary conversational query text.
 func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -994,8 +1053,52 @@ func TestAgentChatCompletions_DerivesUserInputFromInputs(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
 
-	if captured != "a b c d e" {
-		t.Errorf("userInput = %#v, want %q (nested inputs.value)", captured, "a b c d e")
+	got, ok := captured.(map[string]any)
+	if !ok || got["text"] != "a b c d e" {
+		t.Errorf("userInput = %#v, want named text input", captured)
+	}
+}
+
+func TestAgentChatCompletions_MissingOptionalInputValueIsNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","inputs":{"a":{"name":"a","type":"line","optional":true}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok {
+		t.Fatalf("userInput type = %T, want map[string]any", captured)
+	}
+	if value, exists := got["a"]; !exists || value != nil {
+		t.Fatalf("userInput[a] = %#v, exists=%v, want nil", value, exists)
+	}
+}
+
+func TestAgentChatCompletions_PreservesNamedInputsAlongsideQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","query":"Hello","inputs":{"name":{"name":"name","value":"Alice","type":"line"}}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	var captured any
+	h := &AgentHandler{chatRunner: &captureChatRunner{captured: &captured}}
+	h.AgentChatCompletions(c)
+
+	got, ok := captured.(map[string]any)
+	if !ok || got["name"] != "Alice" || got["query"] != "Hello" {
+		t.Fatalf("userInput = %#v, want name=Alice query=Hello", captured)
 	}
 }
 
@@ -1073,6 +1176,9 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	if runner.sessionID == "" {
 		t.Error("runner sessionID should be generated for a new OpenAI-compatible request")
 	}
+	if runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("trusted session id = %q, want generated id %q", runner.trustedSessionID, runner.sessionID)
+	}
 
 	var resp map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -1112,15 +1218,33 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	if !ok {
 		t.Fatalf("usage = %#v, want object", resp["usage"])
 	}
-	wantPromptTokens := tokenizer.NumTokensFromString("Be concise.") +
-		tokenizer.NumTokensFromString("What is 1+1?") +
-		tokenizer.NumTokensFromString("2") +
-		tokenizer.NumTokensFromString("hi")
+	wantPromptTokens := tokenizer.NumTokensFromString("hi")
 	if got := int(usage["prompt_tokens"].(float64)); got != wantPromptTokens {
-		t.Errorf("prompt_tokens = %d, want all message content counted as %d", got, wantPromptTokens)
+		t.Errorf("prompt_tokens = %d, want only the latest message content counted as %d", got, wantPromptTokens)
 	}
 	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
 		t.Errorf("usage totals do not add up: %v", usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_SuppliedSessionIsNotTrustedFirstTouch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","session_id":"client-session","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{}
+	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+	if runner.sessionID != "client-session" {
+		t.Fatalf("session id = %q, want client-session", runner.sessionID)
+	}
+	if runner.trustedSessionID != "" {
+		t.Fatalf("trusted session id = %q, want empty", runner.trustedSessionID)
 	}
 }
 
@@ -1281,13 +1405,6 @@ func TestAgentChatCompletions_OpenAICompat_MapsErrors(t *testing.T) {
 		errorType   string
 		wantMessage string
 	}{
-		{
-			name:        "session busy",
-			err:         service.ErrAgentSessionBusy,
-			status:      http.StatusConflict,
-			errorType:   "invalid_request_error",
-			wantMessage: "already running",
-		},
 		{
 			name:        "operating error",
 			err:         service.ErrAgentNotOwner,
@@ -1591,79 +1708,6 @@ func decodeOpenAICompatStream(t *testing.T, body string) ([]map[string]interface
 	return chunks, done
 }
 
-// TestRerunAgent_RequiresAllFields covers the 101 branch: missing
-// any of id / dsl / component_id -> "required argument are missing: ..."
-func TestRerunAgent_RequiresAllFields(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cases := []struct {
-		name    string
-		body    string
-		missing string
-	}{
-		{"empty", `{}`, "id,dsl,component_id"},
-		{"only_id", `{"id":"x"}`, "dsl,component_id"},
-		{"id_dsl", `{"id":"x","dsl":{}}`, "component_id"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-				strings.NewReader(tc.body))
-			c.Request.Header.Set("Content-Type", "application/json")
-			c.Set("user", &entity.User{ID: "u1"})
-			c.Set("user_id", "u1")
-
-			ctx := t.Context()
-			h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-			h.RerunAgent(c)
-
-			var resp map[string]interface{}
-			_ = json.Unmarshal(w.Body.Bytes(), &resp)
-			if code, _ := resp["code"].(float64); code != float64(common.CodeArgumentError) {
-				t.Errorf("code = %v, want 101", code)
-			}
-			if msg, _ := resp["message"].(string); !strings.Contains(msg, "required argument are missing") {
-				t.Errorf("message = %q, want to contain 'required argument are missing'", msg)
-			}
-		})
-	}
-}
-
-// TestRerunAgent_AcceptsCompleteRequest covers the happy path: all
-// three required fields present + documentService wired with a
-// rerun that succeeds -> 200 / code 0, and the stub receives the
-// log id / dsl / component_id from the request verbatim.
-func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	stub := &stubDocService{}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeSuccess) {
-		t.Errorf("code = %v, want 0 (msg=%v)", code, resp["message"])
-	}
-	if stub.userID != "u1" || stub.logID != "log-1" || stub.componentID != "c1" {
-		t.Errorf("stub args = user %q log %q component %q, want u1/log-1/c1",
-			stub.userID, stub.logID, stub.componentID)
-	}
-	if _, ok := stub.dsl["path"]; !ok {
-		t.Errorf("stub dsl = %v, want the request dsl passed through", stub.dsl)
-	}
-}
-
 // TestPromptsReturnsHardcodedFields covers the contract: the data
 // payload must contain the four authoring guideline keys.
 func TestPromptsReturnsHardcodedFields(t *testing.T) {
@@ -1689,155 +1733,6 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 			t.Errorf("prompts.data should contain %q, got: %v", key, data)
 		}
 	}
-}
-
-// TestRerunAgent_RejectsInaccessibleDocument: POST /api/v1/agents/rerun
-// gates on RerunDocument resolving the log and validating document access
-// before accepting the request. A denial from the service must surface as
-// CodeDataError + "Document not found." so a caller cannot probe whether a
-// document exists in another tenant.
-func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"doc-victim","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	// The stub models the service's deny path: unknown log or an
-	// inaccessible document both collapse to ErrRerunDocumentNotFound.
-	stub := &stubDocService{err: document.ErrRerunDocumentNotFound}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
-		t.Errorf("deny-all stub: want code %d (Document not found), got %v (msg=%v)",
-			common.CodeDataError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "Document not found") {
-		t.Errorf("deny-all stub: want message to contain 'Document not found', got %q", msg)
-	}
-}
-
-// TestRerunAgent_NoDocumentServiceFailsClosed pins the fail-closed
-// rule: a nil documentService is treated as a wiring misconfiguration
-// that would create an auth bypass, NOT a backward-compatible "skip
-// the gate" state. The handler must return 500 / "server
-// misconfiguration" so a missing dependency is loud and gets fixed,
-// instead of silently allowing any caller to rerun an arbitrary doc id.
-func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"doc-anything","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
-	// Note: no WithDocumentService call → documentService is nil.
-	// The production wiring (cmd/ragflow_server.go) chains
-	// WithDocumentService onto NewAgentHandler; a nil here means the
-	// handler was constructed without its required dependency.
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
-		t.Errorf("nil documentService: want code %d (fail closed), got %v (msg=%v)",
-			common.CodeServerError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "server misconfiguration") {
-		t.Errorf("nil documentService: want message to mention misconfiguration, got %q", msg)
-	}
-}
-
-// TestRerunAgent_InternalErrorReturns500: a non-domain failure (DB down,
-// queue publish failed, ...) is neither a caller data error nor safe to
-// echo back. The handler must answer CodeServerError with a generic
-// message and keep the raw error text out of the response.
-func TestRerunAgent_InternalErrorReturns500(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	stub := &stubDocService{err: errors.New("update pipeline log dsl: connection refused")}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeServerError) {
-		t.Errorf("internal error: want code %d, got %v (msg=%v)",
-			common.CodeServerError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); strings.Contains(msg, "connection refused") {
-		t.Errorf("internal error: raw error leaked into the response message %q", msg)
-	}
-}
-
-// TestRerunAgent_DocumentProcessingIsDataError: a mid-run document is a
-// caller-facing conflict, so the typed processing error keeps the 102
-// envelope with the service's message.
-func TestRerunAgent_DocumentProcessingIsDataError(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun",
-		strings.NewReader(`{"id":"log-1","dsl":{"path":[]},"component_id":"c1"}`))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("user_id", "u1")
-
-	stub := &stubDocService{err: &document.RerunDocumentProcessingError{DocumentName: "hlm.docx"}}
-	ctx := t.Context()
-	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
-		WithDocumentService(stub)
-	h.RerunAgent(c)
-
-	var resp map[string]interface{}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if code, _ := resp["code"].(float64); code != float64(common.CodeDataError) {
-		t.Errorf("processing error: want code %d, got %v (msg=%v)",
-			common.CodeDataError, code, resp["message"])
-	}
-	if msg, _ := resp["message"].(string); !strings.Contains(msg, "is processing") {
-		t.Errorf("processing error: want message to contain 'is processing', got %q", msg)
-	}
-}
-
-// stubDocService stubs the documentRerunService surface for handler
-// tests: it records the arguments and replays err (nil = success,
-// document.ErrRerunDocumentNotFound = deny).
-type stubDocService struct {
-	err         error
-	userID      string
-	logID       string
-	dsl         map[string]interface{}
-	componentID string
-}
-
-func (s *stubDocService) RerunDocument(_ context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error {
-	s.userID = userID
-	s.logID = logID
-	s.dsl = dsl
-	s.componentID = componentID
-	return s.err
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that the

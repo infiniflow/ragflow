@@ -133,9 +133,9 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	}
 
 	state := stateFromRunOutput(t, out)
-	chunkerState, ok := state["TokenChunker:SixApplesFall"]
+	chunkerState, ok := state["GeneralChunker:SixApplesFall"]
 	if !ok {
-		t.Fatal("missing TokenChunker:SixApplesFall state")
+		t.Fatal("missing GeneralChunker:SixApplesFall state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
@@ -191,7 +191,6 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	}
 	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
 
-	wantTexts := []string{"Alpha paragraph.", "Beta paragraph."}
 	wantMergedText := "Alpha paragraph.\nBeta paragraph."
 	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
@@ -217,14 +216,11 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
 	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 2 {
-		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	for i, wantText := range wantTexts {
-		item := jsonItems[i]
-		if got := item["text"]; got != wantText {
-			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
-		}
+	if got := jsonItems[0]["text"]; got != "Alpha paragraph.\n\nBeta paragraph." {
+		t.Fatalf("parser json[0].text = %v, want normalized full text", got)
 	}
 	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
@@ -756,8 +752,8 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
 	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
 		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _, _ string) (componentpkg.Embedder, error) {
-				return fixedEmbedder{}, nil
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _ string) (componentpkg.Embedder, string, error) {
+				return fixedEmbedder{}, "", nil
 			})
 		}
 		factory, _, _, ok := runtime.DefaultRegistry.Lookup(name)

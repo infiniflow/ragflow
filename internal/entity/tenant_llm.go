@@ -24,7 +24,7 @@ type TenantLLM struct {
 	LLMFactory string  `gorm:"column:llm_factory;size:128;not null" json:"llm_factory"`
 	ModelType  *string `gorm:"column:model_type;size:128;index" json:"model_type,omitempty"`
 	LLMName    *string `gorm:"column:llm_name;size:128;index;default:''" json:"llm_name,omitempty"`
-	APIKey     *string `gorm:"column:api_key;size:8192" json:"api_key,omitempty"`
+	APIKey     *string `gorm:"column:api_key;type:text" json:"api_key,omitempty"`
 	APIBase    *string `gorm:"column:api_base;size:255" json:"api_base,omitempty"`
 	MaxTokens  int64   `gorm:"column:max_tokens;default:8192" json:"max_tokens"`
 	UsedTokens int64   `gorm:"column:used_tokens;default:0" json:"used_tokens"`

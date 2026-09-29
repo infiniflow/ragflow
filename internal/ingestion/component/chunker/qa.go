@@ -17,13 +17,15 @@
 // QAChunker extracts question-answer pairs from parsed content.
 //
 // Input formats and extraction strategies:
-//   - Text (txt, csv)  → delimiter-based Q&A (comma or tab)
-//   - Markdown (md)    → heading-based Q&A
-//   - HTML (xls, xlsx) → table-based Q&A (first two columns)
-//   - JSON (pdf, docx, xlsx) → text sections via delimiter; table items via extractQATable
+//   - Text (txt, csv) → delimiter-based Q&A (comma or tab)
+//   - Markdown (md)   → heading-based Q&A
+//   - HTML table      → table-based Q&A (first two columns)
+//   - JSON            → typed spreadsheet cells first; otherwise text sections
+//     or the HTML-table fallback for parsers that emit table markup.
 //
-// Every Q&A pair becomes a single chunk with content_with_weight
-// formatted as "Question: {q}\tAnswer: {a}".
+// Every Q&A pair becomes a single chunk whose text is
+// "Question: {q}\tAnswer: {a}" (ingestion renames text to
+// content_with_weight at the index boundary).
 package chunker
 
 import (
@@ -31,7 +33,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"html"
 	"regexp"
 	"strings"
 
@@ -118,7 +119,11 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	case schema.PayloadFormatText:
 		qaPairs = extractQAText(stringPtrVal(upstream.TextResult))
 	default:
-		qaPairs = extractQAJSON(upstream.JSONResult)
+		fileType := upstream.FileType
+		if strings.TrimSpace(fileType) == "" && isCSV(upstream.Name) {
+			fileType = "csv"
+		}
+		qaPairs = extractQAJSON(upstream.JSONResult, fileType)
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(qaPairs))
@@ -131,11 +136,16 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		if isMarkdown {
 			answer = renderMarkdown(answer)
 		}
+		// Text is the pipeline's canonical chunk carrier: ingestion hashes
+		// it into the chunk id and renames it to content_with_weight. A
+		// content_with_weight-only chunk would share one empty-text id with
+		// every sibling and the index write would collapse all Q&A pairs
+		// into a single chunk.
 		chunk := schema.ChunkDoc{
-			ContentWithWeight: fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
-			DocType:           "text",
-			ContentLtks:       contentLTKS,
-			ContentSmLtks:     contentSMLTKS,
+			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
+			DocType:       "text",
+			ContentLtks:   contentLTKS,
+			ContentSmLtks: contentSMLTKS,
 		}
 		//
 		// index), image id + coordinates carried from the source item.
@@ -195,41 +205,6 @@ func stringPtrVal(s *string) string {
 
 func isCSV(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".csv")
-}
-
-// ---------------------------------------------------------------------------
-// HTML / spreadsheet QA extraction
-// ---------------------------------------------------------------------------
-
-var htmlTR = regexp.MustCompile(`(?i)<tr[^>]*>(.*?)</tr>`)
-var htmlTD = regexp.MustCompile(`(?i)<t[dh][^>]*>(.*?)</t[dh]>`)
-var htmlTag = regexp.MustCompile(`<[^>]+>`)
-
-func extractQATable(htmlStr string, strictPairs bool) []qaPair {
-	if htmlStr == "" {
-		return nil
-	}
-	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
-	pairs := make([]qaPair, 0, len(rows))
-	for _, row := range rows {
-		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
-		// Python qa.py:365 requires exactly two fields for CSV pairs.
-		if strictPairs && len(cells) != 2 {
-			continue
-		}
-		var texts []string
-		for _, cell := range cells {
-			t := html.UnescapeString(htmlTag.ReplaceAllString(cell[1], ""))
-			t = strings.TrimSpace(t)
-			if t != "" {
-				texts = append(texts, t)
-			}
-		}
-		if len(texts) >= 2 {
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1]})
-		}
-	}
-	return pairs
 }
 
 // ---------------------------------------------------------------------------
@@ -423,31 +398,121 @@ func detectDelimiter(lines []string) string {
 // JSON / structured QA extraction
 // ---------------------------------------------------------------------------
 
-func extractQAJSON(items []schema.ChunkDoc) []qaPair {
+func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	var pairs []qaPair
+	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
+		var tmp []qaPair
 		txt, _ := itemText(item)
 		if txt == "" {
 			continue
 		}
-		// XLSX (#18800) emits OutputFormat json with HTML tables in item
-		// text and doc_type_kwd=table. Route those through extractQATable
-		// so spreadsheet QA keeps working; plain text items stay on the
-		// delimiter path used by pdf/docx.
-		var tmp []qaPair
-		if itemDocType(item) == "table" {
-			tmp = extractQATable(txt, false)
+		// Route on what the row walker can read, not on the type label.
+		// doc_type:"table" is not truthful for every producer: the
+		// opendataloader, tcadp and somark PDF parsers tag text that holds
+		// no <table> markup, so such an item used to enter the table
+		// extractor, find no rows, and silently lose every pair; conversely
+		// a text-labelled block holding real table markup is read as a
+		// table. isTableHTML is only the cheap candidate filter: the
+		// walker's result decides, so nothing it can read is denied, and a
+		// block that merely opens with "<table" text (no row) stays on the
+		// prose path instead of silently pairing nothing. (Python's qa.py
+		// drops plain-text table payloads such as PDF tables entirely; the
+		// walker keeps their pairs.) Pre-upgrade row-IR payloads
+		// (ck_type: table_row/table_header with cells) hold no markup and
+		// fall through to the text extractor, so documents from before this
+		// wire must be re-parsed rather than re-chunked.
+		var rows [][]string
+		if isTableHTML(txt) {
+			rows = tableRows(txt)
+		}
+		if len(rows) > 0 {
+			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
 		} else {
 			tmp = extractQAText(txt)
 		}
 		// Preserve the source item's image id and coordinates on each
-		// extracted pair
+		// extracted pair. A row-aligned positions matrix already gave each
+		// pair its own tuple (R1: a row chunk must not carry the whole
+		// table's matrix in positions[0]).
 		for _, p := range tmp {
 			p.Image = item.Image
 			p.PDFPositions = item.PDFPositions
-			p.Positions = item.Positions
+			if len(p.Positions) == 0 {
+				p.Positions = item.Positions
+			}
 			pairs = append(pairs, p)
 		}
+	}
+	return pairs
+}
+
+// extractQATable turns table markup from an HTML payload into Q&A pairs: the
+// JSON dispatch routes on the same walker, so both paths share
+// qaPairsFromRows. These items carry no positions payload of their own.
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
+	if htmlStr == "" {
+		return nil
+	}
+	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
+}
+
+// qaPairsFromRows builds the pairs of one table: the first two non-empty
+// cells of a row become the question and the answer. strictPairs is the CSV
+// contract (Python qa.py:365) and requires a row to have exactly two cells
+// instead of taking the first two.
+//
+// positions is the item's own positions payload, and spreadsheetPositions
+// says whether it may be read as the spreadsheet wire's matrix. When it is
+// (identity present, one five-field tuple per <tr>), each pair carries only
+// its row's tuple and takes its 0-based record index from that tuple's
+// rowStart (top_int = positions[i][1] - 1), which reproduces the legacy
+// row-IR numbering. Otherwise pairs are numbered by extraction order,
+// mirroring Python qa.py's enumerate over the extracted pairs — PDF items
+// write layout boxes into the same field, so they must not be reinterpreted
+// as spreadsheet rows.
+func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
+	var matrix [][]float64
+	if len(positions) > 0 {
+		if err := json.Unmarshal(positions, &matrix); err != nil {
+			matrix = nil
+		}
+	}
+	rowAligned := spreadsheetPositions && len(matrix) == len(rows) && len(rows) > 0
+	if rowAligned {
+		for _, tuple := range matrix {
+			if len(tuple) != 5 {
+				rowAligned = false
+				break
+			}
+		}
+	}
+	pairs := make([]qaPair, 0, len(rows))
+	for i, cells := range rows {
+		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		if strictPairs && len(cells) != 2 {
+			if len(pairs) > 0 {
+				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")
+			}
+			continue
+		}
+		var texts []string
+		for _, cell := range cells {
+			if cell != "" {
+				texts = append(texts, cell)
+			}
+		}
+		if len(texts) < 2 {
+			continue
+		}
+		pair := qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)}
+		if rowAligned {
+			pair.RowNum = int(matrix[i][1]) - 1
+			if encoded, err := json.Marshal([][]float64{matrix[i]}); err == nil {
+				pair.Positions = encoded
+			}
+		}
+		pairs = append(pairs, pair)
 	}
 	return pairs
 }

@@ -19,6 +19,19 @@ import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
 import { parseApiKeyAsObject } from './utils';
 
+const buildMineruApiKey = (values: Record<string, any>) => {
+  const cfg: Record<string, any> = { ...values };
+  delete cfg.instance_name;
+  cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
+  if (
+    values.mineru_backend !== 'vlm-http-client' &&
+    values.mineru_backend !== 'hybrid-http-client'
+  ) {
+    delete cfg.mineru_server_url;
+  }
+  return cfg;
+};
+
 /**
  * Factory configuration mapping table
  * key: LLMFactory value
@@ -40,15 +53,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'base_url',
-        label: 'addLlmBaseUrl',
-        type: 'inputSelect',
-        required: true,
-        placeholder: 'baseUrlNameMessage',
-        shouldRender: 'hideWhenInstanceExists',
-        validation: { message: 'baseUrlNameMessage' },
-      },
-      {
         name: 'api_key',
         label: 'apiKey',
         type: FormFieldType.Password,
@@ -56,6 +60,15 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'apiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
         validation: { message: 'apiKeyMessage' },
+      },
+      {
+        name: 'base_url',
+        label: 'addLlmBaseUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'baseUrlNameMessage',
+        shouldRender: 'hideWhenInstanceExists',
+        validation: { message: 'baseUrlNameMessage' },
       },
       {
         name: 'api_version',
@@ -431,19 +444,19 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
+        name: 'opendataloader_api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'apiKeyPlaceholder',
+      },
+      {
         name: 'opendataloader_apiserver',
         label: 'baseUrl',
         type: FormFieldType.Text,
         required: true,
         placeholder: 'opendataloaderApiserverPlaceholder',
         validation: { message: 'opendataloaderApiserverMessage' },
-      },
-      {
-        name: 'opendataloader_api_key',
-        label: 'apiKey',
-        type: FormFieldType.Password,
-        required: false,
-        placeholder: 'apiKeyPlaceholder',
       },
     ],
     verifyTransform: (values) => {
@@ -500,20 +513,22 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'paddleocr_api_url',
-        label: 'paddleocrApiUrl',
-        type: 'inputSelect',
-        required: true,
-        placeholder: 'paddleocrApiUrlPlaceholder',
-        validation: { message: 'paddleocrApiUrlMessage' },
-      },
-      {
         name: 'paddleocr_access_token',
         label: 'paddleocrAccessToken',
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
+      },
+      {
+        name: 'paddleocr_api_url',
+        label: 'paddleocrApiUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
+        validation: { message: 'paddleocrApiUrlMessage' },
       },
       {
         name: 'paddleocr_algorithm',
@@ -587,20 +602,22 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'paddleocr_api_url',
-        label: 'paddleocrApiUrl',
-        type: 'inputSelect',
-        required: true,
-        placeholder: 'paddleocrApiUrlPlaceholder',
-        validation: { message: 'paddleocrApiUrlMessage' },
-      },
-      {
         name: 'paddleocr_access_token',
         label: 'paddleocrAccessToken',
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
+      },
+      {
+        name: 'paddleocr_api_url',
+        label: 'paddleocrApiUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
+        validation: { message: 'paddleocrApiUrlMessage' },
       },
     ],
     verifyTransform: (values) => ({
@@ -659,12 +676,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'mineruSelectBackend',
         options: [
           { label: 'pipeline', value: 'pipeline' },
-          { label: 'vlm-transformers', value: 'vlm-transformers' },
-          { label: 'vlm-vllm-engine', value: 'vlm-vllm-engine' },
+          { label: 'vlm-engine', value: 'vlm-engine' },
+          { label: 'hybrid-engine', value: 'hybrid-engine' },
           { label: 'vlm-http-client', value: 'vlm-http-client' },
-          { label: 'vlm-mlx-engine', value: 'vlm-mlx-engine' },
-          { label: 'vlm-vllm-async-engine', value: 'vlm-vllm-async-engine' },
-          { label: 'vlm-lmdeploy-engine', value: 'vlm-lmdeploy-engine' },
+          { label: 'hybrid-http-client', value: 'hybrid-http-client' },
         ],
         validation: { message: 'mineruBackendMessage' },
       },
@@ -675,7 +690,8 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         required: false,
         placeholder: 'mineruServerUrlPlaceholder',
         shouldRender: (values: any) =>
-          values?.mineru_backend === 'vlm-http-client',
+          values?.mineru_backend === 'vlm-http-client' ||
+          values?.mineru_backend === 'hybrid-http-client',
         validation: { message: 'mineruServerUrlMessage' },
       },
       {
@@ -686,34 +702,18 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: true,
       },
     ],
-    verifyTransform: (values) => {
-      const cfg: Record<string, any> = { ...values };
-      delete cfg.instance_name;
-      cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
-      if (values.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
-      }
-      return {
-        apiKey: cfg,
-        baseUrl: values.mineru_apiserver,
-        modelInfo: [],
-      };
-    },
-    submitTransform: (values) => {
-      const cfg: Record<string, any> = { ...values };
-      delete cfg.instance_name;
-      cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
-      if (values.mineru_backend !== 'vlm-http-client') {
-        delete cfg.mineru_server_url;
-      }
-      return {
-        instance_name: values.instance_name,
-        llm_factory: LLMFactory.MinerU,
-        api_key: cfg,
-        base_url: '',
-        model_info: [],
-      };
-    },
+    verifyTransform: (values) => ({
+      apiKey: buildMineruApiKey(values),
+      baseUrl: values.mineru_apiserver,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.MinerU,
+      api_key: buildMineruApiKey(values),
+      base_url: '',
+      model_info: [],
+    }),
     echoTransform: (instance) => {
       const obj = parseApiKeyAsObject(instance.api_key) ?? {};
       const rawDelete = obj.mineru_delete_output;
@@ -745,6 +745,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
+        name: 'api_key',
+        label: 'somark.apiKey',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'somark.apiKeyPlaceholder',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+      {
         name: 'base_url',
         label: 'somark.baseUrl',
         type: 'inputSelect',
@@ -752,14 +760,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         placeholder: 'somark.baseUrlPlaceholder',
         shouldRender: 'hideWhenInstanceExists',
         validation: { message: 'somark.baseUrlMessage' },
-      },
-      {
-        name: 'api_key',
-        label: 'somark.apiKey',
-        type: FormFieldType.Password,
-        required: false,
-        placeholder: 'somark.apiKeyPlaceholder',
-        shouldRender: 'hideWhenInstanceExists',
       },
     ],
     verifyTransform: (values) => ({

@@ -10,9 +10,9 @@ import {
   readJsonSafely,
   requestChatCompletionStream,
 } from '@/services/chat-completion-stream';
+import { mergeAnswerChunk } from '@/utils/chat';
 import { AnswerFlushIntervalMs } from './constants';
 import { useChatStreamStore } from './store';
-import { mergeAnswerChunk } from './utils';
 
 export type RunChatCompletionStreamParams = {
   conversationId: string;

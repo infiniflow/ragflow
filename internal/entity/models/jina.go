@@ -27,7 +27,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -41,13 +40,11 @@ func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
 	// Embed/Rerank/ListModels issue requests without a per-call context
 	// deadline, so keep an explicit 90s client-level timeout to bound them.
 	// Built on the shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient(false)
-	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: client,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -127,7 +124,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -449,6 +446,16 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedR
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input": request.Texts,
+	}
+	// Python JinaMultiVecEmbed sends task="retrieval.passage" in encode and
+	// "retrieval.query" in encode_queries, but only for the v3/v4 models
+	// ("if 'v3' in model_name or 'v4' in model_name"); earlier models take none.
+	if strings.Contains(*modelName, "v3") || strings.Contains(*modelName, "v4") {
+		if request.Query {
+			reqBody["task"] = "retrieval.query"
+		} else {
+			reqBody["task"] = "retrieval.passage"
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)

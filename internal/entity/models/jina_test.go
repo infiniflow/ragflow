@@ -527,3 +527,37 @@ func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
 		t.Fatalf("Rerank: %v", err)
 	}
 }
+
+func TestJinaEmbedTaskFollowsQueryForV3V4(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	baseURL, bodies := captureEmbedBodies(t, openAIShapeEmbeddingBody)
+	m := NewJinaModel(
+		map[string]string{"default": baseURL},
+		URLSuffix{Embedding: "embeddings", Rerank: "rerank"},
+	)
+	apiKey := "test-key"
+
+	v4 := "jina-embeddings-v4"
+	if _, err := m.Embed(ctx, &v4, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v4): %v", err)
+	}
+	if _, err := m.Embed(ctx, &v4, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v4 query): %v", err)
+	}
+	if got := (*bodies)[0]["task"]; got != "retrieval.passage" {
+		t.Errorf("v4 document task = %v, want retrieval.passage", got)
+	}
+	if got := (*bodies)[1]["task"]; got != "retrieval.query" {
+		t.Errorf("v4 query task = %v, want retrieval.query", got)
+	}
+
+	// An older model must NOT carry a task at all (Python only sets it for v3/v4).
+	v2 := "jina-embeddings-v2-base-en"
+	if _, err := m.Embed(ctx, &v2, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v2 query): %v", err)
+	}
+	if _, ok := (*bodies)[2]["task"]; ok {
+		t.Errorf("v2 must not send task, got %v", (*bodies)[2]["task"])
+	}
+}

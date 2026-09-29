@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -14,6 +15,24 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// keepDatasetOrderTerms narrows the requested terms to the columns the dataset
+// list has always accepted, which is a smaller set than the knowledge base row
+// exposes. A list with nothing left falls back to create_time in the first
+// requested direction, which is what an unrecognised single name did.
+func keepDatasetOrderTerms(terms []dao.OrderTerm) []dao.OrderTerm {
+	kept := make([]dao.OrderTerm, 0, len(terms))
+	for _, term := range terms {
+		column := strings.TrimSpace(term.Column)
+		if _, ok := datasetAllowedOrderByFields[column]; ok {
+			kept = append(kept, dao.OrderTerm{Column: column, Desc: term.Desc})
+		}
+	}
+	if len(kept) == 0 {
+		return []dao.OrderTerm{{Column: "create_time", Desc: len(terms) > 0 && terms[0].Desc}}
+	}
+	return kept
+}
 
 // Package-level vars and constants used by the dataset service.
 var (
@@ -37,7 +56,6 @@ var (
 )
 
 const (
-	graphRaptorQueueDocID    = "graph_raptor_x"
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
 	defaultEmbeddingCheckNum = 5
@@ -175,9 +193,51 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 		return errors.New("parser_config must be valid JSON")
 	}
 	if len(data) > 65535 {
-		return fmt.Errorf("parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
+		return fmt.Errorf("Parser config exceeds size limit (max 65,535 characters). Current size: %d", len(data))
 	}
 	return nil
+}
+
+// validateDatasetParserConfig enforces the Go backend's "component-scoped only"
+// contract: every top-level parser_config key must be keyed by a component id
+// (it contains ":"), never a flat (non-component-scoped) key. The Python backend
+// is fully retired (SystemHandler.Language always returns "go"), so the dataset
+// parser_config is always built from a DSL whose params live on component nodes
+// (e.g. chunk size is "chunk_token_size" on the chunker node, not the legacy
+// flat "chunk_token_num"). Any flat key would be silently dropped by
+// CleanComponentParams downstream and is never consumed, so we reject it loudly
+// here instead.
+//
+// ValidateDocumentParserConfig delegates to this same check, so documents and
+// datasets share one contract: no flat keys are ever permitted on either path.
+func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+	if len(parserConfig) == 0 {
+		return nil
+	}
+	for key := range parserConfig {
+		if !strings.Contains(key, ":") {
+			return fmt.Errorf(
+				"parser_config key %q must be component-scoped (e.g. under an Extractor or GeneralChunker node), not a flat top-level key",
+				key,
+			)
+		}
+	}
+	return nil
+}
+
+// ValidateParserConfig validates the shared REST parser_config schema.
+func ValidateParserConfig(parserConfig map[string]interface{}) error {
+	return validateDatasetParserConfig(parserConfig)
+}
+
+// ValidateDocumentParserConfig validates the parser_config attached to a
+// document. Documents follow the same component-scoped contract as datasets:
+// every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
+// or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
+// nodes come from the same pipeline DSL as the dataset, so there is no flat-key
+// fallback to keep. validateDatasetParserConfig enforces the no-flat-key rule.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
+	return validateDatasetParserConfig(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
@@ -196,6 +256,27 @@ func normalizeDatasetID(id string) (string, error) {
 		return "", errors.New("Invalid UUID format")
 	}
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
+}
+
+// datasetLanguageLimit mirrors the max_length of CreateDatasetReq.language in
+// the Python request model.
+const datasetLanguageLimit = 32
+
+// normalizeDatasetLanguage trims a dataset language and applies the same
+// constraints as CreateDatasetReq.language in Python
+// (strip_whitespace=True, min_length=1, max_length=32), so both backends accept
+// and reject the same values. The length is counted in characters, not bytes,
+// because pydantic counts characters — a byte count would reject valid
+// non-ASCII language names well below the documented limit.
+func normalizeDatasetLanguage(language string) (string, error) {
+	normalized := strings.TrimSpace(language)
+	if normalized == "" {
+		return "", errors.New("String should have at least 1 character")
+	}
+	if utf8.RuneCountInString(normalized) > datasetLanguageLimit {
+		return "", fmt.Errorf("String should have at most %d characters", datasetLanguageLimit)
+	}
+	return normalized, nil
 }
 
 // pythonStringListRepr renders a string slice the way Python prints a list of
@@ -268,25 +349,136 @@ func datasetUpdateEmbeddingID(req service.UpdateDatasetRequest) (string, bool, e
 	return embdID, true, nil
 }
 
-func preserveDatasetParserConfigMetadata(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
+func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming map[string]interface{}) entity.JSONMap {
 	if next == nil {
 		next = entity.JSONMap{}
 	}
 	var mm map[string]any
 	if incoming != nil {
-		if v, ok := incoming["metadata"].(map[string]any); ok {
-			mm = v
-		}
+		mm = extractorNodeMetadata(incoming)
 	}
 	if mm == nil && existing != nil {
-		if v, ok := existing["metadata"].(map[string]any); ok {
-			mm = v
-		}
+		mm = extractorNodeMetadata(existing)
 	}
 	if mm != nil {
 		next["metadata"] = mm
 	}
+	// Resolve the dataset-level parent_child setting (component-scoped on a
+	// chunker node) and scope it onto every chunker node in next. There is no
+	// flat aggregation key.
+	parentChild := resolveParentChild(incoming, existing)
+	if parentChild != nil {
+		for componentID, value := range next {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := value.(map[string]interface{})
+			if !ok {
+				params = map[string]interface{}{}
+				next[componentID] = params
+			}
+			params["parent_child"] = parentChild
+		}
+	}
+	requestedChildren := make(map[string]interface{})
+	for componentID, value := range incoming {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		if requested, ok := value.(map[string]interface{}); ok {
+			if enabled, provided := requested["enable_children"].(bool); provided && !enabled {
+				requestedChildren[componentID] = []string{}
+			} else if _, provided := requested["children_delimiters"]; provided {
+				if params, ok := next[componentID].(map[string]interface{}); ok {
+					requestedChildren[componentID] = params["children_delimiters"]
+				}
+			}
+		}
+	}
+	// Re-derive delimiters from parent_child, then keep explicit chunker edits
+	// (or an existing chunker setting on a partial update) over that fallback.
+	parentChildConfig := map[string]interface{}{}
+	for componentID, value := range incoming {
+		if pipelinepkg.IsChunkerComponent(componentID) {
+			parentChildConfig[componentID] = value
+		}
+	}
+	pipelinepkg.ApplyParentChildChunkerConfig(next, parentChildConfig)
+	parentChildUpdated := parentChild != nil
+	for componentID, value := range next {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if delimiters, provided := requestedChildren[componentID]; provided {
+			params["children_delimiters"] = delimiters
+			continue
+		}
+		if parentChildUpdated {
+			continue
+		}
+		if previous, ok := existing[componentID].(map[string]interface{}); ok {
+			if delimiters, present := previous["children_delimiters"]; present {
+				params["children_delimiters"] = delimiters
+			}
+			if enabled, present := previous["enable_children"]; present {
+				params["enable_children"] = enabled
+			}
+		}
+	}
 	return next
+}
+
+// extractorNodeMetadata returns the modular metadata object ({enabled, metadata,
+// built_in_metadata}) from the first Extractor node in a parser_config, or nil
+// if none is present. Metadata is component-scoped under Extractor nodes; this
+// helper reads it back for preservation across partial updates.
+func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
+	if parserConfig == nil {
+		return nil
+	}
+	for cpnID, raw := range parserConfig {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if meta, ok := params["metadata"].(map[string]any); ok {
+			return meta
+		}
+	}
+	return nil
+}
+
+// resolveParentChild extracts the dataset-level parent_child setting from one or
+// more parser_configs. It reads the component-scoped "parent_child" sub-object on
+// a chunker node only; flat top-level keys are not accepted. Returns nil when
+// absent.
+func resolveParentChild(configs ...map[string]interface{}) map[string]any {
+	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
+		for componentID, raw := range cfg {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pc, ok := params["parent_child"].(map[string]any); ok {
+				return pc
+			}
+		}
+	}
+	return nil
 }
 
 func parserConfigJSONMap(value interface{}) entity.JSONMap {

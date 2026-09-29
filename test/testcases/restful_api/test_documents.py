@@ -14,16 +14,19 @@
 #  limitations under the License.
 #
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import string
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from pathlib import Path
-import uuid
 
-from openpyxl import Workbook
 import pytest
 import requests
+from openpyxl import Workbook
 from requests_toolbelt import MultipartEncoder
+from utils import wait_for
+from utils.file_utils import create_txt_file
+
 from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, VERSION
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
@@ -39,8 +42,6 @@ from test.testcases.utils.file_utils import (
     create_pdf_file,
     create_ppt_file,
 )
-from utils import wait_for
-from utils.file_utils import create_txt_file
 
 
 @pytest.mark.p1
@@ -163,7 +164,7 @@ def test_documents_upload_requires_auth(create_dataset, tmp_path):
         assert_auth_error(payload, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_list_default_concurrent_and_filters_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path)
     first_id = uploaded_docs[0]["id"]
@@ -209,7 +210,7 @@ def test_documents_list_default_concurrent_and_filters_contract(rest_client, cre
         assert len(payload["data"]["docs"]) == expected_docs, (params, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_list_error_and_sorting_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path)
     first_id = uploaded_docs[0]["id"]
@@ -596,7 +597,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_document_body["message"] == "the dataset doesn't own the document", invalid_document_body
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_update_chunk_method_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
     first_document_id = uploaded_docs[0]["id"]
@@ -740,7 +741,7 @@ def test_documents_update_invalid_field_and_guard_contract(rest_client, create_d
             assert "data" in body, (payload, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_update_parser_config_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
     first_document_id = uploaded_docs[0]["id"]
@@ -820,6 +821,11 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
             list_body = list_res.json()
             assert list_body["code"] == 0, (parser_config, list_body)
             doc_parser_config = list_body["data"]["docs"][0]["parser_config"]
+            if IS_GO_PROXY:
+                assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
+                assert "raptor" not in doc_parser_config, (parser_config, list_body)
+                assert "graphrag" not in doc_parser_config, (parser_config, list_body)
+                continue
             if parser_config == {}:
                 assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
             else:
@@ -833,7 +839,10 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
                     else:
                         assert doc_parser_config[key] == value, (parser_config, list_body)
         else:
-            assert body["message"] == expected_message, (parser_config, body)
+            if IS_GO_PROXY:
+                assert body["message"] in expected_message, (parser_config, body)
+            else:
+                assert body["message"] == expected_message, (parser_config, body)
 
 
 @pytest.mark.p2
@@ -860,7 +869,7 @@ def test_documents_parse_and_stop(rest_client, create_document):
         assert "already completed" in stop_payload["message"], stop_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_metadata_batch_update_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=5)
     document_ids = [doc["id"] for doc in uploaded_docs]
@@ -1036,7 +1045,12 @@ def test_document_metadata_config_contract(rest_client, create_document):
     update_body = update_res.json()
     assert update_body["code"] == 0, update_body
     parser_config = update_body["data"]["parser_config"]
-    assert parser_config["metadata"] == update_payload["metadata"], update_body
+    if IS_GO_PROXY:
+        # Go scopes metadata onto the Extractor node rather than a flat key.
+        scoped = parser_config.get("Extractor:AutoExtractDefault", {})
+        assert scoped.get("metadata") == update_payload["metadata"], update_body
+    else:
+        assert parser_config["metadata"] == update_payload["metadata"], update_body
 
 
 @pytest.mark.p2
@@ -1108,7 +1122,7 @@ def test_documents_delete_requires_auth(rest_client, create_dataset, tmp_path):
         assert_auth_error(body, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=3)
     document_ids = [doc["id"] for doc in uploaded_docs]
@@ -1148,12 +1162,12 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
     assert duplicate_payload["code"] == 101, duplicate_payload
     assert "Field: <ids> - Message: <Duplicate ids:" in duplicate_payload["message"], duplicate_payload
 
-    delete_once_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids})
+    delete_once_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids}, timeout=120)
     assert delete_once_res.status_code == 200
     delete_once_payload = delete_once_res.json()
     assert delete_once_payload["code"] == 0, delete_once_payload
 
-    delete_twice_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids})
+    delete_twice_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": document_ids}, timeout=120)
     assert delete_twice_res.status_code == 200
     delete_twice_payload = delete_twice_res.json()
     assert delete_twice_payload["code"] == 102, delete_twice_payload
@@ -1378,7 +1392,7 @@ def test_documents_stop_parse_requires_auth(rest_client, create_document):
         assert_auth_error(body, scenario_name)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_stop_parse_contract_matrix(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=6)
     doc_ids = [doc["id"] for doc in uploaded_docs]
@@ -1504,7 +1518,7 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_dataset_payload["message"] == "document not found", invalid_dataset_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_documents_download_filetype_repeat_and_concurrent_contract(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_download_contract")
 

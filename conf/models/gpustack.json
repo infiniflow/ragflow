@@ -5,5 +5,6 @@
     "models": "v1/models",
     "embedding": "v1-openai/embeddings"
   },
+  "url_hint": "http://host.docker.internal:80/v1",
   "class": "local"
 }

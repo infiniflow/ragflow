@@ -82,19 +82,19 @@ export function TestingResult({
           <>
             <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
               {data.chunks?.map((x) => (
-                <article key={x.chunk_id}>
+                <article key={x.id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
                     <ChunkTitle item={x}></ChunkTitle>
                     <div
                       className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
                       dangerouslySetInnerHTML={{
                         __html: sanitizeHtmlWithImagesAsText(
-                          x.highlight || x.content_with_weight,
+                          x.highlight || x.content,
                         ),
                       }}
                     />
                     <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
-                      {x.doc_name || x.docnm_kwd}
+                      {x.document_keyword}
                     </div>
                   </Card>
                 </article>

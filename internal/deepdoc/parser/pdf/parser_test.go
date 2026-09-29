@@ -38,14 +38,14 @@ func TestOCR_Fallback(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 
 	t.Run("nil image", func(t *testing.T) {
-		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "garbled page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "garbled page", pdf.DlaScale); got != nil {
 			t.Error("nil image → nil")
 		}
 	})
 
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: nil}
-		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page", pdf.DlaScale); got != nil {
 			t.Error("no det boxes → nil")
 		}
 	})
@@ -56,7 +56,7 @@ func TestOCR_Fallback(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}},
 		}
-		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page", pdf.DlaScale)
 		if len(got) != 1 {
 			t.Fatalf("expected 1 pdf.TextChar, got %d", len(got))
 		}
@@ -71,7 +71,7 @@ func TestOCR_Fallback(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{{Text: "", Confidence: 0.1}},
 		}
-		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page", pdf.DlaScale)
 		if len(got) != 0 {
 			t.Error("empty rec text → empty result")
 		}
@@ -87,14 +87,14 @@ func TestOCR_ScanPage(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
 
 	t.Run("nil image", func(t *testing.T) {
-		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "scan page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), nil, &MockDocAnalyzer{Healthy: true}, 0, "scan page", pdf.DlaScale); got != nil {
 			t.Error("nil image → nil")
 		}
 	})
 
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: nil}
-		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page"); got != nil {
+		if got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page", pdf.DlaScale); got != nil {
 			t.Error("no det boxes → nil")
 		}
 	})
@@ -108,7 +108,7 @@ func TestOCR_ScanPage(t *testing.T) {
 			},
 			OCRTexts: []pdf.OCRText{{Text: "Hello", Confidence: 0.9}, {Text: "World", Confidence: 0.8}},
 		}
-		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page", pdf.DlaScale)
 		if len(got) < 1 {
 			t.Error("expected at least 1 pdf.TextChar")
 		}
@@ -120,7 +120,7 @@ func TestOCR_ScanPage(t *testing.T) {
 			OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 			OCRTexts: []pdf.OCRText{},
 		}
-		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page")
+		got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "scan page", pdf.DlaScale)
 		if len(got) != 0 {
 			t.Error("no rec text → empty")
 		}
@@ -264,7 +264,7 @@ func TestOCR_Fallback_PUAGarbled(t *testing.T) {
 		OCRBoxes: []pdf.OCRBox{{X0: 10, Y0: 20, X1: 90, Y1: 20, X2: 90, Y2: 40, X3: 10, Y3: 40}},
 		OCRTexts: []pdf.OCRText{{Text: "PUA OCR text", Confidence: 0.9}},
 	}
-	got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page")
+	got := p.ocrDetectAndRecognize(t.Context(), dummyImg, mock, 0, "garbled page", pdf.DlaScale)
 	if len(got) != 1 || got[0].Text != "PUA OCR text" {
 		t.Errorf("PUA garbled should trigger OCR, got %v", got)
 	}
@@ -278,7 +278,7 @@ func TestOCR_MergeChars(t *testing.T) {
 
 	t.Run("nil image", func(t *testing.T) {
 		chars := []pdf.TextChar{{X0: 10, Top: 10, X1: 20, Bottom: 30, Text: "A", PageNumber: 0}}
-		if boxes := p.ocrMergeChars(t.Context(), nil, chars, &MockDocAnalyzer{Healthy: true}, 0); boxes != nil {
+		if boxes := p.ocrMergeChars(t.Context(), nil, chars, &MockDocAnalyzer{Healthy: true}, 0, pdf.DlaScale); boxes != nil {
 			t.Error("nil image → nil")
 		}
 	})
@@ -286,7 +286,7 @@ func TestOCR_MergeChars(t *testing.T) {
 	t.Run("detect returns no boxes", func(t *testing.T) {
 		mock := &MockDocAnalyzer{Healthy: true, OCRBoxes: []pdf.OCRBox{}}
 		chars := []pdf.TextChar{{X0: 10, Top: 10, X1: 20, Bottom: 30, Text: "A", PageNumber: 0}}
-		if boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0); boxes != nil {
+		if boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale); boxes != nil {
 			t.Error("no detect boxes → nil")
 		}
 	})
@@ -298,7 +298,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "Hello OCR", Confidence: 0.9}},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "Hello", PageNumber: 0}}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -315,7 +315,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{{Text: "OCR", Confidence: 0.9}},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box (OCR), got %d", len(boxes))
 		}
@@ -331,7 +331,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			OCRTexts: []pdf.OCRText{},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 0 {
 			t.Fatalf("expected 0 boxes (empty OCR), got %d", len(boxes))
 		}
@@ -350,7 +350,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			},
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "Hello", PageNumber: 0}}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 2 {
 			t.Fatalf("expected 2 boxes, got %d", len(boxes))
 		}
@@ -378,7 +378,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 70, X1: 90, Top: 110, Bottom: 130, Text: "c", PageNumber: 0},
 			{X0: 10, X1: 30, Top: 10, Bottom: 30, Text: "a", PageNumber: 0},
 		}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 2 {
 			t.Fatalf("expected 2 detect boxes, got %d", len(boxes))
 		}
@@ -405,7 +405,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 10, X1: 30, Top: 30, Bottom: 50, Text: "A", PageNumber: 0},
 			{X0: 40, X1: 60, Top: 20, Bottom: 120, Text: "B", PageNumber: 0},
 		}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -428,7 +428,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{X0: 30, X1: 40, Top: 10, Bottom: 20, Text: "", PageNumber: 0},
 			{X0: 50, X1: 60, Top: 10, Bottom: 20, Text: "a", PageNumber: 0},
 		}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}
@@ -450,7 +450,7 @@ func TestOCR_MergeChars(t *testing.T) {
 			{Text: "d", X0: 10, X1: 20, Top: 10, Bottom: 25, PageNumber: 0},
 			{Text: "o", X0: 21, X1: 30, Top: 10, Bottom: 25, PageNumber: 0},
 		}
-		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0)
+		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
 		if len(boxes) != 1 {
 			t.Fatalf("expected 1 box, got %d", len(boxes))
 		}

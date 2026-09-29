@@ -1,8 +1,9 @@
 // for the dataset list
 // The data structures returned by the `datasets` interface and `/api/v1/datasets/{id}` are inconsistent.
 
-import { RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
+import { IngestionEventItem } from './ingestion';
 
 export interface IConnector {
   id: string;
@@ -47,7 +48,7 @@ export interface IDataset {
   token_num: number;
   update_date: string;
   update_time: number;
-  vector_similarity_weight: number;
+  keywords_similarity_weight: number;
   connectors: IConnector[];
 }
 
@@ -133,7 +134,11 @@ export interface IKnowledgeFile {
   process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
-  run: RunningStatus; // parsing status
+  latest_ingestion_event?: IngestionEventItem | null;
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus; // parsing status
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string; // enabled
@@ -171,22 +176,20 @@ export interface IChunk {
 }
 
 export interface ITestingChunk {
-  chunk_id: string;
+  id: string;
   content_ltks: string;
-  content_with_weight: string;
-  doc_id: string;
-  doc_name: string;
-  img_id: string;
+  content: string;
+  document_id: string;
+  document_keyword: string;
   image_id: string;
-  important_kwd: any[];
-  kb_id: string;
+  important_keywords: any[];
+  questions?: any[];
+  dataset_id: string;
   similarity: number;
   term_similarity: number;
-  vector: number[];
   vector_similarity: number;
   highlight: string;
   positions: number[][];
-  docnm_kwd: string;
   doc_type_kwd: string;
   document_metadata?: Record<string, any>;
 }
@@ -302,3 +305,7 @@ export interface IArtifactGraph {
   total_entities?: number;
   returned_entities?: number;
 }
+
+// Permission types for dataset configuration
+export type DatasetTestingPermission = 'me' | 'team';
+export type DatasetParsingPermission = 'me' | 'team';

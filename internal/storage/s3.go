@@ -120,6 +120,18 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	return actualBucket, actualPath
 }
 
+func (s *S3Storage) createBucket(ctx context.Context, bucket string) error {
+	input := &s3.CreateBucketInput{Bucket: aws.String(bucket)}
+	region := s.client.Options().Region
+	if region != "" && region != "us-east-1" && region != "auto" {
+		input.CreateBucketConfiguration = &types.CreateBucketConfiguration{
+			LocationConstraint: types.BucketLocationConstraint(region),
+		}
+	}
+	_, err := s.client.CreateBucket(ctx, input)
+	return err
+}
+
 func (s *S3Storage) Type() string { return "s3" }
 
 // Health checks S3 service availability
@@ -137,9 +149,7 @@ func (s *S3Storage) Health(ctx context.Context) bool {
 
 	// Ensure bucket exists
 	if !s.BucketExists(ctx, bucket) {
-		_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(bucket),
-		})
+		err := s.createBucket(ctx, bucket)
 		if err != nil {
 			common.Error("Failed to create bucket for health check", err, zap.String("bucket", bucket), zap.Error(err))
 			return false
@@ -169,9 +179,7 @@ func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, 
 	for i := 0; i < 2; i++ {
 		// Ensure bucket exists
 		if !s.BucketExists(ctx, bucket) {
-			_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{
-				Bucket: aws.String(bucket),
-			})
+			err := s.createBucket(ctx, bucket)
 			if err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
@@ -254,6 +262,9 @@ func (s *S3Storage) Remove(ctx context.Context, bucket, fnm string, tenantID ...
 		Key:    aws.String(fnm),
 	})
 	if err != nil {
+		if isS3NotFound(err) {
+			return nil
+		}
 		common.Error("Failed to remove object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 		return err
 	}
@@ -277,6 +288,18 @@ func (s *S3Storage) ObjExist(ctx context.Context, bucket, fnm string, tenantID .
 	}
 
 	return true
+}
+
+func (s *S3Storage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
+	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3NotFound(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (s *S3Storage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -341,6 +364,11 @@ func (s *S3Storage) BucketExists(ctx context.Context, bucket string) bool {
 	return true
 }
 
+func (s *S3Storage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	actualBucket, _ := s.resolveBucketAndPrefix(bucket)
+	return s.bucketExistsForRemoval(ctx, actualBucket)
+}
+
 // RemoveBucket removes a bucket and all its objects
 func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
 	actualBucket, prefix := s.resolveBucketAndPrefix(bucket)
@@ -368,6 +396,29 @@ func (s *S3Storage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	return nil
+}
+
+// RemoveEmptyBucket removes a bucket only when it contains no object versions.
+func (s *S3Storage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	actualBucket, prefix := s.resolveBucketAndPrefix(bucket)
+	exists, err := s.bucketExistsForRemoval(ctx, actualBucket)
+	if err != nil || !exists {
+		return err
+	}
+	if s.bucket != "" {
+		versions, err := s.client.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+			Bucket: aws.String(actualBucket), Prefix: aws.String(prefix), MaxKeys: aws.Int32(1),
+		})
+		if err != nil {
+			return err
+		}
+		if len(versions.Versions) > 0 || len(versions.DeleteMarkers) > 0 || (versions.IsTruncated != nil && *versions.IsTruncated) {
+			return fmt.Errorf("bucket %s is not empty", bucket)
+		}
+		return nil
+	}
+	_, err = s.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(actualBucket)})
+	return err
 }
 
 func (s *S3Storage) resolveBucketAndPrefix(bucket string) (string, string) {
@@ -482,7 +533,7 @@ func isS3NotFound(err error) bool {
 	}
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
+		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey" || apiErr.ErrorCode() == "NoSuchBucket"
 	}
 	return false
 }

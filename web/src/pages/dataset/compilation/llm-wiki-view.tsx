@@ -10,30 +10,22 @@ import {
   useTraceRunData,
 } from '@/hooks/use-dataset-generate';
 import {
-  ArtifactAlterationKeys,
-  ArtifactKeys,
-  ArtifactTopicKeys,
   useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
-import { useParams } from 'react-router';
+import { useState } from 'react';
 
 import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
 import { CompilationLoadingCard } from './loading-card';
-import { canGenerateWiki } from './wiki-generation-eligibility';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
 
 export function LlmWikiView() {
-  const { id } = useParams();
-  const queryClient = useQueryClient();
   const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Contents);
-  const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
+  useFetchKnowledgeBaseConfiguration();
   const { topics, loading: topicListLoading } = useFetchArtifactTopicList();
   const {
     selectedArtifact,
@@ -45,26 +37,13 @@ export function LlmWikiView() {
 
   const { data: artifactRunData } = useTraceRunData(GenerateType.Artifact);
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
-  const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
-  const handleRunEnd = useCallback(() => {
-    queryClient.invalidateQueries({
-      queryKey: ArtifactAlterationKeys.detail(id!, 'wiki'),
-    });
-    queryClient.invalidateQueries({
-      queryKey: ArtifactKeys.listByDataset(id!),
-    });
-    queryClient.invalidateQueries({
-      queryKey: ArtifactTopicKeys.listByDataset(id!),
-    });
-  }, [queryClient, id]);
-  useRunEndEffect(artifactStatus, handleRunEnd);
+  useRunEndEffect(artifactStatus);
 
-  const handleLeftTabChange = useCallback((value: string) => {
+  const handleLeftTabChange = (value: string) => {
     setLeftTab(value as LeftPanelTab);
-  }, []);
+  };
 
-  const canGenerate = canGenerateWiki(knowledgeBase);
   const isLoading = topicListLoading && topics.length === 0;
   const isEmpty = topics.length === 0 && !topicListLoading;
 
@@ -74,39 +53,35 @@ export function LlmWikiView() {
 
   if (isEmpty) {
     return (
-      <CompilationEmptyState
-        type={ViewMode.LlmWiki}
-        disabled={!canGenerate}
-        data={artifactRunData}
-      />
+      <CompilationEmptyState type={ViewMode.LlmWiki} data={artifactRunData} />
     );
   }
 
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <ResizablePanelGroup direction="horizontal" className="flex-1">
-        <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+        <ResizablePanel id="wiki-left" order={1} defaultSize={50}>
           <WikiLeftPanel
             tab={leftTab}
             onTabChange={handleLeftTabChange}
             selectedArtifact={selectedArtifact}
             onSelectArtifact={handleSelectArtifact}
             onClearArtifact={clearSelectedArtifact}
-            onClearWiki={clearSelectedArtifact}
-            updateSheetOpen={updateSheetOpen}
-            onUpdateSheetOpenChange={setUpdateSheetOpen}
-            traceData={artifactRunData}
           />
         </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <WikiDetailContent
-            selectedArtifact={selectedArtifact}
-            selectedVersion={selectedVersion}
-            onSelectVersion={selectVersion}
-            onSelectArtifact={handleSelectArtifact}
-          />
-        </ResizablePanel>
+        {selectedArtifact && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="wiki-detail" order={2}>
+              <WikiDetailContent
+                selectedArtifact={selectedArtifact}
+                selectedVersion={selectedVersion}
+                onSelectVersion={selectVersion}
+                onSelectArtifact={handleSelectArtifact}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </Card>
   );

@@ -18,9 +18,9 @@ import { RerankFormFields } from '@/components/rerank';
 import {
   SimilaritySliderFormField,
   initialSimilarityThresholdValue,
-  initialVectorSimilarityWeightValue,
+  initialKeywordsSimilarityWeightValue,
   similarityThresholdSchema,
-  vectorSimilarityWeightSchema,
+  keywordsSimilarityWeightSchema,
 } from '@/components/similarity-slider';
 import { TopSelectFormItem } from '@/components/top-select';
 import { ButtonLoading } from '@/components/ui/button';
@@ -63,13 +63,13 @@ export default function TestingForm({
         message: t('knowledgeDetails.testTextPlaceholder'),
       }),
       ...similarityThresholdSchema,
-      ...vectorSimilarityWeightSchema,
+      ...keywordsSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
-      size: z.number().int().min(1).max(100),
+      page_size: z.number().int().min(1).max(100),
       ...rerankCandidatesCountSchema,
     })
-    .refine((values) => values.rerank_candidates_count >= values.size, {
+    .refine((values) => values.rerank_candidates_count >= values.page_size, {
       message: t('chat.rerankCandidatesCountValidation'),
       path: ['rerank_candidates_count'],
     });
@@ -78,9 +78,9 @@ export default function TestingForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       ...initialSimilarityThresholdValue,
-      ...initialVectorSimilarityWeightValue,
+      ...initialKeywordsSimilarityWeightValue,
       dataset_ids: [knowledgeBaseId],
-      size: 10,
+      page_size: 10,
       rerank_candidates_count: 64,
     },
   });

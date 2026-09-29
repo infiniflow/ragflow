@@ -19,8 +19,8 @@ func TestUninitializedEngineMethodsReturnErrors(t *testing.T) {
 		t.Fatalf("PublishTask on uninitialized engine: err = %v, want 'not properly initialized'", err)
 	}
 
-	if _, err := e.GetMessages(1); err == nil || !strings.Contains(err.Error(), "not properly initialized") {
-		t.Fatalf("GetMessages on uninitialized engine: err = %v, want 'not properly initialized'", err)
+	if _, err := e.PullMessages(t.Context(), 1); err == nil || !strings.Contains(err.Error(), "not properly initialized") {
+		t.Fatalf("PullMessages on uninitialized engine: err = %v, want 'not properly initialized'", err)
 	}
 
 	if _, err := e.ShowMessageQueue(); err == nil || !strings.Contains(err.Error(), "not properly initialized") {

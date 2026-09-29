@@ -111,10 +111,8 @@ func TestChunker_PreservesLayoutField(t *testing.T) {
 }
 
 // TestChunker_PassesPDFPositionsThrough pins the _pdf_positions
-// pass-through. The PDF parser path (DeepDOC) attaches bbox
-// coordinates under this key; the chunker must forward them
-// so downstream layout-aware components can rebuild the page
-// geometry.
+// pass-through. DeepDOC's PDF parser attaches bounding boxes under this key;
+// downstream layout-aware components use them to rebuild page geometry.
 func TestChunker_PassesPDFPositionsThrough(t *testing.T) {
 	positions := [][]float64{{0.1, 0.2, 0.3, 0.4}, {0.5, 0.6, 0.7, 0.8}}
 	items := []map[string]any{
@@ -134,21 +132,38 @@ func TestChunker_PassesPDFPositionsThrough(t *testing.T) {
 	}
 }
 
-// TestChunker_FallsBackToContentWithWeight pins the
-// content_with_weight fallback on the chunker read side. Python's
-// token_chunker.py:111 falls back to content_with_weight when
-// the text field is empty.
-func TestChunker_FallsBackToContentWithWeight(t *testing.T) {
+func TestChunker_PreservesVisualParentMetadata(t *testing.T) {
 	items := []map[string]any{
-		{"content_with_weight": "fallback text", "doc_type_kwd": "text"},
+		{
+			"text":            "OCR text from a table image",
+			"doc_type_kwd":    "image",
+			"parent_table_id": "docx-table-1",
+			"media_order":     2,
+		},
 	}
 	out := invokeAsTokenChunker(t, items)
 	chunks := chunksFromOutput(t, out)
 	if len(chunks) == 0 {
 		t.Fatal("no chunks emitted")
 	}
-	if got, want := chunks[0]["text"], "fallback text"; got != want {
-		t.Errorf("chunks[0].text = %v, want %v (content_with_weight fallback)", got, want)
+	if got, want := chunks[0]["parent_table_id"], "docx-table-1"; got != want {
+		t.Errorf("chunks[0].parent_table_id = %v, want %v", got, want)
+	}
+	if got, want := chunks[0]["media_order"], float64(2); got != want {
+		t.Errorf("chunks[0].media_order = %v, want %v", got, want)
+	}
+}
+
+// TestChunker_DropsContentWithWeightOnlyItems enforces the pre-index wire
+// contract: chunkers consume canonical "text" only.
+func TestChunker_DropsContentWithWeightOnlyItems(t *testing.T) {
+	items := []map[string]any{
+		{"content_with_weight": "fallback text", "doc_type_kwd": "text"},
+	}
+	out := invokeAsTokenChunker(t, items)
+	chunks := chunksFromOutput(t, out)
+	if len(chunks) != 0 {
+		t.Fatalf("content_with_weight-only items must not produce chunks, got %d", len(chunks))
 	}
 }
 

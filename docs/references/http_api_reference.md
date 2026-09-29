@@ -7,31 +7,69 @@ sidebar_custom_props: {
 ---
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
 ## ERROR CODES
 
+RAGFlow responses may contain both an HTTP status code and a business code in the JSON response body. These codes should be checked separately.
+
+### HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | The HTTP request was processed successfully. Check the response body `code` for the business result. |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Internal server error |
+
+### Response body codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 10 | Not effective |
+| 100 | Exception error |
+| 101 | Invalid request argument |
+| 102 | Invalid or missing data |
+| 103 | Operation error |
+| 105 | Connection error |
+| 106 | Operation still running |
+| 108 | Permission error |
+| 109 | Authentication error |
+| 400 | Bad request |
+| 401 | Unauthorized |
+| 403 | Forbidden |
+| 404 | Not found |
+| 409 | Conflict |
+| 500 | Server error |
 ---
 
-| Code | Message               | Description                |
-|------|-----------------------|----------------------------|
-| 400  | Bad Request           | Invalid request parameters |
-| 401  | Unauthorized          | Unauthorized access        |
-| 403  | Forbidden             | Access denied              |
-| 404  | Not Found             | Resource not found         |
-| 500  | Internal Server Error | Server internal error      |
-| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
-| 1002 | Chunk Update Failed   | Chunk update failed        |
+## Migrate to 1.0
 
----
+RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
 
-## Deprecated API Aliases
+The following changes require client updates:
 
-The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
+| Area | RAGFlow 1.0 Go change | Client action |
+|------|------------------------|---------------|
+| Dataset parser selection | Dataset create and update use `parser_id`; responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `parser_id`. For the general parser, send `"parser_id": "general"`. |
+| Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
+| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
 
-| Deprecated endpoint                                                               | Replacement endpoint                                                                |
+:::note
+Go responses include `X-API-Source: go`, which can be used to verify the serving backend during rollout.
+:::
+
+### Removed API aliases
+
+The following paths remain available only on the Python backend. They are not registered by the RAGFlow 1.0 Go backend.
+
+| Removed endpoint                                                                  | Replacement endpoint                                                                |
 |-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
@@ -51,6 +89,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **GET** `/api/v1/file/get/{file_id}`                                              | **GET** `/api/v1/files/{file_id}`                                                   |
 | **POST** `/api/v1/file/mv`                                                        | **POST** `/api/v1/files/move`                                                       |
 | **POST** `/api/v1/file/convert`                                                   | **POST** `/api/v1/files/link-to-datasets`                                           |
+| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions`                      | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true`         |
 
 ---
 
@@ -64,8 +103,8 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 
 Creates a model response for a given chat conversation.
 
-:::caution DEPRECATED
-`POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats_openai/{chat_id}/chat/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
@@ -78,7 +117,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"model"`: `string`
+  - `"model"`: `string` (optional)
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
   - `"extra_body"`: `object` (optional)
@@ -119,7 +158,7 @@ curl --request POST \
 - `chat_id` (*Path parameter*) `string`, *Required*
   Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`
   The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
@@ -216,9 +255,13 @@ Failure:
 
 ---
 
-### Create agent completion
+### Create OpenAI-compatible agent completion
 
-**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+:::caution REMOVED ALIAS
+RAGFlow 1.0 Go does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
+:::
+
+**POST** `/api/v1/agents/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -227,24 +270,27 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- URL: `/api/v1/agents/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"model"`: `string`
+  - `"agent_id"`: `string`
+  - `"openai-compatible"`: `boolean`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"session_id"`: `string` (optional)
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-        "model": "model",
+        "agent_id": "{agent_id}",
+        "openai-compatible": true,
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true
       }'
@@ -252,8 +298,11 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
-  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+- `agent_id` (*Body parameter*) `string`, *Required*
+  The ID of the agent to run.
+
+- `openai-compatible` (*Body parameter*) `boolean`, *Required*
+  Set this field to `true` to use the OpenAI-compatible request and response format.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
@@ -488,6 +537,7 @@ Creates a dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
+  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -520,6 +570,7 @@ curl --request POST \
   --header 'Authorization: Bearer <YOUR_API_KEY>' \
   --data '{
    "name": "test-sdk",
+   "language": "English",
    "parse_type": <NUMBER_OF_PARSERS_IN_YOUR_PARSER_COMPONENT>,
    "pipeline_id": "<PIPELINE_ID_32_HEX>"
   }'
@@ -541,8 +592,11 @@ curl --request POST \
   A brief description of the dataset to create.
   - Maximum 65535 characters
 
+- `"language"`: (*Body parameter*), `string`
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the server/database default is used.
+
 - `"embedding_model"`: (*Body parameter*), `string`
-  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
@@ -631,7 +685,7 @@ Success:
         "avatar": null,
         "chunk_count": 0,
         "chunk_method": "naive",
-        "create_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "create_date": "2025-04-28T18:40:41",
         "create_time": 1745836841611,
         "created_by": "3af81804241d11f0a6a79f24fc270c7f",
         "description": null,
@@ -652,9 +706,9 @@ Success:
         "status": "1",
         "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "Mon, 28 Apr 2025 18:40:41 GMT",
+        "update_date": "2025-04-28T18:40:41",
         "update_time": 1745836841611,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
     },
 }
 ```
@@ -716,7 +770,7 @@ curl --request DELETE \
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 - `"delete_all"`: (*Body parameter*), `boolean`
-  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
+  Whether to delete all datasets owned by the current user when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -757,6 +811,7 @@ Updates configurations for a specified dataset.
   - `"name"`: `string`
   - `"avatar"`: `string`
   - `"description"`: `string`
+  - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
@@ -793,12 +848,14 @@ curl --request PUT \
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
+- `"language"`: (*Body parameter*), `string`
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the existing dataset language remains unchanged.
 - `"permission"`: (*Body parameter*), `string`
   The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 - `"pagerank"`: (*Body parameter*), `int`
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  Refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank).
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
@@ -837,7 +894,7 @@ curl --request PUT \
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
       - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
@@ -870,14 +927,14 @@ Failure:
 
 ### List datasets
 
-**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
+**GET** `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 
 Lists datasets.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
+- URL: `/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id}&include_parsing_status={include_parsing_status}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -885,7 +942,7 @@ Lists datasets.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={dataset_name}&id={dataset_id} \
+     --url http://{address}/api/v1/datasets?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={dataset_name}&id={dataset_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -908,6 +965,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*)
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*)
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*)
   The name of the dataset to retrieve.
 - `id`: (*Filter parameter*)
@@ -959,7 +1018,7 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1000,7 +1059,7 @@ Success (with `include_parsing_status=true`):
             "unstart_count": 0,
             "update_date": "2026-03-09T18:59:32",
             "update_time": 1773053972723,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1112,7 +1171,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "run": "UNSTART",
             "size": 17966,
@@ -1180,7 +1239,7 @@ curl --request PATCH \
 - `"chunk_method"`: (*Body parameter*), `string`
   The parsing method to apply to the document:
   - `"naive"`: General
-  - `"manual`: Manual
+  - `"manual"`: Manual
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"paper"`: Paper
@@ -1194,7 +1253,7 @@ curl --request PATCH \
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
-    - `"layout_recognize"`: Defaults to `true`.
+    - `"layout_recognize"`: Defaults to `"DeepDOC"`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
@@ -1338,7 +1397,7 @@ To retrieve a specific document's settings and metadata, pass its document ID in
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -1410,7 +1469,7 @@ curl --request GET \
 
 ```bash
 curl -G \
-  --url "http://localhost:9222/api/v1/datasets/{{KB_ID}}/documents" \
+  --url "http://{address}/api/v1/datasets/{dataset_id}/documents" \
   --header 'Authorization: Bearer <YOUR_API_KEY>' \
   --data-urlencode 'metadata_condition={"logic":"and","conditions":[{"name":"tags","comparison_operator":"is","value":"bar"},{"name":"author","comparison_operator":"is","value":"alice"}]}'
 ```
@@ -1436,7 +1495,7 @@ Success:
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n",
-                    "layout_recognize": true,
+                    "layout_recognize": "DeepDOC",
                     "task_page_size": 12
                 },
                 "chunk_method": "naive",
@@ -1562,6 +1621,7 @@ This endpoint only supports datasets that use the built-in chunking pipeline. Fo
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"document_ids"`: `list[string]`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1572,7 +1632,8 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"]
+          "document_ids": ["97a5f1c2759811efaa500242ac120004","97ad64b6759811ef9fc30242ac120004"],
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -1582,6 +1643,8 @@ curl --request POST \
   The dataset ID.
 - `"document_ids"`: (*Body parameter*), `list[string]`, *Required*
   The IDs of the documents to parse.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests for this parse job. Omitted when unset. The value is carried on the worker queue only; it is not stored on Task rows.
 
 #### Response
 
@@ -1621,6 +1684,7 @@ Starts, cancels, or reruns ingestion for documents. Use this endpoint for docume
   - `"doc_ids"`: `list[string]`
   - `"run"`: `string`
   - `"delete"`: `boolean`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1633,7 +1697,8 @@ curl --request POST \
      {
           "doc_ids": ["97a5f1c2759811efaa500242ac120004"],
           "run": "1",
-          "delete": true
+          "delete": true,
+          "user_id": "end-user-123"
      }'
 ```
 
@@ -1645,6 +1710,8 @@ curl --request POST \
   The ingestion action. Use `"1"` to start ingestion and `"2"` to cancel ingestion.
 - `"delete"`: (*Body parameter*), `boolean`
   Whether to delete existing tasks and chunks before rerunning. Defaults to `false`.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on embedding requests when `run` starts ingestion. Omitted when unset.
 
 #### Response
 
@@ -1748,6 +1815,7 @@ Adds a chunk to a specified document in a specified dataset.
   - `"tag_kwd"`: `list[string]`
   - `"questions"`: `list[string]`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -1779,6 +1847,8 @@ curl --request POST \
   Optional questions to use when embedding the chunk.
 - `"image_base64"`: (*Body parameter*), `string`
   A base64-encoded image to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this chunk. Omitted when unset.
 
 #### Response
 
@@ -1817,7 +1887,7 @@ Failure:
 
 ### List chunks
 
-**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={id}`
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks?keywords={keywords}&page={page}&page_size={page_size}&id={chunk_id}`
 
 Lists chunks in a specified document.
 
@@ -1886,7 +1956,7 @@ Success:
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
                 "html4excel": false,
-                "layout_recognize": true
+                "layout_recognize": "DeepDOC"
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
             "process_duration": 0.54213,
@@ -2060,8 +2130,8 @@ Failure:
 
 Updates content or configurations for a specified chunk.
 
-:::caution DEPRECATED
-`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -2079,6 +2149,7 @@ Updates content or configurations for a specified chunk.
   - `"tag_kwd"`: `list[string]`
   - `"available"`: `boolean`
   - `"image_base64"`: `string`
+  - `"user_id"`: `string` (optional)
 
 ##### Request example
 
@@ -2118,6 +2189,8 @@ curl --request PATCH \
   - `false`: Unavailable
 - `"image_base64"`: (*Body parameter*), `string`
   Base64-encoded image content to associate with the chunk.
+- `"user_id"`: (*Body parameter*), `string`, *Optional*
+  End-user identifier forwarded as the OpenAI `user` field on the embedding request for this update. Omitted when unset.
 
 #### Response
 
@@ -2399,7 +2472,8 @@ Retrieves chunks from specified datasets.
   - `"page"`: `integer`
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
-  - `"vector_similarity_weight"`: `float`
+  - `"keywords_similarity_weight"`: `float`
+  - `"vector_similarity_weight"`: `float` (legacy fallback)
   - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
   - `"knn_top_k"`: `integer`
   - `"knn_num_candidates"`: `integer`
@@ -2410,7 +2484,6 @@ Retrieves chunks from specified datasets.
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
-  - `"toc_enhance"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
@@ -2451,18 +2524,20 @@ curl --request POST \
 
 - `"question"`: (*Body parameter*), `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*) `list[string]`
-  The IDs of the datasets to search. If you do not set this argument, ensure that you set `"document_ids"`.
+- `"dataset_ids"`: (*Body parameter*), `list[string]`, *Required*
+  The IDs of the datasets to search. At least one dataset ID must be provided.
 - `"document_ids"`: (*Body parameter*), `list[string]`
-  The IDs of the documents to search. Ensure that all selected documents use the same embedding model. Otherwise, an error will occur. If you do not set this argument, ensure that you set `"dataset_ids"`.
+  Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
 - `"page"`: (*Body parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`: (*Body parameter*)
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
-  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
+  Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: (*Body parameter*), `integer`
   **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
 - `"knn_top_k"`: (*Body parameter*), `integer`
@@ -2474,9 +2549,7 @@ curl --request POST \
 - `"include_knowledge_compilation"`: (*Body parameter*), `boolean`
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/dataset/advanced/construct_knowledge_graph.md) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`
-  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
@@ -2635,7 +2708,6 @@ curl --request POST \
   - `"quote"`: `boolean` Whether the source of text should be displayed. Defaults to `true`.
   - `"tts"`: `boolean`
   - `"refine_multiturn"`: `boolean`
-  - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
@@ -2643,9 +2715,9 @@ curl --request POST \
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
-  - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2692,7 +2764,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "prompt_type": "simple",
         "status": "1",
@@ -2760,7 +2832,7 @@ curl --request PUT \
                "quote":true
           },
           "similarity_threshold":0.2,
-          "vector_similarity_weight":0.3,
+          "keywords_similarity_weight":0.7,
           "top_n":6,
           "top_k":1024,
           "rerank_id":""
@@ -2793,7 +2865,8 @@ curl --request PUT \
     Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2829,7 +2902,7 @@ Success: returns the full updated chat assistant object.
             "parameters": [{"key": "knowledge", "optional": false}]
         },
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "top_k": 1024,
         "rerank_id": "",
@@ -2909,7 +2982,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
@@ -3041,10 +3114,6 @@ Failure:
 
 Deletes chat assistants by ID.
 
-:::caution DEPRECATED
-The `chat_id` in the request body is deprecated, please use `ids` list.
-:::
-
 #### Request
 
 - Method: DELETE
@@ -3111,14 +3180,14 @@ Failure:
 
 ### List chat assistants
 
-**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
+**GET** `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 
 Lists chat assistants.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
+- URL: `/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3126,7 +3195,7 @@ Lists chat assistants.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id} \
+     --url http://{address}/api/v1/chats?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&keywords={keywords}&owner_ids={owner_id}&name={chat_name}&id={chat_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3142,6 +3211,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `keywords`: (*Filter parameter*), `string`
   Case-insensitive fuzzy match against chat assistant names.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
@@ -3193,7 +3264,7 @@ Success:
                 },
                 "rerank_id": "",
                 "similarity_threshold": 0.2,
-                "vector_similarity_weight": 0.3,
+                "keywords_similarity_weight": 0.7,
                 "top_n": 6,
                 "prompt_type": "simple",
                 "status": "1",
@@ -3303,8 +3374,8 @@ Failure:
 
 Updates a session of a specified chat assistant.
 
-:::caution DEPRECATED
-`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -3378,14 +3449,14 @@ Failure:
 
 ### List chat assistant's sessions
 
-**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
+**GET** `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id}`
 
 Lists sessions associated with a specified chat assistant.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id}`
+- URL: `/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3393,7 +3464,7 @@ Lists sessions associated with a specified chat assistant.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={session_name}&id={session_id}&user_id={user_id} \
+     --url http://{address}/api/v1/chats/{chat_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&name={session_name}&id={session_id}&user_id={user_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3411,6 +3482,8 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `name`: (*Filter parameter*) `string`
   The name of the chat session to retrieve.
 - `id`: (*Filter parameter*), `string`
@@ -3732,8 +3805,8 @@ Failure:
 
 Starts a chat completion request. The same endpoint supports three modes:
 
-:::caution DEPRECATED
-`POST /api/v1/chats/{chat_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats/{chat_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
@@ -4030,10 +4103,6 @@ Failure:
 
 ### Create session with agent
 
-:::danger DEPRECATED
-This method is deprecated and no longer recommended. Use `Converse with agent` (`POST /api/v1/agents/chat/completions`) instead; it automatically creates a session ID for the associated agent when `session_id` is not specified.
-:::
-
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
 Creates a session with an agent.
@@ -4043,11 +4112,11 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'
+  - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - the required parameters:`str`
-  - other parameters:
+  - `"user_id"`: `string` (optional)
+  - Other parameters:
     The variables specified in the **Begin** component.
 
 ##### Request example
@@ -4067,8 +4136,8 @@ curl --request POST \
 
 - `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)
-  The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
+- `user_id`: (*Body or query parameter*), `string`, *Optional*
+  A user-defined ID associated with the created session. It can be provided either in the JSON request body or as a URL query parameter. If both are provided, the value in the request body takes precedence. If omitted, the tenant ID associated with the current API key is used.
 
 #### Response
 
@@ -4285,8 +4354,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-:::caution DEPRECATED
-`POST /api/v1/agents/{agent_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/agents/{agent_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -4311,7 +4380,7 @@ Use this mode for the native agent API.
 - `"files"`: `list[object]` (optional)
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 #### Streaming events to handle
 
@@ -4399,9 +4468,9 @@ curl --request POST \
 
 ##### Request parameters
 
-- `agent_id`: (*Path parameter*), `string`
+- `"agent_id"`: (*Body parameter*), `string`, *Required*
   The ID of the associated agent.
-- `"question"`: (*Body Parameter*), `string`, *Required*
+- `"query"`: (*Body parameter*), `string`
   The question to start an AI-powered conversation.
 - `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
@@ -4409,17 +4478,17 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body Parameter*)
-  Variables specified in the **Begin** component.
+- `"inputs"`: (*Body parameter*), `object`
+  Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
+- `"files"`: (*Body parameter*), `array`
+  File descriptors returned by the Agent file upload endpoint. RAGFlow makes the uploaded files available to the Agent through `sys.files`.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - `"chat_template_kwargs"`: (*Body parameter*), `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
-For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
-`http://{address}/v1/canvas/upload/{agent_id}`
-*You will get a corresponding file ID from its response body.*
+Before sending a file in a conversation, upload it as multipart form data with the field name `file` to `POST http://{address}/api/v1/agents/{agent_id}/upload`. The endpoint accepts one or more files and returns a file descriptor for one file or an array of descriptors for multiple files. Pass the returned descriptor or descriptors in the `files` array of the conversation request.
 :::
 
 ##### Response
@@ -4486,7 +4555,7 @@ Use the same endpoint and add `"openai-compatible": true`.
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"model"`: `string` (optional, accepted for compatibility)
-- `"chat_template_kwargs": object` (optional)
+- `"chat_template_kwargs"`: `object` (optional)
 
 ##### Request examples
 
@@ -4615,14 +4684,14 @@ Failure:
 
 ### List agent sessions
 
-**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&dsl={dsl}`
+**GET** `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}`
 
 Lists sessions associated with a specified agent.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}`
+- URL: `/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -4630,7 +4699,7 @@ Lists sessions associated with a specified agent.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id} \
+     --url 'http://{address}/api/v1/agents/{agent_id}/sessions?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&id={session_id}&user_id={user_id}&keywords={keywords}&from_date={from_date}&to_date={to_date}&dsl={dsl}&exp_user_id={exp_user_id}' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -4644,8 +4713,8 @@ curl --request GET \
   The number of sessions on each page. Defaults to `30`.
 - `orderby`: (*Filter parameter*), `string`
   The field by which sessions should be sorted. Available options:
-  - `create_time` (default)
-  - `update_time`
+  - `create_time`
+  - `update_time` (default)
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`
@@ -4654,6 +4723,14 @@ curl --request GET \
   The optional user-defined ID passed in when creating session.
 - `dsl`: (*Filter parameter*), `boolean`
   Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
+- `keywords`: (*Filter parameter*), `string`
+  Fuzzy-searches the session ID, session name, and session messages.
+- `from_date`: (*Filter parameter*), `string`
+  Filters sessions whose applicable date is on or after this date.
+- `to_date`: (*Filter parameter*), `string`
+  Filters sessions whose applicable date is on or before this date.
+- `exp_user_id`: (*Filter parameter*), `string`
+  Returns only the IDs and names of sessions associated with the specified external user ID. When provided, the endpoint uses this special listing mode and does not apply the other pagination and filtering parameters.
 
 #### Response
 
@@ -5035,8 +5112,8 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-:::caution DEPRECATED
-`POST /api/v1/sessions/related_questions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/sessions/related_questions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
@@ -5117,14 +5194,14 @@ Failure:
 
 ### List agents
 
-**GET** `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id}`
+**GET** `/api/v1/agents`
 
-Lists agents.
+Lists agents and compilation template groups accessible to the current user.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id}`
+- URL: `/api/v1/agents`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -5132,7 +5209,7 @@ Lists agents.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id} \
+     --url 'http://{address}/api/v1/agents?page=1&page_size=30&orderby=create_time&desc=true&keywords=example' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5148,10 +5225,18 @@ curl --request GET \
   - `update_time`
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`
-  The ID of the agent to retrieve.
-- `title`: (*Filter parameter*), `string`
-  The name of the agent to retrieve.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
+- `keywords`: (*Filter parameter*), `string`
+  Fuzzy-searches agents by title.
+- `canvas_category`: (*Filter parameter*), `string`
+  Filters agents by one or more comma-separated canvas categories.
+- `canvas_type`: (*Filter parameter*), `string`
+  Filters agents by canvas type.
+- `owner_ids`: (*Filter parameter*), `string`
+  Filters agents by comma-separated authorized owner IDs.
+- `tags`: (*Filter parameter*), `string`
+  Filters agents by comma-separated tags.
 
 #### Response
 
@@ -5159,70 +5244,47 @@ Success:
 
 ```json
 {
-    "code": 0,
-    "data": [
-        {
-            "avatar": null,
-            "canvas_type": null,
-            "create_date": "Thu, 05 Dec 2024 19:10:36 GMT",
-            "create_time": 1733397036424,
-            "description": null,
-            "dsl": {
-                "answer": [],
-                "components": {
-                    "begin": {
-                        "downstream": [],
-                        "obj": {
-                            "component_name": "Begin",
-                            "params": {}
-                        },
-                        "upstream": []
-                    }
-                },
-                "graph": {
-                    "edges": [],
-                    "nodes": [
-                        {
-                            "data": {
-                                "label": "Begin",
-                                "name": "begin"
-                            },
-                            "height": 44,
-                            "id": "begin",
-                            "position": {
-                                "x": 50,
-                                "y": 200
-                            },
-                            "sourcePosition": "left",
-                            "targetPosition": "right",
-                            "type": "beginNode",
-                            "width": 200
-                        }
-                    ]
-                },
-                "history": [],
-                "messages": [],
-                "path": [],
-                "reference": []
-            },
-            "id": "8d9ca0e2b2f911ef9ca20242ac120006",
-            "title": "123465",
-            "update_date": "Thu, 05 Dec 2024 19:10:56 GMT",
-            "update_time": 1733397056801,
-            "user_id": "69736c5e723611efb51b0242ac120007"
-        }
-    ]
+  "code": 0,
+  "data": {
+    "canvas": [
+      {
+        "avatar": null,
+        "canvas_category": "agent_canvas",
+        "canvas_type": "",
+        "description": null,
+        "id": "d12e0f02a13c11f19804611a4dfe1a85",
+        "nickname": "test",
+        "permission": "me",
+        "release_time": null,
+        "tags": "",
+        "tenant_avatar": null,
+        "tenant_id": "fc117a7ea10011f1b894bf34cf9cba96",
+        "title": "111",
+        "type": "agent",
+        "update_time": 1787741800476
+      }
+    ],
+    "total": 1
+  },
+  "message": "success"
 }
 ```
 
-Failure:
+##### Response fields
 
-```json
-{
-    "code": 102,
-    "message": "The agent doesn't exist."
-}
-```
+- `data`: `object`
+  The result container.
+- `data.canvas`: `list[object]`
+  A list of agents and, when applicable, compilation template groups.
+- `data.canvas[].type`: `string`
+  The item type:
+  - `agent`: An agent.
+  - `compilation_template_group`: A compilation template group.
+- `data.total`: `integer`
+  The total number of matched items before pagination.
+- `message`: `string`
+  The result message.
+
 
 ---
 
@@ -5583,9 +5645,9 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
 - `memory_size`: (*Body parameter*), `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: (*Body parameter*), `enum<string>`, *Optional*
 
@@ -5863,14 +5925,14 @@ Failure
 
 ### List messages of a memory
 
-**GET** `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+**GET** `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={keywords}&page={page}&page_size={page_size}`
 
 List the messages of a specified memory.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+- URL: `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={keywords}&page={page}&page_size={page_size}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5892,9 +5954,9 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
   Filters messages by the ID of their source agent. Supports multiple values.
 
-- `session_id`: (*Filter parameter*), `string`, *Optional*
+- `keywords`: (*Filter parameter*), `string`, *Optional*
 
-  Filters messages by their session ID. This field supports fuzzy search.
+  Filters messages by session ID. Despite the parameter name, its value is applied to the `session_id` field.
 
 - `page`: (*Filter parameter*), `int`, *Optional*
 
@@ -6198,14 +6260,14 @@ Failure
 
 ### Search Message
 
-**GET** `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+**GET** `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 
 Searches and retrieves messages from memory based on the provided `query` and other configuration parameters.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+- URL: `/api/v1/messages/search?query={query}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -6219,7 +6281,7 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 ##### Request parameters
 
-- `question`: (*Filter parameter*), `string`, *Required*
+- `query`: (*Filter parameter*), `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
@@ -6253,7 +6315,7 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 
 - `top_n`: (*Filter parameter*), `int`, *Optional*
 
-  The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `10`.
+  The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `5`.
 
 #### Response
 
@@ -6456,10 +6518,10 @@ Failure
 
 **GET** `/api/v1/system/healthz`
 
-Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
+Check the health status of RAGFlow's dependencies: metadata database, Kvrocks cache, document engine, object storage, and NATS message queue.
 
-:::caution DEPRECATED
-`GET /v1/system/healthz` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /v1/system/healthz` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6473,15 +6535,15 @@ Check the health status of RAGFlow's dependencies (database, Redis, document eng
 ##### Request example
 
 ```bash
-curl --request GET
-     --url http://{address}/api/v1/system/healthz
+curl --request GET \
+     --url http://{address}/api/v1/system/healthz \
      --header 'Content-Type: application/json'
 ```
 
 ##### Request parameters
 
 - `address`: (*Path parameter*), string
-  The host and port of the backend service (e.g., `localhost:7897`).
+  The host and port of the backend service (e.g., `localhost:9380`).
 
 ---
 
@@ -6498,6 +6560,7 @@ Content-Type: application/json
   "redis": "ok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "ok"
 }
 ```
@@ -6513,6 +6576,7 @@ Content-Type: application/json
   "redis": "nok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "nok",
   "_meta": {
     "redis": {
@@ -6526,6 +6590,7 @@ Content-Type: application/json
 Explanation:
 
 - Each service is reported as "ok" or "nok".
+- The `redis` field reports the Redis-compatible Kvrocks cache; `message_queue` reports the NATS connection.
 - The top-level `status` reflects overall health.
 - If any service is "nok", detailed error info appears in `_meta`.
 
@@ -6541,8 +6606,8 @@ Explanation:
 
 Uploads one or multiple files to the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/upload` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/upload` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6613,8 +6678,8 @@ Failure:
 
 Uploads a file and creates the respective document.
 
-:::caution DEPRECATED
-`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6692,8 +6757,8 @@ Failure:
 
 **GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
-:::caution DEPRECATED
-The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are not available in 1.0. Use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded for use in the agent system.
@@ -6752,8 +6817,8 @@ Failure:
 
 Creates a new file or folder in the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/create` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/create` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6824,18 +6889,18 @@ Failure:
 
 ### List files
 
-**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+**GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}`
 
 Lists files and folders under a specific folder.
 
-:::caution DEPRECATED
-`GET /api/v1/file/list` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/list` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- URL: `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -6862,6 +6927,8 @@ curl --request GET \
   - `create_time` (default)
 - `desc`: (*Filter parameter*), `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 
 #### Response
 
@@ -6907,8 +6974,8 @@ Failure:
 
 Retrieves the immediate parent folder information of a specified file.
 
-:::caution DEPRECATED
-`GET /api/v1/file/parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6964,8 +7031,8 @@ Failure:
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
-:::caution DEPRECATED
-`GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/all_parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7027,8 +7094,8 @@ Failure:
 
 Deletes one or multiple files or folders.
 
-:::caution DEPRECATED
-`POST /api/v1/file/rm` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/rm` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7094,8 +7161,8 @@ Failure:
 
 Downloads a file from the system.
 
-:::caution DEPRECATED
-`GET /api/v1/file/get/{file_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/get/{file_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7142,8 +7209,8 @@ Failure:
 
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
 
-:::caution DEPRECATED
-The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are not available in 1.0. Use this endpoint instead.
 :::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
@@ -7245,8 +7312,8 @@ or
 
 Converts files to documents and links them to specified datasets.
 
-:::caution DEPRECATED
-`POST /api/v1/file/convert` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/convert` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7321,8 +7388,7 @@ or
 
 **POST** `/api/v1/workspaces/{workspace_id}/commits`
 
-Creates a new snapshot commit for the specified workspace.
-This endpoint also supports:
+Creates a new snapshot commit for the specified workspace. This endpoint also supports:
 - `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its workspace)
 
 #### Request
@@ -7408,8 +7474,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination.
-Also available at:
+Lists all commits for the specified folder with pagination. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7475,8 +7540,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes.
-Also available at:
+Retrieves the details of a specific commit, including its file changes. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7545,8 +7609,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit.
-Also available at:
+Lists the file changes associated with a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7593,8 +7656,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences.
-Also available at:
+Compares two commits and returns the differences. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7660,8 +7722,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`).
-Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7712,8 +7773,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit.
-Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7779,8 +7839,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit.
-Also available at:
+Retrieves the file content as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
@@ -7941,14 +8000,14 @@ Failure:
 
 ### List search apps
 
-**GET** `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&owner_ids={owner_ids}`
+**GET** `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&owner_ids={owner_ids}`
 
 Lists search apps for the current user.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/searches`
+- URL: `/api/v1/searches?keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&sort={sort}&owner_ids={owner_ids}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7965,13 +8024,15 @@ curl --request GET \
 - `keywords`: (*Filter parameter*), `string`
   Search keyword to filter search apps by name.
 - `page`: (*Filter parameter*), `integer`
-  Specifies the page number. Defaults to `0` (no pagination).
+  Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
 - `page_size`: (*Filter parameter*), `integer`
-  The number of items per page. Defaults to `0` (no pagination).
+  The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
 - `orderby`: (*Filter parameter*), `string`
   The field to sort by. Defaults to `create_time`.
 - `desc`: (*Filter parameter*), `boolean`
   Whether to sort in descending order. Defaults to `true`.
+- `sort`: (*Filter parameter*), `string`
+  Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 - `owner_ids`: (*Filter parameter*), `string` (repeatable)
   Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
 
