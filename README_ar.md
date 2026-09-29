@@ -87,6 +87,8 @@
 
 ## 🔥 آخر التحديثات
 
+- 2026-09-29 إصدار RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 إضافة استيعاب محتوى الويب عبر خرائط المواقع.
 - 2026-08-19 إطلاق Knowledge Compilation لإنشاء Wiki وGraph وTree وPageIndex وMind Map وTimeline وSkills على مستوى المستند ومجموعة البيانات.
 - 2026-08-19 إطلاق Agentic RAG مع أوضاع التفكير Low وMedium وHigh وUltra.
@@ -210,23 +212,41 @@
 
 
 
+   الدخول إلى دليل نشر Docker.
+
    ```bash
-   # الدخول إلى دليل نشر Docker.
    cd ragflow/docker
-   # التبديل إلى وسم إصدار Go v1.0.0-rc1.
+   ```
+
+   التبديل إلى وسم إصدار Go v1.0.0-rc1.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # تشغيل خدمات Go وتبعياتها في الخلفية.
+   ```
+
+   تشغيل خدمات Go وتبعياتها في الخلفية.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
+   في إعداد MySQL الافتراضي، تنفّذ نقطة دخول صورة Go ترحيلات قاعدة البيانات أولًا، ثم تشغّل Syncer وAdmin وAPI وIngestor عبر `bin/ragflow_server`.
+
 > يستخدم DeepDoc في الإصدار مفتوح المصدر 1.0 استدلال CPU لتحليل التخطيط وOCR والتعرف على الجداول.
 
-4. التحقق من حالة الخادم بعد تشغيل الخادم:
+4. تحقق من حالة الخدمات وجاهزية API بعد بدء التشغيل:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
+   ```
+
+   يعرض الأمر أعلاه حالة الخدمات التابعة. لا يعرّف RAGFlow فحص صحة Compose؛ تحقق من الجاهزية عبر API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
+
+   تشير استجابة HTTP 200 إلى الجاهزية. إذا غيّرت `SVR_WEB_HTTP_PORT`، فاستخدم ذلك المنفذ في عنوان URL لفحص الصحة. إذا فشل بدء التشغيل، فافحص سجلات الخدمة المعنية باستخدام `docker logs --tail 50 <service>`.
 
 5. في متصفح الويب الخاص بك، أدخل عنوان IP الخاص بالخادم الخاص بك وقم بتسجيل الدخول إلى RAGFlow.
 
@@ -256,6 +276,9 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
@@ -277,9 +300,21 @@
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 

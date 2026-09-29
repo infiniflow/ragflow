@@ -85,6 +85,8 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 dirilis.
+
 - 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
 - 2026-08-19 Memperkenalkan Knowledge Compilation untuk menghasilkan Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills pada tingkat dokumen dan dataset.
 - 2026-08-19 Memperkenalkan Agentic RAG dengan mode berpikir Low, Medium, High, dan Ultra.
@@ -206,30 +208,48 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 
 
 
+   Masuk ke direktori deployment Docker.
+
    ```bash
-   # Masuk ke direktori deployment Docker.
    cd ragflow/docker
-   # Beralih ke tag rilis Go v1.0.0-rc1.
+   ```
+
+   Beralih ke tag rilis Go v1.0.0-rc1.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Jalankan layanan Go dan dependensinya di latar belakang.
+   ```
+
+   Jalankan layanan Go dan dependensinya di latar belakang.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
+   Dalam konfigurasi MySQL default, entrypoint image Go menjalankan migrasi database terlebih dahulu, lalu memulai Syncer, Admin, API, dan Ingestor melalui `bin/ragflow_server`.
+
 > Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
 
-1. Periksa status server setelah server aktif dan berjalan:
+4. Periksa status layanan dan kesiapan API setelah startup:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
+   ```
+
+   Perintah di atas menampilkan status dependensi. RAGFlow tidak mendefinisikan healthcheck Compose; konfirmasikan kesiapan melalui API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
+   Respons HTTP 200 menunjukkan bahwa layanan siap. Jika Anda mengubah `SVR_WEB_HTTP_PORT`, gunakan port tersebut dalam URL pemeriksaan kesehatan. Jika startup gagal, periksa log layanan terkait dengan `docker logs --tail 50 <service>`.
+
+5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
 
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
    >
-3. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
+6. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
    >
@@ -252,6 +272,9 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
@@ -273,9 +296,21 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
