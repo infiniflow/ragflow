@@ -9,6 +9,34 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v1.0.0-rc1
+
+RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. In this release, RAGFlow has been comprehensively rewritten in Go, significantly reducing system resource consumption and replacing the previously heavyweight deployment model with a lightweight one.
+
+### Architecture changes
+- **Message queue:** Migrated from Redis to NATS.
+- **Cache and checkpoints:** Kvrocks is now used for cache and checkpoint storage.
+
+### Data upgrade
+
+When the RAGFlow containers start, the data upgrade process runs automatically to upgrade RAGFlow data from v0.27.2 to v1.0.0-rc1. **Once the upgrade is complete, the data cannot be rolled back to v0.27.2.**
+
+### Upgrade prerequisites and precautions
+1. Back up your data before upgrading.
+2. Upgrade your existing deployment to v0.27.2 first.
+3. If the upgrade fails, restore the original system from your backup and submit an issue describing the problem you encountered.
+
+### Compatibility
+1. **RAGFlow CLI:** Reimplemented in Go, replacing the Python version.
+2. **API compatibility:** [Deprecated APIs](https://ragflow.io/docs/http_api_reference#removed-api-aliases) are no longer supported by the Go implementation.
+3. **SDK compatibility:** The Python SDK is unaffected.
+
+### Known issues
+1. DeepDoc currently supports CPU environments only.
+2. The local sandbox is no longer supported.
+3. GaussDB, PostgreSQL, OpenSearch, and other integrations are not yet supported.
+4. The **Team/Me** permission model is not yet supported.
+
 ## v0.27.2
 
 Released on Sep 10, 2026.
