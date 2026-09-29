@@ -78,7 +78,6 @@ import requests
 # sidecar and re-download/re-extract, so a stale local copy never silently
 # lingers.
 ORT_VERSION = "1.29.0"
-OFFICE_OXIDE_ARCHIVE = "office_oxide-v0.1.12-linux-x86_64.tar.gz"
 
 
 def _ort_asset_name(version):
@@ -227,7 +226,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", OFFICE_OXIDE_ARCHIVE],
+            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://gh-proxy.com/https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -256,7 +255,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", OFFICE_OXIDE_ARCHIVE],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -480,7 +479,7 @@ if __name__ == "__main__":
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
-        (OFFICE_OXIDE_ARCHIVE, "office_oxide"),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
     ]
 
     for archive, subdir in extractions:
@@ -489,7 +488,7 @@ if __name__ == "__main__":
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(native_deps_dir, subdir)
-        if subdir != "office_oxide" and os.path.isdir(target):
+        if os.path.isdir(target):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)

@@ -62,7 +62,6 @@ from huggingface_hub import snapshot_download
 # detects that via a `{asset}.sha256` sidecar and re-downloads/re-extracts, so a
 # stale local copy never silently lingers.
 ORT_VERSION = "1.29.0"
-OFFICE_OXIDE_ARCHIVE = "office_oxide-v0.1.12-linux-x86_64.tar.gz"
 
 
 def _ort_asset_name(version):
@@ -122,7 +121,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", OFFICE_OXIDE_ARCHIVE],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
             # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
@@ -172,7 +171,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", OFFICE_OXIDE_ARCHIVE],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             # ONNX Runtime static archives for the Go in-process (DeepDoc)
             # backend. Statically linked into the server binary (see build.sh:
             # ONNXRUNTIME_STATIC_PREFIX — no --whole-archive, so unreferenced
@@ -280,7 +279,7 @@ if __name__ == "__main__":
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static"),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide"),
-        (OFFICE_OXIDE_ARCHIVE, "office_oxide"),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide"),
         (_ort_asset_name(ORT_VERSION), os.path.join("onnxruntime", "static_lib")),
     ]
     import tarfile
@@ -324,7 +323,7 @@ if __name__ == "__main__":
                 print(f"  ✓ {subdir} ({ORT_VERSION}) already extracted to {version_dir}")
                 continue
 
-        if subdir != "office_oxide" and os.path.isdir(target) and any(f.endswith(".a") for _, _, files in os.walk(target) for f in files):
+        if os.path.isdir(target) and any(f.endswith(".a") for _, _, files in os.walk(target) for f in files):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)
