@@ -15,7 +15,7 @@ jest.mock('@/services/knowledge-service', () => ({
 
 const mockUseUpdateKnowledge = jest.mocked(useUpdateKnowledge);
 
-describe('useSaveDatasetSetting parser_config metadata lift', () => {
+describe('useSaveDatasetSetting parser_config metadata scoping', () => {
   beforeEach(() => {
     mockUseUpdateKnowledge.mockReset();
   });
@@ -32,7 +32,7 @@ describe('useSaveDatasetSetting parser_config metadata lift', () => {
     return { handleSave: current.handleSave, saveKnowledgeConfiguration };
   }
 
-  it('makes the extractor metadata group authoritative over the stale top-level copy', async () => {
+  it('keeps the extractor node metadata authoritative and emits no flat metadata key', async () => {
     const { handleSave, saveKnowledgeConfiguration } = setup();
 
     await handleSave({
@@ -55,17 +55,20 @@ describe('useSaveDatasetSetting parser_config metadata lift', () => {
     } as never);
 
     const payload = saveKnowledgeConfiguration.mock.calls[0][0];
-    expect(payload.parser_config.metadata).toEqual({
+    // The Go backend requires component-scoped keys: no flat `metadata` transport
+    // key is emitted, and the extractor node's own metadata wins over any stale
+    // top-level copy present in the form payload.
+    expect(payload.parser_config).not.toHaveProperty('metadata');
+    expect(
+      payload.parser_config['Extractor:AutoExtractDefault'].metadata,
+    ).toEqual({
       enabled: true,
       metadata: [],
       built_in_metadata: [{ key: 'update_time', type: 'time' }],
     });
-    expect(
-      payload.parser_config['Extractor:AutoExtractDefault'].metadata.enabled,
-    ).toBe(true);
   });
 
-  it('leaves the top-level object untouched when the pipeline has no extractor', async () => {
+  it('does not emit a flat metadata key when the pipeline has no extractor', async () => {
     const { handleSave, saveKnowledgeConfiguration } = setup();
 
     await handleSave({
@@ -81,10 +84,9 @@ describe('useSaveDatasetSetting parser_config metadata lift', () => {
     } as never);
 
     const payload = saveKnowledgeConfiguration.mock.calls[0][0];
-    expect(payload.parser_config.metadata).toEqual({
-      enabled: true,
-      metadata: [],
-      built_in_metadata: [],
+    expect(payload.parser_config).not.toHaveProperty('metadata');
+    expect(payload.parser_config['Tokenizer:SomeNode']).toEqual({
+      fields: 'text',
     });
   });
 });

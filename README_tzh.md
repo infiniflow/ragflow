@@ -87,6 +87,8 @@
 
 ## 🔥 近期更新
 
+- 2026-09-29 發布 RAGFlow 1.0.0-rc1。
+
 - 2026-09-10 支援透過 Sitemap 接入網站內容。
 - 2026-08-19 推出知識編譯，支援在文件級和知識庫級產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
 - 2026-08-19 推出 Agentic RAG，支援 Low、Medium、High、Ultra 四種思考模式。
@@ -209,12 +211,21 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 > [!NOTE]
 > Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
+   進入 Docker 部署目錄。
+
    ```bash
-   # 進入 Docker 部署目錄。
    cd ragflow/docker
-   # 切換至 Go v1.0.0-rc1 發布標籤。
+   ```
+
+   切換至 Go v1.0.0-rc1 發布標籤。
+
+   ```bash
    git checkout v1.0.0-rc1
-   # 在背景啟動 Go 服務及其相依服務。
+   ```
+
+   在背景啟動 Go 服務及其相依服務。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -222,19 +233,19 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 
 > RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理。
 
-4. 檢查相依服務狀態及 API 是否就緒：
+4. 啟動後檢查服務狀態和 API 是否就緒：
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    ```
 
-   相依服務顯示健康且 RAGFlow 容器持續執行後，請透過 HTTP 介面確認 RAGFlow 是否就緒（RAGFlow 容器本身未定義 Compose healthcheck）：
+   上述命令會顯示相依服務的狀態。RAGFlow 本身未定義 Compose healthcheck；請透過 API 確認是否就緒：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請將健康檢查網址中的連接埠替換為對應值。啟動異常時，請使用 Compose 查看對應服務日誌。
+   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請在健康檢查網址中使用對應的連接埠。啟動失敗時，請使用 `docker logs --tail 50 <service>` 查看對應服務日誌。
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
    > 上面這個範例中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過設定則無需輸入連接埠（預設的 HTTP 服務連接埠 80）。
@@ -282,20 +293,33 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    從原始碼啟動的 Go 服務透過 `localhost:6379` 連線到 Compose 暴露的 Kvrocks；Docker 服務則使用容器網路中的主機名稱。使用提供的設定無需修改 `/etc/hosts`。
 4. 先遷移資料庫，再依序啟動服務。每項命令都要在倉庫根目錄的獨立終端機執行；資料庫遷移完成後可關閉該終端機，其餘四個服務終端機需保持執行：
 
+   終端機 1：遷移資料庫
+
    ```bash
-   # 終端機 1：遷移資料庫
    ./bin/ragflow_server --migrate
+   ```
 
-   # 終端機 2：Admin，目標連接埠 9381
+   終端機 2：Admin，目標連接埠 9381
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
 
-   # 終端機 3：Ingestor
+   終端機 3：Ingestor
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
 
-   # 終端機 4：Syncer
+   終端機 4：Syncer
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
 
-   # 終端機 5：API，目標連接埠 9380
+   終端機 5：API，目標連接埠 9380
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 

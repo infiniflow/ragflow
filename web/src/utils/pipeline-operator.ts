@@ -27,6 +27,7 @@ import {
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  normalizeTokenChunkerFormValues,
   transformCompilationParams,
   transformExtractorParams,
   transformGeneralChunkerParams,
@@ -216,18 +217,17 @@ export function transformExtractorConfigToForm(
  */
 function transformTokenChunkerConfigToForm(
   config: Record<string, any> | undefined,
+  { seedLegacyDelimiter = true } = {},
 ): Record<string, any> {
   if (!config) return {};
 
   const result = { ...config };
 
-  // Convert string array delimiters to object array; seed the default '\n'
-  // row when the saved list is empty (legacy token_size nodes saved []).
+  // Convert string array delimiters to object arrays. The legacy re-seed and
+  // mode normalization happen in normalizeTokenChunkerFormValues below, which
+  // still sees the raw delimiter_mode.
   if (Array.isArray(config.delimiters)) {
     result.delimiters = config.delimiters.map((d: string) => ({ value: d }));
-    if (result.delimiters.length === 0) {
-      result.delimiters = [{ value: '\n' }];
-    }
   }
   if (Array.isArray(config.children_delimiters)) {
     result.children_delimiters = config.children_delimiters.map(
@@ -245,28 +245,25 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Normalize delimiter_mode: the 'token_size' tab was removed from the form,
-  // so legacy configs (explicit 'token_size' or absent) load as 'delimiter'.
-  result.delimiter_mode = config.delimiter_mode === 'one' ? 'one' : 'delimiter';
-
-  // Derive enable_children from presence of children_delimiters
-  if (config.enable_children === undefined) {
-    result.enable_children =
-      Array.isArray(config.children_delimiters) &&
-      config.children_delimiters.length > 0;
-  }
+  const normalized = normalizeTokenChunkerFormValues(result, {
+    seedLegacyDelimiter,
+  });
 
   // Clean up DSL-only fields not in form schema
-  delete result.table_context_size;
-  delete result.image_context_size;
+  delete normalized.table_context_size;
+  delete normalized.image_context_size;
 
-  return result;
+  return normalized;
 }
 
 function transformGeneralChunkerConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  const result = transformTokenChunkerConfigToForm(config);
+  // The general chunker never had the legacy 'token_size' tab, so an empty
+  // saved list is always a deliberate choice — skip the legacy re-seed.
+  const result = transformTokenChunkerConfigToForm(config, {
+    seedLegacyDelimiter: false,
+  });
   result.table_context_size = Number(config?.table_context_size ?? 0);
   result.image_context_size = Number(config?.image_context_size ?? 0);
   delete result.image_table_context_window;

@@ -175,6 +175,11 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 		if IsChunkerComponent(s.CpnID) {
 			keys["enable_children"] = struct{}{}
+			// parent_child is the component-scoped home of the parent/child
+			// split setting; it must survive cleaning so the chunker node keeps
+			// it (ApplyParentChildChunkerConfig derives children_delimiters
+			// from it). No flat top-level parent_child is accepted.
+			keys["parent_child"] = struct{}{}
 		}
 		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
 			keys[k] = struct{}{}
@@ -355,34 +360,33 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// top-level parent_child setting unless the request explicitly configures the
-// chunker itself.
+// parent_child setting scoped onto each chunker component. The setting must live
+// as a "parent_child" sub-object on the chunker node itself (component-scoped);
+// flat top-level parent_child keys are not accepted.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
-	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	componentConfig["parent_child"] = parentChild
-	useParentChild, _ := parentChild["use_parent_child"].(bool)
-	childrenDelimiters := []string{}
-	if useParentChild {
-		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
-			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
-		}
-	}
-
 	for componentID, value := range componentConfig {
 		if !IsChunkerComponent(componentID) {
 			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		parentChild, ok := params["parent_child"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		useParentChild, _ := parentChild["use_parent_child"].(bool)
+		childrenDelimiters := []string{}
+		if useParentChild {
+			if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+				childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+			}
 		}
 		if requested, ok := rawConfig[componentID].(map[string]interface{}); ok {
 			if _, provided := requested["children_delimiters"]; provided {
 				continue
 			}
-		}
-		params, ok := value.(map[string]interface{})
-		if !ok {
-			continue
 		}
 		params["children_delimiters"] = childrenDelimiters
 	}

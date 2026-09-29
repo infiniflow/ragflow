@@ -113,7 +113,7 @@ def _playwright_auth_ready_timeout_ms() -> int | None:
 
 def _playwright_hang_timeout_s() -> int:
     raw = _env_int_with_fallback("PLAYWRIGHT_HANG_TIMEOUT_S", "HANG_TIMEOUT_S", DEFAULT_HANG_TIMEOUT_S)
-    return raw if raw > 0 else 0
+    return max(0, raw)
 
 
 def _failure_text(req) -> str:
@@ -400,8 +400,8 @@ def _rsa_encrypt_password(password: str) -> str:
     global _PUBLIC_KEY_CACHE
     global _RSA_CIPHER_CACHE
     try:
-        from Cryptodome.PublicKey import RSA
         from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+        from Cryptodome.PublicKey import RSA
     except Exception as exc:
         raise RuntimeError("Cryptodome is required to encrypt passwords for API seeding. Set RAGFLOW_SEEDING_MODE=ui to skip API seeding.") from exc
     if _PUBLIC_KEY_CACHE is None:

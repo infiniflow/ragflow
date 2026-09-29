@@ -1,4 +1,4 @@
-package docx
+package office
 
 // RawBlock represents a single block extracted from a DOCX file in document order.
 // Type is one of "paragraph", "table", or "image". Headings are represented as

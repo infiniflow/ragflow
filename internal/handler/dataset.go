@@ -445,12 +445,6 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
 					return
 				}
-				if raptor, ok := config["raptor"].(map[string]interface{}); ok {
-					if _, ok := raptor["ext"]; ok {
-						common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.raptor.ext is not supported; send RAPTOR configuration fields directly")
-						return
-					}
-				}
 			}
 		}
 	}

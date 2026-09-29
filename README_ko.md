@@ -69,6 +69,8 @@
 
 ## 🔥 업데이트
 
+- 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
+
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
 - 2026-08-19 Knowledge Compilation을 도입했습니다. 문서 및 데이터셋 수준에서 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills를 생성할 수 있습니다.
 - 2026-08-19 Low, Medium, High, Ultra 사고 모드를 지원하는 Agentic RAG를 도입했습니다.
@@ -191,27 +193,45 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 
 
+   Docker 배포 디렉터리로 이동합니다.
+
    ```bash
-   # Docker 배포 디렉터리로 이동합니다.
    cd ragflow/docker
-   # Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+   ```
+
+   Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
+   ```
+
+   Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
+   기본 MySQL 구성에서는 Go 이미지 진입점이 먼저 데이터베이스 마이그레이션을 실행한 다음 `bin/ragflow_server`를 통해 Syncer, Admin, API 및 Ingestor를 시작합니다.
+
 > RAGFlow 오픈 소스 1.0의 DeepDoc은 레이아웃 분석, OCR, 표 인식에 CPU 추론을 사용합니다.
 
-1. 서버가 시작된 후 서버 상태를 확인하세요:
+4. 시작 후 서비스 상태와 API 준비 상태를 확인하세요:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
+   ```
+
+   위 명령은 종속 서비스 상태를 표시합니다. RAGFlow 자체에는 Compose healthcheck가 정의되어 있지 않으므로 API를 통해 준비 상태를 확인하세요:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
+   HTTP 200 응답은 준비가 완료되었음을 의미합니다. `SVR_WEB_HTTP_PORT`를 변경했다면 상태 확인 URL에 해당 포트를 사용하세요. 시작에 실패하면 `docker logs --tail 50 <service>`로 관련 서비스 로그를 확인하세요.
+
+5. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
-3. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
+6. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
 
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
@@ -234,6 +254,9 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py

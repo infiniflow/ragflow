@@ -40,6 +40,7 @@ type ModelTarget struct {
 	ModelName     string
 	ModelType     entity.ModelType
 	ProviderName  string
+	InstanceID    string
 	InstanceName  string
 	Driver        modelModule.ModelDriver
 	APIConfig     *modelModule.APIConfig
@@ -317,6 +318,7 @@ func (s *ModelSolver) ResolveModelConfig(ctx context.Context, tenantID string, m
 		ModelName:     model.modelName,
 		ModelType:     modelType,
 		ProviderName:  model.providerEntity.ProviderName,
+		InstanceID:    model.instanceID,
 		InstanceName:  model.instanceName,
 		Driver:        model.driver,
 		APIConfig:     model.apiConfig,
@@ -457,6 +459,7 @@ type resolvedModel struct {
 	modelType      entity.ModelType
 	modelID        string
 	modelName      string
+	instanceID     string
 	instanceName   string
 	driver         modelModule.ModelDriver
 	apiConfig      *modelModule.APIConfig
@@ -676,6 +679,7 @@ func (s *ModelSolver) resolveTenantModel(ctx context.Context, tenantID string, m
 		modelType:      modelType,
 		modelID:        modelEntity.ID,
 		modelName:      modelEntity.ModelName,
+		instanceID:     instanceEntity.ID,
 		instanceName:   instanceEntity.InstanceName,
 		driver:         driver,
 		apiConfig:      &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL},
@@ -793,7 +797,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 		if err != nil {
 			return nil, fmt.Errorf("%w: read model limits: %v", errModelConfigUnavailable, err)
 		}
-		return &resolvedModel{modelEntity: modelEntity, providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelID: modelEntity.ID, modelName: modelEntity.ModelName, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokens}, nil
+		return &resolvedModel{modelEntity: modelEntity, providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelID: modelEntity.ID, modelName: modelEntity.ModelName, instanceID: instance.ID, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokens}, nil
 	}
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
@@ -820,7 +824,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 	if err != nil {
 		return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
-	return &resolvedModel{providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelName: modelInfo.Name, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokensFromModelInfo(modelInfo, modelType)}, nil
+	return &resolvedModel{providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelName: modelInfo.Name, instanceID: instance.ID, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, maxTokens: maxTokensFromModelInfo(modelInfo, modelType)}, nil
 }
 
 func (s *ModelSolver) resolveCompositeModelType(ctx context.Context, tenantID, modelRef string) (entity.ModelType, error) {
