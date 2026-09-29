@@ -38,11 +38,10 @@ target/
 # regardless of which deps files download_deps.py currently fetches.
 # The deps image is built from this directory with:
 #   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
-# The two ORT version-pin files are re-included: build.sh's
+# The ORT version-pin file is re-included: build.sh's
 # check_ort_version_consistency (run by Dockerfile_go's `--go` build) greps
-# them. Re-including requires NOT excluding the directory itself.
+# it. Re-including requires NOT excluding the directory itself.
 ragflow_deps/*
-!ragflow_deps/download_go_deps.py
 !ragflow_deps/download_deps.py
 
 # ── IDE and editor config ──────────────────────────────────────────────────

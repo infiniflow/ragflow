@@ -939,7 +939,7 @@ jobs:
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_go_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
+          uv run pytest ragflow_deps/test_download_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
