@@ -23,8 +23,8 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TestParserComponent_Check covers the construction-time business
-// validation for parser methods that require language configuration.
+// TestParserComponent_Check covers construction-time validation for parser
+// methods that require language configuration.
 //
 // audio/video vlm.llm_id is not validated: Python's check() has no
 // such branch, and audio resolves its model at dispatch time with a
@@ -33,6 +33,7 @@ func TestParserComponent_Check(t *testing.T) {
 	cases := []struct {
 		name    string
 		setups  map[string]schema.ParserSetup
+		enhance bool
 		wantErr string // non-empty substring expected in error; empty means no error
 	}{
 		// --- PDF family (parser.py:252-261) ---
@@ -96,6 +97,7 @@ func TestParserComponent_Check(t *testing.T) {
 		{
 			name:    "image: non-ocr without lang → error",
 			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": ""}},
+			enhance: true,
 			wantErr: "image VLM language",
 		},
 		{
@@ -138,7 +140,7 @@ func TestParserComponent_Check(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &ParserComponent{setups: tc.setups}
+			c := &ParserComponent{setups: tc.setups, enableVisionEnhancement: tc.enhance}
 			err := c.Check()
 			if tc.wantErr != "" {
 				if err == nil {
@@ -181,5 +183,30 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 	}
 	if c != nil {
 		t.Errorf("want nil component on error, got %T", c)
+	}
+}
+
+func TestNewParserComponentVisionEnhancementSetting(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		params  map[string]any
+		enabled bool
+	}{
+		{name: "absent", params: nil},
+		{name: "explicit false", params: map[string]any{"enable_vision_enhancement": false}},
+		{name: "explicit true", params: map[string]any{"enable_vision_enhancement": true}, enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			component, err := NewParserComponent(test.params)
+			if err != nil {
+				t.Fatalf("NewParserComponent: %v", err)
+			}
+			if got := component.(*ParserComponent).enableVisionEnhancement; got != test.enabled {
+				t.Fatalf("enableVisionEnhancement = %v, want %v", got, test.enabled)
+			}
+		})
+	}
+	if _, err := NewParserComponent(map[string]any{"enable_vision_enhancement": "true"}); err == nil || !strings.Contains(err.Error(), "must be a boolean") {
+		t.Fatalf("string switch error = %v, want boolean validation", err)
 	}
 }

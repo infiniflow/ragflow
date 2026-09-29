@@ -550,12 +550,6 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	lanes := partition(len(items), workers)
 	perItem := make([][]schema.ChunkDoc, len(items))
-	dataTables := make(map[string]struct{})
-	for _, item := range items {
-		if item.CKType == "table_row" {
-			dataTables[spreadsheetTableKey(item)] = struct{}{}
-		}
-	}
 
 	// Computed once before the goroutines so the split path can decide whether
 	// the main delimiter is a custom (backtick) one — those are dropped, bare
@@ -572,15 +566,6 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 				if err := ctx.Err(); err != nil {
 					perItem[i] = nil
 					continue
-				}
-				if items[i].CKType == "table_header" {
-					if _, hasRows := dataTables[spreadsheetTableKey(items[i])]; hasRows {
-						// The typed header is metadata carried by every row. It
-						// must not become an independent TokenChunker chunk when
-						// row IR is consumed by a legacy pipeline.
-						perItem[i] = nil
-						continue
-					}
 				}
 				if isTextParserSentenceFallback(fileType, c.param.Delimiters, items[i]) {
 					perItem[i] = splitTextParserSentences(items[i])
@@ -727,14 +712,6 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // the chunk reproduces the source exactly, but a custom (backtick) delimiter
 // is dropped (Python-compatible split instruction).
 func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bool) []schema.ChunkDoc {
-	if it.CKType == "table_row" {
-		row := cloneChunkDoc(it)
-		row.DocType = "text"
-		row.CKType = "table_row"
-		row.Text = itemTextOrFallback(it)
-		row.TKNums = intPtr(tokenizeStr(row.Text))
-		return []schema.ChunkDoc{row}
-	}
 	ckType := itemDocType(it)
 	txt := itemTextOrFallback(it)
 	if ckType != "text" {
@@ -853,6 +830,7 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		Positions:    it.Positions,
 		Image:        it.Image,
 		PageNumber:   it.PageNumber,
+		Extra:        cloneExtra(it.Extra),
 	}
 	if ctxAbove != "" {
 		out.ContextAbove = ctxAbove
@@ -1665,11 +1643,17 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 	if in.Positions != nil {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
 	}
-	if in.Extra != nil {
-		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
-		for k, v := range in.Extra {
-			out.Extra[k] = append(json.RawMessage(nil), v...)
-		}
+	out.Extra = cloneExtra(in.Extra)
+	return out
+}
+
+func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for key, value := range in {
+		out[key] = append(json.RawMessage(nil), value...)
 	}
 	return out
 }

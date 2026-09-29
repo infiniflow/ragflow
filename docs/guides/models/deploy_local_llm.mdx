@@ -336,16 +336,20 @@ Starting vLLM API server 0 on http://0.0.0.0:1025
 Started server process [19177]
 Application startup complete.
 ```
-### 5.2 Intergrateing RAGFlow with vLLM Chat/Em/Rerank LLM with WebUI
+### 5.2 Integrating RAGFlow with vLLM Chat/Em/Rerank LLM with WebUI
 
 Go to **Settings** → **Model Providers** → **Search** → **vLLM** → **Add**; configure as follows:
 
 ![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm.png)
 
 Select the vLLM chat model as the default LLM model:
+
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm1.png)
+
 ### 5.3 Chat with vLLM Chat Model
+
 Create a chat and start a conversation as follows:
+
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
 
 ### 6. Deploy GPUStack
@@ -372,15 +376,15 @@ root@gpustack-prod:~# docker ps
 CONTAINER ID   IMAGE               COMMAND                  CREATED       STATUS       PORTS                                                                                  NAMES
 abf59be84b1a   gpustack/gpustack   "/usr/bin/entrypoint…"   6 hours ago   Up 6 hours   0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:10161->10161/tcp, [::]:10161->10161/tcp   gpustack
 ```
-### 6.2 Intergrateing RAGFlow with GPUStack Chat/Em/Rerank LLM with WebUI
+### 6.2 Integrating RAGFlow with GPUStack Chat/Em/Rerank LLM with WebUI
 
 setting->model providers->search->gpustack->add ,configure as follow:
 
 ![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack11.png)
 
-select gpustack chat model as default llm model as follow:
-![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack22.png)
+Select the GPUStack chat model as the default LLM:
 
+![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack22.png)
 
 
 

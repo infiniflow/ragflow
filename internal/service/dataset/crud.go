@@ -128,21 +128,27 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	// Preserve the public default shape when parser_config is empty. The
 	// parent_child block remains the single source of truth; chunker
 	// children_delimiters are derived below only when it is configured.
-	var parentChild map[string]interface{}
-	if req.ParserConfig != nil {
-		if pc, ok := req.ParserConfig["parent_child"].(map[string]interface{}); ok {
-			parentChild = pc
-		}
-	}
+	parentChild := resolveParentChild(req.ParserConfig)
 	if parentChild == nil {
 		parentChild = map[string]interface{}{
 			"use_parent_child":   false,
 			"children_delimiter": "\n",
 		}
 	}
-	parserConfig["parent_child"] = parentChild
+	// Scope parent_child onto every chunker node (component-scoped); no flat key.
+	for componentID, value := range parserConfig {
+		if !pipelinepkg.IsChunkerComponent(componentID) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			params = map[string]interface{}{}
+			parserConfig[componentID] = params
+		}
+		params["parent_child"] = parentChild
+	}
 
-	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	parentChildConfig := map[string]interface{}{}
 	if req.ParserConfig != nil {
 		for componentID, value := range req.ParserConfig {
 			if pipelinepkg.IsChunkerComponent(componentID) {
@@ -404,7 +410,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 				return fmt.Errorf("delete dataset error for %s", kb.ID)
 			}
 			if len(fileIDs) > 0 {
-				if err := tx.Unscoped().Where("id IN ?", fileIDs).Delete(&entity.File{}).Error; err != nil {
+				if err := tx.Unscoped().Where("id IN ? AND source_type = ?", fileIDs, string(entity.FileSourceKnowledgebase)).Delete(&entity.File{}).Error; err != nil {
 					return fmt.Errorf("delete dataset error for %s", kb.ID)
 				}
 			}

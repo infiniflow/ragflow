@@ -2199,6 +2199,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
+			if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
+				return nil, runtime.NewUserFacingError("ExeSQL configuration is incomplete. Set the database connection details before running the agent.")
+			}
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
 			)

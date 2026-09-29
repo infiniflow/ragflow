@@ -620,10 +620,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	if err != nil {
 		return nil, err
 	}
-	fromKwds := make([]string, 0, len(entityChunks))
-	for _, c := range entityChunks {
-		fromKwds = append(fromKwds, firstStringValue(c["slug_kwd"]))
-	}
+	fromKwds := wikiEntitySlugs(entityChunks)
 	graph := &WikiGraph{
 		Entities:       []WikiGraphEntity{},
 		Relations:      []WikiGraphRelation{},
@@ -687,6 +684,21 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	graph.ReturnedEntities = len(graph.Entities)
 	graph.ReturnedRelations = len(graph.Relations)
 	return graph, nil
+}
+
+// wikiEntitySlugs returns the entity slugs the graph's relation lookup filters
+// on. Rows without a slug are skipped: a blank value would render as
+// filter_fulltext('from_kwd', ”), which Infinity rejects with 3052 ("Trying to
+// match:  on fields: from_kwd failed") and fails the whole graph request, while
+// ES happily returns an empty result.
+func wikiEntitySlugs(entityChunks []map[string]interface{}) []string {
+	slugs := make([]string, 0, len(entityChunks))
+	for _, c := range entityChunks {
+		if slug := firstStringValue(c["slug_kwd"]); slug != "" {
+			slugs = append(slugs, slug)
+		}
+	}
+	return slugs
 }
 
 // WikiAlteration is the alteration summary for a dataset's wiki artifacts.

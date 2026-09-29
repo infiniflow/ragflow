@@ -15,13 +15,10 @@ Observability & Tracing with Langfuse.
 This document is contributed by our community contributor [jannikmaierhoefer](https://github.com/jannikmaierhoefer). 👏
 :::
 
-RAGFlow ships with a built-in [Langfuse](https://langfuse.com) integration so that you can **inspect and debug every retrieval and generation step** of your RAG pipelines in near real-time.
-
-Langfuse stores traces, spans and prompt payloads in a purpose-built observability backend and offers filtering and visualisations on top.
+RAGFlow includes a [Langfuse](https://langfuse.com) integration for recording chat traces and chat-model generation observations.
 
 :::info NOTE
-• RAGFlow **≥ 0.18.0** (contains the Langfuse connector)
-• A Langfuse workspace (cloud or self-hosted) with a _Project Public Key_ and _Secret Key_
+- A Langfuse workspace, either cloud-hosted or self-hosted, with a _Project Public Key_ and _Secret Key_.
 :::
 
 ---
@@ -43,30 +40,28 @@ RAGFlow stores the credentials _per tenant_. You can configure them either via t
 
 1. Log in to RAGFlow and click your avatar in the top-right corner.
 2. Select **API ▸ Scroll down to the bottom ▸ Langfuse Configuration**.
-3. Fill in you Langfuse **Host**, **Public Key** and **Secret Key**.
+3. Fill in your Langfuse **Host**, **Public Key**, and **Secret Key**.
 4. Click **Save**.
 
 
-Once saved, RAGFlow starts emitting traces automatically – no code change required.
+Once saved, the Go chat pipeline uses these credentials for chat requests that use a knowledge base or web search.
 
 ---
 
 ## 3. Run a Pipeline and Watch the Traces
 
-1. Execute any chat or retrieval pipeline in RAGFlow (e.g. the Quickstart demo).
+1. Send a message through a Chat configured with a knowledge base or web search.
 2. Open your Langfuse project ▸ **Traces**.
-3. Filter by **name ~ `ragflow-*`** (RAGFlow prefixes each trace with `ragflow-`).
+3. Find the trace named `openai_chat` for the request.
 
-For every user request you will see:
+The trace contains:
 
-• a **trace** representing the overall request
-• **spans** for retrieval, ranking and generation steps
-• the complete **prompts**, **retrieved documents** and **LLM responses** as metadata
+- One `openai_chat` trace containing the tenant ID as `userId`, the chat ID as `sessionId`, and metadata indicating whether streaming was enabled and how many knowledge bases were configured.
+- One `chat` generation observation containing the model name and the prompt, citation prompt, and model message list as input.
+- A completion update for that generation containing the recorded output summary and prompt, completion, and total token counts.
 
-
-([Example trace in Langfuse](https://cloud.langfuse.com/project/cloramnkj0002jz088vzn1ja4/traces/0bde9629-4251-4386-b583-26101b8e7561?timestamp=2025-05-09T19%3A15%3A37.797Z&display=details&observation=823997d8-ac40-40f3-8e7b-8aa6753b499e))
+Langfuse delivery runs asynchronously, so a tracing delivery failure does not stop the chat response.
 
 :::tip NOTE
-Use Langfuse's diff view to compare prompt versions or drill down into long-running retrievals to identify bottlenecks.
+Use the recorded generation input, output, model name, and token usage to inspect a traced chat request.
 :::
-
