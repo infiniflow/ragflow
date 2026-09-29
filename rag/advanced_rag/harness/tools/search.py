@@ -18,6 +18,7 @@ from rag.advanced_rag.harness.chunk_utils import (  # noqa: F401
     _doc_title,
     _snippet,
     _xml_escape,
+    strip_kbinfos_vectors,
 )
 
 # ``_expand_related_via_structure`` is kept imported (not currently called here)
@@ -137,6 +138,7 @@ async def hybrid_search(
     cache_key = _search_cache_key(effective_query, target_ids, top_n, doc_scope)
     if cache is not None and cache_key in cache:
         cached = cache[cache_key]
+        strip_kbinfos_vectors(cached)
         _LOG.info(f"[Hybrid search] Already searched this — reusing the {len(cached.get('chunks', []))} passage(s) found earlier.")
         return cached
 
@@ -172,6 +174,7 @@ async def hybrid_search(
         rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
+    strip_kbinfos_vectors(kbinfos)
     # Preserve the RAW retrieved chunks in the central memory store BEFORE any
     # narrowing. search is cheap and the raw corpus may hold a fact the LLM's
     # report/grounded extraction later compresses away — a gap-driven grep over
@@ -237,6 +240,7 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
+    strip_kbinfos_vectors(kbinfos)
     try:
         from rag.advanced_rag.harness.memory import add as _memory_add
 
@@ -274,6 +278,7 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         rerank_candidates_count=rerank_candidates_count,
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
+    strip_kbinfos_vectors(kbinfos)
     try:
         from rag.advanced_rag.harness.memory import add as _memory_add
 

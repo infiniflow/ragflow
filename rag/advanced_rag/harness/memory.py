@@ -32,6 +32,8 @@ the rest of the research state and is visible to any tool that has ``tools``.
 import logging
 import re
 
+from rag.advanced_rag.harness.chunk_utils import strip_chunk_vectors
+
 _LOG = logging.getLogger(__name__)
 
 # How many memory chunks a single grep query may return at most (keeps the
@@ -118,7 +120,10 @@ def add(tools, chunks) -> None:
         if k in seen:
             continue
         seen.add(k)
-        mem.append(c)
+        # Store text/metadata only; dense vectors are re-fetched for citations.
+        stored = dict(c)
+        stored.pop("vector", None)
+        mem.append(stored)
         added += 1
     if added:
         _LOG.info("[Memory] stored %d new raw chunk(s); memory now has %d.", added, len(mem))
