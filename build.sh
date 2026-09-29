@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.11"
+OFFICE_OXIDE_VERSION="0.1.12"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -372,7 +372,7 @@ check_office_oxide_deps() {
         echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
         echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
         echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-v${OFFICE_OXIDE_VERSION}-linux-x86_64.tar.gz"
         echo "    uv run python3 ragflow_deps/download_go_deps.py"
         exit 1
     fi
