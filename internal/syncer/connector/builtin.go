@@ -18,6 +18,7 @@ package connector
 
 import (
 	"context"
+	"strings"
 
 	"ragflow/internal/dao"
 )
@@ -47,7 +48,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
 	registerBuiltIn(registry, "airtable", NewAirtableConnector)
 	registerBuiltIn(registry, "r2", NewR2Connector)
-	registerBuiltIn(registry, "s3", NewS3Connector)
+	registerBuiltIn(registry, "s3", newS3SourceConnector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
 	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
@@ -68,6 +69,15 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "seafile", NewSeaFileConnector)
 	registerBuiltIn(registry, "bigquery", NewBigQueryConnector)
 	registerBuiltIn(registry, "zotero", NewZoteroConnector)
+}
+
+// newS3SourceConnector selects the client for the bucket type stored under an S3 source.
+// The data source form keeps an S3-compatible bucket under source "s3" with bucket_type "s3_compatible".
+func newS3SourceConnector(config map[string]any) (Connector, error) {
+	if strings.TrimSpace(stringConfig(config["bucket_type"])) == s3CompatibleSource {
+		return NewS3CompatibleConnector(config)
+	}
+	return NewS3Connector(config)
 }
 
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
