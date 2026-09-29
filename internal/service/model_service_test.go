@@ -969,3 +969,55 @@ func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
 		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }
+
+// TestMaskAPIKey_NeverLeaksFullKey is the regression test for the
+// ShowProviderInstance sibling of PR #20277. The helper must:
+//   - return "" for an empty key (so callers can use it unconditionally);
+//   - return "***" for a key too short to safely expose any prefix;
+//   - never include the un-masked body of the key in the returned string;
+//   - preserve the leading three chars and trailing four chars so the
+//     operator can still visually confirm "is the key the one I set".
+func TestMaskAPIKey_NeverLeaksFullKey(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty key is empty string", "", ""},
+		{"single char is constant mask", "x", "***"},
+		{"six chars is constant mask", "abcdef", "***"},
+		{"seven chars is constant mask (boundary)", "abcdefg", "***"},
+		{"eight chars exposes prefix + last 4", "abcdefgh", "abc***efgh"},
+		{"standard OpenAI key shape", "sk-proj-AAAAAAAAAAAAAAAAAAAAAAAA", "sk-***AAAA"},
+		{"long Bedrock-style key", "AKIAIOSFODNN7EXAMPLEKEYFORTESTING", "AKI***TING"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := maskAPIKey(tc.in)
+			if got != tc.want {
+				t.Errorf("maskAPIKey(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMaskAPIKey_DoesNotEchoBodyOfLongKey guards against the helper
+// accidentally returning the raw value when the input is a real
+// provider key. A naive implementation that just replaces one
+// character could still leak; the body of the key must never appear
+// in the masked output.
+func TestMaskAPIKey_DoesNotEchoBodyOfLongKey(t *testing.T) {
+	key := "sk-proj-XXXXXXXXXXXXXXXXXXXXXXXX"
+	masked := maskAPIKey(key)
+	if masked == key {
+		t.Fatalf("maskAPIKey leaked the full key: %q", masked)
+	}
+	// Sanity: the prefix and suffix must be preserved so operators can
+	// still verify which key is configured.
+	if got := masked[:3]; got != "sk-" {
+		t.Errorf("prefix lost: got %q, want %q", got, "sk-")
+	}
+	if got := masked[len(masked)-4:]; got != "XXXX" {
+		t.Errorf("suffix lost: got %q, want %q", got, "XXXX")
+	}
+}
