@@ -659,7 +659,6 @@ jobs:
                  echo "RAGFLOW_DEV_MODE=true"
                } >> .env-go
                RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
