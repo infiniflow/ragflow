@@ -28,7 +28,6 @@ func ApplyComponentScopedParserConfig(
 		datasetMeta = cloneJSONMap(mm)
 	}
 
-	foundExtractor := false
 	for cpnID, raw := range parserConfig {
 		params, ok := raw.(map[string]any)
 		if !ok {
@@ -37,7 +36,6 @@ func ApplyComponentScopedParserConfig(
 		cpnLower := strings.ToLower(cpnID)
 		switch {
 		case strings.HasPrefix(cpnLower, "extractor:") || strings.HasPrefix(cpnLower, "extractor_"):
-			foundExtractor = true
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
@@ -63,19 +61,17 @@ func ApplyComponentScopedParserConfig(
 		}
 	}
 
-	// Strip legacy top-level flat metadata fields.
+	// Documents and datasets are uniformly component-scoped (every dataset and
+	// document DSL defines an Extractor node), so the flat "metadata" transport
+	// key is never a first-class config: it is scoped onto an Extractor node
+	// above and then dropped here. A flat metadata object with no Extractor node
+	// to receive it is invalid input and is silently dropped (no node is
+	// auto-created), keeping the function free of compatibility shims.
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "metadata_config")
 	delete(parserConfig, "built_in_metadata")
 	delete(parserConfig, "fields")
-	// Drop the flat modular "metadata" transport key only when it was scoped
-	// onto an Extractor node above. Dataset configs always have an Extractor
-	// node, so the flat key disappears there; documents may carry a metadata
-	// map without an Extractor node (e.g. extracted field values) and must
-	// keep it.
-	if foundExtractor {
-		delete(parserConfig, "metadata")
-	}
+	delete(parserConfig, "metadata")
 
 	return parserConfig
 }

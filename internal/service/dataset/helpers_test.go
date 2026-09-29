@@ -205,7 +205,7 @@ func TestValidateDatasetParserConfigSize_OverLimit(t *testing.T) {
 	}
 }
 
-func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) {
+func TestValidateDatasetParserConfig_RejectsFlatNullableOptionalFields(t *testing.T) {
 	// A flat key is rejected regardless of its value (even nil): datasets are
 	// component-scoped only, so "task_page_size"/"pages" must live on a node.
 	for _, config := range []map[string]interface{}{
@@ -250,7 +250,7 @@ func TestValidateDocumentParserConfig_RejectsAnyFlatKey(t *testing.T) {
 	}
 }
 
-func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
+func TestValidateParserConfigRejectsFlatParentChildDelimiter(t *testing.T) {
 	config := map[string]interface{}{"children_delimiter": "|"}
 	// Datasets reject every flat key, including parser-level ones.
 	if err := validateDatasetParserConfig(config); err == nil {

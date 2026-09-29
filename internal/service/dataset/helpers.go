@@ -208,8 +208,8 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 // CleanComponentParams downstream and is never consumed, so we reject it loudly
 // here instead.
 //
-// Document configs are exempt via ValidateDocumentParserConfig, which keeps the
-// flat "metadata" map (extracted field values carried without an Extractor node).
+// ValidateDocumentParserConfig delegates to this same check, so documents and
+// datasets share one contract: no flat keys are ever permitted on either path.
 func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
 	if len(parserConfig) == 0 {
 		return nil

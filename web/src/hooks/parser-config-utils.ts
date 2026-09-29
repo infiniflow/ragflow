@@ -93,12 +93,21 @@ export const normalizeParserConfig = (
     }
   }
 
-  const parentChild = enable_children
-    ? {
-        children_delimiter,
-        use_parent_child: use_parent_child ?? enable_children,
-      }
-    : undefined;
+  // When children are enabled we forward the delimiter and the explicit
+  // use_parent_child override (defaulting to enabled). When they are explicitly
+  // disabled we must still emit a parent_child payload with use_parent_child:
+  // false, otherwise a pre-existing node's parent_child (e.g. {use_parent_child:
+  // true}) would pass through untouched and silently keep children parsing ON.
+  // When enable_children is absent we leave any existing parent_child untouched.
+  const parentChild =
+    enable_children === true
+      ? {
+          children_delimiter,
+          use_parent_child: use_parent_child ?? true,
+        }
+      : enable_children === false
+        ? { use_parent_child: false }
+        : undefined;
 
   // Python backend: keep the legacy flat-key contract unchanged.
   if (!pickByBackend({ go: true, python: false })) {
