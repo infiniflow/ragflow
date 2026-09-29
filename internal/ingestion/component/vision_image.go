@@ -25,6 +25,12 @@ import (
 	"io"
 	"strings"
 
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
+	_ "image/gif"
+	_ "image/jpeg"
+
 	parserlib "ragflow/internal/parser/parser"
 )
 

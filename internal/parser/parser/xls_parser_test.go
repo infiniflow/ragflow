@@ -119,7 +119,7 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	}
 }
 
-func TestXLSParser_ImagesUseLocalOCRBudget(t *testing.T) {
+func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 	var imageData bytes.Buffer
 	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatalf("encode fixture: %v", err)
@@ -163,8 +163,8 @@ func TestXLSParser_ImagesUseLocalOCRBudget(t *testing.T) {
 	if imageItem == nil || imageItem["image"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(imageBytes) {
 		t.Fatalf("image item = %+v, want retained picture payload", imageItem)
 	}
-	if warnings := strings.Join(result.Warnings, "\n"); !strings.Contains(warnings, "xls OCR sentinel") {
-		t.Fatalf("warnings = %q, want local OCR failure from the XLS path", warnings)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
 }
 

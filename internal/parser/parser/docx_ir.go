@@ -383,32 +383,32 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 						"column_index":    tableImage.column,
 						"media_order":     mediaOrder + 1,
 					}
-					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata, budget)
+					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata)
 				}
 
 			case "list":
 				for _, item := range el.Items {
 					text := extractTextFromListItem(item)
-					if text == "" {
-						continue
+					if text != "" {
+						sections = append(sections, map[string]any{
+							"text":         text,
+							"image":        nil,
+							"doc_type_kwd": "text",
+						})
 					}
+					sections = appendDOCXListImageSections(sections, docxIRList{Items: []docxIRListItem{item}}, budget)
+				}
+
+			case "text_box":
+				text := extractTextFromBlockElements(el.contentBlocks())
+				if text != "" {
 					sections = append(sections, map[string]any{
 						"text":         text,
 						"image":        nil,
 						"doc_type_kwd": "text",
 					})
 				}
-
-			case "text_box":
-				text := extractTextFromBlockElements(el.contentBlocks())
-				if text == "" {
-					continue
-				}
-				sections = append(sections, map[string]any{
-					"text":         text,
-					"image":        nil,
-					"doc_type_kwd": "text",
-				})
+				sections = appendDOCXIRImageSections(sections, el.contentBlocks(), budget)
 			}
 		}
 	}
@@ -468,17 +468,35 @@ func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embe
 	if !included && !keepWalking {
 		return sections, false
 	}
-	return appendDOCXImagePayload(sections, data, included, metadata, budget), keepWalking
+	return appendDOCXImagePayload(sections, data, included, metadata), keepWalking
 }
 
-func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any, budget *embeddedMediaBudget) []map[string]any {
+func appendDOCXListImageSections(sections []map[string]any, list docxIRList, budget *embeddedMediaBudget) []map[string]any {
+	for _, item := range list.Items {
+		sections = appendDOCXIRImageSections(sections, item.Content, budget)
+		if item.Nested != nil {
+			sections = appendDOCXListImageSections(sections, *item.Nested, budget)
+		}
+	}
+	return sections
+}
+
+func appendDOCXIRImageSections(sections []map[string]any, elements []docxIRElement, budget *embeddedMediaBudget) []map[string]any {
+	forEachDOCXIRImage(elements, func(data []byte) bool {
+		var keepWalking bool
+		sections, keepWalking = appendDOCXImageSection(sections, data, budget, nil)
+		return keepWalking
+	})
+	return sections
+}
+
+func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any) []map[string]any {
 	item := map[string]any{
 		"text":         "",
 		"image":        nil,
 		"doc_type_kwd": "image",
 	}
 	if included {
-		budget.recognizeImage(data, item)
 		item["image"] = base64.StdEncoding.EncodeToString(data)
 	} else {
 		item["media_omitted"] = true

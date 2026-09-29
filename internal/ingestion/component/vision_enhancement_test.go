@@ -189,14 +189,14 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 	}
 }
 
-func TestVisionEnhancement_AppendsVLMToParserOCRText(t *testing.T) {
+func TestVisionEnhancement_AppendsVLMToExistingText(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
 
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{{
-			"text":         "Existing caption\nRecognized diagram text",
+			"text":         "Existing caption",
 			"image":        visionTestPNGBase64(t),
 			"doc_type_kwd": "image",
 		}},
@@ -210,12 +210,34 @@ func TestVisionEnhancement_AppendsVLMToParserOCRText(t *testing.T) {
 	if !handled {
 		t.Fatal("handled = false, want true")
 	}
-	want := "Existing caption\nRecognized diagram text\na diagram of a pipeline"
+	want := "Existing caption\na diagram of a pipeline"
 	if got := res.JSON[0]["text"]; got != want {
 		t.Errorf("enhanced text = %q, want %q", got, want)
 	}
 	if len(invoker.images) != 1 {
 		t.Errorf("VLM calls = %d, want 1", len(invoker.images))
+	}
+}
+
+func TestVisionEnhancement_ReportsVLMInvocationFailure(t *testing.T) {
+	swapVisionGlobals(t, fakeResolver, func(context.Context, modelModule.ModelDriver, string, []modelModule.Message, *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+		return nil, errors.New("VLM unavailable")
+	}, fakePrompt)
+
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{{
+			"image":        visionTestPNGBase64(t),
+			"doc_type_kwd": "image",
+		}},
+	}
+	result, _, err := maybeDispatchVisionEnhancement(t.Context(), dao.DB, utility.FileTypeDOCX, dispatched,
+		map[string]any{"tenant_id": "t1"}, nil)
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "VLM unavailable") {
+		t.Fatalf("warnings = %v, want the VLM failure", result.Warnings)
 	}
 }
 

@@ -14,16 +14,14 @@
 //  limitations under the License.
 //
 
-// PictureParser validates image files and performs local DeepDOC OCR.
-// Optional PaddleOCR and VLM dispatch remain in the ingestion component.
-//
-// The ingestion component selects the optional PaddleOCR path before invoking
-// this parser as the local DeepDOC fallback.
+// PictureParser validates image files and returns their image payload for
+// optional VLM enhancement in the ingestion component.
 
 package parser
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -43,7 +41,7 @@ var imageExtensions = map[string]bool{
 	"ai": true, "raw": true, "wmf": true,
 }
 
-// PictureParser handles local DeepDOC OCR for image files.
+// PictureParser emits image files for optional vision enhancement.
 type PictureParser struct {
 	OutputFormat string
 }
@@ -64,8 +62,7 @@ func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult validates the image extension and extracts local DeepDOC
-// OCR text before returning the image item to ingestion.
+// ParseWithResult validates the image extension and returns its image payload.
 func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if len(ext) > 1 && ext[0] == '.' {
@@ -85,6 +82,9 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 			Err: fmt.Errorf("picture: unsupported extension %q (filename: %s); accepted: .jpg/.jpeg/.png/.gif/.bmp/.tiff/.tif/.webp/.svg/.ico/.avif/.heic/...", ext, filename),
 		}
 	}
+	if len(data) == 0 || len(data) > MaxImagePayloadBytes {
+		return ParseResult{Err: fmt.Errorf("picture: image payload size %d is outside the %d-byte limit", len(data), MaxImagePayloadBytes)}
+	}
 
 	// Parser output is normalized to JSON at the component boundary, so an
 	// absent backend format defaults to JSON here as well.
@@ -93,10 +93,15 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		outFmt = "json"
 	}
 
-	imageOCR := newImageOCRBudget(ctx)
-	defer imageOCR.close()
+	release, err := AcquireImageMedia(ctx)
+	if err != nil {
+		return ParseResult{Err: err}
+	}
+	imagePayload := "data:" + pictureMIME(ext) + ";base64," + base64.StdEncoding.EncodeToString(data)
+	release()
 	item := map[string]any{
-		"text":         imageOCR.recognize(data),
+		"text":         "",
+		"image":        imagePayload,
 		"doc_type_kwd": DocTypeImage,
 	}
 	if err := ctx.Err(); err != nil {
@@ -109,8 +114,34 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 			"size":         len(data),
 			"doc_type_kwd": DocTypeImage,
 		},
-		JSON:     []map[string]any{item},
-		Warnings: imageOCR.warnings(),
+		JSON: []map[string]any{item},
+	}
+}
+
+func pictureMIME(ext string) string {
+	switch ext {
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "bmp":
+		return "image/bmp"
+	case "webp":
+		return "image/webp"
+	case "svg":
+		return "image/svg+xml"
+	case "tiff", "tif":
+		return "image/tiff"
+	case "ico":
+		return "image/x-icon"
+	case "avif":
+		return "image/avif"
+	case "heic":
+		return "image/heic"
+	default:
+		return "image/png"
 	}
 }
 

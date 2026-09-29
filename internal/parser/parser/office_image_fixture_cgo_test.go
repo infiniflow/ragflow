@@ -5,6 +5,7 @@ package parser
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -13,9 +14,21 @@ import (
 	"testing"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
+func useFailingOCRAnalyzer(t *testing.T) {
+	t.Helper()
+	previous := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = previous })
+	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
+		return &deepdocpdf.MockDocAnalyzer{Healthy: true, OCRDetectErr: errors.New("image parser must not invoke OCR")}, true
+	})
+}
+
 func TestDOCXParser_RealTableImage(t *testing.T) {
+	useFailingOCRAnalyzer(t)
 	data, err := os.ReadFile(filepath.Join("testdata", "docx_table_image.docx"))
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +38,9 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 	result := p.ParseWithResult(t.Context(), "docx_table_image.docx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
 	var tableID string
 	for _, item := range result.JSON {
@@ -56,6 +72,7 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 }
 
 func TestPPTXParser_RealSlideImage(t *testing.T) {
+	useFailingOCRAnalyzer(t)
 	raster := image.NewRGBA(image.Rect(0, 0, 32, 16))
 	for y := 0; y < 16; y++ {
 		for x := 0; x < 32; x++ {
@@ -78,6 +95,9 @@ func TestPPTXParser_RealSlideImage(t *testing.T) {
 	result := NewPPTXParser().ParseWithResult(t.Context(), "slide_image.pptx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
 	for _, item := range result.JSON {
 		if item["doc_type_kwd"] != "image" {

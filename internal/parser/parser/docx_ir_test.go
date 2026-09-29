@@ -584,3 +584,48 @@ func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
 		t.Errorf("nested list text = %q, want %q", got, "L1\nL2a\nL2b")
 	}
 }
+
+func TestBuildDOCXJSONSections_EmitsListAndTextBoxImages(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"list","items":[
+			{"content":[{"type":"paragraph","content":[
+				{"type":"text","text":"list text"},
+				{"type":"image","data":"aGVsbG8="}
+			]}],"nested":{"items":[
+				{"content":[{"type":"paragraph","content":[
+					{"type":"image","data":"d29ybGQ="}
+				]}]}
+			]}}
+		]},
+		{"type":"text_box","content":[{"type":"paragraph","content":[
+			{"type":"text","text":"text box text"},
+			{"type":"image","data":"cGljdHVyZQ=="}
+		]}]}
+	]}]}`
+	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	want := []struct {
+		docType string
+		text    string
+		image   string
+	}{
+		{docType: "text", text: "list text"},
+		{docType: "image", image: "aGVsbG8="},
+		{docType: "image", image: "d29ybGQ="},
+		{docType: "text", text: "text box text"},
+		{docType: "image", image: "cGljdHVyZQ=="},
+	}
+	if len(sections) != len(want) {
+		t.Fatalf("sections = %+v, want %d items", sections, len(want))
+	}
+	for i, expected := range want {
+		if got := sections[i]["doc_type_kwd"]; got != expected.docType {
+			t.Errorf("section %d type = %v, want %q", i, got, expected.docType)
+		}
+		if expected.text != "" && sections[i]["text"] != expected.text {
+			t.Errorf("section %d text = %v, want %q", i, sections[i]["text"], expected.text)
+		}
+		if expected.image != "" && sections[i]["image"] != expected.image {
+			t.Errorf("section %d image = %v, want %q", i, sections[i]["image"], expected.image)
+		}
+	}
+}

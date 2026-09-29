@@ -109,10 +109,9 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 
 	var items []map[string]any
 	mediaBudget := newEmbeddedMediaBudget()
-	imageOCR := newImageOCRBudget(ctx)
-	mediaBudget.imageOCR = imageOCR
-	defer imageOCR.close()
-	unresolvedImages := walkMarkdownBlocksWithImages(imageOCR.ctx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
+	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -120,7 +119,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	warnings := mediaBudget.warnings()
-	if mediaBudget.items > 0 && imageOCR.ctx.Err() == context.DeadlineExceeded {
+	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
 	if unresolvedImages > 0 {
@@ -499,11 +498,9 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 						break
 					}
 					if raw != nil {
-						budget.recognizeImage(raw, item)
 						item["image"] = base64.StdEncoding.EncodeToString(raw)
 					} else {
 						item["image"] = encoded
-						appendOCRText(item, budget.imageOCR.recognizeBase64(encoded))
 					}
 					if !flatten {
 						item["doc_type_kwd"] = "image"

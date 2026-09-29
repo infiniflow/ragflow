@@ -348,9 +348,6 @@ cellLoop:
 				"col_end":      col,
 			}
 			if included {
-				if budget != nil {
-					budget.recognizeImage(picture.File, item)
-				}
 				encoded := base64.StdEncoding.EncodeToString(picture.File)
 				item["image"] = "data:" + mimeType + ";base64," + encoded
 			} else {

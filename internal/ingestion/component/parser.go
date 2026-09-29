@@ -240,7 +240,8 @@ func (c *ParserComponent) Check() error {
 			}
 		}
 	}
-	// image family (parser.py:283-287).
+	// image family (parser.py:283-287). The legacy "ocr" setup value selects
+	// the tenant default vision model; image OCR is not run by this path.
 	if img, ok := c.setups["image"]; ok {
 		pm, _ := img["parse_method"].(string)
 		// A model selected for optional image enhancement needs a language
@@ -480,8 +481,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	var handledImage bool
 	if !handledVision && !handledMedia {
-		// Image/Picture dispatch: PaddleOCR, Parser DeepDOC fallback, and
-		// optional IMAGE2TEXT vision description.
+		// Image/Picture dispatch: optional IMAGE2TEXT vision description.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
 		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement)
 		if visionErr != nil {
@@ -501,8 +501,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
 
 		if c.enableVisionEnhancement {
-			// Enhancement is optional; parser-provided OCR remains available
-			// if a vision model cannot describe an image.
+			// Enhancement is optional; parser-provided text and image metadata
+			// remain available if a vision model cannot describe an image.
 			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
 		}
 	}

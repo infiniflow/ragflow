@@ -114,8 +114,6 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("docx to-ir-json: %w", irErr)}
 		}
 		budget := newEmbeddedMediaBudget()
-		budget.imageOCR = newImageOCRBudget(ctx)
-		defer budget.imageOCR.close()
 		sections := buildDOCXJSONSections(irJSON, budget)
 		if err := ctx.Err(); err != nil {
 			return ParseResult{Err: err}

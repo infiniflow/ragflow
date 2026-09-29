@@ -157,7 +157,8 @@ type visionImage struct {
 }
 
 // maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
-// resources and table regions. Local OCR belongs to each image parser.
+// resources and table regions. PDF OCR remains in the PDF parser; non-PDF
+// image text comes from this optional enhancement.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -195,8 +196,8 @@ func maybeDispatchVisionEnhancement(
 	if len(items) == 0 {
 		return dispatched, false, nil
 	}
-	// Resolve VLM before materializing image payloads. Parser-owned OCR has
-	// already completed, so there is no image work to do without a VLM model.
+	// Resolve VLM before materializing image payloads, so disabled or
+	// unavailable enhancement does not spend time loading media.
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -239,11 +240,13 @@ func maybeDispatchVisionEnhancement(
 	// remain live while model requests run.
 	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
 		return dispatched, false, nil
 	}
 	defer cropper.Close()
 	modified := false
 	descriptions := make([]string, len(items))
+	failures := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
 	for slot, itemIdx := range items {
@@ -275,15 +278,26 @@ func maybeDispatchVisionEnhancement(
 						resource = &visionImage{VLMData: payload}
 					}
 				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("media admission failed: %v", err)
+				}
 				return
 			}
 			defer release()
 			item := dispatched.JSON[itemIdx]
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
+				cropErr := err
 				if ctx.Err() == nil && vlmReady {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
 						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					if cropErr != nil {
+						failures[slot] = fmt.Sprintf("image materialization failed: %v", cropErr)
+					} else {
+						failures[slot] = "no usable image payload"
 					}
 				}
 				return
@@ -292,6 +306,7 @@ func maybeDispatchVisionEnhancement(
 				resource.VLMData, err = encodeVisionRaster(resource.Raster)
 				if err != nil {
 					resource.VLMData = ""
+					failures[slot] = fmt.Sprintf("image encoding failed: %v", err)
 				} else {
 					resource.VLMDataValidated = resource.VLMData != ""
 				}
@@ -306,6 +321,9 @@ func maybeDispatchVisionEnhancement(
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
+			if failures[slot] == "" {
+				failures[slot] = "image payload is invalid or exceeds configured limits"
+			}
 			releaseSlot()
 			continue
 		}
@@ -316,21 +334,43 @@ func maybeDispatchVisionEnhancement(
 
 			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
+				failures[slot] = "could not build a VLM request"
 				return
 			}
 			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
 			if ierr != nil {
+				failures[slot] = fmt.Sprintf("VLM request failed: %v", ierr)
 				return
 			}
 			descriptions[slot] = extractVisionAnswer(resp)
+			if strings.TrimSpace(descriptions[slot]) == "" {
+				failures[slot] = "VLM returned an empty description"
+			}
 		}(slot, resource.VLMData)
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
+	failedItems := 0
+	firstFailure := ""
+	for _, failure := range failures {
+		if failure == "" {
+			continue
+		}
+		failedItems++
+		if firstFailure == "" {
+			firstFailure = failure
+		}
+	}
+	if failedItems > 0 {
+		warning := fmt.Sprintf("vision enhancement failed for %d item(s): %s", failedItems, firstFailure)
+		dispatched.Warnings = append(dispatched.Warnings, warning)
+		common.Warn("vision enhancement: one or more image descriptions failed",
+			zap.Int("failed_items", failedItems), zap.String("first_failure", firstFailure))
+	}
 
-	// Append descriptions after parser-provided OCR text.
+	// Append descriptions after parser-provided text and captions.
 	for slot, itemIdx := range items {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {

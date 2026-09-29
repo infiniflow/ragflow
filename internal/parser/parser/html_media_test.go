@@ -15,6 +15,9 @@ func TestHTMLParser_EmitsInlineImagesInDocumentOrder(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for a valid inline image", result.Warnings)
+	}
 	if len(result.JSON) != 3 {
 		t.Fatalf("items = %+v, want text/image/text", result.JSON)
 	}

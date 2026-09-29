@@ -108,9 +108,6 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	mediaBudget := newEmbeddedMediaBudget()
-	imageOCR := newImageOCRBudget(ctx)
-	mediaBudget.imageOCR = imageOCR
-	defer imageOCR.close()
 	items, warnings, sheets, err := parseXLSXBytes(data, mediaBudget)
 	if err == nil {
 		if ctx.Err() != nil {
@@ -130,11 +127,9 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	// The first parse attempt is discarded, so its media reservations and OCR
-	// warnings must not affect the normalized retry's output.
+	// The first parse attempt is discarded, so its media reservations must not
+	// affect the normalized retry's output.
 	mediaBudget = newEmbeddedMediaBudget()
-	mediaBudget.imageOCR = imageOCR
-	imageOCR.resetFailures()
 	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, mediaBudget)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
