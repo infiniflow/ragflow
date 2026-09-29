@@ -177,7 +177,7 @@ func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[s
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": map[string]interface{}(search.SearchConfig),
+		"search_config": BuildSearchConfigResponse(map[string]interface{}(search.SearchConfig)),
 		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
@@ -311,7 +311,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 		Name:         detail.Name,
 		Description:  detail.Description,
 		CreatedBy:    detail.CreatedBy,
-		SearchConfig: detail.SearchConfig,
+		SearchConfig: BuildSearchConfigResponse(detail.SearchConfig),
 		UpdateTime:   detail.UpdateTime,
 	}, nil
 }
@@ -572,6 +572,22 @@ func floatFromSearchConfig(value interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// BuildSearchConfigResponse returns the public search configuration without
+// exposing the internally persisted vector weight.
+func BuildSearchConfigResponse(searchConfig map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(searchConfig))
+	for key, value := range searchConfig {
+		result[key] = value
+	}
+	if _, exists := result["keywords_similarity_weight"]; !exists {
+		if vectorWeight, ok := floatFromSearchConfig(result["vector_similarity_weight"]); ok {
+			result["keywords_similarity_weight"] = 1 - vectorWeight
+		}
+	}
+	delete(result, "vector_similarity_weight")
+	return result
 }
 
 // UpdateSearchRequest update search request

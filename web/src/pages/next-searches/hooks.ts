@@ -216,7 +216,6 @@ export interface ISearchAppDetailProps {
     rerank_candidates_count: number;
     use_kg: boolean;
     keywords_similarity_weight?: number;
-    vector_similarity_weight?: number;
     web_search: boolean;
     chat_settingcross_languages: string[];
     meta_data_filter?: {

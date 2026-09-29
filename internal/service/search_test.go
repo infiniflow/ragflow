@@ -131,6 +131,24 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildSearchConfigResponseOmitsVectorSimilarityWeight(t *testing.T) {
+	searchConfig := map[string]interface{}{
+		"similarity_threshold":     0.2,
+		"vector_similarity_weight": 0.3,
+	}
+
+	response := BuildSearchConfigResponse(searchConfig)
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+	if _, exists := searchConfig["keywords_similarity_weight"]; exists {
+		t.Fatal("BuildSearchConfigResponse must not mutate the stored search config")
+	}
+}
+
 func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	setupSearchServiceTestDB(t)
 

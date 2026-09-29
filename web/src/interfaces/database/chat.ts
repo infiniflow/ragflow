@@ -82,7 +82,6 @@ export interface IDialog {
   update_date: string;
   update_time: number;
   keywords_similarity_weight?: number;
-  vector_similarity_weight?: number;
   similarity_threshold: number;
   top_k: number;
   top_n: number;

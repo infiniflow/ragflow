@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"testing"
@@ -309,6 +310,32 @@ func TestChatServiceUpdateChatNormalizesKeywordsSimilarityWeight(t *testing.T) {
 	}
 	if got, ok := resp["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
 		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", resp["keywords_similarity_weight"])
+	}
+	if _, exists := resp["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatWithKBNamesMarshalJSONOmitsVectorSimilarityWeight(t *testing.T) {
+	payload, err := json.Marshal(&ChatWithKBNames{
+		Chat:       &entity.Chat{VectorSimilarityWeight: 0.3},
+		KBNames:    []string{"Dataset"},
+		DatasetIDs: []string{"dataset-1"},
+		Nickname:   "Owner",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	response := map[string]interface{}{}
+	if err = json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
 	}
 }
 
