@@ -380,8 +380,8 @@ func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoc
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
 // single production entry point now that the external HTTP service is no longer
-// a backend. Callers outside the parser package (e.g. standalone image OCR in
-// the ingestion component) use this instead of constructing a client.
+// a backend. PDF and non-PDF image parsers use it instead of constructing a
+// client.
 func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
 	return deepDocAnalyzerFromEnv()
 }

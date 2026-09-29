@@ -47,8 +47,9 @@ var resolveModelConfig = defaultResolveModelConfig
 
 // configuredMediaModelID extracts a per-call model reference from a parser setup.
 // Image parsing stores the VLM model reference in parse_method when it is not
-// "ocr" (mirroring Python rag/flow/parser/parser.py:_image). Other media
-// families use vlm.llm_id, matching the frontend parser form.
+// "ocr" (mirroring Python rag/flow/parser/parser.py:_image); "ocr" selects the
+// tenant default vision model, and Go does not run OCR for standalone images.
+// Other media families use vlm.llm_id, matching the frontend parser form.
 func configuredMediaModelID(setup schema.ParserSetup, family string) string {
 	if family == "image" {
 		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
