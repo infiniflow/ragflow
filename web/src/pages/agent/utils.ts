@@ -345,24 +345,70 @@ export function transformParserParams(params: ParserFormSchemaType) {
   });
 }
 
+// Decides whether an empty delimiter list should be re-seeded with the
+// default '\n' row. Only legacy nodes need it: nodes saved under the removed
+// 'token_size' tab always persisted an empty list (older DSLs may not even
+// carry a mode). Nodes written by the current form have an explicit
+// 'delimiter'/'one' mode, so an empty list there is a deliberate choice —
+// pure token-size chunking, which both backends support — and must survive.
+export function shouldSeedDefaultDelimiter(
+  delimiterMode: string | undefined,
+  delimiters: unknown,
+): boolean {
+  return (
+    isEmpty(delimiters) &&
+    delimiterMode !== 'delimiter' &&
+    delimiterMode !== 'one'
+  );
+}
+
+// Migrates legacy token chunker values to the current form shape. Idempotent,
+// so every boundary (form defaults, canvas save, dataset load) can apply it:
+// - 'token_size' (removed tab) or an absent mode falls back to 'delimiter';
+// - only legacy nodes get the empty delimiter list re-seeded (the general
+//   chunker never had the legacy tab, so callers pass seedLegacyDelimiter:
+//   false — an empty list there is always a deliberate choice);
+// - enable_children predates the toggle: derive it from the children list.
+export function normalizeTokenChunkerFormValues<T extends Record<string, any>>(
+  values: T,
+  { seedLegacyDelimiter = true } = {},
+) {
+  return {
+    ...values,
+    delimiter_mode: values.delimiter_mode === 'one' ? 'one' : 'delimiter',
+    delimiters:
+      seedLegacyDelimiter &&
+      shouldSeedDefaultDelimiter(values.delimiter_mode, values.delimiters)
+        ? [{ value: '\n' }]
+        : (values.delimiters ?? []),
+    enable_children:
+      values.enable_children ??
+      (Array.isArray(values.children_delimiters) &&
+        values.children_delimiters.length > 0),
+    children_delimiters: values.children_delimiters ?? [],
+  };
+}
+
 export function transformTokenChunkerParams(
   params: TokenChunkerFormSchemaType,
+  { seedLegacyDelimiter = true } = {},
 ) {
-  const { image_table_context_window, ...rest } = params;
+  const { image_table_context_window, ...rest } =
+    normalizeTokenChunkerFormValues(params, { seedLegacyDelimiter });
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
     // Keep the configured values in 'one' mode too: the chunker ignores them
     // while merging everything into a single chunk, but zeroing them here
     // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
-    overlapped_percent: Number(params.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+    overlapped_percent: Number(rest.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(rest.delimiters, 'value'),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
-    children_delimiters: params.enable_children
-      ? transformObjectArrayToPureArray(params.children_delimiters, 'value')
+    children_delimiters: rest.enable_children
+      ? transformObjectArrayToPureArray(rest.children_delimiters, 'value')
       : [],
   };
 }
@@ -397,10 +443,14 @@ export function getChunkerChildrenDelimiterPreview(
 export function transformGeneralChunkerParams(
   params: TokenChunkerFormSchemaType,
 ) {
-  const result = transformTokenChunkerParams(params);
+  // The general chunker never had the legacy 'token_size' tab, so an empty
+  // delimiter list is always a deliberate choice — skip the legacy re-seed.
+  const result = omit(
+    transformTokenChunkerParams(params, { seedLegacyDelimiter: false }),
+    ['delimiter_mode'],
+  );
   result.table_context_size = Number(params.table_context_size || 0);
   result.image_context_size = Number(params.image_context_size || 0);
-  delete result.delimiter_mode;
   return result;
 }
 
