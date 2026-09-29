@@ -156,7 +156,7 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
 // DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
-// not just for v<=0 — so that downstream AddPositions (a passthrough) and
+// not just for v<=0 — so that downstream addPDFPositions (a passthrough) and
 // PositionsFromMatrix (which subtracts 1 for the 0-indexed PDFium engine)
 // each see a consistent 1-indexed value.
 func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
