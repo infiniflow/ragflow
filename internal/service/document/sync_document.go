@@ -114,7 +114,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	}
 
 	// create the 'doc'
-	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), copyJSONMap(kb.ParserConfig))
+	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
 	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, parserID, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	doc.ID = input.DocumentID
 
@@ -299,15 +299,6 @@ func syncDocumentStagedLocation(sourceType, docID, filename string) string {
 		sourceType = "sync"
 	}
 	return fmt.Sprintf("sync/%s/.staged/%s/%s%s", sourceType, utility.GenerateToken(), docID, ext)
-}
-
-// copyJSONMap returns a shallow copy of a JSON map.
-func copyJSONMap(value entity.JSONMap) entity.JSONMap {
-	out := entity.JSONMap{}
-	for k, v := range value {
-		out[k] = v
-	}
-	return out
 }
 
 // errorsIsRecordNotFound reports whether an error is GORM's not-found error.

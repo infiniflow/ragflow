@@ -974,6 +974,55 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 	}
 }
 
+func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kb := entity.Knowledgebase{
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := db.First(&kb, "id = ?", kb.ID).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if kb.ParserConfig != nil {
+		t.Fatalf("dataset parser_config = %#v, want nil", kb.ParserConfig)
+	}
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(newFakeUploadStorage())
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	result, err := testDocumentService(t).Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector:     entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: kb,
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-nil-config",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID: "source-1", SemanticIdentifier: "source", Extension: ".txt", Blob: []byte("content"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("sync document: %v", err)
+	}
+	if result.Action != service.DocumentActionAdded {
+		t.Fatalf("sync action = %q, want added", result.Action)
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", result.DocID).Error; err != nil {
+		t.Fatalf("load synced document: %v", err)
+	}
+	if doc.ParserConfig == nil || len(doc.ParserConfig) != 0 {
+		t.Fatalf("document parser_config = %#v, want empty object", doc.ParserConfig)
+	}
+}
+
 func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	db := setupServiceTestDB(t)
@@ -3479,9 +3528,11 @@ func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) 
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 		ParserConfig: map[string]any{
-			"parent_child": map[string]any{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
@@ -3537,9 +3588,11 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 
 	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{
-			"parent_child": map[string]any{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, map[string]bool{"parser_config": true})
@@ -3553,9 +3606,12 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
 		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
 	}
-	parentChild, ok := resp.ParserConfig["parent_child"].(map[string]interface{})
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
 	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
-		t.Fatalf("parent_child = %#v, want persisted public setting", resp.ParserConfig["parent_child"])
+		t.Fatalf("chunker parent_child = %#v, want persisted public setting", chunker["parent_child"])
+	}
+	if _, ok := resp.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level flat parent_child should be absent, got %#v", resp.ParserConfig["parent_child"])
 	}
 }
 

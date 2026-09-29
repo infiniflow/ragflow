@@ -205,40 +205,113 @@ func TestValidateDatasetParserConfigSize_OverLimit(t *testing.T) {
 	}
 }
 
-func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) {
+func TestValidateDatasetParserConfig_RejectsFlatNullableOptionalFields(t *testing.T) {
+	// A flat key is rejected regardless of its value (even nil): datasets are
+	// component-scoped only, so "task_page_size"/"pages" must live on a node.
 	for _, config := range []map[string]interface{}{
 		{"task_page_size": nil},
 		{"pages": nil},
 	} {
-		if err := validateDatasetParserConfig(config); err != nil {
-			t.Fatalf("validateDatasetParserConfig(%#v): %v", config, err)
+		if err := validateDatasetParserConfig(config); err == nil {
+			t.Fatalf("validateDatasetParserConfig(%#v): expected error for flat key, got nil", config)
 		}
 	}
 }
 
 func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
 	err := validateDatasetParserConfig(map[string]interface{}{"delimiter": float64(1)})
-	if err == nil || err.Error() != "Input should be a valid string" {
-		t.Fatalf("err=%v", err)
+	if err == nil {
+		t.Fatal("expected error for flat delimiter key")
 	}
 }
 
-func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
-		t.Fatalf("err=%v", err)
+func TestValidateDocumentParserConfig_RejectsAnyFlatKey(t *testing.T) {
+	// Documents follow the same component-scoped contract as datasets: no flat
+	// top-level key is accepted (the Go backend scopes every setting under a
+	// node id such as "Extractor:AutoExtractDefault" or "GeneralChunker:SixApplesFall").
+	for _, flat := range []map[string]interface{}{
+		{"parser_specific": "value"},
+		{"delimiter": float64(1)},
+		{"children_delimiter": "|"},
+		{"metadata": map[string]interface{}{}},
+		{"parent_child": map[string]interface{}{}},
+	} {
+		if err := ValidateDocumentParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat document config %#v", flat)
+		}
 	}
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err == nil {
-		t.Fatal("expected known-field validation error")
+	// Component-scoped keys always pass.
+	if err := ValidateDocumentParserConfig(map[string]interface{}{
+		"Extractor:AutoExtractDefault":   map[string]interface{}{"metadata": map[string]interface{}{}},
+		"GeneralChunker:SixApplesFall":   map[string]interface{}{"chunk_token_size": float64(512)},
+		"GeneralChunker:SixApplesFallPC": map[string]interface{}{"parent_child": map[string]interface{}{}},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
 	}
 }
 
-func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
+func TestValidateParserConfigRejectsFlatParentChildDelimiter(t *testing.T) {
 	config := map[string]interface{}{"children_delimiter": "|"}
-	if err := validateDatasetParserConfig(config); err != nil {
-		t.Fatalf("flat children_delimiter should remain accepted for compatibility: %v", err)
+	// Datasets reject every flat key, including parser-level ones.
+	if err := validateDatasetParserConfig(config); err == nil {
+		t.Fatal("expected error for flat children_delimiter on dataset")
 	}
-	if err := ValidateDocumentParserConfig(config); err != nil {
-		t.Fatalf("document parser config should accept children_delimiter: %v", err)
+	// Documents share the same no-flat-key contract.
+	if err := ValidateDocumentParserConfig(config); err == nil {
+		t.Fatal("expected error for flat children_delimiter on document")
+	}
+}
+
+func TestValidateDatasetParserConfig_RejectsAnyFlatKey(t *testing.T) {
+	for _, flat := range []map[string]interface{}{
+		{"chunk_token_num": float64(128)},
+		{"delimiter": "\n"},
+		{"children_delimiter": "|"},
+		{"layout_recognize": "DeepDOC"},
+		{"auto_keywords": float64(0)},
+		{"task_page_size": float64(1)},
+		{"pages": nil},
+		{"parser_specific": "value"},
+	} {
+		if err := validateDatasetParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat dataset config %#v", flat)
+		}
+	}
+	// Component-scoped keys (containing ":") always pass.
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(512)},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
+	}
+}
+
+func TestValidateParserConfigRejectsFlatMetadataAndParentChild(t *testing.T) {
+	if err := validateDatasetParserConfig(map[string]interface{}{"metadata": map[string]interface{}{}}); err == nil {
+		t.Fatal("expected error for flat metadata key")
+	}
+	if err := ValidateDocumentParserConfig(map[string]interface{}{"parent_child": map[string]interface{}{}}); err == nil {
+		t.Fatal("expected error for flat parent_child key")
+	}
+	// Component-scoped (cpnID-keyed) forms are accepted.
+	if err := validateDatasetParserConfig(map[string]interface{}{
+		"Extractor:AutoExtractDefault": map[string]interface{}{"metadata": map[string]interface{}{}},
+		"GeneralChunker:SixApplesFall": map[string]interface{}{"parent_child": map[string]interface{}{}},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
+	}
+	// Parser-level flat keys are no longer accepted on datasets: the Go backend
+	// is component-scoped only (chunk size is "chunk_token_size" on the chunker
+	// node, not the legacy flat "chunk_token_num").
+	for _, flat := range []map[string]interface{}{
+		{"chunk_token_num": float64(128)},
+		{"delimiter": "\n"},
+		{"children_delimiter": "|"},
+		{"layout_recognize": "DeepDOC"},
+		{"parser_specific": "value"},
+	} {
+		if err := validateDatasetParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat dataset config %#v", flat)
+		}
 	}
 }
 
@@ -368,10 +441,12 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 
 func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	cases := map[string]interface{}{
@@ -380,7 +455,11 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 	}
 	for name, incomingMetadata := range cases {
 		t.Run(name, func(t *testing.T) {
-			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			incoming := map[string]interface{}{
+				"Extractor:AutoExtractDefault": map[string]any{
+					"metadata": incomingMetadata,
+				},
+			}
 			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
 			meta, ok := got["metadata"].(map[string]any)
 			if !ok {
@@ -396,17 +475,21 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 
 func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           false,
-			"metadata":          []any{},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	incoming := map[string]interface{}{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)

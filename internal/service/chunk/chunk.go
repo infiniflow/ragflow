@@ -1466,7 +1466,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	// Embed inside the model's window: Content arrives from the API and can be
 	// arbitrarily long, and the provider answers 400/20015 instead of truncating it.
-	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("encode chunk embedding: %v", err)}
 	}

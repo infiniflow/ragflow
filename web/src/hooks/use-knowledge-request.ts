@@ -16,15 +16,13 @@
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { isDatasetId } from '@/utils/dataset-util';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
-  IArtifactAlteration,
   IArtifactGraph,
   IArtifactPage,
   IArtifactTopic,
@@ -49,9 +47,7 @@ import i18n from '@/locales/config';
 import kbService, {
   checkEmbedding,
   clearWiki,
-  deleteArtifactsStructure,
   deleteKnowledgeGraph,
-  getArtifactsAlteration,
   getArtifactGraph,
   getArtifactPage,
   getArtifactsStructure,
@@ -67,7 +63,6 @@ import kbService, {
   listWikiCommits,
   removeTag,
   renameTag,
-  runIndex,
   updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
@@ -93,7 +88,6 @@ import {
   normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
-import { DatasetGenerateKeys } from './use-dataset-generate';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
@@ -492,28 +486,6 @@ export const ArtifactTopicKeys = {
     [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
 };
 
-export const ArtifactAlterationKeys = {
-  detail: (datasetId: string, kind: string) =>
-    [KnowledgeApiAction.FetchArtifactAlteration, datasetId, kind] as const,
-};
-
-export function useFetchArtifactAlteration(kind: string) {
-  const knowledgeBaseId = useKnowledgeBaseId();
-
-  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
-    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-    initialData: null,
-    enabled: !!knowledgeBaseId && !!kind,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await getArtifactsAlteration(knowledgeBaseId, kind);
-      return data?.data ?? null;
-    },
-  });
-
-  return { data, loading };
-}
-
 const wikiCommitKeys = {
   list: (datasetId: string, pageType: string, slug: string) =>
     [KnowledgeApiAction.FetchWikiCommits, datasetId, pageType, slug] as const,
@@ -880,31 +852,6 @@ export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
   return { data, loading };
 }
 
-export const useDeleteDatasetStructure = () => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
-    mutationFn: async (kind: string) => {
-      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
-        });
-      }
-      return data?.code;
-    },
-  });
-
-  return { data, loading, deleteDatasetStructure: mutateAsync };
-};
-
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
     Record<string, Record<string, string[]>>
@@ -998,11 +945,7 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
-export const useRunArtifactIndex = (kind: string) => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
-
+export const useRunArtifactIndex = () => {
   const {
     data,
     isPending: loading,
@@ -1010,33 +953,11 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
-      // Go: wiki compilation is auto-driven by the scheduler; there is no
-      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
-      // update can't be mistaken for a real re-merge (the UI hides/disables the
-      // update control — plan v4.1 §4.2).
-      if (isGo) {
-        throw new Error(i18n.t('message.compileNotSupported'));
-      }
-      const { data } = await runIndex(knowledgeBaseId, 'wiki');
-      if (data?.code === 0) {
-        message.success(i18n.t('message.operated'));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: DatasetGenerateKeys.traceById(
-            GenerateType.Artifact,
-            knowledgeBaseId,
-          ),
-        });
-      }
-      return data;
+      // Wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a
+      // wiki update can't be mistaken for a real re-merge (the UI hides/
+      // disables the update control).
+      throw new Error(i18n.t('message.compileNotSupported'));
     },
   });
 

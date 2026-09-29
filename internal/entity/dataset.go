@@ -150,21 +150,21 @@ func (kb *Knowledgebase) TableName() string {
 // ToMap converts Knowledgebase to a map for JSON response
 func (kb *Knowledgebase) ToMap() map[string]interface{} {
 	result := map[string]interface{}{
-		"id":                       kb.ID,
-		"tenant_id":                kb.TenantID,
-		"name":                     kb.Name,
-		"embd_id":                  kb.EmbdID,
-		"permission":               kb.Permission,
-		"created_by":               kb.CreatedBy,
-		"doc_num":                  kb.DocNum,
-		"token_num":                kb.TokenNum,
-		"chunk_num":                kb.ChunkNum,
-		"similarity_threshold":     kb.SimilarityThreshold,
-		"vector_similarity_weight": kb.VectorSimilarityWeight,
-		"parser_id":                kb.ParserID,
-		"parser_config":            kb.ParserConfig,
-		"pagerank":                 kb.Pagerank,
-		"create_time":              kb.CreateTime,
+		"id":                         kb.ID,
+		"tenant_id":                  kb.TenantID,
+		"name":                       kb.Name,
+		"embd_id":                    kb.EmbdID,
+		"permission":                 kb.Permission,
+		"created_by":                 kb.CreatedBy,
+		"doc_num":                    kb.DocNum,
+		"token_num":                  kb.TokenNum,
+		"chunk_num":                  kb.ChunkNum,
+		"similarity_threshold":       kb.SimilarityThreshold,
+		"keywords_similarity_weight": 1 - kb.VectorSimilarityWeight,
+		"parser_id":                  kb.ParserID,
+		"parser_config":              kb.ParserConfig,
+		"pagerank":                   kb.Pagerank,
+		"create_time":                kb.CreateTime,
 	}
 
 	if kb.Avatar != nil {
@@ -236,24 +236,26 @@ type KnowledgebaseDetail struct {
 
 // KnowledgebaseListItem represents a knowledge base item in list responses
 type KnowledgebaseListItem struct {
-	ID           string  `json:"id"`
-	Avatar       *string `json:"avatar"`
-	Name         string  `json:"name"`
-	Language     *string `json:"language"`
-	Description  *string `json:"description"`
-	TenantID     string  `json:"tenant_id"`
-	Permission   string  `json:"permission"`
-	DocNum       int64   `json:"doc_num"`
-	TokenNum     int64   `json:"token_num"`
-	ChunkNum     int64   `json:"chunk_num"`
-	ParserID     string  `json:"parser_id"`
-	ParserConfig JSONMap `json:"parser_config"`
-	Pagerank     int64   `json:"pagerank"`
-	EmbdID       string  `json:"embd_id"`
-	TenantEmbdID *string `json:"tenant_embd_id,omitempty"`
-	Nickname     string  `json:"nickname"`
-	TenantAvatar *string `json:"tenant_avatar,omitempty"`
-	UpdateTime   *int64  `json:"update_time,omitempty"`
+	ID                     string  `json:"id"`
+	Avatar                 *string `json:"avatar"`
+	Name                   string  `json:"name"`
+	Language               *string `json:"language"`
+	Description            *string `json:"description"`
+	TenantID               string  `json:"tenant_id"`
+	Permission             string  `json:"permission"`
+	DocNum                 int64   `json:"doc_num"`
+	TokenNum               int64   `json:"token_num"`
+	ChunkNum               int64   `json:"chunk_num"`
+	SimilarityThreshold    float64 `json:"similarity_threshold"`
+	VectorSimilarityWeight float64 `json:"-"`
+	ParserID               string  `json:"parser_id"`
+	ParserConfig           JSONMap `json:"parser_config"`
+	Pagerank               int64   `json:"pagerank"`
+	EmbdID                 string  `json:"embd_id"`
+	TenantEmbdID           *string `json:"tenant_embd_id,omitempty"`
+	Nickname               string  `json:"nickname"`
+	TenantAvatar           *string `json:"tenant_avatar,omitempty"`
+	UpdateTime             *int64  `json:"update_time,omitempty"`
 }
 
 // DatasetOwnerFilter represents an owner option in dataset filter responses.

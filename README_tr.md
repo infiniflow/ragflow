@@ -87,6 +87,8 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 
 ## 🔥 Son Güncellemeler
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 yayımlandı.
+
 - 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
 - 2026-08-19 Belge ve veri kümesi düzeyinde Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills üretmek için Knowledge Compilation tanıtıldı.
 - 2026-08-19 Low, Medium, High ve Ultra düşünme modlarına sahip Agentic RAG tanıtıldı.
@@ -206,23 +208,41 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
+   Docker dağıtım dizinine girin.
+
    ```bash
-   # Docker dağıtım dizinine girin.
    cd ragflow/docker
-   # Go v1.0.0-rc1 sürüm etiketine geçin.
+   ```
+
+   Go v1.0.0-rc1 sürüm etiketine geçin.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
+   ```
+
+   Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
+   Varsayılan MySQL yapılandırmasında Go imajı giriş noktası önce veritabanı geçişlerini çalıştırır, ardından `bin/ragflow_server` aracılığıyla Syncer, Admin, API ve Ingestor hizmetlerini başlatır.
+
 > RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
 
-4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
+4. Başlatma sonrasında hizmet durumunu ve API hazır olma durumunu kontrol edin:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
+   ```
+
+   Yukarıdaki komut bağımlılıkların durumunu gösterir. RAGFlow bir Compose healthcheck tanımlamaz; hazır olma durumunu API üzerinden doğrulayın:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
+
+   HTTP 200 yanıtı hazır olunduğunu gösterir. `SVR_WEB_HTTP_PORT` değerini değiştirdiyseniz sağlık kontrolü URL'sinde bu portu kullanın. Başlatma başarısız olursa ilgili hizmetin günlüklerini `docker logs --tail 50 <service>` ile inceleyin.
 
 5. Web tarayıcınıza sunucunuzun IP adresini girin ve RAGFlow'a giriş yapın.
 
@@ -252,6 +272,9 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py

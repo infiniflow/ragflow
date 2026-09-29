@@ -85,6 +85,8 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 ## 🔥 Últimas Atualizações
 
+- 2026-09-29 Lançamento do RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 Adicionada a ingestão de conteúdo da Web por meio de sitemaps.
 - 2026-08-19 Lançado o Knowledge Compilation, que gera Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines e Skills nos níveis de documento e dataset.
 - 2026-08-19 Lançado o Agentic RAG com os modos de pensamento Low, Medium, High e Ultra.
@@ -201,24 +203,39 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
 
 
 
+   Entre no diretório de implantação do Docker.
+
    ```bash
-   # Entre no diretório de implantação do Docker.
    cd ragflow/docker
-   # Mude para a tag de lançamento Go v1.0.0-rc1.
+   ```
+
+   Mude para a tag de lançamento Go v1.0.0-rc1.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Inicie os serviços Go e suas dependências em segundo plano.
+   ```
+
+   Inicie os serviços Go e suas dependências em segundo plano.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
    Na configuração padrão do MySQL, o entrypoint da imagem executa as migrações do banco de dados e inicia Syncer, Admin, API e Ingestor por meio de `bin/ragflow_server`. No RAGFlow open-source 1.0, DeepDoc usa inferência por CPU para análise de layout, OCR e reconhecimento de tabelas.
 
-4. Verifique o estado das dependências com `docker compose -f docker-compose.yml ps` e confirme se o RAGFlow está pronto pela interface HTTP (o contêiner do RAGFlow não define um healthcheck do Compose):
+4. Verifique o estado dos serviços e a prontidão da API após a inicialização:
+
+   ```bash
+   docker ps
+   ```
+
+   O comando acima exibe o estado das dependências. O RAGFlow não define um healthcheck do Compose; confirme a prontidão pela API:
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Uma resposta HTTP 200 indica que o serviço está pronto. Se `SVR_WEB_HTTP_PORT` foi alterado, use essa porta na URL. Se a inicialização falhar, consulte os logs do serviço correspondente pelo Compose.
+   Uma resposta HTTP 200 indica que o serviço está pronto. Se `SVR_WEB_HTTP_PORT` foi alterado, use essa porta na URL de verificação. Se a inicialização falhar, consulte os logs do serviço correspondente com `docker logs --tail 50 <service>`.
 5. No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
 
    > Com as configurações padrão, você só precisa digitar `http://IP_DO_SEU_MÁQUINA` (**sem** o número da porta), pois a porta HTTP padrão `80` pode ser omitida ao usar as configurações padrão.
@@ -243,6 +260,9 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
@@ -261,20 +281,33 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    Os serviços Go iniciados pelo código-fonte acessam o Kvrocks exposto pelo Compose em `localhost:6379`; os serviços Docker usam o nome do host na rede dos contêineres. A configuração fornecida não exige alterações em `/etc/hosts`.
 4. Execute primeiro a migração e depois inicie Admin, Ingestor, Syncer e API em quatro terminais separados, sempre na raiz do repositório. O terminal da migração pode ser fechado quando o comando terminar; os outros quatro devem permanecer abertos:
 
+   Terminal 1: migração
+
    ```bash
-   # Terminal 1: migração
    ./bin/ragflow_server --migrate
+   ```
 
-   # Terminal 2: Admin, porta de destino 9381
+   Terminal 2: Admin, porta de destino 9381
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
 
-   # Terminal 3: Ingestor
+   Terminal 3: Ingestor
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
 
-   # Terminal 4: Syncer
+   Terminal 4: Syncer
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
 
-   # Terminal 5: API, porta de destino 9380
+   Terminal 5: API, porta de destino 9380
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
