@@ -225,14 +225,28 @@ func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
 	}
 }
 
-func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
-	// Documents keep a lenient flat contract (e.g. a flat "metadata" map with no
-	// Extractor node); only flat "parent_child" is rejected.
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
-		t.Fatalf("expected nil for unknown flat field, got %v", err)
+func TestValidateDocumentParserConfig_RejectsAnyFlatKey(t *testing.T) {
+	// Documents follow the same component-scoped contract as datasets: no flat
+	// top-level key is accepted (the Go backend scopes every setting under a
+	// node id such as "Extractor:AutoExtractDefault" or "GeneralChunker:SixApplesFall").
+	for _, flat := range []map[string]interface{}{
+		{"parser_specific": "value"},
+		{"delimiter": float64(1)},
+		{"children_delimiter": "|"},
+		{"metadata": map[string]interface{}{}},
+		{"parent_child": map[string]interface{}{}},
+	} {
+		if err := ValidateDocumentParserConfig(flat); err == nil {
+			t.Fatalf("expected error for flat document config %#v", flat)
+		}
 	}
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err != nil {
-		t.Fatalf("expected nil for flat delimiter, got %v", err)
+	// Component-scoped keys always pass.
+	if err := ValidateDocumentParserConfig(map[string]interface{}{
+		"Extractor:AutoExtractDefault":   map[string]interface{}{"metadata": map[string]interface{}{}},
+		"GeneralChunker:SixApplesFall":   map[string]interface{}{"chunk_token_size": float64(512)},
+		"GeneralChunker:SixApplesFallPC": map[string]interface{}{"parent_child": map[string]interface{}{}},
+	}); err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
 	}
 }
 
@@ -242,9 +256,9 @@ func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
 	if err := validateDatasetParserConfig(config); err == nil {
 		t.Fatal("expected error for flat children_delimiter on dataset")
 	}
-	// Documents still accept legacy flat keys except parent_child.
-	if err := ValidateDocumentParserConfig(config); err != nil {
-		t.Fatalf("expected nil for document flat children_delimiter, got %v", err)
+	// Documents share the same no-flat-key contract.
+	if err := ValidateDocumentParserConfig(config); err == nil {
+		t.Fatal("expected error for flat children_delimiter on document")
 	}
 }
 
