@@ -42,7 +42,7 @@ docker pull infiniflow/ragflow_deps:latest
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-`ragflow_deps/download_deps.py` downloads Go native libraries, `.ort` weights, and tokenizer assets. It does not produce the NLTK, Chrome, Tika, and other Python assets required by `ragflow_deps/Dockerfile`. Building the dependency image from a clean checkout therefore requires those assets to be provisioned separately. For a local Go build, follow `internal/development.md`.
+This command builds the Go image using the published `infiniflow/ragflow_deps:latest` image for its model and tokenizer assets. It does not build `ragflow_deps/Dockerfile`. For a local Go build, `ragflow_deps/download_deps.py` downloads the native libraries, `.ort` weights, and model tokenizer assets; see `internal/development.md`.
 
 ## Launch a RAGFlow Service from Docker for macOS
 

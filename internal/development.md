@@ -42,7 +42,7 @@ sudo apt install libpcre2-dev
 uv run python3 ragflow_deps/download_deps.py
 ```
 
-This downloader provisions Go native libraries, `.ort` weights, and model tokenizer assets. It does not install Python `.onnx` weights or NLTK data. `build.sh` provisions the `cl100k_base.tiktoken` table separately.
+This downloader provisions Go native libraries, `.ort` weights, and model tokenizer assets. `build.sh` provisions the `cl100k_base.tiktoken` table separately.
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >

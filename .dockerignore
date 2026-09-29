@@ -36,8 +36,7 @@ target/
 # ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
 # Excluding the directory contents keeps the main build context small
 # regardless of which deps files download_deps.py currently fetches.
-# The deps image also needs separately provisioned Python resources before
-# it can be built from this directory.
+# The Go Docker build uses the published deps image and does not rebuild it.
 # The ORT version-pin file is re-included: build.sh's
 # check_ort_version_consistency (run by Dockerfile_go's `--go` build) greps
 # it. Re-including requires NOT excluding the directory itself.
