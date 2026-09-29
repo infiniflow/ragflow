@@ -18,6 +18,8 @@ package handler
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,16 +27,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
-// TestNormalizeMessageContent and friends moved to
-// internal/service/openai_chat_test.go as TestService_NormalizeMessageContent_*
-// (the helpers themselves moved to the service package). TestWriteSSE
-// also moved to the service package as TestService_WriteSSE_FormatAndFlush.
-// Handler tests here focus on the HTTP boundary: rejection at parse /
-// presence / forbidden-key checks.
+// Message normalization is tested in the service package. Handler tests focus
+// on authentication, single request parsing, error envelopes, and JSON/SSE
+// response rendering.
 
 // fakeOpenAIUser injects a real *entity.User into the context so GetUser
 // succeeds. Without this, the handler short-circuits with
@@ -59,11 +59,8 @@ func newOpenAITestContext(t *testing.T, chatID, body string) (*gin.Context, *htt
 	return c, w
 }
 
-// TestChatCompletions_RejectsMissingMessages pins down the validation
-// rule "You have to provide messages." (openai_api.py:255-256). The
-// peek-and-discard parse in the handler (see OpenAIChatCompletions)
-// rejects this BEFORE the service is called, so the test doesn't
-// need a DB.
+// TestChatCompletions_RejectsMissingMessages pins down the validation rule
+// "You have to provide messages." without requiring database access.
 func TestChatCompletions_RejectsMissingMessages(t *testing.T) {
 	h := NewOpenAIChatHandler(service.NewOpenAIChatService())
 	c, w := newOpenAITestContext(t, "c1", `{"model":"model"}`)
@@ -79,42 +76,27 @@ func TestChatCompletions_RejectsMissingMessages(t *testing.T) {
 	}
 }
 
-// TestChatCompletions_DefaultsMissingModelToModel pins the
-// Go-specific behavior: `model` is OPTIONAL on the openai_chat
-// endpoint. If absent or empty, the handler injects the OpenAI
-// compat sentinel "model" (which the service resolves to the
-// dialog's default LLM). Python enforces the
-// OpenAI spec strictly via @validate_request("model", "messages")
-// at openai_api.py:237; the Go side intentionally relaxes that
-// so callers can use the dialog's default without typing
-// `"model": "model"` explicitly.
-//
-// The handler's check is the "model" is defaulted, not the
-// service's success. We recover from the service's expected DB
-// panic and only assert on what the handler wrote.
-func TestChatCompletions_DefaultsMissingModelToModel(t *testing.T) {
-	h := NewOpenAIChatHandler(service.NewOpenAIChatService())
+// A missing model remains empty when the handler delegates. Model resolution
+// belongs to the service; the HTTP boundary neither defaults nor rejects it.
+func TestChatCompletions_PassesMissingModelToService(t *testing.T) {
+	var receivedModel string
+	stub := &stubOpenAIChatService{
+		complete: func(_ context.Context, _, _ string, req service.OpenAIChatRequest) (*service.OpenAICompletionResponse, error) {
+			receivedModel = req.Model
+			return &service.OpenAICompletionResponse{Content: "ok"}, nil
+		},
+	}
+	h := NewOpenAIChatHandler(stub)
 	c, w := newOpenAITestContext(t, "c1",
 		`{"messages":[{"role":"user","content":"hi"}]}`)
 
-	// The handler should accept the request and call the service.
-	// The service will panic on DB access (no DB in tests); we
-	// recover so the test only asserts the handler's behavior.
-	func() {
-		defer func() {
-			_ = recover() // expected: service panicked on DB call
-		}()
-		h.OpenAIChatCompletions(c)
-	}()
+	h.OpenAIChatCompletions(c)
 
-	// The handler must NOT have written a rejection response
-	// before the service panicked. If the response body has
-	// "You have to provide messages.", the messages-presence
-	// check fired by mistake (it shouldn't, since messages IS
-	// present).
-	respBody := w.Body.String()
-	if strings.Contains(respBody, "You have to provide messages.") {
-		t.Fatalf("missing model should be defaulted, not rejected; got: %s", respBody)
+	if receivedModel != "" {
+		t.Fatalf("handler changed missing model to %q", receivedModel)
+	}
+	if !strings.Contains(w.Body.String(), `"object":"chat.completion"`) {
+		t.Fatalf("handler did not render service response: %s", w.Body.String())
 	}
 }
 
@@ -216,6 +198,97 @@ func TestChatCompletions_RejectsNonPositiveMaxTokens(t *testing.T) {
 	respBody := w.Body.String()
 	if !strings.Contains(respBody, "`max_tokens` must be greater than 0.") {
 		t.Fatalf("expected max_tokens validation error, got %s", respBody)
+	}
+}
+
+func TestChatCompletions_ValidationContract(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		code    common.ErrorCode
+		message string
+	}{
+		{
+			name:    "invalid JSON",
+			body:    `{ not json`,
+			code:    common.CodeArgumentError,
+			message: "invalid character 'n' looking for beginning of object key string",
+		},
+		{
+			name:    "missing messages",
+			body:    `{"model":"model"}`,
+			code:    common.CodeDataError,
+			message: "You have to provide messages.",
+		},
+		{
+			name:    "last message is not user",
+			body:    `{"model":"model","messages":[{"role":"assistant","content":"answer"}]}`,
+			code:    common.CodeDataError,
+			message: "The last content of this conversation is not from user.",
+		},
+		{
+			name:    "invalid content",
+			body:    `{"model":"model","messages":[{"role":"user","content":42}]}`,
+			code:    common.CodeDataError,
+			message: "messages[].content must be a string or an array of content parts.",
+		},
+		{
+			name:    "extra body must be object",
+			body:    `{"model":"model","messages":[{"role":"user","content":"hi"}],"extra_body":"bad"}`,
+			code:    common.CodeArgumentError,
+			message: "extra_body must be an object.",
+		},
+		{
+			name:    "reference metadata must be object",
+			body:    `{"model":"model","messages":[{"role":"user","content":"hi"}],"extra_body":{"reference_metadata":"bad"}}`,
+			code:    common.CodeDataError,
+			message: "reference_metadata must be an object.",
+		},
+		{
+			name:    "reference metadata fields must be array",
+			body:    `{"model":"model","messages":[{"role":"user","content":"hi"}],"extra_body":{"reference_metadata":{"fields":"author"}}}`,
+			code:    common.CodeArgumentError,
+			message: "reference_metadata.fields must be an array.",
+		},
+		{
+			name:    "metadata condition must be object",
+			body:    `{"model":"model","messages":[{"role":"user","content":"hi"}],"extra_body":{"metadata_condition":"bad"}}`,
+			code:    common.CodeArgumentError,
+			message: "metadata_condition must be an object.",
+		},
+		{
+			name:    "max tokens must be positive",
+			body:    `{"model":"model","messages":[{"role":"user","content":"hi"}],"max_tokens":0}`,
+			code:    common.CodeArgumentError,
+			message: "`max_tokens` must be greater than 0.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := NewOpenAIChatHandler(service.NewOpenAIChatService())
+			c, recorder := newOpenAITestContext(t, "c1", test.body)
+
+			h.OpenAIChatCompletions(c)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("HTTP status = %d", recorder.Code)
+			}
+			var payload struct {
+				Code    common.ErrorCode `json:"code"`
+				Data    interface{}      `json:"data"`
+				Message string           `json:"message"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v; body=%s", err, recorder.Body.String())
+			}
+			if payload.Code != test.code || payload.Message != test.message || payload.Data != nil {
+				t.Fatalf("payload = %+v, want code=%d message=%q data=nil", payload, test.code, test.message)
+			}
+			if got := recorder.Header().Get("Content-Type"); strings.Contains(got, "text/event-stream") {
+				t.Fatalf("validation error committed SSE headers: %q", got)
+			}
+		})
 	}
 }
 
