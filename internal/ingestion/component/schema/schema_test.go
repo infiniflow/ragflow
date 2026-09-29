@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )

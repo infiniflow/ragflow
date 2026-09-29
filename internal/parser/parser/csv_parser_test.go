@@ -182,8 +182,13 @@ func TestCSVParser_ReadsTheSeparatorTheFileWasWrittenWith(t *testing.T) {
 		if res.Err != nil {
 			t.Fatalf("separator %q: ParseWithResult failed: %v", sep, res.Err)
 		}
-		if got := res.JSON[len(res.JSON)-1]["text"]; got != "Name：Widget; Region：EU; Units：12 ——Data" {
-			t.Errorf("separator %q: row text = %v", sep, got)
+		if len(res.JSON) != 1 {
+			t.Fatalf("separator %q: items = %d, want one HTML table item", sep, len(res.JSON))
+		}
+		text, _ := res.JSON[0]["text"].(string)
+		if !strings.Contains(text, "<tr><th>Name</th><th>Region</th><th>Units</th></tr>") ||
+			!strings.Contains(text, "<tr><td>Widget</td><td>EU</td><td>12</td></tr>") {
+			t.Errorf("separator %q: row not split into three columns: %q", sep, text)
 		}
 	}
 }
@@ -248,7 +253,11 @@ func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
-	if got := res.JSON[len(res.JSON)-1]["text"]; got != "Name：Widget; Units：12 ——Data" {
-		t.Errorf("row text = %v", got)
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if !strings.Contains(text, "<tr><td>Widget</td><td></td><td>12</td></tr>") {
+		t.Errorf("empty tab-separated field not kept: %q", text)
 	}
 }
