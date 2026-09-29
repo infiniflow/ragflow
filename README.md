@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -161,9 +161,11 @@ releases! 🌟
 
 ## 🏠 Local Deployment
 
-### 📝 Prerequisites
+### 🐳 Docker Deployment
 
-- Recommended starting configuration: 4 CPU cores, 16 GB RAM, and 50 GB of available disk space. Actual requirements depend on the document engine, data volume, parsing tasks, and concurrency. Local models and OceanBase require additional resources.
+#### 📝 Docker Deployment Prerequisites
+
+- Recommended starting configuration: 4 CPU cores, 16 GB RAM, and 50 GB of available disk space. Actual requirements depend on the document engine, data volume, parsing tasks, and concurrency. Local models and other optional components may require additional resources.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only when using the Self-Managed container Sandbox.
 
@@ -172,7 +174,7 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
 > [!TIP]
 > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-### 🚀 Start up the server
+#### 🚀 Start up the server
 
 1. If using Elasticsearch, set `vm.max_map_count` on the Docker host to at least 262144. This step is usually unnecessary with Infinity:
 
@@ -207,6 +209,12 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
 
 > Build the Go image before the first deployment. Build time depends on network and machine performance.
 
+Set the locally built image in **docker/.env** before starting Compose:
+
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
+```
+
 ```bash
 cd ragflow
 docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
@@ -240,15 +248,15 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
 
    _The show is on!_
 
-### ⚙️ Docker Configuration
+#### ⚙️ Docker Configuration and Adjustment
 
-Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks as a Redis-protocol-compatible cache, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, model image source, and GPU options as described in the [Docker configuration guide](./docker/README.md). For platform limitations and macOS requirements, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
+Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). For platform limitations and macOS requirements, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 
 ### 🔨 Launch Go Services from Source
 
-### 📝 Source Build Prerequisites
+#### 📝 Source Build Prerequisites
 
 Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 development files, and the native libraries required by CGO. Node.js and npm are required only when developing the React frontend.
 
@@ -270,7 +278,7 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
 
    The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
-3. Start the local dependencies and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. Go source services connect to Compose-exposed Kvrocks at `localhost:6379`, while Go Docker services connect to Kvrocks on the container network. The following command explicitly lists the dependencies required by Go services and therefore does not start Redis, which would use the same port. If using the default Elasticsearch engine, set `vm.max_map_count` on the Docker host to at least `262144` first.
+3. Start the local dependencies and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. Go source services connect to Compose-exposed Kvrocks at `localhost:6379`, while Go Docker services connect to Kvrocks on the container network. If using the default Elasticsearch engine, set `vm.max_map_count` on the Docker host to at least `262144` first.
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144

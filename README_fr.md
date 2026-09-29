@@ -26,7 +26,7 @@
         <img alt="Badge statique" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Derniere%20version" alt="Dernière version">
@@ -156,9 +156,11 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 
 ## 🎬 Auto-hébergement
 
-### 📝 Prérequis
+### 🐳 Déploiement Docker
 
-- Configuration de départ recommandée : 4 cœurs CPU, 16 Go de RAM et 50 Go d’espace disque disponible. Les besoins réels dépendent du moteur de documents, du volume de données, des tâches d’analyse et de la concurrence. Les modèles locaux et OceanBase nécessitent des ressources supplémentaires.
+#### 📝 Prérequis du déploiement Docker
+
+- Configuration de départ recommandée : 4 cœurs CPU, 16 Go de RAM et 50 Go d’espace disque disponible. Les besoins réels dépendent du moteur de documents, du volume de données, des tâches d’analyse et de la concurrence. Les modèles locaux et les autres composants facultatifs peuvent nécessiter des ressources supplémentaires.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/) : requis uniquement avec le Sandbox de conteneurs Self-Managed.
 
@@ -167,7 +169,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 > [!TIP]
 > Si vous n'avez pas installé Docker sur votre machine locale (Windows, Mac ou Linux), consultez [Installer Docker Engine](https://docs.docker.com/engine/install/).
 
-### 🚀 Démarrer le serveur
+#### 🚀 Démarrer le serveur
 
 1. Assurez-vous que `vm.max_map_count` >= 262144 :
 
@@ -199,6 +201,10 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
    Avant le premier déploiement, définissez `RAGFLOW_IMAGE=ragflow:go-local` dans **docker/.env**, puis exécutez depuis la racine du dépôt :
 
+   ```dotenv
+   RAGFLOW_IMAGE=ragflow:go-local
+   ```
+
    ```bash
    cd ragflow
    docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
@@ -227,13 +233,15 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
    _Le spectacle commence !_
 
-### ⚙️ Configuration Docker
+#### ⚙️ Configuration et ajustement de Docker
 
-Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks comme cache compatible avec le protocole Redis et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents, la source des images de modèles et les options GPU, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
+Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
 
 Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 
 ### 🔨 Lancer le service depuis les sources pour le développement
+
+#### 📝 Prérequis de la compilation depuis les sources
 
 1. Installez la version de Go indiquée dans `go.mod` (Go 1.27 actuellement), Clang 20, LLD 20, CMake 4.0 ou version ultérieure, ainsi que les fichiers de développement PCRE2. Les services Go dépendent de CGO et de bibliothèques natives ; [build.sh](./build.sh) configure les paramètres nécessaires.
 2. Clonez le dépôt, préparez les bibliothèques natives et les fichiers de modèles requis, puis compilez les services Go :
@@ -246,9 +254,12 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
    bash build.sh --all
    ```
+
+   Le script prépare les bibliothèques natives et les ressources de modèles nécessaires à la compilation Go et requiert `requests` et `huggingface-hub`. Ignorez cette étape si vous avez préparé les mêmes ressources autrement. Depuis la racine du dépôt, les services Go trouvent automatiquement `rag/res/deepdoc` ; depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 3. Lancez les dépendances requises (Elasticsearch, MySQL, MinIO, NATS, Kvrocks et ClickHouse) avec Docker Compose :
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -273,6 +284,14 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
+   Les modes de démarrage fonctionnent comme suit :
+
+   - `--migrate` : exécute les migrations de base de données puis quitte.
+   - `--admin` : démarre le service Admin pour les opérations de gestion et d'initialisation.
+   - `--ingestor` : démarre le service Ingestor pour l'ingestion et l'analyse des données.
+   - `--syncer` : démarre le service Syncer pour la synchronisation des données.
+   - `--api` : démarre le service API pour l'interface Web, les SDK et les clients externes.
+
    `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer.
 5. Installez Node.js et npm uniquement pour développer le front-end :
 
@@ -293,6 +312,8 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    ```
 
    Une réponse HTTP 200 indique que l'API répond. À la fin du développement, appuyez sur `Ctrl+C` dans chaque terminal de service. Pour arrêter les dépendances sans supprimer les conteneurs, exécutez `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Pour supprimer les conteneurs de dépendances et le réseau Compose tout en conservant les volumes nommés, exécutez `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+
+Consultez [Lancer le service depuis les sources](./docs/develop/launch_ragflow_from_source.md) pour plus de détails.
 
 ## 📚 Documentation
 

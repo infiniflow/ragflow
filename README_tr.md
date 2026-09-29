@@ -26,7 +26,7 @@
         <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20S%C3%BCr%C3%BCm" alt="Son Sürüm">
@@ -158,9 +158,11 @@ Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) ba
 
 ## 🎬 Kendi Sunucusunda Barındırma
 
-### 📝 Ön Koşullar
+### 🐳 Docker Dağıtımı
 
-- Önerilen başlangıç yapılandırması: 4 CPU çekirdeği, 16 GB RAM ve 50 GB kullanılabilir disk alanı. Gerçek gereksinimler belge motoruna, veri hacmine, ayrıştırma görevlerine ve eşzamanlılığa bağlıdır. Yerel modeller ve OceanBase ek kaynak gerektirir.
+#### 📝 Docker Dağıtımı Ön Koşulları
+
+- Önerilen başlangıç yapılandırması: 4 CPU çekirdeği, 16 GB RAM ve 50 GB kullanılabilir disk alanı. Gerçek gereksinimler belge motoruna, veri hacmine, ayrıştırma görevlerine ve eşzamanlılığa bağlıdır. Yerel modeller ve diğer isteğe bağlı bileşenler ek kaynak gerektirebilir.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca Self-Managed kapsayıcı Sandbox kullanılırken gereklidir.
 
@@ -169,7 +171,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 > [!TIP]
 > Yerel makinenize (Windows, Mac veya Linux) Docker yüklemediyseniz, [Docker Engine Kurulumu](https://docs.docker.com/engine/install/) sayfasına bakın.
 
-### 🚀 Sunucuyu Başlatma
+#### 🚀 Sunucuyu Başlatma
 
 1. `vm.max_map_count` değerinin >= 262144 olduğundan emin olun:
 
@@ -204,16 +206,17 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Aşağıdaki komut RAGFlow Docker imajının `v0.27.2` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.27.2` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
+> Başlatmadan önce yerel olarak oluşturulan imajı **docker/.env** dosyasında seçin. Go imajının resmi derleme hedefi `linux/amd64` platformudur.
+
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
+```
 
 ```bash
-   cd ragflow/docker
-
-   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
-   # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
-   # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
-
-   docker compose --env-file .env -f docker-compose.yml up -d
+cd ragflow
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+cd docker
+docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
 > RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
@@ -225,22 +228,6 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
-
-   ```bash
-
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > Bu onay adımını atlayıp doğrudan RAGFlow'a giriş yaparsanız, o anda RAGFlow tam olarak başlatılmamış olabileceğinden
-   > tarayıcınız `ağ hatası` uyarısı verebilir.
-   >
 5. Web tarayıcınıza sunucunuzun IP adresini girin ve RAGFlow'a giriş yapın.
 
    > Varsayılan ayarlarla, yalnızca `http://MAKİNENİZİN_IP_ADRESİ` girmeniz yeterlidir (port numarası **gerekmez**),
@@ -253,7 +240,15 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 
    _Gösteri başlasın!_
 
+#### ⚙️ Docker Yapılandırması ve Ayarlama
+
+Go Docker dağıtımı `docker/.env` ve `docker/docker-compose.yml` dosyalarını kullanır; önbellek ve Checkpoint depolaması için Kvrocks, mesaj kuyruğu olarak da NATS JetStream kullanılır. İmajı, bağlantı noktalarını, parolaları, belge motorunu ve model imajı kaynağını değiştirmek için [Docker yapılandırma kılavuzunu](./docker/README.md) izleyin. Platform sınırlamaları ve macOS gereksinimleri için [Go Docker imajı oluşturma ve platform desteği kılavuzuna](./docs/develop/build_docker_image.mdx) bakın.
+
+Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetleri yeniden başlatma ve mevcut verileri koruma veya temizleme işlemleri için de yukarıdaki Docker yapılandırma kılavuzunu izleyin.
+
 ### 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
+
+#### 📝 Kaynaktan Derleme Ön Koşulları
 
 1. `go.mod` dosyasında belirtilen Go sürümünü (şu anda Go 1.27), Clang 20, LLD 20, CMake 4.0 veya üzerini ve PCRE2 geliştirme dosyalarını yükleyin. Go hizmetleri CGO ve yerel kitaplıklara bağlıdır; [build.sh](./build.sh) gerekli derleme parametrelerini ayarlar.
 2. Depoyu klonlayın, gerekli yerel kitaplıkları ve model dosyalarını hazırlayın, ardından Go hizmetlerini derleyin:
@@ -266,9 +261,12 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
    bash build.sh --all
    ```
+
+   Betik, Go derlemesi için gerekli yerel kitaplıkları ve model kaynaklarını hazırlar ve `requests` ile `huggingface-hub` gerektirir. Aynı kaynakları başka bir yöntemle hazırladıysanız bu adımı atlayabilirsiniz. Depo kökünden başlatıldığında Go hizmetleri `rag/res/deepdoc` dizinini otomatik olarak bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini mutlak yola ayarlayın.
 3. Gerekli bağımlılıkları (Elasticsearch, MySQL, MinIO, NATS, Kvrocks ve ClickHouse) Docker Compose ile başlatın:
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -284,26 +282,33 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. Node.js ve npm'i yalnızca ön yüz geliştirecekseniz yükleyin:
+
+   Başlatma modları şu şekilde çalışır:
+
+   - `--migrate`: Veritabanı geçişlerini çalıştırır ve tamamlanınca çıkar.
+   - `--admin`: Yönetim ve başlatma işlemleri için Admin hizmetini başlatır.
+   - `--ingestor`: Veri alımı ve ayrıştırma görevleri için Ingestor hizmetini başlatır.
+   - `--syncer`: Veri eşitleme görevleri için Syncer hizmetini başlatır.
+   - `--api`: Web UI, SDK'lar ve harici istemciler için API hizmetini başlatır.
+
+   `RAGFLOW_DEV_MODE=true` yalnızca geliştirme içindir. Kod sürümü ile veritabanı geçiş sürümü arasındaki sürüm düşürme denetimini devre dışı bırakır ancak geçiş çalıştırmaz veya şemayı değiştirmez. Üretimde kullanmayın. Admin'i diğer hizmetlerden önce başlatın. Geçişten sonra `RAGFLOW_DEV_MODE=true bash build.sh --run` Admin, Ingestor ve API'yi başlatır ancak Syncer'ı başlatmaz; tam hizmet zinciri için `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` komutunu ayrıca çalıştırın.
+5. Yalnızca ön yüz geliştirirken Node.js ve npm'i yükleyin, ardından React ön yüzünü başlatın:
 
    ```bash
    cd web
    npm install
-   ```
-5. Ön yüz hizmetini başlatın:
-
-   ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
-
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-Geliştirme tamamlandığında, durdurmak için her hizmet terminalinde Ctrl+C'ye basın:
+   Başka bir terminalde Go API'nin hazır olduğunu doğrulayın:
 
    ```bash
-   # Her hizmet terminalinde Ctrl+C'ye basın.
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   HTTP 200 yanıtı API'nin yanıt verdiğini gösterir. Geliştirme tamamlandığında her hizmet terminalinde `Ctrl+C` tuşlarına basın. Kapsayıcıları koruyarak bağımlılıkları durdurmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` komutunu çalıştırın. Adlandırılmış birimleri koruyarak bağımlılık kapsayıcılarını ve Compose ağını kaldırmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` komutunu çalıştırın.
+
+Ayrıntılar için [Hizmeti Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
 ## 📚 Dokümantasyon
 

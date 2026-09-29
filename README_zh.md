@@ -166,7 +166,7 @@
 
 #### 📝 Docker 部署前提条件
 
-- 建议起步配置：4 核 CPU、16 GB 内存和 50 GB 可用磁盘。实际资源需求取决于文档引擎、数据规模、解析任务和并发量；启用本地模型或 OceanBase 时，请同时满足相应组件的额外资源要求。
+- 建议起步配置：4 核 CPU、16 GB 内存和 50 GB 可用磁盘。实际资源需求取决于文档引擎、数据规模、解析任务和并发量；启用本地模型或其他额外组件时，请同时满足相应组件的资源要求。
 - Docker ≥ 24.0.0，Docker Compose ≥ v2.26.1。
 - [gVisor](https://gvisor.dev/docs/user_guide/install/)：仅在使用 Self-Managed 容器 Sandbox 时需要安装和配置。
 
@@ -256,7 +256,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 #### ⚙️ Docker 配置与调整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 作为 Redis 协议兼容缓存，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 存储缓存和 Checkpoint，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 
@@ -284,7 +284,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
 
    下载脚本负责准备 Go 构建所需的原生库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
 
-3. 启动本地依赖服务，并确认 **conf/service_conf.yaml** 中的主机与端口对应宿主机可访问的地址。Go 源码服务通过 `localhost:6379` 连接 Compose 暴露的 Kvrocks；Go Docker 服务则在容器网络中连接 Kvrocks。下面的命令显式列出 Go 服务所需的依赖，因此不会启动占用相同端口的 Redis 服务。如果使用默认 Elasticsearch，还需先将 Docker 主机的 `vm.max_map_count` 设为至少 `262144`。
+3. 启动本地依赖服务，并确认 **conf/service_conf.yaml** 中的主机与端口对应宿主机可访问的地址。Go 源码服务通过 `localhost:6379` 连接 Compose 暴露的 Kvrocks；Go Docker 服务则在容器网络中连接 Kvrocks。如果使用默认 Elasticsearch，还需先将 Docker 主机的 `vm.max_map_count` 设为至少 `262144`。
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144

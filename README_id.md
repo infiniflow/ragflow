@@ -26,7 +26,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -156,9 +156,11 @@ Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 
 ## 🎬 Pengelolaan Mandiri
 
-### 📝 Prasyarat
+### 🐳 Deployment Docker
 
-- Konfigurasi awal yang disarankan: 4 inti CPU, RAM 16 GB, dan ruang disk tersedia 50 GB. Kebutuhan aktual bergantung pada mesin dokumen, volume data, tugas penguraian, dan konkurensi. Model lokal dan OceanBase memerlukan sumber daya tambahan.
+#### 📝 Prasyarat Deployment Docker
+
+- Konfigurasi awal yang disarankan: 4 inti CPU, RAM 16 GB, dan ruang disk tersedia 50 GB. Kebutuhan aktual bergantung pada mesin dokumen, volume data, tugas penguraian, dan konkurensi. Model lokal dan komponen opsional lainnya mungkin memerlukan sumber daya tambahan.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Hanya diperlukan saat menggunakan container Sandbox Self-Managed.
 
@@ -167,7 +169,7 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 > [!TIP]
 > Jika Anda belum menginstal Docker di komputer lokal Anda (Windows, Mac, atau Linux), lihat [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-### 🚀 Menjalankan Server
+#### 🚀 Menjalankan Server
 
 1. Pastikan `vm.max_map_count` >= 262144:
 
@@ -204,14 +206,15 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 
 > Tulis `RAGFLOW_IMAGE=ragflow:go-local` ke **docker/.env** sebelum memulai. Target build resmi image Go adalah `linux/amd64`.
 
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
+```
+
 ```bash
-   cd ragflow/docker
-
-   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
-   # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
-   # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
-
-   docker compose --env-file .env -f docker-compose.yml up -d
+cd ragflow
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+cd docker
+docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
 > Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
@@ -223,22 +226,6 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
-
-   ```bash
-
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network abnormal`
-   > karena RAGFlow mungkin belum sepenuhnya siap.
-   >
 2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
 
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
@@ -251,13 +238,15 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 
    _Sistem telah siap digunakan!_
 
-### ⚙️ Konfigurasi Docker
+#### ⚙️ Konfigurasi dan Penyesuaian Docker
 
-Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, dengan Kvrocks sebagai cache yang kompatibel dengan protokol Redis dan NATS JetStream sebagai antrean pesan. Untuk mengatur image, port, kata sandi, mesin dokumen, sumber image model, dan opsi GPU, lihat [panduan konfigurasi Docker](./docker/README.md). Untuk batasan platform dan persyaratan macOS, lihat [panduan build image Go dan dukungan platform](./docs/develop/build_docker_image.mdx).
+Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, dengan Kvrocks untuk cache dan penyimpanan Checkpoint serta NATS JetStream sebagai antrean pesan. Untuk mengatur image, port, kata sandi, mesin dokumen, dan sumber image model, lihat [panduan konfigurasi Docker](./docker/README.md). Untuk batasan platform dan persyaratan macOS, lihat [panduan build image Go dan dukungan platform](./docs/develop/build_docker_image.mdx).
 
 Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, serta mempertahankan atau menghapus data yang ada, ikuti juga panduan konfigurasi Docker tersebut.
 
 ### 🔨 Menjalankan Aplikasi dari Sumber untuk Pengembangan
+
+#### 📝 Prasyarat Build dari Sumber
 
 1. Instal versi Go yang ditentukan di `go.mod` (saat ini Go 1.27), Clang 20, LLD 20, CMake 4.0 atau yang lebih baru, serta berkas pengembangan PCRE2. Layanan Go memerlukan CGO dan pustaka native; [build.sh](./build.sh) mengatur parameter build yang diperlukan.
 2. Clone repositori, siapkan pustaka native dan berkas model yang diperlukan, lalu build layanan Go:
@@ -270,9 +259,12 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
    bash build.sh --all
    ```
+
+   Skrip tersebut menyiapkan pustaka native dan sumber daya model yang diperlukan untuk build Go serta memerlukan `requests` dan `huggingface-hub`. Lewati langkah ini jika sumber daya yang sama telah disiapkan dengan cara lain. Saat dijalankan dari root repositori, layanan Go otomatis menemukan `rag/res/deepdoc`; untuk menjalankan dari direktori lain, atur `DEEPDOC_MODEL_DIR` ke path absolutnya.
 3. Jalankan dependensi yang diperlukan (Elasticsearch, MySQL, MinIO, NATS, Kvrocks, dan ClickHouse) menggunakan Docker Compose:
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -288,26 +280,33 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. Instal Node.js dan npm hanya jika mengembangkan frontend:
+
+   Mode startup bekerja sebagai berikut:
+
+   - `--migrate`: Menjalankan migrasi database lalu keluar.
+   - `--admin`: Memulai layanan Admin untuk pengelolaan dan inisialisasi.
+   - `--ingestor`: Memulai layanan Ingestor untuk tugas ingestion dan parsing data.
+   - `--syncer`: Memulai layanan Syncer untuk sinkronisasi data.
+   - `--api`: Memulai layanan API untuk Web UI, SDK, dan klien eksternal.
+
+   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk rantai layanan lengkap.
+5. Hanya untuk pengembangan frontend, instal Node.js dan npm, lalu jalankan frontend React:
 
    ```bash
    cd web
    npm install
-   ```
-5. Jalankan aplikasi frontend:
-
-   ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
-
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-Setelah pengembangan selesai, tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya:
+   Di terminal lain, pastikan Go API siap:
 
    ```bash
-   # Tekan Ctrl+C di setiap terminal layanan untuk menghentikan prosesnya.
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   Respons HTTP 200 menunjukkan bahwa API merespons. Setelah pengembangan selesai, tekan `Ctrl+C` di setiap terminal layanan. Untuk menghentikan dependensi tanpa menghapus kontainer, jalankan `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Untuk menghapus kontainer dependensi dan jaringan Compose sambil mempertahankan volume bernama, jalankan `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+
+Lihat [Menjalankan Layanan dari Sumber](./docs/develop/launch_ragflow_from_source.md) untuk detailnya.
 
 ## 📚 Dokumentasi
 

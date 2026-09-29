@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -163,9 +163,11 @@
 
 ## 🎬 自行架設
 
-### 📝 前提條件
+### 🐳 Docker 部署
 
-- 建議起步配置：4 核 CPU、16 GB 記憶體和 50 GB 可用磁碟。實際資源需求取決於文件引擎、資料規模、解析任務和並發量；啟用本機模型或 OceanBase 時，請同時滿足相應元件的額外資源需求。
+#### 📝 Docker 部署前提條件
+
+- 建議起步配置：4 核 CPU、16 GB 記憶體和 50 GB 可用磁碟。實際資源需求取決於文件引擎、資料規模、解析任務和並發量；啟用本機模型或其他額外元件時，請同時滿足相應元件的資源需求。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在使用 Self-Managed 容器 Sandbox 時需要安裝和設定。
 
@@ -174,7 +176,7 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 > [!TIP]
 > 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
 
-### 🚀 啟動伺服器
+#### 🚀 啟動伺服器
 
 1. 如果使用 Elasticsearch，請將 Docker 主機的 `vm.max_map_count` 設為至少 262144。使用 Infinity 時通常不需要執行此步驟：
 
@@ -247,13 +249,15 @@ RAGFLOW_IMAGE=ragflow:go-local
 
    _好戲開始，接著奏樂接著舞！ _
 
-### ⚙️ Docker 設定
+#### ⚙️ Docker 設定與調整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 作為 Redis 通訊協定相容快取，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎、模型映像來源和 GPU 選項，請參閱 [Docker 設定說明](./docker/README.md)。平台限制和 macOS 執行要求，請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台限制和 macOS 執行要求，請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
 切換文件引擎、更新設定、重新啟動服務，以及保留或清除既有資料等操作，也請依照上述 Docker 設定文件執行。
 
 ### 🔨 以原始碼啟動 Go 服務
+
+#### 📝 原始碼啟動前提條件
 
 原始碼啟動需要安裝 `go.mod` 指定的 Go 版本（目前為 Go 1.27）、Clang 20、LLD 20、CMake >= 4.0、PCRE2 開發檔案，以及 CGO 所需的原生程式庫。僅開發 React 前端時需要 Node.js 和 npm。
 
@@ -272,10 +276,11 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    bash build.sh --all
    ```
 
-   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。
-3. 啟動本機依賴服務，並確認 **conf/service_conf.yaml** 中的主機與連接埠可從主機存取。以下命令只啟動 Go 服務所需的依賴，不會啟動會佔用相同連接埠的 Redis 服務：
+   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+3. 啟動本機依賴服務，並確認 **conf/service_conf.yaml** 中的主機與連接埠可從主機存取：
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -300,6 +305,14 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
+   各啟動模式的作用如下：
+
+   - `--migrate`：執行資料庫遷移，完成後退出。
+   - `--admin`：啟動 Admin 服務，負責管理和初始化操作。
+   - `--ingestor`：啟動 Ingestor 服務，負責資料攝取和解析任務。
+   - `--syncer`：啟動 Syncer 服務，負責資料同步任務。
+   - `--api`：啟動 API 服務，為 Web、SDK 和外部用戶端提供介面。
+
    `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer。
 5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
@@ -316,6 +329,8 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    ```
 
    返回 HTTP 200 表示 API 可以正常回應。開發結束時，在各服務終端機按 `Ctrl+C` 停止對應程序。如需停止相依服務但保留容器，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需移除相依服務容器和 Compose 網路但保留具名資料卷，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`。
+
+詳情請參閱[從原始碼啟動服務](./docs/develop/launch_ragflow_from_source.md)。
 
 ## 📚 技術文檔
 

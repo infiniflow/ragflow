@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -140,9 +140,11 @@
 
 ## 🎬 セルフホスティング
 
-### 📝 必要条件
+### 🐳 Docker デプロイ
 
-- 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルとOceanBaseには追加のリソースが必要です。
+#### 📝 Docker デプロイの前提条件
+
+- 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルやその他のオプションコンポーネントでは、追加のリソースが必要になる場合があります。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-ManagedコンテナSandboxを使用する場合のみ必要です。
 
@@ -151,7 +153,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
 > [!TIP]
 > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
-### 🚀 サーバーを起動
+#### 🚀 サーバーを起動
 
 1. `vm.max_map_count` >= 262144 であることを確認する:
 
@@ -187,15 +189,16 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
 > 起動前に **docker/.env** へ `RAGFLOW_IMAGE=ragflow:go-local` を設定してください。Go イメージの正式なビルド対象は `linux/amd64` です。
 
-```bash
-   cd ragflow/docker
-
-   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
-   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
-   # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
-
-   docker compose --env-file .env -f docker-compose.yml up -d
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
 ```
+
+   ```bash
+   cd ragflow
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+   cd docker
+   docker compose --env-file .env -f docker-compose.yml up -d
+   ```
 
 > RAGFlow オープンソース 1.0 の DeepDoc は、レイアウト解析、OCR、表認識に CPU 推論を使用します。
 
@@ -206,20 +209,6 @@ DockerデプロイではホストへのGoのインストールは不要です。
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _以下の出力は、システムが正常に起動したことを確認するものです:_
-
-   ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
-   >
 2. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
 
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
@@ -231,7 +220,15 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
    _これで初期設定完了！ショーの開幕です！_
 
+#### ⚙️ Docker の設定と調整
+
+Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームの制限とmacOSの要件については、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
+
+ドキュメントエンジンの切り替え、設定変更後のサービス再起動、既存データの保持または削除についても、上記のDocker設定ガイドに従ってください。
+
 ### 🔨 ソースコードからサービスを起動する方法
+
+#### 📝 ソースビルドの前提条件
 
 1. `go.mod` で指定されたGoバージョン（現在はGo 1.27）、Clang 20、LLD 20、CMake 4.0以降、およびPCRE2開発ファイルをインストールします。GoサービスはCGOとネイティブライブラリに依存し、[build.sh](./build.sh)が必要なビルド設定を行います。
 2. リポジトリをクローンし、必要なネイティブライブラリとモデルファイルを準備してからGoサービスをビルドします:
@@ -244,9 +241,12 @@ DockerデプロイではホストへのGoのインストールは不要です。
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
    bash build.sh --all
    ```
+
+   このスクリプトはGoビルドに必要なネイティブライブラリとモデルリソースを準備し、`requests`と`huggingface-hub`を使用します。同じリソースを別の方法で準備済みの場合は、この手順を省略できます。リポジトリルートから起動するとGoサービスは`rag/res/deepdoc`を自動検出します。別のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR`にその絶対パスを設定してください。
 3. Docker Composeで必要な依存サービス（Elasticsearch、MySQL、MinIO、NATS、Kvrocks、ClickHouse）を起動します:
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -262,26 +262,33 @@ DockerデプロイではホストへのGoのインストールは不要です。
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールします:
+
+   各起動モードの役割は次のとおりです:
+
+   - `--migrate`: データベース移行を実行して終了します。
+   - `--admin`: 管理と初期化を行うAdminサービスを起動します。
+   - `--ingestor`: データ取り込みと解析を行うIngestorサービスを起動します。
+   - `--syncer`: データ同期を行うSyncerサービスを起動します。
+   - `--api`: Web UI、SDK、外部クライアント向けのAPIサービスを起動します。
+
+   `RAGFLOW_DEV_MODE=true`は開発専用です。コードとデータベース移行バージョン間のダウングレードチェックを無効にしますが、移行の実行やスキーマ変更は行いません。本番環境では設定しないでください。Adminを他のサービスより先に起動します。移行後は`RAGFLOW_DEV_MODE=true bash build.sh --run`でAdmin、Ingestor、APIを起動できますが、Syncerは起動しません。完全なサービスチェーンには`RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`を別途実行してください。
+5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールしてReactフロントエンドを起動します:
 
    ```bash
    cd web
    npm install
-   ```
-5. フロントエンドサービスを起動する:
-
-   ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   _以下の画面で、システムが正常に起動したことを示します:_
-
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-開発が完了したら、各サービスのターミナルでCtrl+Cを押して停止します:
+   別のターミナルでGo APIの準備が完了したことを確認します:
 
    ```bash
-   # 各サービスを実行しているターミナルでCtrl+Cを押して停止します。
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   HTTP 200が返ればAPIは応答しています。開発終了時は各サービスターミナルで`Ctrl+C`を押します。コンテナを保持したまま依存サービスを停止するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` を実行します。名前付きボリュームを保持したまま依存コンテナとComposeネットワークを削除するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` を実行します。
+
+詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
 ## 📚 ドキュメンテーション
 

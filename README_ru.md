@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=%D0%9F%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D0%B8%D0%B9%20%D1%80%D0%B5%D0%BB%D0%B8%D0%B7" alt="Последний релиз">
@@ -158,9 +158,11 @@
 
 ## 🎬 Самостоятельное развёртывание
 
-### 📝 Требования
+### 🐳 Развёртывание с Docker
 
-- Рекомендуемая начальная конфигурация: 4 ядра CPU, 16 ГБ RAM и 50 ГБ свободного места на диске. Фактические требования зависят от движка документов, объёма данных, задач анализа и параллельной нагрузки. Локальные модели и OceanBase требуют дополнительных ресурсов.
+#### 📝 Требования к развёртыванию с Docker
+
+- Рекомендуемая начальная конфигурация: 4 ядра CPU, 16 ГБ RAM и 50 ГБ свободного места на диске. Фактические требования зависят от движка документов, объёма данных, задач анализа и параллельной нагрузки. Для локальных моделей и других дополнительных компонентов могут потребоваться дополнительные ресурсы.
 - Docker ≥ 24.0.0 и Docker Compose ≥ v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/) — требуется только для Self-Managed контейнерной Sandbox.
 
@@ -169,7 +171,7 @@
 > [!TIP]
 > Если Docker ещё не установлен (Windows, Mac или Linux), см. [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-### 🚀 Запуск сервера
+#### 🚀 Запуск сервера
 
 1. Убедитесь, что `vm.max_map_count` ≥ 262144:
 
@@ -203,16 +205,17 @@
 > Все образы собраны под x86. Образов для ARM64 пока нет.
 > Если вы на ARM64, следуйте [этому руководству](https://ragflow.io/docs/dev/build_docker_image), чтобы собрать образ самостоятельно.
 
-> Команда ниже скачивает образ `v0.27.2`. Чтобы использовать другую версию, измените `RAGFLOW_IMAGE` в файле **docker/.env** перед запуском.
+> Перед запуском укажите локально собранный образ в файле **docker/.env**. Официальная целевая платформа сборки Go-образа — `linux/amd64`.
+
+```dotenv
+RAGFLOW_IMAGE=ragflow:go-local
+```
 
 ```bash
-   cd ragflow/docker
-
-   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
-   # Опционально: используйте стабильный тег (см. релизы)
-   # Это гарантирует, что entrypoint.sh соответствует версии образа.
-
-   docker compose --env-file .env -f docker-compose.yml up -d
+cd ragflow
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+cd docker
+docker compose --env-file .env -f docker-compose.yml up -d
 ```
 
 > В открытой версии RAGFlow 1.0 DeepDoc использует CPU для анализа макета, OCR и распознавания таблиц.
@@ -224,20 +227,6 @@
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _Успешный запуск выглядит так:_
-
-   ```bash
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > Если пропустить этот шаг и сразу открыть RAGFlow в браузере, может появиться ошибка `network abnormal` — система ещё не полностью инициализировалась.
-
 5. Откройте в браузере IP-адрес сервера и войдите в RAGFlow.
 
    > При стандартных настройках достаточно `http://IP_ВАШЕЙ_МАШИНЫ` (порт 80 можно не указывать).
@@ -248,7 +237,15 @@
 
    _Готово!_
 
+#### ⚙️ Настройка Docker
+
+Развёртывание Go в Docker использует `docker/.env` и `docker/docker-compose.yml`, Kvrocks для кэша и хранения Checkpoint, а NATS JetStream — в качестве очереди сообщений. Изменяйте образ, порты, пароли, движок документов и источник образов моделей в соответствии с [руководством по настройке Docker](./docker/README.md). Ограничения платформ и требования macOS описаны в [руководстве по сборке Go-образа и поддержке платформ](./docs/develop/build_docker_image.mdx).
+
+При смене движка документов, изменении конфигурации и перезапуске сервисов, а также при сохранении или удалении существующих данных следуйте этому же руководству по настройке Docker.
+
 ### 🔨 Запуск из исходников для разработки
+
+#### 📝 Требования для сборки из исходников
 
 1. Установите версию Go из `go.mod` (сейчас Go 1.27), Clang 20, LLD 20, CMake 4.0 или новее и файлы разработки PCRE2. Сервисам Go нужны CGO и нативные библиотеки; [build.sh](./build.sh) задаёт необходимые параметры сборки.
 
@@ -263,9 +260,12 @@
    bash build.sh --all
    ```
 
+   Скрипт подготавливает нативные библиотеки и ресурсы моделей для сборки Go и требует `requests` и `huggingface-hub`. Пропустите этот шаг, если те же ресурсы подготовлены другим способом. При запуске из корня репозитория сервисы Go автоматически находят `rag/res/deepdoc`; для запуска из другого каталога задайте `DEEPDOC_MODEL_DIR` как абсолютный путь к нему.
+
 3. Запустите необходимые зависимости (Elasticsearch, MySQL, MinIO, NATS, Kvrocks и ClickHouse):
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -282,24 +282,33 @@
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. Установите Node.js и npm только для разработки фронтенда:
+
+   Режимы запуска работают следующим образом:
+
+   - `--migrate`: выполняет миграции базы данных и завершает работу.
+   - `--admin`: запускает сервис Admin для управления и инициализации.
+   - `--ingestor`: запускает сервис Ingestor для приёма и анализа данных.
+   - `--syncer`: запускает сервис Syncer для синхронизации данных.
+   - `--api`: запускает API для веб-интерфейса, SDK и внешних клиентов.
+
+   `RAGFLOW_DEV_MODE=true` предназначен только для разработки. Он отключает проверку отката между версиями кода и миграций базы данных, но не запускает миграции и не изменяет схему. Не используйте его в production. Запускайте Admin раньше остальных сервисов. После миграции `RAGFLOW_DEV_MODE=true bash build.sh --run` запускает Admin, Ingestor и API, но не Syncer; для полной цепочки отдельно выполните `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
+5. Только для разработки фронтенда установите Node.js и npm, затем запустите React-фронтенд:
 
    ```bash
    cd web
    npm install
-   ```
-
-5. Запустите фронтенд:
-
-   ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-После разработки остановите каждый сервис сочетанием Ctrl+C в соответствующем терминале:
+   В другом терминале проверьте готовность Go API:
 
    ```bash
-   # Нажмите Ctrl+C в каждом терминале службы, чтобы остановить процесс.
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   Ответ HTTP 200 означает, что API отвечает. После разработки нажмите `Ctrl+C` в каждом терминале сервиса. Чтобы остановить зависимости, сохранив контейнеры, выполните `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Чтобы удалить контейнеры зависимостей и сеть Compose, сохранив именованные тома, выполните `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+
+Подробнее см. [Запуск сервиса из исходников](./docs/develop/launch_ragflow_from_source.md).
 
 ## 📚 Документация
 

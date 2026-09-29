@@ -26,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -141,9 +141,11 @@
 
 ## 🎬 자체 호스팅
 
-### 📝 사전 준비 사항
+### 🐳 Docker 배포
 
-- 권장 시작 구성: CPU 4코어, RAM 16 GB, 사용 가능한 디스크 공간 50 GB. 실제 요구 사항은 문서 엔진, 데이터 양, 파싱 작업, 동시 실행 수에 따라 달라집니다. 로컬 모델과 OceanBase에는 추가 리소스가 필요합니다.
+#### 📝 Docker 배포 사전 요구 사항
+
+- 권장 시작 구성: CPU 4코어, RAM 16 GB, 사용 가능한 디스크 공간 50 GB. 실제 요구 사항은 문서 엔진, 데이터 양, 파싱 작업, 동시 실행 수에 따라 달라집니다. 로컬 모델과 기타 선택적 구성 요소에는 추가 리소스가 필요할 수 있습니다.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-Managed 컨테이너 Sandbox를 사용하는 경우에만 필요합니다.
 
@@ -152,7 +154,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 > [!TIP]
 > 로컬 머신(Windows, Mac, Linux)에 Docker가 설치되지 않은 경우, [Docker 엔진 설치](https://docs.docker.com/engine/install/)를 참조하세요.
 
-### 🚀 서버 시작하기
+#### 🚀 서버 시작하기
 
 1. `vm.max_map_count`가 262144 이상인지 확인하세요:
 
@@ -189,15 +191,16 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
    > 시작하기 전에 **docker/.env**에 `RAGFLOW_IMAGE=ragflow:go-local`을 설정하세요. Go 이미지의 공식 빌드 대상은 `linux/amd64`입니다.
 
+   ```dotenv
+   RAGFLOW_IMAGE=ragflow:go-local
+   ```
+
    ```bash
-   cd ragflow/docker
-
-   docker build --platform linux/amd64 -f ../Dockerfile -t ragflow:go-local ..
-   # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
-   # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
-
+   cd ragflow
+   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+   cd docker
    docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```
 
 > RAGFlow 오픈 소스 1.0의 DeepDoc은 레이아웃 분석, OCR, 표 인식에 CPU 추론을 사용합니다.
 
@@ -208,20 +211,6 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _다음 출력 결과로 시스템이 성공적으로 시작되었음을 확인합니다:_
-
-   ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network abnormal` 오류가 발생할 수 있습니다.
-
 2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
 3. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
@@ -230,7 +219,15 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
    _이제 쇼가 시작됩니다!_
 
+#### ⚙️ Docker 구성 및 조정
+
+Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 제한과 macOS 요구 사항은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
+
+문서 엔진 전환, 구성 변경 후 서비스 재시작, 기존 데이터 보존 또는 삭제 작업도 위 Docker 구성 가이드를 따르세요.
+
 ### 🔨 소스 코드로 서비스를 시작합니다.
+
+#### 📝 소스 빌드 사전 요구 사항
 
 1. `go.mod`에 지정된 Go 버전(현재 Go 1.27), Clang 20, LLD 20, CMake 4.0 이상, PCRE2 개발 파일을 설치합니다. Go 서비스는 CGO와 네이티브 라이브러리에 의존하며 [build.sh](./build.sh)가 필요한 빌드 매개변수를 설정합니다.
 
@@ -245,9 +242,12 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    bash build.sh --all
    ```
 
+   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+
 3. Docker Compose를 사용하여 필요한 의존 서비스(Elasticsearch, MySQL, MinIO, NATS, Kvrocks, ClickHouse)를 시작합니다:
 
    ```bash
+   sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
      up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
@@ -264,29 +264,33 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-5. 프론트엔드 개발 시에만 Node.js와 npm을 설치합니다:
+
+   시작 모드의 역할은 다음과 같습니다:
+
+   - `--migrate`: 데이터베이스 마이그레이션을 실행한 뒤 종료합니다.
+   - `--admin`: 관리 및 초기화 작업을 위한 Admin 서비스를 시작합니다.
+   - `--ingestor`: 데이터 수집 및 파싱 작업을 위한 Ingestor 서비스를 시작합니다.
+   - `--syncer`: 데이터 동기화 작업을 위한 Syncer 서비스를 시작합니다.
+   - `--api`: Web UI, SDK 및 외부 클라이언트를 위한 API 서비스를 시작합니다.
+
+   `RAGFLOW_DEV_MODE=true`는 개발 전용입니다. 코드 버전과 데이터베이스 마이그레이션 버전 사이의 다운그레이드 검사를 비활성화하지만 마이그레이션을 실행하거나 스키마를 변경하지 않습니다. 프로덕션에서는 설정하지 마세요. Admin을 다른 서비스보다 먼저 시작하세요. 마이그레이션 후 `RAGFLOW_DEV_MODE=true bash build.sh --run`은 Admin, Ingestor, API를 시작하지만 Syncer는 시작하지 않습니다. 전체 서비스 체인에는 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`를 별도로 실행하세요.
+5. 프론트엔드를 개발할 때만 Node.js와 npm을 설치한 다음 React 프론트엔드를 시작합니다:
 
    ```bash
    cd web
    npm install
-   ```
-
-5. 프론트엔드 서비스를 시작합니다:
-
-   ```bash
    API_PROXY_SCHEME=go npm run dev
    ```
 
-   _다음 인터페이스는 시스템이 성공적으로 시작되었음을 나타냅니다:_
-
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
-
-개발을 마치면 각 서비스 터미널에서 Ctrl+C를 눌러 서비스를 중지합니다.
+   다른 터미널에서 Go API가 준비되었는지 확인합니다:
 
    ```bash
-   # 각 서비스 터미널에서 Ctrl+C를 눌러 프로세스를 중지하세요.
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
+
+   HTTP 200 응답은 API가 정상적으로 응답함을 의미합니다. 개발이 끝나면 각 서비스 터미널에서 `Ctrl+C`를 누릅니다. 컨테이너를 유지한 채 의존 서비스를 중지하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`를 실행합니다. 명명된 볼륨을 유지하면서 의존 컨테이너와 Compose 네트워크를 삭제하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`을 실행합니다.
+
+자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 
 
 ## 📚 문서
