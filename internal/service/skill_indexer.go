@@ -151,21 +151,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 	// For ES: add tokenized fields for BM25 search
 	// For Infinity: fields have built-in analyzer, no need for xxx_tks
 	if isES {
-		nameTokens, _ := tokenizer.Tokenize(skill.Name)
-		tagsText := strings.Join(skill.Tags, " ")
-		tagsTokens, _ := tokenizer.Tokenize(tagsText)
-
-		doc["name_tks"] = nameTokens
-		doc["tags_tks"] = tagsTokens
-
-		if fieldConfig.Description.Enabled {
-			descTokens, _ := tokenizer.Tokenize(skill.Description)
-			doc["description_tks"] = descTokens
-		}
-		if fieldConfig.Content.Enabled {
-			contentTokens, _ := tokenizer.Tokenize(skill.Content)
-			doc["content_tks"] = contentTokens
-		}
+		addSkillTokenFields(doc, skill, fieldConfig)
 	}
 
 	indexName := SkillIndexName(tenantID, spaceID)
@@ -325,22 +311,9 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		}
 
 		// For ES: add tokenized fields for BM25 search
+		// See IndexSkill for the lowercase rationale.
 		if isES {
-			nameTokens, _ := tokenizer.Tokenize(skill.Name)
-			tagsText := strings.Join(skill.Tags, " ")
-			tagsTokens, _ := tokenizer.Tokenize(tagsText)
-
-			doc["name_tks"] = nameTokens
-			doc["tags_tks"] = tagsTokens
-
-			if fieldConfig.Description.Enabled {
-				descTokens, _ := tokenizer.Tokenize(skill.Description)
-				doc["description_tks"] = descTokens
-			}
-			if fieldConfig.Content.Enabled {
-				contentTokens, _ := tokenizer.Tokenize(skill.Content)
-				doc["content_tks"] = contentTokens
-			}
+			addSkillTokenFields(doc, skill, fieldConfig)
 		}
 
 		common.Info("Batch: Calling IndexDocument", zap.String("indexName", indexName), zap.String("docID", docID), zap.Int("index", i))
@@ -1005,6 +978,36 @@ func truncate(text string, maxLen int) string {
 		return text
 	}
 	return string(runes[:maxLen])
+}
+
+// addSkillTokenFields writes the BM25 *_tks fields for a skill record,
+// pre-lowercased so the canvas's query-side lowercase matches.
+//
+// The SkillHub fields are declared with the whitespace analyzer in
+// internal/engine/elasticsearch/chunk.go:3002-3038 (name_tks, tags_tks,
+// description_tks, content_tks). The whitespace analyzer does NOT lowercase,
+// so any indexed value with capital letters is unreachable to a
+// lowercased query. This is the SkillIndexer sibling of the
+// content_ltks / title_tks fold for the dataset ingest pipeline (#20304).
+//
+// FieldConfig gates Description/Content so an operator who has disabled
+// either field does not see ghost tokens appear in the index.
+func addSkillTokenFields(doc map[string]interface{}, skill SkillInfo, fieldConfig entity.FieldConfig) {
+	nameTokens, _ := tokenizer.Tokenize(skill.Name)
+	doc["name_tks"] = strings.ToLower(nameTokens)
+
+	tagsText := strings.Join(skill.Tags, " ")
+	tagsTokens, _ := tokenizer.Tokenize(tagsText)
+	doc["tags_tks"] = strings.ToLower(tagsTokens)
+
+	if fieldConfig.Description.Enabled {
+		descTokens, _ := tokenizer.Tokenize(skill.Description)
+		doc["description_tks"] = strings.ToLower(descTokens)
+	}
+	if fieldConfig.Content.Enabled {
+		contentTokens, _ := tokenizer.Tokenize(skill.Content)
+		doc["content_tks"] = strings.ToLower(contentTokens)
+	}
 }
 
 // getEmbeddingDimension gets the embedding dimension by calling the embedding API with test text
