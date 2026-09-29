@@ -15,6 +15,7 @@
 package infinity
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -501,5 +502,292 @@ func TestJSONColumnsMatchCaseInsensitively(t *testing.T) {
 	decodeJSONFields(row)
 	if want := []interface{}{}; !reflect.DeepEqual(row["Source_Doc_IDs"], want) {
 		t.Errorf("nil Source_Doc_IDs = %#v, want %#v", row["Source_Doc_IDs"], want)
+	}
+}
+
+// TestTransformChunkFieldsKeepsTitleColumn pins that title_kwd survives as its
+// own column. The compiled wiki/nav rows carry their label only in title_kwd and
+// nav keys every cluster update on it (title_kwd = <cluster name>); folding the
+// field into docnm — Python's chunk-title alias — wrote ONLY docnm, so on
+// Infinity every reader of title_kwd saw "" while ES returned the field verbatim
+// (nav labels degraded to the description's first line and cluster merges never
+// matched, so each document opened a new root cluster).
+func TestTransformChunkFieldsKeepsTitleColumn(t *testing.T) {
+	got := transformChunkFields(map[string]interface{}{"title_kwd": "忠臣进谏与托孤遗志 27577543"}, nil)
+	if want := "忠臣进谏与托孤遗志 27577543"; got["title_kwd"] != want {
+		t.Errorf("title_kwd = %#v, want %q", got["title_kwd"], want)
+	}
+	// The chunk-title alias is still written when the row carries no docnm_kwd.
+	if want := "忠臣进谏与托孤遗志 27577543"; got["docnm"] != want {
+		t.Errorf("docnm = %#v, want %q", got["docnm"], want)
+	}
+
+	// With docnm_kwd present, the alias must not overwrite the document name,
+	// and title_kwd must still keep the row's own label.
+	got = transformChunkFields(map[string]interface{}{
+		"docnm_kwd": "出师表.txt",
+		"title_kwd": "wiki page title",
+	}, nil)
+	if want := "出师表.txt"; got["docnm"] != want {
+		t.Errorf("docnm = %#v, want %q", got["docnm"], want)
+	}
+	if want := "wiki page title"; got["title_kwd"] != want {
+		t.Errorf("title_kwd = %#v, want %q", got["title_kwd"], want)
+	}
+}
+
+// TestStripScorePseudoColumns pins that a caller's ES-style score columns are
+// dropped: Infinity rejects "_score" unless a MATCH TEXT/TENSOR or Fusion is
+// present (3013), and Search re-adds the one form its query shape accepts.
+func TestStripScorePseudoColumns(t *testing.T) {
+	got := stripScorePseudoColumns([]string{"type_kwd", "_score", "SCORE", "similarity()", "title_kwd"})
+	want := []string{"type_kwd", "title_kwd"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stripScorePseudoColumns = %#v, want %#v", got, want)
+	}
+
+	// A filter-only query keeps no score column at all.
+	if got := stripScorePseudoColumns([]string{"_score"}); len(got) != 0 {
+		t.Fatalf("filter-only score columns = %#v, want empty", got)
+	}
+}
+
+func TestHasPartialWildcard(t *testing.T) {
+	cases := []struct {
+		fields []string
+		want   bool
+	}{
+		{[]string{"id", "title_kwd"}, false},
+		{[]string{"*"}, false}, // Infinity reads a bare "*" as "all columns"
+		{[]string{"id", "q_*_vec"}, true},
+		{[]string{"q_*_vec", "*"}, true},
+	}
+	for _, c := range cases {
+		if got := hasPartialWildcard(c.fields); got != c.want {
+			t.Errorf("hasPartialWildcard(%#v) = %v, want %v", c.fields, got, c.want)
+		}
+	}
+}
+
+// TestExpandSelectWildcards pins the workaround for the partial wildcard the
+// compile reader asks for: Infinity parses "q_*_vec" as the expression
+// "q_" * "_vec" and fails to bind it (3013), so it is expanded into the table's
+// real vector column(s) and dropped when the table has none.
+func TestExpandSelectWildcards(t *testing.T) {
+	cols := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"id":         {Type: "varchar"},
+		"q_1024_vec": {Type: "vector,1024,float"},
+		"content":    {Type: "varchar"},
+	}
+
+	if got, want := expandSelectWildcards([]string{"id", "q_*_vec", "title_kwd"}, cols),
+		[]string{"id", "q_1024_vec", "title_kwd"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("expandSelectWildcards = %#v, want %#v", got, want)
+	}
+
+	// A bare "*" is left untouched: Infinity supports it.
+	if got, want := expandSelectWildcards([]string{"*"}, cols), []string{"*"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("bare wildcard = %#v, want %#v", got, want)
+	}
+
+	// A pattern matching nothing is dropped instead of being sent verbatim.
+	if got, want := expandSelectWildcards([]string{"id", "missing_*_col"}, cols), []string{"id"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("unmatched wildcard = %#v, want %#v", got, want)
+	}
+
+	// Resolving to an already listed column must not duplicate it.
+	if got, want := expandSelectWildcards([]string{"q_1024_vec", "q_*_vec"}, cols), []string{"q_1024_vec"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("duplicate wildcard = %#v, want %#v", got, want)
+	}
+
+	// Columns with no vector column at all: the wildcard disappears, the rest
+	// survives (a query may legitimately target a table without embeddings).
+	got := expandSelectWildcards([]string{"id", "q_*_vec"}, map[string]struct {
+		Type    string
+		Default interface{}
+	}{"id": {Type: "varchar"}})
+	if want := []string{"id"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("table without vector column = %#v, want %#v", got, want)
+	}
+}
+
+func TestWildcardMatchColumn(t *testing.T) {
+	cases := []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"q_*_vec", "q_1024_vec", true},
+		{"q_*_vec", "q_768_vec", true},
+		{"q_*_vec", "content", false},
+		{"q_*_vec", "q_1024_vec_x", false},
+		{"*_vec", "q_1024_vec", true},
+		{"q_*", "q_1024_vec", true},
+		{"foo", "foo", true},
+		{"foo", "bar", false},
+		{"a*b*c", "aXbYc", true},
+		{"a*b*c", "ac", false},
+	}
+	for _, c := range cases {
+		if got := wildcardMatchColumn(c.pattern, c.name); got != c.want {
+			t.Errorf("wildcardMatchColumn(%q, %q) = %v, want %v", c.pattern, c.name, got, c.want)
+		}
+	}
+}
+
+// lengthPrefixedJSON builds Infinity's raw Json/Array column encoding: one
+// `[int32 little-endian length][payload]` segment per stored value.
+func lengthPrefixedJSON(parts ...string) []byte {
+	out := make([]byte, 0, 64)
+	for _, p := range parts {
+		var l [4]byte
+		binary.LittleEndian.PutUint32(l[:], uint32(len(p)))
+		out = append(out, l[:]...)
+		out = append(out, p...)
+	}
+	return out
+}
+
+// TestDecodeJSONFieldsLengthPrefixedBytes pins the read path for the Json/Array
+// columns Infinity returns as length-prefixed bytes instead of JSON text — the
+// shape the structure graph reads compilation_template_ids from.
+func TestDecodeJSONFieldsLengthPrefixedBytes(t *testing.T) {
+	row := map[string]interface{}{
+		// One real value after three empty writes (the observed shape).
+		"compilation_template_ids": lengthPrefixedJSON("[]", "[]", "[]", `["03b36295dcb34f9e811d8073b21e7f2f"]`),
+		"source_chunk_ids":         lengthPrefixedJSON("[]", "[]", "[]", `["d1962d8d1cf69ab6","1313e71f7c7c9cca"]`),
+		// Every write empty: the column reads back as an empty list.
+		"doc_ids_kwd": lengthPrefixedJSON("[]", "[]", "[]", "[]", "[]", "[]"),
+	}
+	decodeJSONFields(row)
+
+	if want := []interface{}{"03b36295dcb34f9e811d8073b21e7f2f"}; !reflect.DeepEqual(row["compilation_template_ids"], want) {
+		t.Errorf("compilation_template_ids = %#v, want %#v", row["compilation_template_ids"], want)
+	}
+	if want := []interface{}{"d1962d8d1cf69ab6", "1313e71f7c7c9cca"}; !reflect.DeepEqual(row["source_chunk_ids"], want) {
+		t.Errorf("source_chunk_ids = %#v, want %#v", row["source_chunk_ids"], want)
+	}
+	if want := []interface{}{}; !reflect.DeepEqual(row["doc_ids_kwd"], want) {
+		t.Errorf("doc_ids_kwd = %#v, want %#v", row["doc_ids_kwd"], want)
+	}
+
+	// A value written twice must not fabricate a second identical bucket.
+	dup := map[string]interface{}{
+		"compilation_template_ids": lengthPrefixedJSON(`["t1"]`, `["t1","t2"]`),
+	}
+	decodeJSONFields(dup)
+	if want := []interface{}{"t1", "t2"}; !reflect.DeepEqual(dup["compilation_template_ids"], want) {
+		t.Errorf("duplicate segments = %#v, want %#v", dup["compilation_template_ids"], want)
+	}
+
+	// A non-array segment (an object) on a list column keeps the list shape
+	// (Python's parse_json_list wraps a scalar), and on a plain JSON column it
+	// decodes to the object itself.
+	listObj := map[string]interface{}{
+		"compilation_template_ids": lengthPrefixedJSON(`{"kind":"tree"}`),
+	}
+	decodeJSONFields(listObj)
+	wrapped, ok := listObj["compilation_template_ids"].([]interface{})
+	if !ok || len(wrapped) != 1 {
+		t.Fatalf("object segment on a list column = %#v, want a one-element list", listObj["compilation_template_ids"])
+	}
+	if m, ok := wrapped[0].(map[string]interface{}); !ok || m["kind"] != "tree" {
+		t.Errorf("object segment element = %#v, want the decoded map", wrapped[0])
+	}
+
+	plainObj := map[string]interface{}{
+		"source_chunk_hashes": lengthPrefixedJSON(`{"a":"b"}`),
+	}
+	decodeJSONFields(plainObj)
+	if m, ok := plainObj["source_chunk_hashes"].(map[string]interface{}); !ok || m["a"] != "b" {
+		t.Errorf("object segment on a JSON column = %#v, want the decoded map", plainObj["source_chunk_hashes"])
+	}
+}
+
+func TestDecodeInfinityJSONBytesRejectsOtherShapes(t *testing.T) {
+	if _, ok := decodeInfinityJSONBytes([]byte("not-length-prefixed")); ok {
+		t.Error("plain text bytes must not be accepted as a Json column blob")
+	}
+	if _, ok := decodeInfinityJSONBytes([]byte{1, 2}); ok {
+		t.Error("too-short bytes must not be accepted")
+	}
+	// A truncated final segment decodes the complete prefix only.
+	blob := lengthPrefixedJSON(`["a"]`)
+	blob = append(blob, 0, 0, 0, 9, 'x')
+	value, ok := decodeInfinityJSONBytes(blob)
+	if !ok {
+		t.Fatal("complete leading segment must still decode")
+	}
+	if want := []interface{}{"a"}; !reflect.DeepEqual(value, want) {
+		t.Errorf("truncated blob = %#v, want %#v", value, want)
+	}
+}
+
+// TestRealignJSONColumnCells pins the redistribution of a Json/Array column that
+// Infinity returns as one cell holding one segment per row: without it only row 0
+// keeps the column, so the structure graph sees one entity row per read.
+func TestRealignJSONColumnCells(t *testing.T) {
+	columns := map[string][]interface{}{
+		"id":                       {"a", "b", "c"},
+		"knowledge_graph_kwd":      {"entity", "entity", "relation"},
+		"compilation_template_ids": {lengthPrefixedJSON(`["t1"]`, `[]`, `["t2"]`)},
+	}
+	rows := []map[string]interface{}{{}, {}, {}}
+	realignJSONColumnCells(rows, columns)
+
+	wantText := []string{`["t1"]`, `[]`, `["t2"]`}
+	for i, want := range wantText {
+		if got := rows[i]["compilation_template_ids"]; got != want {
+			t.Errorf("row %d segment = %#v, want %q", i, got, want)
+		}
+	}
+	// Decoding each row's redistributed text yields that row's own value.
+	decodeJSONFields(rows[0])
+	decodeJSONFields(rows[1])
+	decodeJSONFields(rows[2])
+	if want := []interface{}{"t1"}; !reflect.DeepEqual(rows[0]["compilation_template_ids"], want) {
+		t.Errorf("row 0 = %#v, want %#v", rows[0]["compilation_template_ids"], want)
+	}
+	if want := []interface{}{}; !reflect.DeepEqual(rows[1]["compilation_template_ids"], want) {
+		t.Errorf("row 1 = %#v, want %#v", rows[1]["compilation_template_ids"], want)
+	}
+	if want := []interface{}{"t2"}; !reflect.DeepEqual(rows[2]["compilation_template_ids"], want) {
+		t.Errorf("row 2 = %#v, want %#v", rows[2]["compilation_template_ids"], want)
+	}
+
+	// A blob whose segment count does not match the row count is left alone, and
+	// a column that already has one cell per row is untouched.
+	odd := []map[string]interface{}{{}, {}}
+	realignJSONColumnCells(odd, map[string][]interface{}{
+		"compilation_template_ids": {lengthPrefixedJSON(`["t1"]`, `[]`, `["t2"]`)},
+	})
+	if len(odd[0]) != 0 {
+		t.Errorf("mismatched segment count must be left untouched, got %#v", odd[0])
+	}
+	aligned := []map[string]interface{}{{}, {}}
+	realignJSONColumnCells(aligned, map[string][]interface{}{
+		"compilation_template_ids": {`["t1"]`, `["t2"]`},
+	})
+	if len(aligned[0]) != 0 {
+		t.Errorf("an aligned column must be left untouched, got %#v", aligned[0])
+	}
+	// A single row keeps the cell as it came: decodeInfinityJSONBytes handles it.
+	single := []map[string]interface{}{{}}
+	realignJSONColumnCells(single, map[string][]interface{}{
+		"compilation_template_ids": {lengthPrefixedJSON(`["t1"]`)},
+	})
+	if len(single[0]) != 0 {
+		t.Errorf("a single-row result must be left untouched, got %#v", single[0])
+	}
+	// Segments that are not JSON are not per-row values: leave the column alone
+	// rather than copying the framing into every row.
+	notJSON := []map[string]interface{}{{}, {}}
+	realignJSONColumnCells(notJSON, map[string][]interface{}{
+		"compilation_template_ids": {lengthPrefixedJSON("t1", "t2")},
+	})
+	if len(notJSON[0]) != 0 {
+		t.Errorf("non-JSON segments must be left untouched, got %#v", notJSON[0])
 	}
 }
