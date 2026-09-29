@@ -25,12 +25,21 @@ SECTIONS = [
     ("Second paragraph.", None, None),
     ("Third paragraph.", None, None),
 ]
+IMAGE = ("", "IMG", None)
+TABLE = ("", None, "<table><tr><td>x</td></tr></table>")
+
+
+def test_merged_paragraphs_keep_a_line_break_with_an_empty_delimiter():
+    chunks, _ = naive_merge_docx(SECTIONS, chunk_token_num=128, delimiter="")
+    assert [ck["text"] for ck in chunks] == ["First paragraph.\nSecond paragraph.\nThird paragraph."]
 
 
 @pytest.mark.parametrize("delimiter", ["\n", DEFAULT_DELIMITER, ""])
-def test_merged_paragraphs_keep_a_line_break(delimiter):
-    chunks, _ = naive_merge_docx(SECTIONS, chunk_token_num=128, delimiter=delimiter)
-    assert [ck["text"] for ck in chunks] == ["First paragraph.\nSecond paragraph.\nThird paragraph."]
+@pytest.mark.parametrize("between", [IMAGE, TABLE], ids=["image", "table"])
+def test_paragraphs_merged_across_an_image_or_table_keep_a_line_break(between, delimiter):
+    sections = [SECTIONS[0], between, SECTIONS[1]]
+    chunks, _ = naive_merge_docx(sections, chunk_token_num=128, delimiter=delimiter)
+    assert [ck["text"] for ck in chunks if ck["ck_type"] == "text"] == ["First paragraph.\nSecond paragraph."]
 
 
 def test_custom_delimiter_still_keeps_one_chunk_per_paragraph():
