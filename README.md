@@ -202,24 +202,18 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Build the Go image and start the server with the Go Compose configuration:
+3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
 
 > [!NOTE]
-> The official Go image build target is `linux/amd64`. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) for platform, resource, and macOS requirements.
-
-> Build the Go image before the first deployment. Build time depends on network and machine performance.
-
-Set the locally built image in **docker/.env** before starting Compose:
-
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
+> The `v1.0.0-rc1` tag and later release tags use the Go implementation. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) only if you need to build an image locally.
 
 ```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
+# Enter the Docker deployment directory.
+cd ragflow/docker
+# Check out the Go v1.0.0-rc1 release tag.
+git checkout v1.0.0-rc1
+# Start the Go services and their dependencies in the background.
+docker compose -f docker-compose.yml up -d
 ```
 
 In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
@@ -229,7 +223,7 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
 4. Check service status and API readiness after startup:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    ```
 
    The command above displays dependency status. RAGFlow itself does not define a Compose healthcheck; confirm readiness through its API:
@@ -238,7 +232,7 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker compose --env-file .env -f docker-compose.yml logs --tail 50 <service>`.
+   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker compose -f docker-compose.yml logs --tail 50 <service>`.
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default

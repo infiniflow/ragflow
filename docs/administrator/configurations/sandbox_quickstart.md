@@ -110,7 +110,9 @@ docker tag infiniflow/sandbox-base-nodejs:latest sandbox-base-nodejs:latest
 Then restart the standalone sandbox services:
 
 ```bash
+# Stop the standalone Sandbox services before applying the changes.
 docker compose -f docker-compose.yml down
+# Start the standalone Sandbox services in the background.
 docker compose -f docker-compose.yml up -d
 ```
 

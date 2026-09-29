@@ -202,31 +202,29 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. ابدأ تشغيل الخادم باستخدام صور Docker المعدة مسبقًا:
+3. انتقل إلى وسم إصدار Go وشغّل صورة Go الجاهزة باستخدام Docker Compose:
 
 > [!CAUTION]
 > جميع الصور Docker مصممة لمنصات x86. لا نعرض حاليًا صور Docker لـ ARM64.
 > إذا كنت تستخدم نظامًا أساسيًا ARM64، فاتبع [هذا الدليل](https://ragflow.io/docs/dev/build_docker_image) لإنشاء صورة Docker متوافقة مع نظامك.
 
-> اكتب `RAGFLOW_IMAGE=ragflow:go-local` في **docker/.env** قبل التشغيل. هدف البناء الرسمي لصورة Go هو `linux/amd64`.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
 
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   # الدخول إلى دليل نشر Docker.
+   cd ragflow/docker
+   # التبديل إلى وسم إصدار Go v1.0.0-rc1.
+   git checkout v1.0.0-rc1
+   # تشغيل خدمات Go وتبعياتها في الخلفية.
+   docker compose -f docker-compose.yml up -d
+   ```
 
 > يستخدم DeepDoc في الإصدار مفتوح المصدر 1.0 استدلال CPU لتحليل التخطيط وOCR والتعرف على الجداول.
 
 4. التحقق من حالة الخادم بعد تشغيل الخادم:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -293,7 +291,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
    - `--syncer`: يشغّل خدمة Syncer لمهام مزامنة البيانات.
    - `--api`: يشغّل خدمة API لواجهة الويب وSDK والعملاء الخارجيين.
 
-   يُستخدم `RAGFLOW_DEV_MODE=true` للتطوير فقط؛ فهو يعطّل فحص الرجوع بين إصدار الكود وإصدار ترحيل قاعدة البيانات، ولا ينفذ الترحيلات أو يغير المخطط. لا تستخدمه في الإنتاج. شغّل Admin قبل الخدمات الأخرى. بعد الترحيل، يشغّل `RAGFLOW_DEV_MODE=true bash build.sh --run` خدمات Admin وIngestor وAPI، لكنه لا يشغّل Syncer؛ شغّل Syncer منفصلًا باستخدام `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` عند الحاجة إلى السلسلة الكاملة.
+   يُستخدم `RAGFLOW_DEV_MODE=true` للتطوير فقط؛ فهو يعطّل فحص الرجوع بين إصدار الكود وإصدار ترحيل قاعدة البيانات، ولا ينفذ الترحيلات أو يغير المخطط. لا تستخدمه في الإنتاج. شغّل Admin قبل الخدمات الأخرى. بعد الترحيل، يشغّل `RAGFLOW_DEV_MODE=true bash build.sh --run` خدمات Admin وIngestor وAPI، لكنه لا يشغّل Syncer؛ شغّل Syncer منفصلًا باستخدام `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` لتشغيل سلسلة الخدمات كاملة.
 5. ثبّت Node.js وnpm وشغّل واجهة React فقط عند تطوير الواجهة الأمامية:
 
    ```bash

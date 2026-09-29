@@ -204,25 +204,19 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. 建置 Go 版映像，並使用 Go 版 Compose 設定啟動伺服器：
+3. 切換至 Go 版發布標籤，並使用 Docker Compose 啟動伺服器：
 
 > [!NOTE]
 > Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
-> 首次部署前需要先建置 Go 映像，建置時間取決於網路和機器效能。
-
-將以下值寫入 `docker/.env`：
-
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
-
-```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   # 進入 Docker 部署目錄。
+   cd ragflow/docker
+   # 切換至 Go v1.0.0-rc1 發布標籤。
+   git checkout v1.0.0-rc1
+   # 在背景啟動 Go 服務及其相依服務。
+   docker compose -f docker-compose.yml up -d
+   ```
 
 預設 MySQL 設定下，Go 映像入口會先執行資料庫遷移，再透過 `bin/ragflow_server` 啟動 Syncer、Admin、API 和 Ingestor。
 
@@ -231,7 +225,7 @@ RAGFLOW_IMAGE=ragflow:go-local
 4. 檢查相依服務狀態及 API 是否就緒：
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    ```
 
    相依服務顯示健康且 RAGFlow 容器持續執行後，請透過 HTTP 介面確認 RAGFlow 是否就緒（RAGFlow 容器本身未定義 Compose healthcheck）：
@@ -313,7 +307,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    - `--syncer`：啟動 Syncer 服務，負責資料同步任務。
    - `--api`：啟動 API 服務，為 Web、SDK 和外部用戶端提供介面。
 
-   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer。
+   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer；如需完整服務鏈，請另外執行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
 5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
    ```bash

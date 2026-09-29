@@ -181,23 +181,21 @@ DockerデプロイではホストへのGoのインストールは不要です。
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
+3. Go リリースタグに切り替え、Docker Compose で事前ビルド済み Go イメージを起動します:
 
 > [!CAUTION]
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-> 起動前に **docker/.env** へ `RAGFLOW_IMAGE=ragflow:go-local` を設定してください。Go イメージの正式なビルド対象は `linux/amd64` です。
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   # Docker デプロイディレクトリに移動します。
+   cd ragflow/docker
+   # Go v1.0.0-rc1 リリースタグに切り替えます。
+   git checkout v1.0.0-rc1
+   # Go サービスと依存サービスをバックグラウンドで起動します。
+   docker compose -f docker-compose.yml up -d
    ```
 
 > RAGFlow オープンソース 1.0 の DeepDoc は、レイアウト解析、OCR、表認識に CPU 推論を使用します。
@@ -205,7 +203,7 @@ RAGFLOW_IMAGE=ragflow:go-local
    1. サーバーを立ち上げた後、サーバーの状態を確認する:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 

@@ -197,24 +197,22 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Construisez l’image Go et démarrez le serveur avec la configuration Compose Go. La cible de construction officielle est `linux/amd64`. Consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx) pour connaître les exigences détaillées.
+3. Passez à la balise de version Go et démarrez l’image Go préconstruite avec Docker Compose :
 
-   Avant le premier déploiement, définissez `RAGFLOW_IMAGE=ragflow:go-local` dans **docker/.env**, puis exécutez depuis la racine du dépôt :
 
-   ```dotenv
-   RAGFLOW_IMAGE=ragflow:go-local
-   ```
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   # Accédez au répertoire de déploiement Docker.
+   cd ragflow/docker
+   # Basculez vers la balise de version Go v1.0.0-rc1.
+   git checkout v1.0.0-rc1
+   # Démarrez les services Go et leurs dépendances en arrière-plan.
+   docker compose -f docker-compose.yml up -d
    ```
 
    Avec la configuration MySQL par défaut, le point d’entrée de l’image exécute d’abord les migrations, puis démarre Syncer, Admin, API et Ingestor via `bin/ragflow_server`. Dans RAGFlow open-source 1.0, DeepDoc utilise l’inférence CPU pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
 
-4. Vérifiez l’état des dépendances avec `docker compose --env-file .env -f docker-compose.yml ps`, puis confirmez que RAGFlow est prêt avec l’interface HTTP (le conteneur RAGFlow ne définit pas de healthcheck Compose) :
+4. Vérifiez l’état des dépendances avec `docker compose -f docker-compose.yml ps`, puis confirmez que RAGFlow est prêt avec l’interface HTTP (le conteneur RAGFlow ne définit pas de healthcheck Compose) :
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -292,7 +290,7 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    - `--syncer` : démarre le service Syncer pour la synchronisation des données.
    - `--api` : démarre le service API pour l'interface Web, les SDK et les clients externes.
 
-   `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer.
+   `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer. Pour démarrer la chaîne complète, exécutez séparément `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
 5. Installez Node.js et npm uniquement pour développer le front-end :
 
    ```bash

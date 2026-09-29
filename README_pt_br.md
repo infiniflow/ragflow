@@ -197,24 +197,22 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Construa a imagem Go e inicie o servidor com a configuração Compose Go. O destino oficial de build é `linux/amd64`. Consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx) para obter detalhes.
+3. Mude para a tag de lançamento Go e inicie a imagem Go pré-criada com o Docker Compose:
 
-   Antes da primeira implantação, defina `RAGFLOW_IMAGE=ragflow:go-local` em **docker/.env** e execute, a partir da raiz do repositório:
 
-   ```dotenv
-   RAGFLOW_IMAGE=ragflow:go-local
-   ```
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   # Entre no diretório de implantação do Docker.
+   cd ragflow/docker
+   # Mude para a tag de lançamento Go v1.0.0-rc1.
+   git checkout v1.0.0-rc1
+   # Inicie os serviços Go e suas dependências em segundo plano.
+   docker compose -f docker-compose.yml up -d
    ```
 
    Na configuração padrão do MySQL, o entrypoint da imagem executa as migrações do banco de dados e inicia Syncer, Admin, API e Ingestor por meio de `bin/ragflow_server`. No RAGFlow open-source 1.0, DeepDoc usa inferência por CPU para análise de layout, OCR e reconhecimento de tabelas.
 
-4. Verifique o estado das dependências com `docker compose --env-file .env -f docker-compose.yml ps` e confirme se o RAGFlow está pronto pela interface HTTP (o contêiner do RAGFlow não define um healthcheck do Compose):
+4. Verifique o estado das dependências com `docker compose -f docker-compose.yml ps` e confirme se o RAGFlow está pronto pela interface HTTP (o contêiner do RAGFlow não define um healthcheck do Compose):
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -288,7 +286,7 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    - `--syncer`: Inicia o serviço Syncer para tarefas de sincronização de dados.
    - `--api`: Inicia o serviço API para a interface Web, SDKs e clientes externos.
 
-   `RAGFLOW_DEV_MODE=true` é exclusivo para desenvolvimento. Ele desativa a verificação de downgrade entre o código e as migrações, mas não executa migrações nem altera o esquema. Não o use em produção. Depois da migração, `RAGFLOW_DEV_MODE=true bash build.sh --run` pode iniciar Admin, Ingestor e API, mas não inicia o Syncer.
+   `RAGFLOW_DEV_MODE=true` é exclusivo para desenvolvimento. Ele desativa a verificação de downgrade entre o código e as migrações, mas não executa migrações nem altera o esquema. Não o use em produção. Depois da migração, `RAGFLOW_DEV_MODE=true bash build.sh --run` pode iniciar Admin, Ingestor e API, mas não inicia o Syncer. Para iniciar a cadeia completa de serviços, execute separadamente `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
 5. Instale Node.js e npm somente se for desenvolver o front-end:
 
    ```bash
