@@ -685,4 +685,3 @@ func TestFlattenLegacyParserSetups(t *testing.T) {
 		})
 	}
 }
-
