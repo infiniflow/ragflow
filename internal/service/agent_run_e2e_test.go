@@ -1557,6 +1557,38 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	}
 }
 
+func TestRunAgent_ExeSQLConfigErrorIsUserFacing(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvas{}, &entity.UserCanvasVersion{}, &entity.APIToken{},
+		&entity.API4Conversation{}, &entity.TenantModelProvider{},
+		&entity.TenantModelInstance{}, &entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	dsl := map[string]any{"components": map[string]any{
+		"begin_0": map[string]any{"obj": map[string]any{"component_name": "Begin", "params": map[string]any{}}, "downstream": []any{"sql_0"}},
+		"sql_0":   map[string]any{"obj": map[string]any{"component_name": "ExeSQL", "params": map[string]any{"db_type": "mysql", "host": "", "database": "", "username": ""}}, "upstream": []any{"begin_0"}},
+	}}
+	makeCanvasWithDSL(t, "canvas-exesql-config", "user-1", "tenant-1", "v-exesql-config", dsl)
+
+	events, err := NewAgentService().RunAgent(WithAgentSessionID(t.Context(), "session-exesql-config"), "user-1", "canvas-exesql-config", "session-exesql-config", "", "hello", nil)
+	if err != nil {
+		t.Fatalf("RunAgent returned sync error: %v", err)
+	}
+	_, _, errs, _, _ := drainAgentEvents(t, events)
+	if len(errs) == 0 || errs[0].Kind != "user" {
+		t.Fatalf("errors = %+v, want user-facing ExeSQL configuration error", errs)
+	}
+	if errs[0].Message != "ExeSQL configuration is incomplete. Set the database connection details before running the agent." {
+		t.Fatalf("error message = %q", errs[0].Message)
+	}
+}
+
 // TestRunAgent_AllFixture_CategorizeResume drives the categorize branch
 // of all.json through the real checkpoint-backed interrupt/resume path:
 //
