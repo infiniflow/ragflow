@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/utility"
+	"ragflow/internal/common"
 )
 
 // withConnectorLoopbackTestHook enables the loopback test seam for the duration
@@ -147,9 +147,9 @@ func TestJiraConnectorRejectsInternalBaseURL(t *testing.T) {
 
 func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	withConnectorLoopbackTestHook(t)
-	origLookup := utility.LookupHost
+	origLookup := common.LookupHost
 	lookups := 0
-	utility.LookupHost = func(host string) ([]string, error) {
+	common.LookupHost = func(host string) ([]string, error) {
 		if host == "localhost" {
 			lookups++
 			if lookups == 1 {
@@ -161,7 +161,7 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 		}
 		return origLookup(host)
 	}
-	t.Cleanup(func() { utility.LookupHost = origLookup })
+	t.Cleanup(func() { common.LookupHost = origLookup })
 
 	var targetHit atomic.Bool
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -250,11 +250,11 @@ func TestConnectorRequestRejectsCrossOriginBodyRedirect(t *testing.T) {
 }
 
 func TestAssertConnectorURLSafeHTTPS(t *testing.T) {
-	orig := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		return []string{"93.184.216.34"}, nil
 	}
-	t.Cleanup(func() { utility.LookupHost = orig })
+	t.Cleanup(func() { common.LookupHost = orig })
 
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })

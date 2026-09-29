@@ -73,6 +73,7 @@ export interface IMessageData {
   content: string;
   audio_binary: string;
   outputs: any;
+  memory_error?: string;
   start_to_think?: boolean;
   end_to_think?: boolean;
 }

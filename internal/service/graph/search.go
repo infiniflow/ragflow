@@ -101,7 +101,7 @@ func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, q
 	embCfg := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Query: true — the KG search embeds the user's question (Python
 	// get_vector → encode_queries), not a document.
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{question}, Query: true}, embModel.APIConfig, embCfg, nil)
+	embeddings, err := embModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{question}, Query: true}, embCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("KG entity embed failed: %w", err)
 	}

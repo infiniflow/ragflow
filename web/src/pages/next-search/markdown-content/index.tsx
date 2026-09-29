@@ -189,12 +189,14 @@ const MarkdownContent = ({
               <PopoverTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </PopoverTrigger>
               <PopoverContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </PopoverContent>
@@ -248,7 +250,7 @@ const MarkdownContent = ({
   const renderReference = useCallback(
     (text: string) => {
       const replacedText = reactStringReplace(text, currentReg, (match) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
 
         return (
           <Popover>
@@ -266,7 +268,7 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, t],
+    [getPopoverContent],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

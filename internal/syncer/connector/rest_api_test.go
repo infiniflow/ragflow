@@ -24,13 +24,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 // restAPITestPublicIP is the fixed public address used to satisfy the
@@ -51,7 +50,7 @@ func restAPITestLookupHost(host string) ([]string, error) {
 func withRestAPITestHooks(t *testing.T) {
 	t.Helper()
 	origLoopback := connectorAllowLoopbackForTest
-	origLookup := utility.LookupHost
+	origLookup := common.LookupHost
 	origTries := restAPIRetryTries
 	origBaseDelay := restAPIRetryBaseDelay
 	origMaxDelay := restAPIRetryMaxDelay
@@ -60,7 +59,7 @@ func withRestAPITestHooks(t *testing.T) {
 	orig429Waits := restAPI429MaxWaits
 	orig429Wait := restAPI429DefaultWait
 	connectorAllowLoopbackForTest = true
-	utility.LookupHost = restAPITestLookupHost
+	common.LookupHost = restAPITestLookupHost
 	restAPIRetryTries = 3
 	restAPIRetryBaseDelay = time.Millisecond
 	restAPIRetryMaxDelay = 10 * time.Millisecond
@@ -70,7 +69,7 @@ func withRestAPITestHooks(t *testing.T) {
 	restAPI429DefaultWait = time.Millisecond
 	t.Cleanup(func() {
 		connectorAllowLoopbackForTest = origLoopback
-		utility.LookupHost = origLookup
+		common.LookupHost = origLookup
 		restAPIRetryTries = origTries
 		restAPIRetryBaseDelay = origBaseDelay
 		restAPIRetryMaxDelay = origMaxDelay

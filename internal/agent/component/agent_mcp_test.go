@@ -3,13 +3,11 @@ package component
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/flow/agent/react"
-	"github.com/cloudwego/eino/schema"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
@@ -17,6 +15,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestAgentMCPRequiresRuntimeServer(t *testing.T) {
@@ -33,9 +35,9 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	pushComponentDB(t, db)
-	lookup := utility.LookupHost
-	utility.LookupHost = func(string) ([]string, error) { return []string{"8.8.8.8"}, nil }
-	t.Cleanup(func() { utility.LookupHost = lookup })
+	lookup := common.LookupHost
+	common.LookupHost = func(string) ([]string, error) { return []string{"8.8.8.8"}, nil }
+	t.Cleanup(func() { common.LookupHost = lookup })
 	var dispatched atomic.Bool
 	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "DELETE" {

@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -55,8 +56,7 @@ const defaultAgentDeferredTimeout = 10 * time.Minute
 // provider is `parts[1]` for the 2-part shape and `parts[2]` for
 // the 3+ shape. Any middle `@<seg>` segments (the "instance" in
 // Python's split_model_name) are intentionally dropped — the Go
-// drivers and the tenant_llm lookup both key on the bare model
-// name + factory, not on the instance.
+// drivers key on the bare model name, not on the instance.
 //
 // Mirrors Python's split_model_name at
 // api/db/joint_services/tenant_model_service.py:163-178:
@@ -211,9 +211,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// graph releases its output stream, so agent.Stream does not return
 	// until the model finishes. GetMessageStreams blocks on the future's
 	// started signal (closed by the graph onStart callback), so starting
-	// the collector first lets thinking deltas stream out in real time
+	// the collector first lets non-citation deltas stream out in real time
 	// while the checker runs, instead of buffering the entire round.
-	emitDone := emitAgentModelStreams(ctx, future)
+	emitDone := emitAgentModelStreams(ctx, future, p.Cite)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
@@ -294,7 +294,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 // images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 	}
 	// Inject sys.files uploads into the current user message, mirroring
@@ -345,7 +345,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 	return input
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool) <-chan error {
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
@@ -384,6 +384,11 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 					continue
 				}
 				if msg.Content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				// Retrieval tools can add chunks during this call. Hold the first
+				// answer until we know whether citation grounding will run.
+				if cite {
 					continue
 				}
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
@@ -446,9 +451,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // the model to insert [ID:N] tags into the assistant's final
 // content.
 //
-// Returns the grounded content on success, the original content
-// unchanged when no chunks are available or the call fails. Mirrors
-// Python's `cite_letter` / `generate_with_citation` flow.
+// Streams grounded deltas when the invoker supports streaming. Returns the
+// original content when no chunks are available or the call fails before
+// emitting anything.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -461,7 +466,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	}
 	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -471,18 +476,46 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			{Role: schema.User, Content: content},
 		},
 		TopP: p.TopP,
-	})
+	}
+	var resp *ChatInvokeResponse
+	var err error
+	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		var leadingWhitespace strings.Builder
+		emitting := false
+		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if isThink || delta == "" {
+				return nil
+			}
+			if !emitting {
+				leadingWhitespace.WriteString(delta)
+				if strings.TrimSpace(leadingWhitespace.String()) == "" {
+					return nil
+				}
+				delta = leadingWhitespace.String()
+				emitting = true
+			}
+			runtime.EmitAgentMessage(ctx, delta, "")
+			return nil
+		})
+	} else {
+		resp, err = inv.Invoke(ctx, db, req)
+	}
 	if err != nil {
 		// Grounding is best-effort. Return the original content
 		// so the message still flows; the caller can decide
 		// whether to surface the error.
 		return content, err
 	}
-	grounded := strings.TrimSpace(resp.Content)
-	if grounded == "" {
+	if resp == nil {
+		return content, fmt.Errorf("citation grounding returned no response")
+	}
+	if strings.TrimSpace(resp.Content) == "" {
 		return content, nil
 	}
-	return grounded, nil
+	return resp.Content, nil
 }
 
 // chunksFromState extracts the recorded retrieval chunks from
@@ -490,7 +523,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 // chunks key is absent / empty. The returned slice is shaped
 // for prompts.CitationSource — the grounding renderer.
 func chunksFromState(ctx context.Context) []prompts.CitationSource {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return nil
 	}
@@ -880,22 +913,20 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 		if inputs["_ERROR"] == "No dataset is selected." {
 			return map[string]any{"content": "No dataset is selected."}, nil
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.SystemPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
-			}
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.UserPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
-			}
 		}
 	}
 	if state != nil {
@@ -930,7 +961,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// a dedicated LLM call. The rephrased prompt is what the Agent runner
 	// actually consumes.
 	if p.OptimizeMultiTurn {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if rephrased, err := optimizeMultiTurnQuestion(ctx, db, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
@@ -944,7 +975,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// the canvas state's Memory. Conversation History is reserved for
 	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, db, p, msg); sErr2 == nil && summary != "" {
 				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
@@ -965,9 +996,8 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// the canvas state has recorded retrieval chunks (populated
 	// by the Retrieval tool during the ReAct loop), make a second
 	// LLM call to insert [ID:N] tags into the final content. The
-	// grounding call is best-effort — on failure the original
-	// content is kept and the error is surfaced under
-	// outputs["grounding_error"].
+	// grounding call is best-effort until it emits a visible delta. An
+	// interrupted citation stream must not be followed by the first answer.
 	// Diagnostic sentinel (temporary — see plan): log the post-
 	// agentRunner state right before the `msg.Content` deref so a
 	// subsequent panic shows whether the agent returned (nil, nil).
@@ -997,6 +1027,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 				content = grounded
 				groundingStatus = "applied"
 			} else if gErr != nil {
+				if ctx.Err() != nil || runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx) {
+					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
+				}
 				groundingStatus = "error: " + gErr.Error()
 			}
 		}
@@ -1013,8 +1046,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		out["grounding_status"] = groundingStatus
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
-	if !streamed {
+	switch {
+	case !streamed:
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case artifactMD != "":
+		// Python's stream_output_with_tools_async yields the tool-artifact
+		// markdown as a trailing delta after the LLM stream, so the live SSE
+		// stream (and hence the chat) includes the artifact references even
+		// when the model did not embed them itself. The Go port previously
+		// appended them only to the recorded output and skipped live emission
+		// once the stream had run, so artifact images never appeared in chat.
+		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
 }
@@ -1087,9 +1129,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// llm_id format. The RAGFlow DSL stores the model identifier as
 	// "<model>@<instance>@<provider>" (mirrors Python's
 	// split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178 and the
-	// Go-side SplitModelNameAndFactory at
-	// internal/service/tenant.go:168). Two-part
+	// api/db/joint_services/tenant_model_service.py:163-178. Two-part
 	// "<model>@<provider>" and bare "<model>" are also accepted —
 	// bare means no driver known, which falls through to the dummy
 	// driver below. The trailing "@<provider>" suffix must also be
@@ -1138,8 +1178,9 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 // artifactEntry is the shape of a single tool-returned artifact
 // surfaced through the Agent's outputs["artifacts"].
 type artifactEntry struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // artifactCollectorKey is the context key used to share the
@@ -1283,19 +1324,11 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		}
 		name, _ := m["name"].(string)
 		url, _ := m["url"].(string)
-		if url == "" {
-			if content, ok := m["content_b64"].(string); ok && content != "" {
-				mime, _ := m["mime_type"].(string)
-				if mime == "" {
-					mime = "application/octet-stream"
-				}
-				url = "data:" + mime + ";base64," + content
-			}
-		}
 		if name == "" || url == "" {
 			continue
 		}
-		out = append(out, artifactEntry{Name: name, URL: url})
+		mime, _ := m["mime_type"].(string)
+		out = append(out, artifactEntry{Name: name, URL: url, MIMEType: mime})
 	}
 	return out
 }
@@ -1334,16 +1367,23 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 		if strings.Contains(existingText, a.URL) {
 			continue
 		}
-		lower := strings.ToLower(a.URL)
-		if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
-			strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
-			strings.HasSuffix(lower, ".webp") {
+		if isImageArtifact(a) {
 			fmt.Fprintf(&sb, "\n\n![%s](%s)", a.Name, a.URL)
 		} else {
 			fmt.Fprintf(&sb, "\n\n[Download %s](%s)", a.Name, a.URL)
 		}
 	}
 	return sb.String()
+}
+
+func isImageArtifact(a artifactEntry) bool {
+	if strings.HasPrefix(strings.ToLower(a.MIMEType), "image/") {
+		return true
+	}
+	lower := strings.ToLower(a.URL)
+	return strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp") || strings.HasSuffix(lower, ".svg")
 }
 
 // extractToolCalls converts eino ToolCalls from a message into the

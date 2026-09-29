@@ -45,6 +45,9 @@ interface ProcessLogModalProps {
   translateKey?: string;
 }
 
+const MissingStorageFilePattern =
+  /storage\.Get\("(?:[^"\\]|\\.)*",\s*"(?:[^"\\]|\\.)*"\):\s*The specified key does not exist\./;
+
 const InfoItem: React.FC<{
   overflowTip?: boolean;
   label: string;
@@ -105,9 +108,19 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
   const logInfo = useMemo(() => {
     return initData;
   }, [initData]);
+  const hasMissingStorageFile =
+    MissingStorageFilePattern.test(logInfo.details) ||
+    logInfo.events?.some((event) =>
+      MissingStorageFilePattern.test(event.message),
+    );
   const eventListRef = useRef<HTMLDivElement>(null);
   const prependHeightRef = useRef<number | null>(null);
   const eventCount = logInfo.events?.length ?? 0;
+  const missingStorageFileHint = hasMissingStorageFile && (
+    <div className="text-state-error font-medium">
+      File not found in object storage.
+    </div>
+  );
   useEffect(() => {
     const list = eventListRef.current;
     const previousHeight = prependHeightRef.current;
@@ -190,6 +203,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                             </div>
                           );
                         })}
+                        {eventCount > 0 && missingStorageFileHint}
                       </div>
                     }
                   />
@@ -204,6 +218,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                     value={
                       <div className="w-full  whitespace-pre-line text-wrap bg-bg-card rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto p-2.5">
                         {replaceText(logInfo.details)}
+                        {eventCount === 0 && missingStorageFileHint}
                       </div>
                     }
                   />

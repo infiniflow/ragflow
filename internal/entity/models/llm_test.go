@@ -54,6 +54,54 @@ func TestEinoChatModelAllowsFinalAnswerAfterToolResult(t *testing.T) {
 	}
 }
 
+// TestEinoChatModelErrorNamesTheModel pins the user-visible shape of a provider
+// failure on BOTH paths: the chat paths render it as `**ERROR**: <err>`, so the
+// message must lead with the model the user configured and keep the provider's
+// own words — not the wrapper's internal "models: EinoChatModel.Generate(…)"
+// path, which put the cause after noise. The stream path is covered as well
+// because a plain (tool-less) turn reports its failures through it, not through
+// Generate.
+func TestEinoChatModelErrorNamesTheModel(t *testing.T) {
+	sentinel := errors.New("minimax API error: insufficient balance")
+	modelName := "MiniMax-M3"
+	model := NewEinoChatModel(
+		NewChatModel(&failingDriver{captureToolDriver: &captureToolDriver{}, err: sentinel}, &modelName, &APIConfig{}), nil)
+	msgs := []*schema.Message{schema.UserMessage("hi")}
+
+	cases := []struct {
+		path string
+		fail func() error
+	}{
+		{"Generate", func() error {
+			_, err := model.Generate(t.Context(), msgs)
+			return err
+		}},
+		{"Stream", func() error {
+			stream, err := model.Stream(t.Context(), msgs)
+			if err != nil {
+				return err
+			}
+			_, recvErr := stream.Recv()
+			return recvErr
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			err := tc.fail()
+			if err == nil {
+				t.Fatalf("%s: want the provider's error", tc.path)
+			}
+			if got, want := err.Error(), modelName+": "+sentinel.Error(); got != want {
+				t.Fatalf("error = %q, want %q", got, want)
+			}
+			// The provider's error stays wrapped so callers can still inspect it.
+			if !errors.Is(err, sentinel) {
+				t.Errorf("errors.Is(err, sentinel) = false, got %v", err)
+			}
+		})
+	}
+}
+
 // TestEinoChatModelAppliesExplicitToolChoice pins that WithToolChoice actually
 // reaches the driver's configuration (its doc promises exactly that): a keyword
 // choice travels as the plain string with no object value, a named tool travels
@@ -412,6 +460,21 @@ type captureToolDriver struct {
 
 type streamSentinelDriver struct {
 	*captureToolDriver
+}
+
+// failingDriver rejects every chat call with a fixed error, standing in for a
+// provider that refuses the request (an exhausted quota, bad credentials).
+type failingDriver struct {
+	*captureToolDriver
+	err error
+}
+
+func (d *failingDriver) ChatWithMessages(context.Context, string, []Message, *APIConfig, *ChatConfig, *common.ModelUsage) (*ChatResponse, error) {
+	return nil, d.err
+}
+
+func (d *failingDriver) ChatStreamlyWithSender(context.Context, string, []Message, *APIConfig, *ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
+	return d.err
 }
 
 func (d *streamSentinelDriver) ChatStreamlyWithSender(ctx context.Context, _ string, _ []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {

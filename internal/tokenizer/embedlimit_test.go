@@ -17,6 +17,7 @@
 package tokenizer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -268,5 +269,53 @@ func TestCL100KTrimNeverExceedsLimit(t *testing.T) {
 				t.Errorf("sample %d limit %d: trimmed text counts %d tokens", i, limit, got)
 			}
 		}
+	}
+}
+
+// TestIsOverLimitErrorMatchesDelimitedNumbers pins the difference between a substring
+// test and a delimited one. The caller acts on this answer by re-embedding a
+// truncated input, so a false positive silently replaces a real error with a
+// window-limit one; 120015 merely contains 20015, and 1400 merely contains 400.
+func TestIsOverLimitErrorMatchesDelimitedNumbers(t *testing.T) {
+	cases := []struct {
+		name string
+		err  string
+		want bool
+	}{
+		{
+			"siliconflow over-window",
+			`SILICONFLOW API error: 400 Bad Request, body: {"code":20015,"message":"The parameter is invalid. Please check again.","data":null}`,
+			true,
+		},
+		{
+			"siliconflow code as a string",
+			`SILICONFLOW API error: 400 Bad Request, body: {"code":"20015"}`,
+			true,
+		},
+		{
+			"openai wording",
+			`OpenAI embeddings API error: 400 Bad Request, body: {"error":{"message":"This model's maximum context length is 8192 tokens"}}`,
+			true,
+		},
+		{"413", `API error: 413 Request Entity Too Large, body: input is too long`, true},
+		{"422", `API error: 422 Unprocessable Entity, body: too many tokens`, true},
+		// Delimiter neighbours: a longer provider code that merely contains 20015, and
+		// a status that merely contains 400.
+		{"code 120015", `SILICONFLOW API error: 400 Bad Request, body: {"code":120015}`, false},
+		{"code 200150", `SILICONFLOW API error: 400 Bad Request, body: {"code":200150}`, false},
+		{"status 1400", `API error: 1400 Bad Request, body: too long`, false},
+		// Rate limits and provider failures must not be mistaken for size.
+		{"rate limit", `SILICONFLOW API error: 429 Too Many Requests, body: {"message":"Request was rejected due to rate limiting. Details: TPM limit reached."}`, false},
+		{"server error", `SILICONFLOW API error: 500 Internal Server Error, body: too long`, false},
+		{"unauthorized", `OpenAI embeddings API error: 401 Unauthorized, body: invalid api key`, false},
+		{"network", `failed to send request: dial tcp: connection refused`, false},
+	}
+	for _, c := range cases {
+		if got := IsOverLimitError(errors.New(c.err)); got != c.want {
+			t.Errorf("%s: IsOverLimitError = %t, want %t (%s)", c.name, got, c.want, c.err)
+		}
+	}
+	if IsOverLimitError(nil) {
+		t.Error("IsOverLimitError(nil) = true, want false")
 	}
 }

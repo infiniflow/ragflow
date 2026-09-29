@@ -54,7 +54,7 @@ func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Astraflo
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

@@ -37,22 +37,34 @@ export const useCreateMemory = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  const createMemory = useCallback(
-    async (props: ICreateMemoryProps): Promise<CreateMemoryResponse> => {
+  const {
+    data,
+    isError,
+    isPending,
+    mutateAsync: createMemoryMutation,
+  } = useMutation<CreateMemoryResponse, Error, ICreateMemoryProps>({
+    mutationKey: ['createMemory'],
+    mutationFn: async (props) => {
       const { data: response } = await memoryService.createMemory(props);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to create memory');
       }
-      if (response.code === 0) {
-        message.success(t('message.created'));
-        queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
-      }
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       return response.data;
     },
-    [queryClient, t],
+    onSuccess: () => {
+      message.success(t('message.created'));
+    },
+  });
+
+  const createMemory = useCallback(
+    (props: ICreateMemoryProps) => {
+      return createMemoryMutation(props);
+    },
+    [createMemoryMutation],
   );
 
-  return { createMemory };
+  return { data, isError, isPending, createMemory };
 };
 
 export const useFetchMemoryList = () => {
@@ -241,6 +253,7 @@ export const useUpdateMemory = () => {
   const {
     data,
     isError,
+    isPending,
     mutateAsync: updateMemoryMutation,
   } = useMutation<any, Error, IMemoryAppDetailProps>({
     mutationKey: ['updateMemory'],
@@ -272,7 +285,7 @@ export const useUpdateMemory = () => {
     [updateMemoryMutation],
   );
 
-  return { data, isError, updateMemory };
+  return { data, isError, isPending, updateMemory };
 };
 
 export const useRenameMemory = () => {
@@ -282,9 +295,9 @@ export const useRenameMemory = () => {
     hideModal: hideChatRenameModal,
     showModal: showChatRenameModal,
   } = useSetModalState();
-  const { updateMemory } = useUpdateMemory();
-  const { createMemory } = useCreateMemory();
-  const [loading, setLoading] = useState(false);
+  const { isPending: createPending, createMemory } = useCreateMemory();
+  const { isPending: updatePending, updateMemory } = useUpdateMemory();
+  const memoryRenameLoading = createPending || updatePending;
   const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const handleShowChatRenameModal = useCallback(
@@ -310,8 +323,6 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
-      // let res;
-      setLoading(true);
       if (memory?.id) {
         try {
           await updateMemory({
@@ -329,13 +340,12 @@ export const useRenameMemory = () => {
       //   navigateToMemory(res?.id)();
       // }
       callBack?.();
-      setLoading(false);
       handleHideModal();
     },
     [memory, createMemory, handleHideModal, updateMemory],
   );
   return {
-    memoryRenameLoading: loading,
+    memoryRenameLoading,
     initialMemory: memory,
     onMemoryRenameOk,
     openCreateModal,

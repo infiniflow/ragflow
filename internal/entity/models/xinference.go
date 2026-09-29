@@ -46,7 +46,7 @@ func NewXinferenceModel(baseURL map[string]string, urlSuffix URLSuffix) *Xinfere
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }

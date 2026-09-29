@@ -469,6 +469,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
 		sessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
 	if err != nil {
@@ -1110,28 +1111,29 @@ func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
 	if len(inputs) == 0 {
 		return nil
 	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]interface{}); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
 
 	out := make(map[string]any, len(inputs))
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
+		out[name] = unwrapFormInput(raw)
 	}
 	return out
+}
+
+func unwrapFormInput(raw any) any {
+	field, ok := raw.(map[string]interface{})
+	if !ok {
+		return raw
+	}
+	if value, exists := field["value"]; exists {
+		return value
+	}
+	// Frontend form state can omit an untouched optional value. A field
+	// descriptor without a submitted value represents nil, not the
+	// descriptor itself (which would make Switch's `empty` fail).
+	if _, descriptor := field["type"]; descriptor {
+		return nil
+	}
+	return raw
 }
 
 func countInputValues(inputs map[string]interface{}) int {
@@ -1270,6 +1272,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
 		req.SessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	// req.Files is already normalized to the 1D file list by the
@@ -1470,13 +1473,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[string]any {
 	values := make(map[string]any, len(inputs)+1)
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if value, exists := field["value"]; exists {
-				values[name] = value
-				continue
-			}
-		}
-		values[name] = raw
+		values[name] = unwrapFormInput(raw)
 	}
 	values["query"] = query
 	return values

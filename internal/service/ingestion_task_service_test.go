@@ -1118,34 +1118,6 @@ func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *t
 	}
 }
 
-func TestIngestionTaskServiceAggregateTaskProgressByRunClassifiesByPhase(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Chunker", 0, "Chunker Started"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-	if err := svc.RecordLifecycle(ctx, "run-2", "task-1", "Parser", 0, "other run"); err != nil {
-		t.Fatalf("record other run: %v", err)
-	}
-	agg, err := svc.AggregateTaskProgressByPipelineLogID(ctx, "run-1", 2)
-	if err != nil {
-		t.Fatalf("AggregateTaskProgressByPipelineLogID failed: %v", err)
-	}
-	if agg.Done != 1 || agg.Running != 1 || agg.Failed != 0 {
-		t.Fatalf("aggregate = %+v, want Done=1 Running=1 Failed=0", agg)
-	}
-	if agg.Percent != 50 {
-		t.Fatalf("percent = %v, want 50", agg.Percent)
-	}
-}
-
 func TestIngestionTaskServiceRecordMessageClearsLifecycleFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

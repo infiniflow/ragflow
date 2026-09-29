@@ -73,6 +73,7 @@ func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.T
 type fakeUploadStorage struct {
 	objects  map[string][]byte
 	afterPut func()
+	getCalls int
 }
 
 func newFakeUploadStorage() *fakeUploadStorage {
@@ -90,11 +91,23 @@ func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary 
 	return nil
 }
 func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
+	f.getCalls++
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+type imageOwnershipEngine struct {
+	fakeChatDocEngine
+	result  *types.SearchResult
+	request *types.SearchRequest
+}
+
+func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.request = req
+	return e.result, nil
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -110,8 +123,15 @@ func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tena
 func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (f *fakeUploadStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeUploadStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
@@ -235,6 +255,7 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
 }
 
 type failingDeleteDocEngine struct {
@@ -273,11 +294,13 @@ func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string)
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -295,10 +318,12 @@ func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interf
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
 	updateValues     []map[string]interface{}
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
 		{"id": "tree-1", "compile_kwd": "tree"},
@@ -812,8 +837,16 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "path/to/blob"
-	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
+	insertTestFile(t, "file-1", "dataset-folder-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	store := newFakeUploadStorage()
+	if err := store.Put(t.Context(), "kb-1", loc, []byte("document")); err != nil {
+		t.Fatalf("store document blob: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -834,6 +867,9 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
+	}
+	if store.ObjExist(ctx, "kb-1", loc) {
+		t.Fatal("document blob should be deleted")
 	}
 }
 
@@ -935,6 +971,55 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 		if strings.Contains(key, "/.staged/") {
 			t.Fatalf("expected staged object cleanup, found %s", key)
 		}
+	}
+}
+
+func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kb := entity.Knowledgebase{
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := db.First(&kb, "id = ?", kb.ID).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if kb.ParserConfig != nil {
+		t.Fatalf("dataset parser_config = %#v, want nil", kb.ParserConfig)
+	}
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(newFakeUploadStorage())
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	result, err := testDocumentService(t).Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector:     entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: kb,
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-nil-config",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID: "source-1", SemanticIdentifier: "source", Extension: ".txt", Blob: []byte("content"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("sync document: %v", err)
+	}
+	if result.Action != service.DocumentActionAdded {
+		t.Fatalf("sync action = %q, want added", result.Action)
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", result.DocID).Error; err != nil {
+		t.Fatalf("load synced document: %v", err)
+	}
+	if doc.ParserConfig == nil || len(doc.ParserConfig) != 0 {
+		t.Fatalf("document parser_config = %#v, want empty object", doc.ParserConfig)
 	}
 }
 
@@ -1866,7 +1951,7 @@ func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	svc := testDocumentService(t)
 	// Should not panic with no f2d mappings
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "no-mappings")
+	svc.cleanupFileReferences(ctx, "no-mappings", "kb-1")
 }
 
 func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
@@ -1879,7 +1964,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -1904,7 +1989,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d for doc-1 gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -2462,8 +2547,11 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if engine.deleteCalls != 2 {
 		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
@@ -2570,6 +2658,35 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
 		t.Fatalf("available_int = %#v, want 0", got)
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
+	}
+}
+
+func TestDocumentKnowledgeCompileTypesIncludesUnavailableProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	variants, _, err := svc.documentKnowledgeCompileTypes(t.Context(), "tenant-1", "kb-1", "doc-1")
+	if err != nil {
+		t.Fatalf("documentKnowledgeCompileTypes failed: %v", err)
+	}
+	if docEngine.search == nil || !docEngine.search.IncludeUnavailable {
+		t.Fatalf("knowledge compile type search = %#v, want unavailable products included", docEngine.search)
+	}
+	for _, want := range []string{"tree", "structure", "wiki"} {
+		found := false
+		for _, variant := range variants {
+			if variant == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("variants = %v, missing %q", variants, want)
+		}
 	}
 }
 
@@ -3392,6 +3509,45 @@ func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
+	}
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+}
+
 // TestUpdateDatasetDocumentRejectsInvalidPages verifies the fail-fast contract
 // for the "pages" range: an invalid range (from<1) aborts the request with
 // CodeDataError instead of being silently dropped or persisted.
@@ -3421,6 +3577,41 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want CodeDataError", code)
+	}
+}
+
+func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
+			},
+		},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("chunker parent_child = %#v, want persisted public setting", chunker["parent_child"])
+	}
+	if _, ok := resp.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level flat parent_child should be absent, got %#v", resp.ParserConfig["parent_child"])
 	}
 }
 
@@ -3596,7 +3787,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 
 	mockStorage := useFakeStorage(t)
 	data := []byte("artifact content")
-	if err := mockStorage.Put(ctx, sandboxArtifactBucket(), "result.png", data); err != nil {
+	if err := mockStorage.Put(ctx, common.SandboxArtifactBucket(), "result.png", data); err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
 
@@ -3714,7 +3905,7 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
 
-	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+	if got["doc-file"] != "/api/v1/documents/doc-file/thumbnail" {
 		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
 	}
 	if got["doc-base64"] != base64Thumb {
@@ -3725,6 +3916,102 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 	if _, ok := got["doc-other"]; ok {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
+	}
+}
+
+func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("a", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	engine := &imageOwnershipEngine{result: &types.SearchResult{}}
+	store := useFakeStorage(t)
+	if err := store.Put(ctx, kbID, "raw.pdf", []byte("%PDF-1.7")); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	if _, err := svc.GetDocumentImage(ctx, "user-1", kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("GetDocumentImage() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)
+	}
+}
+
+func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("b", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	imageID := "imagetemps-page-1.png"
+	engine := &imageOwnershipEngine{result: &types.SearchResult{Total: 1, Chunks: []map[string]any{{"doc_id": "doc-1", "img_id": imageID}}}}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "imagetemps", "page-1.png", image); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	got, err := svc.GetDocumentImageForDocument(ctx, "user-1", "doc-1", imageID)
+	if err != nil {
+		t.Fatalf("GetDocumentImageForDocument() error = %v", err)
+	}
+	if !bytes.Equal(got, image) {
+		t.Fatalf("GetDocumentImageForDocument() = %q", got)
+	}
+	if engine.request == nil || engine.request.Filter["doc_id"] != "doc-1" || engine.request.Filter["img_id"] != imageID {
+		t.Fatalf("ownership search = %#v", engine.request)
+	}
+}
+
+func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
+	thumbnail := "thumbnail.png"
+	if err := db.Create(&entity.Document{
+		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "kb-thumb", thumbnail, image); err != nil {
+		t.Fatal(err)
+	}
+	svc := testDocumentService(t)
+
+	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
+	}
+	got, err := svc.GetDocumentThumbnail(ctx, "owner-1", "doc-thumb")
+	if err != nil || !bytes.Equal(got, image) {
+		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
 }
 

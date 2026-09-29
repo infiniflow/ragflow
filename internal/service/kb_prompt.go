@@ -97,18 +97,31 @@ func formatChunkEntry(ck SourcedChunk, index int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ID: %d\n", index)
 	if ck.DocName != "" {
-		fmt.Fprintf(&b, "├── Title: %s\n", ck.DocName)
+		fmt.Fprintf(&b, "├── Title: %s\n", collapseNewlines(ck.DocName))
 	}
 	if ck.URL != "" {
-		fmt.Fprintf(&b, "├── URL: %s\n", ck.URL)
+		fmt.Fprintf(&b, "├── URL: %s\n", collapseNewlines(ck.URL))
 	}
 	if ck.DocumentMetadata != nil {
 		for k, v := range ck.DocumentMetadata {
-			fmt.Fprintf(&b, "├── %s: %v\n", k, v)
+			fmt.Fprintf(&b, "├── %s: %v\n", k, collapseNewlines(fmt.Sprint(v)))
 		}
 	}
 	b.WriteString("└── Content:\n")
 	b.WriteString(ck.Content)
 	b.WriteString("\n\n")
 	return b.String()
+}
+
+// collapseNewlines mirrors draw_node() in Python's _kb_block(): a title, URL or
+// metadata value is a single line in the rendered block, so embedded newlines
+// must not break the tree the model is reading.
+func collapseNewlines(s string) string {
+	if !strings.Contains(s, "\n") {
+		return s
+	}
+	for strings.Contains(s, "\n\n") {
+		s = strings.ReplaceAll(s, "\n\n", "\n")
+	}
+	return strings.ReplaceAll(s, "\n", " ")
 }

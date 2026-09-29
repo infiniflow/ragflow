@@ -38,7 +38,7 @@ func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioM
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }

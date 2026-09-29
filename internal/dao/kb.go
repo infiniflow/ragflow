@@ -226,7 +226,8 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
 			knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 			knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
-			knowledgebase.chunk_num, knowledgebase.parser_id, knowledgebase.parser_config,
+			knowledgebase.chunk_num, knowledgebase.similarity_threshold,
+			knowledgebase.vector_similarity_weight, knowledgebase.parser_id, knowledgebase.parser_config,
 			knowledgebase.pagerank, knowledgebase.embd_id,
 			knowledgebase.tenant_embd_id,
 			user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
@@ -467,16 +468,6 @@ func (dao *KnowledgebaseDAO) DecreaseDocumentNum(ctx context.Context, db *gorm.D
 		}).Error
 }
 
-// GetKBIDsByTenantID retrieves all knowledge base IDs for a tenant
-// This matches the Python get_kb_ids method
-func (dao *KnowledgebaseDAO) GetKBIDsByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]string, error) {
-	var kbIDs []string
-	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
-		Pluck("id", &kbIDs).Error
-	return kbIDs, err
-}
-
 // GetAllIDs retrieves all knowledge base IDs
 // This matches the Python get_all_ids method
 func (dao *KnowledgebaseDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]string, error) {
@@ -485,37 +476,6 @@ func (dao *KnowledgebaseDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]stri
 		Where("status = ?", string(entity.StatusValid)).
 		Pluck("id", &kbIDs).Error
 	return kbIDs, err
-}
-
-// UpdateParserConfig updates the parser configuration with deep merge
-// This matches the Python update_parser_config method
-func (dao *KnowledgebaseDAO) UpdateParserConfig(ctx context.Context, db *gorm.DB, id string, config map[string]interface{}) error {
-	var kb entity.Knowledgebase
-	if err := db.WithContext(ctx).Where("id = ? AND status = ?", id, string(entity.StatusValid)).First(&kb).Error; err != nil {
-		return err
-	}
-
-	mergedConfig := mergeConfig(kb.ParserConfig, config)
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("id = ?", id).
-		Update("parser_config", mergedConfig).Error
-}
-
-// DeleteFieldMap removes the field_map from parser_config
-// This matches the Python delete_field_map method
-func (dao *KnowledgebaseDAO) DeleteFieldMap(ctx context.Context, db *gorm.DB, id string) error {
-	var kb entity.Knowledgebase
-	if err := db.WithContext(ctx).Where("id = ? AND status = ?", id, string(entity.StatusValid)).First(&kb).Error; err != nil {
-		return err
-	}
-
-	if kb.ParserConfig != nil {
-		delete(kb.ParserConfig, "field_map")
-		return db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-			Where("id = ?", id).
-			Update("parser_config", kb.ParserConfig).Error
-	}
-	return nil
 }
 
 // GetFieldMap retrieves field mappings from multiple knowledge bases
@@ -605,43 +565,6 @@ func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs
 	}
 
 	return kbs, total, nil
-}
-
-// mergeConfig performs a deep merge of configuration maps
-func mergeConfig(old, new map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	for k, v := range old {
-		result[k] = v
-	}
-
-	for k, v := range new {
-		if existing, ok := result[k]; ok {
-			if existingMap, ok := existing.(map[string]interface{}); ok {
-				if newMap, ok := v.(map[string]interface{}); ok {
-					result[k] = mergeConfig(existingMap, newMap)
-					continue
-				}
-			}
-			if existingSlice, ok := existing.([]interface{}); ok {
-				if newSlice, ok := v.([]interface{}); ok {
-					merged := append(existingSlice, newSlice...)
-					seen := make(map[interface{}]bool)
-					unique := make([]interface{}, 0)
-					for _, item := range merged {
-						if !seen[item] {
-							seen[item] = true
-							unique = append(unique, item)
-						}
-					}
-					result[k] = unique
-					continue
-				}
-			}
-		}
-		result[k] = v
-	}
-
-	return result
 }
 
 // DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)

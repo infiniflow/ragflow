@@ -17,8 +17,14 @@
 package server
 
 import (
+	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +66,46 @@ kvrocks:
 	}
 	if !foundKvrocks {
 		t.Fatalf("Kvrocks config not exported in GetAllConfigs: %#v", allConfigs)
+	}
+}
+
+func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "service_conf.yaml")
+	const secret = "test-only-mcp-secret"
+	if err := os.WriteFile(path, []byte("mcp: {host_api_key: "+secret+", launch_mode: host}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldConfig, oldViper := globalConfig, globalViper
+	oldLogger := common.Logger
+	t.Cleanup(func() { globalConfig, globalViper = oldConfig, oldViper; common.Logger = oldLogger })
+	core, logs := observer.New(zapcore.InfoLevel)
+	common.Logger = zap.New(core)
+	if err := Init(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := GetConfig().GetAPIServerConfig().MCP.HostAPIKey; got != secret {
+		t.Fatal("key was not loaded")
+	}
+	PrintAll()
+	if strings.Contains(fmt.Sprint(logs.All()), secret) {
+		t.Fatal("MCP key leaked to configuration log")
+	}
+	all, err := GetAllConfigs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(fmt.Sprint(all), secret) {
+		t.Fatal("MCP key exported")
+	}
+	if globalViper.GetString("mcp.host_api_key") != secret {
+		t.Fatal("logging mutated loaded configuration")
+	}
+	t.Setenv("RAGFLOW_MCP_HOST_API_KEY", "different-test-secret")
+	if err := Init(path); err != nil {
+		t.Fatal(err)
+	}
+	PrintAll()
+	if strings.Contains(fmt.Sprint(logs.All()), "different-test-secret") {
+		t.Fatal("environment key leaked")
 	}
 }

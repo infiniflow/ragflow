@@ -9,13 +9,10 @@ import (
 	"ragflow/internal/service/nav"
 )
 
-// TestNavInputFromProducts_TreeAndStructure covers B2: nav is fed by BOTH tree
-// and structure products (not tree alone). Tree uses the root product's summary;
-// structure folds the per-document entity ROW descriptions into a summary
-// (mirroring Python runner.py rebuild_structure_graph_json +
-// _page_index_graph_summary — the graph blob product is gone from the storage
-// model).
-func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
+// TestNavInputFromProducts_TreeAndPageIndex verifies that navigation is fed by
+// tree roots and PageIndex entity rows. Other structure kinds do not create
+// navigation entries.
+func TestNavInputFromProducts_TreeAndPageIndex(t *testing.T) {
 	products := []kccommon.Product{
 		// tree: root product carries the doc summary + vector.
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
@@ -24,17 +21,21 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 		// tree: a non-root summary node is NOT a nav input.
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
 			Content: "section body", Meta: map[string]any{"kind": "summary", "level": 0}},
-		// structure: entity rows fold their descriptions into the doc summary.
+		// PageIndex entity rows fold their descriptions into the doc summary.
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
 			Content: `{"name":"Engine","type":"component","description":"a propulsion device"}`,
-			Meta:    map[string]any{"kind": "entity", "compile_kwd": "page_index"}},
+			Kind:    "page_index", Meta: map[string]any{"kind": "entity"}},
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
 			Content: `{"name":"Turbine","type":"component","description":"converts flow into rotation"}`,
-			Meta:    map[string]any{"kind": "entity", "compile_kwd": "page_index"}},
-		// structure: a relation row is NOT a nav summary line.
+			Kind:    "page_index", Meta: map[string]any{"kind": "entity"}},
+		// A PageIndex relation is not a nav summary line.
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
 			Content: `{"from":"Engine","to":"Turbine","type":"drives"}`,
-			Meta:    map[string]any{"kind": "relation", "compile_kwd": "page_index", "from": "Engine", "to": "Turbine"}},
+			Kind:    "page_index", Meta: map[string]any{"kind": "relation", "from": "Engine", "to": "Turbine"}},
+		// Graph entities must not create navigation entries.
+		{DocID: "d3", TenantID: "t1", Variant: kccommon.VariantStructure,
+			Content: `{"name":"Graph entity","description":"must not become navigation"}`,
+			Kind:    "knowledge_graph", Meta: map[string]any{"kind": "entity"}},
 	}
 
 	got := navInputFromProducts("kb1", products)
@@ -55,23 +56,26 @@ func TestNavInputFromProducts_TreeAndStructure(t *testing.T) {
 	if !reflect.DeepEqual(treeIn.Embedd, []float32{0.1, 0.2}) {
 		t.Errorf("tree embedd should be the root vector, got %v", treeIn.Embedd)
 	}
-	structIn, ok := byDoc["d2"]
+	pageIndexIn, ok := byDoc["d2"]
 	if !ok {
-		t.Fatal("missing structure nav input for d2")
+		t.Fatal("missing PageIndex nav input for d2")
 	}
-	if !strings.Contains(structIn.Summary, "Engine: a propulsion device") {
-		t.Errorf("structure summary = %q, want folded entity descriptions", structIn.Summary)
+	if _, found := byDoc["d3"]; found {
+		t.Fatal("Graph structure product must not produce navigation input")
 	}
-	if !strings.Contains(structIn.Summary, "Turbine: converts flow into rotation") {
-		t.Errorf("structure summary = %q, want both entity lines", structIn.Summary)
+	if !strings.Contains(pageIndexIn.Summary, "Engine: a propulsion device") {
+		t.Errorf("PageIndex summary = %q, want folded entity descriptions", pageIndexIn.Summary)
 	}
-	if strings.Contains(structIn.Summary, "drives") {
-		t.Errorf("structure summary must not include relation rows, got %q", structIn.Summary)
+	if !strings.Contains(pageIndexIn.Summary, "Turbine: converts flow into rotation") {
+		t.Errorf("PageIndex summary = %q, want both entity lines", pageIndexIn.Summary)
+	}
+	if strings.Contains(pageIndexIn.Summary, "drives") {
+		t.Errorf("PageIndex summary must not include relation rows, got %q", pageIndexIn.Summary)
 	}
 	// The entity rows' vectors are NOT the summary vector: leave Embedd empty so
 	// NavService embeds the folded summary text.
-	if len(structIn.Embedd) != 0 {
-		t.Errorf("structure embedd should be empty (NavService re-embeds), got %v", structIn.Embedd)
+	if len(pageIndexIn.Embedd) != 0 {
+		t.Errorf("PageIndex embedd should be empty (NavService re-embeds), got %v", pageIndexIn.Embedd)
 	}
 }
 
@@ -95,9 +99,9 @@ func TestNavInputFromProducts_EmptySummaryDropped(t *testing.T) {
 	products := []kccommon.Product{
 		// tree root with empty content -> skip.
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree, Meta: map[string]any{"kind": "root"}},
-		// structure entity with no description -> skip.
+		// PageIndex entity with no description -> skip.
 		{DocID: "d2", TenantID: "t1", Variant: kccommon.VariantStructure,
-			Content: `{"name":"A","description":""}`, Meta: map[string]any{"kind": "entity"}},
+			Kind: "page_index", Content: `{"name":"A","description":""}`, Meta: map[string]any{"kind": "entity"}},
 	}
 	got := navInputFromProducts("kb1", products)
 	if len(got) != 0 {
@@ -109,7 +113,7 @@ func TestNavInputFromProducts_TreeSummaryWinsRegardlessOfOrder(t *testing.T) {
 	products := []kccommon.Product{
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantStructure,
 			Content: `{"name":"A","description":"structure summary"}`,
-			Meta:    map[string]any{"kind": "entity"}},
+			Kind:    "page_index", Meta: map[string]any{"kind": "entity"}},
 		{DocID: "d1", TenantID: "t1", Variant: kccommon.VariantTree,
 			Content: "tree summary", Vector: []float32{0.1},
 			Meta: map[string]any{"kind": "root"}},

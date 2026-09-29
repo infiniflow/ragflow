@@ -26,16 +26,13 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -81,6 +78,8 @@
 
 請登入網址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 試用雲服務。
 
+如需本機部署，請參閱[本機部署](#-自行架設)。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -88,18 +87,19 @@
 
 ## 🔥 近期更新
 
-- 2026-06-15 支援飛書、Discord、Telegram、Line 等多種聊天管道。
-- 2026-04-24 支援 DeepSeek v4 版本。
-- 2026-03-24 發布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以透過 OpenClaw 訪問 RAGFlow 數據集。
-- 2025-12-26 支援AI代理的「記憶」功能。
-- 2025-11-19 支援 Gemini 3 Pro。
-- 2025-11-12 支援從 Confluence、S3、Notion、Discord、Google Drive 進行資料同步。
-- 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
-- 2025-10-15 支援可編排的資料管道。
-- 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
-- 2025-08-01 支援 agentic workflow 和 MCP。
-- 2025-05-23 為 Agent 新增 Python/JS 程式碼執行器元件。
-- 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述。
+- 2026-09-29 發布 RAGFlow 1.0.0-rc1。
+
+- 2026-09-10 支援透過 Sitemap 接入網站內容。
+- 2026-08-19 推出知識編譯，支援在文件級和知識庫級產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
+- 2026-08-19 推出 Agentic RAG，支援 Low、Medium、High、Ultra 四種思考模式。
+- 2026-07-02 支援 Google BigQuery 資料來源接入與增量同步。
+- 2026-06-29 支援 WhatsApp、釘釘和企業微信聊天管道。
+- 2026-05-26 新增 Browser 元件，支援 Agent 自主瀏覽和操作網頁。
+- 2026-04-21 提供七種預置資料攝取流水線範本。
+- 2026-04-21 支援 Agent 應用程式發布、Sandbox 程式碼執行與圖表產生。
+- 2026-04-21 支援使用者級記憶儲存和檢索。
+
+更多更新請參閱[完整發布記錄](./docs/release_notes.md)。
 
 
 ## 🎉 關注項目
@@ -114,13 +114,32 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 基於[深度文件理解](./deepdoc/README.md)，能夠從各類複雜格式的非結構化資料中提取真知灼見。
+- 基於深度文件理解，能夠從各類複雜格式的非結構化資料中提取真知灼見。
 - 真正在無限上下文（token）的場景下快速完成大海撈針測試。
 
 ### 🍱 **基於模板的文字切片**
 
 - 不只是智能，更重要的是可控可解釋。
 - 多種文字範本可供選擇
+
+### 🧩 **知識編譯（Knowledge Compilation）**
+
+- 支援文件級和知識庫級編譯，將原始內容整理為結構化知識產物。
+- 透過編譯範本產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills，滿足不同的知識組織與重用需求。
+- 支援設定編譯模型與處理規則，並檢視、更新和重新產生知識產物。
+
+### 🧠 **Agentic Retrieval**
+
+- 針對複雜問題進行多步檢索：模型會分析問題，並在需要時執行問題拆解、知識檢索和證據核驗。
+- 透過多輪檢索與推理取得更完整的上下文，協助產生有依據的回答。
+- 支援 Low、Medium、High、Ultra 思考模式，可依問題複雜度控制檢索和推理深度。
+
+### ⚙️ **Go 原生服務架構**
+
+- API、Admin、Ingestor 和 Syncer 由 Go 服務統一提供。
+- DeepDoc 在 Go 行程內執行，負責版面分析、OCR 和表格辨識。
+- Go 服務透過 CGO 呼叫原生文件解析程式庫和 ONNX Runtime。
+- MCP 和 Sandbox Executor 是可按需啟用的選用能力。
 
 ### 🌱 **有理有據、最大程度降低幻覺（hallucination）**
 
@@ -141,26 +160,27 @@
 ## 🔎 系統架構
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow 系統架構" width="1000" />
 </div>
 
 ## 🎬 自行架設
 
-### 📝 前提條件
+### 🐳 Docker 部署
 
-- CPU >= 4 核
-- RAM >= 16 GB
-- Disk >= 50 GB
+#### 📝 Docker 部署前提條件
+
+- 建議起步配置：4 核 CPU、16 GB 記憶體和 50 GB 可用磁碟。實際資源需求取決於文件引擎、資料規模、解析任務和並發量；啟用本機模型或其他額外元件時，請同時滿足相應元件的資源需求。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在您打算使用 RAGFlow 的代碼執行器（沙箱）功能時才需要安裝。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在使用 Self-Managed 容器 Sandbox 時需要安裝和設定。
+
+Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時需要額外安裝和設定 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主機安裝 gVisor。
 
 > [!TIP]
 > 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
 
-### 🚀 啟動伺服器
+#### 🚀 啟動伺服器
 
-1. 確保 `vm.max_map_count` 不小於 262144：
+1. 如果使用 Elasticsearch，請將 Docker 主機的 `vm.max_map_count` 設為至少 262144。使用 Infinity 時通常不需要執行此步驟：
 
    > 如需確認 `vm.max_map_count` 的大小：
    >
@@ -186,210 +206,149 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. 進入 **docker** 資料夾，利用事先編譯好的 Docker 映像啟動伺服器：
+3. 切換至 Go 版發布標籤，並使用 Docker Compose 啟動伺服器：
 
-> [!CAUTION]
-> 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
-> 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
+> [!NOTE]
+> Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
-> 執行以下指令會自動下載 RAGFlow Docker 映像 `v0.27.2`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.27.2` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
+   進入 Docker 部署目錄。
 
-```bash
+   ```bash
    cd ragflow/docker
+   ```
 
-   git checkout v0.27.2
-   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
-   # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
+   切換至 Go v1.0.0-rc1 發布標籤。
 
-   # Use CPU for DeepDoc tasks:
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   在背景啟動 Go 服務及其相依服務。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> 注意：在 `v0.22.0` 之前的版本，我們會同時提供包含 embedding 模型的映像和不含 embedding 模型的 slim 映像。具體如下：
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> 從 `v0.22.0` 開始，我們只發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
-
-> [!TIP]
-> 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
->
-> - 華為雲鏡像名：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow`
-> - 阿里雲鏡像名：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow`
-
-4. 伺服器啟動成功後再次確認伺服器狀態：
-
-   ```bash
-   docker logs -f docker-ragflow-cpu-1
    ```
 
-   _出現以下介面提示說明伺服器啟動成功：_
+預設 MySQL 設定下，Go 映像入口會先執行資料庫遷移，再透過 `bin/ragflow_server` 啟動 Syncer、Admin、API 和 Ingestor。
+
+> RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理。
+
+4. 啟動後檢查服務狀態和 API 是否就緒：
 
    ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
+   docker ps
    ```
 
-   > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network abnormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
-   >
+   上述命令會顯示相依服務的狀態。RAGFlow 本身未定義 Compose healthcheck；請透過 API 確認是否就緒：
+
+   ```bash
+   curl -f http://localhost/api/v1/system/healthz
+   ```
+
+   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請在健康檢查網址中使用對應的連接埠。啟動失敗時，請使用 `docker logs --tail 50 <service>` 查看對應服務日誌。
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
    > 上面這個範例中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過設定則無需輸入連接埠（預設的 HTTP 服務連接埠 80）。
    >
-6. 在 [service_conf.yaml.template](./docker/service_conf.yaml.template) 檔案的 `user_default_llm` 欄位設定 LLM factory，並在 `API_KEY` 欄填入和你選擇的大模型相對應的 API key。
-
-   > 詳見 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)。
-   >
+6. 登入 RAGFlow 後，在模型提供商頁面新增 LLM、Embedding 和 Reranker，並填寫對應的模型名稱、服務位址和 API key。
 
    _好戲開始，接著奏樂接著舞！ _
 
-## 🔧 系統配置
+#### ⚙️ Docker 設定與調整
 
-系統配置涉及以下三份文件：
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台限制和 macOS 執行要求，請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
-- [.env](./docker/.env)：存放一些系統環境變量，例如 `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` 等。
-- [service_conf.yaml.template](./docker/service_conf.yaml.template)：設定各類別後台服務。
-- [docker-compose.yml](./docker/docker-compose.yml): 系統依賴該檔案完成啟動。
+切換文件引擎、更新設定、重新啟動服務，以及保留或清除既有資料等操作，也請依照上述 Docker 設定文件執行。
 
-請務必確保 [.env](./docker/.env) 檔案中的變數設定與 [service_conf.yaml.template](./docker/service_conf.yaml.template) 檔案中的設定保持一致！
+### 🔨 以原始碼啟動 Go 服務
 
-如果無法存取映像網站 hub.docker.com 或模型網站 huggingface.co，請依照 [.env](./docker/.env) 註解修改 `RAGFLOW_IMAGE` 和 `HF_ENDPOINT`。
+#### 📝 原始碼啟動前提條件
 
-> [./docker/README](./docker/README.md) 解釋了 [service_conf.yaml.template](./docker/service_conf.yaml.template) 用到的環境變數設定和服務配置。
+原始碼啟動需要安裝 `go.mod` 指定的 Go 版本（目前為 Go 1.27）、Clang 20、LLD 20、CMake >= 4.0、PCRE2 開發檔案，以及 CGO 所需的原生程式庫。僅開發 React 前端時需要 Node.js 和 npm。
 
-如需更新預設的 HTTP 服務連接埠(80), 可以在[docker-compose.yml](./docker/docker-compose.yml) 檔案中將配置 `80:80` 改為 `<YOUR_SERVING_PORT>:80` 。
-
-> 所有系統配置都需要透過系統重新啟動生效：
->
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-###把文檔引擎從 Elasticsearch 切換成為 Infinity
-
-RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換為 [Infinity](https://github.com/infiniflow/infinity/), 可以按照下面步驟進行:
-
-1. 停止所有容器運作:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-   Note: `-v` 將會刪除 docker 容器的 volumes，已有的資料會被清空。
-2. 設定 **docker/.env** 目錄中的 `DOC_ENGINE` 為 `infinity`.
-3. 啟動容器:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Infinity 目前官方並未正式支援在 Linux/arm64 架構下的機器上運行.
-
-## 🔧 原始碼編譯 Docker 映像
-
-本 Docker 映像大小約 2 GB 左右並且依賴外部的大模型和 embedding 服務。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-若您位於代理環境，可傳遞代理參數：
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 以原始碼啟動服務
-
-1. 安裝 `uv`。如已安裝，可跳過此步驟：
-
-   ```bash
-   pipx install uv
-   export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
-   ```
-2. 下載原始碼並安裝 Python 依賴：
+1. 複製倉庫，並安裝上述建置工具：
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   cd ragflow
    ```
-3. 透過 Docker Compose 啟動依賴的服務（MinIO, Elasticsearch, Redis, and MySQL）：
+2. 使用 [Go 依賴下載腳本](./ragflow_deps/download_go_deps.py)準備原生程式庫和模型檔案，再編譯 Go 服務：
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
 
-   在 `/etc/hosts` 中加入以下程式碼，將 **conf/service_conf.yaml** 檔案中的所有 host 位址都解析為 `127.0.0.1`：
-
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. 如果無法存取 HuggingFace，可以把環境變數 `HF_ENDPOINT` 設為對應的鏡像網站：
-
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-5. 如果你的操作系统没有 jemalloc，请按照如下方式安装：
+   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+3. 啟動本機依賴服務，並確認 **conf/service_conf.yaml** 中的主機與連接埠可從主機存取：
 
    ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
-6. 啟動後端服務：
+
+   從原始碼啟動的 Go 服務透過 `localhost:6379` 連線到 Compose 暴露的 Kvrocks；Docker 服務則使用容器網路中的主機名稱。使用提供的設定無需修改 `/etc/hosts`。
+4. 先遷移資料庫，再依序啟動服務。每項命令都要在倉庫根目錄的獨立終端機執行；資料庫遷移完成後可關閉該終端機，其餘四個服務終端機需保持執行：
+
+   終端機 1：遷移資料庫
 
    ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
+   ./bin/ragflow_server --migrate
    ```
-7. 安裝前端依賴：
+
+   終端機 2：Admin，目標連接埠 9381
+
+   ```bash
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   終端機 3：Ingestor
+
+   ```bash
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   終端機 4：Syncer
+
+   ```bash
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   終端機 5：API，目標連接埠 9380
+
+   ```bash
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ```
+
+   各啟動模式的作用如下：
+
+   - `--migrate`：執行資料庫遷移，完成後退出。
+   - `--admin`：啟動 Admin 服務，負責管理和初始化操作。
+   - `--ingestor`：啟動 Ingestor 服務，負責資料攝取和解析任務。
+   - `--syncer`：啟動 Syncer 服務，負責資料同步任務。
+   - `--api`：啟動 API 服務，為 Web、SDK 和外部用戶端提供介面。
+
+   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer；如需完整服務鏈，請另外執行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
+5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
    ```bash
    cd web
    npm install
+   API_PROXY_SCHEME=go npm run dev
    ```
-8. 啟動前端服務：
+
+   在另一個終端機確認 Go API 已就緒：
 
    ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   以下界面說明系統已成功啟動：_
+   返回 HTTP 200 表示 API 可以正常回應。開發結束時，在各服務終端機按 `Ctrl+C` 停止對應程序。如需停止相依服務但保留容器，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需移除相依服務容器和 Compose 網路但保留具名資料卷，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`。
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
-9. 開發完成後停止 RAGFlow 前端和後端服務：
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+詳情請參閱[從原始碼啟動服務](./docs/develop/launch_ragflow_from_source.md)。
 
 ## 📚 技術文檔
 

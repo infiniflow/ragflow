@@ -32,6 +32,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// KeywordDelimiter separates the original question from the keywords appended
+// by keyword extraction. Without it the question's last token merges with the
+// first keyword during tokenization, which silently degrades lexical matching.
+// Every question-augmentation callsite uses this one delimiter.
+const KeywordDelimiter = ","
+
+// AppendKeywords joins question with the keywords extracted from it, separated
+// by KeywordDelimiter. An empty keywords string (failed or empty extraction)
+// leaves question untouched, so a dangling delimiter is never appended.
+func AppendKeywords(question, keywords string) string {
+	if keywords == "" {
+		return question
+	}
+	return question + KeywordDelimiter + keywords
+}
+
 // KeywordExtraction extracts keywords from content using LLM.
 //
 // Uses ChatModel to call the LLM with a keyword extraction prompt.

@@ -26,7 +26,9 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
 )
@@ -46,19 +48,21 @@ func (s stubRetrievalService) Search(_ context.Context, _ *gorm.DB, req runtime.
 	return s.chunks, nil
 }
 
-// stubDocEngine implements engine.DocEngine by only serving GetChunk; the rest
-// of the (large) interface is promoted from a nil field and never called by
-// this test.
+// stubDocEngine serves the document-scoped Search used by retrieval_by_children;
+// the rest of the (large) interface is promoted from a nil field and never
+// called by this test.
 type stubDocEngine struct {
 	engine.DocEngine
 	parents map[string]map[string]any
 }
 
-func (s stubDocEngine) GetChunk(_ context.Context, _, chunkID string, _ []string) (interface{}, error) {
-	if p, ok := s.parents[chunkID]; ok {
-		return p, nil
+func (s stubDocEngine) Search(_ context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
+	parentID, _ := req.Filter["id"].(string)
+	docID, _ := req.Filter["doc_id"].(string)
+	if p, ok := s.parents[parentID]; ok && p["doc_id"] == docID {
+		return &enginetypes.SearchResult{Chunks: []map[string]interface{}{p}}, nil
 	}
-	return nil, fmt.Errorf("parent %s not found", chunkID)
+	return &enginetypes.SearchResult{}, nil
 }
 
 // TestRuntimeRetrieverPreservesUnsetControls pins the presence semantics of the
@@ -139,8 +143,8 @@ func TestChunkAggRetrievePropagatesError(t *testing.T) {
 func TestRuntimeRetrieverPromotesChildrenToParent(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
-		{ID: "child-1", Content: "frag one", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
-		{ID: "child-2", Content: "frag two", DatasetID: "kb-1", MomID: "parent-1", Score: 0.8},
+		{ID: "child-1", Content: "frag one", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
+		{ID: "child-2", Content: "frag two", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.8},
 		{ID: "top-1", Content: "standalone", DatasetID: "kb-1", Score: 0.9},
 	}})
 	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
@@ -223,7 +227,7 @@ func TestHybridSearchSkipsWhenNoChildren(t *testing.T) {
 func TestBM25SearchDoesPromoteChildren(t *testing.T) {
 	prev := runtime.GetRetrievalService()
 	runtime.SetRetrievalService(stubRetrievalService{chunks: []runtime.RetrievalChunk{
-		{ID: "child-1", Content: "frag", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
+		{ID: "child-1", Content: "frag", DocumentID: "doc-1", DatasetID: "kb-1", MomID: "parent-1", Score: 0.6},
 	}})
 	t.Cleanup(func() { runtime.SetRetrievalService(prev) })
 
@@ -1360,6 +1364,412 @@ func TestPassageFromChunkTruncatesContent(t *testing.T) {
 	}
 	// Keys: exactly: {"id","content","doc_id"} — the
 	// id must live under "id", which is what the drill merge reads back.
+	if p["doc_id"] != "d1" || p["id"] != "c1" {
+		t.Errorf("passage = %v", p)
+	}
+}
+
+// TestMetadataSearchToolBadArgsAndKeyHints pins the two "the model should change what it
+// asked for" outcomes: a call without filters, and a filter key the dataset does not
+// carry. Both are MISS/bad_args — a query-level miss, never a claim about the tool — and
+// the key case names the fields the dataset really has.
+func TestMetadataSearchToolBadArgsAndKeyHints(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK: true,
+		metas:      common.MetaData{"author": {"Alice": {"d1"}}},
+	}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+	ctx := context.Background()
+
+	out, err := exec.Execute(ctx, "metadata_search", map[string]any{})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args for a call without filters", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "search_chunks") {
+		t.Errorf("note = %q, want the fallback tools named", note)
+	}
+
+	out, err = exec.Execute(ctx, "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args for a missing key", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "author") {
+		t.Errorf("note = %q, want the dataset's REAL keys listed", note)
+	}
+}
+
+// TestMetadataSearchToolInfraWhenIndexUnreadable pins the semantic split: a metadata-index
+// failure is ERROR/infra and must NOT be phrased as "this dataset has no metadata" — the
+// model would then give up on a filter that a working index would have honoured.
+func TestMetadataSearchToolInfraWhenIndexUnreadable(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{flattenErr: errors.New("es down")}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusError || out.Reason != ReasonInfra {
+		t.Errorf("status/reason = %s/%s, want error/infra", out.Status, out.Reason)
+	}
+	if note := toolNote(out); !strings.Contains(note, "NOT a statement about the dataset") {
+		t.Errorf("note = %q, want an explicit infra framing", note)
+	}
+}
+
+// TestMetadataSearchToolReturnsMatchedDocIDsOnly pins the selector contract: the tool
+// resolves the matching documents and returns their doc_ids — it runs NO retrieval, admits
+// nothing to the shared pool and returns no passages. The ids are the whole output, because
+// that is what lets the model spend one filter on several follow-up tools.
+//
+// The result also carries the applied filter and each matched document's metadata values —
+// context the model reads, never an argument to hand to another tool (the ids are that
+// argument). Values are drawn from the dataset's DECLARED fields, so annotation noise the
+// dataset never declared cannot leak into every result.
+func TestMetadataSearchToolReturnsMatchedDocIDsOnly(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"id": "c1", "doc_id": "d1", "content": "Culdcept was released in 1999 by OmiyaSoft."},
+	}}
+	deps, kb := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1", "d2"},
+		metas:       common.MetaData{"title": {"Culdcept": {"d1", "d2"}}},
+		docMeta: map[string]map[string]any{
+			"d1": {
+				"title":       "Culdcept",
+				"file_name":   "culdcept.pdf",
+				"update_time": "2026-09-20 13:55:03",
+				"verdict":     "incorrect", // observed-only noise: must not be carried
+			},
+			"d2": {"title": []any{"Culdcept", "Culdcept II"}},
+		},
+	}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "title", Type: "string"},
+		{Key: "file_name", Type: "string"},
+		{Key: "update_time", Type: "time"},
+	}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
+		"logic":   "and",
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok", out.Status, out.Reason)
+	}
+	// A selector retrieves nothing: the retriever must not be called at all.
+	if len(r.requests) != 0 {
+		t.Errorf("retriever calls = %d, want 0 (metadata_search must not search)", len(r.requests))
+	}
+	if len(kb.Chunks) != 0 {
+		t.Errorf("pool chunks = %d, want none admitted by a selector", len(kb.Chunks))
+	}
+	if len(out.EvidenceIDs) != 0 {
+		t.Errorf("evidence ids = %v, want none", out.EvidenceIDs)
+	}
+	if len(out.Payload) != 1 {
+		t.Fatalf("payload = %v, want one doc_ids object", out.Payload)
+	}
+	m, ok := out.Payload[0].(map[string]any)
+	if !ok {
+		t.Fatalf("payload[0] = %#v, want a map", out.Payload[0])
+	}
+	if m["kind"] != "metadata_search" {
+		t.Errorf("payload kind = %v, want metadata_search", m["kind"])
+	}
+	ids, _ := m["doc_ids"].([]string)
+	if len(ids) != 2 || ids[0] != "d1" || ids[1] != "d2" {
+		t.Errorf("doc_ids = %v, want the matched documents", m["doc_ids"])
+	}
+	if docs, _ := out.Metrics["docs"].(int); docs != 2 {
+		t.Errorf("metrics docs = %v, want 2", out.Metrics["docs"])
+	}
+
+	// The applied filter travels with the result.
+	applied, _ := m["filters"].([]map[string]any)
+	if len(applied) != 1 || applied[0]["key"] != "title" || applied[0]["op"] != "contains" {
+		t.Errorf("payload filters = %v, want the applied condition", m["filters"])
+	}
+
+	// Per-document context: declared fields only, lists joined, noise excluded.
+	docsList, _ := m["documents"].([]any)
+	if len(docsList) != 2 {
+		t.Fatalf("payload documents = %v, want one entry per matched document", m["documents"])
+	}
+	first, _ := docsList[0].(map[string]any)
+	if first["doc_id"] != "d1" {
+		t.Errorf("documents[0].doc_id = %v, want d1", first["doc_id"])
+	}
+	fields, _ := first["metadata"].(map[string]any)
+	if fields["file_name"] != "culdcept.pdf" || fields["update_time"] != "2026-09-20 13:55:03" {
+		t.Errorf("documents[0].metadata = %v, want the document's declared values", fields)
+	}
+	if _, leaked := fields["verdict"]; leaked {
+		t.Errorf("documents[0].metadata carries an undeclared observed key: %v", fields)
+	}
+	second, _ := docsList[1].(map[string]any)
+	fields2, _ := second["metadata"].(map[string]any)
+	if fields2["title"] != "Culdcept, Culdcept II" {
+		t.Errorf("documents[1].metadata[title] = %v, want the list joined with \", \"", fields2["title"])
+	}
+}
+
+// TestMetadataSearchToolContextReadFailureKeepsTheSelection pins the best-effort contract of
+// the context block: the documents were already resolved, so a failed metadata read must
+// still return them (with the filter) rather than turning the call into an error.
+func TestMetadataSearchToolContextReadFailureKeepsTheSelection(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1"},
+		metas:       common.MetaData{"title": {"Culdcept": {"d1"}}},
+		docMetaErr:  errors.New("metadata index down"),
+	}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "Culdcept"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok — the ids resolved, only the context is missing", out.Status, out.Reason)
+	}
+	m, _ := out.Payload[0].(map[string]any)
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the matched document", got)
+	}
+	if _, present := m["documents"]; present {
+		t.Errorf("payload documents = %v, want the block omitted when nothing could be read", m["documents"])
+	}
+}
+
+// TestMetadataSearchToolAcceptsCatalogFieldKey pins the non-title path end to end at the
+// executor: a field the dataset really carries is accepted and the push-down resolves the
+// documents. Before the catalog the schema never let a model emit this filter, so the
+// executor's field-agnosticism was unreachable in practice.
+func TestMetadataSearchToolAcceptsCatalogFieldKey(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	resolver := &stubMetadataResolver{
+		pushdownOK:  true,
+		pushdownIDs: []string{"d1"},
+		metas:       common.MetaData{"author": {"Alice": {"d1"}}},
+	}
+	deps.MetadataResolver = resolver
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "author", "op": "contains", "value": "Alice"}},
+		"logic":   "and",
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s), want ok — a field the dataset carries must not be rejected", out.Status, out.Reason)
+	}
+	if len(resolver.gotFilters) != 1 || resolver.gotFilters[0]["key"] != "author" {
+		t.Errorf("resolver filters = %v, want the author condition", resolver.gotFilters)
+	}
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the author-matched document", got)
+	}
+}
+
+// TestMetadataSearchToolWithoutMetadataIsMissNotError pins the metadata-free outcome: a
+// call against a dataset whose metadata index carries NOTHING is a query-level bad_args
+// miss with the fallback named — never an ERROR, which would tell the model the
+// infrastructure failed and it should give up on the whole line of search.
+func TestMetadataSearchToolWithoutMetadataIsMissNotError(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, metas: common.MetaData{}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "title", "op": "contains", "value": "New York"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status == StatusError {
+		t.Fatalf("status = error (reason %s); a metadata-free dataset is NOT an infrastructure failure", out.Reason)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Errorf("status/reason = %s/%s, want miss/bad_args", out.Status, out.Reason)
+	}
+	note := toolNote(out)
+	if !strings.Contains(note, "NONE") {
+		t.Errorf("note = %q, want the explicit no-metadata hint", note)
+	}
+	if !strings.Contains(note, "search_chunks") {
+		t.Errorf("note = %q, want the fallback tools named", note)
+	}
+}
+
+// TestMetadataSearchToolAcceptsDeclaredOnlyField pins the consistency the declarative source
+// forces: a field the dataset DECLARES but has not indexed yet is advertised by the schema, so
+// the executor — which validates against the same union — must accept it rather than answer
+// "no such key" to the very filter it offered.
+func TestMetadataSearchToolAcceptsDeclaredOnlyField(t *testing.T) {
+	r := &stubRetriever{chunks: []map[string]any{
+		{"id": "c1", "doc_id": "d1", "content": "A report about towers."},
+	}}
+	deps, _ := newTestSearchDeps(r)
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, pushdownIDs: []string{"d1"}, metas: common.MetaData{}}
+	deps.DeclaredMetadata = &stubDeclaredMetadata{defs: []common.MetadataFieldDef{
+		{Key: "doc_type", Description: "kind of document", Enum: []string{"report"}},
+	}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "doc_type", "op": "=", "value": "report"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusOK {
+		t.Fatalf("status = %s (reason %s); a declared field must be accepted, not answered with bad_args", out.Status, out.Reason)
+	}
+	if got := payloadDocIDs(out.Payload); len(got) != 1 || got[0] != "d1" {
+		t.Errorf("doc_ids = %v, want the declared-field match", got)
+	}
+}
+
+// TestMetadataSearchToolRejectsSystemKey pins the blacklist at the enforcement point: a key
+// the catalog refuses to advertise (benchmark labels, connector fields) is ALSO refused when
+// the model names it anyway, so the leak cannot be reached by guessing.
+func TestMetadataSearchToolRejectsSystemKey(t *testing.T) {
+	deps, _ := newTestSearchDeps(&stubRetriever{})
+	deps.MetadataResolver = &stubMetadataResolver{pushdownOK: true, metas: common.MetaData{
+		"title":       {"Culdcept": {"d1"}},
+		"question_id": {"444": {"d1"}},
+	}}
+	exec := NewSearchExecutor(deps, RunRequest{ThinkingMode: "high"})
+
+	out, err := exec.Execute(context.Background(), "metadata_search", map[string]any{
+		"filters": []any{map[string]any{"key": "question_id", "op": "=", "value": "444"}},
+	})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if out.Status != StatusMiss || out.Reason != ReasonBadArgs {
+		t.Fatalf("status/reason = %s/%s, want miss/bad_args for a blacklisted key", out.Status, out.Reason)
+	}
+	note := toolNote(out)
+	if !strings.Contains(note, "Available: title") {
+		t.Errorf("note = %q, want the offered fields only (no question_id)", note)
+	}
+	if strings.Contains(note, "444") {
+		t.Errorf("note = %q, must not echo a blacklisted key's value", note)
+	}
+}
+
+// TestNormalizeMetadataValue pins the value coercion: a list where one keyword is expected
+// collapses to its first non-empty element (one call = one keyword), 'in' keeps its list,
+// and an all-empty list becomes no value at all.
+func TestNormalizeMetadataValue(t *testing.T) {
+	cases := []struct {
+		value any
+		op    string
+		want  any
+	}{
+		{[]any{"New York", "Boston"}, "contains", "New York"},
+		{[]any{"", nil, "Boston"}, "contains", "Boston"},
+		{[]any{"", nil}, "contains", nil},
+		{[]any{"a", "b"}, "in", []any{"a", "b"}},
+		{"New York", "contains", "New York"},
+	}
+	for _, c := range cases {
+		if got := NormalizeMetadataValue(c.value, c.op); fmt.Sprint(got) != fmt.Sprint(c.want) {
+			t.Errorf("NormalizeMetadataValue(%v, %q) = %v, want %v", c.value, c.op, got, c.want)
+		}
+	}
+}
+
+// TestMetadataSearchOneShotGuardBlocksSecondCall pins the one-shot policy end to end at
+// the tool node: the first call runs, the second within the same session is answered with
+// a nudge and never executed.
+func TestMetadataSearchOneShotGuardBlocksSecondCall(t *testing.T) {
+	exec := &ladderExec{emptyFor: map[string]bool{}}
+	st := &SessionState{
+		Tools:        &Toolset{Exec: exec, ThinkingMode: "high"},
+		DeadlineLeft: 60,
+		ToolCache:    NewToolCache(),
+		PendingCalls: []ToolCall{{ID: "call-1", Name: "metadata_search"}},
+	}
+	if err := st.toolNode(context.Background()); err != nil {
+		t.Fatalf("toolNode: %v", err)
+	}
+	if len(exec.calls) != 1 || exec.calls[0] != "metadata_search" {
+		t.Fatalf("calls = %v, want the first metadata_search executed", exec.calls)
+	}
+	if !st.MetadataSearchUsed {
+		t.Error("MetadataSearchUsed must be set after the first call")
+	}
+
+	st.PendingCalls = []ToolCall{{ID: "call-2", Name: "metadata_search"}}
+	if err := st.toolNode(context.Background()); err != nil {
+		t.Fatalf("toolNode (second turn): %v", err)
+	}
+	if len(exec.calls) != 1 {
+		t.Errorf("calls = %v, want the second metadata_search blocked", exec.calls)
+	}
+	last := st.Messages[len(st.Messages)-1]
+	if !strings.Contains(last.Content, "ONE-SHOT") {
+		t.Errorf("second call's tool message = %q, want the one-shot nudge", last.Content)
+	}
+}
+
+// toolNote reads the note off a tool outcome whose payload is a single note object.
+func toolNote(out ToolOutcome) string {
+	if len(out.Payload) == 0 {
+		return ""
+	}
+	m, ok := out.Payload[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	note, _ := m["note"].(string)
+	return note
+}
+
+// TestPassageFromChunkRendersTablesAsMarkdown pins the action-session table shape: the
+// model sees a Markdown view (same rows, a fraction of the tokens) and never the raw
+// <table>/<td> markup. The chunk in the shared pool stays raw for citation.
+func TestPassageFromChunkRendersTablesAsMarkdown(t *testing.T) {
+	table := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
+		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
+		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
+	p := passageFromChunk(map[string]any{
+		"chunk_id": "c1", "doc_id": "d1", "content": table,
+	})
+	content, _ := p["content"].(string)
+	if strings.Contains(content, "<td>") || strings.Contains(content, "<table") {
+		t.Errorf("the model-visible passage still carries raw HTML: %q", content)
+	}
+	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("passage lost %q: %q", want, content)
+		}
+	}
 	if p["doc_id"] != "d1" || p["id"] != "c1" {
 		t.Errorf("passage = %v", p)
 	}

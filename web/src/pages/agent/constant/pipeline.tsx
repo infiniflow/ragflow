@@ -2,7 +2,6 @@ import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
 import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum PdfOutputFormat {
@@ -415,12 +414,7 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return pickByBackend<
-    typeof initialGoExtractorValues | typeof initialExtractorValues
-  >({
-    go: initialGoExtractorValues,
-    python: initialExtractorValues,
-  });
+  return initialGoExtractorValues;
 }
 
 export const initialCompilationValues = {
@@ -438,8 +432,12 @@ export const NoDebugOperatorsList = [Operator.File];
 // legacy Python operator and is deliberately excluded.
 export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
+// Pipeline operators limited to a single instance per canvas. Title/Token
+// chunkers are separate entries here (each blocks its own duplication) but
+// also share one slot: see the chunker group rule in buildPipelineNextOperators.
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.Compiler,
   Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,

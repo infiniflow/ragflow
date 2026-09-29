@@ -37,25 +37,34 @@ var legacyPipelineOperationStatuses = map[string]string{
 	"5": "SCHEDULE",
 }
 
-func normalizePipelineOperationStatuses(statuses []string) []string {
+func expandPipelineOperationStatuses(statuses []string) []string {
 	if len(statuses) == 0 {
 		return statuses
 	}
-	normalized := make([]string, len(statuses))
-	for i, status := range statuses {
+	values := make([]string, 0, len(statuses)*2)
+	seen := make(map[string]struct{}, len(statuses)*2)
+	add := func(status string) {
+		if _, ok := seen[status]; ok {
+			return
+		}
+		seen[status] = struct{}{}
+		values = append(values, status)
+	}
+	for _, status := range statuses {
+		add(status)
 		if canonical, ok := legacyPipelineOperationStatuses[status]; ok {
-			normalized[i] = canonical
-		} else {
-			normalized[i] = status
+			add(canonical)
+			continue
+		}
+		for legacy, canonical := range legacyPipelineOperationStatuses {
+			if canonical == status {
+				add(legacy)
+				break
+			}
 		}
 	}
-	return normalized
+	return values
 }
-
-// graphRaptorFakeDocID is the placeholder document_id used for dataset-level
-// (graph/raptor/mindmap) pipeline logs, mirroring GRAPH_RAPTOR_FAKE_DOC_ID in
-// api/db/services/task_service.py.
-const graphRaptorFakeDocID = "graph_raptor_x"
 
 // PipelineOperationLogDAO data access object for pipeline_operation_log.
 type PipelineOperationLogDAO struct{}
@@ -68,13 +77,15 @@ func NewPipelineOperationLogDAO() *PipelineOperationLogDAO {
 // GetDatasetLogsByKBID lists dataset-level (graph/raptor/mindmap) ingestion
 // logs for a knowledge base. Pagination is only applied when both page and
 // pageSize are positive, matching peewee's paginate behavior.
+// Dataset-level writers leave run_count NULL; positive run counts identify
+// run-scoped ingestion rows and must not be returned from this list.
 //
 // documentID is honoured for the same reason as in GetFileLogsByKBID. Dataset
 // logs belong to no single document, so a caller that names one gets an empty
 // list rather than the whole dataset history.
 func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, operationStatus []string, createDateFrom, createDateTo, keywords, documentID string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("kb_id = ? AND document_id = ?", kbID, graphRaptorFakeDocID)
+		Where("kb_id = ? AND document_id = ? AND run_count IS NULL", kbID, entity.DatasetLogDocumentID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -83,7 +94,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 		query = query.Where("document_id = ?", documentID)
 	}
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", normalizePipelineOperationStatuses(operationStatus))
+		query = query.Where("operation_status IN ?", expandPipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)
@@ -122,7 +133,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 // documents share a name.
 func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *gorm.DB, kbID string, page, pageSize int, terms []OrderTerm, keywords, documentID string, operationStatus []string, createDateFrom, createDateTo string) ([]*entity.PipelineOperationLog, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("kb_id = ? AND run_count > 0", kbID)
+		Where("kb_id = ? AND (run_count > 0 OR run_count IS NULL)", kbID)
 
 	if keywords != "" {
 		query = query.Where("LOWER(document_name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
@@ -130,10 +141,10 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	if documentID != "" {
 		query = query.Where("document_id = ?", documentID)
 	}
-	query = query.Where("document_id <> ?", graphRaptorFakeDocID)
+	query = query.Where("document_id <> ?", entity.DatasetLogDocumentID)
 
 	if len(operationStatus) > 0 {
-		query = query.Where("operation_status IN ?", operationStatus)
+		query = query.Where("operation_status IN ?", expandPipelineOperationStatuses(operationStatus))
 	}
 	if createDateFrom != "" {
 		query = query.Where("create_date >= ?", createDateFrom)

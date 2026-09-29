@@ -58,7 +58,7 @@ func (c *Config) ParseCacheEngineConfig(v *viper.Viper) error {
 
 func (c *Config) parseKvrocksConfig(v *viper.Viper) error {
 	// Sensible defaults; deployed values come from the `kvrocks` section.
-	c.cacheEngine.Kvrocks.Host = "localhost"
+	c.cacheEngine.Kvrocks.Host = "kvrocks"
 	c.cacheEngine.Kvrocks.Port = 6379
 	c.cacheEngine.Kvrocks.DB = 1
 	c.cacheEngine.Kvrocks.Username = ""

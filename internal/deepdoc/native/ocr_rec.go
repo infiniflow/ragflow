@@ -290,61 +290,46 @@ func (r OCRRecResult) Wire() string {
 // pre-sized per width and even a width-matched session would still emit a
 // varying seq length. Instead we use a DynamicAdvancedSession and pass a nil
 // output on every Run: onnxruntime allocates the correctly-shaped output
-// tensor, which we copy out before destroying it. The input tensor is
-// fixed-shape per (model, width), so one recSession is reused per width.
+// tensor, which we copy out before destroying it. The input tensor is NOT
+// cached: each Run allocates a fresh input tensor and frees it after (see
+// recSession.Run), so a pooled rec session holds only its weights in steady
+// state.
 type recSession struct {
 	inName   string
 	outName  string
+	inShape  []int64
 	sess     *ort.DynamicAdvancedSession
-	in       *ort.Tensor[float32]
 	poisoned bool
 }
 
-func newRecSession(modelPath, inName string, inShape []int64, outName string) (*recSession, error) {
-	in := make([]float32, prod(inShape))
-	inT, err := ort.NewTensor(ort.NewShape(inShape...), in)
+func newRecSession(modelPath, inName string, inShape []int64, outName string, weights *weightSet) (*recSession, error) {
+	// Build the same options as NewSession: one intra-op thread, BFC arena
+	// disabled, and the shared initializers injected when weights != nil. See
+	// newSessionOptions in session.go for the rationale. Reusing it keeps the
+	// rec pool's session configuration in lockstep with the det/DLA/TSR pool.
+	opts, err := newSessionOptions(weights)
 	if err != nil {
 		return nil, err
 	}
-	opts, err := ort.NewSessionOptions()
-	if err != nil {
-		inT.Destroy()
-		return nil, err
-	}
-	// One intra-op thread per session, matching NewSession: see the
-	// intraOpThreads constant in session.go.
-	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
-		opts.Destroy()
-		inT.Destroy()
-		return nil, err
-	}
-	// Disable the BFC memory arena for this session. See the matching comment in
-	// NewSession (session.go): the arena never shrinks, so pooled rec sessions
-	// (up to recMaxShapePools*recShapePoolCap = 128 idle) each hoard a native
-	// block, which drove most of the ~14 GB of native memory at the ~20 GB OOM
-	// peak. With the arena off, idle rec sessions keep only their weights.
-	if err := opts.SetCpuMemArena(false); err != nil {
-		opts.Destroy()
-		inT.Destroy()
-		return nil, err
-	}
+	// The C session copies these options at creation time, so the options handle
+	// can be released once the session is built. The shared weight buffers are
+	// owned by the process-wide weightCache and outlive every session.
+	defer opts.Destroy()
 	sess, err := ort.NewDynamicAdvancedSession(modelPath,
 		[]string{inName}, []string{outName}, opts)
 	if err != nil {
-		opts.Destroy()
-		inT.Destroy()
 		return nil, err
 	}
-	return &recSession{inName: inName, outName: outName, sess: sess, in: inT}, nil
+	return &recSession{inName: inName, outName: outName, inShape: inShape, sess: sess}, nil
 }
 
-// Run copies input into the input tensor, executes with an auto-allocated
-// (dynamic) output, and returns the output data. The allocated output tensor
-// is destroyed before returning; out is a fresh copy the caller owns.
+// Run allocates a fresh input tensor, executes with an auto-allocated
+// (dynamic) output, and returns the output data. Both tensors are destroyed
+// before returning; out is a fresh copy the caller owns.
 func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error) {
-	if len(input) != len(s.in.GetData()) {
-		return nil, fmt.Errorf("recSession %s: input len %d != tensor len %d",
-			s.outName, len(input), len(s.in.GetData()))
+	if len(input) != int(prod(s.inShape)) {
+		return nil, fmt.Errorf("recSession %s: input len %d != expected %d",
+			s.outName, len(input), int(prod(s.inShape)))
 	}
 	opts, err := ort.NewRunOptions()
 	if err != nil {
@@ -363,10 +348,15 @@ func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error
 		}
 	}()
 
-	copy(s.in.GetData(), input)
-	// nil output → onnxruntime allocates the actual-shaped tensor.
+	// Fresh input tensor per Run; freed right after the call. nil output →
+	// onnxruntime allocates the actual-shaped tensor.
+	inT, err := ort.NewTensor(ort.NewShape(s.inShape...), input)
+	if err != nil {
+		return nil, err
+	}
+	defer inT.Destroy()
 	outputs := []ort.Value{nil}
-	if err := s.sess.RunWithOptions([]ort.Value{s.in}, outputs, opts); err != nil {
+	if err := s.sess.RunWithOptions([]ort.Value{inT}, outputs, opts); err != nil {
 		if ctx.Err() != nil {
 			s.poisoned = true
 		}
@@ -387,13 +377,11 @@ func (s *recSession) Run(ctx context.Context, input []float32) ([]float32, error
 	return out, nil
 }
 
-// Destroy releases the dynamic session and input tensor.
+// Destroy releases the dynamic session. Input/output tensors are no longer
+// owned by the session (allocated per Run and freed there).
 func (s *recSession) Destroy() {
 	if s.sess != nil {
 		s.sess.Destroy()
-	}
-	if s.in != nil {
-		s.in.Destroy()
 	}
 }
 

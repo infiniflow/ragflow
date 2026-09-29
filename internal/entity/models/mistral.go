@@ -114,7 +114,7 @@ func NewMistralModel(baseURL map[string]string, urlSuffix URLSuffix) *MistralMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

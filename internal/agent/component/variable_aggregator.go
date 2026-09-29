@@ -163,7 +163,7 @@ func (v *VariableAggregatorComponent) Name() string { return v.name }
 // per-invocation. When inputs["variables"] is absent the static param
 // config is used unchanged.
 func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAggregator: %w", err)
 	}

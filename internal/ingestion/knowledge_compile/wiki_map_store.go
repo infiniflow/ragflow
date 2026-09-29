@@ -34,7 +34,8 @@ const (
 )
 
 type wikiMapVersionStore struct {
-	engine engine.DocEngine
+	engine            engine.DocEngine
+	resolveVectorSize func(context.Context) (int, error)
 }
 
 func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error) {
@@ -69,10 +70,12 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	if state.Key == "" || state.TenantID == "" || state.DatasetID == "" || state.DocumentID == "" {
 		return fmt.Errorf("save Wiki MAP active state: key and scope are required")
 	}
+	if err := s.ensureInfinityChunkStore(ctx, state.TenantID, state.DatasetID); err != nil {
+		return err
+	}
 	row := map[string]interface{}{
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
-		"tenant_id":           state.TenantID,
 		"kb_id":               state.DatasetID,
 		"compile_kwd":         wikiMapActiveCompileKWD,
 		"scope_kwd":           "doc",
@@ -84,11 +87,46 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 	return err
 }
 
-// NewWikiMapVersionStore returns the DocStore-backed immutable Wiki MAP cache.
-// Its rows remain non-searchable through available_int=0 and the compile
-// discriminator, while preserving every chunk/hash version for reuse.
-func NewWikiMapVersionStore(docEngine engine.DocEngine) kccommon.WikiMapVersionStore {
-	return &wikiMapVersionStore{engine: docEngine}
+// NewWikiMapVersionStoreWithVectorSizeResolver creates a Wiki MAP store that
+// can initialize an Infinity chunk table before inserting metadata-only MAP
+// rows. Elasticsearch does not need this resolver because it can create its
+// mapping dynamically.
+func NewWikiMapVersionStoreWithVectorSizeResolver(
+	docEngine engine.DocEngine,
+	resolveVectorSize func(context.Context) (int, error),
+) kccommon.WikiMapVersionStore {
+	return &wikiMapVersionStore{
+		engine:            docEngine,
+		resolveVectorSize: resolveVectorSize,
+	}
+}
+
+func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tenantID, datasetID string) error {
+	if engine.Type(s.engine) != engine.EngineInfinity {
+		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenantID)
+	exists, err := s.engine.ChunkStoreExists(ctx, baseName, datasetID)
+	if err != nil {
+		return fmt.Errorf("check Infinity chunk store for Wiki MAP: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if s.resolveVectorSize == nil {
+		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: vector-size resolver is not configured")
+	}
+	vectorSize, err := s.resolveVectorSize(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki MAP vector size: %w", err)
+	}
+	if vectorSize <= 0 {
+		return fmt.Errorf("resolve Wiki MAP vector size: got %d", vectorSize)
+	}
+	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: %w", err)
+	}
+	return nil
 }
 
 func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, datasetID string, keys []string) (map[string][]byte, error) {
@@ -153,6 +191,9 @@ func (s *wikiMapVersionStore) PutWikiMapVersions(ctx context.Context, versions [
 		byScope[scope] = append(byScope[scope], version)
 	}
 	for _, scopedVersions := range byScope {
+		if err := s.ensureInfinityChunkStore(ctx, scopedVersions[0].TenantID, scopedVersions[0].DatasetID); err != nil {
+			return err
+		}
 		for start := 0; start < len(scopedVersions); start += wikiMapStoreBatchSize {
 			end := min(start+wikiMapStoreBatchSize, len(scopedVersions))
 			batch := scopedVersions[start:end]
@@ -187,7 +228,6 @@ func wikiMapVersionRow(version kccommon.WikiMapVersion) map[string]interface{} {
 		// Keep immutable MAP history in a separate document namespace so source
 		// document deletion cannot remove a reusable chunk/hash version.
 		"doc_id":              wikiMapCacheDocID(version.DocumentID),
-		"tenant_id":           version.TenantID,
 		"kb_id":               version.DatasetID,
 		"compile_kwd":         wikiMapExtractCompileKWD,
 		"scope_kwd":           "doc",

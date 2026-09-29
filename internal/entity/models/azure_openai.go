@@ -39,7 +39,7 @@ func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureO
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 			// Azure OpenAI authenticates with the non-standard "api-key"
 			// header instead of "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {

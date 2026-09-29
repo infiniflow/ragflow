@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,7 +38,7 @@ import (
 //
 // For read-only comparison, see compare_test.go (no CGO needed).
 func TestBatchResults(t *testing.T) {
-	setupLogger()
+	setupLogger(t)
 
 	pdfDir := filepath.Join("testdata", "real_pdfs")
 	all := listRealPDFs(t, pdfDir)
@@ -64,15 +63,16 @@ func TestBatchResults(t *testing.T) {
 
 // ── helpers ─────────────────────────────────────────────────────────
 
-func setupLogger() {
-	level := slog.LevelInfo
+func setupLogger(t *testing.T) {
+	restoreLoggerGlobals(t)
+	level := "info"
 	switch common.GetEnv(common.EnvBatchLogLevel) {
 	case "debug":
-		level = slog.LevelDebug
+		level = "debug"
 	case "warn":
-		level = slog.LevelWarn
+		level = "warn"
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	_ = common.InitLogger(level, common.FileOutput{}, "")
 }
 
 type outputDirs struct {

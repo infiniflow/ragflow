@@ -93,7 +93,10 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				continue
 			}
 		}
-		s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, docID)
+		// A status transition changes document availability, not its parsed
+		// content. The status event handles dataset-level retraction/re-enable;
+		// scheduling a delayed Wiki recompilation here creates duplicate events
+		// and a visible 20-second oscillation.
 		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
@@ -162,6 +165,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
 			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 			if tenantErr == nil && tenant != nil {
 				cleaned = service.ApplyComponentScopedParserConfig(
@@ -464,9 +468,7 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	}
 
 	merged := common.DeepMergeMaps(doc.ParserConfig, config)
-	if _, ok := config["raptor"]; !ok {
-		delete(merged, "raptor")
-	}
+	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
 
 	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),

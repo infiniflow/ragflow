@@ -18,7 +18,6 @@ package task
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -36,6 +35,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/service"
@@ -193,22 +193,7 @@ func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.E
 // lets each healthy input keep its own budget. A provider that rejects even the last
 // proportional step therefore still gets one attempt at the floor - per input, on the
 // input that actually needs it.
-func overLimitLadder(budget int) []int {
-	if budget <= 0 {
-		return []int{0}
-	}
-	limits := []int{budget}
-	for _, factor := range []float64{0.75, 0.5, 0.25, 0.125} {
-		next := int(float64(budget) * factor)
-		if next < overLimitFloorTokens {
-			next = overLimitFloorTokens
-		}
-		if next < limits[len(limits)-1] {
-			limits = append(limits, next)
-		}
-	}
-	return limits
-}
+func overLimitLadder(budget int) []int { return tokenizer.OverLimitLadder(budget) }
 
 // overLimitLadderToFloor is overLimitLadder plus the last-resort floor, for the
 // per-input isolation path: an input that no proportional step fits may still fit
@@ -218,17 +203,11 @@ func overLimitLadder(budget int) []int {
 // The batch loop deliberately stops above the floor. Reaching it there would trim
 // EVERY input of the batch to 64 tokens just because one input is pathological,
 // while isolating lets each healthy input keep its own budget.
-func overLimitLadderToFloor(budget int) []int {
-	limits := overLimitLadder(budget)
-	if limits[len(limits)-1] > overLimitFloorTokens {
-		limits = append(limits, overLimitFloorTokens)
-	}
-	return limits
-}
+func overLimitLadderToFloor(budget int) []int { return tokenizer.OverLimitLadderToFloor(budget) }
 
 // overLimitFloorTokens is the smallest budget worth trying before declaring the
 // input genuinely broken rather than merely long.
-const overLimitFloorTokens = 64
+const overLimitFloorTokens = tokenizer.OverLimitFloorTokens
 
 // trimAll re-trims every text to `limit` tokens. Texts handed in by the caller
 // are already trimmed to the full budget, and trimming a prefix again just makes
@@ -289,7 +268,7 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 			return nil, 0, cerr
 		}
 		usage := &common.ModelUsage{}
-		embeds, err = e.model.ModelDriver.Embed(ctx, e.model.ModelName, req, e.model.APIConfig, config, usage)
+		embeds, err = e.model.Embed(ctx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
 		}
@@ -404,41 +383,12 @@ func (e *embedder) encodeIsolating(ctx context.Context, texts []string, limiter 
 	return out, nil
 }
 
-// overLimitMarkers are the provider wordings that mean "this input is longer
-// than the model accepts". 20015 is SiliconFlow's code for exactly that (it
-// answers a generic "The parameter is invalid" message); the rest are the usual
-// phrasings elsewhere.
-var overLimitMarkers = []string{
-	"20015",
-	"too long",
-	"too many tokens",
-	"maximum context",
-	"context length",
-	"context_length",
-	"input length",
-	"token limit",
-	"reduce the length",
-	"maximum allowed",
-}
-
 // isOverLimitErr reports whether err is an over-limit rejection rather than a
-// rate limit or a genuine failure. Only 4xx rejections qualify: a 5xx is the
-// provider's problem and shrinking the input would not help.
-func isOverLimitErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	if !strings.Contains(msg, "400") && !strings.Contains(msg, "413") && !strings.Contains(msg, "422") {
-		return false
-	}
-	for _, marker := range overLimitMarkers {
-		if strings.Contains(msg, marker) {
-			return true
-		}
-	}
-	return false
-}
+// rate limit or a genuine failure. The marker set and the 4xx requirement live in
+// internal/tokenizer (tokenizer.IsOverLimitError): every embedder outside this
+// package needs the same classification to drive its own shrink-and-retry, and one
+// definition is what keeps them from drifting apart.
+func isOverLimitErr(err error) bool { return tokenizer.IsOverLimitError(err) }
 
 // Retry policy for rate-limited embedding calls.
 //
@@ -526,21 +476,16 @@ func waitOutCooldown(ctx context.Context, key providerQuotaKey) error {
 	}
 }
 
-// quotaKey derives the provider-instance key the cooldown is scoped to. The API
-// key decides who owns the quota, so it is part of the key but hashed: the key
-// must never carry a plaintext secret.
+// quotaKey derives the provider-instance key the cooldown and the token-ratio
+// calibration are scoped to. The API key decides who owns the quota, so it is part
+// of the key but hashed: the key must never carry a plaintext secret. The format
+// comes from the model (EmbeddingModel.QuotaKey) so every embedder - ingestion,
+// dataset nav, the knowledge compiler - learns the same ratio for a deployment.
 func (e *embedder) quotaKey() providerQuotaKey {
 	if e == nil || e.model == nil {
 		return providerQuotaKey("embedder:unknown")
 	}
-	var baseURL, region, apiKey string
-	if cfg := e.model.APIConfig; cfg != nil {
-		baseURL = derefString(cfg.BaseURL)
-		region = derefString(cfg.Region)
-		apiKey = derefString(cfg.ApiKey)
-	}
-	sum := sha256.Sum256([]byte(apiKey))
-	return providerQuotaKey(fmt.Sprintf("%s|%s|%s|%x", baseURL, region, derefString(e.model.ModelName), sum[:8]))
+	return providerQuotaKey(e.model.QuotaKey())
 }
 
 // derefString safely dereferences an optional string.
@@ -657,6 +602,13 @@ func isRetryableErr(err error) bool {
 		return isRetryableNetErr(err, netErr)
 	}
 	msg := strings.ToLower(err.Error())
+	// net/http's HTTP/2 transport uses an internal error type for a graceful
+	// connection retirement, so errors.As cannot identify it here. Embedding is
+	// safe to repeat, and the transport will put the retry on a fresh connection.
+	if strings.Contains(msg, "http2: server sent goaway and closed the connection") &&
+		strings.Contains(msg, "errcode=no_error") {
+		return true
+	}
 	if code, ok := statusFromMessage(msg); ok {
 		return retryableStatus(code)
 	}
@@ -735,6 +687,7 @@ func newEmbedderResolver(
 // so the concrete resolver is injected here - the task package is the
 // composition root for ingestion runs.
 func init() {
+	modelSolver := service.NewModelSolver()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
@@ -746,6 +699,12 @@ func init() {
 			}
 			return kb.EmbdID, nil
 		},
-		service.NewModelProviderService().GetEmbeddingModel,
+		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
+			target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+			if err != nil {
+				return nil, err
+			}
+			return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
+		},
 	)
 }

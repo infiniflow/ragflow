@@ -688,7 +688,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// tenantID scopes composite-reference resolution to the tenant's own rows
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if tid, ok := state.Sys["tenant_id"].(string); ok {
 			tenantID = tid
 		}
@@ -714,7 +714,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// state is absent (e.g. tests that call Invoke directly without
 	// going through the canvas scheduler), the prompts pass through
 	// unchanged — backward compatible.
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
@@ -752,7 +752,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileTexts []string
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
 			return nil, err
 		}
@@ -811,7 +811,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// empty,
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}

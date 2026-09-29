@@ -37,7 +37,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -195,7 +194,7 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
 		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 		if eErr != nil {
-			slog.Warn("chunker: could not open PDF for on-demand cropping", "err", eErr)
+			common.Warn("chunker: could not open PDF for on-demand cropping", zap.Error(eErr))
 		}
 		if engine != nil {
 			defer engine.Close()

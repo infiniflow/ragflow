@@ -5,13 +5,18 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"image"
 	"image/png"
 	"reflect"
-	"runtime"
 	"sync"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -90,35 +95,48 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	}
 }
 
-func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
-	if got, budget := defaultPageWorkerCount(), DeepDocConcurrency(); got > budget {
-		t.Fatalf("got %d page workers, want at most %d (process inference budget)", got, budget)
+func TestDefaultPageWorkersMatchPageConcurrency(t *testing.T) {
+	if got := defaultPageWorkerCount(); got != PageConcurrency() {
+		t.Fatalf("defaultPageWorkerCount() = %d, want PageConcurrency() = %d", got, PageConcurrency())
 	}
 }
 
 // TestDeepDocConcurrencyShare pins the process budget rule: DeepDoc inference
-// may have floor(80% of the CPUs available to the process) Runs in flight.
+// may have at most DeepDocConcurrency() Runs in flight, and that budget is the
+// configurable value (default 4) set at server start, not derived from
+// GOMAXPROCS.
 func TestDeepDocConcurrencyShare(t *testing.T) {
-	want := int(deepdocInferenceCPUShare * float64(runtime.GOMAXPROCS(0)))
-	if got := DeepDocConcurrency(); got != max(1, want) {
-		t.Fatalf("got %d concurrent Runs, want %d (GOMAXPROCS=%d)",
-			got, max(1, want), runtime.GOMAXPROCS(0))
+	orig := DeepDocConcurrency()
+	t.Cleanup(func() { SetDeepDocConcurrency(orig) })
+
+	SetDeepDocConcurrency(4)
+	if got := DeepDocConcurrency(); got != 4 {
+		t.Fatalf("default DeepDocConcurrency() = %d, want 4", got)
+	}
+	SetDeepDocConcurrency(11)
+	if got := DeepDocConcurrency(); got != 11 {
+		t.Fatalf("DeepDocConcurrency() = %d, want 11 after SetDeepDocConcurrency(11)", got)
 	}
 }
 
-// TestSetPageWorkerPoolSizeClampsToBudget pins the setter's contract: the page
-// worker pool never grows past the process inference budget, because workers
-// beyond it cannot add throughput — rendering is serialized by pdfsync.Mu and
-// inference by the native gate — and only contend for the CPUs the budget
-// already accounts for.
-func TestSetPageWorkerPoolSizeClampsToBudget(t *testing.T) {
+// TestSetPageWorkerPoolSizeHonorsRequestedSize pins the setter's contract: the
+// page worker pool resizes to the requested size, which is independent of the
+// process inference budget (workers beyond the budget simply queue rendered
+// bitmaps while they wait for an inference slot, so a larger pool does not
+// over-subscribe inference). A non-positive request is floored to 1.
+func TestSetPageWorkerPoolSizeHonorsRequestedSize(t *testing.T) {
 	orig := PageWorkerPoolStats().DesiredWorkers
 	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
 
 	budget := DeepDocConcurrency()
 	SetPageWorkerPoolSize(budget + 8)
-	if got := PageWorkerPoolStats().DesiredWorkers; got != budget {
-		t.Fatalf("worker pool resized to %d, want the budget %d", got, budget)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != budget+8 {
+		t.Fatalf("worker pool resized to %d, want %d (no budget clamp)", got, budget+8)
+	}
+
+	SetPageWorkerPoolSize(0)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != 1 {
+		t.Fatalf("worker pool resized to %d, want 1 (floored from 0)", got)
 	}
 }
 
@@ -310,6 +328,41 @@ func TestParser_RunPageWorkers_CancellationHonored(t *testing.T) {
 		mock, NewTableBuilderFor(mock))
 	if err == nil {
 		t.Error("expected non-nil error from cancelled context")
+	}
+}
+
+// TestReportPageInferenceFailure_CancelledContextStaysAtDebug verifies the
+// per-page inference logger distinguishes a stop from a fault. Cancelling a run
+// terminates every in-flight ONNX Run, whose error (the runtime's terminate-flag
+// text, or ctx.Err()) must not produce one warning per page — it keeps a debug
+// trail instead; a failure raised on a live context still warns.
+func TestReportPageInferenceFailure_CancelledContextStaysAtDebug(t *testing.T) {
+	prevLogger := common.Logger
+	defer func() { common.Logger = prevLogger }()
+	core, logs := observer.New(zapcore.DebugLevel)
+	common.Logger = zap.New(core)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reportPageInferenceFailure(ctx, "DLA failed", 7,
+		errors.New("Error running network: Exiting due to terminate flag being set to true."))
+	entries := logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.DebugLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("cancelled page inference failure left no debug trail: %+v", entries)
+	}
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("debug entry lost the page number: %v", got)
+	}
+
+	reportPageInferenceFailure(context.Background(), "DLA failed", 7, errors.New("output shape mismatch"))
+	entries = logs.TakeAll()
+	if len(entries) != 1 || entries[0].Level != zapcore.WarnLevel ||
+		entries[0].Message != "DLA failed" {
+		t.Fatalf("live page inference failure was not warned: %+v", entries)
+	}
+	if got := entries[0].ContextMap()["page"]; got != int64(7) {
+		t.Fatalf("warning lost the page number: %v", got)
 	}
 }
 

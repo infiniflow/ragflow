@@ -407,6 +407,33 @@ func TestWorkflowOutputs_WithAttachment(t *testing.T) {
 	}
 }
 
+func TestWorkflowOutputsFromTerminalUsesMessageContent(t *testing.T) {
+	output := map[string]any{
+		"content":   "****\nvisible answer\n++++",
+		"downloads": []any{},
+	}
+	if got := workflowOutputsFromTerminal(output); got != "****\nvisible answer\n++++" {
+		t.Fatalf("workflowOutputsFromTerminal = %#v, want complete Message content", got)
+	}
+}
+
+func TestPartialAssistantOutputExcludesMessagePresentation(t *testing.T) {
+	state := canvas.NewCanvasState("run-history", "session-history")
+	appendAssistantHistory(state, partialAssistantOutput("model answer", nil, nil))
+
+	history := state.SnapshotHistory()
+	if len(history) != 1 {
+		t.Fatalf("history length = %d, want 1", len(history))
+	}
+	if history[0]["content"] != "model answer" {
+		t.Fatalf("history content = %#v, want raw Agent answer", history[0]["content"])
+	}
+	payload, _ := history[0]["payload"].(map[string]any)
+	if _, ok := payload["downloads"]; ok {
+		t.Fatalf("history payload unexpectedly contains Message presentation fields: %#v", payload)
+	}
+}
+
 // TestGetVersion_Success verifies getting a specific version by ID.
 func TestGetVersion_Success(t *testing.T) {
 	testDB := setupServiceTestDB(t)
@@ -659,7 +686,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 	ctx := t.Context()
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		ctx,
+		WithAgentSessionID(ctx, "test-session"),
 		"user-1",
 		"canvas-empty",
 		"test-session",
@@ -712,6 +739,43 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		case <-deadline:
 			t.Fatal("placeholder channel did not close within 5s — driver deadlocked?")
 		}
+	}
+}
+
+func TestRunAgentRejectsUntrustedSessionContinuation(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+	createAgentSessionTestCanvas(t, "canvas-2", "user-1")
+	createAgentSessionTestConversation(t, "session-other-agent", "canvas-2", "user-1", 1000)
+	createAgentSessionTestConversation(t, "session-other-user", "canvas-1", "user-2", 1000)
+	createAgentSessionTestConversation(t, "session-valid", "canvas-1", "user-1", 1000)
+
+	svc := NewAgentService()
+	for _, tc := range []struct {
+		name      string
+		sessionID string
+		userID    string
+		wantErr   bool
+	}{
+		{name: "unknown", sessionID: "session-missing", userID: "user-1", wantErr: true},
+		{name: "wrong agent", sessionID: "session-other-agent", userID: "user-1", wantErr: true},
+		{name: "foreign owner", sessionID: "session-other-user", userID: "user-1", wantErr: true},
+		{name: "valid resume", sessionID: "session-valid", userID: "user-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events, err := svc.RunAgent(t.Context(), tc.userID, "canvas-1", tc.sessionID, "", "hello", nil)
+			if tc.wantErr {
+				if !errors.Is(err, dao.ErrUserCanvasNotFound) {
+					t.Fatalf("RunAgent error = %v, want ErrUserCanvasNotFound", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RunAgent valid resume failed: %v", err)
+			}
+			for range events {
+			}
+		})
 	}
 }
 

@@ -5,10 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
-
-	"ragflow/internal/utility"
 )
 
 func TestS3CompatibleConnectorOpenSyncUsesFingerprintAndFetch(t *testing.T) {
@@ -426,14 +425,14 @@ func TestS3CompatibleHelpers(t *testing.T) {
 // depend on DNS.
 func stubS3EndpointResolver(t *testing.T) {
 	t.Helper()
-	orig := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		if host == "s3.example.com" {
 			return []string{"93.184.216.34"}, nil
 		}
 		return orig(host)
 	}
-	t.Cleanup(func() { utility.LookupHost = orig })
+	t.Cleanup(func() { common.LookupHost = orig })
 }
 
 func newTestS3CompatibleConnector(t *testing.T, objects []s3Object) *S3CompatibleConnector {

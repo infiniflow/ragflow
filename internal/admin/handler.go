@@ -1175,8 +1175,8 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	errCode, message := h.service.HandleHeartbeat(&req)
-	common.ErrorWithCode(c, errCode, message)
+	errCode, data, message := h.service.HandleHeartbeat(&req)
+	common.ResponseWithCodeData(c, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1274,4 +1274,13 @@ func (h *Handler) PingEngine(c *gin.Context) {
 	}
 
 	common.SuccessNoMessage(c, "SUCCESS")
+}
+
+func (h *Handler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }

@@ -29,7 +29,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-RUNTIME_IMAGES = ("Dockerfile", "Dockerfile_base", "Dockerfile_go")
+RUNTIME_IMAGES = ("Dockerfile_base", "Dockerfile")
 GO_SOURCES = ("spm.go", "wordpiece.go", "bpe.go")
 KINDS = ("runtime", "oracle")
 DOWNLOADER = "download_go_deps.py"

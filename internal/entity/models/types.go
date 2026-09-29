@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -331,6 +332,36 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 	return GetEmbeddingTokenizer(name)
 }
 
+// QuotaKey names the deployment this embedding model counts against: endpoint,
+// region, model name and an API-key prefix. The tokenizer belongs to the model, but
+// what a provider accepts is per deployment - the same model behind two endpoints
+// can have different windows - so everything that learns a real/own token ratio
+// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
+// has to key that ratio the same way; otherwise each path re-learns the same
+// rejection and none of them tightens for the others.
+func (m *EmbeddingModel) QuotaKey() string {
+	if m == nil {
+		return ""
+	}
+	var baseURL, region, apiKey, modelName string
+	if cfg := m.APIConfig; cfg != nil {
+		if cfg.BaseURL != nil {
+			baseURL = *cfg.BaseURL
+		}
+		if cfg.Region != nil {
+			region = *cfg.Region
+		}
+		if cfg.ApiKey != nil {
+			apiKey = *cfg.ApiKey
+		}
+	}
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
+}
+
 // RerankModel wraps a ModelDriver with rerank-specific configuration
 type RerankModel struct {
 	ModelDriver ModelDriver
@@ -384,6 +415,50 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 		}
 	}
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
+}
+
+// ASRModel wraps a ModelDriver with speech-to-text configuration.
+type ASRModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewASRModel creates a new ASRModel.
+func NewASRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ASRModel {
+	return &ASRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Transcribe converts audio to text.
+func (m *ASRModel) Transcribe(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage) (*ASRResponse, error) {
+	return m.ModelDriver.TranscribeAudio(ctx, m.ModelName, audioFile, m.APIConfig, config, usage)
+}
+
+// TranscribeWithSender streams transcription results through sender.
+func (m *ASRModel) TranscribeWithSender(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.TranscribeAudioWithSender(ctx, m.ModelName, audioFile, m.APIConfig, config, usage, sender)
+}
+
+// TTSModel wraps a ModelDriver with text-to-speech configuration.
+type TTSModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewTTSModel creates a new TTSModel.
+func NewTTSModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *TTSModel {
+	return &TTSModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Speech converts text to audio.
+func (m *TTSModel) Speech(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage) (*TTSResponse, error) {
+	return m.ModelDriver.AudioSpeech(ctx, m.ModelName, audioContent, m.APIConfig, config, usage)
+}
+
+// SpeechWithSender streams synthesized audio through sender.
+func (m *TTSModel) SpeechWithSender(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.AudioSpeechWithSender(ctx, m.ModelName, audioContent, m.APIConfig, config, usage, sender)
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.

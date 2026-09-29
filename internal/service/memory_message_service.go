@@ -61,9 +61,9 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -329,9 +329,11 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		return err
 	}
 	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: contents}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	// Embed inside the model's window: memory contents are caller-supplied and
+	// unbounded, and the provider answers 400/20015 instead of truncating them.
+	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("embed model: %w", err)
 	}
 	if len(embeddings) != len(messages) {
 		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
@@ -351,7 +353,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 		message["doc_id"] = message["memory_id"]
 	}
 
-	indexName := memoryIndexName(mem.TenantID)
+	indexName := MemoryIndexName(mem.TenantID)
 	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
 	if err != nil {
 		return fmt.Errorf("check message index: %w", err)

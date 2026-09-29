@@ -65,19 +65,6 @@ func NewKvrocksCheckPointStoreWithClient(client *redis.Client, ttl time.Duration
 	return &KvrocksCheckPointStore{client: client, ttl: ttl}
 }
 
-// KvrocksCheckpointExists reports whether a pipeline checkpoint is present for
-// id. It is used by ingestion progress handling to distinguish a fresh run
-// from a resume: resumed nodes may not emit lifecycle events again, so their
-// previous completed progress rows must be retained.
-func KvrocksCheckpointExists(ctx context.Context, id string) (bool, error) {
-	rc := kvrocks.Get()
-	if rc == nil || rc.GetClient() == nil {
-		return false, errors.New("checkpoint store: kvrocks client not initialized")
-	}
-	found, err := rc.GetClient().Exists(ctx, checkpointKeyPrefix+id).Result()
-	return found > 0, err
-}
-
 // Get implements eino's CheckPointStore.Get. Returns (nil, false, nil) when
 // the key does not exist (redis.Nil) so callers can distinguish "missing"
 // from "present-but-error".

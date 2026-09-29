@@ -434,7 +434,13 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 		zap.String("skeleton", describeInternalMessages(internal)))
 	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
 	if err != nil {
-		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *cm.ModelName, err)
+		// The chat paths surface this to the user as `**ERROR**: <err>`
+		// (errorAnswerText in agentic-rag/agentic_rag_graph.go, chat_pipeline.go),
+		// so lead with the model name and keep the provider's sentence: the old
+		// "models: EinoChatModel.Generate(MiniMax-M3): …" prefix was internal
+		// noise around the one fact that mattered. On a failover chain this is
+		// the LAST model tried: Generate reports its lastErr as-is.
+		return nil, fmt.Errorf("%s: %w", *cm.ModelName, err)
 	}
 	// Record the per-call token usage so the canvas-level aggregator (and
 	// Langfuse) can compute the run total. Mirrors Python's
@@ -870,6 +876,15 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
 			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			if err != nil {
+				// Same user-visible shape as generateOnce's error: lead with the
+				// model name and keep the provider's own sentence. Tagging it HERE
+				// rather than at the sink keeps the name honest — the sweep may
+				// forward this as lastErr, and the deltas-already-sent branch sends
+				// it as-is. cacheableSweepFailure classifies via errors.As, so the
+				// %w wrapping does not change its verdict.
+				err = fmt.Errorf("%s: %w", *cm.ModelName, err)
+			}
 			if err == nil {
 				// Streamed turns report their token usage through the config
 				// (stream_options.include_usage), not through the nil modelUsage

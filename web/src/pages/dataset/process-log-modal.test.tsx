@@ -14,6 +14,9 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatTime } from '@/utils/date';
 
 const eventTs = '2026-09-18T10:20:30+08:00';
+const MissingFileMessage =
+  'Parser: storage.Get("source-bucket", "source-file.txt"): The specified key does not exist.';
+const MissingFileHint = 'File not found in object storage.';
 
 type LogEvent = {
   id: number;
@@ -24,7 +27,7 @@ type LogEvent = {
   message: string;
 };
 
-function renderModal(events: LogEvent[]) {
+function renderModal(events: LogEvent[] = [], details = '') {
   return render(
     React.createElement(
       TooltipProvider,
@@ -35,7 +38,7 @@ function renderModal(events: LogEvent[]) {
         title: 'log',
         logInfo: {
           fileName: 'doc.pdf',
-          details: '',
+          details,
           events,
         },
       }),
@@ -86,5 +89,41 @@ describe('ProcessLogModal ingestion events', () => {
       screen.queryByTestId('ingestion-event-time'),
     ).not.toBeInTheDocument();
     expect(screen.getByText('Tokenizer Started')).toBeInTheDocument();
+  });
+
+  it('shows one missing-file hint inside either log source', () => {
+    const messages = [MissingFileMessage, `Task failed: ${MissingFileMessage}`];
+    const eventsView = renderModal(
+      messages.map((message, index) => ({
+        id: index,
+        ts: eventTs,
+        event_type: index === 0 ? 0 : 2,
+        component: 'Parser',
+        phase: 2,
+        message,
+      })),
+    );
+
+    const hint = screen.getByText(MissingFileHint);
+    messages.forEach((message) => {
+      expect(screen.getByText(message)).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(MissingFileMessage).closest('.overflow-y-auto')
+        ?.lastElementChild,
+    ).toBe(hint);
+
+    eventsView.unmount();
+    const detailsView = renderModal([], MissingFileMessage);
+    expect(screen.getByText(MissingFileHint).parentElement).toHaveClass(
+      'overflow-y-auto',
+    );
+
+    detailsView.unmount();
+    renderModal(
+      [],
+      'Parser: storage.Get("source-bucket", "source-file.txt"): Access Denied.',
+    );
+    expect(screen.queryByText(MissingFileHint)).not.toBeInTheDocument();
   });
 });

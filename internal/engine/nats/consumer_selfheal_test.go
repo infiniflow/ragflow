@@ -109,7 +109,9 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 	// And the recreated consumer must actually deliver: publish after the repair
 	// and pull it back.
 	publishTask(t, queue, "after-repair")
-	recovered, err := queue.PullMessage(pullCtx)
+	recoveredCtx, recoveredCancel := taskPullContext(t)
+	defer recoveredCancel()
+	recovered, err := queue.PullMessage(recoveredCtx)
 	if err != nil {
 		t.Fatalf("PullMessage after the repair: %v", err)
 	}

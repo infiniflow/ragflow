@@ -14,11 +14,10 @@
  *  limitations under the License.
  */
 
-import message from '@/components/ui/message';
 import { DatasetNavList } from '@/interfaces/database/dataset-nav';
 import i18n from '@/locales/config';
 import datasetNavService from '@/services/dataset-nav-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { trim } from 'lodash';
 
 import { useKnowledgeBaseId } from './use-knowledge-request';
@@ -116,55 +115,4 @@ export function useFetchDatasetNavChildren(
   });
 
   return { data, loading, isError, error, refetch };
-}
-
-export function useDeleteDatasetNav() {
-  const kbId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationFn: async () => {
-      const { data } = await datasetNavService.deleteNav({ datasetId: kbId });
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetNavKeys.all(kbId),
-        });
-      }
-      return data;
-    },
-  });
-
-  return { data, loading, deleteNav: mutateAsync };
-}
-
-export function useDeleteDatasetNavNode() {
-  const kbId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await datasetNavService.deleteNavNode({
-        datasetId: kbId,
-        name,
-      });
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetNavKeys.all(kbId),
-        });
-      }
-      return data;
-    },
-  });
-
-  return { data, loading, deleteNavNode: mutateAsync };
 }
