@@ -302,7 +302,7 @@ func HasModelFiles(dir string) bool {
 // DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
 // THREE raw version declarations that must stay equal (the other two are
 // ORT_VERSION in ragflow_deps/download_deps.py and ARG ORT_VERSION in
-// Dockerfile_go) — NOT a single source of truth. The
+// Dockerfile) — NOT a single source of truth. The
 // download URL and extracted dir name are built from those ORT_VERSION
 // constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
@@ -316,7 +316,7 @@ func HasModelFiles(dir string) bool {
 // (drift breaks the static link or the runtime OrtGetApiBase lookup):
 //   - DeepDocORTVersion (here, Go)
 //   - ORT_VERSION in ragflow_deps/download_deps.py
-//   - ARG ORT_VERSION in Dockerfile_go
+//   - ARG ORT_VERSION in Dockerfile
 //
 // Separately, keep these on the same ORT minor line but version them
 // independently of the Go native lib (see pyproject.toml / development.md):

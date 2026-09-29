@@ -21,7 +21,7 @@
 #
 # Typical workflow:
 #
-#   uv run python3 ragflow_deps/download_deps.py            # download
+#   uv run ragflow_deps/download_deps.py            # download
 # Go DeepDoc weights: in addition to the native libs, this script downloads the
 # five Go model files (internal/common.DeepDocModelFiles) from InfiniFlow/deepdoc
 # straight into the repo's canonical model directory `rag/res/deepdoc/` (one level
@@ -46,16 +46,17 @@ import os
 import shutil
 import sys
 import tarfile
+import tempfile
 import zipfile
 
 import requests
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
-# THREE places (with that Go constant and ARG ORT_VERSION in Dockerfile_go)
+# THREE places (with that Go constant and ARG ORT_VERSION in Dockerfile)
 # that must carry the same ONNX Runtime
 # native release for the statically-linked Go DeepDoc backend. There is no
-# single source of truth — keep all four equal. build.sh --check-ort-version
-# greps this file (and the other three) to fail fast on drift. (The Python pip
+# single source of truth — keep all three equal. build.sh --check-ort-version
+# greps this file (and the other two) to fail fast on drift. (The Python pip
 # onnxruntime== pin in pyproject.toml is versioned independently and is not
 # part of this check.)
 #
@@ -255,20 +256,29 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
 
 
 def download_with_progress(url, filename):
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get("content-length", 0))
     block_size = 1024
+    temporary_name = None
+    try:
+        with requests.get(url, stream=True, timeout=(15, 60)) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=os.path.dirname(os.path.abspath(filename)), prefix=".download-", delete=False
+            ) as file:
+                temporary_name = file.name
+                downloaded = 0
+                for data in response.iter_content(block_size):
+                    file.write(data)
+                    downloaded += len(data)
 
-    with open(filename, "wb") as file:
-        downloaded = 0
-        for data in response.iter_content(block_size):
-            file.write(data)
-            downloaded += len(data)
-
-            if total_size > 0:
-                progress = (downloaded / total_size) * 100
-                sys.stdout.write(f"\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
-                sys.stdout.flush()
+                    if total_size > 0:
+                        progress = (downloaded / total_size) * 100
+                        sys.stdout.write(f"\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
+                        sys.stdout.flush()
+        os.replace(temporary_name, filename)
+    finally:
+        if temporary_name and os.path.exists(temporary_name):
+            os.remove(temporary_name)
 
     print()
 

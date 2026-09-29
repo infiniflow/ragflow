@@ -1,4 +1,4 @@
-# Tests for ragflow_deps/download_deps.py ONNX Runtime extraction.
+# Tests for ragflow_deps/download_deps.py downloads and ONNX Runtime extraction.
 #
 # build.sh's build_go() fails fast when libonnxruntime.a is not linked, so these
 # tests must guarantee the archive is really landed on disk — above all after an
@@ -11,12 +11,18 @@
 # every consumer shares one name convention. These tests pin that rename.
 
 import os
+import threading
 import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import pytest
+import requests
 
 from download_deps import (
     _ort_asset_name,
     _ort_extracted_dir,
     _ort_normalized_dir,
+    download_with_progress,
     extract_onnxruntime,
     has_static_archives,
 )
@@ -86,3 +92,56 @@ def test_idempotent_when_matching_version_already_present(tmp_path):
     before = sorted(os.listdir(static_lib))
     assert extract_onnxruntime(str(static_lib), str(archive), version) is True
     assert sorted(os.listdir(static_lib)) == before
+
+
+def test_download_rejects_http_error_without_caching(tmp_path):
+    class MissingArtifact(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"not an archive")
+
+        def log_message(self, *_args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), MissingArtifact)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    destination = tmp_path / "archive.tar.gz"
+    try:
+        with pytest.raises(requests.HTTPError):
+            download_with_progress(f"http://127.0.0.1:{server.server_port}/missing", destination)
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
+
+    assert not destination.exists(), "an HTTP error must not become a cached archive"
+
+
+def test_download_does_not_cache_truncated_response(tmp_path):
+    class TruncatedArtifact(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "1024")
+            self.end_headers()
+            self.wfile.write(b"incomplete archive")
+            self.wfile.flush()
+            self.close_connection = True
+
+        def log_message(self, *_args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), TruncatedArtifact)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    destination = tmp_path / "archive.tar.gz"
+    try:
+        with pytest.raises(requests.RequestException):
+            download_with_progress(f"http://127.0.0.1:{server.server_port}/truncated", destination)
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
+
+    assert not destination.exists(), "an interrupted transfer must not be reused"

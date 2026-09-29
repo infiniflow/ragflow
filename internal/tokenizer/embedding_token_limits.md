@@ -433,11 +433,14 @@ an operator can point at whichever tree they have:
 | a `huggingface.co`-like root | `<dir>/<repo>/<file>` |
 | a flat directory | `<dir>/<file>` |
 
-The variable is deliberately **not** embedding-specific: DeepDoc's weights use the same
-layout (`huggingface.co/InfiniFlow/deepdoc`) and `resolveDeepDocModelDir` honours it too,
-so one mount can serve every downloaded model asset. `ragflow_deps/download_deps.py` and
-the three runtime Dockerfiles keep writing the same tree, so nothing changes for a default
-deployment. The layout and the precedence are pinned by tests:
+The variable is deliberately **not** embedding-specific: `resolveDeepDocModelDir`
+also checks `<dir>/huggingface.co/InfiniFlow/deepdoc` when `MODEL_ASSETS_DIR`
+points at `<dir>`. The local `ragflow_deps/download_deps.py` puts the five Go
+DeepDoc files in `rag/res/deepdoc/`, outside that tree. To serve both asset types
+from one mounted directory, copy those five files into the DeepDoc path above;
+otherwise mount `rag/res/deepdoc/` separately and set `DEEPDOC_MODEL_DIR`.
+The published dependency image already contains the DeepDoc tree used by the
+runtime Dockerfiles. The layout and the precedence are pinned by tests:
 `internal/common/model_assets_test.go` for the candidate list, and
 `internal/tokenizer/asset_dir_test.go` for the end-to-end case (a child process with an
 unrelated working directory loads the SPM counter from the configured tree).

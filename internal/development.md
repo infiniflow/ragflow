@@ -39,10 +39,12 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-uv run python3 ragflow_deps/download_deps.py
+uv run ragflow_deps/download_deps.py
 ```
 
-This downloader provisions Go native libraries, `.ort` weights, and model tokenizer assets. `build.sh` provisions the `cl100k_base.tiktoken` table separately.
+Install `uv` before running the downloader; it installs the script's declared Python dependencies.
+
+This downloader provisions Go native libraries, `.ort` weights, and model tokenizer assets. `build.sh` provisions the `cl100k_base.tiktoken` table during Go builds and tests.
 
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
@@ -99,7 +101,7 @@ This downloader provisions Go native libraries, `.ort` weights, and model tokeni
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run python3 ragflow_deps/download_deps.py` (or pre-seed
+> `uv run ragflow_deps/download_deps.py` (or pre-seed
 > `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
 > no ORT-free production build path — if ORT is absent the binary fails at
 > startup, so the remedy is always to seed the static lib above, never to build
@@ -109,7 +111,7 @@ This downloader provisions Go native libraries, `.ort` weights, and model tokeni
 > that must stay in sync. Bumping it in one spot and not the others fails the
 > build with `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
-> - `Dockerfile_go` — `ARG ORT_VERSION`
+> - `Dockerfile` — `ARG ORT_VERSION`
 > - `ragflow_deps/download_deps.py` — `ORT_VERSION`
 >
 > `build.sh` runs this consistency check automatically before the Go build
@@ -128,7 +130,7 @@ This downloader provisions Go native libraries, `.ort` weights, and model tokeni
 >   under the same tag/asset name, or an older download is present) the build
 >   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
 >   expected/actual sha256 and the exact refresh command
->   (`rm -f <zip>` + `uv run python3 ragflow_deps/download_deps.py`). CI seeds
+>   (`rm -f <zip>` + `uv run ragflow_deps/download_deps.py`). CI seeds
 >   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
 >   is authoritative). This matters because the `onnxruntime_go` binding reaches
 >   ORT only through the OrtApi function-pointer table
@@ -141,7 +143,7 @@ This downloader provisions Go native libraries, `.ort` weights, and model tokeni
 >   would otherwise silently reuse a stale linked binary. Stamping the path with
 >   the archive's sha256 changes the flag string whenever the content changes →
 >   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
->   re-run `uv run python3 ragflow_deps/download_deps.py`
+>   re-run `uv run ragflow_deps/download_deps.py`
 >   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow
@@ -199,7 +201,7 @@ missing from the model directory.
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run python3 ragflow_deps/download_deps.py` and rebuild
+  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
