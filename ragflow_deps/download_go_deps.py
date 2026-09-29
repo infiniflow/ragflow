@@ -489,13 +489,7 @@ if __name__ == "__main__":
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(native_deps_dir, subdir)
-        if subdir == "office_oxide":
-            os.makedirs(target, exist_ok=True)
-            with tarfile.open(archive_path) as tf:
-                tf.extractall(target)
-            print(f"  Extracted {archive} → {target}")
-            continue
-        if os.path.isdir(target):
+        if subdir != "office_oxide" and os.path.isdir(target):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)

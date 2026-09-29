@@ -309,12 +309,6 @@ if __name__ == "__main__":
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(native_deps_dir, subdir)
-        if subdir == "office_oxide":
-            os.makedirs(target, exist_ok=True)
-            with tarfile.open(archive_path) as tf:
-                tf.extractall(target)
-            print(f"  Extracted {archive} → {target}")
-            continue
 
         # The infiniflow/ragflow-build release zip carries a top-level dir
         # named onnxruntime-v{ORT_VERSION}-linux-x86_64. A plain
@@ -330,7 +324,7 @@ if __name__ == "__main__":
                 print(f"  ✓ {subdir} ({ORT_VERSION}) already extracted to {version_dir}")
                 continue
 
-        if os.path.isdir(target) and any(f.endswith(".a") for _, _, files in os.walk(target) for f in files):
+        if subdir != "office_oxide" and os.path.isdir(target) and any(f.endswith(".a") for _, _, files in os.walk(target) for f in files):
             print(f"  ✓ {subdir} already extracted to {target}")
             continue
         os.makedirs(target, exist_ok=True)
