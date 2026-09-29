@@ -307,6 +307,22 @@ class StorageFactory:
         return cls.storage_mapping[storage]()
 
 
+def _init_crypto_storage(storage_impl):
+    """Wrap storage_impl for encryption at rest when RAGFLOW_CRYPTO_ENABLED is true.
+
+    A broken crypto config raises instead of falling back to the unencrypted
+    impl. Reads would keep working either way, because decrypt() passes data
+    without the "RAGF" magic header straight through, so documents written in
+    the clear would stay unnoticed even after the config is fixed.
+    """
+    if os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() != "true":
+        return storage_impl
+
+    from rag.utils.encrypted_storage import create_encrypted_storage
+
+    return create_encrypted_storage(storage_impl)
+
+
 def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = normalize_database_type(os.getenv("DB_TYPE", "mysql"))
@@ -458,28 +474,7 @@ def init_settings():
         GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
-    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
-
-    # Define crypto settings
-    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
-
-    # Check if encryption is enabled
-    if crypto_enabled:
-        # Do not fall back to the unencrypted storage impl when the crypto config
-        # is broken. The operator asked for encryption at rest, so silently
-        # serving plaintext writes is the one outcome they cannot detect: reads
-        # keep working, because decrypt() passes data without the "RAGF" magic
-        # header straight through, so a plaintext object stays readable even
-        # after the config is fixed. Fail fast instead, like the unsupported
-        # doc-engine branch above.
-        from rag.utils.encrypted_storage import create_encrypted_storage
-
-        algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-        crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
-
-        STORAGE_IMPL = create_encrypted_storage(storage_impl, algorithm=algorithm, key=crypto_key, encryption_enabled=crypto_enabled)
-    else:
-        STORAGE_IMPL = storage_impl
+    STORAGE_IMPL = _init_crypto_storage(StorageFactory.create(Storage[STORAGE_IMPL_TYPE]))
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)

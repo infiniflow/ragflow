@@ -257,28 +257,13 @@ class TestInitSettingsCrypto:
 
     @staticmethod
     def _init_storage(monkeypatch, env):
-        """Run the RAGFLOW_CRYPTO_* branch of init_settings against a fake impl.
+        """Run init_settings' storage wrapping against a fake impl."""
+        from common.settings import _init_crypto_storage
 
-        Mirrors common/settings.py rather than calling init_settings(), which
-        also connects to MySQL, Redis and the doc store.
-        """
-        import os
-
-        for name in ("RAGFLOW_CRYPTO_ENABLED", "RAGFLOW_CRYPTO_ALGORITHM", "RAGFLOW_CRYPTO_KEY"):
-            monkeypatch.delenv(name, raising=False)
         for name, value in env.items():
             monkeypatch.setenv(name, value)
 
-        storage_impl = FakeStorage()
-        if os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() != "true":
-            return storage_impl
-
-        return create_encrypted_storage(
-            storage_impl,
-            algorithm=os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc"),
-            key=os.environ.get("RAGFLOW_CRYPTO_KEY"),
-            encryption_enabled=True,
-        )
+        return _init_crypto_storage(FakeStorage())
 
     def test_enabled_with_valid_config_encrypts(self, monkeypatch):
         """The happy path wraps the storage impl."""
