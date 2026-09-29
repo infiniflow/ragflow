@@ -136,19 +136,20 @@ func writeZipFile(t *testing.T, zw *zip.Writer, name, body string) {
 // decoding it, so <w:t>&lt;SEP&gt;</w:t> parsed as "SEP". That reached the
 // chunker intact, so a delimiter configured as "`<SEP>`" could never match and
 // the marker survived into the chunk body. v0.1.10 was the correctness release
-// that fixed this defect class; v0.1.11 is the pinned version.
+// that fixed this defect class; v0.1.12 is the pinned version.
 func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
 	cases := []struct {
-		name string
-		run  string // run text as it appears inside <w:t>, entities unescaped
-		want string
+		name         string
+		run          string // run text as it appears inside <w:t>, entities unescaped
+		want         string
+		wantMarkdown string
 	}{
-		{"named", "&lt;SEP&gt;", "<SEP>"},
-		{"decimal", "&#60;SEP&#62;", "<SEP>"},
-		{"hex", "&#x3C;SEP&#x3E;", "<SEP>"},
-		{"ampersand", "A&amp;B", "A&B"},
-		{"apostrophe", "it&apos;s", "it's"},
-		{"emdash", "a&#8212;b", "a—b"},
+		{"named", "&lt;SEP&gt;", "<SEP>", `\<SEP\>`},
+		{"decimal", "&#60;SEP&#62;", "<SEP>", `\<SEP\>`},
+		{"hex", "&#x3C;SEP&#x3E;", "<SEP>", `\<SEP\>`},
+		{"ampersand", "A&amp;B", "A&B", "A&B"},
+		{"apostrophe", "it&apos;s", "it's", "it's"},
+		{"emdash", "a&#8212;b", "a—b", "a—b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,8 +171,8 @@ func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
 			if mdRes.Err != nil {
 				t.Fatalf("ParseWithResult(markdown): %v", mdRes.Err)
 			}
-			if !strings.Contains(mdRes.Markdown, tc.want) {
-				t.Errorf("markdown = %q, want it to contain %q", mdRes.Markdown, tc.want)
+			if !strings.Contains(mdRes.Markdown, tc.wantMarkdown) {
+				t.Errorf("markdown = %q, want it to contain %q", mdRes.Markdown, tc.wantMarkdown)
 			}
 		})
 	}
