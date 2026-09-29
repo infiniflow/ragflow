@@ -128,8 +128,8 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef, userID strin
 		return nil, common.CodeBadRequest, err
 	}
 
-	modelName := target.ModelName
-	embeddings, err := target.Driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: texts}, target.APIConfig, config, nil)
+	embeddingModel := modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

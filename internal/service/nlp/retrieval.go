@@ -979,7 +979,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
 	// / NVIDIA query). Embedding it as a document would put the query vector in
 	// the wrong space for those providers.
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embModel.Embed(ctx, models.EmbedRequest{Texts: []string{txt}, Query: true}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

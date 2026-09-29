@@ -268,7 +268,7 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 			return nil, 0, cerr
 		}
 		usage := &common.ModelUsage{}
-		embeds, err = e.model.ModelDriver.Embed(ctx, e.model.ModelName, req, e.model.APIConfig, config, usage)
+		embeds, err = e.model.Embed(ctx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
 		}

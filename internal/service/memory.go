@@ -1501,7 +1501,7 @@ func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question str
 	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	// Query: true — the memory store is searched by question (Python
 	// memory/services/query.py uses emb_mdl.encode_queries).
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{question}, Query: true}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{question}, Query: true}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return nil, err
 	}
