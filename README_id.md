@@ -198,31 +198,29 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Bangun image Docker pre-built dan jalankan server:
+3. Beralih ke tag rilis Go dan jalankan image Go yang telah disiapkan dengan Docker Compose:
 
 > [!CAUTION]
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Tulis `RAGFLOW_IMAGE=ragflow:go-local` ke **docker/.env** sebelum memulai. Target build resmi image Go adalah `linux/amd64`.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
 
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   # Masuk ke direktori deployment Docker.
+   cd ragflow/docker
+   # Beralih ke tag rilis Go v1.0.0-rc1.
+   git checkout v1.0.0-rc1
+   # Jalankan layanan Go dan dependensinya di latar belakang.
+   docker compose -f docker-compose.yml up -d
+   ```
 
 > Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
 
 1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -289,7 +287,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    - `--syncer`: Memulai layanan Syncer untuk sinkronisasi data.
    - `--api`: Memulai layanan API untuk Web UI, SDK, dan klien eksternal.
 
-   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk rantai layanan lengkap.
+   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk menjalankan seluruh rantai layanan.
 5. Hanya untuk pengembangan frontend, instal Node.js dan npm, lalu jalankan frontend React:
 
    ```bash

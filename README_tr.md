@@ -200,31 +200,27 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Önceden oluşturulmuş Docker imajlarını kullanarak sunucuyu başlatın:
+3. Go sürüm etiketine geçin ve önceden oluşturulmuş Go imajını Docker Compose ile başlatın:
 
 > [!CAUTION]
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Başlatmadan önce yerel olarak oluşturulan imajı **docker/.env** dosyasında seçin. Go imajının resmi derleme hedefi `linux/amd64` platformudur.
-
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
-
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   # Docker dağıtım dizinine girin.
+   cd ragflow/docker
+   # Go v1.0.0-rc1 sürüm etiketine geçin.
+   git checkout v1.0.0-rc1
+   # Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
+   docker compose -f docker-compose.yml up -d
+   ```
 
 > RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
 
 4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
