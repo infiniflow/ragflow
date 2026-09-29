@@ -518,6 +518,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrApiUrlMessage' },
       },
       {
@@ -526,6 +527,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
       },
       {
@@ -605,6 +607,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrApiUrlMessage' },
       },
       {
@@ -613,6 +616,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
       },
     ],

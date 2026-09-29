@@ -17,11 +17,8 @@
 // Package component contains e2e fixture stubs used directly by tests.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// fixture-backed component names that are registered here: Retrieval and its
-// aliases, CodeExec, Generate, Answer, Iteration, and IterationItem.
-// Production TavilySearch and ExeSQL nodes are registered through
-// ToolBackedComponent; their fixture stubs are direct-only test constructors. The
-// fixture stub bodies are deliberately trivial — they
+// fixture-backed component names that are registered here: Generate, Answer,
+// Iteration, and IterationItem. The fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,
 // and produces outputs downstream templates can resolve", not
@@ -44,191 +41,6 @@ import (
 
 	"gorm.io/gorm"
 )
-
-// ----- Retrieval -----
-
-const componentNameRetrieval = "Retrieval"
-
-// RetrievalStub is a fixture stub for the Retrieval component. It
-// returns an empty `formalized_content` so downstream templates
-// that reference `{retrieval:0@formalized_content}` resolve to an
-// empty string. The real production component (Dealer / KGSearch
-// path) is registered as newRetrievalComponent in
-// universe_a_wrappers.go and is the body that actually runs in
-// production.
-type RetrievalStub struct{}
-
-// NewRetrievalStub constructs a Retrieval stub. params is accepted
-// for API parity but unused at this stage (the real component
-// parses kb_ids / similarity_threshold / top_n from it).
-func NewRetrievalStub(_ map[string]any) (Component, error) {
-	return &RetrievalStub{}, nil
-}
-
-// Name returns the registered component name.
-func (r *RetrievalStub) Name() string { return componentNameRetrieval }
-
-// Invoke returns a stub result that downstream templates can
-// resolve. `formalized_content` is the field the test fixtures
-// reference; empty string is the safe fixture value.
-func (r *RetrievalStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	return map[string]any{"formalized_content": ""}, nil
-}
-
-// Stream mirrors Invoke as a single-chunk SSE stream.
-func (r *RetrievalStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := r.Invoke(ctx, db, inputs)
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan map[string]any, 1)
-	ch <- out
-	close(ch)
-	return ch, nil
-}
-
-// Inputs returns the DSL param surface.
-func (r *RetrievalStub) Inputs() map[string]string {
-	return map[string]string{
-		"kb_ids":                     "Knowledge base IDs to search over.",
-		"similarity_threshold":       "Minimum vector similarity to include a chunk.",
-		"keywords_similarity_weight": "BM25 vs vector blend factor (0 = pure vector, 1 = pure BM25).",
-		"top_n":                      "Number of top chunks to keep after rerank.",
-		"top_k":                      "Number of candidates to retrieve before rerank.",
-		"rerank_id":                  "Optional rerank model identifier.",
-		"empty_response":             "Fallback message when no chunks pass the threshold.",
-	}
-}
-
-// Outputs returns the public output surface.
-func (r *RetrievalStub) Outputs() map[string]string {
-	return map[string]string{
-		"formalized_content": "Rendered chunks for downstream LLM prompts.",
-	}
-}
-
-// ----- TavilySearch -----
-
-const componentNameTavilySearch = "TavilySearch"
-
-// TavilySearchStub is a fixture stub for the TavilySearch tool. The
-// real implementation (see internal/agent/tool/tavily.go) calls
-// the Tavily HTTP API; this stub returns an empty result so the
-// canvas e2e flow runs without network access.
-type TavilySearchStub struct{}
-
-// NewTavilySearchStub constructs a TavilySearch stub.
-func NewTavilySearchStub(_ map[string]any) (Component, error) {
-	return &TavilySearchStub{}, nil
-}
-
-// Name returns the registered component name.
-func (t *TavilySearchStub) Name() string { return componentNameTavilySearch }
-
-// Invoke returns an empty `formalized_content` so downstream
-// templates resolve.
-func (t *TavilySearchStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	return map[string]any{"formalized_content": ""}, nil
-}
-
-// Stream mirrors Invoke.
-func (t *TavilySearchStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := t.Invoke(ctx, db, inputs)
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan map[string]any, 1)
-	ch <- out
-	close(ch)
-	return ch, nil
-}
-
-// Inputs returns the DSL param surface.
-func (t *TavilySearchStub) Inputs() map[string]string {
-	return map[string]string{
-		"api_key": "Tavily API key.",
-		"query":   "Search query template (may reference {iterationitem:0@result}).",
-	}
-}
-
-// Outputs returns the public output surface.
-func (t *TavilySearchStub) Outputs() map[string]string {
-	return map[string]string{
-		"formalized_content": "Rendered search results for downstream LLM prompts.",
-	}
-}
-
-func (t *TavilySearchStub) GetInputForm() map[string]any {
-	return map[string]any{
-		"query": map[string]any{
-			"name": "Query",
-			"type": "line",
-		},
-	}
-}
-
-// ----- ExeSQL -----
-
-const componentNameExeSQL = "ExeSQL"
-const componentNameCodeExec = "CodeExec"
-
-// ExeSQLStub is a fixture stub for the ExeSQL component. The real
-// implementation (see internal/agent/tool/exesql.go) opens a MySQL
-// connection and runs the user's SQL; this stub returns a fixed
-// two-column schema so the e2e flow runs without a database.
-type ExeSQLStub struct{}
-
-// NewExeSQLStub constructs an ExeSQL stub.
-func NewExeSQLStub(_ map[string]any) (Component, error) {
-	return &ExeSQLStub{}, nil
-}
-
-// Name returns the registered component name.
-func (e *ExeSQLStub) Name() string { return componentNameExeSQL }
-
-// Invoke returns a stable two-column stub result. Downstream
-// templates that render SQL output will see headers + an empty row
-// — enough for the message surface to format a string.
-func (e *ExeSQLStub) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	return map[string]any{
-		"columns": []string{"col1", "col2"},
-		"rows":    [][]any{{"", ""}},
-		"sql":     "",
-	}, nil
-}
-
-// Stream mirrors Invoke.
-func (e *ExeSQLStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := e.Invoke(ctx, db, inputs)
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan map[string]any, 1)
-	ch <- out
-	close(ch)
-	return ch, nil
-}
-
-// Inputs returns the DSL param surface.
-func (e *ExeSQLStub) Inputs() map[string]string {
-	return map[string]string{
-		"database": "Database / schema name.",
-		"username": "DB user.",
-		"host":     "DB host.",
-		"port":     "DB port.",
-		"password": "DB password.",
-		"top_n":    "Limit on rows returned.",
-	}
-}
-
-// Outputs returns the public output surface.
-func (e *ExeSQLStub) Outputs() map[string]string {
-	return map[string]string{
-		"columns": "Result-set column names.",
-		"rows":    "Result-set rows (matrix form).",
-		"sql":     "Resolved SQL string.",
-	}
-}
 
 // ----- Generate -----
 
@@ -347,7 +159,7 @@ func (a *AnswerStub) Name() string { return componentNameAnswer }
 func (a *AnswerStub) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
 	// Mirror the no-state-check pattern of Message/Retrieval: we
 	// don't read state, but the signature must match.
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("Answer: %w", err)
 	}
 	return map[string]any{"answer": ""}, nil
@@ -490,8 +302,7 @@ func (it *IterationItemStub) Outputs() map[string]string {
 // uniqueness), so accidental double-registration in a later refactor
 // surfaces as a panic at init time, not as a silent override.
 func init() {
-	// Retrieval still requires its specialized adapter. The stub remains a
-	// direct test constructor for the "no service wired" path.
+	// Retrieval still requires its specialized adapter.
 	Register(componentNameRetrieval, newRetrievalComponent)
 	// The agent canvas uses both a PascalCase "SearchMyDataset"
 	// and the original snake_case typo "search_my_dateset"; an

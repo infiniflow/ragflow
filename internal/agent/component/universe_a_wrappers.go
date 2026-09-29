@@ -161,6 +161,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+const componentNameRetrieval = "Retrieval"
+
 var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
 
 func newRetrievalComponent(params map[string]any) (Component, error) {
@@ -201,7 +203,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
 	query, _ := merged["query"].(string)
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
 			query = resolved
 		}
@@ -231,7 +233,13 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-	return parseToolEnvelope(out), nil
+	decoded := parseToolEnvelope(out)
+	if chunks, ok := decoded["chunks"]; ok {
+		if _, has := decoded["json"]; !has {
+			decoded["json"] = chunks
+		}
+	}
+	return decoded, nil
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -411,7 +419,7 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 		common.Warn("agent retrieval component: resolve dataset id by id failed",
 			zap.Error(err))
 	}
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		common.Debug("agent retrieval component: resolve dataset id context")
 		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
 			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(ctx, db, kbName, tenantID); lookupErr == nil && kb != nil {
@@ -459,6 +467,8 @@ type codeExecComponent struct {
 	outputs map[string]any
 }
 
+const componentNameCodeExec = "CodeExec"
+
 func newCodeExecComponent(params map[string]any) (Component, error) {
 	cloned := make(map[string]any, len(params))
 	for k, v := range params {
@@ -484,7 +494,7 @@ func (c *codeExecComponent) Inputs() map[string]string {
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
 	res := make(map[string]any, len(c.params))
-	for k, _ := range c.params {
+	for k := range c.params {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
@@ -514,7 +524,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 		merged[k] = v
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, _ := runtime.GetStateFromContext(ctx)
 		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
 	common.Debug("CodeExec wrapper invoke",
@@ -775,7 +785,7 @@ func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
 		return
 	}
 	sessionID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		sessionID = state.SessionID
 	}
 	// The CodeExec tool already hosts sandbox artifacts and surfaces

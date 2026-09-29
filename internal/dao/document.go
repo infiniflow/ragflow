@@ -160,16 +160,34 @@ const latestIngestionTaskJoin = `LEFT JOIN ingestion_task ON ingestion_task.docu
 		  )
 	)`
 
+func buildDocumentListIngestionStatusExpression(db *gorm.DB) string {
+	const taskStatus = "COALESCE(NULLIF(ingestion_task.status, ''), 'UNSTART')"
+	if !db.Migrator().HasColumn(&entity.Document{}, "run") {
+		return taskStatus
+	}
+
+	return `CASE
+		WHEN ingestion_task.id IS NOT NULL THEN ` + taskStatus + `
+		WHEN document.run = '1' THEN 'RUNNING'
+		WHEN document.run = '2' THEN 'STOPPED'
+		WHEN document.run = '3' THEN 'COMPLETED'
+		WHEN document.run = '4' THEN 'FAILED'
+		WHEN document.run = '5' THEN 'SCHEDULED'
+		ELSE 'UNSTART'
+	END`
+}
+
 // ListByKBIDWithOptions lists documents by knowledge base ID with filters.
 func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
 	var documents []*entity.DocumentListItem
 	var total int64
+	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
 
 	// Historical retries can leave multiple ingestion tasks per document. Keep
 	// only the newest row, with ID as a deterministic tie-breaker for equal
 	// create times. This ordering must match IngestionTaskDAO's task lookups.
 	listQuery := db.WithContext(ctx).Table("document").
-		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ingestion_task.status as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname, ` + ingestionStatus + ` as ingestion_status, ingestion_task.pipeline_log_id as pipeline_log_id`).
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
@@ -183,14 +201,14 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 		countQuery = countQuery.Joins(latestIngestionTaskJoin)
 	}
 
-	listQuery = applyDocumentListFilters(listQuery, opts, true)
-	countQuery = applyDocumentListFilters(countQuery, opts, true)
+	listQuery = applyDocumentListFilters(listQuery, opts, true, ingestionStatus)
+	countQuery = applyDocumentListFilters(countQuery, opts, true, ingestionStatus)
 
 	if err := countQuery.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	orderBy := documentListOrderColumn(opts.OrderBy)
+	orderBy := documentListOrderColumn(opts.OrderBy, ingestionStatus)
 	if opts.Desc {
 		orderBy += " DESC"
 	} else {
@@ -212,13 +230,14 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 		IngestionStatus *string `gorm:"column:ingestion_status"`
 		Suffix          string  `gorm:"column:suffix"`
 	}
+	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
 
 	query := db.WithContext(ctx).Table("document").
-		Select("document.id, ingestion_task.status as ingestion_status, document.suffix").
+		Select("document.id, " + ingestionStatus + " as ingestion_status, document.suffix").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id").
 		Joins(latestIngestionTaskJoin)
-	query = applyDocumentListFilters(query, opts, true)
+	query = applyDocumentListFilters(query, opts, true, ingestionStatus)
 
 	if err := query.Scan(&rows).Error; err != nil {
 		return nil, 0, err
@@ -247,21 +266,23 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 // ListIDsByKBIDWithOptions lists matching document IDs without pagination.
 func (dao *DocumentDAO) ListIDsByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]string, error) {
 	var ids []string
+	var ingestionStatus string
 	query := db.WithContext(ctx).Table("document").
 		Select("document.id").
 		Joins("JOIN file2document ON file2document.document_id = document.id").
 		Joins("JOIN file ON file.id = file2document.file_id")
 	if len(opts.RunStatuses) > 0 {
+		ingestionStatus = buildDocumentListIngestionStatusExpression(db)
 		query = query.Joins(latestIngestionTaskJoin)
 	}
-	query = applyDocumentListFilters(query, opts, true)
+	query = applyDocumentListFilters(query, opts, true, ingestionStatus)
 	if err := query.Scan(&ids).Error; err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
-func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualified bool) *gorm.DB {
+func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualified bool, ingestionStatus string) *gorm.DB {
 	column := func(name string) string {
 		if qualified {
 			return "document." + name
@@ -274,22 +295,7 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 		query = query.Where("LOWER("+column("name")+") LIKE ?", "%"+strings.ToLower(strings.TrimSpace(opts.Keywords))+"%")
 	}
 	if len(opts.RunStatuses) > 0 {
-		hasUnstart := false
-		otherStatuses := make([]string, 0, len(opts.RunStatuses))
-		for _, s := range opts.RunStatuses {
-			if strings.EqualFold(s, "UNSTART") {
-				hasUnstart = true
-			} else {
-				otherStatuses = append(otherStatuses, s)
-			}
-		}
-		if hasUnstart && len(otherStatuses) > 0 {
-			query = query.Where("(ingestion_task.status IN ? OR ingestion_task.id IS NULL OR ingestion_task.status = ?)", otherStatuses, "UNSTART")
-		} else if hasUnstart {
-			query = query.Where("(ingestion_task.id IS NULL OR ingestion_task.status = ?)", "UNSTART")
-		} else {
-			query = query.Where("ingestion_task.status IN ?", otherStatuses)
-		}
+		query = query.Where("("+ingestionStatus+") IN ?", opts.RunStatuses)
 	}
 	if len(opts.Types) > 0 {
 		query = query.Where(column("type")+" IN ?", opts.Types)
@@ -313,7 +319,7 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	return query
 }
 
-func documentListOrderColumn(orderBy string) string {
+func documentListOrderColumn(orderBy, ingestionStatus string) string {
 	switch orderBy {
 	case "update_time":
 		return "document.update_time"
@@ -324,7 +330,7 @@ func documentListOrderColumn(orderBy string) string {
 	case "type":
 		return "document.type"
 	case "run", "ingestion_status":
-		return "COALESCE(ingestion_task.status, 'UNSTART')"
+		return ingestionStatus
 	default:
 		return "document.create_time"
 	}

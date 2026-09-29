@@ -221,7 +221,7 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 	if log.DocumentID == entity.DatasetLogDocumentID {
 		return log.RunCount == nil
 	}
-	return log.RunCount != nil && *log.RunCount > 0
+	return log.RunCount == nil || *log.RunCount > 0
 }
 
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
@@ -308,7 +308,11 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("get latest ingestion event: %w", err)
 	}
-	return datasetIngestionLogToMap(log, ingestionEventItem(latestEvents[log.ID])), common.CodeSuccess, nil
+	latestEvent := ingestionEventItem(latestEvents[log.ID])
+	if log.DocumentID == entity.DatasetLogDocumentID {
+		return datasetIngestionLogToMap(log, latestEvent), common.CodeSuccess, nil
+	}
+	return fileIngestionLogToMap(log, latestEvent), common.CodeSuccess, nil
 }
 
 func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *service.IngestionEventItem) map[string]interface{} {
@@ -333,6 +337,7 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *ser
 		"update_date":            log.UpdateDate,
 		"latest_ingestion_event": latestEvent,
 	}
+	addIngestionProgressFallback(m, log, latestEvent)
 	if log.PipelineID != nil {
 		m["pipeline_id"] = *log.PipelineID
 	}
@@ -343,7 +348,7 @@ func datasetIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *ser
 }
 
 func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *service.IngestionEventItem) map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                     log.ID,
 		"document_id":            log.DocumentID,
 		"tenant_id":              log.TenantID,
@@ -368,6 +373,14 @@ func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *servic
 		"update_time":            int64PointerValue(log.UpdateTime),
 		"update_date":            timePointerValue(log.UpdateDate),
 		"latest_ingestion_event": latestEvent,
+	}
+	addIngestionProgressFallback(m, log, latestEvent)
+	return m
+}
+
+func addIngestionProgressFallback(values map[string]interface{}, log *entity.PipelineOperationLog, latestEvent *service.IngestionEventItem) {
+	if latestEvent == nil && log.ProgressMsg != nil && *log.ProgressMsg != "" {
+		values["progress_msg"] = *log.ProgressMsg
 	}
 }
 

@@ -21,8 +21,7 @@ function usage() {
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
-    echo
-    echo "MCP: configure service_conf.yaml or RAGFLOW_MCP_* environment variables."
+
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"

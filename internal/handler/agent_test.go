@@ -717,14 +717,16 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 // event, trailing `data: [DONE]\n\n`) without standing up the eino
 // runner or a live DB.
 type stubChatRunner struct {
-	events    []canvas.RunEvent
-	err       error
-	sessionID string
-	userInput any
+	events           []canvas.RunEvent
+	err              error
+	sessionID        string
+	trustedSessionID string
+	userInput        any
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	s.sessionID = sessionID
+	s.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	s.userInput = userInput
 	if s.err != nil {
 		return nil, s.err
@@ -823,12 +825,37 @@ func TestRunAgent_StreamAddsDoneWhenRunnerCloses(t *testing.T) {
 	h := &AgentHandler{chatRunner: runner}
 	h.RunAgent(c)
 
+	if runner.sessionID == "" || runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("generated session id = %q, trusted session id = %q", runner.sessionID, runner.trustedSessionID)
+	}
 	body := w.Body.String()
 	if got := strings.Count(body, "data:[DONE]\n\n"); got != 1 {
 		t.Fatalf("expected exactly one [DONE] terminator, got %d in %q", got, body)
 	}
 	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
+	}
+}
+
+func TestRunAgent_SuppliedSessionIsNotTrustedFirstTouch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "canvas_id", Value: "a1"}}
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/a1/run?session_id=client-session",
+		strings.NewReader(`{"user_input":"hi"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{}
+	(&AgentHandler{chatRunner: runner}).RunAgent(c)
+
+	if runner.sessionID != "client-session" {
+		t.Fatalf("session id = %q, want client-session", runner.sessionID)
+	}
+	if runner.trustedSessionID != "" {
+		t.Fatalf("trusted session id = %q, want empty", runner.trustedSessionID)
 	}
 }
 
@@ -940,11 +967,13 @@ func TestAgentChatCompletions_NonStreamingPreservesThinkMarkers(t *testing.T) {
 }
 
 type emptySessionCaptureRunner struct {
-	sessionID string
+	sessionID        string
+	trustedSessionID string
 }
 
-func (r *emptySessionCaptureRunner) RunAgent(_ context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	r.sessionID = sessionID
+	r.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -966,6 +995,9 @@ func TestAgentChatCompletions_EmptyOutputReturnsGeneratedSession(t *testing.T) {
 
 	if runner.sessionID == "" {
 		t.Fatal("handler passed an empty session id to RunAgent")
+	}
+	if runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("trusted session id = %q, want generated id %q", runner.trustedSessionID, runner.sessionID)
 	}
 	var response map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
@@ -1144,6 +1176,9 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	if runner.sessionID == "" {
 		t.Error("runner sessionID should be generated for a new OpenAI-compatible request")
 	}
+	if runner.trustedSessionID != runner.sessionID {
+		t.Fatalf("trusted session id = %q, want generated id %q", runner.trustedSessionID, runner.sessionID)
+	}
 
 	var resp map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -1189,6 +1224,27 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsCompletion(t *testing
 	}
 	if usage["total_tokens"].(float64) != usage["prompt_tokens"].(float64)+usage["completion_tokens"].(float64) {
 		t.Errorf("usage totals do not add up: %v", usage)
+	}
+}
+
+func TestAgentChatCompletions_OpenAICompat_SuppliedSessionIsNotTrustedFirstTouch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
+		strings.NewReader(`{"agent_id":"a1","session_id":"client-session","openai-compatible":true,"messages":[{"role":"user","content":"hi"}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+
+	runner := &stubChatRunner{}
+	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+	if runner.sessionID != "client-session" {
+		t.Fatalf("session id = %q, want client-session", runner.sessionID)
+	}
+	if runner.trustedSessionID != "" {
+		t.Fatalf("trusted session id = %q, want empty", runner.trustedSessionID)
 	}
 }
 

@@ -1669,11 +1669,7 @@ func restAPIQuoteString(s string) string {
 			b.WriteString(`\f`)
 		default:
 			if r < 0x20 || r == 0x7f {
-				if r < 0x100 {
-					b.WriteString(fmt.Sprintf(`\x%02x`, r))
-				} else {
-					b.WriteString(fmt.Sprintf(`\u%04x`, r))
-				}
+				b.WriteString(fmt.Sprintf(`\x%02x`, r))
 			} else {
 				b.WriteRune(r)
 			}

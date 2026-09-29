@@ -26,22 +26,16 @@ import (
 )
 
 type XLSXParser struct {
-	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSXParser(libType string) (*XLSXParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSXParser(_ string) (*XLSXParser, error) {
 	return &XLSXParser{
-		libType:                        libType,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -61,9 +55,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -115,7 +107,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	items, warnings, sheets, err := parseXLSXBytes(data, p.HTML4Excel)
+	items, warnings, sheets, err := parseXLSXBytes(data)
 	if err == nil {
 		return xlsxParseResult(filename, items, warnings, sheets)
 	}
@@ -127,7 +119,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, p.HTML4Excel)
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
 	}
@@ -135,7 +127,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -151,25 +143,16 @@ func parseXLSXBytes(data []byte, html4excel bool) ([]map[string]any, []string, i
 			return nil, warnings, len(sheets), err
 		}
 		warnings = append(warnings, sheetWarnings...)
-		var sheetItems []map[string]any
-		if html4excel {
-			if table := recordsToHTMLTableItem(records, sheet, sheetIdx+1, headerRow, dataRows); table != nil {
-				sheetItems = []map[string]any{table}
-			}
-		} else {
-			sheetItems = recordsToSpreadsheetItems(records, sheet, sheetIdx+1, headerRow, dataRows)
-		}
 		images, imageWarnings := extractXLSXImages(f, sheet)
 		for _, image := range images {
 			row, _ := numericItemInt(image["row_start"])
 			col, _ := numericItemInt(image["col_start"])
 			image["sheet_index"] = sheetIdx + 1
-			image["table_id"] = fmt.Sprintf("sheet-%d", sheetIdx+1)
 			image["positions"] = [][]float64{{float64(sheetIdx + 1), float64(row), float64(row), float64(col), float64(col)}}
 		}
-		sheetItems = append(sheetItems, images...)
-		sortSpreadsheetItems(sheetItems)
-		items = append(items, sheetItems...)
+		// One wire shape for every spreadsheet sheet: segmented HTML tables
+		// with row-aligned positions, images interleaved at their anchors.
+		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images)...)
 		warnings = append(warnings, imageWarnings...)
 	}
 	return items, warnings, len(sheets), nil
