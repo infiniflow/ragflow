@@ -70,7 +70,7 @@ func applyUserCanvasTagFilter(ctx context.Context, db *gorm.DB, query *gorm.DB, 
 	return query.Where(tagQuery)
 }
 
-var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
+var ErrUserCanvasNotFound = errors.New("ag: not found or access denied")
 
 // UserCanvasDAO user canvas data access object
 type UserCanvasDAO struct{}

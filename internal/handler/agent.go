@@ -1223,7 +1223,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// DataFlow canvas: run a synchronous, side-effect-free debug (dry-run)
+	// DataFlow agent: run a synchronous, side-effect-free debug (dry-run)
 	// and return the parsed chunks inline — reusing this existing
 	// chat/completions endpoint instead of a dedicated dataflow/debug route.
 	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is

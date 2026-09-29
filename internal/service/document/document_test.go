@@ -3770,7 +3770,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 		Title:          sptr("Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	// Seed an API4Conversation whose message references the filename.
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), db, &entity.API4Conversation{

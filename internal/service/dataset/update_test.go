@@ -973,7 +973,7 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 		DSL:    entity.JSONMap{},
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
-		t.Fatalf("insert test canvas: %v", err)
+		t.Fatalf("insert test agent: %v", err)
 	}
 }
 
@@ -1070,7 +1070,7 @@ func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 		DSL:            entity.JSONMap(dslMap),
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 }
 
