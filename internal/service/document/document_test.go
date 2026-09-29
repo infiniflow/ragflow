@@ -2232,6 +2232,87 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	}
 }
 
+// TestUpdateDatasetDocumentAllowsOwner pins the cycle-91 fix: a user whose ID
+// happens to equal the dataset's tenant_id (the only configuration the
+// pre-fix GetByIDAndTenantID(datasetID, userID) check accidentally worked for)
+// is still allowed through. The check is now kbDAO.Accessible which compares
+// user_id properly via the user_tenant join (#20411).
+func TestUpdateDatasetDocumentAllowsOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	// Pass an empty request with no present fields; the call should reach the
+	// post-access code path and return success with no error. This pins that
+	// the auth check did not reject a legitimate owner.
+	data, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	if err != nil {
+		t.Fatalf("owner call failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("owner code = %v, want %v", code, common.CodeSuccess)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil response data")
+	}
+}
+
+// TestBatchUpdateDocumentStatusRejectsNonOwner pins the deny path for the
+// bulk status update endpoint that previously called
+// GetByIDAndTenantID(datasetID, userID) with the user's id instead of the
+// tenant id. After the fix, a non-owner gets a clear error (#20411).
+func TestBatchUpdateDocumentStatusRejectsNonOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "tenant-2", "kb-1", "0", []string{"doc-1"})
+	if err == nil {
+		t.Fatal("expected ownership error for non-owner")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "you don't own the dataset" {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+// TestBatchUpdateDocumentStatusAllowsOwner pins the happy path for the bulk
+// status update endpoint: a legitimate owner (userID equals kb.TenantID)
+// succeeds. Without the cycle-91 fix this also succeeded but only by
+// coincidence (the old check happened to compare dataset.tenant_id against
+// the same string used as userID); the new Accessible-based check is the
+// intended contract (#20411).
+func TestBatchUpdateDocumentStatusAllowsOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	result, code, err := svc.BatchUpdateDocumentStatus(ctx, "tenant-1", "kb-1", "0", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("owner call failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("owner code = %v, want %v", code, common.CodeSuccess)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result map")
+	}
+	if status, ok := result["doc-1"].(map[string]string); !ok || status["status"] != "0" {
+		t.Fatalf("unexpected result[doc-1]: %#v", result["doc-1"])
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
