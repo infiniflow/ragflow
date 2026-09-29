@@ -356,12 +356,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	// Transform chunks using helper function
 	insertChunks := make([]map[string]interface{}, len(chunks))
+	isMemoryIndex := strings.HasPrefix(baseName, "memory_")
 	for i, chunk := range chunks {
-		insertChunks[i] = transformChunkFields(chunk, embeddingCols)
-		// kb_id is owned by the engine at the write boundary (mirrors ES
-		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
-		// so the producer value (if any) is intentionally overridden here.
-		insertChunks[i]["kb_id"] = datasetID
+		insertChunks[i] = prepareInsertChunk(chunk, embeddingCols, datasetID, isMemoryIndex)
 	}
 
 	// Delete existing rows with matching IDs
@@ -393,6 +390,17 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	common.Info("InfinityConnection.InsertChunks result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
 	return []string{}, nil
+}
+
+func prepareInsertChunk(chunk map[string]interface{}, embeddingCols [][2]interface{}, datasetID string, isMemoryIndex bool) map[string]interface{} {
+	doc := transformChunkFields(chunk, embeddingCols)
+	if isMemoryIndex {
+		delete(doc, "doc_id")
+		delete(doc, "kb_id")
+		return doc
+	}
+	doc["kb_id"] = datasetID
+	return doc
 }
 
 // UpdateChunks updates chunks in a dataset
