@@ -2234,3 +2234,82 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}
 }
+
+// TestExtractorComponent_NewExtractorComponent_ReadsMetadataSystemPrompt
+// verifies the operator-supplied legacy `sys_prompt` plumbs through into
+// MetadataExtractConfig.SystemPrompt. The downstream runEnableMetadata call
+// then uses it instead of the hard-coded autoMetadataPrompt template.
+func TestExtractorComponent_NewExtractorComponent_ReadsMetadataSystemPrompt(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		"llm_id": "tenant-chat",
+		"metadata": map[string]any{
+			"enabled":       true,
+			"system_prompt": "Extract ONLY a JSON object with keys doc_date, project_name.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ext := c.(*ExtractorComponent)
+	if ext.Param.Metadata.SystemPrompt != "Extract ONLY a JSON object with keys doc_date, project_name." {
+		t.Errorf("SystemPrompt did not plumb through, got %q", ext.Param.Metadata.SystemPrompt)
+	}
+	if !ext.Param.Metadata.Enabled {
+		t.Errorf("Metadata.Enabled must be true, got %+v", ext.Param.Metadata)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_LegacyMode_AcceptsAnyKey covers
+// issue #20335: the legacy pipeline-compat path (no declared Metadata field
+// set, optional operator-supplied SystemPrompt) calls the LLM with the
+// operator's prompt under a permissive object schema and keeps every key the
+// model returns.
+func TestExtractorComponent_runEnableMetadata_LegacyMode_AcceptsAnyKey(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"doc_date":"28 September 2026","project_name":"Lilyfield","document_title":"Acoustic Assessment","project_no":"PRJ-001"}`})
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID: "tenant-chat",
+		Metadata: schema.MetadataExtractConfig{
+			Enabled:      true,
+			SystemPrompt: "Operator prompt: return ONLY a JSON object.",
+		},
+	}}
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	wantKeys := []string{"doc_date", "project_name", "document_title", "project_no"}
+	for _, k := range wantKeys {
+		if _, has := meta[k]; !has {
+			t.Errorf("legacy mode must keep declared-style keys, missing %q: %v", k, meta)
+		}
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_LegacyMode_NoSystemPromptStillRuns
+// guards the legacy branch when the operator skipped the `sys_prompt` key —
+// the LLM is still called under the modular prompt template and any JSON
+// object it returns is preserved.
+func TestExtractorComponent_runEnableMetadata_LegacyMode_NoSystemPromptStillRuns(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"foo":"bar","baz":42}`})
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		Metadata: schema.MetadataExtractConfig{Enabled: true},
+	}}
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing: %T", ck["metadata"])
+	}
+	if meta["foo"] != "bar" {
+		t.Errorf("legacy mode must keep string values, got %v", meta)
+	}
+	if _, has := meta["baz"]; !has {
+		t.Errorf("legacy mode must keep any key the model returns, got %v", meta)
+	}
+}

@@ -1229,3 +1229,103 @@ func TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
 		t.Errorf("declared key must survive, got %#v", params)
 	}
 }
+
+// TestNormalizeExtractorParams_LegacyFieldName_Issue20335 covers the
+// pipeline-compat shim added for issue #20335: a single Auto Metadata extractor
+// configured with the old `field_name: "metadata"` (+ optional `sys_prompt`)
+// pair is translated into the new `metadata.enabled = true` form so the
+// downstream whitelist filter does not strip the operator's intent before
+// NewExtractorComponent sees it.
+func TestNormalizeExtractorParams_LegacyFieldName_Issue20335(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]any
+		validate func(t *testing.T, out map[string]any)
+	}{
+		{
+			name: "field_name metadata + sys_prompt synthesises metadata.enabled",
+			input: map[string]any{
+				"field_name": "metadata",
+				"sys_prompt": "The document contains a metadata section. Output strictly JSON.",
+				"llm_id":     "tenant-chat",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				meta, ok := out["metadata"].(map[string]any)
+				if !ok {
+					t.Fatalf("expected synthesized metadata block, got %#v", out["metadata"])
+				}
+				if enabled, _ := meta["enabled"].(bool); !enabled {
+					t.Errorf("expected metadata.enabled=true, got %#v", meta["enabled"])
+				}
+				if sp, _ := meta["system_prompt"].(string); sp != "The document contains a metadata section. Output strictly JSON." {
+					t.Errorf("system_prompt did not migrate, got %#v", meta["system_prompt"])
+				}
+				// field_name / sys_prompt are still present in the map at this
+				// stage; the per-key whitelist filter downstream drops them.
+				if _, ok := out["field_name"]; !ok {
+					t.Errorf("legacy field_name should remain in the map until the whitelist filter runs, got %#v", out)
+				}
+			},
+		},
+		{
+			name: "field_name metadata without sys_prompt synthesises enabled-only block",
+			input: map[string]any{
+				"field_name": "metadata",
+				"llm_id":     "tenant-chat",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				meta, ok := out["metadata"].(map[string]any)
+				if !ok {
+					t.Fatalf("expected synthesized metadata block, got %#v", out["metadata"])
+				}
+				if enabled, _ := meta["enabled"].(bool); !enabled {
+					t.Errorf("expected metadata.enabled=true, got %#v", meta["enabled"])
+				}
+				if _, has := meta["system_prompt"]; has {
+					t.Errorf("system_prompt must not be injected when the operator did not set sys_prompt, got %#v", meta)
+				}
+			},
+		},
+		{
+			name: "modern modular metadata block is NOT clobbered by legacy shim",
+			input: map[string]any{
+				"field_name": "metadata",
+				"sys_prompt": "ignored: modular config wins",
+				"metadata": map[string]any{
+					"enabled":  true,
+					"metadata": []any{map[string]any{"key": "doc_date", "type": "string"}},
+				},
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				meta, ok := out["metadata"].(map[string]any)
+				if !ok {
+					t.Fatalf("expected existing metadata block, got %#v", out["metadata"])
+				}
+				if _, has := meta["system_prompt"]; has {
+					t.Errorf("legacy shim must not inject system_prompt into an existing modular block, got %#v", meta)
+				}
+				if _, has := meta["metadata"]; !has {
+					t.Errorf("modular metadata field set must survive, got %#v", meta)
+				}
+			},
+		},
+		{
+			name: "non-metadata field_name does not trigger shim",
+			input: map[string]any{
+				"field_name": "summary",
+				"sys_prompt": "ignored: only field_name=metadata is in scope",
+			},
+			validate: func(t *testing.T, out map[string]any) {
+				if _, has := out["metadata"]; has {
+					t.Errorf("shim must not fire for field_name=summary, got %#v", out)
+				}
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out := NormalizeExtractorParams(tc.input)
+			tc.validate(t, out)
+		})
+	}
+}
