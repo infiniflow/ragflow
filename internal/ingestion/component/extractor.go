@@ -281,6 +281,9 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := metaRaw["built_in_metadata"]; ok {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
 			}
+			if v, ok := metaRaw["system_prompt"].(string); ok {
+				p.Metadata.SystemPrompt = v
+			}
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -1009,24 +1012,38 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 // merges the parsed JSON object into ck["metadata"]. It mirrors the
 // runAutoKeywords/runAutoQuestions shape but parses a JSON object and
 // merges into the chunk's metadata map.
+//
+// Legacy pipeline-compat shim: when Metadata.Enabled is true but the operator
+// did not declare a Metadata field set (and the NormalizeExtractorParams shim
+// has set a SystemPrompt), the LLM is called with the operator's prompt under
+// a permissive object schema. Every key the model returns is kept. This is
+// the path that lets a pipeline with the old `field_name: "metadata"` +
+// `sys_prompt: "..."` config continue to populate `meta_fields` after the
+// modular-schema refactor (PR #18432).
 func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	if strings.TrimSpace(chunkText) == "" {
 		return nil
 	}
-	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
+	if !c.Param.Metadata.Enabled {
 		return nil
 	}
-	// Render the field schema into the prompt, mirroring Python's
-	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
-	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
-	if len(schemaMap) == 0 {
-		return nil
+	var schemaStr string
+	var err error
+	if len(c.Param.Metadata.Metadata) > 0 {
+		// Modern modular config: render declared fields into the prompt schema.
+		schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
+		if len(schemaMap) == 0 {
+			return nil
+		}
+		schemaJSON, err := json.Marshal(schemaMap)
+		if err != nil {
+			return err
+		}
+		schemaStr = string(schemaJSON)
+	} else {
+		// Legacy single-pass: no declared field set, accept any JSON object.
+		schemaStr = `{"type":"object","additionalProperties":true}`
 	}
-	schemaJSON, err := json.Marshal(schemaMap)
-	if err != nil {
-		return err
-	}
-	schemaStr := string(schemaJSON)
 
 	// Per-chunk result cache: identical (model + chunk + schema) extractions
 	// are served from the cache so a resumed run — which re-executes every
@@ -1051,7 +1068,14 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			temperature: &metaTemp,
 			cache:       in.cache,
 		}
-		systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
+		// Legacy operator-supplied prompt takes precedence over the hard-coded
+		// template; the schema is irrelevant to the model in that case.
+		var systemPrompt string
+		if sp := strings.TrimSpace(c.Param.Metadata.SystemPrompt); sp != "" {
+			systemPrompt = sp
+		} else {
+			systemPrompt = fmt.Sprintf(autoMetadataPrompt, schemaStr)
+		}
 		parsed, err = c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
 		if err != nil {
 			return err
@@ -1060,10 +1084,12 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// Non-JSON or empty response — nothing to extract, not an error.
 			return nil
 		}
-		parsed = filterMetadataToDeclaredKeys(parsed, c.Param.Metadata.Metadata)
-		if len(parsed) == 0 {
-			// Every key fell outside the declared field set — nothing to keep.
-			return nil
+		if len(c.Param.Metadata.Metadata) > 0 {
+			parsed = filterMetadataToDeclaredKeys(parsed, c.Param.Metadata.Metadata)
+			if len(parsed) == 0 {
+				// Every key fell outside the declared field set — nothing to keep.
+				return nil
+			}
 		}
 		setMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID, parsed)
 	}
