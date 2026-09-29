@@ -1122,6 +1122,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService)
 	modelSolver := service.NewModelSolver()
 
 	// Wire the real MemorySaver so the Message component can persist
@@ -1195,7 +1196,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
-	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
+	providerHandler := handler.NewProviderHandler(userService, modelProviderService, modelCallService)
 	// Install the agent service's Kvrocks-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
@@ -1226,7 +1227,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// provider is unconfigured, the synthesizer falls back to a
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
-	configureTTSSynthesizer(modelProviderService)
+	configureTTSSynthesizer(modelCallService)
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
@@ -1538,14 +1539,14 @@ func buildAgentRunOptions() agentRunOptions {
 // ModelName from req.Engine). When the model provider is
 // unconfigured (nil dispatcher) the helper returns nil, which
 // reverts the audio package to its default stub.
-func configureTTSSynthesizer(modelProviderService *service.ModelProviderService) {
-	if modelProviderService == nil {
-		common.Info("agent: model provider service not initialised; TTS in no-op echo mode")
+func configureTTSSynthesizer(modelCallService *service.ModelCallService) {
+	if modelCallService == nil {
+		common.Info("agent: model call service not initialised; TTS in no-op echo mode")
 		audio.SetModelProviderSynthesizer(nil)
 		return
 	}
-	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelProviderService))
-	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
+	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelCallService))
+	common.Info("agent: TTS model-call dispatch installed (audio.Synthesize → ModelCallService.AudioSpeech)")
 }
 
 // inferenceTotalCores returns the CPU budget the DeepDoc inference config is
