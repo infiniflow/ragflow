@@ -32,7 +32,6 @@ type Router struct {
 	systemHandler        *handler.SystemHandler
 	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
-	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
 	langfuseHandler      *handler.LangfuseHandler
@@ -71,7 +70,6 @@ func NewRouter(
 	systemHandler *handler.SystemHandler,
 	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
-	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
 	langfuseHandler *handler.LangfuseHandler,
@@ -107,7 +105,6 @@ func NewRouter(
 		systemHandler:        systemHandler,
 		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
 		langfuseHandler:      langfuseHandler,
