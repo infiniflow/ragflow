@@ -4,16 +4,54 @@ import (
 	"html"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// captionText is a caption box's text plus its top edge, used to order
-// multiple captions of one table in READING order (top→bottom) before
-// concatenation. Section order is not guaranteed to match the PDF layout
-// (e.g. 06's lower caption box precedes the upper one in sections), so the
-// top coordinate is carried explicitly.
+func hasCaptionFragment(text, fragment string) bool {
+	if fragment == "" {
+		return true
+	}
+	isWordRune := func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsNumber(r)
+	}
+	first, _ := utf8.DecodeRuneInString(fragment)
+	last, _ := utf8.DecodeLastRuneInString(fragment)
+	for offset := 0; offset < len(text); {
+		i := strings.Index(text[offset:], fragment)
+		if i < 0 {
+			return false
+		}
+		i += offset
+		end := i + len(fragment)
+		leftBoundary := i == 0
+		if i > 0 {
+			previous, _ := utf8.DecodeLastRuneInString(text[:i])
+			leftBoundary = !isWordRune(first) || !isWordRune(previous)
+		}
+		rightBoundary := end == len(text)
+		if end < len(text) {
+			next, _ := utf8.DecodeRuneInString(text[end:])
+			rightBoundary = !isWordRune(last) || !isWordRune(next)
+		}
+		if leftBoundary && rightBoundary {
+			return true
+		}
+		offset = i + 1
+	}
+	return false
+}
+
+// captionText is a caption box's text plus its page and top edge, used to
+// order multiple captions of one table in DOCUMENT order before
+// concatenation: page first, then top→bottom within the page. Sorting by the
+// page-local top edge ALONE scrambles a cross-page table: every continuation
+// page's header block sits near its page top (small local Y), so its caption
+// interleaved ahead of the anchor page's, breaking document order.
 type captionText struct {
+	page int
 	top  float64
 	text string
 }
@@ -33,6 +71,92 @@ func captionSep(text string) string {
 		}
 	}
 	return ""
+}
+
+// dedupCaptions drops caption texts that are contained in (or equal to)
+// another caption, checking containment in BOTH directions: a caption already
+// covered by a surviving one is dropped, and a caption that covers earlier
+// ones replaces them, so "Table 1" plus "Table 1 Results" keeps only the
+// longer text. Blanks are trimmed away; survivors keep first-appearance order,
+// and a replacing caption takes the position of the FIRST caption it replaces
+// so the merged text stays in reading order.
+func dedupCaptions(captions []string) []string {
+	var seen []string
+	for _, c := range captions {
+		t := strings.TrimSpace(c)
+		if t == "" {
+			continue
+		}
+		contained := false
+		for _, s := range seen {
+			if hasCaptionFragment(s, t) {
+				contained = true
+				break
+			}
+		}
+		if contained {
+			continue
+		}
+		kept := make([]string, 0, len(seen)+1)
+		replaced := false
+		for _, s := range seen {
+			if hasCaptionFragment(t, s) {
+				if !replaced {
+					kept = append(kept, t)
+					replaced = true
+				}
+				continue
+			}
+			kept = append(kept, s)
+		}
+		if !replaced {
+			kept = append(kept, t)
+		}
+		seen = kept
+	}
+	return seen
+}
+
+func containsMergedCaption(text, fragment string) bool {
+	if hasCaptionFragment(text, fragment) {
+		return true
+	}
+	// CJK TSR caption fragments can be split mid-phrase across pages. In this
+	// one cross-page selection, keep the longer rendering when it contains the
+	// entire shorter caption; ordinary caption-list dedup still requires word
+	// boundaries so separate captions are not collapsed.
+	for _, r := range fragment {
+		if r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsNumber(r)) {
+			return false
+		}
+	}
+	return fragment != "" && strings.Contains(text, fragment)
+}
+
+// pickMergedCaption decides the caption of a cross-page merged table: ONE
+// logical table keeps ONE caption, the anchor page's. Continuation pages
+// typically repeat the page-header block (title + that page's section names)
+// and TSR hands each repeat over as a caption. A continuation caption only
+// replaces the anchor's when it is a longer rendering of the SAME text (TSR
+// splitting differs per page); unrelated text is dropped, never concatenated
+// — concatenating per-page header blocks produced a 150-char scrambled
+// mega-caption on the Jiangxi price-list sample. Nothing is lost: section
+// names also appear inside the merged table as their own banner rows.
+func pickMergedCaption(anchor, continuation string) string {
+	a := strings.TrimSpace(anchor)
+	c := strings.TrimSpace(continuation)
+	switch {
+	case c == "":
+		return a
+	case a == "":
+		return c
+	case containsMergedCaption(a, c):
+		return a
+	case containsMergedCaption(c, a):
+		return c
+	default:
+		return a
+	}
 }
 
 func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
@@ -56,10 +180,14 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 			// content-loss go_bug table-html-emission-format; it is NOT a
 			// table-assembly change (cell content/structure are untouched).
 			top := 1e9
+			page := 0
 			if len(s.Positions) > 0 {
 				top = s.Positions[0].Top
+				if len(s.Positions[0].PageNumbers) > 0 {
+					page = s.Positions[0].PageNumbers[0]
+				}
 			}
-			byTarget[target] = append(byTarget[target], captionText{top: top, text: s.Text})
+			byTarget[target] = append(byTarget[target], captionText{page: page, top: top, text: s.Text})
 			captions = append(captions, i)
 			continue
 		}
@@ -75,9 +203,14 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		}
 	}
 	// Inject one combined <caption> per target. Captions of the same table are
-	// ordered by top edge (reading order, top→bottom) before concatenation.
+	// ordered by (page, top edge) — document order — before concatenation.
 	for idx, entries := range byTarget {
-		sort.SliceStable(entries, func(i, j int) bool { return entries[i].top < entries[j].top })
+		sort.SliceStable(entries, func(i, j int) bool {
+			if entries[i].page != entries[j].page {
+				return entries[i].page < entries[j].page
+			}
+			return entries[i].top < entries[j].top
+		})
 		texts := make([]string, len(entries))
 		for i, e := range entries {
 			texts[i] = e.text
@@ -316,29 +449,42 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // preserved.
 func injectCaption(table *pdf.Section, captions []string) {
 	var b strings.Builder
-	for _, c := range captions {
-		t := strings.TrimSpace(c)
-		if t == "" {
-			continue
-		}
+	for _, t := range dedupCaptions(captions) {
 		if b.Len() > 0 {
-			b.WriteString(captionSep(c))
+			b.WriteString(captionSep(t))
 		}
 		b.WriteString(html.EscapeString(t))
 	}
 	if b.Len() == 0 {
 		return
 	}
-	escaped := "<caption>" + b.String() + "</caption>"
+	escaped := b.String()
+	const openCap = "<caption>"
+	const closeCap = "</caption>"
+	if startIdx := strings.Index(table.Text, openCap); startIdx >= 0 {
+		if endIdx := strings.Index(table.Text[startIdx:], closeCap); endIdx >= 0 {
+			existingCap := table.Text[startIdx+len(openCap) : startIdx+endIdx]
+			if hasCaptionFragment(existingCap, escaped) {
+				return
+			}
+			if hasCaptionFragment(escaped, existingCap) {
+				table.Text = table.Text[:startIdx+len(openCap)] + escaped + table.Text[startIdx+endIdx:]
+				return
+			}
+			combined := existingCap + captionSep(escaped) + escaped
+			table.Text = table.Text[:startIdx+len(openCap)] + combined + table.Text[startIdx+endIdx:]
+			return
+		}
+	}
 	if table.Text == "" {
-		table.Text = escaped
+		table.Text = "<caption>" + escaped + "</caption>"
 		return
 	}
 	const open = "<table>"
 	if idx := strings.Index(table.Text, open); idx >= 0 {
 		at := idx + len(open)
-		table.Text = table.Text[:at] + escaped + table.Text[at:]
+		table.Text = table.Text[:at] + "<caption>" + escaped + "</caption>" + table.Text[at:]
 		return
 	}
-	table.Text = escaped + table.Text
+	table.Text = "<caption>" + escaped + "</caption>" + table.Text
 }
