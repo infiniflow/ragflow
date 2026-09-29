@@ -32,10 +32,10 @@ Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/b
 | Database version | Scope | Gate constant |
 |---|---|---|
 | `v0.26.0` | Rebuild the tenant model tables from `tenant_llm` and normalize stored model ids | `modelMigrationBaseVersion` |
-| `v0.27.2` | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion` |
+| `v1.0.0-rc1` | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion` |
 | `v1.0.0-rc1.dev1` | Split conversation message and reference payloads into child tables | `conversationHistoryTargetVersion` |
 
-The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v0.27.2` step, and a database at or above `v0.27.2` runs neither.
+The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
 ---
 
@@ -50,7 +50,7 @@ The two tenant model steps are cumulative: a database at `v0.26.0` still runs th
 | `tenant_model_instance` | Created if missing. Columns: `id` (PK), `instance_name`, `provider_id`, `api_key`, `status`, `extra`, base timestamps. |
 | `tenant_model` | Created if missing. Columns: `id` (PK), `model_name`, `provider_id`, `instance_id`, `model_type`, `status`, `extra`, base timestamps. |
 
-The three tables are created only when the legacy `tenant_llm` table exists and the target table does not, mirroring the `CREATE TABLE IF NOT EXISTS` the Python stages run. Existing tables are never altered by this step: `tenant_model.model_type` deliberately keeps the text shape the Python migration left behind so the `v0.27.2` merge can still read the legacy model names.
+The three tables are created only when the legacy `tenant_llm` table exists and the target table does not, mirroring the `CREATE TABLE IF NOT EXISTS` the Python stages run. Existing tables are never altered by this step: `tenant_model.model_type` deliberately keeps the text shape the Python migration left behind so the `v1.0.0-rc1` merge can still read the legacy model names.
 
 ### Data migration
 
