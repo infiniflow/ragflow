@@ -45,7 +45,15 @@ type ModelCallService struct {
 // NewModelCallService creates a model-call service with the standard model
 // provider and model resolver.
 func NewModelCallService() *ModelCallService {
-	providerService := NewModelProviderService()
+	return NewModelCallServiceWithProviderService(NewModelProviderService())
+}
+
+// NewModelCallServiceWithProviderService creates a model-call service using
+// an existing provider service and its DAO configuration.
+func NewModelCallServiceWithProviderService(providerService *ModelProviderService) *ModelCallService {
+	if providerService == nil {
+		providerService = NewModelProviderService()
+	}
 	return &ModelCallService{
 		providerService: providerService,
 		modelSolver:     &ModelSolver{service: providerService},
@@ -196,7 +204,25 @@ func (s *ModelCallService) TranscribeAudioStream(ctx context.Context, modelRef, 
 // AudioSpeech converts audioContent to speech with the model selected by
 // modelRef.
 func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+	var target *ModelTarget
+	var code common.ErrorCode
+	var err error
+	if strings.TrimSpace(modelRef) == "" {
+		tenantID, tenantErr := s.ownerTenantID(ctx, userID)
+		if tenantErr != nil {
+			// Audio synthesis supplies the tenant ID directly, while HTTP
+			// model calls supply a user ID. Fall back to the former when no
+			// owner tenant can be resolved from the latter.
+			tenantID = userID
+		}
+		code = common.CodeNotFound
+		target, err = s.modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeTTS)
+		if err == nil {
+			code = common.CodeSuccess
+		}
+	} else {
+		target, _, code, err = s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+	}
 	if err != nil {
 		return nil, code, err
 	}
@@ -344,6 +370,7 @@ func populateModelUsage(usage *common.ModelUsage, target *ModelTarget, tenantID,
 	usage.UserID = userID
 	usage.TenantID = tenantID
 	usage.ProviderName = target.ProviderName
+	usage.InstanceID = target.InstanceID
 	usage.ModelName = target.ModelName
 	if target.APIConfig != nil && target.APIConfig.ApiKey != nil {
 		usage.APIKey = *target.APIConfig.ApiKey
