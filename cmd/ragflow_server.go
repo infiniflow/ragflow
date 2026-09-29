@@ -1691,7 +1691,7 @@ func resolveDeepDocModelDir() string {
 	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
 	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
 	candidates = append(candidates,
-		filepath.Join(wd, "rag", "res", "deepdoc"),
+		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
 		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
 	)
 	for _, c := range candidates {
@@ -1701,7 +1701,7 @@ func resolveDeepDocModelDir() string {
 	}
 	// None verified; return the canonical default so any error message points
 	// at the conventional location.
-	return filepath.Join(wd, "rag", "res", "deepdoc")
+	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
 }
 
 // resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the

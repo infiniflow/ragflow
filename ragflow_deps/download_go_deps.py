@@ -305,7 +305,7 @@ def download_go_models(use_china_mirrors=False):
 
     # Canonical local-dev model dir the Go backend auto-discovers.
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_dir = os.path.join(repo_root, "rag", "res", "deepdoc")
+    target_dir = os.path.join(repo_root, "internal", "rag", "res", "deepdoc")
     os.makedirs(target_dir, exist_ok=True)
 
     missing = []

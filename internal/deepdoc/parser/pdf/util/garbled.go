@@ -221,7 +221,7 @@ var (
 func loadOCRAlphabet() map[rune]struct{} {
 	ocrAlphabetOnce.Do(func() {
 		ocrAlphabet = map[rune]struct{}{}
-		data, err := os.ReadFile(filepath.Join(utility.GetProjectRoot(), "rag", "res", "deepdoc", "ocr.res"))
+		data, err := os.ReadFile(filepath.Join(utility.GetProjectRoot(), "internal", "rag", "res", "deepdoc", "ocr.res"))
 		if err != nil {
 			return
 		}
