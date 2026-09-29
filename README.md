@@ -228,7 +228,7 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker compose -f docker-compose.yml logs --tail 50 <service>`.
+   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker logs --tail 50 <service>`.
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default

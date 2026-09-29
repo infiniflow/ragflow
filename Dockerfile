@@ -243,14 +243,13 @@ COPY --chmod=755 docker/entrypoint*.sh ./
 RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-COPY docker/nginx/ragflow.conf.golang \
-     /etc/nginx/conf.d/
+COPY docker/nginx/ragflow.conf /etc/nginx/conf.d/
 
 RUN rm -f /etc/nginx/sites-enabled/default
 
 
 COPY conf conf
-COPY agent/templates agent/templates
+COPY internal/agent/templates agent/templates
 COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend

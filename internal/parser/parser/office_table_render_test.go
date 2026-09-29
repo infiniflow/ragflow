@@ -367,7 +367,7 @@ func TestXLSXImageMIMEType(t *testing.T) {
 func TestExtractXLSXImagesWarningForInvalidSheet(t *testing.T) {
 	f := excelize.NewFile()
 	defer f.Close()
-	_, warnings := extractXLSXImages(f, "MissingSheet")
+	_, warnings := extractXLSXImages(f, "MissingSheet", nil)
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "image discovery failed") {
 		t.Fatalf("warnings = %v, want image discovery warning", warnings)
 	}
