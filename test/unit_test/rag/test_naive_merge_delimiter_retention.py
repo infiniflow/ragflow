@@ -83,6 +83,25 @@ def test_no_synthetic_newline_within_section():
     assert joined == "\nab。cd", joined
 
 
+def test_empty_delimiter_keeps_inter_section_newline():
+    # Regression guard: with an empty delimiter (size-only mode) every section
+    # keeps its leading "\n" separator, so multi-section input is NOT
+    # concatenated into one blob. (#20384 review — naive_merge empty-delim path)
+    chunks = naive_merge([("sec1", ""), ("sec2", "")], chunk_token_num=512, delimiter="")
+    assert "".join(chunks) == "\nsec1\nsec2", chunks
+
+
+def test_empty_delimiter_with_images_keeps_inter_section_newline():
+    # Same contract for the images path; the two splitters must stay consistent.
+    chunks, _images = naive_merge_with_images(
+        ["sec1", "sec2"],
+        [None, None],
+        chunk_token_num=512,
+        delimiter="",
+    )
+    assert "".join(chunks) == "\nsec1\nsec2", chunks
+
+
 def test_book_txt_flow_retains_punctuation_and_line_breaks():
     # Mirrors rag/app/book.py's txt path: split on "\n", then naive_merge with
     # the default Chinese delimiter. Sentence punctuation must survive and the

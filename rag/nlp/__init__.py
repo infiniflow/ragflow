@@ -1538,8 +1538,9 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DEL
     for sec_idx, (sec, pos) in enumerate(sections):
         if not dels:
             # Empty delimiter: size-only mode. The whole section is one
-            # paragraph; keep the inter-section "\n" separation.
-            paragraphs.append(("\n" + sec if sec_idx == 0 else sec, pos))
+            # paragraph; every section keeps its leading "\n" so the
+            # inter-section separation survives (matches naive_merge_with_images).
+            paragraphs.append(("\n" + sec, pos))
             continue
         for j, ptext in enumerate(_split_segments_retain_delimiter(sec, dels)):
             prefix = "\n" if j == 0 else ""
