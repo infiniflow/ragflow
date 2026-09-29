@@ -103,6 +103,11 @@ class Session(Base):
         else:
             raise Exception(f"Unknown session type: {self.__session_type}")
 
+        # SSE is UTF-8 by spec (https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream).
+        # `requests` defaults to ISO-8859-1 when Content-Type has no charset, which corrupts non-ASCII payloads.
+        if res.encoding is None or "utf" not in res.encoding.lower():
+            res.encoding = "utf-8"
+
         if stream:
             for line in res.iter_lines(decode_unicode=True):
                 if not line:
