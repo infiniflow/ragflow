@@ -175,6 +175,33 @@ func TestOpenAIChatNonStreamPreservesSuccessWireFormat(t *testing.T) {
 	}
 }
 
+func TestWriteOpenAIChatSSEErrorIsTerminalAndKeepsDone(t *testing.T) {
+	events := make(chan service.OpenAIStreamEvent, 3)
+	events <- service.OpenAIStreamEvent{Kind: service.OpenAIEventContent, Delta: "partial"}
+	events <- service.OpenAIStreamEvent{Kind: service.OpenAIEventError, Error: "an internal error occurred"}
+	events <- service.OpenAIStreamEvent{Kind: service.OpenAIEventFinal, FinalAnswer: "must be ignored"}
+
+	c, recorder := newOpenAIStreamTestContext()
+	err := writeOpenAIChatSSE(t.Context(), c, &service.OpenAIChatStream{
+		Events: events,
+		Model:  "test-model",
+	}, "chatcmpl-test")
+	if err != nil {
+		t.Fatalf("writeOpenAIChatSSE() error = %v", err)
+	}
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"content":"**ERROR**: an internal error occurred"`) {
+		t.Fatalf("missing sanitized error chunk: %s", body)
+	}
+	if strings.Contains(body, "must be ignored") || strings.Contains(body, `"finish_reason":"stop"`) {
+		t.Fatalf("success terminal emitted after error: %s", body)
+	}
+	if got := strings.Count(body, "data: [DONE]\n\n"); got != 1 {
+		t.Fatalf("[DONE] count = %d, body=%s", got, body)
+	}
+}
+
 type stubOpenAIChatService struct {
 	complete func(context.Context, string, string, service.OpenAIChatRequest) (*service.OpenAICompletionResponse, error)
 	stream   func(context.Context, string, string, service.OpenAIChatRequest) (*service.OpenAIChatStream, error)

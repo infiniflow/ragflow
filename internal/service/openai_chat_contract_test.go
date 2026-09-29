@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -198,6 +199,99 @@ func TestOpenAICompleteReturnsSuccessPayload(t *testing.T) {
 	}
 	if resp.TotalTokens != resp.PromptTokens+resp.CompletionTokens {
 		t.Fatalf("usage is inconsistent: %+v", resp)
+	}
+}
+
+func TestOpenAICompleteSanitizesGenerationFailure(t *testing.T) {
+	results := make(chan AsyncChatResult, 1)
+	results <- AsyncChatResult{Answer: "**ERROR**: dial mysql.internal password=secret", Final: true}
+	close(results)
+
+	resp, err := newOpenAIContractService(&stubOpenAIPipeline{results: results}).Complete(
+		t.Context(), "user-1", "chat-1", validOpenAIChatRequest())
+	if resp != nil {
+		t.Fatalf("response = %+v, want nil", resp)
+	}
+	assertOpenAICodedError(t, err, common.CodeDataError, openAIInternalErrorMessage)
+	if strings.Contains(err.Error(), "mysql.internal") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("error leaked internal details: %v", err)
+	}
+}
+
+func TestOpenAIStreamSanitizesFailureAndStopsAtFirstTerminal(t *testing.T) {
+	results := make(chan AsyncChatResult, 3)
+	results <- AsyncChatResult{Answer: "partial"}
+	results <- AsyncChatResult{Answer: "**ERROR**: provider secret", Final: true}
+	results <- AsyncChatResult{Answer: "duplicate final", Final: true}
+	close(results)
+	pipeline := &stubOpenAIPipeline{results: results}
+
+	stream, err := newOpenAIContractService(pipeline).Stream(t.Context(), "user-1", "chat-1", validOpenAIChatRequest())
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	if !pipeline.called || !pipeline.stream {
+		t.Fatalf("pipeline called=%v stream=%v", pipeline.called, pipeline.stream)
+	}
+
+	var events []OpenAIStreamEvent
+	for event := range stream.Events {
+		events = append(events, event)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %+v, want content and error", events)
+	}
+	if events[0].Kind != OpenAIEventContent || events[0].Delta != "partial" {
+		t.Fatalf("content event = %+v", events[0])
+	}
+	if events[1].Kind != OpenAIEventError || events[1].Error != openAIInternalErrorMessage {
+		t.Fatalf("error event = %+v", events[1])
+	}
+	if strings.Contains(events[1].Error, "secret") {
+		t.Fatalf("error event leaked provider detail: %+v", events[1])
+	}
+}
+
+func TestOpenAIStreamPipelineStartFailureReturnsCodedError(t *testing.T) {
+	pipeline := &stubOpenAIPipeline{err: errors.New("dial mysql.internal password=secret")}
+	stream, err := newOpenAIContractService(pipeline).Stream(t.Context(), "user-1", "chat-1", validOpenAIChatRequest())
+	if stream != nil {
+		t.Fatalf("stream = %+v, want nil", stream)
+	}
+	assertOpenAICodedError(t, err, common.CodeDataError, openAIInternalErrorMessage)
+}
+
+func TestOpenAIStreamMetadataFailureIsSanitized(t *testing.T) {
+	pipeline := &stubOpenAIPipeline{}
+	svc := newOpenAIContractService(pipeline)
+	svc.metadataSvc = stubOpenAIMetadataProvider{err: errors.New("query mysql.internal password=secret")}
+	req := validOpenAIChatRequest()
+	req.ExtraBody = map[string]interface{}{
+		"metadata_condition": map[string]interface{}{"author": "Ada"},
+	}
+
+	stream, err := svc.Stream(t.Context(), "user-1", "chat-1", req)
+	if stream != nil {
+		t.Fatalf("stream = %+v, want nil", stream)
+	}
+	assertOpenAICodedError(t, err, common.CodeDataError, openAIInternalErrorMessage)
+	if pipeline.called {
+		t.Fatal("pipeline started after metadata preparation failed")
+	}
+	if strings.Contains(err.Error(), "mysql.internal") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("metadata error leaked internal detail: %v", err)
+	}
+}
+
+func TestOpenAIStreamPreparePanicIsSanitized(t *testing.T) {
+	pipeline := &stubOpenAIPipeline{panicOnCall: "database password=secret"}
+	stream, err := newOpenAIContractService(pipeline).Stream(t.Context(), "user-1", "chat-1", validOpenAIChatRequest())
+	if stream != nil {
+		t.Fatalf("stream = %+v, want nil", stream)
+	}
+	assertOpenAICodedError(t, err, common.CodeDataError, openAIInternalErrorMessage)
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("panic detail leaked to caller: %v", err)
 	}
 }
 

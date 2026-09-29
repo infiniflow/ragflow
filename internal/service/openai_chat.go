@@ -31,6 +31,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const openAIInternalErrorMessage = "an internal error occurred"
+
 type openAIChatGetter interface {
 	GetChat(ctx context.Context, userID, chatID string) (*GetChatResponse, error)
 }
@@ -194,7 +196,15 @@ func (s *OpenAIChatService) Complete(
 	ctx context.Context,
 	userID, chatID string,
 	req OpenAIChatRequest,
-) (*OpenAICompletionResponse, error) {
+) (response *OpenAICompletionResponse, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI non-stream completion panic", zap.Any("recover", recovered))
+			response = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 	prepared, err := s.prepare(ctx, userID, chatID, req, false)
 	if err != nil {
@@ -211,11 +221,16 @@ func (s *OpenAIChatService) Complete(
 		case result, ok := <-prepared.results:
 			if !ok {
 				if !found {
-					return nil, common.NewCodedError(common.CodeDataError, "AsyncChat returned no final result")
+					return nil, openAIInternalError("consume chat pipeline", fmt.Errorf("AsyncChat returned no final result"))
 				}
 				goto completed
 			}
 			if result.Final {
+				if isOpenAIGenerationFailure(result.Answer) {
+					common.Warn("OpenAI non-stream generation failed", zap.String("answer", result.Answer))
+					drainOpenAIResults(prepared.results)
+					return nil, common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+				}
 				finalResult = result
 				found = true
 				drainOpenAIResults(prepared.results)
@@ -260,7 +275,15 @@ func (s *OpenAIChatService) Stream(
 	ctx context.Context,
 	userID, chatID string,
 	req OpenAIChatRequest,
-) (*OpenAIChatStream, error) {
+) (stream *OpenAIChatStream, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI stream preparation panic", zap.Any("recover", recovered))
+			stream = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 	prepared, err := s.prepare(ctx, userID, chatID, req, true)
 	if err != nil {
@@ -370,7 +393,19 @@ func (s *OpenAIChatService) prepare(
 	userID, chatID string,
 	req OpenAIChatRequest,
 	stream bool,
-) (*preparedOpenAIChat, error) {
+) (prepared *preparedOpenAIChat, err error) {
+	var finish func()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if finish != nil {
+				finish()
+			}
+			common.Warn("OpenAI chat preparation panic", zap.Any("recover", recovered))
+			prepared = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
 	req, options, err := normalizeAndValidateOpenAIRequest(req)
 	if err != nil {
 		return nil, err
@@ -378,7 +413,13 @@ func (s *OpenAIChatService) prepare(
 
 	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
-		return nil, common.NewCodedError(common.CodeDataError, err.Error())
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err.Error() == "no authorization" || err.Error() == "chat not found" {
+			return nil, common.NewCodedError(common.CodeDataError, err.Error())
+		}
+		return nil, openAIInternalError("load chat", err)
 	}
 	dialog := dialogResp.Chat
 	resolvedModel := req.Model
@@ -430,8 +471,7 @@ func (s *OpenAIChatService) prepare(
 		}
 		metas, mdErr := s.metadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
-			return nil, common.NewCodedError(common.CodeDataError,
-				fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
+			return nil, openAIInternalError("load metadata", mdErr)
 		}
 		docIDsStr = MetadataConditionToDocIDs(metas, openaiReq.MetadataCondition)
 		common.Debug("metadata_condition filter ended", zap.String("doc_ids", docIDsStr))
@@ -470,18 +510,18 @@ func (s *OpenAIChatService) prepare(
 
 	langfuseCtx, shutdown := s.withLangfuse(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
 	runCtx, cancel := context.WithCancel(langfuseCtx)
-	finish := openAIFinish(cancel, shutdown)
+	finish = openAIFinish(cancel, shutdown)
 	asyncResults, asyncErr := s.pipeline.AsyncChat(runCtx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		finish()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, common.NewCodedError(common.CodeDataError, asyncErr.Error())
+		return nil, openAIInternalError("start chat pipeline", asyncErr)
 	}
 	if asyncResults == nil {
 		finish()
-		return nil, common.NewCodedError(common.CodeDataError, "AsyncChat returned a nil result channel")
+		return nil, openAIInternalError("start chat pipeline", fmt.Errorf("AsyncChat returned a nil result channel"))
 	}
 	return &preparedOpenAIChat{
 		ctx:           runCtx,
@@ -509,6 +549,13 @@ func (s *OpenAIChatService) produceStream(prepared *preparedOpenAIChat, events c
 	defer close(events)
 	defer prepared.finish()
 	defer common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI streaming producer panic", zap.Any("recover", recovered))
+			drainOpenAIResults(prepared.results)
+			_ = send(OpenAIStreamEvent{Kind: OpenAIEventError, Error: openAIInternalErrorMessage})
+		}
+	}()
 
 	var (
 		fullContent    string
@@ -557,6 +604,12 @@ func (s *OpenAIChatService) produceStream(prepared *preparedOpenAIChat, events c
 			lastResult = result
 
 			if result.Final {
+				if isOpenAIGenerationFailure(result.Answer) {
+					common.Warn("OpenAI stream generation failed", zap.String("answer", result.Answer))
+					_ = send(OpenAIStreamEvent{Kind: OpenAIEventError, Error: openAIInternalErrorMessage})
+					drainOpenAIResults(prepared.results)
+					return
+				}
 				finalReference = []FormattedChunk{}
 				if ref, ok := result.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
@@ -637,9 +690,23 @@ func openAIFinish(cancel context.CancelFunc, shutdown func()) func() {
 	return func() {
 		once.Do(func() {
 			cancel()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					common.Warn("OpenAI Langfuse cleanup panic", zap.Any("recover", recovered))
+				}
+			}()
 			shutdown()
 		})
 	}
+}
+
+func openAIInternalError(operation string, err error) error {
+	common.Warn("OpenAI chat internal error", zap.String("operation", operation), zap.Error(err))
+	return common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+}
+
+func isOpenAIGenerationFailure(answer string) bool {
+	return strings.HasPrefix(strings.TrimSpace(answer), "**ERROR**")
 }
 
 func drainOpenAIResults(results <-chan AsyncChatResult) {

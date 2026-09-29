@@ -110,7 +110,7 @@ func openAIStreamPayload(
 			"reasoning_content": nil,
 			"function_call":     nil,
 			"tool_calls":        nil,
-		}, nil, nil), false
+		}, nil, nil), true
 	case service.OpenAIEventFinal:
 		delta := gin.H{
 			"role":              "assistant",
