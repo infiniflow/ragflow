@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,8 +31,10 @@ import (
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -223,11 +224,11 @@ func (c *feishuChannel) Send(ctx context.Context, msg core.OutgoingMessage) erro
 // run keeps the SDK WebSocket client active until the channel stops.
 func (c *feishuChannel) run(ctx context.Context) {
 	if c.wsClient == nil {
-		log.Printf("[feishu:%s] WebSocket client is not initialized", c.account.AccountID)
+		common.Warn("feishu: WebSocket client is not initialized", zap.String("account_id", c.account.AccountID))
 		return
 	}
 	if err := c.wsClient.Start(ctx); err != nil && ctx.Err() == nil {
-		log.Printf("[feishu:%s] WebSocket client exited: %v", c.account.AccountID, err)
+		common.Error("feishu: WebSocket client exited", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 
@@ -317,7 +318,7 @@ func (c *feishuChannel) enqueueIncoming(incoming core.IncomingMessage) bool {
 		go c.runWorker(c.ctx, incoming.ChatID, worker)
 	}
 	if queueFull {
-		log.Printf("[feishu:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+		common.Warn("feishu: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
 	}
 	return false
 }
@@ -371,7 +372,7 @@ func (c *feishuChannel) handleIncoming(ctx context.Context, incoming core.Incomi
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[feishu:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("feishu: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

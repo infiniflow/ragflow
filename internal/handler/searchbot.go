@@ -64,13 +64,9 @@ type SearchBotRetrievalTestRequest struct {
 	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
 	RerankID               *string                `json:"rerank_id,omitempty"`
 	Keyword                *bool                  `json:"keyword,omitempty"`
+	Highlight              *bool                  `json:"highlight,omitempty"`
 	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
 	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
-	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
-	//        → search.py highlightFields → ES get_highlight()
-	// Issue: https://github.com/infiniflow/ragflow/issues/15712
-	// Highlight           *bool                   `json:"highlight,omitempty"`
 }
 
 // UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
@@ -157,7 +153,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -210,7 +206,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -261,13 +257,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	// Resolve chat model ID.
 	modelID := ""
+	options := service.AskStreamOptions{}
 	if req.SearchID != "" && h.searchSvc != nil {
 		ctx := c.Request.Context()
 		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
-			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
-				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
-					modelID = cid
-				}
+			searchConfig := searchConfigFromDetail(detail)
+			options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
+			if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
+				modelID = chatID
 			}
 		}
 	}
@@ -283,7 +280,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -298,7 +295,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
-	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
@@ -387,7 +384,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")
@@ -529,6 +526,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		TenantRerankID:         h.TenantRerankID,
 		RerankID:               h.RerankID,
 		Keyword:                h.Keyword,
+		Highlight:              h.Highlight,
 		SimilarityThreshold:    h.SimilarityThreshold,
 		VectorSimilarityWeight: h.VectorSimilarityWeight,
 	}

@@ -25,7 +25,7 @@ func TestOCRMergeChars_FullCoverage(t *testing.T) {
 		{X0: 12, X1: 28, Top: 2, Bottom: 35, Text: "World"},
 	}
 
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -54,7 +54,7 @@ func TestOCRMergeChars_PartialCoverage(t *testing.T) {
 		{X0: 2, X1: 12, Top: 2, Bottom: 15, Text: "A"},
 	}
 
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}
@@ -81,14 +81,14 @@ func TestOCRMergeChars_NoDetectBoxes(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	boxes := p.ocrMergeChars(ctx, testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(ctx, testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if boxes != nil {
 		t.Errorf("expected nil for no detect boxes, got %d boxes", len(boxes))
 	}
 
 	// Also test empty OCRBoxes
 	mock.OCRBoxes = []pdf.OCRBox{}
-	boxes = p.ocrMergeChars(ctx, testPageImg(), chars, mock, 0)
+	boxes = p.ocrMergeChars(ctx, testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if boxes != nil {
 		t.Errorf("expected nil for empty detect boxes, got %d boxes", len(boxes))
 	}
@@ -114,7 +114,7 @@ func TestOCRMergeChars_GarbledChars(t *testing.T) {
 		{X0: 22, X1: 28, Top: 2, Bottom: 35, Text: "a"},                   // normal
 	}
 
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -143,7 +143,7 @@ func TestOCRMergeChars_HeightGate(t *testing.T) {
 		{X0: 2, X1: 10, Top: 2, Bottom: 3, Text: "tiny"},
 	}
 
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box (OCR fallback after height gate), got %d", len(boxes))
 	}
@@ -174,7 +174,7 @@ func TestOCRMergeChars_FontEncodingGarbled(t *testing.T) {
 			Text: "#", FontName: "DY1+SimSun", PageNumber: 0,
 		}
 	}
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 OCR-fallback box, got %d", len(boxes))
 	}
@@ -253,7 +253,7 @@ func TestOCRMergeChars_MixedFontSizes(t *testing.T) {
 		{X0: 12, X1: 24, Top: 5, Bottom: 35, Text: "大"}, // larger font, lower baseline
 		{X0: 24, X1: 36, Top: 5, Bottom: 35, Text: "号"}, // same size as 大, rightmost
 	}
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 1 {
 		t.Fatalf("expected 1 box, got %d", len(boxes))
 	}
@@ -285,7 +285,7 @@ func TestOCRMergeChars_BoxOrder(t *testing.T) {
 		{X0: 2, X1: 10, Top: 16, Bottom: 19, Text: "B"}, // box 2 (middle)
 		{X0: 2, X1: 10, Top: 32, Bottom: 37, Text: "C"}, // box 3 (bottom)
 	}
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 3 {
 		t.Fatalf("expected 3 boxes, got %d", len(boxes))
 	}
@@ -320,7 +320,7 @@ func TestOCRMergeChars_OverlappingBoxes(t *testing.T) {
 		{X0: 12, X1: 18, Top: 2, Bottom: 12, Text: "乙"}, // overlap zone
 		{X0: 22, X1: 28, Top: 2, Bottom: 12, Text: "丙"}, // Box B only
 	}
-	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0)
+	boxes := p.ocrMergeChars(t.Context(), testPageImg(), chars, mock, 0, pdf.DlaScale)
 	if len(boxes) != 2 {
 		t.Fatalf("expected 2 boxes, got %d", len(boxes))
 	}
@@ -397,5 +397,49 @@ func TestPdfOxideUnmappedGarbled_RealWorldGarbled(t *testing.T) {
 	garbled := "和蔘语言###D_8-.*/*护理全科##%&$ 80引用\"\"###$#(点向患儿"
 	if !util.PdfOxideUnmappedGarbled(garbled) {
 		t.Error("real-world garbled text with ### clusters should be detected")
+	}
+}
+
+// TestOCRBoxesTrackRenderZoom pins the coordinate invariant of both OCR paths:
+// the page is rendered at `zoom`, so detection pixels divide by that same zoom
+// to become PDF points — the units ParseResult.PageHeight is in, since
+// parser.go computes it as renderHeight/zoom. Dividing by a constant instead
+// leaves the boxes retryZoom/DlaScale times too large after a per-page retry
+// render (9/3 with the default config), which is how body boxes end up looking
+// like margin boxes to the header/footer zone check.
+func TestOCRBoxesTrackRenderZoom(t *testing.T) {
+	img := testPageImg() // 90x120 pixels
+	mock := &MockDocAnalyzer{
+		Healthy: true,
+		OCRBoxes: []pdf.OCRBox{
+			{X0: 0, Y0: 0, X1: 90, Y1: 0, X2: 90, Y2: 120, X3: 0, Y3: 120},
+		},
+		OCRTexts: []pdf.OCRText{{Text: "OCR text", Confidence: 0.9}},
+	}
+	p := NewParser(pdf.DefaultParserConfig())
+
+	// DlaScale is the default render; 9.0 is what the retry render uses when
+	// Config.Zoom is 3 (the default), so both must land inside their own page.
+	for _, zoom := range []float64{pdf.DlaScale, 9.0} {
+		pageW := float64(img.Bounds().Dx()) / zoom
+		pageH := float64(img.Bounds().Dy()) / zoom
+
+		merged := p.ocrMergeChars(t.Context(), img, nil, mock, 0, zoom)
+		if len(merged) != 1 {
+			t.Fatalf("zoom %v: ocrMergeChars expected 1 box, got %d", zoom, len(merged))
+		}
+		if merged[0].X1 > pageW || merged[0].Bottom > pageH {
+			t.Fatalf("zoom %v: ocrMergeChars box (%v,%v,%v,%v) falls outside the %.2fx%.2fpt page of this render",
+				zoom, merged[0].X0, merged[0].Top, merged[0].X1, merged[0].Bottom, pageW, pageH)
+		}
+
+		scanned := p.ocrDetectAndRecognize(t.Context(), img, mock, 0, "scan page", zoom)
+		if len(scanned) != 1 {
+			t.Fatalf("zoom %v: ocrDetectAndRecognize expected 1 box, got %d", zoom, len(scanned))
+		}
+		if scanned[0].X1 > pageW || scanned[0].Bottom > pageH {
+			t.Fatalf("zoom %v: ocrDetectAndRecognize box (%v,%v,%v,%v) falls outside the %.2fx%.2fpt page of this render",
+				zoom, scanned[0].X0, scanned[0].Top, scanned[0].X1, scanned[0].Bottom, pageW, pageH)
+		}
 	}
 }

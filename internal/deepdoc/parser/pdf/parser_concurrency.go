@@ -6,6 +6,9 @@ import (
 	"runtime"
 	"sync"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/utility"
 )
@@ -18,12 +21,14 @@ import (
 // threads DeepDoc inference occupies in this process are exactly the number of
 // Runs in flight at once — one number to bound.
 //
-// That number is decided here, by the caller: DeepDocConcurrency() is this
-// process's share of the CPUs, and it is (a) registered with the native gate
-// every inference call passes through (native.SetInferenceLimit, called by the
-// server's backend wiring) and (b) used to size the page worker pool. It is
-// deliberately not user-configurable, so callers never have to reason about the
-// knob.
+// That number is the process inference budget. It is (a) registered with the
+// native gate every inference call passes through (native.SetInferenceLimit,
+// called by the server's backend wiring) and (b) used to size the page worker
+// pool. It is configurable: the server resolves it once at start from
+// CLI > env (RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY) > config
+// (deepdoc.inference_concurrency) > default 4, then injects it with
+// SetDeepDocConcurrency. Callers read it via DeepDocConcurrency(); they never
+// have to reason about the precedence themselves.
 //
 // Native PDFium access (RenderPage / ExtractChars / PageSize / outlines)
 // is serialized by a process-wide mutex in package pdfsync, shared by
@@ -32,20 +37,24 @@ import (
 // mutex (not a per-Parser limiter) is the correct guard. See
 // pdfsync/pdfsync.go.
 
-// deepdocInferenceCPUShare is the share of the process's CPUs DeepDoc
-// inference may occupy. The remainder is headroom for the Go runtime, PDFium,
-// and I/O sharing the same cores.
-const deepdocInferenceCPUShare = 0.8
+// deepDocInferenceConcurrency is the process-wide DeepDoc ONNX inference budget,
+// set once at server start via SetDeepDocConcurrency. It is the maximum number
+// of Runs in flight; each Run is single-threaded (intraOpThreads = 1 in the
+// native package), so it is also the number of cores inference may occupy.
+var deepDocInferenceConcurrency = 4
+
+// SetDeepDocConcurrency sets the process inference budget. It is called exactly
+// once at server boot after CLI/env/config resolution. Non-positive values are
+// clamped to 1.
+func SetDeepDocConcurrency(n int) {
+	deepDocInferenceConcurrency = max(1, n)
+}
 
 // DeepDocConcurrency returns how many DeepDoc ONNX Runs this process may have in
 // flight at once — its inference budget. Sessions run single-threaded, so this
 // is also the number of threads inference occupies.
-//
-// The share is taken from GOMAXPROCS, not runtime.NumCPU: GOMAXPROCS is what
-// the process is actually allowed to use (it honours a cgroup CPU quota), while
-// NumCPU reports the host's cores inside a container.
 func DeepDocConcurrency() int {
-	return max(1, int(deepdocInferenceCPUShare*float64(runtime.GOMAXPROCS(0))))
+	return deepDocInferenceConcurrency
 }
 
 // ── Page worker pool ─────────────────────────────────────────────────────
@@ -57,6 +66,39 @@ type pageTask struct {
 	pageNumber  int
 	docAnalyzer pdf.DocAnalyzer
 	tb          pdf.TableBuilder
+	// progress reports this run's page completions; the worker fires the
+	// caller's callback as soon as its page finishes.
+	progress *pageProgress
+}
+
+// pageProgress serialises page-completion reporting for one runPageWorkers
+// run. The counter and the callback share one lock so completions are reported
+// in order and never concurrently — the contract ParserConfig.OnPageDone
+// documents — even though the pages themselves run on parallel workers.
+//
+// Reporting from the worker is what ties the callback to the page that just
+// finished. The collection loop cannot run until every page has been
+// submitted, and SubmitTo blocks once the worker queue is full, so on a
+// document larger than the pool's worker+queue capacity a collector-side
+// callback stays silent while the pool drains the overflow and then reports
+// every completion behind it in one burst.
+type pageProgress struct {
+	mu     sync.Mutex
+	done   int
+	total  int
+	onDone func(done, total int)
+}
+
+// finish records one completed page and reports it. It is a no-op when no
+// callback is configured (the default), so an unwatched parse pays nothing.
+func (p *pageProgress) finish() {
+	if p.onDone == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.done++
+	p.onDone(p.done, p.total)
 }
 
 const pageWorkerQueueFactor = 4
@@ -81,6 +123,7 @@ func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
 		}
 		pagePool = utility.NewWorkerPool(workers, workers*pageWorkerQueueFactor,
 			func(ctx context.Context, task pageTask) (pageResult, error) {
+				defer task.progress.finish()
 				return task.parser.processPage(ctx, task.engine, task.pageNumber,
 					task.docAnalyzer, task.tb), nil
 			})
@@ -133,6 +176,20 @@ func (p *Parser) inferDLA(ctx context.Context, doc pdf.DocAnalyzer, pageImg imag
 		return nil, nil
 	}
 	return doc.DLA(ctx, pageImg)
+}
+
+// reportPageInferenceFailure logs one page-local inference failure (DLA, TSR or
+// OCR). A failure raised while the parse context is cancelled is the stop path,
+// not a fault: cancelling terminates every in-flight ONNX Run, and the native
+// session answers with the runtime's terminate-flag error (or ctx.Err()), which
+// carries no context.Canceled to match on. Those pages log at debug instead of
+// warning once per page; any other failure keeps its per-page warning.
+func reportPageInferenceFailure(ctx context.Context, msg string, page int, err error) {
+	if ctx.Err() != nil {
+		common.Debug(msg, zap.Int("page", page), zap.Error(err))
+		return
+	}
+	common.Warn(msg, zap.Int("page", page), zap.Error(err))
 }
 
 // inferTSR invokes TSR for a single cropped table region.

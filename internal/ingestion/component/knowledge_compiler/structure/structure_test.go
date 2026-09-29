@@ -388,6 +388,20 @@ func TestFillKnownNodes(t *testing.T) {
 	}
 }
 
+func TestExtractHypergraphSkipsEdgesWithoutEntities(t *testing.T) {
+	chat := &graphChat{}
+	nodes, edges, err := extractHypergraph(context.Background(), common.Deps{Chat: chat}, CompileConfig{LLMID: "llm", ParserConfig: map[string]any{"entity": map[string]any{"id": "name"}}}, "node", "## Known Entities: {known_nodes}", "unrelated text")
+	if err != nil {
+		t.Fatalf("extractHypergraph: %v", err)
+	}
+	if len(nodes) != 0 || len(edges) != 0 {
+		t.Fatalf("empty entity batch returned nodes=%v edges=%v", nodes, edges)
+	}
+	if chat.nodeCalls != 1 || chat.edgeCalls != 0 {
+		t.Fatalf("LLM calls = node:%d edge:%d, want node:1 edge:0", chat.nodeCalls, chat.edgeCalls)
+	}
+}
+
 // ---- payload helpers ----
 
 func TestPayloadChunkIDs(t *testing.T) {
@@ -554,6 +568,34 @@ func TestStructureAliasRewrite(t *testing.T) {
 	}
 	if !sawRewritten {
 		t.Errorf("relation Al→Gamma was not rewritten to Alpha→Gamma")
+	}
+}
+
+func TestStructureSkipsSelfLoopRelations(t *testing.T) {
+	deps := common.Deps{Embed: hashEmbedder{dim: 4}}
+	cfg := CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: graphParserConfig(),
+	}
+	rows, err := buildRows(context.Background(), deps, cfg, nil, []map[string]any{
+		{"type": "linked", "source": "Root", "target": "Root"},
+		{"type": "linked", "source": "Root", "target": "Child"},
+	}, []string{"c1"})
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want only the non-self relation", len(rows))
+	}
+
+	filtered := filterSelfLoopRelations(append(rows, common.Product{
+		Content: payloadJSON(map[string]any{"source": "Child", "target": "Child", "type": "linked"}),
+		Meta:    map[string]any{"kind": "relation", "from": "Child", "to": "Child"},
+	}))
+	if len(filtered) != 1 {
+		t.Fatalf("filtered rows = %d, want self-loop removed", len(filtered))
 	}
 }
 

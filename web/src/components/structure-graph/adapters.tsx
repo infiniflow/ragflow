@@ -370,6 +370,11 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
   return { nodes, edges };
 }
 
+// G6's mindmap layout requires a single root, so multi-root API data is
+// wrapped under this synthetic node. It is not an entity and carries no
+// chunk payload; clicks on it must not trigger chunk navigation/fetching.
+export const SyntheticMindMapRootId = 'mindmap-root';
+
 export function adaptMindMapToIndentedTree(
   template: IStructureGraphTemplate,
 ): TreeData {
@@ -389,7 +394,7 @@ export function adaptMindMapToIndentedTree(
   }
 
   return {
-    id: 'mindmap-root',
+    id: SyntheticMindMapRootId,
     children: g6Roots,
   };
 }

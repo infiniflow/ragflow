@@ -49,16 +49,9 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 		return nil, nil
 	}
 
-	// Verify the requested groups exist and are valid. The built-in group
-	// (compiler.json's default) is a global, tenant-agnostic catalogue, so it
-	// resolves for every tenant; other groups are scoped to the caller's
-	// tenant.
-	isBuiltin := make(map[string]bool, len(groupIDs))
-	for _, gid := range groupIDs {
-		if gid == BuiltinCompilationTemplateGroupID {
-			isBuiltin[gid] = true
-		}
-	}
+	// Verify the requested groups exist, are valid, and belong to the caller's
+	// tenant. Built-in template definitions are read-only YAML test fixtures;
+	// they are not persisted as a global template group.
 	var validGroups []entity.CompilationTemplateGroup
 	if err := db.WithContext(ctx).
 		Where("id IN ? AND status = ?", groupIDs, string(entity.StatusValid)).
@@ -75,11 +68,8 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 		if _, ok := valid[gid]; !ok {
 			return nil, fmt.Errorf("compilation_template_group %q not found for tenant %q", gid, tenantID)
 		}
-		// Non-built-in groups must belong to the requesting tenant.
-		if !isBuiltin[gid] {
-			if byID[gid].TenantID != tenantID {
-				return nil, fmt.Errorf("compilation_template_group %q not found for tenant %q", gid, tenantID)
-			}
+		if byID[gid].TenantID != tenantID {
+			return nil, fmt.Errorf("compilation_template_group %q not found for tenant %q", gid, tenantID)
 		}
 	}
 
@@ -117,8 +107,8 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, db *gorm.DB, tenantID, templateID string) (*entity.CompilationTemplate, error) {
 	var t entity.CompilationTemplate
 	if err := db.WithContext(ctx).
-		Where("id = ? AND status = ? AND (tenant_id = ? OR (tenant_id IS NULL AND (is_builtin = ? OR group_id = ?)))",
-			templateID, string(entity.StatusValid), tenantID, true, BuiltinCompilationTemplateGroupID).
+		Where("id = ? AND status = ? AND tenant_id = ?",
+			templateID, string(entity.StatusValid), tenantID).
 		First(&t).Error; err != nil {
 		return nil, fmt.Errorf("load compilation template %q: %w", templateID, err)
 	}
@@ -133,19 +123,6 @@ func (dao *CompilationTemplateDAO) ListByGroup(ctx context.Context, db *gorm.DB,
 	if err := db.WithContext(ctx).
 		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
 		Order("create_time asc").
-		Find(&templates).Error; err != nil {
-		return nil, err
-	}
-	return templates, nil
-}
-
-// ListBuiltins returns the valid, built-in (is_builtin) compilation templates,
-// ordered by create_time then name. Mirrors Python list_builtins().
-func (dao *CompilationTemplateDAO) ListBuiltins(ctx context.Context, db *gorm.DB) ([]*entity.CompilationTemplate, error) {
-	var templates []*entity.CompilationTemplate
-	if err := db.WithContext(ctx).
-		Where("is_builtin = ? AND status = ?", true, string(entity.StatusValid)).
-		Order("create_time asc, name asc").
 		Find(&templates).Error; err != nil {
 		return nil, err
 	}

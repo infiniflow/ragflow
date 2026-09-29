@@ -34,6 +34,69 @@ func TestReduceExtracts_MergesProvenance(t *testing.T) {
 	}
 }
 
+func TestRunPlan_EntityModeBuildsPagesFromReducedExtract(t *testing.T) {
+	p := &wikiPipeline{
+		ctx: context.Background(),
+		reduced: wikiExtract{
+			Entities: []wikiEntity{{
+				Name:           "刘备",
+				Type:           "person",
+				Aliases:        []string{"玄德"},
+				SourceChunkIDs: []string{"c1"},
+			}},
+			Concepts: []wikiConcept{{
+				Term:           "三国演义",
+				Definition:     "历史小说",
+				SourceChunkIDs: []string{"c2"},
+			}},
+			Claims: []wikiClaim{
+				{Subject: "刘备", SourceChunkIDs: []string{"c1"}},
+				{Subject: "三国演义", SourceChunkIDs: []string{"c2"}},
+			},
+			Relations: []wikiRelation{{From: "刘备", To: "三国演义", Type: "appears_in"}},
+			Topics: []wikiTopic{
+				{Path: "历史/人物", SourceChunkIDs: []string{"c1"}},
+				{Path: "历史/作品", SourceChunkIDs: []string{"c2"}},
+			},
+		},
+		docID: "doc-1",
+	}
+
+	plan, err := p.runPlan()
+	if err != nil {
+		t.Fatalf("runPlan err = %v", err)
+	}
+	if len(plan.Pages) != 2 {
+		t.Fatalf("plan pages = %d, want 2", len(plan.Pages))
+	}
+	bySlug := make(map[string]wikiPlanPage, len(plan.Pages))
+	for _, page := range plan.Pages {
+		bySlug[page.Slug] = page
+	}
+
+	entityPage, ok := bySlug["entity/person/刘备"]
+	if !ok {
+		t.Fatalf("entity page missing: %#v", plan.Pages)
+	}
+	if entityPage.Title != "刘备" || entityPage.PageType != "entity" || entityPage.Topic != "历史/人物" {
+		t.Fatalf("entity page metadata = %#v", entityPage)
+	}
+	if !slices.Equal(entityPage.EntityNames, []string{"刘备", "玄德"}) {
+		t.Fatalf("entity page names = %#v", entityPage.EntityNames)
+	}
+	if !slices.Equal(entityPage.RelatedKB, []string{"concept/三国演义"}) {
+		t.Fatalf("entity related pages = %#v", entityPage.RelatedKB)
+	}
+
+	conceptPage, ok := bySlug["concept/三国演义"]
+	if !ok {
+		t.Fatalf("concept page missing: %#v", plan.Pages)
+	}
+	if conceptPage.Topic != "历史/作品" || !slices.Equal(conceptPage.RelatedKB, []string{"entity/person/刘备"}) {
+		t.Fatalf("concept page metadata = %#v", conceptPage)
+	}
+}
+
 func TestParseWikiExtractNormalizesTopicPathAndProvenance(t *testing.T) {
 	extract := parseWikiExtract(map[string]any{
 		"topics": []any{map[string]any{

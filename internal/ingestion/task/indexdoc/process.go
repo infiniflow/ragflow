@@ -94,6 +94,7 @@ func ProcessChunksForPipeline(
 		}
 
 		cleanupConsumedChunkFields(ck)
+		stripPipelineOnlyFields(ck)
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
 		processChunkPositions(ck)
@@ -137,6 +138,33 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 	delete(ck, "keywords")
 
 	delete(ck, "summary")
+}
+
+// pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
+// consumed inside the pipeline (ck_type drives chunk merging and the image-crop
+// decision, tk_nums carries the chunker's token count into the Tokenizer,
+// layout*/image/context_* describe the media block, and page_number/table_id/
+// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
+// is a chunk-store column.
+//
+// The Python index doc carries none of them — its chunk builder emits only the
+// persist fields — but Go's chunker hands them on, and the write boundary is
+// strict about unknown columns: Infinity rejects the whole insert with
+// "Column ck_type not found in table" (InfinityException 3013). Elasticsearch
+// merely swallowed them, because a dynamic mapping accepts any field.
+var pipelineOnlyFields = []string{
+	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
+	"context_above", "context_below", "page_number",
+	"table_id", "sheet", "sheet_index", "headers", "cells",
+	"row_start", "row_end", "col_start", "col_end",
+}
+
+// stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
+// leaving the chunk with the persist schema only.
+func stripPipelineOnlyFields(ck map[string]any) {
+	for _, key := range pipelineOnlyFields {
+		delete(ck, key)
+	}
 }
 
 func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]any {

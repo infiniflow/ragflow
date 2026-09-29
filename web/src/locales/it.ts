@@ -519,13 +519,13 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'Durante il recupero, RAGFlow utilizza una combinazione di similarità ponderata delle parole chiave e similarità coseno vettoriale ponderata oppure, quando è selezionato un modello di reranking, una combinazione di similarità ponderata delle parole chiave e punteggio di reranking ponderato. Questo parametro imposta la soglia di similarità tra la query dell’utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata su 20. Ciò significa che verranno recuperati solo i chunk con un punteggio di similarità ibrida pari o superiore a 20. Se il peso della similarità vettoriale è impostato su 0, questa soglia non si applica.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
-        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
+        'Imposta il peso della similarità vettoriale nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
       keywordSimilarityWeight: 'Peso similarità parole chiave',
       keywordSimilarityWeightTip:
-        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
+        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato. La somma dei pesi della similarità vettoriale e delle parole chiave deve essere uguale a 1.0.',
       testText: 'Testo di test',
       testTextPlaceholder: 'Inserisci la tua domanda qui!',
       testingLabel: 'Esegui',
@@ -571,7 +571,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       close: 'Chiudi',
       rerankModel: 'Modello rerank',
       rerankPlaceholder: 'Seleziona valore',
-      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema. Se desideri usare un modello rerank, assicurati di usare un reranker SaaS; se preferisci un modello rerank distribuito localmente, assicurati di avviare RAGFlow con docker-compose-gpu.yml.`,
+      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema.`,
       topK: 'Top-K',
       topKTip: `Usato insieme al modello Rerank, questa impostazione definisce il numero di chunk di testo da inviare al modello di reranking specificato.`,
       delimiter: `Delimitatore per testo`,
@@ -1147,7 +1147,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       tavilyApiKeyTip:
         'Se una chiave API è impostata correttamente qui, le ricerche web basate su Tavily saranno usate per integrare il recupero dal dataset.',
       tavilyApiKeyMessage: 'Inserisci la tua chiave API Tavily',
-      tavilyApiKeyHelp: 'Come ottenerla?',
+      webSearchApiKeyHelp: 'Come ottenerla?',
       crossLanguage: 'Ricerca cross-lingua',
       crossLanguagePlaceholder: 'Seleziona valore',
       crossLanguageTip: `Seleziona una o più lingue per la ricerca cross-lingua. Se non viene selezionata nessuna lingua, il sistema cerca con la query originale.`,

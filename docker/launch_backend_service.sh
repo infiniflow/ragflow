@@ -104,7 +104,7 @@ task_exe(){
         task_name="ragflow_server --ingestor"
         task_cmd=("bin/ragflow_server" "--ingestor")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            task_cmd+=("--debug")
+            task_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0
@@ -140,8 +140,10 @@ run_server(){
         prepare_for_go
         server_name="ragflow_server"
         server_cmd=("bin/ragflow_server" "--api")
-    fi
-    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            server_cmd+=("--log-level" "debug")
+        fi
+    elif [[ "$DEBUG_MODE" -eq 1 ]]; then
         server_cmd+=("--debug")
     fi
     local retry_count=0
@@ -174,7 +176,7 @@ run_admin_server(){
         server_name="admin_server"
         server_cmd=("bin/ragflow_server" "--admin")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            server_cmd+=("--debug")
+            server_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0
@@ -206,7 +208,7 @@ run_data_sync(){
         server_name="ragflow_server --syncer"
         sync_cmd=("bin/ragflow_server" "--syncer")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            sync_cmd+=("--debug")
+            sync_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0

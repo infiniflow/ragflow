@@ -19,21 +19,21 @@ package chunkcache
 import (
 	"testing"
 
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 )
 
 // Compile-time proof that the real client still satisfies Store. Without it a
 // signature change in the redis package would only surface at the call sites.
-var _ Store = (*redis.Client)(nil)
+var _ Store = (*kvrocks.Client)(nil)
 
 // TestClient_NilInterfaceWhenRedisAbsent is the reason Client() exists. Handing
-// redis.Get() straight to a Store parameter would wrap a typed nil pointer in a
+// kvrocks.Get() straight to a Store parameter would wrap a typed nil pointer in a
 // non-nil interface, defeating every `s == nil` guard and panicking on the
 // first call in a Redis-less deployment. Client() must return an interface that
 // compares equal to nil.
 func TestClient_NilInterfaceWhenRedisAbsent(t *testing.T) {
-	if redis.Get() != nil {
-		t.Skip("a global Redis client is configured in this process")
+	if kvrocks.Get() != nil {
+		t.Skip("a global Kvrocks client is configured in this process")
 	}
 	if got := Client(); got != nil {
 		t.Fatalf("Client() = %#v, want a nil interface", got)

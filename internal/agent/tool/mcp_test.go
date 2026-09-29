@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"slices"
 	"strings"
 	"testing"
@@ -432,9 +433,9 @@ func TestMCPToolAdapter_InvokableRunIsError(t *testing.T) {
 // utility/mcp_client_test.go's allowLoopbackForTests helper.
 func mcpLoopbackOverride(t *testing.T) func() {
 	t.Helper()
-	orig := mcpclient.LookupHost
-	mcpclient.LookupHost = func(_ string) ([]string, error) {
+	orig := common.LookupHost
+	common.LookupHost = func(_ string) ([]string, error) {
 		return []string{"8.8.8.8"}, nil
 	}
-	return func() { mcpclient.LookupHost = orig }
+	return func() { common.LookupHost = orig }
 }

@@ -57,13 +57,16 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
+	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
 			if !appcommon.IsTransientError(err) {
-				reportLLMFailure(ctx, attempt, maxRetries, 0, err)
+				if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, err, true); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 				return nil, err
 			}
 			// Transient chat failure (timeout / transport / provider); retry
@@ -72,6 +75,9 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		} else {
 			if repaired, repairErr := RepairJSONText(resp.Content); repairErr == nil {
 				if m, unmarshalErr := tryUnmarshalJSONErr(repaired); unmarshalErr == nil {
+					if message, ok := failureReporter.RecoveryMessage(attempt + 1); ok {
+						runtime.ReportProgressMessage(ctx, "Compiler", message)
+					}
 					return m, nil
 				}
 			}
@@ -95,10 +101,14 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
-			reportLLMFailure(ctx, attempt, maxRetries, 0, lastErr)
+			if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, lastErr, true); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
 			break
 		}
-		reportLLMFailure(ctx, attempt, maxRetries, delay, lastErr)
+		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
+			runtime.ReportProgressMessage(ctx, "Compiler", message)
+		}
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", delay),
 			zap.Error(lastErr))
@@ -155,14 +165,6 @@ func isJSONObjectOrArray(s string) bool {
 		return false
 	}
 	return json.Valid([]byte(s))
-}
-
-func reportLLMFailure(ctx context.Context, attempt, maxRetries int, delay time.Duration, err error) {
-	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, CompactError(err))
-	if delay > 0 {
-		message += fmt.Sprintf("; retrying in %s", delay)
-	}
-	runtime.ReportProgressMessage(ctx, "Compiler", message)
 }
 
 // CompactError produces a bounded, single-line error suitable for progress

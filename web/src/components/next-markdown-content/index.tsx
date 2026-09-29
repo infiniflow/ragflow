@@ -49,7 +49,6 @@ import {
   replaceThinkToSection,
   unescapeAngleBrackets,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
@@ -69,7 +68,7 @@ import {
 import message from '../ui/message';
 import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => parseCitationIndex(match);
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
@@ -273,7 +272,10 @@ function MarkdownContent({
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
       const chunks = reference?.chunks ?? {};
-      const chunkItem = chunks[chunkIndex];
+      // Agent reference.chunks is a Record keyed by the original citation ID
+      // (e.g. "3092e7ae6831b877"); the caller maps those IDs to a positional
+      // display index, so look up the N-th entry by insertion order.
+      const chunkItem = Object.values(chunks)[chunkIndex];
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -317,12 +319,14 @@ function MarkdownContent({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={cn(styles.referenceImagePreview)}
                 ></Image>
               </HoverCardContent>
@@ -373,18 +377,28 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      // Assign each unique citation marker a stable display number based on
+      // its first occurrence, so the same ID always renders as the same [N]
+      // chip. The actual chunk lookup uses that index against the positional
+      // order of IReferenceObject.chunks (see getReferenceInfo).
+      const keyToDisplay = new Map<number | string, number>();
+      const replacedText = reactStringReplace(text, currentReg, (match) => {
+        const chunkKey = getChunkKey(match);
+        let displayIndex = keyToDisplay.get(chunkKey);
+        if (displayIndex === undefined) {
+          displayIndex = keyToDisplay.size;
+          keyToDisplay.set(chunkKey, displayIndex);
+        }
 
         return (
-          <HoverCard key={i}>
+          <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
             <HoverCardTrigger>
               <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                {t('common.figure')} {chunkIndex + 1}
+                [{displayIndex + 1}]
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(chunkIndex)}
+              {renderPopoverContent(displayIndex)}
             </HoverCardContent>
           </HoverCard>
         );
@@ -392,10 +406,10 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent, t],
+    [renderPopoverContent],
   );
 
-  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const dir = getDirAttribute(content?.replace(currentReg, ''));
   const showLoadingDots = useLoadingPause(loading, content);
 
   return (

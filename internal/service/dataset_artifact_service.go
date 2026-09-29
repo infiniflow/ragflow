@@ -42,6 +42,8 @@ const (
 	CompileKwdSkill        = "skill"
 	CompileKwdSkillAll     = "skill_all"
 	CompileKwdDatasetNav   = "dataset_nav"
+	defaultWikiGraphTopN   = 512
+	maxWikiGraphTopN       = 1024
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
@@ -61,6 +63,10 @@ func wikiIndexName(tenantID string) string {
 // searchCompiled runs a filtered search over the tenant's document index for
 // the given dataset, returning the matching chunks.
 func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr) ([]map[string]interface{}, int64, error) {
+	return s.searchCompiledWithMatch(ctx, tenantID, datasetID, filter, selectFields, offset, limit, orderBy, nil)
+}
+
+func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr, matchExprs []interface{}) ([]map[string]interface{}, int64, error) {
 	docEngine := engine.Get()
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
@@ -80,6 +86,7 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 		SelectFields: selectFields,
 		Filter:       merged,
 		OrderBy:      orderBy,
+		MatchExprs:   matchExprs,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -544,8 +551,12 @@ var wikiTopicCollator = collate.New(language.Chinese)
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
 type WikiGraph struct {
-	Entities  []WikiGraphEntity   `json:"entities"`
-	Relations []WikiGraphRelation `json:"relations"`
+	Entities          []WikiGraphEntity   `json:"entities"`
+	Relations         []WikiGraphRelation `json:"relations"`
+	TotalEntities     int                 `json:"total_entities"`
+	TotalRelations    int                 `json:"total_relations"`
+	ReturnedEntities  int                 `json:"returned_entities"`
+	ReturnedRelations int                 `json:"returned_relations"`
 }
 
 // WikiGraphEntity is a single wiki graph entity.
@@ -565,12 +576,47 @@ type WikiGraphRelation struct {
 	To   string `json:"to"`
 }
 
-// GetWikiGraph returns the wiki entity/relation graph for a dataset.
-func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID string) (*WikiGraph, error) {
-	entityChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1},
-		[]string{"slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
-		0, 1000, (&types.OrderByExpr{}).Desc("weight_int"))
+// GetWikiGraph returns an incremental wiki graph slice for a dataset. keywords
+// seeds the overview with BM25 entity matches; topN overrides the entity cap.
+func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID, keywords string, topN *int) (*WikiGraph, error) {
+	entityFilter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1}
+	relationFilter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1}
+	_, totalEntities, err := s.searchCompiled(ctx, tenantID, datasetID, entityFilter, []string{"id"}, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+	_, totalRelations, err := s.searchCompiled(ctx, tenantID, datasetID, relationFilter, []string{"id"}, 0, 1, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	limit := defaultWikiGraphTopN
+	if topN != nil {
+		limit = *topN
+		if limit < 1 {
+			limit = 1
+		}
+		if limit > maxWikiGraphTopN {
+			limit = maxWikiGraphTopN
+		}
+	}
+
+	keywords = strings.TrimSpace(keywords)
+	var matchExprs []interface{}
+	var orderBy *types.OrderByExpr
+	if keywords != "" {
+		matchExprs = []interface{}{&types.MatchTextExpr{
+			Fields:       []string{"title_tks^10", "title_sm_tks^5", "content_ltks^2", "content_sm_ltks"},
+			MatchingText: keywords,
+			TopN:         limit,
+			ExtraOptions: map[string]interface{}{"original_query": keywords},
+		}}
+	} else {
+		orderBy = (&types.OrderByExpr{}).Desc("weight_int")
+	}
+	entityChunks, _, err := s.searchCompiledWithMatch(ctx, tenantID, datasetID, entityFilter,
+		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "content_with_weight"},
+		0, limit, orderBy, matchExprs)
 	if err != nil {
 		return nil, err
 	}
@@ -578,7 +624,12 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	for _, c := range entityChunks {
 		fromKwds = append(fromKwds, firstStringValue(c["slug_kwd"]))
 	}
-	graph := &WikiGraph{Entities: []WikiGraphEntity{}, Relations: []WikiGraphRelation{}}
+	graph := &WikiGraph{
+		Entities:       []WikiGraphEntity{},
+		Relations:      []WikiGraphRelation{},
+		TotalEntities:  int(totalEntities),
+		TotalRelations: int(totalRelations),
+	}
 	for _, c := range entityChunks {
 		w := intValue(c["weight_int"])
 		// Match the GetWikiPage / ListWikiPages contract: expose the bare slug
@@ -594,19 +645,31 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
+		// name / aliases / description live in the content_with_weight payload
+		// (as Python writes them); the columns they replaced exist in no mapping.
+		payload := wikiEntityPayload(c)
+		name := firstStringValue(c["title_kwd"])
+		if v := payloadString(payload, "name"); v != "" {
+			name = v
+		}
+		entityType := pageType
+		if v := payloadString(payload, "type"); v != "" {
+			entityType = v
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
 			Slug:           bareSlug,
-			Name:           firstStringValue(c["title_kwd"]),
-			Aliases:        toStringSlice(c["aliases_kwd"]),
-			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           pageType,
+			Name:           name,
+			Aliases:        payloadStrings(payload, "aliases"),
+			Description:    payloadString(payload, "description"),
+			Type:           entityType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
+		relationFilter["from_kwd"] = fromKwds
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1, "from_kwd": fromKwds},
+			relationFilter,
 			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
@@ -621,6 +684,8 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			})
 		}
 	}
+	graph.ReturnedEntities = len(graph.Entities)
+	graph.ReturnedRelations = len(graph.Relations)
 	return graph, nil
 }
 
@@ -741,7 +806,7 @@ func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenan
 	if id, ok := params["compilation_template_id"].(string); ok && id != "" {
 		var template entity.CompilationTemplate
 		if err := dao.DB.WithContext(ctx).
-			Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND status = ?", id, tenantID, string(entity.StatusValid)).
+			Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, string(entity.StatusValid)).
 			First(&template).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return false, nil
@@ -790,7 +855,7 @@ func (s *DatasetArtifactService) valueHasWikiTemplate(ctx context.Context, tenan
 func (s *DatasetArtifactService) groupHasWikiTemplate(ctx context.Context, tenantID, groupID string) (bool, error) {
 	var group entity.CompilationTemplateGroup
 	if err := dao.DB.WithContext(ctx).
-		Where("id = ? AND (tenant_id = ? OR tenant_id = '') AND status = ?", groupID, tenantID, string(entity.StatusValid)).
+		Where("id = ? AND tenant_id = ? AND status = ?", groupID, tenantID, string(entity.StatusValid)).
 		First(&group).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return false, nil
@@ -1008,6 +1073,47 @@ func firstStringValue(v interface{}) string {
 		}
 	}
 	return ""
+}
+
+// wikiEntityPayload decodes the canvas payload a wiki_entity row stores in
+// content_with_weight (Python `_wiki_entity_payload`); the payload is
+// authoritative for name/aliases/description/type.
+func wikiEntityPayload(row map[string]interface{}) map[string]interface{} {
+	raw := firstStringValue(row["content_with_weight"])
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var payload map[string]interface{}
+	if json.Unmarshal([]byte(raw), &payload) != nil {
+		return nil
+	}
+	return payload
+}
+
+// payloadString reads a payload field, accepting the legacy Go key too.
+func payloadString(payload map[string]interface{}, key string) string {
+	if payload == nil {
+		return ""
+	}
+	if v, ok := payload[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	// Legacy Go rows named the same values title / page_type / summary.
+	legacy := map[string]string{"name": "title", "type": "page_type", "description": "summary"}[key]
+	if legacy != "" {
+		if v, ok := payload[legacy].(string); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// payloadStrings returns a string-list payload field.
+func payloadStrings(payload map[string]interface{}, key string) []string {
+	if payload == nil {
+		return []string{}
+	}
+	return toStringSlice(payload[key])
 }
 
 // bareWikiSlug strips only the first path segment from a full wiki slug

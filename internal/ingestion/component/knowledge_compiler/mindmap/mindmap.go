@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
@@ -72,7 +73,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
-			var lastContent string
+			var lastParseErr error
 			for attempt := 0; attempt < mindmapJSONRetryMax; attempt++ {
 				resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 					LLMID:           llmID,
@@ -82,18 +83,22 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 					DisableThinking: true,
 				})
 				if err != nil {
+					runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+						"[ERROR] Mindmap batch %d/%d LLM call failed: %s",
+						i+1, len(batches), common.CompactError(err)))
 					return err
 				}
-				lastContent = resp.Content
 				// Distinct slice index per batch → no cross-goroutine contention.
-				if tree, ok := parseJSONTree(resp.Content, batch.ids); ok {
+				if tree, parseErr := parseJSONTreeWithError(resp.Content, batch.ids); parseErr == nil {
 					results[i].tree = tree
 					return nil
+				} else {
+					lastParseErr = parseErr
 				}
 			}
-			// Keep the old Markdown protocol as a compatibility fallback after
-			// exhausting JSON retries.
-			results[i].outline = utility.Todict(utility.Dictify(utility.StripFences(lastContent)))
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"[ERROR] Mindmap batch %d/%d JSON parsing failed after %d attempts: %s",
+				i+1, len(batches), mindmapJSONRetryMax, common.CompactError(lastParseErr)))
 			return nil
 		})
 	}
@@ -104,31 +109,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
-	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
-	// shape the final tree. Python returns a bare root when nothing parsed.
-	var root *utility.Node
-	allJSON := len(results) > 0
-	for _, result := range results {
-		if result.tree == nil {
-			allJSON = false
-			break
-		}
-		root = mergeMindmapTrees(root, result.tree)
-	}
-	if !allJSON {
-		var merged utility.OMap
-		for _, result := range results {
-			if len(result.outline) == 0 {
-				continue
-			}
-			if len(merged) == 0 {
-				merged = result.outline
-			} else {
-				merged = utility.MergeDicts(merged, result.outline)
-			}
-		}
-		root = utility.ShapeTree(merged)
-	}
+	// Merge every successfully parsed JSON tree. A failed batch is skipped after
+	// its user-facing error is reported and must not erase other batches.
+	root := mergeMindmapBatchResults(results)
 
 	products := treeToProducts(tenantID, docID, root, mindmapSourceChunkIDs(inputs.Chunks))
 
@@ -212,7 +195,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 		p := queue[0]
 		queue = queue[1:]
 		for _, child := range p.node.Children {
-			if child.ID == "" {
+			if child == nil || child.ID == "" {
 				continue
 			}
 			// Entity: child node (dedup by id so a DAG-shaped tree does not emit
@@ -241,24 +224,28 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 				})
 			}
 			// Relation: parent → child edge (type = "related", Python default).
-			out = append(out, common.Product{
-				ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "relation", p.parent, child.ID),
-				DocID:    docID,
-				TenantID: tenantID,
-				Variant:  common.VariantMindmap,
-				Content: payloadJSON(map[string]any{
-					"source": p.parent,
-					"target": child.ID,
-					"type":   "related",
-				}),
-				Meta: map[string]any{
-					"kind":          "relation",
-					"from":          p.parent,
-					"to":            child.ID,
-					"relation_type": "related",
-					"compile_kwd":   "mindmap",
-				},
-			})
+			// A node may be repeated as the synthetic root when batch roots are
+			// merged; do not persist that self-loop.
+			if p.parent != child.ID {
+				out = append(out, common.Product{
+					ID:       common.StableRowID(tenantID, docID, string(common.VariantMindmap), "relation", p.parent, child.ID),
+					DocID:    docID,
+					TenantID: tenantID,
+					Variant:  common.VariantMindmap,
+					Content: payloadJSON(map[string]any{
+						"source": p.parent,
+						"target": child.ID,
+						"type":   "related",
+					}),
+					Meta: map[string]any{
+						"kind":          "relation",
+						"from":          p.parent,
+						"to":            child.ID,
+						"relation_type": "related",
+						"compile_kwd":   "mindmap",
+					},
+				})
+			}
 			queue = append(queue, pending{child, child.ID})
 		}
 	}
@@ -292,8 +279,7 @@ func mindmapSourceChunkIDs(chunks []common.Chunk) []string {
 }
 
 type mindmapBatchResult struct {
-	tree    *utility.Node
-	outline utility.OMap
+	tree *utility.Node
 }
 
 type jsonMindmapNode struct {
@@ -304,21 +290,26 @@ type jsonMindmapNode struct {
 }
 
 func parseJSONTree(content string, batchIDs []string) (*utility.Node, bool) {
+	tree, err := parseJSONTreeWithError(content, batchIDs)
+	return tree, err == nil
+}
+
+func parseJSONTreeWithError(content string, batchIDs []string) (*utility.Node, error) {
 	content, err := common.RepairJSONText(content)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	var raw jsonMindmapNode
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
-		return nil, false
+		return nil, err
 	}
 	if strings.TrimSpace(raw.ID) == "" {
 		raw.ID = raw.Name
 	}
 	if strings.TrimSpace(raw.ID) == "" {
-		return nil, false
+		return nil, fmt.Errorf("mindmap root id is empty")
 	}
-	return convertJSONMindmapNode(raw, batchIDs), true
+	return convertJSONMindmapNode(raw, batchIDs), nil
 }
 
 func convertJSONMindmapNode(raw jsonMindmapNode, batchIDs []string) *utility.Node {
@@ -388,6 +379,16 @@ func mergeMindmapTrees(left, right *utility.Node) *utility.Node {
 		}
 	}
 	return left
+}
+
+func mergeMindmapBatchResults(results []mindmapBatchResult) *utility.Node {
+	var root *utility.Node
+	for _, result := range results {
+		if result.tree != nil {
+			root = mergeMindmapTrees(root, result.tree)
+		}
+	}
+	return root
 }
 
 func mergeMindmapIDs(left, right []string) []string {

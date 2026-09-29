@@ -29,8 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -402,18 +400,16 @@ func (c *BitbucketConnector) getJSONWithRetry(ctx context.Context, apiURL string
 
 // get performs one SSRF-safe authenticated GET request.
 func (c *BitbucketConnector) get(ctx context.Context, apiURL string) (*http.Response, error) {
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  apiURL,
+		Headers: map[string]string{"Accept": "application/json", "Authorization": "Basic " + basicAuthHeader(c.email, c.apiToken)},
+		Timeout: bitbucketRequestTimeout,
+	})
 	if err != nil {
-		return nil, err
+		return nil, connectorUnsafeErr(err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(c.email, c.apiToken)
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, bitbucketRequestTimeout)
-	return client.Do(req)
+	return resp, nil
 }
 
 func sleepFor(ctx context.Context, duration time.Duration) error {

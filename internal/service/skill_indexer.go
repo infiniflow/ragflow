@@ -168,7 +168,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 		}
 	}
 
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	// For Infinity: ensure table exists with correct dimension BEFORE inserting
 	if docEngine.GetType() == "infinity" {
@@ -249,7 +249,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	}
 
 	// Ensure index exists with correct dimension
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	if docEngine.GetType() == "infinity" {
 		// For Infinity: must ensure table exists with correct dimension BEFORE inserting
 		common.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
@@ -362,7 +362,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 // Returns nil if the document doesn't exist (idempotent delete)
 func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, spaceID, skillID string, docEngine engine.DocEngine) error {
 	spaceID = normalizeSpaceID(spaceID)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	// ES document ID cannot contain '/' - replace with '_'
 	docID := strings.ReplaceAll(skillID, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
@@ -381,7 +381,7 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, sp
 // Deletes all versions: both new format (skillname) and old format (skillname_x.x.x)
 func (s *SkillIndexerService) DeleteSkillByName(ctx context.Context, tenantID, spaceID, skillName string, docEngine engine.DocEngine) error {
 	spaceID = normalizeSpaceID(spaceID)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	docID := strings.ReplaceAll(skillName, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
@@ -436,7 +436,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	common.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 	if exists {
 		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
@@ -843,7 +843,7 @@ func (s *SkillIndexerService) cleanupOldVersions(ctx context.Context, tenantID, 
 // InitializeIndex initializes the skill search index for a tenant
 func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) error {
 	// Check if index exists
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	common.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
 
@@ -874,7 +874,7 @@ func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID
 
 // createIndexWithDimension creates the skill index with a specific vector dimension
 func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int) error {
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	common.Info(fmt.Sprintf("Creating skill index with dimension %d", dimension),
 		zap.String("indexName", indexName),

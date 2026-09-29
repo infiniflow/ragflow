@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -69,6 +70,25 @@ type documentWikiPageReader interface {
 	LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error)
 }
 
+// enabledDocumentIDs returns the documents that may contribute to dataset-level
+// Wiki products. Wiki staging rows intentionally keep available_int=0 even when
+// their document is disabled, so availability alone cannot identify active
+// contributions.
+//
+// The bool reports whether the database is configured. Offline/unit readers do
+// not have document status available and retain the previous engine-only behavior.
+func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, error) {
+	if kcDB == nil {
+		return nil, false, nil
+	}
+	var ids []string
+	err := kcDB.WithContext(ctx).
+		Model(&entity.Document{}).
+		Where("kb_id = ? AND (status IS NULL OR status <> ?)", datasetID, "0").
+		Pluck("id", &ids).Error
+	return ids, true, err
+}
+
 // engineReader loads the per-document compiled products through the global
 // DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
 // process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
@@ -77,24 +97,17 @@ type engineReader struct {
 	eng engine.DocEngine
 }
 
-// compiledSelectFields are the columns needed to reconstruct a Product from a
-// stored compiled chunk document.
-//
-// wiki_incremental port: the list also selects `kc_kind` and
-// `create_timestamp_flt` (+`create_time`) so the reader can round-trip the
-// wiki product kind (page/section) and the original creation timestamp without
-// re-deriving them (see productFromChunkMap). Without these in the SELECT list,
-// the stored values are invisible to the reader and every merged row would fall
-// back to the compile_kwd-derived kind / a fresh now() timestamp — which both
-// breaks the page/section filter and re-stamps creation time on every rebuild.
+// compiledSelectFields are the columns needed to reconstruct a Product. Every
+// name must exist in the target engine schema (Infinity rejects a SELECT of an
+// unknown column); payload = content_with_weight, kind = compile_kwd.
 var compiledSelectFields = []string{
-	"id", "doc_id", "tenant_id", "compile_kwd",
+	"id", "doc_id", "compile_kwd",
 	"available_int",
-	"content_with_weight", "kc_payload",
+	"content_with_weight",
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-	"slug_kwd", "type",
-	"kc_kind", "create_timestamp_flt", "create_time",
+	"slug_kwd",
+	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
 	// under knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd
@@ -121,7 +134,7 @@ var compiledSelectFields = []string{
 var wikiSelectFields = []string{
 	"page_type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
 	"entity_names_kwd", "summary_with_weight",
-	"related_kb_pages_kwd", "outlinks_kwd", "section_level_int",
+	"related_kb_pages_kwd", "outlinks_kwd", "depth_int",
 	"q_*_vec",
 }
 
@@ -268,10 +281,20 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	if eng == nil || len(slugs) == 0 {
 		return nil, nil
 	}
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled Wiki documents: %w", err)
+	}
+	if statusAvailable && len(enabledIDs) == 0 {
+		return nil, nil
+	}
 	filter := map[string]interface{}{
 		"available_int": 0,
 		"compile_kwd":   compileKwdWikiPage,
 		"slug_kwd":      slugs,
+	}
+	if statusAvailable {
+		filter["doc_id"] = enabledIDs
 	}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
@@ -301,8 +324,8 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 }
 
 // productFromChunkMap reconstructs a kccommon.Product from a stored compiled
-// chunk document. It reads the payload from kc_payload (falling back to
-// content_with_weight) and the embedding from the q_<dim>_vec column.
+// chunk document. It reads the payload from content_with_weight and the
+// embedding from the q_<dim>_vec column.
 //
 // expect is the variant the caller is querying for. The stored compile_kwd is
 // reverse-mapped via KwdToVariant and compared against expect; a mismatch (or
@@ -311,10 +334,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 // the plan: we never rely on the raw string equality alone, so unknown kinds
 // are rejected consistently rather than leaking into the wrong bucket.
 func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommon.Variant) (kccommon.Product, bool) {
-	content, _ := c["kc_payload"].(string)
-	if content == "" {
-		content, _ = c["content_with_weight"].(string)
-	}
+	content, _ := c["content_with_weight"].(string)
 	if content == "" {
 		return kccommon.Product{}, false
 	}
@@ -391,11 +411,13 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v := metaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
 		meta["outlinks"] = v
 	}
-	if v, ok := metaInt(c, "section_level_int"); ok {
-		meta["section_level"] = v
-	}
-	if v, ok := c["type"].(string); ok && v != "" {
-		meta["type"] = v
+	// Section depth comes from depth_int. Only the wiki variant consumes
+	// Meta["section_level"] (applyVariantColumns); tree rows also stamp depth_int,
+	// but they keep their depth in raptor_layer_int.
+	if expect == kccommon.VariantWiki {
+		if v, ok := metaInt(c, "depth_int"); ok {
+			meta["section_level"] = v
+		}
 	}
 	// Restore the structure/tree product kind. The component stores it under
 	// knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd (tree:
@@ -412,16 +434,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 			meta["kind"] = "entity"
 		}
 	}
-	// wiki_incremental port: round-trip the wiki product kind so the
-	// dataset-level merge can reliably distinguish pages from sections. The
-	// merged writer stores kc_kind; when present it is authoritative. Without
-	// it (legacy rows), derive from compile_kwd: wiki_page -> "page",
-	// wiki_section -> "section". This fix is what stops the processBatch
-	// "Meta.kind==page" filter from deleting every wiki page (previously kind
-	// was empty for wiki pages that had no entity/relation endpoint).
-	if v := asString(c["kc_kind"]); v != "" {
-		meta["kind"] = v
-	} else if variant == compileKwdWikiPage {
+	// compile_kwd IS the page/section discriminator (there is no kind column):
+	// wiki_page -> "page", wiki_section -> "section". Without it the
+	// processBatch "Meta.kind==page" filter would drop every wiki page.
+	if variant == compileKwdWikiPage {
 		meta["kind"] = "page"
 	} else if variant == compileKwdWikiSection {
 		meta["kind"] = "section"
@@ -495,10 +511,10 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
 		KbIDs:      []string{kb},
 		Limit:      topN,
-		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
+		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight",
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
-			"type", "source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd",
-			"kc_kind", "create_timestamp_flt", "create_time"},
+			"source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd",
+			"create_timestamp_flt", "create_time"},
 			wikiSelectFields...),
 		Filter: map[string]interface{}{
 			"available_int": 1,

@@ -91,7 +91,7 @@ func maybeDispatchPDFVision(
 		strings.HasPrefix(layoutLower, "monkeyocrv2") ||
 		strings.Contains(layoutLower, "@monkeyocrv2")
 	isMonkeyByUUID := false
-	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !isNamedPDFParseMethod(monkeySelector) {
+	if !isMonkeyMatch && tenantID != "" && strings.TrimSpace(monkeySelector) != "" && !parser.IsPDFParseMethod(monkeySelector) {
 		isMonkeyByUUID = isMonkeyOCRv2LayoutModelID(ctx, db, tenantID, monkeySelector)
 	}
 	if isMonkeyMatch || isMonkeyByUUID {
@@ -105,10 +105,25 @@ func maybeDispatchPDFVision(
 		return res, true, err
 	}
 
-	// MinerU dispatch: parse_method "mineru" or layout_recognizer "@MinerU"
-	if strings.EqualFold(strings.TrimSpace(method), "mineru") ||
+	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
+	// MinerU, a composite model@instance@provider selector naming MinerU in
+	// either field, or a bare tenant model UUID (in either field) that
+	// resolves to a MinerU OCR model.
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+	isMinerUMatch := methodLower == "mineru" ||
 		strings.HasPrefix(layoutLower, "mineru") ||
-		strings.Contains(layoutLower, "@mineru") {
+		strings.Contains(layoutLower, "@mineru") ||
+		strings.Contains(methodLower, "@mineru")
+	minerUSelector := layout
+	if strings.TrimSpace(minerUSelector) == "" {
+		minerUSelector = method
+	}
+	isMinerUByUUID := false
+	if !isMinerUMatch && strings.TrimSpace(minerUSelector) != "" &&
+		!parser.IsPDFParseMethod(minerUSelector) {
+		isMinerUByUUID = isMinerULayoutModelID(ctx, db, tenantID, minerUSelector)
+	}
+	if isMinerUMatch || isMinerUByUUID {
 		common.Info("pdf vision dispatch: MinerU branch matched",
 			zap.String("parse_method", method),
 			zap.String("layout_recognizer", layout),
@@ -117,7 +132,11 @@ func maybeDispatchPDFVision(
 			return parser.ParseResult{}, true,
 				fmt.Errorf("parser: MinerU requires tenant_id")
 		}
-		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup)
+		dispatchModelID := ""
+		if isMinerUByUUID || strings.Contains(minerUSelector, "@") {
+			dispatchModelID = minerUSelector
+		}
+		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
 		if err != nil {
 			return parser.ParseResult{}, true, err
 		}
@@ -146,7 +165,7 @@ func maybeDispatchPDFVision(
 	}
 	isPaddleOCRByUUID := false
 	if !isPaddleOCRMatch && strings.TrimSpace(paddleOCRSelector) != "" &&
-		!isNamedPDFParseMethod(paddleOCRSelector) {
+		!parser.IsPDFParseMethod(paddleOCRSelector) {
 		isPaddleOCRByUUID = isPaddleOCRLayoutModelID(ctx, db, tenantID, paddleOCRSelector)
 	}
 	if isPaddleOCRMatch || isPaddleOCRByUUID {
@@ -473,7 +492,7 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the tenant's MinerU OCR model
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model
 // via the streaming /file_parse endpoint and returns parsed sections.
 // Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
 // stream=True and reads the zip response body directly (no polling).
@@ -484,8 +503,9 @@ func dispatchMinerUPDF(
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
+	modelID string,
 ) (parser.ParseResult, error) {
-	driver, _, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeOCR)
+	driver, _, apiConfig, err := resolveMinerUModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU model: %w", err)
 	}
@@ -503,9 +523,15 @@ func dispatchMinerUPDF(
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
-	// Parse method: "raw", "auto", "ocr", "txt" matching Python's MinerUParseMethod.
-	parseMethod := getStringOr(setup, "parse_method", "auto")
-	lang := getStringOr(setup, "mineru_lang", "English")
+	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
+	// Language chain mirrors Python's mineru_parser.py:1181
+	// (mineru_lang → lang → "English"): the dedicated MinerU option wins,
+	// then the setup language, then English. The pdf setup's lang default
+	// ("Chinese") makes the unconfigured lang_list match Python's ch.
+	lang := getStringOr(setup, "mineru_lang", "")
+	if lang == "" {
+		lang = getStringOr(setup, "lang", "English")
+	}
 	mineruLang := mineruLangCode(lang)
 	backend := getStringOr(setup, "mineru_backend", "pipeline")
 
@@ -528,6 +554,29 @@ func dispatchMinerUPDF(
 	md := strings.Join(parts, "\n")
 
 	return buildMarkdownOCRDispatchResult(md), nil
+}
+
+// resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
+// dispatch. modelID is the raw selector value: a bare tenant model UUID (no
+// "@") selects that exact model, a composite model@instance@provider name
+// resolves through the provider-instance chain, and an empty value falls back
+// to the tenant's first MinerU OCR model — mirroring Python's by_mineru,
+// which falls back to get_first_provider_model_name(tenant_id, "MinerU",
+// LLMType.OCR) for the named "mineru" selector.
+var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
+
+func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
+		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MinerU")
+	return driver, modelName, apiConfig, err
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
@@ -579,59 +628,8 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	// Align with Python's PaddleOCROcrModel: the tenant api_key for the cloud
-	// PaddleOCR provider is a JSON payload carrying paddleocr_base_url /
-	// paddleocr_api_url, paddleocr_access_token and paddleocr_algorithm, while
-	// the instance base_url field stays empty. PaddleOCR.local keeps a
-	// plain-text bearer token in api_key and its base url in the instance
-	// extra, so a non-JSON api_key passes through untouched.
-	keyBaseURL, keyAccessToken, keyAlgorithm := "", "", ""
-	if apiConfig.ApiKey != nil {
-		keyBaseURL, keyAccessToken, keyAlgorithm = modelModule.PaddleOCRConfigFromAPIKey(*apiConfig.ApiKey)
-	}
-
-	baseURL := ""
-	if apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	if baseURL == "" {
-		baseURL = keyBaseURL
-	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
-	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
-	}
-	if baseURL == "" {
-		return parser.ParseResult{}, fmt.Errorf(
-			"parser: PaddleOCR requires a base url from the tenant PaddleOCR OCR model or PADDLEOCR_BASE_URL")
-	}
-
-	apiKey := ""
-	if apiConfig.ApiKey != nil {
-		apiKey = *apiConfig.ApiKey
-	}
-	if keyAccessToken != "" {
-		apiKey = keyAccessToken
-	}
-	algorithm := strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", ""))
-	if algorithm == "" {
-		algorithm = keyAlgorithm
-	}
-	if algorithm == "" {
-		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
-	}
-	if algorithm == "" {
-		algorithm = "PaddleOCR-VL"
-	}
-	ocrAPIConfig := &modelModule.APIConfig{BaseURL: &baseURL}
-	if apiKey != "" {
-		ocrAPIConfig.ApiKey = &apiKey
-	}
-
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, ocrAPIConfig, &modelModule.OCRConfig{
-		Algorithm: algorithm,
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, &modelModule.OCRConfig{
+		Algorithm: strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", "")),
 	}, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
@@ -676,6 +674,21 @@ func mineruLangCode(lang string) string {
 	default:
 		return "ch"
 	}
+}
+
+// mineruAPIParseMethod constrains the /file_parse form field to the values
+// the MinerU API accepts (auto, txt, ocr), mirroring Python's
+// MinerUParseMethod. The value comes from the parser setup's dedicated
+// mineru_parse_method option; the setup's parse_method is a dispatch
+// selector ("mineru", a composite selector, or a tenant model UUID), never
+// an API method, so anything unrecognized falls back to the API default.
+func mineruAPIParseMethod(raw string) string {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	switch method {
+	case "auto", "txt", "ocr":
+		return method
+	}
+	return "auto"
 }
 
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
@@ -835,46 +848,17 @@ func resolvePDFVisionModelID(setup schema.ParserSetup) (string, bool) {
 	}
 	if raw, ok := setup["parse_method"].(string); ok {
 		method := strings.TrimSpace(raw)
-		if method != "" && !isNamedPDFParseMethod(method) {
+		if method != "" && !parser.IsPDFParseMethod(method) {
 			return method, true
 		}
 	}
 	if raw, ok := setup["layout_recognizer"].(string); ok {
 		method := strings.TrimSpace(raw)
-		if method == "" || strings.EqualFold(method, "plain text") || strings.EqualFold(method, "plaintext") {
-			return "", false
-		}
-		if !isNamedPDFParseMethod(method) {
+		if method != "" && !parser.IsPDFParseMethod(method) {
 			return method, true
 		}
 	}
 	return "", false
-}
-
-// isNamedPDFParseMethod reports whether raw is a recognized named PDF
-// parse method (as opposed to a CustomVLM model name). Its membership set
-// MUST stay aligned with the PDF whitelist enforced by
-// (*ParserComponent).Check() (parser.go:200-203):
-//
-//	deepdoc, plain_text, mineru, docling,
-//	opendataloader, tcadp parser, paddleocr, somark
-//
-// A parse_method that Check() rejects must not be treated as a named method
-// here, otherwise it silently falls through to the CustomVLM vision path
-// instead of failing fast at construction.
-//
-// Note: "@"-suffixed spellings such as "foo@mineru" are layout_recognizer
-// selectors, not parse_method values. Check() rejects them as parse_method,
-// and the MinerU layout branch is resolved from the layout_recognizer field
-// separately (pdf_vision_dispatch.go:62-68), so they must NOT be recognized
-// here.
-func isNamedPDFParseMethod(raw string) bool {
-	method := strings.ToLower(strings.TrimSpace(raw))
-	switch method {
-	case "deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark":
-		return true
-	}
-	return false
 }
 
 func dispatchPDFVision(
@@ -1010,6 +994,29 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 		return true
 	}
 	return false
+}
+
+// isMinerULayoutModelID reports whether selector — a bare tenant model UUID
+// with no "model@instance@provider" composite hint — resolves to an active
+// OCR model driven by a MinerU provider (remote mineru.net or local mineru).
+// The raw UUID carries no provider spelling, so it must be resolved before
+// the dispatch path is chosen instead of falling through to the image2text
+// VLM path.
+var isMinerULayoutModelID = defaultIsMinerULayoutModelID
+
+func defaultIsMinerULayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if db == nil {
+		return false
+	}
+	if selector == "" || strings.Contains(selector, "@") {
+		return false
+	}
+	driver, _, _, err := defaultResolveMinerUModelForDispatch(ctx, db, tenantID, selector)
+	if err != nil {
+		return false
+	}
+	return isMinerUDriver(driver)
 }
 
 // isPaddleOCRDriver reports whether the model driver is a PaddleOCR variant

@@ -331,7 +331,7 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 type sysEchoComponent struct{}
 
 func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
+	state, err := agentruntime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -60,22 +60,19 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
 	}
 	name := e.embdModelName
+	var model *modelModule.EmbeddingModel
 	if name == "" {
-		// Resolve the tenant's default embedding model composite reference
-		// ("<model>@<instance>@<provider>") — NOT the tenant id. Passing the
-		// tenant id as the model ref makes ResolveModelConfig parse it as a
-		// "model@provider" key, which fails with "provider name missing in model
-		// name: <tenant_id>". Mirrors knowledge_compiler_wiring.go's chat-model
-		// default resolution.
-		ref, err := e.modelSvc.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeEmbedding)
+		target, err := e.modelSvc.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeEmbedding)
 		if err != nil {
 			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 		}
-		name = ref
-	}
-	model, err := e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
-	if err != nil {
-		return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+	} else {
+		var err error
+		model, err = e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
+		if err != nil {
+			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		}
 	}
 	nonEmpty := make([]string, 0, len(texts))
 	for _, t := range texts {
@@ -86,7 +83,23 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
+	// Documents go through EmbedWithinLimit: the provider does not truncate, it
+	// answers 400/20015, and a nav summary is not a short string - without a tree
+	// product it is every entity line of the page-index graph joined into one. The
+	// model makes the cut (and retries with a smaller budget when a calibrated count
+	// undershoots), which is what Python gets from BaseEmbedding.encode.
+	//
+	// Queries stay on the driver. A query is short, so there is nothing to cut, and
+	// EmbedWithinLimit refuses to run when the model declares a tokenizer whose asset
+	// is missing - a refusal that belongs to the ingest path, not to a search, which
+	// has to keep answering on a deployment that never provisioned the asset.
+	var embeds []modelModule.EmbeddingData
+	var err error
+	if query {
+		embeds, err = model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: true}, model.APIConfig, nil, nil)
+	} else {
+		embeds, err = model.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: nonEmpty}, nil, nil)
+	}
 	if err != nil {
 		return nil, err
 	}

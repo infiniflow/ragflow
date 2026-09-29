@@ -54,6 +54,7 @@ func newWebDAVMountedTestServer(t *testing.T, mountPath string, files map[string
 
 func newWebDAVTestServerAtMount(t *testing.T, mountPath string, files map[string]webdavTestFile) (*httptest.Server, *[]string, *[]string) {
 	t.Helper()
+	withConnectorLoopbackTestHook(t)
 	var authHeaders []string
 	var getRequests []string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -668,6 +669,7 @@ func TestWebDAVConnectorFiltersAndImages(t *testing.T) {
 // containing absolute or protocol-relative hrefs to a different origin are rejected
 // at URL resolution time, preventing any GET to the external host.
 func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 
 	var externalRequests int

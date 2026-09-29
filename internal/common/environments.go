@@ -31,6 +31,31 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// SandboxArtifactBucket is the object-storage bucket that holds
+// code-exec sandbox artifacts, served back through
+// /api/v1/documents/artifact/<name>.
+func SandboxArtifactBucket() string {
+	if bucket := GetEnv(EnvSandboxArtifactBucket); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+// SandboxArtifactContentTypes maps the sandbox-artifact file extensions
+// the /api/v1/documents/artifact route serves to response content
+// types. Artifact publication derives storage-name extensions from the
+// same table so every published URL resolves to a servable type.
+var SandboxArtifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
 func IsLLMDebugEnabled() bool {
 	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
 	return err == nil && enabled
@@ -39,6 +64,7 @@ func IsLLMDebugEnabled() bool {
 // environment variables
 const (
 	EnvTensorrtDLAServer                 = "TENSORRT_DLA_SVR"
+	EnvRAGFlowDevMode                    = "RAGFLOW_DEV_MODE"
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
@@ -223,23 +249,26 @@ const (
 
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	// the RAGFlow default model dir (rag/res/deepdoc).
 	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
 	// EnvDeepDocDropScore overrides the confidence threshold below which the
 	// in-process (Go) DeepDoc backend blanks recognized text while preserving
-	// the real score. It MUST match the Python inference service's
-	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
-	// backends apply the same text-blanking contract.
+	// the real score. It defaults to 0.5, matching the historical DeepDoc
+	// recognizer drop_score, so recognized text is blanked consistently.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
+	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
+	// Runs may be in flight at once (each uses one core). It overrides the
+	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// --deepdoc-inference-concurrency CLI flag.
+	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
 // the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
-// into the Go binary supports .ort only, not the protobuf .onnx format. The
-// Python DeepDoc service keeps the legacy .onnx files and lists them
-// independently (see deepdoc/server/download_deps.py), so this slice must NOT
-// re-add the .onnx names; it is the Go presence check, not a shared list.
+// into the Go binary supports .ort only, not the protobuf .onnx format, so
+// this slice must NOT re-add the .onnx names; it is the Go presence check,
+// not a shared list.
 // cmd/ resolves the model directory against it; the native analyzer validates
 // file presence against it via HasModelFiles. Order is insignificant (callers
 // do set-membership checks); keep it stable so logs and diffs stay readable.
@@ -249,9 +278,7 @@ const (
 //     (it fetches the files one by one, so it MUST be edited by hand when this
 //     slice changes);
 //   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
-//     (so .ort lands in the model dir automatically — no FILES edit needed);
-//   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
-//     image) keeps the .onnx list and must NOT be changed to .ort.
+//     (so .ort lands in the model dir automatically — no FILES edit needed).
 var DeepDocModelFiles = []string{
 	"det.ort",
 	"layout.ort",

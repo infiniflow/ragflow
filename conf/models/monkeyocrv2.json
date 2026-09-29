@@ -3,6 +3,7 @@
   "url_suffix": {
     "doc_parse": "parse"
   },
+  "url_hint": "http://host.docker.internal:8000",
   "class": "local",
   "models": [
     {

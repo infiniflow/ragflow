@@ -756,6 +756,12 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		}
 		dsl = canvas.DSL
 	}
+	if err := validateAgentChatModels(ctx, req.UserID, dsl); err != nil {
+		if errors.Is(err, ErrAgentStorageError) {
+			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
+		}
+		return nil, common.CodeDataError, err
+	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {

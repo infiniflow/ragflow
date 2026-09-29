@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -34,7 +33,10 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -189,7 +191,7 @@ func (c *lineChannel) Start(ctx context.Context) error {
 	c.mu.Lock()
 	c.server = server
 	c.mu.Unlock()
-	log.Printf("[line:%s] registered at path /line/%s/webhook", c.account.AccountID, c.account.AccountID)
+	common.Info("line: registered webhook", zap.String("account_id", c.account.AccountID))
 	return nil
 }
 
@@ -323,7 +325,7 @@ func (c *lineChannel) enqueueIncoming(incoming core.IncomingMessage) bool {
 		go c.runWorker(ctx, incoming.ChatID, worker)
 	}
 	if queueFull {
-		log.Printf("[line:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+		common.Warn("line: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
 	}
 	return false
 }
@@ -374,7 +376,7 @@ func (c *lineChannel) handleIncoming(ctx context.Context, incoming core.Incoming
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[line:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("line: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 
@@ -493,10 +495,10 @@ func (s *lineWebhookServer) start() error {
 	}
 	go func() {
 		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("[line] webhook server exited: %v", err)
+			common.Error("line: webhook server exited", err)
 		}
 	}()
-	log.Printf("[line] webhook listening on http://%s/line/<account_id>/webhook", addr)
+	common.Info("line: webhook listening", zap.String("addr", addr))
 	return nil
 }
 

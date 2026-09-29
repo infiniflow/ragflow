@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
@@ -98,15 +99,21 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
-// splitDroppingDelim mirrors Python's _split_text_by_pattern
-// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
-// glued to a segment: re.split with a captured group keeps delimiters at odd
-// indices, and only the even-index (text) parts are kept. This is the
-// behavior shared TokenChunker paths and General's primary/Markdown splits
-// reproduce so a split chunk reads "first sentence here" without the trailing
-// delimiter. General's legacy-compatible children split is implemented
-// separately because that path keeps the delimiter attached to its parent.
-func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
+// splitByDelim splits text on every match of pattern.
+//
+// When keepDelim is true the matched delimiter is preserved by gluing it to the
+// end of the segment that precedes it, so concatenating the returned segments
+// reproduces text exactly: "a。b。" yields ["a。", "b。"] and a leading or
+// trailing delimiter stays attached to its neighbour. This is the lossless
+// TokenChunker contract — a delimiter is a hint for where the chunker MAY
+// break, never a character to delete, so "。" must not vanish (or be swapped
+// for "\n") after chunking.
+//
+// When keepDelim is false the delimiter is DISCARDED (mirroring Python's
+// _split_text_by_pattern, which keeps only the even-index text parts); that
+// mode is used by the GeneralChunker legacy paths that still match Python's
+// drop behaviour, and by any caller that needs the historical contract.
+func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -114,19 +121,37 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if len(idxs) == 0 {
 		return []string{text}
 	}
+	if !keepDelim {
+		// Drop mode: keep only the text between delimiters, skipping any
+		// delimiter that sits at the very start (no preceding text).
+		var out []string
+		cursor := 0
+		for _, idx := range idxs {
+			start, end := idx[0], idx[1]
+			if start == cursor {
+				cursor = end
+				continue
+			}
+			out = append(out, text[cursor:start])
+			cursor = end
+		}
+		if cursor < len(text) {
+			out = append(out, text[cursor:])
+		}
+		return out
+	}
+	// Keep mode: attach each delimiter to the segment ending just before it so
+	// the concatenation is lossless. Trailing text with no trailing delimiter
+	// is appended as the final segment.
 	var out []string
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		if start == cursor {
-			cursor = end
-			continue
-		}
-		out = append(out, text[cursor:start])
+		out = append(out, text[cursor:start]+text[start:end])
 		cursor = end
 	}
-	if cursor < len(text) {
-		out = append(out, text[cursor:])
+	if tail := text[cursor:]; tail != "" {
+		out = append(out, tail)
 	}
 	return out
 }
@@ -166,6 +191,18 @@ func itemDocType(it schema.ChunkDoc) string {
 		return "image"
 	}
 	return "text"
+}
+
+// isMediaChunk reports whether a chunk is an image or table region. It checks
+// CKType first (general/token paths set it) and falls back to DocType
+// (group/hierarchy forward parser output that carries only doc_type_kwd), so
+// it classifies media regardless of which chunker produced the chunk.
+func isMediaChunk(ck schema.ChunkDoc) bool {
+	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
+	if typ == "" {
+		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
+	}
+	return typ == "image" || typ == "table"
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".
@@ -231,6 +268,32 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(materialized),
 	}
+}
+
+// canonicalChunkText returns the normalized text a chunk id is derived
+// from. It folds media context (when present) and strips position tags,
+// matching exactly the text the decorator keys on after
+// finalizeGeneralChunks runs removeTag and chunkOutputs materializes
+// context. Routing every chunk id through this one function — instead of
+// recomputing the text at each consumption point — guarantees the streamed
+// crop-upload key and the decorator's ck["id"] can never diverge, including
+// for image/table chunks whose text still carries position tags when there
+// is no media context.
+func canonicalChunkText(ck schema.ChunkDoc) string {
+	return removeTag(materializeMediaContext(ck).Text)
+}
+
+// canonicalChunkID returns the deterministic chunk id: the single identity
+// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
+// over canonicalChunkText) is centralized here, so the text normalization
+// that feeds the hash lives in exactly one place. The decorator in
+// register.go re-derives ck["id"] from the same already-finalized text as a
+// fallback for chunks that bypassed the streamed crop-upload path; the two
+// routes cannot disagree because a chunk is either stamped by crop-upload
+// (and the decorator reuses that id) or computed by the decorator fallback —
+// never both — and both hash the normalized chunk body.
+func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	return common.ChunkID(docID, canonicalChunkText(ck))
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its

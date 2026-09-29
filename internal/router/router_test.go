@@ -191,3 +191,47 @@ func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered Chat MindMap route", resp.Code, resp.Body.String())
 	}
 }
+
+func TestRouterSetupRegistersDocumentImageRoutesWithBetaAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+	}
+	r.Setup(engine)
+
+	// These routes must sit behind BetaAuthMiddleware so the beta token a
+	// shared chat carries (?auth=...) can fetch the images its answer cites,
+	// matching Python's login_required(auth_types=[AUTH_JWT, AUTH_API,
+	// AUTH_BETA]). Behind the strict AuthMiddleware they answer HTTP 401 for
+	// beta tokens and shared chats render broken images.
+	paths := []string{
+		"/api/v1/documents/doc-1/thumbnail",
+		"/api/v1/documents/doc-1/images/kb-1-img-1",
+		"/api/v1/documents/images/kb-1-img-1",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			engine.ServeHTTP(resp, req)
+
+			if resp.Code == http.StatusNotFound {
+				t.Fatalf("GET %s returned 404; route is not registered", path)
+			}
+			if resp.Code == http.StatusUnauthorized {
+				t.Fatalf("GET %s returned 401; route is behind the strict auth middleware instead of the beta one", path)
+			}
+			var body struct {
+				Code common.ErrorCode `json:"code"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode response body: %v", err)
+			}
+			if body.Code != common.CodeDataError {
+				t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered route", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}

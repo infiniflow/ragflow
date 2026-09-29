@@ -64,6 +64,7 @@ func SetupTestDB(t *testing.T, tables ...any) *gorm.DB {
 		tables = []any{
 			&entity.IngestionTask{},
 			&entity.IngestionTaskLog{},
+			&entity.PipelineOperationLog{},
 			&entity.Task{},
 			&entity.Document{},
 			&entity.Knowledgebase{},
@@ -208,12 +209,27 @@ func SeedTestData(t *testing.T, db *gorm.DB, opts ...TestDataOption) (string, st
 	}
 
 	// Create IngestionTask
+	runCount := 1
+	runID := "run-" + cfg.taskID
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              runID,
+		DocumentID:      cfg.docID,
+		RunCount:        &runCount,
+		TenantID:        cfg.tenantID,
+		KbID:            cfg.kbID,
+		ParserID:        doc.ParserID,
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+	}).Error; err != nil {
+		t.Fatalf("create pipeline operation log: %v", err)
+	}
 	if err := db.Create(&entity.IngestionTask{
-		ID:         cfg.taskID,
-		UserID:     "u1",
-		DocumentID: cfg.docID,
-		DatasetID:  cfg.kbID,
-		Status:     common.RUNNING,
+		ID:            cfg.taskID,
+		UserID:        "u1",
+		DocumentID:    cfg.docID,
+		DatasetID:     cfg.kbID,
+		Status:        common.RUNNING,
+		PipelineLogID: &runID,
 	}).Error; err != nil {
 		t.Fatalf("create ingestion task: %v", err)
 	}

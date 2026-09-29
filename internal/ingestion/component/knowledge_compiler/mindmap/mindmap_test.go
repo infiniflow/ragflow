@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
@@ -116,6 +117,23 @@ func TestTreeToProducts_EmptyAndNil(t *testing.T) {
 	}
 }
 
+func TestTreeToProducts_SkipsSelfLoop(t *testing.T) {
+	root := &utility.Node{ID: "root", Children: []*utility.Node{
+		{ID: "root"},
+		{ID: "child"},
+	}}
+	products := treeToProducts("t1", "d1", root, nil)
+
+	if len(products) != 3 {
+		t.Fatalf("products = %d, want root entity, child entity, and one relation", len(products))
+	}
+	for _, product := range products {
+		if product.Meta["kind"] == "relation" && product.Meta["from"] == product.Meta["to"] {
+			t.Fatalf("self-loop relation was emitted: %+v", product.Meta)
+		}
+	}
+}
+
 func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
 	content := `{"id":"root","source_chunk_ids":["c1","outside"],"children":[{"id":"child","source_chunk_ids":["c2"],"children":[]}]}`
 	root, ok := parseJSONTree(content, []string{"c1", "c2"})
@@ -132,6 +150,26 @@ func TestParseJSONTree_SourceChunkIDs(t *testing.T) {
 	products := treeToProducts("t1", "d1", root, nil)
 	if ids, ok := products[0].Meta["source_chunk_ids"].([]string); !ok || len(ids) != 1 || ids[0] != "c1" {
 		t.Fatalf("entity meta source chunk ids = %#v, want [c1]", products[0].Meta["source_chunk_ids"])
+	}
+}
+
+func TestMergeMindmapBatchResultsKeepsSuccessfulTrees(t *testing.T) {
+	root := mergeMindmapBatchResults([]mindmapBatchResult{
+		{tree: &utility.Node{ID: "root", Children: []*utility.Node{{ID: "child"}}}},
+		{},
+	})
+	if root == nil || len(root.Children) != 1 || root.Children[0].ID != "child" {
+		t.Fatalf("merged tree = %+v, want successful tree with child", root)
+	}
+}
+
+func TestMergeMindmapTreesDoesNotDuplicateChildren(t *testing.T) {
+	root := mergeMindmapTrees(
+		&utility.Node{ID: "root", Children: []*utility.Node{{ID: "first"}}},
+		&utility.Node{ID: "root", Children: []*utility.Node{{ID: "second"}}},
+	)
+	if root == nil || len(root.Children) != 2 {
+		t.Fatalf("merged children = %+v, want 2 unique children", root.Children)
 	}
 }
 
@@ -168,4 +206,31 @@ func TestRunRetriesInvalidJSON(t *testing.T) {
 	if len(outputs.Products) != 3 {
 		t.Fatalf("products = %d, want root, child, and relation", len(outputs.Products))
 	}
+}
+
+func TestRunReportsJSONParseFailure(t *testing.T) {
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(_, message string) {
+		messages = append(messages, message)
+	})
+	outputs, err := Run(ctx, common.Deps{
+		Chat: invalidJSONChat{},
+	}, common.Param{}, common.Inputs{
+		Chunks: []common.Chunk{{ID: "c1", Text: "source text"}},
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(outputs.Products) != 0 {
+		t.Fatalf("products = %d, want no products after parse failure", len(outputs.Products))
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "[ERROR] Mindmap batch 1/1 JSON parsing failed") {
+		t.Fatalf("progress messages = %v, want one user-facing parse error", messages)
+	}
+}
+
+type invalidJSONChat struct{}
+
+func (invalidJSONChat) Chat(context.Context, common.ChatRequest) (*common.ChatResponse, error) {
+	return &common.ChatResponse{Content: "The request was rejected because it was considered high risk"}, nil
 }

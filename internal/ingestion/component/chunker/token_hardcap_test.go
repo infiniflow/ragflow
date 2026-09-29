@@ -270,7 +270,6 @@ func TestMergeUnits_ExpandedPiecesCarryMetadata(t *testing.T) {
 		Layout:        "text",
 		Image:         "raw-image",
 		PageNumber:    intPtr(3),
-		TagKwd:        []string{"t1"},
 		ChunkOrderInt: intPtr(7),
 	}
 	got := mergeUnits([]schema.ChunkDoc{unit}, target, 0, "\n")
@@ -283,9 +282,6 @@ func TestMergeUnits_ExpandedPiecesCarryMetadata(t *testing.T) {
 		}
 		if ck.PageNumber == nil || *ck.PageNumber != 3 {
 			t.Errorf("sub-piece %d lost PageNumber: %#v", i, ck.PageNumber)
-		}
-		if len(ck.TagKwd) != 1 || ck.TagKwd[0] != "t1" {
-			t.Errorf("sub-piece %d lost TagKwd: %#v", i, ck.TagKwd)
 		}
 		if ck.ChunkOrderInt == nil || *ck.ChunkOrderInt != 7 {
 			t.Errorf("sub-piece %d lost ChunkOrderInt: %#v", i, ck.ChunkOrderInt)

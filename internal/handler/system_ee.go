@@ -30,3 +30,33 @@ import (
 func (h *SystemHandler) GetEnableAdmin(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "EnableAdmin not implemented")
 }
+
+// GetCores /api/v1/system/cores [GET]
+func (h *SystemHandler) GetCores(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Get cores not implemented")
+}
+
+// SetCores /api/v1/system/cores [PUT]
+func (h *SystemHandler) SetCores(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Set cores not implemented")
+}
+
+// GetMemory /api/v1/system/memory [GET]
+func (h *SystemHandler) GetMemory(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Get memory not implemented")
+}
+
+// SetMemory /api/v1/system/memory [PUT]
+func (h *SystemHandler) SetMemory(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Set memory not implemented")
+}
+
+// GetConcurrency /api/v1/system/concurrency [GET]
+func (h *SystemHandler) GetConcurrency(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Get concurrency not implemented")
+}
+
+// SetConcurrency /api/v1/system/concurrency [PUT]
+func (h *SystemHandler) SetConcurrency(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Set concurrency not implemented")
+}

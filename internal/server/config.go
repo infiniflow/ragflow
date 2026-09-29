@@ -136,6 +136,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse log config error: %w", err)
 	}
 
+	err = globalConfig.ParseDeepDocConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse deepdoc config error: %w", err)
+	}
+
 	err = globalConfig.ParseSMTPConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse SMTP config error: %w", err)
@@ -230,8 +235,11 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	// cache engine
 	cacheType := globalConfig.CacheEngineType()
 	switch cacheType {
-	case "redis":
-		redisConfig := globalConfig.GetRedisConfig()
+	// The Go stack talks to Kvrocks. "redis" is accepted for backwards
+	// compatibility with the shared service_conf.yaml.template; both map to
+	// the same Kvrocks backend, so export the same connection settings.
+	case "redis", "kvrocks":
+		redisConfig := globalConfig.GetKvrocksConfig()
 		exportedRedisConfigs := redisConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedRedisConfigs)
 	default:
@@ -276,6 +284,10 @@ func PrintAll() {
 	}
 
 	allSettings := globalViper.AllSettings()
+	// The standalone MCP key grants every self-host client the same identity.
+	if mcp, ok := allSettings["mcp"].(map[string]interface{}); ok {
+		delete(mcp, "host_api_key")
+	}
 	common.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		common.Info("config", zap.String("key", key), zap.Any("value", value))

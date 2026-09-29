@@ -357,7 +357,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 		return strings.TrimSpace(common.StripThinkTrailing(content)), nil
 	}
 
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -372,7 +372,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 }
 
 func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bool, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return false, nil
 	}

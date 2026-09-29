@@ -29,13 +29,18 @@ import (
 // here so the binary is self-contained and survives the Python source being
 // deleted.
 //
-// The templates mirrored by this package (action_run, action_initialize_state,
-// consumed by the harness action session; sca_select and sca_query_rewrite,
-// consumed by the orchestrator) were previously duplicated as copies under
-// harness/prompts/. They are now unified here, with the harness wiring its
-// PromptLoader default to this package's embedded loader.
+// The templates mirrored by this package (action_run, action_set,
+// action_initialize_state, consumed by the harness action session; sca_select
+// and sca_query_rewrite, consumed by the orchestrator) were previously
+// duplicated as copies under harness/prompts/. They are now unified here, with
+// the harness wiring its PromptLoader default to this package's embedded loader.
+//
+// action_set is the ONE template that is not part of a system prompt: the harness
+// appends it to a session's seed message, and only for a direction that is a SET
+// (see enumerates). Strategy text that is always in the prompt is paid for by
+// every question, including the ones it cannot help.
 
-//go:embed action_run.md action_initialize_state.md sca_select.md sca_query_rewrite.md citation_prompt.md
+//go:embed action_run.md action_set.md action_initialize_state.md sca_select.md sca_query_rewrite.md citation_prompt.md
 var templatesFS embed.FS
 
 // EmbeddedPromptLoader serves the bundled .md templates by name. Load returns

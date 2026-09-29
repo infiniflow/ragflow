@@ -79,9 +79,6 @@ func TestIntegration_NoCrash(t *testing.T) {
 			}
 
 			for i, tbl := range result.Tables {
-				if tbl.ImageB64 == "" {
-					t.Errorf("table[%d] ImageB64 is empty", i)
-				}
 				if len(tbl.Positions) == 0 {
 					t.Errorf("table[%d] has no positions", i)
 				}

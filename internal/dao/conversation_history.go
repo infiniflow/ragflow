@@ -331,9 +331,22 @@ func messageValues(fields entity.ConversationMessageFields) map[string]interface
 }
 
 func createHistory(ctx context.Context, db *gorm.DB, table, kind, conversationID string, raw json.RawMessage) error {
+	rows, err := historyRows(kind, conversationID, raw)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return db.WithContext(ctx).Table(table).CreateInBatches(rows, 100).Error
+}
+
+// historyRows flattens a message or reference payload into child rows. Its
+// positions are the payload indexes, starting from zero.
+func historyRows(kind, conversationID string, raw json.RawMessage) ([]map[string]interface{}, error) {
 	items, err := splitHistory(raw, kind)
 	if err != nil {
-		return fmt.Errorf("split %s history: %w", kind, err)
+		return nil, fmt.Errorf("split %s history: %w", kind, err)
 	}
 	rows := make([]map[string]interface{}, 0, len(items))
 	for position, item := range items {
@@ -341,17 +354,14 @@ func createHistory(ctx context.Context, db *gorm.DB, table, kind, conversationID
 		if kind == "message" {
 			fields, err := flattenMessage(item)
 			if err != nil {
-				return fmt.Errorf("flatten message %d: %w", position, err)
+				return nil, fmt.Errorf("flatten message %d: %w", position, err)
 			}
 			row = messageValues(fields)
 			row["conversation_id"], row["position"] = conversationID, position
 		}
 		rows = append(rows, row)
 	}
-	if len(rows) == 0 {
-		return nil
-	}
-	return db.WithContext(ctx).Table(table).CreateInBatches(rows, 100).Error
+	return rows, nil
 }
 
 func loadHistory(ctx context.Context, db *gorm.DB, table, payloadColumn string, conversationIDs []string) (map[string]json.RawMessage, error) {

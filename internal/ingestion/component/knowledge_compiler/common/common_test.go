@@ -6,9 +6,31 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 )
+
+func TestRetryFailureReporterCoalescesRepeatedErrors(t *testing.T) {
+	reporter := RetryFailureReporter{}
+	err := errors.New("429 rate limit")
+
+	if message, ok := reporter.FailureMessage(1, 6, time.Second, err, false); !ok || !strings.Contains(message, "attempt 1/6") {
+		t.Fatalf("first failure = (%q, %v), want an emitted attempt message", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(2, 6, 2*time.Second, err, false); ok || message != "" {
+		t.Fatalf("second repeated failure = (%q, %v), want suppressed", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(3, 6, 4*time.Second, err, false); ok || message != "" {
+		t.Fatalf("third repeated failure = (%q, %v), want suppressed", message, ok)
+	}
+	if message, ok := reporter.FailureMessage(4, 6, 8*time.Second, err, false); !ok || !strings.Contains(message, "3 repeated failures") {
+		t.Fatalf("fourth failure = (%q, %v), want a coalesced retry update", message, ok)
+	}
+	if message, ok := reporter.RecoveryMessage(5); !ok || !strings.Contains(message, "recovered after 4 failures") {
+		t.Fatalf("recovery = (%q, %v), want recovery summary", message, ok)
+	}
+}
 
 type captureChat struct{ req ChatRequest }
 

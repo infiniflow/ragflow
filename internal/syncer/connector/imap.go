@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	netmail "net/mail"
 	"os"
@@ -41,8 +40,10 @@ import (
 	// Register the charset decoder so text/* parts in non-UTF-8 charsets
 	// (e.g. ISO-8859-1, Windows-1252) are decoded to UTF-8 on read.
 	_ "github.com/emersion/go-message/charset"
+	"go.uber.org/zap"
 	xhtml "golang.org/x/net/html"
 
+	"ragflow/internal/common"
 	"ragflow/internal/utility"
 )
 
@@ -205,7 +206,7 @@ func (s *imapSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 		}
 		emailDoc, attachments, err := parseIMAPMessage(raw, s.connector.sizeThreshold)
 		if err != nil {
-			log.Printf("imap: skip message seq %d in mailbox %q: %v", seq, s.currentMailbox, err)
+			common.Warn("imap: skip message", zap.Uint64("seq", seq), zap.String("mailbox", s.currentMailbox), zap.Error(err))
 			continue
 		}
 		if !s.inWindow(emailDoc.UpdatedAt) {
@@ -813,7 +814,15 @@ func runIMAPCommand[T any](ctx context.Context, client *imapclient.Client, run f
 }
 
 func dialRealIMAPClient(ctx context.Context, host string, port int, username, password string) (imapClient, error) {
-	address := net.JoinHostPort(host, strconv.Itoa(port))
+	// The configured host is server-side controlled, so it is guarded by the
+	// shared host-type SSRF check and the TCP dial is pinned to the validated
+	// public IP. The TLS layer still presents the original hostname as SNI so
+	// certificate verification is unchanged.
+	pinIP, err := assertConnectorHostSafe(host)
+	if err != nil {
+		return nil, err
+	}
+	address := net.JoinHostPort(pinIP.String(), strconv.Itoa(port))
 	dialCtx, cancelDial := context.WithTimeout(ctx, imapDialTimeout)
 	defer cancelDial()
 	rawConn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", address)

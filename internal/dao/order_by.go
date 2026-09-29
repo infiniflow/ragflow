@@ -187,6 +187,7 @@ var pipelineLogOrderableColumns = map[string]struct{}{
 	"task_type":        {},
 	"operation_status": {},
 	"status":           {},
+	"run_count":        {},
 	"create_time":      {},
 	"create_date":      {},
 	"update_time":      {},

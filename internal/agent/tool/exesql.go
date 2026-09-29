@@ -296,7 +296,7 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 		return exesqlErrorResult(fmt.Errorf("exesql: parse arguments: %w", err)),
 			fmt.Errorf("exesql: parse arguments: %w", err)
 	}
-	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
+	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
 		resolved, resolveErr := runtime.ResolveTemplate(args.SQL, state)
 		if resolveErr != nil {
 			return exesqlErrorResult(resolveErr), resolveErr

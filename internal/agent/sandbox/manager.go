@@ -53,9 +53,13 @@ import (
 // `agent/sandbox/providers/manager.py::ProviderManager`. It is
 // goroutine-safe and lazily initialized.
 type ProviderManager struct {
-	mu       sync.RWMutex
-	provider SandboxProvider
-	loaded   bool
+	refreshMu          sync.Mutex
+	mu                 sync.RWMutex
+	provider           SandboxProvider
+	loaded             bool
+	override           bool
+	snapshot           string
+	settingsConfigured bool
 }
 
 // globalManager is the package-level manager. Mirrors the Python
@@ -76,14 +80,15 @@ func DefaultManager() *ProviderManager {
 	return globalManager
 }
 
-// SetProvider installs a provider directly, bypassing env-based
-// initialization. Used by tests and by the boot path once admin-panel
-// settings reading is wired.
+// SetProvider installs an explicit override, bypassing settings refresh.
 func (m *ProviderManager) SetProvider(p SandboxProvider) {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.provider = p
 	m.loaded = true
+	m.override = true
 }
 
 // Provider returns the active provider. nil if not yet initialized.
@@ -103,10 +108,15 @@ func (m *ProviderManager) IsConfigured() bool {
 
 // Reset clears the manager. Used by reload paths and by tests.
 func (m *ProviderManager) Reset() {
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.provider = nil
 	m.loaded = false
+	m.override = false
+	m.snapshot = ""
+	m.settingsConfigured = false
 }
 
 // InitFromEnv resolves the active provider type from
@@ -118,12 +128,15 @@ func (m *ProviderManager) Reset() {
 // The returned error is suitable for surfacing in boot logs; the
 // manager stays unconfigured when Initialize fails.
 func (m *ProviderManager) InitFromEnv(ctx context.Context) error {
-	m.mu.Lock()
-	if m.loaded && m.provider != nil {
-		m.mu.Unlock()
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	return m.initFromEnv(ctx)
+}
+
+func (m *ProviderManager) initFromEnv(ctx context.Context) error {
+	if m.IsConfigured() {
 		return nil
 	}
-	m.mu.Unlock()
 
 	ptype := resolveProviderType()
 	p, err := buildProvider(ptype)
@@ -133,7 +146,9 @@ func (m *ProviderManager) InitFromEnv(ctx context.Context) error {
 	if err := p.Initialize(ctx); err != nil {
 		return fmt.Errorf("sandbox: initialize provider %q: %w", ptype, err)
 	}
-	m.SetProvider(p)
+	m.mu.Lock()
+	m.provider, m.loaded = p, true
+	m.mu.Unlock()
 	return nil
 }
 
@@ -147,24 +162,12 @@ type SystemSetting = entity.SystemSettings
 // *dao.SystemSettingsDAO directly) makes the manager unit-testable
 // without a real MySQL.
 type SettingsReader interface {
-	GetByName(ctx context.Context, db *gorm.DB, name string) ([]entity.SystemSettings, error)
+	GetByNamePrefix(ctx context.Context, db *gorm.DB, prefix string) ([]entity.SystemSettings, error)
 }
 
 // LoadFromSettings resolves the active provider from the admin-panel
-// `sandbox.provider_type` and `sandbox.{provider_type}` settings in
-// the system_settings MySQL table. JSON-decodes the provider config
-// and passes it to the provider's FromConfig constructor. Falls back
-// to env-based init when:
-//   - the reader returns no rows (the settings haven't been written);
-//   - the reader returns an error (DB unreachable / table missing);
-//   - the provider type is unknown.
-//
-// This matches the Python
-// `agent/sandbox/client.py::_load_provider_from_settings` flow but
-// reuses the provider's FromConfig path so env-driven and
-// settings-driven init produce semantically identical providers.
-// Subsequent calls are no-ops once a provider is loaded; use
-// Reset + ReloadFromSettings to pick up admin-panel changes.
+// settings snapshot before each execution. Only absent settings permit
+// environment bootstrap; explicit overrides bypass settings entirely.
 func (m *ProviderManager) LoadFromSettings(ctx context.Context) error {
 	return m.LoadFromSettingsWithReader(ctx, dao.DB, dao.NewSystemSettingsDAO())
 }
@@ -174,35 +177,42 @@ func (m *ProviderManager) LoadFromSettings(ctx context.Context) error {
 // uses the real *dao.SystemSettingsDAO); tests inject a fake
 // SettingsReader.
 func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, db *gorm.DB, r SettingsReader) error {
-	m.mu.Lock()
-	if m.loaded && m.provider != nil {
-		m.mu.Unlock()
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+	if m.override {
 		return nil
 	}
-	m.mu.Unlock()
 
 	ptype, cfg, err := loadSettingsConfig(ctx, db, r)
+	if ptype != "" {
+		m.settingsConfigured = true
+	}
 	if err != nil {
-		// Soft fall back: settings missing / malformed / DB error
-		// → use env defaults. This keeps boot resilient when the
-		// admin panel hasn't been configured yet.
-		return m.InitFromEnv(ctx)
+		if errors.Is(err, errSettingsNotConfigured) && !m.settingsConfigured {
+			return m.initFromEnv(ctx)
+		}
+		return fmt.Errorf("sandbox: read settings: %w", err)
+	}
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("sandbox: encode settings: %w", err)
+	}
+	snapshot := string(ptype) + ":" + string(encoded)
+	if snapshot == m.snapshot && m.IsConfigured() {
+		return nil
 	}
 
 	p, err := buildProviderFromConfig(ptype, cfg)
-	if err != nil {
-		// Settings row references a provider type we don't ship
-		// (e.g. legacy type, typo). Fall back to env so boot
-		// proceeds with the operator's env config.
-		return m.InitFromEnv(ctx)
-	}
 	if err != nil {
 		return fmt.Errorf("sandbox: build provider %q from settings: %w", ptype, err)
 	}
 	if err := p.Initialize(ctx); err != nil {
 		return fmt.Errorf("sandbox: initialize provider %q from settings: %w", ptype, err)
 	}
-	m.SetProvider(p)
+	m.mu.Lock()
+	m.provider, m.loaded = p, true
+	m.mu.Unlock()
+	m.snapshot = snapshot
 	return nil
 }
 
@@ -226,51 +236,43 @@ func (m *ProviderManager) ReloadFromSettingsWithReader(ctx context.Context, db *
 // (ProviderType, nil) when the settings table has no rows for
 // these keys (caller falls back to env).
 func loadSettingsConfig(ctx context.Context, db *gorm.DB, r SettingsReader) (ProviderType, map[string]any, error) {
-	rows, err := r.GetByName(ctx, db, "sandbox.provider_type")
+	rows, err := r.GetByNamePrefix(ctx, db, "sandbox.")
 	if err != nil {
 		return "", nil, err
 	}
-	if len(rows) == 0 {
-		// No settings row at all → caller falls back to env.
-		return "", nil, errSettingsNotConfigured
+	settings := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if _, exists := settings[row.Name]; exists {
+			return "", nil, fmt.Errorf("duplicate setting %q", row.Name)
+		}
+		settings[row.Name] = row.Value
 	}
-	ptype := ProviderType(rows[0].Value)
-	if ptype == "" {
-		return "", nil, errSettingsNotConfigured
+	selected, explicit := settings["sandbox.provider_type"]
+	ptype := ProviderSelfManaged
+	if explicit {
+		if selected == "" {
+			return "", nil, errors.New("sandbox provider type is empty")
+		}
+		ptype = ProviderType(selected)
 	}
-
-	cfgRows, err := r.GetByName(ctx, db, "sandbox."+string(ptype))
-	if err != nil {
-		return ptype, nil, err
-	}
-	if len(cfgRows) == 0 {
-		// Provider type set, but no per-provider config row.
-		// The caller will try the env-driven path for the same
-		// type, which may also miss if env is unconfigured for
-		// that type. Treat as "no settings" so the env fallback
-		// is uniform.
-		return ptype, nil, errSettingsNotConfigured
+	raw, exists := settings["sandbox."+string(ptype)]
+	if !exists {
+		if !explicit {
+			return "", nil, errSettingsNotConfigured
+		}
+		return ptype, nil, fmt.Errorf("missing configuration for sandbox provider %q", ptype)
 	}
 	var cfg map[string]any
-	if err := json.Unmarshal([]byte(cfgRows[0].Value), &cfg); err != nil {
-		// Malformed JSON: fall back to env rather than booting
-		// with an empty config (which would build a provider with
-		// zero values for every field).
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || cfg == nil {
 		return ptype, nil, errSettingsMalformed
 	}
 	return ptype, cfg, nil
 }
 
-// errSettingsNotConfigured signals "the admin panel hasn't
-// configured sandbox settings; the env path should run." Treated
-// as a soft signal: the manager swallows this and calls
-// InitFromEnv, so boot never fails just because no one has
-// touched the admin panel.
+// errSettingsNotConfigured permits environment bootstrap before the first save.
 var errSettingsNotConfigured = errors.New("sandbox: admin-panel settings not configured")
 
-// errSettingsMalformed signals "the settings JSON couldn't be
-// parsed; the env path should run." Same soft-failure handling
-// as errSettingsNotConfigured.
+// errSettingsMalformed rejects invalid persisted configuration without fallback.
 var errSettingsMalformed = errors.New("sandbox: admin-panel settings JSON malformed")
 
 // resolveProviderType reads SANDBOX_PROVIDER_TYPE. Defaults to
@@ -283,10 +285,7 @@ func resolveProviderType() ProviderType {
 	return ProviderSelfManaged
 }
 
-// buildProvider constructs a provider by type. Adding a new provider
-// is a single switch case here. E2B returns ErrE2BProviderNotImplemented
-// from every operation, but we still construct the provider so the
-// manager can report the configured type to health checks.
+// buildProvider constructs an environment-configured provider by type.
 func buildProvider(t ProviderType) (SandboxProvider, error) {
 	switch t {
 	case ProviderSelfManaged:
@@ -309,9 +308,7 @@ func buildProvider(t ProviderType) (SandboxProvider, error) {
 }
 
 // buildProviderFromConfig is the settings-driven counterpart of
-// buildProvider. The config map keys mirror the env-var names
-// without the per-provider prefix (e.g. SANDBOX_EXECUTOR_MANAGER_URL
-// on env == "EXECUTOR_MANAGER_URL" in the settings JSON).
+// buildProvider. Configuration uses the canonical lowercase Python schema keys.
 func buildProviderFromConfig(t ProviderType, cfg map[string]any) (SandboxProvider, error) {
 	switch t {
 	case ProviderSelfManaged:

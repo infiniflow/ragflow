@@ -396,10 +396,10 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
+        'Lors de la récupération, RAGFlow utilise soit une combinaison de similarité pondérée par mots-clés et de similarité cosinus vectorielle pondérée, soit, lorsqu’un modèle de reranking est sélectionné, une combinaison de similarité pondérée par mots-clés et de score de reranking pondéré. Ce paramètre définit le seuil de similarité entre la requête de l’utilisateur et les segments. Tout segment dont le score de similarité est inférieur à ce seuil sera exclu des résultats. Par défaut, le seuil est défini sur 20. Cela signifie que seuls les segments dont le score de similarité hybride est supérieur ou égal à 20 seront récupérés. Si le poids de la similarité vectorielle est défini sur 0, ce seuil ne s’applique pas.',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
-        "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",
+        "Définit le poids de la similarité vectorielle dans le score de similarité combiné, qu'elle soit utilisée avec la similarité cosinus vectorielle ou le score de réordonnancement. La somme des deux poids doit être égale à 1.0.",
       testText: 'Texte de test',
       testTextPlaceholder: 'Saisissez votre question ici !',
       testingLabel: 'Test',
@@ -445,7 +445,7 @@ export default {
       cancel: 'Annuler',
       rerankModel: 'Modèle de réordonnancement',
       rerankPlaceholder: 'Veuillez sélectionner',
-      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse. Pour un modèle local, utilisez docker-compose-gpu.yml.`,
+      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse.`,
       topK: 'Top-K',
       topKTip: 'Nombre de segments à envoyer au modèle de réordonnancement.',
       delimiter: 'Délimiteur de texte',
@@ -577,7 +577,7 @@ export default {
         "Aucun test n'a encore été lancé. Les résultats apparaîtront ici.",
       keywordSimilarityWeight: 'Poids de similarité par mots-clés',
       keywordSimilarityWeightTip:
-        'Définit le poids de la similarité par mots-clés dans le score global, combiné avec la similarité vectorielle ou le score de réordonnancement. Le total des deux poids doit être égal à 1.0.',
+        'Définit le poids de la similarité par mots-clés dans le score de similarité combiné. La somme des poids de similarité vectorielle et par mots-clés doit être égale à 1.0.',
       close: 'Fermer',
       enableChildrenDelimiter:
         'Utiliser les segments enfants pour la récupération',
@@ -1074,7 +1074,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       tavilyApiKeyTip:
         'Si une clé API est correctement configurée ici, les recherches web basées sur Tavily seront utilisées pour compléter la récupération des bases de connaissances.',
       tavilyApiKeyMessage: 'Veuillez saisir votre clé API Tavily',
-      tavilyApiKeyHelp: "Comment l'obtenir ?",
+      webSearchApiKeyHelp: "Comment l'obtenir ?",
       crossLanguage: 'Recherche inter-langues',
       crossLanguagePlaceholder: 'Sélectionner une valeur',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n'est sélectionnée, le système recherche avec la requête originale.`,

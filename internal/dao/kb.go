@@ -300,8 +300,8 @@ func (dao *KnowledgebaseDAO) GetAllByTenantIDs(ctx context.Context, db *gorm.DB,
 	var kbs []*entity.Knowledgebase
 
 	err := db.WithContext(ctx).Where(
-		"(tenant_id IN ? AND permission = ?) OR tenant_id = ?",
-		tenantIDs, string(entity.TenantPermissionTeam), userID,
+		"((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
+		tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid),
 	).Order("create_time ASC").Find(&kbs).Error
 
 	return kbs, err
@@ -465,16 +465,6 @@ func (dao *KnowledgebaseDAO) DecreaseDocumentNum(ctx context.Context, db *gorm.D
 			"chunk_num": db.Raw("chunk_num - ?", chunkNum),
 			"token_num": db.Raw("token_num - ?", tokenNum),
 		}).Error
-}
-
-// GetKBIDsByTenantID retrieves all knowledge base IDs for a tenant
-// This matches the Python get_kb_ids method
-func (dao *KnowledgebaseDAO) GetKBIDsByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]string, error) {
-	var kbIDs []string
-	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid)).
-		Pluck("id", &kbIDs).Error
-	return kbIDs, err
 }
 
 // GetAllIDs retrieves all knowledge base IDs

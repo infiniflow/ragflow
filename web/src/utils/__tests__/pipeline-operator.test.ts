@@ -51,6 +51,64 @@ describe('GeneralChunker operator bridge', () => {
   });
 });
 
+describe('Parser nested setups compatibility', () => {
+  beforeEach(() => {
+    mockIsGoBackend = true;
+  });
+
+  it('lifts a legacy nested "setups" object into file families', () => {
+    const form = transformApiConfigToForm('Parser', {
+      setups: {
+        pdf: { parse_method: 'vision', pages: [[1, 3]] },
+      },
+    });
+    expect(form.setups).toHaveLength(1);
+    expect(form.setups[0].fileFormat).toBe('pdf');
+    expect(form.setups[0].parse_method).toBe('vision');
+    expect(form.setups[0].pages).toEqual([{ from: 1, to: 3 }]);
+  });
+
+  it('keeps flat file families unchanged', () => {
+    const form = transformApiConfigToForm('Parser', {
+      pdf: { parse_method: 'deepdoc' },
+    });
+    expect(form.setups).toHaveLength(1);
+    expect(form.setups[0].fileFormat).toBe('pdf');
+    expect(form.setups[0].parse_method).toBe('deepdoc');
+  });
+
+  it('skips non-family keys such as outputs', () => {
+    const form = transformApiConfigToForm('Parser', {
+      outputs: { html: { type: 'string' } },
+      pdf: { parse_method: 'deepdoc' },
+    });
+    const families = form.setups.map((s: any) => s.fileFormat);
+    expect(families).toEqual(['pdf']);
+  });
+
+  it('does not surface "setups" as a file family in buildOperatorNode', () => {
+    const node = buildOperatorNode(
+      {
+        id: 'Parser:HipSignsRhyme',
+        data: {
+          form: { setups: [{ fileFormat: 'pdf', parse_method: 'naive' }] },
+        },
+      } as any,
+      {
+        'Parser:HipSignsRhyme': {
+          setups: { pdf: { parse_method: 'vision' } },
+        },
+      },
+    );
+
+    const form = (node.data as Record<string, any>).form;
+    const families = form.setups.map((s: any) => s.fileFormat);
+    expect(families).not.toContain('setups');
+    const pdf = form.setups.find((s: any) => s.fileFormat === 'pdf');
+    expect(pdf?.parse_method).toBe('vision');
+  });
+});
+
 describe('buildOperatorNode dataset-level metadata precedence', () => {
   beforeEach(() => {
     mockIsGoBackend = true;

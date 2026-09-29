@@ -430,6 +430,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowTasks()
 	case TokenLog:
 		return p.parseAdminShowLogCommands()
+	case TokenHardware:
+		return p.parseAdminShowHardware()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -3070,6 +3072,18 @@ func (p *Parser) parseAdminShowLogLevel() (*Command, error) {
 	p.nextToken() // consume LEVEL
 
 	cmd := NewCommand("admin_show_log_level")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShowHardware() (*Command, error) {
+	p.nextToken() // consume HARDWARE
+	cmd := NewCommand("admin_show_hardware")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

@@ -328,7 +328,7 @@ func (s *BotService) ChatbotCompletion(
 	// async_iframe_completion saves `user_id=kwargs.get("user_id", "")`).
 	// The Go BotHandler routes pass `user.ID` through the
 	// "tenantID" parameter (the Go User struct collapses user and
-	// tenant into one identifier — see project CLAUDE.md), so
+	// tenant into one identifier — see project AGENTS.md), so
 	// writing `tenantID` here actually stores the requester's
 	// user-id (== tenant-id) in the python user-id slot. The
 	// session-tenant check on the read path compares against the

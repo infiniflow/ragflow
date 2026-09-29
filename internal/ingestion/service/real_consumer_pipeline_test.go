@@ -87,7 +87,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}

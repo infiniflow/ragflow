@@ -41,7 +41,6 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
-  currentReg,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -66,6 +65,7 @@ import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { SafeImg } from '@/components/safe-img';
 
 const getChunkIndex = (match: string) => parseCitationIndex(match);
+const ReferenceMarkerReg = /(\[(?:ID:)?[0-9\u0660-\u0669\u06F0-\u06F9]+\])/g;
 
 // Wraps every text node so citation markers can be replaced by React elements.
 // Defined at module scope: react-markdown rebuilds its whole processor whenever
@@ -253,12 +253,14 @@ const MarkdownContent = ({
               <HoverCardTrigger>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceChunkImage}
                 ></Image>
               </HoverCardTrigger>
               <HoverCardContent>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className={styles.referenceImagePreview}
                 ></Image>
               </HoverCardContent>
@@ -324,26 +326,40 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      const replacedText = reactStringReplace(
+        text,
+        ReferenceMarkerReg,
+        (match, i) => {
+          const chunkIndex = getChunkIndex(match);
+          if (typeof chunkIndex !== 'number') {
+            return match;
+          }
+          const hasReference = !!reference?.chunks?.[chunkIndex];
+          // Explicit markers can render while their sources are still arriving.
+          if (!hasReference && !(loading && match.startsWith('[ID:'))) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={i}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                {t('common.figure')} {chunkIndex + 1}
-              </bdi>
-            </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {getPopoverContent(chunkIndex)}
-            </HoverCardContent>
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={i}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{chunkIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {hasReference && (
+                <HoverCardContent className="max-w-3xl">
+                  {getPopoverContent(chunkIndex)}
+                </HoverCardContent>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
-    [getPopoverContent, t],
+    [getPopoverContent, loading, reference?.chunks],
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));

@@ -260,6 +260,7 @@ func TestJiraConnectorBuildJQLIgnoresQuotedOrderBy(t *testing.T) {
 }
 
 func TestJiraConnectorDownloadRejectsSchemeMismatch(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("request should not be sent for mismatched scheme")
 	}))
@@ -283,6 +284,7 @@ func TestJiraConnectorDownloadRejectsSchemeMismatch(t *testing.T) {
 }
 
 func TestJiraConnectorDownloadRejectsCrossOriginRedirect(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
 	destinationHit := false
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		destinationHit = true
@@ -313,6 +315,7 @@ func TestJiraConnectorDownloadRejectsCrossOriginRedirect(t *testing.T) {
 }
 
 func TestJiraConnectorDownloadKeepsAuthorizationOnSameOriginRedirect(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
 	var server *httptest.Server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
@@ -349,6 +352,7 @@ func TestJiraConnectorDownloadKeepsAuthorizationOnSameOriginRedirect(t *testing.
 
 func jiraFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	withConnectorLoopbackTestHook(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rest/api/3/project/RAG", func(w http.ResponseWriter, r *http.Request) {
 		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
@@ -375,6 +379,7 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 
 func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Server {
 	t.Helper()
+	withConnectorLoopbackTestHook(t)
 	var server *httptest.Server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rest/api/3/project/RAG", func(w http.ResponseWriter, r *http.Request) {

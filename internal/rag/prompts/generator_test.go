@@ -247,3 +247,75 @@ func TestKBPromptWithSourceIndicesTracksRenderedChunks(t *testing.T) {
 		t.Fatalf("KBPrompt = %v, want the same blocks as KBPromptWithSourceIndices", plain)
 	}
 }
+
+// TestKBPromptNumbersFirstBlockOne pins kb_prompt's numbering: "ID: 1" is the
+// first rendered block. It is kept for parity with Python's kb_prompt — no Go
+// renderer whose numbers reach a citation marker uses it (the agentic compose and
+// the naive chat path both render 0-based, the numbering the client indexes).
+func TestKBPromptNumbersFirstBlockOne(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c0", "content": "first body"},
+		{"chunk_id": "c1", "content": "second body"},
+	}
+	blocks := KBPrompt(chunks, 100000)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+	if !strings.HasPrefix(blocks[0], "\nID: 1\n") {
+		t.Errorf("first block = %q, want it numbered \"ID: 1\"", blocks[0])
+	}
+	if !strings.HasPrefix(blocks[1], "\nID: 2\n") {
+		t.Errorf("second block = %q, want it numbered \"ID: 2\"", blocks[1])
+	}
+}
+
+// TestKBPromptPoolIndexedUsesChunkPositions pins the numbering the
+// summarize_document blocks use: the id is the chunk's position in the pool, not
+// its place among the rendered blocks. A chunk that renders no block (empty
+// content) must not shift the ids of the chunks after it, because a marker the
+// model echoes has to name the position the chat pipeline resolves citations in.
+func TestKBPromptPoolIndexedUsesChunkPositions(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c0", "content": ""}, // renders no block
+		{"chunk_id": "c1", "content": "first body"},
+		{"chunk_id": "c2", "content": "second body"},
+	}
+	blocks, sources := KBPromptPoolIndexed(chunks, 100000)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2 (the empty chunk renders nothing)", len(blocks))
+	}
+	if want := []int{1, 2}; !reflect.DeepEqual(sources, want) {
+		t.Fatalf("sources = %v, want %v", sources, want)
+	}
+	if !strings.HasPrefix(blocks[0], "\nID: 1\n") {
+		t.Errorf("first block = %q, want the id of its chunk position (1), not its render position (0)", blocks[0])
+	}
+	if !strings.HasPrefix(blocks[1], "\nID: 2\n") {
+		t.Errorf("second block = %q, want \"ID: 2\"", blocks[1])
+	}
+}
+
+// TestKBPromptZeroBasedNumbersFirstBlockZero pins the numbering the agentic
+// compose renders: the client resolves a citation marker by using its number as
+// an index into reference.chunks, and the streamed answer reaches that client
+// before the pipeline could rewrite anything, so the model has to be shown — and
+// so write — the index itself.
+func TestKBPromptZeroBasedNumbersFirstBlockZero(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_id": "c0", "content": "first body"},
+		{"chunk_id": "c1", "content": "second body"},
+	}
+	blocks, sources := KBPromptZeroBasedWithSourceIndices(chunks, 100000)
+	if want := []int{0, 1}; !reflect.DeepEqual(sources, want) {
+		t.Fatalf("sources = %v, want %v", sources, want)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+	if !strings.HasPrefix(blocks[0], "\nID: 0\n") {
+		t.Errorf("first block = %q, want it numbered \"ID: 0\"", blocks[0])
+	}
+	if !strings.HasPrefix(blocks[1], "\nID: 1\n") {
+		t.Errorf("second block = %q, want it numbered \"ID: 1\"", blocks[1])
+	}
+}

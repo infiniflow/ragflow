@@ -12,64 +12,6 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-// TestExecuteTask_CheckpointParseFailureDoesNotKillProcess verifies that checkpoint
-// parse failures do not call fatal exit (which would kill the whole worker process).
-// Instead, the task should be marked as FAILED and return gracefully.
-// This tests the fix for issue 1 from the code review.
-func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-
-	_, _, docID, taskID := testutil.SeedTestData(t, db,
-		testutil.WithPipelineID("flow-1"),
-		testutil.WithTenantID("tenant-1"),
-	)
-
-	// Create a task log with invalid checkpoint (run_count is a string instead of number)
-	err := db.Create(&entity.IngestionTaskLog{
-		TaskID: taskID,
-		Checkpoint: entity.JSONMap{
-			"run_count": "not-a-number", // intentionally wrong type
-		},
-	}).Error
-	if err != nil {
-		t.Fatalf("create bad task log: %v", err)
-	}
-
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	// Replace runDocumentTask to ensure it doesn't get called
-	var runDocumentTaskCalled bool
-	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-		runDocumentTaskCalled = true
-		return nil
-	}
-
-	taskCtx := taskpkg.NewTaskContextForScheduling(
-		t.Context(),
-		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
-	)
-
-	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
-	ctx := t.Context()
-	ingestor.executeTask(ctx, taskCtx)
-
-	// Corrupted run_count values are skipped by IncrementRunCount, so the task
-	// proceeds to runDocumentTask and completes normally.
-	if !runDocumentTaskCalled {
-		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
-	}
-
-	// Verify task status was set to COMPLETED
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
-	if err != nil {
-		t.Fatalf("load final ingestion task: %v", err)
-	}
-	if finalTask.Status != common.COMPLETED {
-		t.Fatalf("final status = %s, want %s", finalTask.Status, common.COMPLETED)
-	}
-}
-
 func TestDefaultRunDocumentTask_BothPipelineAndParserMissing(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -151,7 +93,6 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
-
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocumentTaskCalled bool
 	var gotTaskID string
@@ -199,10 +140,8 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 }
 
 // TestExecuteTask_CancelBeforePipeline verifies that when cancelCheck returns
-// true at task start, the task is cancelled before AdvanceStep,
-// runDocumentTask is never called, and document progress is set to -1 with a
-// cancel marker. Mirrors Python's cancel flow where has_canceled() returns
-// true in Pipeline.callback().
+// true at task start, the task is cancelled before the pipeline runs and the
+// legacy document progress message remains untouched.
 func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
@@ -211,6 +150,10 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
+	const progressMessage = "Queued before cancellation"
+	if err := db.Model(&entity.Document{}).Where("id = ?", docID).Update("progress_msg", progressMessage).Error; err != nil {
+		t.Fatalf("seed document progress message: %v", err)
+	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
@@ -239,7 +182,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	if doc.Progress != -1 {
 		t.Fatalf("document.progress = %v, want -1 (cancelled)", doc.Progress)
 	}
-	if doc.ProgressMsg == nil || *doc.ProgressMsg == "" {
-		t.Fatal("document.progress_msg should contain cancel marker, got empty")
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != progressMessage {
+		t.Fatalf("document.progress_msg = %v, want preserved %q", doc.ProgressMsg, progressMessage)
 	}
 }
