@@ -49,6 +49,9 @@ function createSessionStorage(
     [Authorization]: authKey,
     [Token]: tokenKey,
     [UserInfo]: userInfoKey,
+    // Login flows pass these labels as object keys (not the storage constant values).
+    Token: tokenKey,
+    userInfo: userInfoKey,
     [AdminAuthorization]: authKey,
     [AdminToken]: tokenKey,
     [AdminUserInfo]: userInfoKey,
