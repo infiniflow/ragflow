@@ -84,15 +84,11 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 ## 🔥 Latest Updates
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 released.
 - 2026-09-10 Added website content ingestion through sitemaps.
 - 2026-08-19 Introduced Knowledge Compilation to generate Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines, and Skills at the document and dataset levels.
 - 2026-08-19 Introduced Agentic RAG with Low, Medium, High, and Ultra thinking modes.
 - 2026-07-02 Added Google BigQuery data source ingestion and incremental synchronization.
-- 2026-06-29 Added chat channels for WhatsApp, DingTalk, and WeCom.
-- 2026-05-26 Added the Browser component, enabling Agents to browse and interact with web pages.
-- 2026-04-21 Added seven built-in data ingestion pipeline templates.
-- 2026-04-21 Added Agent application publishing, sandbox code execution, and chart generation.
-- 2026-04-21 Added user-level memory storage and retrieval.
 
 See the [full release notes](./docs/release_notes.md) for more updates.
 
@@ -204,26 +200,26 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
    ```
 3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
 
-> [!NOTE]
-> The `v1.0.0-rc1` tag and later release tags use the Go implementation. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) only if you need to build an image locally.
+    > [!NOTE]
+    > The `v1.0.0-rc1` tag and later release tags use the Go implementation. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) only if you need to build an image locally.
 
-```bash
-# Enter the Docker deployment directory.
-cd ragflow/docker
-# Check out the Go v1.0.0-rc1 release tag.
-git checkout v1.0.0-rc1
-# Start the Go services and their dependencies in the background.
-docker compose -f docker-compose.yml up -d
-```
+   > ```bash
+   > # Enter the Docker deployment directory.
+   > cd ragflow/docker
+   > # Check out the Go v1.0.0-rc1 release tag.
+   > git checkout v1.0.0-rc1
+   > # Start the Go services and their dependencies in the background.
+   > docker compose -f docker-compose.yml up -d
+   > ```
 
-In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
+   > In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
 
-> In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+   > In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 
 4. Check service status and API readiness after startup:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    ```
 
    The command above displays dependency status. RAGFlow itself does not define a Compose healthcheck; confirm readiness through its API:
@@ -239,8 +235,6 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
    > HTTP serving port `80` can be omitted when using the default configurations.
    >
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
-
-   _The show is on!_
 
 #### ⚙️ Docker Configuration and Adjustment
 
