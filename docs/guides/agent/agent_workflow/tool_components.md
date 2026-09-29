@@ -16,7 +16,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -224,6 +224,34 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 The output contains search entries, summaries, and links returned by Keenable. It can be summarized by the Agent or passed to subsequent retrieval or extraction nodes. Do not set `realtime` for keyless trial runs.
 
 ![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.jpg)
+
+### Sofya
+
+Sofya is a web search API for AI Agents. It returns the text of the result pages, not only a snippet, so results can be used without a separate fetch step. An API key is required and can be created at [sofya.co](https://sofya.co).
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| topic | string | No | general | `general` for web search or `news` for current events. |
+| freshness | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
+| api_key | string | Node configuration | Empty | Sofya API key. |
+| search_depth | string | Node configuration | basic | `basic` returns the content of the result pages. `snippets` returns search snippets only, which is faster and cheaper. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 20. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-sofya-api-key>` |
+| Search Depth | basic |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, and page content returned by Sofya. Results whose page could not be read fall back to the search snippet. It can be summarized by the Agent or passed to subsequent nodes.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.

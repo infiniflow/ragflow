@@ -139,6 +139,7 @@ var toolComponentRegistrations = []struct {
 	{componentName: "QueritContents", toolName: "querit_contents"},
 	{componentName: "QueritSearch", toolName: "querit_search"},
 	{componentName: "SearXNG", toolName: "searxng"},
+	{componentName: "SofyaSearch", toolName: "sofya"},
 	{componentName: "TavilySearch", toolName: "tavily"},
 	{componentName: "TavilyExtract", toolName: "tavily_extract"},
 	{componentName: "WenCai", toolName: "wencai"},
