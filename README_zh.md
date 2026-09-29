@@ -203,24 +203,23 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. 构建 Go 版镜像并使用 Go 版 Compose 配置启动服务器：
+3. 切换到 Go 版发布标签并使用 Docker Compose 启动服务器：
 
-   > ⚠️ **提示：** Go 镜像的正式构建目标为 `linux/amd64`。详细平台、资源和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
-
-   > 首次部署需要先构建 Go 镜像，构建时间取决于网络和机器性能。
-
-   将以下值写入 `docker/.env`：
-
-   ```dotenv
-   RAGFLOW_IMAGE=ragflow:go-local
-   ```
+   > ⚠️ **提示：** `v1.0.0-rc1` 及之后的发布标签使用 Go 实现。详细平台和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   # 进入仓库中的 Docker 部署目录
+   cd ragflow/docker
+   # 切换到 Go 版 v1.0.0-rc1 发布标签
+   git checkout v1.0.0-rc1
+   # 在后台启动 Go 服务及其依赖服务
+   docker compose -f docker-compose.yml up -d
    ```
+
+   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取 Go 镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc1` 标签：
+   >
+   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc1`
+   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc1`
 
    默认 MySQL 配置下，Go 镜像入口会先执行数据库迁移，再通过 `bin/ragflow_server` 启动 Syncer、Admin、API 和 Ingestor。
 
@@ -228,7 +227,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 4. 服务器启动成功后再次确认服务器状态：
 
-   使用 `docker compose --env-file .env -f docker-compose.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
+   使用 `docker compose -f docker-compose.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -240,7 +239,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
    ```bash
    # CPU 部署
-   docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
+   docker compose -f docker-compose.yml logs --tail 50 ragflow-cpu
 
    ```
 
@@ -256,7 +255,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 #### ⚙️ Docker 配置与调整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 存储缓存和 Checkpoint，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 存储缓存和 Checkpoint，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。源码构建 Docker 镜像请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 

@@ -59,10 +59,11 @@ const (
 )
 
 // navNodeSelectFields are the columns every nav tree read needs: the label
-// (title_kwd), the Python-era name column, the parent edge, the payload
-// (description), and the leaf's document id.
+// (title_kwd, plus docnm_kwd for rows Infinity folded the label into), the
+// Python-era name column, the parent edge, the payload (description), and the
+// leaf's document id.
 var navNodeSelectFields = []string{
-	"name", "title_kwd", "parent_kwd", "depth_int",
+	"name", "title_kwd", "docnm_kwd", "parent_kwd", "depth_int",
 	"content_with_weight", "doc_count_int", "type_kwd", "doc_id",
 }
 
@@ -155,6 +156,11 @@ func (s *NavService) navSearch(ctx context.Context, tenantID, kbID string, filte
 		SelectFields: selectFields,
 		Filter:       merged,
 		MatchExprs:   matchExprs,
+		// Nav rows carry available_int=0, and Infinity adds available_int=1 to
+		// every MATCH query unless the caller opts out (shouldDefaultAvailableFilter):
+		// nav's own vector/keyword reads would otherwise see none of its rows. ES
+		// never filters available_int; the compile_kwd filter scopes the read.
+		IncludeUnavailable: true,
 	}
 	res, err := de.Search(ctx, req)
 	if err != nil {
@@ -338,13 +344,26 @@ func (s *NavService) navNodesFromRows(rows []map[string]interface{}) []nav.NavNo
 	return nodes
 }
 
+// navRowLabel returns the nav row's stored label: the value parent_kwd
+// references and the tree renders. Go's writer stores it in title_kwd, Python's
+// in name. Rows persisted before Infinity kept title_kwd as a column of its own
+// carry it only in docnm (see engine/infinity transformChunkFields), which reads
+// back as docnm_kwd; without that fallback the API answered the description's
+// first line as a cluster name, so the tree's child lookup by name (the frontend
+// expands with GET /navigation/<name>/children) matched no row.
+func navRowLabel(row map[string]interface{}) string {
+	for _, col := range []string{"name", "title_kwd", "docnm_kwd"} {
+		if v := firstStringValue(row[col]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // navClusterRowKey is the key a cluster's children reference through parent_kwd:
 // Python's writer stores it in `name`, Go's in `title_kwd`.
 func navClusterRowKey(row map[string]interface{}) string {
-	if name := firstStringValue(row["name"]); name != "" {
-		return name
-	}
-	return firstStringValue(row["title_kwd"])
+	return navRowLabel(row)
 }
 
 // navDocRowKey / navClusterKey namespace the two row identities so a cluster and
@@ -377,10 +396,7 @@ func navKeywordExpressions(keywords string) []interface{} {
 // is written. An explicit readable `name` column (Python's writer stores one)
 // wins when present.
 func (s *NavService) nodeFromRow(row map[string]interface{}, fallbackType string) nav.NavNode {
-	name := firstStringValue(row["title_kwd"])
-	if n := firstStringValue(row["name"]); n != "" {
-		name = n
-	}
+	name := navRowLabel(row)
 	// A raw id (doc_id or "cluster_<hash>") is not a human-readable name; fall
 	// back to a title derived from the payload description. Cluster names are the
 	// child-lookup key (parent_kwd references them verbatim), so they must stay
@@ -526,7 +542,7 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter map[string]interface{}, f64 []float64, limit int, allowed map[string]struct{}) ([]nav.NavHit, error) {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
 		filter,
-		[]string{"type_kwd", "title_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
+		[]string{"type_kwd", "title_kwd", "docnm_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
 			EmbeddingData:     f64,
@@ -542,7 +558,7 @@ func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter 
 	for _, c := range chunks {
 		h := nav.NavHit{
 			Type:   firstStringValue(c["type_kwd"]),
-			Name:   firstStringValue(c["title_kwd"]),
+			Name:   navRowLabel(c),
 			DocID:  firstStringValue(c["doc_id"]),
 			DocIDs: firstStringSlice(c["doc_ids_kwd"]),
 		}
@@ -647,7 +663,7 @@ func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID strin
 			"type_kwd": []string{"nav_doc"},
 			"doc_id":   docIDs,
 		}),
-		[]string{"type_kwd", "name", "title_kwd", "content_with_weight", "doc_id"},
+		[]string{"type_kwd", "name", "title_kwd", "docnm_kwd", "content_with_weight", "doc_id"},
 		0, len(docIDs), nil)
 	if err != nil {
 		return map[string]string{}
@@ -669,12 +685,9 @@ func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID strin
 		}
 		if summary == "" {
 			// No description in the payload: fall back to the stored label
-			// (readable name, else title_kwd), rejecting raw ids — a 32-hex id or
-			// "cluster_<hash>" is not a human label.
-			summary = firstStringValue(c["name"])
-			if summary == "" {
-				summary = firstStringValue(c["title_kwd"])
-			}
+			// (readable name, else title_kwd/docnm), rejecting raw ids — a
+			// 32-hex id or "cluster_<hash>" is not a human label.
+			summary = navRowLabel(c)
 			if graphIsRawID(summary) {
 				summary = ""
 			}
@@ -726,7 +739,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"type_kwd": []string{nav.TypeNavDoc},
 			"doc_id":   []string{in.DocID},
 		}),
-		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd"}, 0, 1, nil)
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd", "docnm_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -737,7 +750,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// summary's first line, or the model-facing readers would keep seeing a
 		// file name. The tokenized text is (re)built when it is missing.
 		title := navDocTitle(in.Summary)
-		titleStale := firstStringValue(existing[0]["title_kwd"]) != title
+		titleStale := navRowLabel(existing[0]) != title
 		ltksStale := firstStringValue(existing[0]["content_ltks"]) == "" ||
 			firstStringValue(existing[0]["content_sm_ltks"]) == ""
 		if payload, ok := existing[0]["content_with_weight"].(string); ok {
@@ -924,6 +937,48 @@ func navClusterID(tenantID, kbID, name string) string {
 	return "dataset_nav_cluster_" + contentHash8(tenantID+"\x00"+kbID+"\x00"+name)
 }
 
+// navClusterCondition addresses one nav cluster row by its deterministic row id,
+// the way Python's dataset_nav does (every cluster update/delete resolves
+// _nav_cluster_id and read-modify-writes that row). The label is not usable as a
+// key: it is an LLM-written name that can share words with another cluster, and
+// Infinity cannot match a multi-token value on these columns at all (see
+// engine/infinity keywordFilterCondition). The row id is always single-token.
+func navClusterCondition(tenantID, kbID, clusterName string) map[string]interface{} {
+	return navFilter(map[string]interface{}{
+		"id": []string{navClusterID(tenantID, kbID, clusterName)},
+	})
+}
+
+// navChildRehomeCondition builds the condition that moves one split child under
+// its new parent, or nil when the child cannot be addressed at all.
+//
+// The row id is preferred: the label is empty for rows the Infinity write path
+// folded into docnm, and two children can share a summary's first line, so a
+// label filter can miss the row or hit a sibling. A nav_doc leaf without a row id
+// is still identifiable by its document. Nothing else is safe — with blank
+// keywords dropped, a type-only condition would match every row of that type in
+// the dataset.
+func navChildRehomeCondition(child map[string]interface{}, kbID string) map[string]interface{} {
+	typ := firstStringValue(child["type_kwd"])
+	if typ == "" {
+		return nil
+	}
+	cond := map[string]interface{}{
+		"compile_kwd": []string{navCompileKwd},
+		"kb_id":       kbID,
+	}
+	if rowID := firstStringValue(child["id"]); rowID != "" {
+		cond["id"] = []string{rowID}
+		return cond
+	}
+	if docID := firstStringValue(child["doc_id"]); typ == "nav_doc" && docID != "" {
+		cond["type_kwd"] = []string{typ}
+		cond["doc_id"] = []string{docID}
+		return cond
+	}
+	return nil
+}
+
 // cleanupEmptyCluster deletes a nav_cluster that holds no docs and no child
 // clusters, then recurses to its parent (cascade, mirroring Python
 // _cleanup_empty_cluster). It is called by RemoveDoc after deleting a nav_doc so
@@ -937,7 +992,7 @@ func (s *NavService) cleanupEmptyCluster(ctx context.Context, tenantID, kbID, cl
 		return err
 	}
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"id", "parent_kwd", "doc_count_int", "doc_ids_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
@@ -994,7 +1049,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 				"type_kwd":   []string{"nav_cluster"},
 				"parent_kwd": []string{parent},
 			}),
-			[]string{"title_kwd", "_score"}, 0, 1,
+			[]string{"title_kwd", "docnm_kwd", "_score"}, 0, 1,
 			[]interface{}{&types.MatchDenseExpr{
 				VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
 				EmbeddingData:     f64,
@@ -1009,7 +1064,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		if len(chunks) == 0 {
 			break
 		}
-		name := firstStringValue(chunks[0]["title_kwd"])
+		name := navRowLabel(chunks[0])
 		sim := rowScore(chunks[0])
 		// Adopt-and-overwrite, mirroring Python _find_best_cluster: the result is
 		// the DEEPEST cluster reached while the descent keeps clearing
@@ -1058,7 +1113,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// engine column q_<dim>_vec, e.g. from the doc being appended) is selected so
 	// the split siblings can inherit a representative vector for KNN routing; an
 	// empty vecCol skips it (callers without a known dim).
-	selectFields := []string{"id", "doc_id", "doc_count_int", "doc_ids_kwd", "title_kwd", "type_kwd"}
+	selectFields := []string{"id", "doc_id", "doc_count_int", "doc_ids_kwd", "title_kwd", "docnm_kwd", "type_kwd"}
 	if vecCol != "" {
 		selectFields = append(selectFields, vecCol)
 	}
@@ -1092,7 +1147,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// held docs; select id + doc_ids_kwd so the split can delete by the
 	// engine-assigned row id and inherit the cluster's directly-held documents.
 	clusterChunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"id", "doc_count_int", "doc_ids_kwd", "parent_kwd", "depth_int"}, 0, 1, nil)
 	if err != nil {
 		return err
@@ -1121,23 +1176,23 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		ids   []string
 		vec   []float32
 	}{}
+	// Every child must be addressable before the first write. The rehome points
+	// children at splitA/splitB, and those rows are only inserted after the
+	// original cluster is deleted, so a child that cannot be rehomed would be left
+	// hanging off a name no query can reach — refuse the split instead of
+	// half-moving the subtree.
+	for _, child := range children {
+		if navChildRehomeCondition(child, kbID) == nil {
+			return fmt.Errorf("datasetnav: refusing to split cluster %q: child %q carries no row id, document id or type",
+				clusterName, navRowLabel(child))
+		}
+	}
 	for i, child := range children {
 		acc := &accA
 		if i%2 == 1 {
 			acc = &accB
 		}
-		title := firstStringValue(child["title_kwd"])
 		typ := firstStringValue(child["type_kwd"])
-		childID := firstStringValue(child["id"])
-		if title == "" && childID == "" {
-			continue
-		}
-		if typ == "" {
-			// The engine returned a child without a type discriminator; skip it
-			// so we never rehome with an empty-type filter that matches nothing
-			// (leaving the child orphaned under a deleted cluster name).
-			continue
-		}
 		// Aggregate this child's doc count + doc ids into the target split.
 		if c := intValue(child["doc_count_int"]); c > 0 {
 			acc.count += c
@@ -1150,16 +1205,15 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			childDocIDs = append(childDocIDs, firstStringValue(child["doc_id"]))
 		}
 		acc.ids = appendUnique(acc.ids, childDocIDs)
-		// Rehome the child by its row id (precise) rather than an empty-safe
-		// type+title filter, so the UpdateChunks filter always matches.
-		upd := map[string]interface{}{"parent_kwd": accTarget(i, splitA, splitB)}
-		if err := de.UpdateChunks(ctx,
-			map[string]interface{}{
-				"compile_kwd": []string{navCompileKwd},
-				"type_kwd":    []string{typ},
-				"title_kwd":   []string{title},
-				"kb_id":       kbID,
-			}, upd, s.navIndexName(tenantID), kbID); err != nil {
+		childCond := navChildRehomeCondition(child, kbID)
+		if childCond == nil {
+			// Unreachable after the pre-pass above; kept so a future caller
+			// cannot fall through to a condition that matches the whole dataset.
+			return fmt.Errorf("datasetnav: refusing to rehome %s child %q", typ, navRowLabel(child))
+		}
+		if err := de.UpdateChunks(ctx, childCond,
+			map[string]interface{}{"parent_kwd": accTarget(i, splitA, splitB)},
+			s.navIndexName(tenantID), kbID); err != nil {
 			return err
 		}
 	}
@@ -1312,7 +1366,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 		return nil
 	}
 	rows, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"content_with_weight"}, 0, 1, nil)
 	if err != nil {
 		return err
@@ -1351,12 +1405,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 		}
 	}
 	return de.UpdateChunks(ctx,
-		map[string]interface{}{
-			"compile_kwd": []string{navCompileKwd},
-			"type_kwd":    []string{"nav_cluster"},
-			"title_kwd":   []string{clusterName},
-			"kb_id":       kbID,
-		}, updates, s.navIndexName(tenantID), kbID)
+		navClusterCondition(tenantID, kbID, clusterName), updates, s.navIndexName(tenantID), kbID)
 }
 
 // llmMergeDescription merges a set of source descriptions into one via the
@@ -1460,7 +1509,7 @@ func (s *NavService) llmCreateSummary(ctx context.Context, tenantID, text string
 // representative vector; pass "" when the caller has no known dimension.
 func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docID, vecCol string) error {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"doc_ids_kwd", "doc_count_int"}, 0, 1, nil)
 	if err != nil {
 		return err
@@ -1491,17 +1540,14 @@ func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine
 	if !found {
 		count++
 	}
-	// Pin the update to the nav_cluster row only: a regular chunk sharing the
-	// same title_kwd must never be clobbered. The read-modify-write here is
-	// expected to run under a per-dataset lock held by the UpsertDoc caller;
-	// without it, concurrent appends to the same cluster can lose updates.
+	// The condition addresses the cluster by its row id, so no other row can be
+	// caught by the update — neither a regular chunk that happens to carry a
+	// similar title nor a second cluster whose readable name shares words with
+	// this one. The read-modify-write here is expected to run under a per-dataset
+	// lock held by the UpsertDoc caller; without it, concurrent appends to the
+	// same cluster can lose updates.
 	if err := de.UpdateChunks(ctx,
-		map[string]interface{}{
-			"compile_kwd": []string{navCompileKwd},
-			"type_kwd":    []string{"nav_cluster"},
-			"title_kwd":   []string{clusterName},
-			"kb_id":       kbID,
-		},
+		navClusterCondition(tenantID, kbID, clusterName),
 		map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count},
 		s.navIndexName(tenantID), kbID); err != nil {
 		return err
@@ -1602,7 +1648,7 @@ func (s *NavService) findClusterContainingDoc(ctx context.Context, tenantID, kbI
 		res, err := de.Search(ctx, &types.SearchRequest{
 			IndexNames:   []string{s.navIndexName(tenantID)},
 			KbIDs:        []string{kbID},
-			SelectFields: []string{"title_kwd", "doc_ids_kwd"},
+			SelectFields: []string{"title_kwd", "docnm_kwd", "doc_ids_kwd"},
 			Filter:       map[string]interface{}{"type_kwd": "nav_cluster", "compile_kwd": []string{navCompileKwd}},
 			Offset:       offset,
 			Limit:        pageSize,
@@ -1613,7 +1659,7 @@ func (s *NavService) findClusterContainingDoc(ctx context.Context, tenantID, kbI
 		for _, row := range res.Chunks {
 			for _, d := range firstStringSlice(row["doc_ids_kwd"]) {
 				if d == docID {
-					return firstStringValue(row["title_kwd"]), nil
+					return navRowLabel(row), nil
 				}
 			}
 		}
@@ -1632,7 +1678,7 @@ func (s *NavService) removeDocFromCluster(ctx context.Context, tenantID, kbID, c
 		return err
 	}
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
-		navFilter(map[string]interface{}{"type_kwd": []string{"nav_cluster"}, "title_kwd": []string{clusterName}}),
+		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"doc_ids_kwd", "doc_count_int"}, 0, 1, nil)
 	if err != nil {
 		return err
@@ -1654,12 +1700,7 @@ func (s *NavService) removeDocFromCluster(ctx context.Context, tenantID, kbID, c
 		count--
 	}
 	return de.UpdateChunks(ctx,
-		map[string]interface{}{
-			"compile_kwd": []string{navCompileKwd},
-			"type_kwd":    []string{"nav_cluster"},
-			"title_kwd":   []string{clusterName},
-			"kb_id":       kbID,
-		},
+		navClusterCondition(tenantID, kbID, clusterName),
 		map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count},
 		s.navIndexName(tenantID), kbID)
 }

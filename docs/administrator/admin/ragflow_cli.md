@@ -25,7 +25,7 @@ When `VERSION` is omitted, the installer resolves the latest GitHub Release and 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh \
-  | VERSION=v0.27.2 sh
+  | VERSION=v1.0.0-rc1 sh
 ```
 
 Both forms are supported. Pin a version for production or reproducible installations so that a later Release does not change the installed version.
@@ -46,7 +46,7 @@ When no version is specified, the Windows installer also uses the latest GitHub 
 
 ```powershell
 irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 -OutFile install.ps1
-./install.ps1 -Version v0.27.2
+./install.ps1 -Version v1.0.0-rc1
 ```
 
 The Windows installer installs `ragflow-cli.exe` under `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds that directory to the user `PATH`. Restart the terminal if the installer reports that `PATH` was updated.

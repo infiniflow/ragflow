@@ -53,7 +53,7 @@ Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. That file also controls t
 
 ```bash
 cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go DeepDoc backend uses CPU inference.
@@ -61,8 +61,8 @@ The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go 
 ## Verify the service
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml ps
-docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
+docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml logs --tail 50 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
@@ -94,7 +94,7 @@ The same Go image and Compose file work on macOS. On Apple Silicon, keep `--plat
 
    ```bash
    cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
    curl -f http://localhost/api/v1/system/healthz
    ```
 

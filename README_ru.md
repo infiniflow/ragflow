@@ -199,31 +199,27 @@
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Запустите сервер с помощью готовых Docker-образов:
+3. Переключитесь на тег релиза Go и запустите готовый образ Go с помощью Docker Compose:
 
 > [!CAUTION]
 > Все образы собраны под x86. Образов для ARM64 пока нет.
 > Если вы на ARM64, следуйте [этому руководству](https://ragflow.io/docs/dev/build_docker_image), чтобы собрать образ самостоятельно.
 
-> Перед запуском укажите локально собранный образ в файле **docker/.env**. Официальная целевая платформа сборки Go-образа — `linux/amd64`.
-
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
-
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   # Перейдите в каталог развертывания Docker.
+   cd ragflow/docker
+   # Переключитесь на тег релиза Go v1.0.0-rc1.
+   git checkout v1.0.0-rc1
+   # Запустите службы Go и их зависимости в фоновом режиме.
+   docker compose -f docker-compose.yml up -d
+   ```
 
 > В открытой версии RAGFlow 1.0 DeepDoc использует CPU для анализа макета, OCR и распознавания таблиц.
 
 4. Проверьте статус после запуска:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker compose -f docker-compose.yml ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
