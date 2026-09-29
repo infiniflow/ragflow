@@ -38,7 +38,6 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
-	"golang.org/x/net/html"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
@@ -206,145 +205,6 @@ func stringPtrVal(s *string) string {
 
 func isCSV(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".csv")
-}
-
-// ---------------------------------------------------------------------------
-// HTML / spreadsheet QA extraction
-// ---------------------------------------------------------------------------
-
-// tableRows walks the parsed HTML and returns the <td>/<th> text of every
-// <tr>, in document order.
-//
-// The markup is parsed into a tree rather than matched with a regex because
-// this input is not guaranteed to be well formed: seven parsers render table
-// items (xlsx, csv, docx, html, pdf, …) and some of that markup originates
-// from user-supplied documents. A tree also settles the cases a tag-level
-// scan gets wrong: a nested <table> no longer terminates its enclosing row
-// early — that row keeps its own cells, with the nested table's text folded
-// into the cell holding it — and a row or cell missing its closing tag is
-// recovered rather than dropped.
-func tableRows(htmlStr string) [][]string {
-	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
-	// mode, so a bare row fragment would yield nothing. Give the parser the
-	// table context it needs instead of dropping the rows silently.
-	lower := strings.ToLower(htmlStr)
-	if strings.Contains(lower, "<tr") && !strings.Contains(lower, "<table") {
-		htmlStr = "<table>" + htmlStr + "</table>"
-	}
-	doc, err := html.Parse(strings.NewReader(htmlStr))
-	if err != nil {
-		return nil
-	}
-	var rows [][]string
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		// An inert subtree is parsed but never rendered. <template> puts its
-		// content straight into the ordinary child list (the parser has no
-		// separate template-contents field), so without this its rows would
-		// be read as rows of the enclosing table.
-		if n.Type == html.ElementNode && isInertElement(n.Data) {
-			return
-		}
-		if isHTMLElement(n, "tr") {
-			var cells []string
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
-					cells = append(cells, cellText(c))
-				}
-			}
-			// Return without descending: the cells above already collected
-			// the nested table's text, so its rows must not be reported a
-			// second time as rows of the enclosing table.
-			rows = append(rows, cells)
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	return rows
-}
-
-// cellText returns the visible text of a table cell. The parser hands text
-// nodes over already unescaped, nested markup contributes its text without
-// its tags (a nested table's cells are concatenated, not separated), and a
-// <br> becomes a newline instead of silently gluing the two halves of the
-// cell together.
-func cellText(cell *html.Node) string {
-	var sb strings.Builder
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		switch {
-		case n.Type == html.TextNode:
-			sb.WriteString(n.Data)
-		case isHTMLElement(n, "br"):
-			sb.WriteByte('\n')
-		case n.Type == html.ElementNode && isInertElement(n.Data):
-			// Stop here rather than descending: the content is parsed but
-			// never rendered, so it is not text a reader of the cell sees.
-			return
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(cell)
-	return strings.TrimSpace(sb.String())
-}
-
-// isHTMLElement reports whether n is an element with the given tag name in
-// the HTML namespace. Foreign content reuses HTML tag names for unrelated
-// elements — an <svg><tr> is not a table row — so matching on the tag name
-// alone would read markup that carries no table semantics.
-func isHTMLElement(n *html.Node, tag string) bool {
-	return n.Type == html.ElementNode && n.Namespace == "" && n.Data == tag
-}
-
-// isInertElement reports whether an element's content is inert — parsed, but
-// never rendered as visible text. An inline <script> or <style> inside a
-// table cell of a user-supplied document would otherwise be embedded into the
-// Q&A pair as if it were part of the sentence, and a <template>'s placeholder
-// rows would be read as real ones.
-func isInertElement(tag string) bool {
-	switch tag {
-	case "script", "style", "noscript", "template":
-		return true
-	}
-	return false
-}
-
-// extractQATable turns table markup into Q&A pairs: the first two non-empty
-// cells of a row become the question and the answer. strictPairs is the CSV
-// contract (Python qa.py:365) and requires a row to have exactly two cells
-// instead of taking the first two.
-func extractQATable(htmlStr string, strictPairs bool) []qaPair {
-	if htmlStr == "" {
-		return nil
-	}
-	rows := tableRows(htmlStr)
-	pairs := make([]qaPair, 0, len(rows))
-	for _, cells := range rows {
-		// Python qa.py:365 requires exactly two fields for CSV pairs.
-		if strictPairs && len(cells) != 2 {
-			if len(pairs) > 0 {
-				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")
-			}
-			continue
-		}
-		var texts []string
-		for _, cell := range cells {
-			if cell != "" {
-				texts = append(texts, cell)
-			}
-		}
-		if len(texts) >= 2 {
-			// RowNum mirrors Python qa.py's enumerate over the extracted
-			// pairs (beAdoc(..., row_num=ii)) → top_int.
-			pairs = append(pairs, qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)})
-		}
-	}
-	return pairs
 }
 
 // ---------------------------------------------------------------------------
@@ -543,59 +403,118 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
 		var tmp []qaPair
-		if item.CKType == "table_header" || item.CKType == "table_row" {
-			// QA spreadsheets have no header row: the parser's structural
-			// table_header is still the first question/answer record.
-			if strictCSV && len(item.Cells) != 2 {
-				if len(pairs) > 0 {
-					pairs[len(pairs)-1].Answer += "\n" + strings.Join(item.Cells, ",")
-				}
-				continue
-			}
-			tmp = extractQARowCells(item.Cells, strictCSV, item.RowStart)
+		txt, _ := itemText(item)
+		if txt == "" {
+			continue
+		}
+		// Route on what the row walker can read, not on the type label.
+		// doc_type:"table" is not truthful for every producer: the
+		// opendataloader, tcadp and somark PDF parsers tag text that holds
+		// no <table> markup, so such an item used to enter the table
+		// extractor, find no rows, and silently lose every pair; conversely
+		// a text-labelled block holding real table markup is read as a
+		// table. isTableHTML is only the cheap candidate filter: the
+		// walker's result decides, so nothing it can read is denied, and a
+		// block that merely opens with "<table" text (no row) stays on the
+		// prose path instead of silently pairing nothing. (Python's qa.py
+		// drops plain-text table payloads such as PDF tables entirely; the
+		// walker keeps their pairs.) Pre-upgrade row-IR payloads
+		// (ck_type: table_row/table_header with cells) hold no markup and
+		// fall through to the text extractor, so documents from before this
+		// wire must be re-parsed rather than re-chunked.
+		var rows [][]string
+		if isTableHTML(txt) {
+			rows = tableRows(txt)
+		}
+		if len(rows) > 0 {
+			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
 		} else {
-			txt, _ := itemText(item)
-			if txt == "" {
-				continue
-			}
-			// Non-spreadsheet table items may still carry HTML markup. Keep
-			// the HTML fallback for parsers that do not expose typed cells.
-			if itemDocType(item) == "table" {
-				tmp = extractQATable(txt, strictCSV)
-			} else {
-				tmp = extractQAText(txt)
-			}
+			tmp = extractQAText(txt)
 		}
 		// Preserve the source item's image id and coordinates on each
-		// extracted pair
+		// extracted pair. A row-aligned positions matrix already gave each
+		// pair its own tuple (R1: a row chunk must not carry the whole
+		// table's matrix in positions[0]).
 		for _, p := range tmp {
 			p.Image = item.Image
 			p.PDFPositions = item.PDFPositions
-			p.Positions = item.Positions
+			if len(p.Positions) == 0 {
+				p.Positions = item.Positions
+			}
 			pairs = append(pairs, p)
 		}
 	}
 	return pairs
 }
 
-func extractQARowCells(cells []string, strict bool, rowStart *int) []qaPair {
-	if strict && len(cells) != 2 {
+// extractQATable turns table markup from an HTML payload into Q&A pairs: the
+// JSON dispatch routes on the same walker, so both paths share
+// qaPairsFromRows. These items carry no positions payload of their own.
+func extractQATable(htmlStr string, strictPairs bool) []qaPair {
+	if htmlStr == "" {
 		return nil
 	}
-	texts := make([]string, 0, len(cells))
-	for _, cell := range cells {
-		if cell = strings.TrimSpace(cell); cell != "" {
-			texts = append(texts, cell)
+	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
+}
+
+// qaPairsFromRows builds the pairs of one table: the first two non-empty
+// cells of a row become the question and the answer. strictPairs is the CSV
+// contract (Python qa.py:365) and requires a row to have exactly two cells
+// instead of taking the first two.
+//
+// positions is the item's own positions payload, and spreadsheetPositions
+// says whether it may be read as the spreadsheet wire's matrix. When it is
+// (identity present, one five-field tuple per <tr>), each pair carries only
+// its row's tuple and takes its 0-based record index from that tuple's
+// rowStart (top_int = positions[i][1] - 1), which reproduces the legacy
+// row-IR numbering. Otherwise pairs are numbered by extraction order,
+// mirroring Python qa.py's enumerate over the extracted pairs — PDF items
+// write layout boxes into the same field, so they must not be reinterpreted
+// as spreadsheet rows.
+func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
+	var matrix [][]float64
+	if len(positions) > 0 {
+		if err := json.Unmarshal(positions, &matrix); err != nil {
+			matrix = nil
 		}
 	}
-	if len(texts) < 2 {
-		return nil
+	rowAligned := spreadsheetPositions && len(matrix) == len(rows) && len(rows) > 0
+	if rowAligned {
+		for _, tuple := range matrix {
+			if len(tuple) != 5 {
+				rowAligned = false
+				break
+			}
+		}
 	}
-	rowNum := -1
-	if rowStart != nil && *rowStart > 0 {
-		rowNum = *rowStart - 1
+	pairs := make([]qaPair, 0, len(rows))
+	for i, cells := range rows {
+		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		if strictPairs && len(cells) != 2 {
+			if len(pairs) > 0 {
+				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")
+			}
+			continue
+		}
+		var texts []string
+		for _, cell := range cells {
+			if cell != "" {
+				texts = append(texts, cell)
+			}
+		}
+		if len(texts) < 2 {
+			continue
+		}
+		pair := qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)}
+		if rowAligned {
+			pair.RowNum = int(matrix[i][1]) - 1
+			if encoded, err := json.Marshal([][]float64{matrix[i]}); err == nil {
+				pair.Positions = encoded
+			}
+		}
+		pairs = append(pairs, pair)
 	}
-	return []qaPair{{Question: texts[0], Answer: texts[1], RowNum: rowNum}}
+	return pairs
 }
 
 func init() {

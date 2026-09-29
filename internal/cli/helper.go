@@ -14,10 +14,29 @@
 //  limitations under the License.
 //
 
-package task
+package cli
 
-// Special doc_id values used in task messages (mirrors Python constants).
-const (
-	// GRAPH_RAPTOR_FAKE_DOC_ID is the fake doc_id used for RAPTOR-generated chunks.
-	GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_fake_doc"
+import (
+	"fmt"
 )
+
+func (c *CLI) apiModeClient() (*HTTPClient, error) {
+	if c.Config.CLIMode != APIMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+	if httpClient == nil || (httpClient.LoginToken == nil && !httpClient.useAPIKey) {
+		return nil, fmt.Errorf("no authorization")
+	}
+	return httpClient, nil
+}
+
+func (c *HTTPClient) AuthKind() string {
+	if c.LoginToken != nil {
+		return "web"
+	}
+	if c.useAPIKey {
+		return "api"
+	}
+	return "web"
+}
