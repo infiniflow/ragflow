@@ -35,7 +35,6 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -112,8 +111,8 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-// Python form: flatten the DSL prompts array into the form's single field;
-// the Python extractor form consumes the legacy flat fields as-is.
+// Base normalization: flatten the DSL prompts array into the form's single
+// field. The Go transform below builds on top of this.
 function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -208,10 +207,7 @@ function transformExtractorConfigToFormGo(
 export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorConfigToFormGo,
-    python: transformExtractorConfigToFormPython,
-  })(config);
+  return transformExtractorConfigToFormGo(config);
 }
 
 /**
