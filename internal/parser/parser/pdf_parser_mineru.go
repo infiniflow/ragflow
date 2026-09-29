@@ -35,6 +35,10 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if backend == "" {
 		backend = "pipeline"
 	}
+	serverURL := strings.TrimSpace(parser.MinerUServerURL)
+	if serverURL == "" {
+		serverURL = strings.TrimSpace(common.GetEnv(common.EnvMineruServerURL))
+	}
 	timeout := parser.MinerUPollTimeout
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
@@ -51,7 +55,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		apiConfig.ApiKey = &apiKey
 	}
 
-	task, err := driver.ParseFile(ctx, &backend, data, nil, apiConfig, &models.ParseFileConfig{}, nil)
+	task, err := driver.ParseFile(ctx, &backend, data, nil, apiConfig, &models.ParseFileConfig{ServerURL: serverURL}, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}

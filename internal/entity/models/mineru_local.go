@@ -130,6 +130,9 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 	} else {
 		_ = writer.WriteField("backend", "pipeline")
 	}
+	if parseFileConfig.ServerURL != "" {
+		_ = writer.WriteField("server_url", parseFileConfig.ServerURL)
+	}
 
 	if err = writer.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
