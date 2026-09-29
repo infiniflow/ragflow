@@ -12,27 +12,16 @@
 # This script downloads every artifact the Go build needs: the native static
 # libraries (pdfium / pdf_oxide / office_oxide / onnxruntime) for `build.sh`,
 # and the Go DeepDoc `.ort` weights (det/layout/tsr/rec.ort + ocr.res) so a Go
-# dev can run the in-process backend locally without separately running
-# `download_deps.py`. Run it from anywhere — the `__main__` block chdir's into
+# dev can run the in-process backend locally. Run it from anywhere — the
+# `__main__` block chdir's into
 # this file's own directory, so all outputs land under `ragflow_deps/`
 # regardless of the caller's CWD.
 #
-# Build-context relationship: `ragflow_deps/Dockerfile` is built with
-# `ragflow_deps/` as its build context, so the files written here MUST
-# sit at the top of `ragflow_deps/`. The Dockerfile's COPY lines assume
-# top-level paths (`huggingface.co`, `nltk_data`, `cl100k_base.tiktoken`,
-# `*.deb`, `*.jar`, `*.tar.gz`, `stagehand-server-v3-linux-<arch>`).
+# Downloaded archives and tokenizer assets land under `ragflow_deps/`.
 #
 # Typical workflow:
 #
-#   uv run python3 ragflow_deps/download_go_deps.py            # download
-#   cd ragflow_deps
-#   docker build -f Dockerfile -t infiniflow/ragflow_deps .
-#
-# The main `Dockerfile` (built from the project root) pulls this image
-# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
-# is unaffected by where these files live locally.
-#
+#   uv run ragflow_deps/download_deps.py
 # Go DeepDoc weights: in addition to the native libs, this script downloads the
 # five Go model files (internal/common.DeepDocModelFiles) from InfiniFlow/deepdoc
 # straight into the repo's canonical model directory `internal/rag/res/deepdoc/` (one level
@@ -47,7 +36,7 @@
 # tokenizer file per family (XLM-R SentencePiece, BERT WordPiece, two byte-level BPE
 # families) from `huggingface.co/<repo>/<file>` at the top of ragflow_deps/ - the path
 # the loaders search and the one ragflow_deps/Dockerfile ships. This script fetches
-# them too, so one invocation gives a Go checkout everything it counts with. Without
+# them too. Without
 # them every model that declares a tokenizer silently counts with the calibrated
 # cl100k estimate instead (see internal/tokenizer/embedding_token_limits.md).
 
@@ -61,11 +50,11 @@ import zipfile
 import requests
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
-# FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_deps.py,
-# and ARG ORT_VERSION in Dockerfile_go) that must carry the same ONNX Runtime
+# THREE places (with that Go constant and ARG ORT_VERSION in Dockerfile)
+# that must carry the same ONNX Runtime
 # native release for the statically-linked Go DeepDoc backend. There is no
-# single source of truth — keep all four equal. build.sh --check-ort-version
-# greps this file (and the other three) to fail fast on drift. (The Python pip
+# single source of truth — keep all three equal. build.sh --check-ort-version
+# greps this file (and the other two) to fail fast on drift. (The Python pip
 # onnxruntime== pin in pyproject.toml is versioned independently and is not
 # part of this check.)
 #
@@ -73,8 +62,8 @@ import requests
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
 # account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
 # `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`. The archive is occasionally
-# re-issued under this SAME tag/asset name with patched content; both download
-# scripts (this one and download_deps.py) detect that via a `{asset}.sha256`
+# re-issued under this SAME tag/asset name with patched content; this script
+# detects that via a `{asset}.sha256`
 # sidecar and re-download/re-extract, so a stale local copy never silently
 # lingers.
 ORT_VERSION = "1.29.0"
@@ -333,8 +322,6 @@ def download_go_models(use_china_mirrors=False):
             '"no in-process DeepDoc backend serving". To recover:\n'
             "  - re-run this script (a transient HF/network error usually clears);\n"
             "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
-            "  - or run `uv run python3 ragflow_deps/download_deps.py`, which snapshots\n"
-            f"    all of {DEEPDOC_REPO} (it also provides the Python-side .onnx);\n"
             "  - or copy the missing files into that directory by hand.",
             file=sys.stderr,
         )

@@ -27,7 +27,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
-- Python 3.10 or later only for `ragflow_deps/download_go_deps.py`, which downloads the native libraries and model resources required by the Go build.
+- Python 3.10 or later only for `ragflow_deps/download_deps.py`, which downloads the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
@@ -59,7 +59,7 @@ Download the native libraries and Go DeepDoc model weights with a small, isolate
 ```bash
 python3 -m venv /tmp/ragflow-go-download-venv
 /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-/tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+/tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
 ```
 
 The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `internal/rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.

@@ -42,8 +42,7 @@ PDF_OXIDE_VERSION="0.3.73"
 # (--undefined=OrtGetApiBase + --dynamic-list, no --whole-archive); OrtGetApiBase
 # is then resolved via dlopen(NULL) (the process-global symbol table, not the
 # executable's own path), so no libonnxruntime.so is needed at runtime.
-# Downloaded by ragflow_deps/download_go_deps.py (and
-# ragflow_deps/download_deps.py) into onnxruntime/static_lib.
+# Downloaded by ragflow_deps/download_deps.py into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
@@ -74,10 +73,8 @@ _seed_from_system() {
 # NumTokensFromString / TrimContentToTokenLimit when it is absent: a deployment
 # that forgot the file must not silently zero every token count (see
 # internal/tokenizer/bpe_loader.go and failfast_test.go). CI provisions it in a
-# workflow step before running the Go tests; build.sh does the same so the
-# documented local test commands are self-contained. Order mirrors CI: system
-# pre-seed first, then the network. A failure here is deliberately NOT fatal —
-# the loader stays the final gate, and its panic message names the file.
+# workflow step before running the Go tests; build.sh also provisions it for
+# local Go builds. Order mirrors CI: system pre-seed first, then the network.
 CL100K_TABLE_URL="https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 CL100K_TABLE_RELPATH="ragflow_deps/cl100k_base.tiktoken"
 SYSTEM_DEPS_TOKENIZER="/opt/ragflow_deps"
@@ -123,8 +120,8 @@ _ensure_cl100k_table() {
     rm -f "$tmp"
 
     echo -e "  ${YELLOW}cl100k_base BPE table NOT provisioned${NC} (offline, or the network is blocked)"
-    echo "  internal/tokenizer panics on a missing table by design, so every test that"
-    echo "  counts tokens will fail loudly. Recover with any of:"
+    echo "  The Go API and Ingestor cannot start without this table, and token-counting"
+    echo "  tests will fail. Recover with any of:"
     echo "    - re-run this command (a transient network error usually clears);"
     echo "    - curl -fsSL -o ${CL100K_TABLE_RELPATH} ${CL100K_TABLE_URL}"
     echo "    - or point TIKTOKEN_CACHE_DIR at a directory holding the table."
@@ -219,26 +216,24 @@ check_go_deps() {
 # The in-process (Go) DeepDoc backend statically links libonnxruntime.a built
 # from ONE exact ORT release; a mismatch links a wrong/missing .a and only fails
 # at runtime (dlopen(NULL) can't find OrtGetApiBase). The version is pinned in
-# four Go-side locations that must all agree.
+# three Go-side locations that must all agree.
 check_ort_version_consistency() {
     print_section "Checking ONNX Runtime version consistency"
 
-    local env_go d1 d2 dockerfile
+    local env_go deps dockerfile
     env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
-    d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
-    d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    deps="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
     dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
-    if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
+    if [ -z "$env_go" ] || [ -z "$deps" ] || [ -z "$dockerfile" ]; then
         echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
         exit 1
     fi
 
-    if [ "$env_go" != "$d1" ] || [ "$env_go" != "$d2" ] || [ "$env_go" != "$dockerfile" ]; then
+    if [ "$env_go" != "$deps" ] || [ "$env_go" != "$dockerfile" ]; then
         echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
         printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
-        printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
-        printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$deps" "ragflow_deps/download_deps.py:ORT_VERSION"
         printf '  %-10s  %s\n' "$dockerfile" "dockerfile:ARG ORT_VERSION"
         exit 1
     fi
@@ -302,7 +297,7 @@ check_onnxruntime_deps() {
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
-        echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
+        echo "    uv run ragflow_deps/download_deps.py" >&2
         echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         return 1
     fi
@@ -317,7 +312,7 @@ check_onnxruntime_deps() {
     #
     # A mismatch means the local copy is corrupt or stale; we only WARN (not
     # fail) so a one-off re-issue cannot break the build. The download scripts
-    # (ragflow_deps/download_go_deps.py, download_deps.py) still verify against
+    # ragflow_deps/download_deps.py still verifies against
     # the published sidecar at download time, so a re-issued archive is picked
     # up on the next download.
     local asset="onnxruntime-v${ort_version}-linux-x86_64.zip"
@@ -332,7 +327,7 @@ check_onnxruntime_deps() {
             echo "  local    sha256: $actual" >&2
             echo "  The local copy may be corrupt or stale. Refresh it with:" >&2
             echo "    rm -f ${zip_path}" >&2
-            echo "    uv run python3 ragflow_deps/download_go_deps.py   # or ragflow_deps/download_deps.py" >&2
+            echo "    uv run ragflow_deps/download_deps.py" >&2
         else
             echo "  ✓ ${asset} sha256 matches pinned digest"
         fi
@@ -357,7 +352,7 @@ check_office_oxide_deps() {
     if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
         echo -e "${RED}Error: office_oxide native library not found${NC}"
         echo "  Expected: ${lib_path}"
-        echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+        echo "  Run: uv run ragflow_deps/download_deps.py"
         echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
         exit 1
     fi
@@ -371,12 +366,12 @@ check_office_oxide_deps() {
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
         echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
         rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/office_oxide-linux-x86_64.tar.gz"
-        if ! (cd "${PROJECT_ROOT}" && uv run python3 ragflow_deps/download_go_deps.py); then
+        if ! (cd "${PROJECT_ROOT}" && uv run python3 ragflow_deps/download_deps.py); then
             echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
             echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
             echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
             echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
-            echo "    uv run python3 ragflow_deps/download_go_deps.py"
+            echo "    uv run python3 ragflow_deps/download_deps.py"
             exit 1
         fi
         lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -409,7 +404,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -515,7 +510,7 @@ check_pdf_oxide_deps() {
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
                 echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
-                echo "    uv run python3 ragflow_deps/download_go_deps.py"
+                echo "    uv run ragflow_deps/download_deps.py"
                 return 1
                 ;;
         esac
@@ -523,7 +518,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+    echo "  Run: uv run ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -611,6 +606,10 @@ build_go() {
 
     cd "$PROJECT_ROOT"
 
+    # API and Ingestor fail at startup without this table. A successful Go
+    # build must leave the local checkout ready to run the server.
+    _ensure_cl100k_table || return 1
+
     # Check if C++ library exists
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: C++ static library not found. Run with --cpp first.${NC}"
@@ -653,12 +652,12 @@ build_go() {
         echo "  -Wl,--dynamic-list). Without it the binary compiles but dies" >&2
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
-        echo "    uv run python3 ragflow_deps/download_go_deps.py" >&2
+        echo "    uv run ragflow_deps/download_deps.py" >&2
         echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         echo "  This production binary must statically include ORT — there is no" >&2
         echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
         echo "    - the ORT static_lib dir was never seeded: run" >&2
-        echo "      'uv run python3 ragflow_deps/download_go_deps.py', or pre-seed" >&2
+        echo "      'uv run ragflow_deps/download_deps.py', or pre-seed" >&2
         echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
         echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
@@ -1096,7 +1095,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.26.4
     - clang++ with C++20 support
-    - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
+    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
@@ -1198,7 +1197,7 @@ main() {
             fi
             # The in-process (Go) DeepDoc backend needs the .ort weights. Default
             # MODEL_DIR to the canonical repo model dir (internal/rag/res/deepdoc) so a
-            # local run needs no MODEL_DIR export after `download_go_deps.py`.
+            # local run needs no MODEL_DIR export after `download_deps.py`.
             REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
             export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/internal/rag/res/deepdoc}"
             run_go_tests_tagged "cgo integration" "${pkgs[@]}"

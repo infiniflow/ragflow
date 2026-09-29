@@ -269,7 +269,7 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 

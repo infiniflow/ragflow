@@ -1,4 +1,4 @@
-# Tests for ragflow_deps/download_go_deps.py ONNX Runtime extraction.
+# Tests for ragflow_deps/download_deps.py ONNX Runtime extraction.
 #
 # build.sh's build_go() fails fast when libonnxruntime.a is not linked, so these
 # tests must guarantee the archive is really landed on disk — above all after an
@@ -13,7 +13,7 @@
 import os
 import zipfile
 
-from download_go_deps import (
+from download_deps import (
     _ort_asset_name,
     _ort_extracted_dir,
     _ort_normalized_dir,
