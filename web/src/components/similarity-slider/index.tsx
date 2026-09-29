@@ -51,18 +51,10 @@ export const keywordsSimilarityWeightSchema = {
   keywords_similarity_weight: z.number().min(0).max(1),
 };
 
-export const vectorSimilarityWeightSchema = {
-  vector_similarity_weight: z.number(),
-};
-
-export const initialVectorSimilarityWeightValue = {
-  vector_similarity_weight: 0.3,
-};
-
 export function SimilaritySliderFormField({
   similarityName = 'similarity_threshold',
-  similarityWeightName = 'vector_similarity_weight',
-  similarityWeightType = 'vector',
+  similarityWeightName = 'keywords_similarity_weight',
+  similarityWeightType = 'keyword',
   isTooltipShown,
   numberInputClassName,
 }: SimilaritySliderFormFieldProps) {
