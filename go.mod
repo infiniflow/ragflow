@@ -271,7 +271,8 @@ replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/
 replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7
 
 // onnxruntime_go is mirrored to github.com/infiniflow/onnxruntime_go (org-owned
-// fork of yalue/onnxruntime_go at v1.23.0) so the in-process DeepDoc backend no
+// fork of yalue/onnxruntime_go at v1.29.0, matching the ORT native release in
+// DeepDocORTVersion) so the in-process DeepDoc backend no
 // longer depends on a personal fork or the upstream repo directly. ONNX Runtime is
 // linked statically (no --whole-archive, so unreferenced kernels are
 // dropped; only OrtGetApiBase is exported, via --dynamic-list), and OrtGetApiBase
