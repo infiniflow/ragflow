@@ -4,7 +4,6 @@ import {
 } from '@/components/list-filter-bar/interface';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useGetDocumentFilter } from '@/hooks/use-document-request';
-import { RunningStatus } from '@/constants/knowledge';
 import { useMemo } from 'react';
 
 export const EMPTY_METADATA_FIELD = 'empty_metadata';
@@ -27,12 +26,8 @@ export function useSelectDatasetFilters() {
     if (filter.run_status) {
       list = Object.keys(filter.run_status).map((x) => ({
         id: x,
-        label: t(
-          x === RunningStatus.QUEUED
-            ? 'runningStatusQueued'
-            : `runningStatus${x}`,
-        ),
-        count: filter.run_status[x],
+        label: t(`runningStatus${x}`),
+        count: filter.run_status[x as unknown as number],
       }));
     }
     if (filter.metadata) {

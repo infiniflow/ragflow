@@ -2495,8 +2495,7 @@ export default {
       navDeleteNodeTitle: 'Tugunni o‘chirish',
       navDeleteNodeDescription:
         'Haqiqatan ham bu tugunni va uning bola tugunlarini o‘chirmoqchimisiz?',
-      representationEmpty:
-        'Pipeline kompilyatori sozlanmagan, yoki artefakt ajratilmagan.',
+      representationEmpty: 'Mavjud artefakt shablonlari yo‘q.',
       representationUnsupported:
         'Bu taqdimot turi hozircha qo‘llab-quvvatlanmaydi.',
       claimsPanelTitle: 'Da’volar · {{name}}',

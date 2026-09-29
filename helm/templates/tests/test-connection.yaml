@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "ragflow.fullname" . }}-test-connection"
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: {{ include "ragflow.imageRepo" (dict "root" . "repo" "busybox") }}
+      command:
+      - 'wget'
+      args:
+      - {{ printf "%s.%s.svc" (include "ragflow.fullname" .) .Release.Namespace }}
+  restartPolicy: Never

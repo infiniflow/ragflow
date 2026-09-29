@@ -1,0 +1,131 @@
+{{- if eq .Values.env.DOC_ENGINE "elasticsearch" -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-es-data
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  {{- with .Values.elasticsearch.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.elasticsearch.storage.capacity }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ragflow.fullname" . }}-es
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: elasticsearch
+  {{- with .Values.elasticsearch.deployment.strategy }}
+  updateStrategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+      {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: elasticsearch
+      annotations:
+        checksum/config-es: {{ include (print $.Template.BasePath "/elasticsearch-config.yaml") . | sha256sum }}
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      {{- if or .Values.global.imagePullSecrets .Values.elasticsearch.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.elasticsearch.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      initContainers:
+      - name: fix-data-volume-permissions
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.alpine.repository) }}:{{ .Values.elasticsearch.initContainers.alpine.tag }}
+        {{- with .Values.elasticsearch.initContainers.alpine.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        command:
+        - sh
+        - -c
+        - "chown -R 1000:0 /usr/share/elasticsearch/data"
+        volumeMounts:
+          - mountPath: /usr/share/elasticsearch/data
+            name: es-data
+      - name: sysctl
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.busybox.repository) }}:{{ .Values.elasticsearch.initContainers.busybox.tag }}
+        {{- with .Values.elasticsearch.initContainers.busybox.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+      containers:
+      - name: elasticsearch
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.image.repository) }}:{{ .Values.elasticsearch.image.tag }}
+        {{- with .Values.elasticsearch.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+          - configMapRef:
+              name: {{ include "ragflow.fullname" . }}-es-config
+        ports:
+          - containerPort: 9200
+            name: http
+          - containerPort: 9300
+            name: transport
+        volumeMounts:
+          - mountPath: /usr/share/elasticsearch/data
+            name: es-data
+        {{- with .Values.elasticsearch.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+        securityContext:
+          capabilities:
+            add:
+              - "IPC_LOCK"
+          runAsUser: 1000
+          # NOTE: fsGroup doesn't seem to
+          # work so use init container instead
+          # fsGroup: 1000
+          allowPrivilegeEscalation: false
+      volumes:
+        - name: es-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-es-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-es
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+  ports:
+    - protocol: TCP
+      port: 9200
+      targetPort: http
+  type: {{ .Values.elasticsearch.service.type }}
+{{- end -}}

@@ -1,0 +1,135 @@
+{{- if eq .Values.env.DOC_ENGINE "opensearch" -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ragflow.fullname" . }}-opensearch-data
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  {{- with .Values.opensearch.storage.className }}
+  storageClassName: {{ . }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.opensearch.storage.capacity }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ragflow.fullname" . }}-opensearch
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: opensearch
+  {{- with .Values.opensearch.deployment.strategy }}
+  updateStrategy:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+      {{- include "ragflow.labels" . | nindent 8 }}
+        app.kubernetes.io/component: opensearch
+      annotations:
+        checksum/config-opensearch: {{ include (print $.Template.BasePath "/opensearch-config.yaml") . | sha256sum }}
+        checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
+    spec:
+      {{- if or .Values.global.imagePullSecrets .Values.opensearch.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.global.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.opensearch.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      initContainers:
+      - name: fix-data-volume-permissions
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.opensearch.initContainers.alpine.repository) }}:{{ .Values.opensearch.initContainers.alpine.tag }}
+        {{- with .Values.opensearch.initContainers.alpine.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        command:
+        - sh
+        - -c
+        - "chown -R 1000:0 /usr/share/opensearch/data"
+        volumeMounts:
+          - mountPath: /usr/share/opensearch/data
+            name: opensearch-data
+      - name: sysctl
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.opensearch.initContainers.busybox.repository) }}:{{ .Values.opensearch.initContainers.busybox.tag }}
+        {{- with .Values.opensearch.initContainers.busybox.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+      containers:
+      - name: opensearch
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.opensearch.image.repository) }}:{{ .Values.opensearch.image.tag }}
+        {{- with .Values.opensearch.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        envFrom:
+          - secretRef:
+              name: {{ include "ragflow.fullname" . }}-env-config
+          - configMapRef:
+              name: {{ include "ragflow.fullname" . }}-opensearch-config
+        ports:
+          - containerPort: 9201
+            name: http
+        volumeMounts:
+          - mountPath: /usr/share/opensearch/data
+            name: opensearch-data
+        {{- with .Values.opensearch.deployment.resources }}
+        resources:
+          {{- . | toYaml | nindent 10 }}
+        {{- end }}
+        securityContext:
+          capabilities:
+            add:
+              - "IPC_LOCK"
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+        livenessProbe:
+          exec:
+            command:
+              - sh
+              - -c
+              - curl -u admin:$OPENSEARCH_PASSWORD localhost:9201
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 6
+      volumes:
+        - name: opensearch-data
+          persistentVolumeClaim:
+            claimName: {{ include "ragflow.fullname" . }}-opensearch-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ragflow.fullname" . }}-opensearch
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: opensearch
+  ports:
+    - protocol: TCP
+      port: 9201
+      targetPort: http
+  type: {{ .Values.opensearch.service.type }}
+{{- end -}}
