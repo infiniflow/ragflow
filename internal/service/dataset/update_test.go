@@ -108,9 +108,11 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	})
@@ -128,9 +130,12 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
 		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
 	}
-	parentChild, ok := persisted.ParserConfig["parent_child"].(map[string]interface{})
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
 	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
-		t.Fatalf("parent_child = %#v, want persisted public setting", persisted.ParserConfig["parent_child"])
+		t.Fatalf("chunker parent_child = %#v, want persisted public setting", chunker["parent_child"])
+	}
+	if _, ok := persisted.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level flat parent_child should be absent, got %#v", persisted.ParserConfig["parent_child"])
 	}
 }
 
@@ -140,9 +145,11 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
 	existingConfig := entity.JSONMap{
-		"parent_child": map[string]interface{}{
-			"use_parent_child":   true,
-			"children_delimiter": "|",
+		"GeneralChunker:SixApplesFall": map[string]interface{}{
+			"parent_child": map[string]interface{}{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
 		},
 	}
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", existingConfig).Error; err != nil {
@@ -150,7 +157,10 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 	}
 
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserConfig: map[string]interface{}{"chunk_token_num": float64(256)},
+		// Component-scoped override (flat parser-level keys are rejected now).
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(256)},
+		},
 	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
@@ -1185,6 +1195,27 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
+// extractorNodeMetadata returns the metadata object stored on the first
+// Extractor node of a parser_config (the component-scoped form).
+func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	for cpnID, raw := range cfg {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if meta, ok := params["metadata"].(map[string]interface{}); ok {
+			return meta
+		}
+	}
+	t.Fatalf("no Extractor node with metadata found in parser_config: %#v", cfg)
+	return nil
+}
+
 func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -1203,10 +1234,12 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 		"Parser:HipSignsRhyme": map[string]interface{}{
 			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
 		},
-		"metadata": map[string]interface{}{
-			"enabled":           true,
-			"metadata":          incomingMetadata,
-			"built_in_metadata": incomingBuiltInMetadata,
+		"Extractor:AutoExtractDefault": map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"enabled":           true,
+				"metadata":          incomingMetadata,
+				"built_in_metadata": incomingBuiltInMetadata,
+			},
 		},
 	}
 
@@ -1222,12 +1255,16 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	meta := extractorNodeMetadataInTest(t, map[string]interface{}(persisted.ParserConfig))
+	if !reflect.DeepEqual(meta, map[string]interface{}{
 		"enabled":           true,
 		"metadata":          incomingMetadata,
 		"built_in_metadata": incomingBuiltInMetadata,
 	}) {
-		t.Fatalf("modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("modular metadata was not preserved on extractor node: %#v", meta)
+	}
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent: %#v", persisted.ParserConfig["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])
@@ -1250,10 +1287,12 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 		"type": "string",
 	}}
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"metadata": map[string]interface{}{
-			"enabled":           true,
-			"metadata":          existingMetadata,
-			"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+		"Extractor:AutoExtractDefault": map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"enabled":           true,
+				"metadata":          existingMetadata,
+				"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
+			},
 		},
 	}).Error; err != nil {
 		t.Fatalf("seed parser_config: %v", err)
@@ -1275,12 +1314,16 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], map[string]interface{}{
+	meta := extractorNodeMetadataInTest(t, map[string]interface{}(persisted.ParserConfig))
+	if !reflect.DeepEqual(meta, map[string]interface{}{
 		"enabled":           true,
 		"metadata":          existingMetadata,
 		"built_in_metadata": []interface{}{map[string]interface{}{"key": "document_name", "type": "string"}},
 	}) {
-		t.Fatalf("existing modular metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("existing modular metadata was not preserved on extractor node: %#v", meta)
+	}
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent: %#v", persisted.ParserConfig["metadata"])
 	}
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent: %#v", persisted.ParserConfig["enable_metadata"])

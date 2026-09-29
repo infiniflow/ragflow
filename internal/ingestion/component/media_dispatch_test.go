@@ -34,6 +34,17 @@ import (
 	"ragflow/internal/utility"
 )
 
+func TestMaybeDispatchImageWithoutVisionReportsNoContent(t *testing.T) {
+	result, handled, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL,
+		"photo.png", []byte("image bytes"), nil, defaultSetups(), false)
+	if !handled {
+		t.Fatal("image was not handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "vision enhancement") {
+		t.Fatalf("error = %v, want explicit vision requirement; result = %+v", err, result)
+	}
+}
+
 // imagePromptCaptureDriver embeds ModelDriver so it satisfies the interface
 // without listing every method; only ChatWithMessages is overridden to record
 // the messages the image branch selected.
@@ -41,11 +52,13 @@ type imagePromptCaptureDriver struct {
 	modelModule.ModelDriver
 	mu       sync.Mutex
 	captured []modelModule.Message
+	ctxErr   error
 }
 
 func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	d.mu.Lock()
 	d.captured = append(d.captured, messages...)
+	d.ctxErr = ctx.Err()
 	d.mu.Unlock()
 	ans := "captured"
 	return &modelModule.ChatResponse{Answer: &ans}, nil
@@ -107,6 +120,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		[]byte("not-a-real-image"),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -158,6 +172,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 		[]byte("not-a-real-image"),
 		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -200,6 +215,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		[]byte("not-a-real-image"),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -222,7 +238,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		t.Errorf("image = %q, want a data URI (data:<mime>;base64,<b64>)", img)
 	}
 	if txt, _ := item["text"].(string); txt == "" {
-		t.Errorf("text field empty; want non-empty combined OCR+VLM text")
+		t.Errorf("text field empty; want non-empty VLM description")
 	}
 }
 
@@ -251,6 +267,7 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 		[]byte("not-a-real-image"),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -442,6 +459,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 		[]byte("not-a-real-image"),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -516,12 +534,12 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 }
 
 // TestImageDecoders_RegisteredFormats validates that image decoders for WebP, BMP,
-// TIFF, PNG, JPEG, and GIF are registered by media_dispatch.go and can decode
+// TIFF, PNG, JPEG, and GIF are registered by vision_image.go and can decode
 // their respective binary payloads via image.Decode without importing the decoder
 // packages directly in the test file.
 func TestImageDecoders_RegisteredFormats(t *testing.T) {
 	// Fixed binary fixtures for image formats decoded via decoders registered in
-	// media_dispatch.go (neither standard library nor x/image decoders are imported
+	// vision_image.go (neither standard library nor x/image decoders are imported
 	// in this test file).
 	const (
 		webpB64 = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAD8D+JaQAA3AA/ua1AAA="
@@ -559,96 +577,6 @@ func TestImageDecoders_RegisteredFormats(t *testing.T) {
 			}
 			if decoded == nil {
 				t.Errorf("image.Decode returned nil image for %s", tc.format)
-			}
-		})
-	}
-}
-
-// TestVLMGateShouldSkip verifies the rune vs word count threshold
-// for skipping VLM description. Specifically:
-//   - Zero-allocation rune counting via utf8.RuneCountInString correctly handles multi-byte UTF-8.
-//   - Whitespace trimming matches Python txt.strip(): surrounding whitespace is trimmed before counting.
-//   - CJK text is measured in unicode runes: 12 CJK characters occupy 36 bytes (>32 bytes)
-//     but only 12 runes (<=32 runes), so VLM must NOT be skipped.
-//   - CJK text >32 runes (e.g. 33 runes) skips VLM.
-//   - CJK exact boundary text (32 runes) triggers VLM.
-//   - English text >32 words skips VLM.
-//   - English short text (<=32 words and <=32 chars) triggers VLM.
-//   - English text with <=32 words but >32 chars skips VLM.
-func TestVLMGateShouldSkip(t *testing.T) {
-	tests := []struct {
-		name     string
-		lang     string
-		ocrText  string
-		wantSkip bool
-	}{
-		{
-			name:     "empty text does not skip",
-			lang:     "Chinese",
-			ocrText:  "",
-			wantSkip: false,
-		},
-		{
-			name:     "whitespace only text does not skip",
-			lang:     "Chinese",
-			ocrText:  "   \n\t  ",
-			wantSkip: false,
-		},
-		{
-			name:     "CJK substantial text (>32 runes, >32 bytes) skips VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 33), // 33 runes, 99 bytes
-			wantSkip: true,
-		},
-		{
-			name:     "CJK short text with >32 bytes but <=32 runes triggers VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 12), // 12 runes, 36 bytes (>32 bytes)
-			wantSkip: false,
-		},
-		{
-			name:     "CJK exact boundary text (32 runes, 96 bytes) triggers VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 32), // 32 runes, 96 bytes (32 is not > 32)
-			wantSkip: false,
-		},
-		{
-			name:     "CJK exact boundary text with whitespace padding trims to <=32 runes and triggers VLM",
-			lang:     "Chinese",
-			ocrText:  "  " + strings.Repeat("中", 32) + "  ", // 32 runes after trim
-			wantSkip: false,
-		},
-		{
-			name:     "CJK substantial text with whitespace padding trims to >32 runes and skips VLM",
-			lang:     "Chinese",
-			ocrText:  "  " + strings.Repeat("中", 33) + "  ", // 33 runes after trim
-			wantSkip: true,
-		},
-		{
-			name:     "English substantial text (>32 words) skips VLM",
-			lang:     "English",
-			ocrText:  strings.Repeat("word ", 33), // 33 words
-			wantSkip: true,
-		},
-		{
-			name:     "English short text (<=32 words and <=32 chars) triggers VLM",
-			lang:     "English",
-			ocrText:  "hello world", // 2 words, 11 chars
-			wantSkip: false,
-		},
-		{
-			name:     "English text with <=32 words but >32 chars skips VLM",
-			lang:     "English",
-			ocrText:  "abcdefghijklmnopqrstuvwxyz01234567", // 1 word, 34 chars (>32 chars)
-			wantSkip: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := vlmGateShouldSkip(tc.ocrText, tc.lang)
-			if got != tc.wantSkip {
-				t.Errorf("vlmGateShouldSkip(%q, %q) = %v, want %v", tc.ocrText, tc.lang, got, tc.wantSkip)
 			}
 		})
 	}

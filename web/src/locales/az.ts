@@ -2599,7 +2599,8 @@ Nümunə: Virtual host üslubu`,
       navDeleteNodeTitle: 'Düyünü sil',
       navDeleteNodeDescription:
         'Bu düyünü və onun alt düyünlərini silmək istədiyinizə əminsiniz?',
-      representationEmpty: 'Əlçatan artefakt şablonu yoxdur.',
+      representationEmpty:
+        'Pipeline kompilyatoru konfiqurasiya edilməyib, yoxsa artefakt çıxarılmayıb.',
       representationUnsupported: 'Bu təqdimat növü hələ dəstəklənmir.',
       claimsPanelTitle: 'İddialar · {{name}}',
       claimsTotal: 'Cəmi {{count}}',

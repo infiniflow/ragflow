@@ -42,15 +42,15 @@ RAGFlow does not directly connect to MCP servers that use `stdio`. To use a `std
 3. Open **MCP**.
 4. Click **Add MCP**.
 5. Configure the MCP server.
+6. Click the refresh button in **Tools available** to test the connection and discover tools.
+7. After the test succeeds and the discovered tools appear, click **Save**.
 
-| Field       | Description                                              | Example                     |
-| ----------- | -------------------------------------------------------- | --------------------------- |
-| Name        | A custom name used to identify the MCP server in RAGFlow | `Local file tools`          |
-| URL         | The complete MCP endpoint                                | `https://example.com/mcp`   |
-| Server type | The transport provided by the MCP server                 | `streamable-http`           |
-| Description | Optional description of the MCP server                   | `Read and manage files`     |
-| Headers     | HTTP headers required by the MCP server                  | `Authorization: Bearer xxx` |
-| Variables   | Variables required by the MCP server configuration       | Depends on the MCP server   |
+| Field | Description | Example |
+| --- | --- | --- |
+| Name | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `web_search_tools` |
+| URL | The complete MCP endpoint | `https://example.com/mcp` |
+| Server type | The transport provided by the MCP server | `streamable-http` |
+| Authorization Token | Optional token sent as `Authorization: Bearer <token>` | The server's token |
 
 The **Server type** must match the transport exposed by the MCP server:
 
@@ -64,96 +64,54 @@ or:
 sse
 ```
 
-If the MCP server does not require authentication, leave **Headers** empty.
+If the MCP server does not require authentication, leave **Authorization Token** empty. The manual form does not expose arbitrary headers, variables, or a description field. For another authentication scheme or custom headers, use a JSON import with a string-to-string `headers` object, as shown in the example below.
 
 Make sure that the path in **URL** matches the endpoint actually exposed by the MCP server. For example, a Streamable HTTP server commonly uses `/mcp`, while an SSE server commonly uses `/sse`.
 
-## MCP server URL access restrictions
+RAGFlow keeps **Save** disabled until the current connection settings have been tested successfully and at least one tool has been discovered. If you change the URL, server type, or authorization token, test the connection again before saving.
 
-RAGFlow validates MCP server URLs before establishing a connection to protect the RAGFlow backend against server-side request forgery (SSRF) and internal network probing.
+## Connection requirements
 
-### Supported URL schemes
+RAGFlow validates the endpoint before connecting:
 
-MCP server URLs must use one of the following schemes:
+- The URL must use `http://` or `https://` and contain a host. `stdio://` is not supported.
+- Every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
+- The Go MCP client connects to the validated address directly and does not use HTTP proxy environment variables.
 
-```text
-http://
-https://
+Consequently, endpoints such as `localhost`, `127.0.0.1`, `::1`, `10.x.x.x`, `172.16.x.x` through `172.31.x.x`, and `192.168.x.x` cannot be added through this path. `ALLOW_ANY_HOST` does not disable this validation. Publish the MCP endpoint on a public address whose DNS records all resolve to public addresses.
+
+## Troubleshoot a failed connection
+
+| Symptom | What to check |
+| --- | --- |
+| `Invalid MCP url` or a disallowed-scheme error | Use a complete `http://` or `https://` endpoint with the correct `/mcp` or `/sse` path. |
+| `URL resolves to a non-public address` | Check DNS from the RAGFlow backend environment. Public hostnames are also rejected if any result is private or synthetic. Proxy tools in Fake-IP mode can cause this result. |
+| Connection or discovery timeout | Check outbound network access, the selected transport, endpoint path, and server availability. The default discovery timeout is 10 seconds. |
+| Authentication failure | Verify the token, or import string-valued custom headers when the server does not use a Bearer token. |
+| Save remains disabled | Test the current settings again and confirm that the server advertises at least one tool. |
+
+## Example: add Parallel Search MCP tools
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides `web_search` and `web_fetch` tools. Save the repository's [example configuration](https://github.com/infiniflow/ragflow/blob/main/example/mcp/parallel_search.json) as a JSON file:
+
+```json
+{
+  "mcpServers": {
+    "parallel-search": {
+      "type": "streamable-http",
+      "url": "https://search.parallel.ai/mcp",
+      "headers": {
+        "User-Agent": "ragflow"
+      }
+    }
+  }
+}
 ```
 
-The URL must contain a valid hostname or IP address.
+Open **User settings → MCP** and import the file. RAGFlow discovers the server's tools during import. The example has no authorization token. If you enter the connection manually, select **Streamable HTTP** and leave **Authorization Token** empty.
 
-Other URL schemes, including `stdio://`, are not supported for MCP server connections.
+In an **Agent** component, add the imported tools from `parallel-search` and enable `web_search` or `web_fetch` as needed. Importing a server does not automatically make its tools the agent's default search tool.
 
-### Public address validation
+Check that discovery returns both tool names. Then inspect an agent run's tool calls to confirm it selected one. If connection fails, check the transport, outbound access to `search.parallel.ai`, and configured headers. Queries, requested URLs, and request context sent through these tools reach Parallel; review its [privacy policy](https://parallel.ai/privacy-policy) before sending sensitive content.
 
-By default, RAGFlow allows an MCP server URL only when **all IP addresses resolved from its hostname are publicly routable addresses**.
-
-With the default configuration:
-
-```text
-ALLOW_ANY_HOST=0
-```
-
-RAGFlow rejects URLs that resolve to loopback, private, link-local, reserved, or other non-public addresses.
-
-Examples of addresses that are rejected by default include:
-
-```text
-127.0.0.1
-::1
-10.x.x.x
-172.16.x.x - 172.31.x.x
-192.168.x.x
-```
-
-This also affects hostnames. Even if the URL uses a public domain name, RAGFlow rejects the connection if that domain resolves to a non-public IP address in the environment where the RAGFlow backend is running.
-
-For example:
-
-```text
-https://mcp.example.com/mcp
-```
-
-can still be rejected if `mcp.example.com` resolves to a private, loopback, or synthetic address.
-
-### Fake-IP DNS results
-
-Proxy applications such as Mihomo or Clash may use Fake-IP mode and return synthetic addresses for public domains.
-
-For example, a public domain may resolve to an address in a range such as:
-
-```text
-fdfe:dcba:9876::/48
-```
-
-RAGFlow identifies such addresses as non-public and may display an error similar to:
-
-```text
-URL resolves to a non-public address (...), which is not allowed.
-```
-
-If you see this error, check DNS resolution from the environment where the RAGFlow backend is running.
-
-The error does not necessarily indicate that the MCP server URL, transport type, or authentication configuration is incorrect.
-
-## Connect to a local or private MCP server
-
-For trusted local development or testing environments, you can allow RAGFlow to connect to MCP servers running on localhost, a private network, or a Docker network.
-
-In `docker/.env`, set:
-
-```text
-ALLOW_ANY_HOST=1
-```
-
-Then fully restart the RAGFlow backend services so that the new environment setting takes effect.
-
-For example:
-
-```bash
-docker compose down
-docker compose up -d
-```
-
-When `ALLOW_ANY_HOST=1`, RAGFlow skips the public-address validation described above.
+For other MCP servers, use their documented URL, transport, and authentication. Imported `headers` must be an object with string names and string values. Keep real credentials out of committed configuration files.

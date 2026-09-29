@@ -66,8 +66,8 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 
 // ParseWithResult produces structured JSON items (when
 // p.outputFormat == "json") or markdown (default) from a
-// docx/document. Embedded images are extracted in both paths
-// for downstream vision-figure dispatch.
+// docx document. The JSON path emits bounded image items; the
+// Markdown path attaches bounded figure metadata to the file result.
 //
 // JSON path mirrors python parser.py:_docx() output_format == "json".
 // Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
@@ -106,13 +106,14 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	// Extract IR JSON for section building (JSON path) and
-	// embedded-image extraction (both paths).
-	var figures []DOCXFigure
+	// embedded-image extraction (both paths). The budget bounds image
+	// payloads so the downstream VLM enhancement stays within limits.
+	budget := newEmbeddedMediaBudget()
 	if irJSON != "" {
-		figures = extractDOCXFiguresFromIR(irJSON)
-	}
-	if len(figures) > 0 {
-		fileMeta["figures"] = buildFiguresMap(figures)
+		figures := extractDOCXFiguresFromIR(irJSON, budget)
+		if len(figures) > 0 {
+			fileMeta["figures"] = buildFiguresMap(figures)
+		}
 	}
 
 	if p.outputFormat == "json" {
@@ -126,8 +127,10 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		if irJSON == "" {
 			return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
 		}
-		var sections []map[string]any
-		sections = buildDOCXJSONSections(irJSON)
+		sections := buildDOCXJSONSections(irJSON, budget)
+		if err := ctx.Err(); err != nil {
+			return ParseResult{Err: err}
+		}
 		// remove_header_footer: drop sections whose normalized text
 		// matches a docx header/footer entry (mirrors Python
 		// parser.py:889-891 extract_docx_header_footer_texts +
@@ -149,6 +152,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 			OutputFormat: "json",
 			File:         fileMeta,
 			JSON:         sections,
+			Warnings:     budget.warnings(),
 		}
 	}
 
@@ -197,6 +201,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		OutputFormat: "markdown",
 		File:         fileMeta,
 		Markdown:     markdownPayload,
+		Warnings:     budget.warnings(),
 	}
 }
 

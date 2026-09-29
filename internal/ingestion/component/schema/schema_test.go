@@ -237,20 +237,13 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 }
 
 func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
-	sheetIndex, rowStart, rowEnd, colStart, colEnd := 2, 42, 42, 1, 3
+	sheetIndex := 2
 	original := ChunkDoc{
-		Text:       "ID：A-100; Status：paid",
-		DocType:    "text",
-		CKType:     "table_row",
-		TableID:    "sheet-2",
+		Text:       "<table><tr><th>ID</th></tr></table>",
+		DocType:    "table",
+		CKType:     "table",
 		Sheet:      "Orders",
 		SheetIndex: &sheetIndex,
-		Headers:    []string{"ID", "Status", "Note"},
-		Cells:      []string{"A-100", "paid", ""},
-		RowStart:   &rowStart,
-		RowEnd:     &rowEnd,
-		ColStart:   &colStart,
-		ColEnd:     &colEnd,
 	}
 
 	data, err := json.Marshal(original)
@@ -261,20 +254,56 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.TableID != original.TableID || decoded.Sheet != original.Sheet {
-		t.Fatalf("spreadsheet identity mismatch: got table=%q sheet=%q", decoded.TableID, decoded.Sheet)
+	if decoded.Sheet != original.Sheet {
+		t.Fatalf("sheet mismatch: got %q", decoded.Sheet)
 	}
 	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
 		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
 	}
-	if decoded.RowStart == nil || *decoded.RowStart != rowStart || decoded.RowEnd == nil || *decoded.RowEnd != rowEnd {
-		t.Fatalf("row range mismatch: start=%v end=%v", decoded.RowStart, decoded.RowEnd)
+}
+
+// TestChunkDocLegacyRowIRKeysPassThrough: the deleted row-IR keys (table_id,
+// headers, cells and the per-row coordinate fields) are no longer typed
+// fields, but payloads that still carry them must survive a decode/encode
+// round trip through Extra; the index boundary strips them from the store.
+func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
+	var decoded ChunkDoc
+	raw := `{"text":"row","doc_type_kwd":"text","ck_type":"table_row","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.ColStart == nil || *decoded.ColStart != colStart || decoded.ColEnd == nil || *decoded.ColEnd != colEnd {
-		t.Fatalf("column range mismatch: start=%v end=%v", decoded.ColStart, decoded.ColEnd)
+	out := decoded.ToMap()
+	for _, key := range []string{"table_id", "headers", "cells", "row_start", "row_end", "col_start", "col_end"} {
+		if _, ok := out[key]; !ok {
+			t.Errorf("legacy key %q lost in round trip: %#v", key, out)
+		}
 	}
-	if !reflect.DeepEqual(decoded.Headers, original.Headers) || !reflect.DeepEqual(decoded.Cells, original.Cells) {
-		t.Fatalf("cells mismatch: headers=%v cells=%v", decoded.Headers, decoded.Cells)
+}
+
+func TestChunkDocVisualParentMetadataRoundTrip(t *testing.T) {
+	imageItem := map[string]any{
+		"text":            "caption",
+		"doc_type_kwd":    "image",
+		"image":           "aGVsbG8=",
+		"parent_table_id": "docx-table-1",
+		"row_index":       2,
+		"column_index":    3,
+		"media_order":     4,
+	}
+	doc, err := ChunkDocFromMap(imageItem)
+	if err != nil {
+		t.Fatalf("ChunkDocFromMap: %v", err)
+	}
+	got := doc.ToMap()
+	for key, want := range map[string]any{
+		"parent_table_id": "docx-table-1",
+		"row_index":       float64(2),
+		"column_index":    float64(3),
+		"media_order":     float64(4),
+	} {
+		if got[key] != want {
+			t.Errorf("metadata %q = %v, want %v", key, got[key], want)
+		}
 	}
 }
 
@@ -619,4 +648,67 @@ func TestContextualTextConcatenatesMediaContext(t *testing.T) {
 // helpers
 // ---------------------------------------------------------------------------
 
-func ptrString(s string) *string { return &s }
+func TestFlattenLegacyParserSetups(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+		want   map[string]any
+	}{
+		{
+			name: "nested setups lifted",
+			params: map[string]any{
+				"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+				"setups": map[string]any{
+					"pdf": map[string]any{"parse_method": "vision"},
+				},
+			},
+			want: map[string]any{
+				"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+				"pdf":     map[string]any{"parse_method": "vision"},
+			},
+		},
+		{
+			name: "flat params unchanged",
+			params: map[string]any{
+				"pdf": map[string]any{"parse_method": "deepdoc"},
+			},
+			want: map[string]any{
+				"pdf": map[string]any{"parse_method": "deepdoc"},
+			},
+		},
+		{
+			name: "empty setups map removed",
+			params: map[string]any{
+				"setups": map[string]any{},
+			},
+			want: map[string]any{},
+		},
+		{
+			name: "same family field-merged with top-level winning",
+			params: map[string]any{
+				"pdf":    map[string]any{"lang": "English"},
+				"setups": map[string]any{"pdf": map[string]any{"parse_method": "vision", "lang": "Chinese"}},
+			},
+			want: map[string]any{
+				"pdf": map[string]any{"parse_method": "vision", "lang": "English"},
+			},
+		},
+		{
+			name: "non-map setups value left alone",
+			params: map[string]any{
+				"setups": "bogus",
+			},
+			want: map[string]any{
+				"setups": "bogus",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FlattenLegacyParserSetups(tc.params)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("FlattenLegacyParserSetups() = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}

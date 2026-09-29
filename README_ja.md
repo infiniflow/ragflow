@@ -26,16 +26,13 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -62,6 +59,8 @@
 
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
+ローカルにデプロイする場合は、[セルフホスティング](#-セルフホスティング)を参照してください。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -69,18 +68,19 @@
 
 ## 🔥 最新情報
 
-- 2026-06-15 Feishu、Discord、Telegram、Lineなどの複数のチャットチャンネルをサポートします。
-- 2026-04-24 DeepSeek v4 をサポート。
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットにアクセスする公式スキルを提供。
-- 2025-12-26 AIエージェントの「メモリ」機能をサポート。
-- 2025-11-19 Gemini 3 Proをサポートしています。
-- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
-- 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
-- 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
-- 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
-- 2025-08-01 エージェントワークフローとMCPをサポート。
-- 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
-- 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
+- 2026-09-29 RAGFlow 1.0.0-rc1 をリリース。
+
+- 2026-09-10 SitemapによるWebコンテンツの取り込みに対応。
+- 2026-08-19 Knowledge Compilationを導入。ドキュメントおよびデータセット単位でWiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skillsを生成できます。
+- 2026-08-19 Low、Medium、High、Ultraの思考モードを備えたAgentic RAGを導入。
+- 2026-07-02 Google BigQueryデータソースの取り込みと増分同期に対応。
+- 2026-06-29 WhatsApp、DingTalk、WeComのチャットチャネルに対応。
+- 2026-05-26 AgentがWebページを閲覧・操作できるBrowserコンポーネントを追加。
+- 2026-04-21 7種類の組み込みデータ取り込みパイプラインテンプレートを追加。
+- 2026-04-21 Agentアプリの公開、Sandboxでのコード実行、グラフ生成に対応。
+- 2026-04-21 ユーザー単位のメモリ保存と検索に対応。
+
+その他の更新については[リリースノート全文](./docs/release_notes.md)を参照してください。
 
 
 ## 🎉 続きを楽しみに
@@ -95,13 +95,28 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 複雑な形式の非構造化データからの[深い文書理解](./deepdoc/README.md)ベースの知識抽出。
+- 複雑な形式の非構造化データからの深い文書理解ベースの知識抽出。
 - 無限のトークンから"干し草の山の中の針"を見つける。
 
 ### 🍱 **テンプレートベースのチャンク化**
 
 - 知的で解釈しやすい。
 - テンプレートオプションが豊富。
+
+### 🧩 **ナレッジコンパイル（Knowledge Compilation）**
+
+- ドキュメントやデータセットのコンテンツを、Wiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skills などの構造化された成果物に整理します。
+- コンパイルモデルと処理ルールを設定し、成果物の表示、更新、再生成を行えます。
+
+### 🧠 **Agentic Retrieval**
+
+- 複雑な質問を分析し、必要に応じて分解、ナレッジ検索、根拠確認を複数段階で行います。
+- Low、Medium、High、Ultra の思考モードで、質問の複雑さに応じて検索と推論の深さを調整できます。
+
+### ⚙️ **Go ネイティブサービスアーキテクチャ**
+
+- API、Admin、Ingestor、Syncer は統合された Go サービスが提供します。DeepDoc は Go プロセス内で動作し、レイアウト解析、OCR、表認識を担当します。
+- Go サービスは CGO 経由でネイティブ文書解析ライブラリと ONNX Runtime を呼び出します。MCP と Sandbox Executor は必要に応じて有効化できます。
 
 ### 🌱 **ハルシネーションが軽減された根拠のある引用**
 
@@ -122,24 +137,25 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow システムアーキテクチャ" width="1000" />
 </div>
 
 ## 🎬 セルフホスティング
 
-### 📝 必要条件
+### 🐳 Docker デプロイ
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
+#### 📝 Docker デプロイの前提条件
+
+- 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルやその他のオプションコンポーネントでは、追加のリソースが必要になる場合があります。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-ManagedコンテナSandboxを使用する場合のみ必要です。
+
+DockerデプロイではホストへのGoのインストールは不要です。Self-ManagedコンテナSandboxではgVisorのインストールと設定が必要ですが、他のSandboxプロバイダーではRAGFlowホストへのgVisorのインストールは不要です。
 
 > [!TIP]
 > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
 
-### 🚀 サーバーを起動
+#### 🚀 サーバーを起動
 
 1. `vm.max_map_count` >= 262144 であることを確認する:
 
@@ -167,201 +183,133 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
+3. Go リリースタグに切り替え、Docker Compose で事前ビルド済み Go イメージを起動します:
 
 > [!CAUTION]
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-> 以下のコマンドは、RAGFlow Docker イメージの v0.27.2 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.27.2 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
-```bash
+
+   Docker デプロイディレクトリに移動します。
+
+   ```bash
    cd ragflow/docker
+   ```
 
-   git checkout v0.27.2
-   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
-   # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
+   Go v1.0.0-rc1 リリースタグに切り替えます。
 
-   # Use CPU for DeepDoc tasks:
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Go サービスと依存サービスをバックグラウンドで起動します。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> 注意：`v0.22.0` より前のバージョンでは、embedding モデルを含むイメージと、embedding モデルを含まない slim イメージの両方を提供していました。詳細は以下の通りです：
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
-
-   1. サーバーを立ち上げた後、サーバーの状態を確認する:
-
-   ```bash
-   docker logs -f docker-ragflow-cpu-1
    ```
 
-   _以下の出力は、システムが正常に起動したことを確認するものです:_
+   デフォルトの MySQL 構成では、Go イメージのエントリーポイントが最初にデータベース移行を実行し、その後 `bin/ragflow_server` を介して Syncer、Admin、API、Ingestor を起動します。
+
+> RAGFlow オープンソース 1.0 の DeepDoc は、レイアウト解析、OCR、表認識に CPU 推論を使用します。
+
+4. 起動後にサービスの状態と API の準備状況を確認します：
 
    ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
+   docker ps
    ```
 
-   > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
-   >
-2. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
+   上記のコマンドは依存サービスの状態を表示します。RAGFlow 自体には Compose healthcheck が定義されていないため、API で準備状況を確認します：
+
+   ```bash
+   curl -f http://localhost/api/v1/system/healthz
+   ```
+
+   HTTP 200 レスポンスは準備完了を示します。`SVR_WEB_HTTP_PORT` を変更した場合は、ヘルスチェック URL でそのポートを使用してください。起動に失敗した場合は、`docker logs --tail 50 <service>` で該当サービスのログを確認してください。
+
+5. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
 
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
    >
-3. [service_conf.yaml.template](./docker/service_conf.yaml.template) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
+6. RAGFlow にログインした後、モデルプロバイダーページで LLM、Embedding、Reranker を追加し、モデル名、サービスアドレス、API キーを入力します。
 
    > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
    >
 
    _これで初期設定完了！ショーの開幕です！_
 
-## 🔧 コンフィグ
+#### ⚙️ Docker の設定と調整
 
-システムコンフィグに関しては、以下のファイルを管理する必要がある:
+Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームの制限とmacOSの要件については、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
 
-- [.env](./docker/.env): `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` などのシステムの基本設定を保持する。
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): バックエンドのサービスを設定します。
-- [docker-compose.yml](./docker/docker-compose.yml): システムの起動は [docker-compose.yml](./docker/docker-compose.yml) に依存している。
+ドキュメントエンジンの切り替え、設定変更後のサービス再起動、既存データの保持または削除についても、上記のDocker設定ガイドに従ってください。
 
-[.env](./docker/.env) ファイルの変更が [service_conf.yaml.template](./docker/service_conf.yaml.template) ファイルの内容と一致していることを確認する必要があります。
+### 🔨 ソースコードからサービスを起動する方法
 
-> [./docker/README](./docker/README.md) ファイル ./docker/README には、service_conf.yaml.template ファイルで ${ENV_VARS} として使用できる環境設定とサービス構成の詳細な説明が含まれています。
+#### 📝 ソースビルドの前提条件
 
-デフォルトの HTTP サービングポート(80)を更新するには、[docker-compose.yml](./docker/docker-compose.yml) にアクセスして、`80:80` を `<YOUR_SERVING_PORT>:80` に変更します。
-
-> すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
->
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Elasticsearch から Infinity にドキュメントエンジンを切り替えます
-
-RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトルを保存します。［Infinity］に切り替え（https://github.com/infiniflow/infinity/)、次の手順に従います。
-
-1. 実行中のすべてのコンテナを停止するには：
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-   Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
-2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
-3. 起動コンテナ：
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-   > [!WARNING]
-   > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
-   >
-
-## 🔧 ソースコードで Docker イメージを作成
-
-この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-プロキシ環境下にいる場合は、プロキシ引数を指定できます：
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 ソースコードからサービスを起動する方法
-
-1. `uv` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
-
-   ```bash
-   pipx install uv
-   ```
-2. ソースコードをクローンし、Python の依存関係をインストールする:
+1. `go.mod` で指定されたGoバージョン（現在はGo 1.27）、Clang 20、LLD 20、CMake 4.0以降、およびPCRE2開発ファイルをインストールします。GoサービスはCGOとネイティブライブラリに依存し、[build.sh](./build.sh)が必要なビルド設定を行います。
+2. リポジトリをクローンし、必要なネイティブライブラリとモデルファイルを準備してからGoサービスをビルドします:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
    ```
-3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
 
-   `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
-
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
-
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
+   このスクリプトはGoビルドに必要なネイティブライブラリとモデルリソースを準備し、`requests`と`huggingface-hub`を使用します。同じリソースを別の方法で準備済みの場合は、この手順を省略できます。リポジトリルートから起動するとGoサービスは`rag/res/deepdoc`を自動検出します。別のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR`にその絶対パスを設定してください。
+3. Docker Composeで必要な依存サービス（Elasticsearch、MySQL、MinIO、NATS、Kvrocks、ClickHouse）を起動します:
 
    ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
-6. バックエンドサービスを起動する:
+
+   ソースから起動する Go サービスは `localhost:6379` で Kvrocks に接続するため、提供されている設定では `/etc/hosts` の変更は不要です。
+
+4. データベースのマイグレーション後、サービスを順番に起動します。各コマンドはリポジトリのルートから別々のターミナルで実行し、サービス用の4つのターミナルは開いたままにします:
 
    ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-7. フロントエンドの依存関係をインストールする:
+
+   各起動モードの役割は次のとおりです:
+
+   - `--migrate`: データベース移行を実行して終了します。
+   - `--admin`: 管理と初期化を行うAdminサービスを起動します。
+   - `--ingestor`: データ取り込みと解析を行うIngestorサービスを起動します。
+   - `--syncer`: データ同期を行うSyncerサービスを起動します。
+   - `--api`: Web UI、SDK、外部クライアント向けのAPIサービスを起動します。
+
+   `RAGFLOW_DEV_MODE=true`は開発専用です。コードとデータベース移行バージョン間のダウングレードチェックを無効にしますが、移行の実行やスキーマ変更は行いません。本番環境では設定しないでください。Adminを他のサービスより先に起動します。移行後は`RAGFLOW_DEV_MODE=true bash build.sh --run`でAdmin、Ingestor、APIを起動できますが、Syncerは起動しません。完全なサービスチェーンには`RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`を別途実行してください。
+5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールしてReactフロントエンドを起動します:
 
    ```bash
    cd web
    npm install
+   API_PROXY_SCHEME=go npm run dev
    ```
-8. フロントエンドサービスを起動する:
+
+   別のターミナルでGo APIの準備が完了したことを確認します:
 
    ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   _以下の画面で、システムが正常に起動したことを示します:_
+   HTTP 200が返ればAPIは応答しています。開発終了時は各サービスターミナルで`Ctrl+C`を押します。コンテナを保持したまま依存サービスを停止するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` を実行します。名前付きボリュームを保持したまま依存コンテナとComposeネットワークを削除するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` を実行します。
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
 ## 📚 ドキュメンテーション
 

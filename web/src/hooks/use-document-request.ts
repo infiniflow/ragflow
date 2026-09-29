@@ -41,6 +41,10 @@ import {
 } from '@/pages/dataset/dataset/utils';
 import documentStructureService from '@/services/document-structure-service';
 import { buildDocumentIngestPayload } from '@/services/document-ingest-adapter';
+import {
+  adaptDocumentFilter,
+  adaptDocumentRunStatusFilter,
+} from '@/services/document-filter-adapter';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -250,7 +254,7 @@ export const useFetchDocumentList = (loop = true) => {
         },
         {
           suffix: filterValue.type as string[],
-          run_status: run as string[],
+          run_status: adaptDocumentRunStatusFilter(run as string[] | undefined),
           return_empty_metadata: returnEmptyMetadata,
           metadata: filterValue.metadata as Record<string, string[]>,
         },
@@ -401,11 +405,13 @@ export const useGetDocumentFilter = (): {
     }
   };
   return {
-    filter: data?.filter || {
-      run_status: {},
-      suffix: {},
-      metadata: {},
-    },
+    filter: data?.filter
+      ? adaptDocumentFilter(data.filter)
+      : {
+          run_status: {},
+          suffix: {},
+          metadata: {},
+        },
     onOpenChange: handleOpenChange,
   };
 };

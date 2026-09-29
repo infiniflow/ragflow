@@ -10,22 +10,22 @@ The release workflow builds the binaries with `CGO_ENABLED=0`, uploads `SHA256SU
 
 ## Linux And macOS
 
-Use the hosted script:
+Use the script maintained in the RAGFlow repository:
 
 ```sh
-curl -sSfL https://your-domain/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | sh
 ```
 
 Install a specific version:
 
 ```sh
-curl -sSfL https://your-domain/install.sh | VERSION=v1.0.0 sh
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | VERSION=v1.0.0 sh
 ```
 
 Install to a user-writable directory:
 
 ```sh
-curl -sSfL https://your-domain/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 The Unix installer:
@@ -38,11 +38,10 @@ The Unix installer:
 
 ## Windows PowerShell
 
-Use the hosted script:
+Run the repository script in PowerShell:
 
 ```powershell
-iwr https://your-domain/install.ps1 -OutFile install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 | iex
 ```
 Install a specific version:
 
@@ -80,20 +79,5 @@ install.sh
 install.ps1
 ```
 
-## Hosting Options
-
-Use a static domain for the public one-line command:
-
-```text
-https://your-domain/install.sh
-https://your-domain/install.ps1
-```
-
-The same scripts can also be used directly from a GitHub Release asset, for example:
-
-```text
-https://github.com/infiniflow/ragflow/releases/download/v1.0.0/install.sh
-https://github.com/infiniflow/ragflow/releases/download/v1.0.0/install.ps1
-```
-
-By default, both scripts install the latest stable GitHub Release. Set `VERSION` on Unix or `-Version` on Windows to pin a specific release.
+By default, both scripts install the latest stable GitHub Release. Set
+`VERSION` on Unix or `-Version` on Windows to pin a specific release.

@@ -21,8 +21,7 @@ function usage() {
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
-    echo
-    echo "MCP: configure service_conf.yaml or RAGFLOW_MCP_* environment variables."
+
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -131,14 +130,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
-
-# -----------------------------------------------------------------------------
-# Select Nginx Configuration
-# -----------------------------------------------------------------------------
-# This image ships the Go backend only, so the golang config is the only one
-# available.
-NGINX_CONF_DIR="/etc/nginx/conf.d"
-cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
 
 # -----------------------------------------------------------------------------
 # Function(s)

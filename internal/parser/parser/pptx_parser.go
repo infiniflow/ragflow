@@ -161,8 +161,12 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			JSON:         itemsFromPlainText(plainText),
 		}
 	}
-	items, err := buildPPTXJSONSections(irJSON)
+	budget := newEmbeddedMediaBudget()
+	items, err := buildPPTXJSONSections(irJSON, budget)
 	if err != nil {
+		return ParseResult{Err: err}
+	}
+	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if len(items) == 0 || itemsAllEmpty(items) {
@@ -181,5 +185,6 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename, "format": effFormat},
 		JSON:         items,
+		Warnings:     budget.warnings(),
 	}
 }

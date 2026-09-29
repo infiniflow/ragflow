@@ -95,9 +95,9 @@ func TestParser_RunPageWorkers_DeterministicOrder(t *testing.T) {
 	}
 }
 
-func TestDefaultPageWorkersTrackInferenceCapacity(t *testing.T) {
-	if got, budget := defaultPageWorkerCount(), DeepDocConcurrency(); got > budget {
-		t.Fatalf("got %d page workers, want at most %d (process inference budget)", got, budget)
+func TestDefaultPageWorkersMatchPageConcurrency(t *testing.T) {
+	if got := defaultPageWorkerCount(); got != PageConcurrency() {
+		t.Fatalf("defaultPageWorkerCount() = %d, want PageConcurrency() = %d", got, PageConcurrency())
 	}
 }
 
@@ -119,19 +119,24 @@ func TestDeepDocConcurrencyShare(t *testing.T) {
 	}
 }
 
-// TestSetPageWorkerPoolSizeClampsToBudget pins the setter's contract: the page
-// worker pool never grows past the process inference budget, because workers
-// beyond it cannot add throughput — rendering is serialized by pdfsync.Mu and
-// inference by the native gate — and only contend for the CPUs the budget
-// already accounts for.
-func TestSetPageWorkerPoolSizeClampsToBudget(t *testing.T) {
+// TestSetPageWorkerPoolSizeHonorsRequestedSize pins the setter's contract: the
+// page worker pool resizes to the requested size, which is independent of the
+// process inference budget (workers beyond the budget simply queue rendered
+// bitmaps while they wait for an inference slot, so a larger pool does not
+// over-subscribe inference). A non-positive request is floored to 1.
+func TestSetPageWorkerPoolSizeHonorsRequestedSize(t *testing.T) {
 	orig := PageWorkerPoolStats().DesiredWorkers
 	t.Cleanup(func() { parserPageWorkerPool().Resize(orig) })
 
 	budget := DeepDocConcurrency()
 	SetPageWorkerPoolSize(budget + 8)
-	if got := PageWorkerPoolStats().DesiredWorkers; got != budget {
-		t.Fatalf("worker pool resized to %d, want the budget %d", got, budget)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != budget+8 {
+		t.Fatalf("worker pool resized to %d, want %d (no budget clamp)", got, budget+8)
+	}
+
+	SetPageWorkerPoolSize(0)
+	if got := PageWorkerPoolStats().DesiredWorkers; got != 1 {
+		t.Fatalf("worker pool resized to %d, want 1 (floored from 0)", got)
 	}
 }
 

@@ -21,6 +21,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
+
 	"slices"
 	"sort"
 	"strconv"
@@ -30,14 +35,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
-	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/utility"
 )
 
 const (
