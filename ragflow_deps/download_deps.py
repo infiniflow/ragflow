@@ -22,7 +22,7 @@
 #
 # Typical workflow:
 #
-#   uv run python3 ragflow_deps/download_deps.py            # download
+#   uv run ragflow_deps/download_deps.py                    # download
 #   cd ragflow_deps
 #   docker build -f Dockerfile -t infiniflow/ragflow_deps .
 #
@@ -44,15 +44,10 @@ os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
 import nltk
 from huggingface_hub import snapshot_download
 
-# mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
-# FOUR places (with that Go constant, ORT_VERSION in ragflow_deps/download_go_deps.py,
-# and ARG ORT_VERSION in Dockerfile_go) that must carry the same ONNX Runtime
-# native release for the statically-linked Go DeepDoc backend. This file's
-# download URL and extracted dir name are derived from ORT_VERSION here, but
-# there is no single source of truth — keep all four equal. build.sh
-# --check-ort-version greps this file (and the other three) to fail fast on
-# drift. (The Python pip onnxruntime== pin in pyproject.toml is versioned
-# independently and is not part of this check.)
+# This full-resource downloader also carries the Go ONNX Runtime archive pin.
+# Keep it aligned with internal/common, download_go_deps.py, and the ORT_VERSION
+# argument in Dockerfile; build.sh checks all four locations. The Python pip
+# onnxruntime pin in pyproject.toml is independent.
 #
 # Source of the native static archives: infiniflow/ragflow-build (our own
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
