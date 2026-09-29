@@ -72,9 +72,8 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
-# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
-# stale top-level ./nltk_data so this matches what's actually populated.
+# When NLTK data is provisioned into ragflow_deps/nltk_data, use that path
+# instead of the stale top-level ./nltk_data.
 export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
 
 # Function to handle termination signals

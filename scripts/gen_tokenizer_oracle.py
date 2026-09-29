@@ -180,7 +180,7 @@ ORACLES = {
 # the served behaviour comes from tokenizer.json above.
 SPM_MODEL = "huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model"
 
-# The cl100k table as shipped in ragflow_deps (the OpenAI blob download_deps.py fetches).
+# The cl100k table as provisioned in ragflow_deps by build.sh.
 # The Go counter loads this file; tiktoken reads its own cached copy of the same blob, so
 # the check in main() is what keeps the check-out honest about what it ships.
 CL100K_TABLE = "cl100k_base.tiktoken"
@@ -329,7 +329,7 @@ def main() -> int:
         # fail loudly instead, the way the Go loader does.
         table = os.path.join(args.deps, CL100K_TABLE)
         if not os.path.isfile(table):
-            print(f"missing cl100k table: {table}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
+            print(f"missing cl100k table: {table}\nrun `bash build.sh --go` to provision it", file=sys.stderr)
             return 1
         encoder = tiktoken.get_encoding("cl100k_base")
         rows = [{"label": label, "text": text, "ids": encoder.encode(text), "chars": len(text)} for label, text in rows_src]

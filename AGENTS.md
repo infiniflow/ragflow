@@ -104,7 +104,6 @@ Rules:
 ### Backend
 ```bash
 uv sync --python 3.13 --all-extras
-uv run python3 ragflow_deps/download_deps.py
 docker compose -f docker/docker-compose-base.yml up -d
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)

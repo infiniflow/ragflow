@@ -669,7 +669,8 @@ means "what the model does":
    against the model is not tagged in the catalog; it falls back to the calibrated
    path. Guessing a tag is the unsafe direction.
 2. **Nothing is hand-typed.** Fixtures and expected counts come from the model's
-   tokenizer; assets come from `download_deps.py` with a SHA-1 pin.
+   tokenizer; model tokenizer assets come from `download_deps.py` with a SHA-1 pin,
+   while `build.sh` provisions `cl100k_base.tiktoken`.
 3. **Equality, not resemblance** (see above), and the dangerous direction
    (under-count) is the one the tests are shaped around.
 4. **Every approximation is named** in §Known approximations together with the

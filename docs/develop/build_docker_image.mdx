@@ -31,18 +31,18 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
 :::danger IMPORTANT
-- While we also test RAGFlow on ARM64 platforms, we do not maintain RAGFlow Docker images for ARM. However, you can build an image yourself on a `linux/arm64` or `darwin/arm64` host machine as well.
+- The commands below use the published `infiniflow/ragflow_deps:latest` dependency image for AMD64. We do not publish an ARM64 dependency image. An ARM64 build requires a compatible dependency image with the same resources.
 - For ARM64 platforms, please upgrade the `xgboost` version in **pyproject.toml** to `1.6.0` and ensure **unixODBC** is properly installed.
 :::
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/ragflow_deps
-uv run python3 download_deps.py
-docker build -f Dockerfile -t infiniflow/ragflow_deps .
-cd ..
+cd ragflow
+docker pull infiniflow/ragflow_deps:latest
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
+
+`ragflow_deps/download_deps.py` downloads Go native libraries, `.ort` weights, and tokenizer assets. It does not produce the NLTK, Chrome, Tika, and other Python assets required by `ragflow_deps/Dockerfile`. Building the dependency image from a clean checkout therefore requires those assets to be provisioned separately. For a local Go build, follow `internal/development.md`.
 
 ## Launch a RAGFlow Service from Docker for macOS
 
