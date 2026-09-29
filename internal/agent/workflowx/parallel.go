@@ -78,8 +78,7 @@ type parallelOptions struct {
 //
 // n <= 1  — sequential execution on the calling goroutine (no
 // goroutines are spawned for any input length).
-// n  > 1  — bounded fan-out using a semaphore of size n; the first
-// item still runs on the main goroutine.
+// n  > 1  — up to n workers invoke items concurrently.
 //
 // The default is 0 (sequential).
 func WithParallelMaxConcurrency(n int) ParallelOption {
@@ -377,7 +376,7 @@ func runParallelInvoke[I, O any](
 		bridgeState = newParallelBridgeState(prev.ItemCheckpoints)
 	}
 
-	// Run all items. The sequential / semaphore-bounded fan-out
+	// Run all items. The sequential / worker-bounded fan-out
 	// is delegated to runParallelFanout.
 	results := runParallelFanout(ctx, nodeKey, sub, effectiveItems, indicesToProcess, options, bridgeState)
 
@@ -622,17 +621,16 @@ type parallelTaskResult struct {
 
 // runParallelFanout executes the per-item sub-workflow calls
 // according to the configured concurrency policy and returns a
-// channel of results. The channel is closed once every item has
-// reported (success, interrupt, or error).
+// channel of results. On cancellation it reports one error for
+// unscheduled work, then closes after admitted items finish.
 //
 // Concurrency policy:
 //   - maxConcurrency <= 1: strictly sequential, no goroutines
 //     spawned (matches plan §"Concurrency policy" and the P0
 //     acceptance criterion "no goroutine spawns for 0 or 1").
-//   - maxConcurrency > 1: bounded fan-out via a buffered channel
-//     semaphore of size maxConcurrency. The first item runs on
-//     the main goroutine; subsequent items run in worker
-//     goroutines that acquire the semaphore before invoking.
+//   - maxConcurrency > 1: a fixed worker count processes queued
+//     items, so blocked work does not delay admission or create
+//     one goroutine per item.
 //
 // Per-item panics are recovered and surfaced as a normal error
 // wrapped with "item %d:" so the outer lambda never crashes.
@@ -699,25 +697,36 @@ func runParallelFanout[I, O any](
 		return resultCh
 	}
 
-	// Concurrent path. Use a buffered channel semaphore.
-	sem := make(chan struct{}, options.maxConcurrency)
+	// Keep the pending queue no larger than the active worker count.
+	workers := min(options.maxConcurrency, len(indices))
+	jobs := make(chan int, workers)
 	var wg sync.WaitGroup
-	for i, idx := range indices {
-		wg.Add(1)
-		idx := idx
-		if i == 0 {
-			// First task runs on the main goroutine.
-			runOne(idx)
-			wg.Done()
-			continue
-		}
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			runOne(idx)
-		}()
+	for range workers {
+		wg.Go(func() {
+			for idx := range jobs {
+				if err := ctx.Err(); err != nil {
+					resultCh <- parallelTaskResult{index: idx, err: err}
+					continue
+				}
+				runOne(idx)
+			}
+		})
 	}
+	wg.Go(func() {
+		defer close(jobs)
+		for _, idx := range indices {
+			if err := ctx.Err(); err != nil {
+				resultCh <- parallelTaskResult{index: idx, err: err}
+				return
+			}
+			select {
+			case jobs <- idx:
+			case <-ctx.Done():
+				resultCh <- parallelTaskResult{index: idx, err: ctx.Err()}
+				return
+			}
+		}
+	})
 	go func() {
 		wg.Wait()
 		close(resultCh)
