@@ -241,6 +241,38 @@ func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID str
 	return response, common.CodeSuccess, nil
 }
 
+// AudioSpeechForTenant synthesizes audio using a tenant ID supplied by the audio dispatcher.
+func (s *ModelCallService) AudioSpeechForTenant(ctx context.Context, modelRef, tenantID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
+	var target *ModelTarget
+	var code common.ErrorCode
+	var err error
+	if strings.TrimSpace(modelRef) == "" {
+		code = common.CodeNotFound
+		target, err = s.modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeTTS)
+		if err == nil {
+			code = common.CodeSuccess
+		}
+	} else {
+		target, code, err = s.resolveTargetByTenant(ctx, modelRef, tenantID, entity.ModelTypeTTS)
+	}
+	if err != nil {
+		return nil, code, err
+	}
+	if config == nil {
+		config = &modelModule.TTSConfig{}
+	}
+
+	modelName := target.ModelName
+	response, err := target.Driver.AudioSpeech(ctx, &modelName, audioContent, target.APIConfig, config, nil)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty audio speech response")
+	}
+	return response, common.CodeSuccess, nil
+}
+
 // AudioSpeechStream streams synthesized audio from the model selected by
 // modelRef through sender.
 func (s *ModelCallService) AudioSpeechStream(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
@@ -329,6 +361,17 @@ func (s *ModelCallService) ParseFile(ctx context.Context, modelRef, userID strin
 		return nil, common.CodeServerError, errors.New("empty parse file response")
 	}
 	return response, common.CodeSuccess, nil
+}
+
+func (s *ModelCallService) resolveTargetByTenant(ctx context.Context, modelRef, tenantID string, modelType entity.ModelType) (*ModelTarget, common.ErrorCode, error) {
+	if s == nil || s.providerService == nil || s.modelSolver == nil {
+		return nil, common.CodeServerError, errors.New("model call service is not initialized")
+	}
+	target, err := s.modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
+	}
+	return target, common.CodeSuccess, nil
 }
 
 func (s *ModelCallService) resolveTarget(ctx context.Context, modelRef, userID string, modelType entity.ModelType) (*ModelTarget, string, common.ErrorCode, error) {

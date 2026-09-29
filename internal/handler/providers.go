@@ -1015,8 +1015,10 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return
 		}
 	}
-	modelRef := *req.ModelID
-	if req.ModelID == nil {
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
 		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
@@ -1184,8 +1186,10 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	modelRef := *req.ModelID
-	if req.ModelID == nil {
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
 		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
@@ -1249,8 +1253,10 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	modelRef := *req.ModelID
-	if req.ModelID == nil {
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
 		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
@@ -1315,8 +1321,10 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	modelRef := *req.ModelID
-	if req.ModelID == nil {
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
 		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
@@ -1422,8 +1430,10 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	modelRef := *req.ModelID
-	if req.ModelID == nil {
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
 		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 

@@ -24,15 +24,14 @@
 // internal/service. The interface is the minimum surface the audio
 // package needs:
 //
-//   - Synthesize: a single method that the model's audio driver
+//   - AudioSpeechForTenant: a tenant-aware method that the model's audio driver
 //     actually exposes (see internal/entity/models/types.go:32-33
 //     BaseModel.AudioSpeech); everything else (provider lookup,
 //     tenant resolution, fallback model selection) is the model's
 //     own internal responsibility.
 //
 // The audio package does not import internal/service directly; it
-// takes a TTSDispatcher (typically the *service.ModelProviderService
-// instance installed at boot). The function returns a non-nil
+// takes a TTSDispatcher implemented by the model-call service installed at boot. The function returns a non-nil
 // SynthesizeResponse on success and a non-nil error on every
 // failure path; the audio package's caller (modelProviderSynthesizer)
 // maps nil-error-with-empty-audio to ErrSynthesizeEmpty and nil-
@@ -52,9 +51,9 @@ import (
 // from the project's model-call service. Tests can substitute a stub
 // without spinning up a real model driver.
 type TTSDispatcher interface {
-	AudioSpeech(
+	AudioSpeechForTenant(
 		ctx context.Context,
-		modelRef, userID string,
+		modelRef, tenantID string,
 		audioContent *string,
 		config *modelModule.TTSConfig,
 	) (*modelModule.TTSResponse, common.ErrorCode, error)
@@ -113,7 +112,7 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 		}
 
 		text := req.Text
-		resp, code, err := d.AudioSpeech(
+		resp, code, err := d.AudioSpeechForTenant(
 			ctx,
 			modelRef,
 			req.TenantID,

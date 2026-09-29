@@ -16,7 +16,7 @@
 
 // tts_dispatch_test.go — verifies that NewTTSDispatchFunc translates
 // an audio.Synthesize request into the correct
-// ModelProviderService.AudioSpeech call shape and surfaces the
+// tenant-aware model-call dispatch shape and surfaces the
 // model's audio bytes back to the audio package as a
 // SynthesizeResponse.
 
@@ -31,7 +31,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// fakeTTSDispatcher records every AudioSpeech invocation and
+// fakeTTSDispatcher records every tenant-aware audio speech invocation and
 // returns canned responses. Lives only in the test file.
 type fakeTTSDispatcher struct {
 	// Canned return values.
@@ -46,14 +46,14 @@ type fakeTTSDispatcher struct {
 	gotTTSConfig    *modelModule.TTSConfig
 }
 
-func (f *fakeTTSDispatcher) AudioSpeech(
+func (f *fakeTTSDispatcher) AudioSpeechForTenant(
 	ctx context.Context,
-	modelRef, userID string,
+	modelRef, tenantID string,
 	audioContent *string,
 	config *modelModule.TTSConfig,
 ) (*modelModule.TTSResponse, common.ErrorCode, error) {
 	f.gotModelRef = modelRef
-	f.gotUserID = userID
+	f.gotUserID = tenantID
 	f.gotAudioContent = audioContent
 	f.gotTTSConfig = config
 	return f.resp, f.code, f.err
