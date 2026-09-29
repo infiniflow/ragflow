@@ -87,6 +87,8 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 
 ## 🔥 Son Güncellemeler
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 yayımlandı.
+
 - 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
 - 2026-08-19 Belge ve veri kümesi düzeyinde Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills üretmek için Knowledge Compilation tanıtıldı.
 - 2026-08-19 Low, Medium, High ve Ultra düşünme modlarına sahip Agentic RAG tanıtıldı.
@@ -206,12 +208,21 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
+   Docker dağıtım dizinine girin.
+
    ```bash
-   # Docker dağıtım dizinine girin.
    cd ragflow/docker
-   # Go v1.0.0-rc1 sürüm etiketine geçin.
+   ```
+
+   Go v1.0.0-rc1 sürüm etiketine geçin.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
+   ```
+
+   Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -220,7 +231,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -252,6 +263,9 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py

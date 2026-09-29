@@ -69,6 +69,8 @@
 
 ## 🔥 업데이트
 
+- 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
+
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
 - 2026-08-19 Knowledge Compilation을 도입했습니다. 문서 및 데이터셋 수준에서 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills를 생성할 수 있습니다.
 - 2026-08-19 Low, Medium, High, Ultra 사고 모드를 지원하는 Agentic RAG를 도입했습니다.
@@ -191,12 +193,21 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 
 
+   Docker 배포 디렉터리로 이동합니다.
+
    ```bash
-   # Docker 배포 디렉터리로 이동합니다.
    cd ragflow/docker
-   # Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+   ```
+
+   Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
+   ```
+
+   Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -205,7 +216,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -234,6 +245,9 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py

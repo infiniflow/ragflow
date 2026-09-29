@@ -87,6 +87,8 @@
 
 ## 🔥 Последние обновления
 
+- 2026-09-29 Выпущен RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 Добавлен сбор веб-контента через sitemap.
 - 2026-08-19 Представлена Knowledge Compilation для создания Wiki, Graph, Tree, PageIndex, Mind Map, Timeline и Skills на уровне документов и наборов данных.
 - 2026-08-19 Представлен Agentic RAG с режимами рассуждения Low, Medium, High и Ultra.
@@ -205,12 +207,21 @@
 > Все образы собраны под x86. Образов для ARM64 пока нет.
 > Если вы на ARM64, следуйте [этому руководству](https://ragflow.io/docs/dev/build_docker_image), чтобы собрать образ самостоятельно.
 
+   Перейдите в каталог развертывания Docker.
+
    ```bash
-   # Перейдите в каталог развертывания Docker.
    cd ragflow/docker
-   # Переключитесь на тег релиза Go v1.0.0-rc1.
+   ```
+
+   Переключитесь на тег релиза Go v1.0.0-rc1.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Запустите службы Go и их зависимости в фоновом режиме.
+   ```
+
+   Запустите службы Go и их зависимости в фоновом режиме.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -219,7 +230,7 @@
 4. Проверьте статус после запуска:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -250,6 +261,9 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py

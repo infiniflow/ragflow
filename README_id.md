@@ -85,6 +85,8 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 dirilis.
+
 - 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
 - 2026-08-19 Memperkenalkan Knowledge Compilation untuk menghasilkan Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills pada tingkat dokumen dan dataset.
 - 2026-08-19 Memperkenalkan Agentic RAG dengan mode berpikir Low, Medium, High, dan Ultra.
@@ -206,12 +208,21 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 
 
 
+   Masuk ke direktori deployment Docker.
+
    ```bash
-   # Masuk ke direktori deployment Docker.
    cd ragflow/docker
-   # Beralih ke tag rilis Go v1.0.0-rc1.
+   ```
+
+   Beralih ke tag rilis Go v1.0.0-rc1.
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Jalankan layanan Go dan dependensinya di latar belakang.
+   ```
+
+   Jalankan layanan Go dan dependensinya di latar belakang.
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -220,7 +231,7 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -252,6 +263,9 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
@@ -273,9 +287,21 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 

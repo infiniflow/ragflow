@@ -68,6 +68,8 @@
 
 ## 🔥 最新情報
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 をリリース。
+
 - 2026-09-10 SitemapによるWebコンテンツの取り込みに対応。
 - 2026-08-19 Knowledge Compilationを導入。ドキュメントおよびデータセット単位でWiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skillsを生成できます。
 - 2026-08-19 Low、Medium、High、Ultraの思考モードを備えたAgentic RAGを導入。
@@ -189,12 +191,21 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
 
 
+   Docker デプロイディレクトリに移動します。
+
    ```bash
-   # Docker デプロイディレクトリに移動します。
    cd ragflow/docker
-   # Go v1.0.0-rc1 リリースタグに切り替えます。
+   ```
+
+   Go v1.0.0-rc1 リリースタグに切り替えます。
+
+   ```bash
    git checkout v1.0.0-rc1
-   # Go サービスと依存サービスをバックグラウンドで起動します。
+   ```
+
+   Go サービスと依存サービスをバックグラウンドで起動します。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -203,7 +214,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
    1. サーバーを立ち上げた後、サーバーの状態を確認する:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
@@ -234,6 +245,9 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
