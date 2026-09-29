@@ -42,65 +42,17 @@ func TestMergeGeneralUnitsAllowsOneBoundaryOverflow(t *testing.T) {
 	}
 }
 
-func TestMergeSpreadsheetRowsUsesProjectedCapAndSheetBoundary(t *testing.T) {
-	sheetOne := 1
-	sheetTwo := 2
-	rows := []schema.ChunkDoc{
-		{Text: "row-1", DocType: "text", CKType: "table_row", TKNums: intPtr(2), SheetIndex: &sheetOne, RowStart: intPtr(2), RowEnd: intPtr(2), ColStart: intPtr(1), ColEnd: intPtr(2)},
-		{Text: "row-2", DocType: "text", CKType: "table_row", TKNums: intPtr(1), SheetIndex: &sheetOne, RowStart: intPtr(3), RowEnd: intPtr(3), ColStart: intPtr(1), ColEnd: intPtr(2)},
-		{Text: "row-3", DocType: "text", CKType: "table_row", TKNums: intPtr(1), SheetIndex: &sheetTwo, RowStart: intPtr(2), RowEnd: intPtr(2), ColStart: intPtr(1), ColEnd: intPtr(2)},
+// TestSameSpreadsheetTableUsesPositionSheet covers the media-context sheet
+// guard once carried by merged row runs: identity falls through to the
+// positions matrix when the sheet fields are absent.
+func TestSameSpreadsheetTableUsesPositionSheet(t *testing.T) {
+	one := schema.ChunkDoc{Text: "sheet-1", Positions: json.RawMessage(`[[1,2,2,1,2]]`)}
+	two := schema.ChunkDoc{Text: "sheet-2", Positions: json.RawMessage(`[[2,2,2,1,2]]`)}
+	if !sameSpreadsheetTable(one, one) {
+		t.Errorf("same position sheet rejected")
 	}
-
-	got := mergeSpreadsheetRows(rows, 3)
-	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{"row-1\nrow-2", "row-3"}) {
-		t.Fatalf("texts = %q", texts)
-	}
-	if len(got) != 2 || got[0].TKNums == nil || *got[0].TKNums != 3 {
-		t.Fatalf("merged row token count = %#v, want 3", got)
-	}
-	if got[0].RowStart == nil || *got[0].RowStart != 2 || got[0].RowEnd == nil || *got[0].RowEnd != 3 {
-		t.Fatalf("merged row range = start:%v end:%v", got[0].RowStart, got[0].RowEnd)
-	}
-	if got[0].SheetIndex == nil || *got[0].SheetIndex != 1 || got[1].SheetIndex == nil || *got[1].SheetIndex != 2 {
-		t.Fatalf("sheet boundaries not preserved: %#v", got)
-	}
-}
-
-func TestMergeSpreadsheetRowsKeepsOversizedRowAndCapZeroAtomic(t *testing.T) {
-	sheet := 1
-	rows := []schema.ChunkDoc{
-		{Text: "small", DocType: "text", CKType: "table_row", TKNums: intPtr(1), SheetIndex: &sheet, RowStart: intPtr(2), RowEnd: intPtr(2)},
-		{Text: "oversized", DocType: "text", CKType: "table_row", TKNums: intPtr(8), SheetIndex: &sheet, RowStart: intPtr(3), RowEnd: intPtr(3)},
-		{Text: "after", DocType: "text", CKType: "table_row", TKNums: intPtr(1), SheetIndex: &sheet, RowStart: intPtr(4), RowEnd: intPtr(4)},
-	}
-	if got := mergeSpreadsheetRows(rows, 3); !reflect.DeepEqual(generalChunkTexts(got), []string{"small", "oversized", "after"}) {
-		t.Fatalf("oversized texts = %q", generalChunkTexts(got))
-	}
-	if got := mergeSpreadsheetRows(rows, 0); !reflect.DeepEqual(generalChunkTexts(got), []string{"small", "oversized", "after"}) {
-		t.Fatalf("zero-cap texts = %q", generalChunkTexts(got))
-	}
-}
-
-func TestGeneralChunkerSpreadsheetConsumesRowIR(t *testing.T) {
-	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 3})
-	if err != nil {
-		t.Fatalf("NewGeneralChunker: %v", err)
-	}
-	out, err := component.Invoke(t.Context(), nil, map[string]any{
-		"name":          "orders.xlsx",
-		"file_type":     "xlsx",
-		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "ID; Status", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1, "table_id": "sheet-1"},
-			{"text": "ID：A-100; Status：paid", "doc_type_kwd": "text", "ck_type": "table_row", "tk_nums": 2, "sheet_index": 1, "table_id": "sheet-1", "row_start": 2, "row_end": 2},
-			{"text": "ID：A-101; Status：pending", "doc_type_kwd": "text", "ck_type": "table_row", "tk_nums": 1, "sheet_index": 1, "table_id": "sheet-1", "row_start": 3, "row_end": 3},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"ID：A-100; Status：paid\nID：A-101; Status：pending"}) {
-		t.Fatalf("spreadsheet chunks = %q", texts)
+	if sameSpreadsheetTable(one, two) {
+		t.Errorf("different position sheets accepted")
 	}
 }
 
@@ -168,18 +120,6 @@ func TestApplyGeneralOverlapDoesNotAccumulatePositions(t *testing.T) {
 	}
 	if string(got[2].PDFPositions) != string(position(3)) || string(got[2].Positions) != string(position(3)) {
 		t.Fatalf("third overlap chunk accumulated prior positions: pdf=%s positions=%s", got[2].PDFPositions, got[2].Positions)
-	}
-}
-
-func TestMergeSpreadsheetRowsUsesPositionSheetWhenIdentityFieldsAreMissing(t *testing.T) {
-	rows := []schema.ChunkDoc{
-		{Text: "sheet-1-row", DocType: "text", CKType: "table_row", TKNums: intPtr(1), Positions: json.RawMessage(`[[1,2,2,1,2]]`)},
-		{Text: "sheet-2-row", DocType: "text", CKType: "table_row", TKNums: intPtr(1), Positions: json.RawMessage(`[[2,2,2,1,2]]`)},
-	}
-
-	got := mergeSpreadsheetRows(rows, 10)
-	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{"sheet-1-row", "sheet-2-row"}) {
-		t.Fatalf("position-only sheet boundary was lost: texts = %q", texts)
 	}
 }
 

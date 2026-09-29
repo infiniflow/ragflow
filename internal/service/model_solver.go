@@ -62,6 +62,217 @@ func NewModelSolver() *ModelSolver {
 	return &ModelSolver{service: NewModelProviderService()}
 }
 
+// modelInstanceExtra contains the instance fields consumed during model
+// resolution. Other provider-specific fields remain valid and are ignored.
+type modelInstanceExtra struct {
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
+}
+
+// decodeModelInstanceExtra reads only the endpoint fields used for model
+// resolution, allowing existing rows to retain provider-specific JSON values.
+func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
+	if strings.TrimSpace(raw) == "" {
+		return modelInstanceExtra{}, nil
+	}
+
+	var extra modelInstanceExtra
+	if err := json.Unmarshal([]byte(raw), &extra); err != nil {
+		return modelInstanceExtra{}, err
+	}
+	return extra, nil
+}
+
+// parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
+// Returns modelName, instanceName, providerName separately.
+//
+// The composite key is right-anchored: providerName is always the *last*
+// '@'-separated field, instanceName is the second-to-last (when present),
+// and everything to the left is the bare model name. Some model names
+// legitimately contain '@' characters themselves (e.g. LM Studio embedding
+// model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`), which
+// produces composite keys like
+// `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`. When the
+// split yields more than 3 fields we rejoin the leading fields back into the
+// modelName so any embedded '@' characters are preserved verbatim.
+func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
+	parts := strings.Split(compositeName, "@")
+	switch len(parts) {
+	case 3:
+		// Format: model@instance@provider
+		return parts[0], parts[1], parts[2], nil
+	case 2:
+		// Format: model@provider -> instance defaults to "default"
+		return parts[0], "default", parts[1], nil
+	case 1:
+		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
+	}
+	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
+	// component must be preserved in that component instead of being dropped
+	// or assigned to the instance/provider fields.
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
+}
+
+// splitRightAnchoredModelName is a bare-name-tolerant variant of
+// parseModelName used by the Builtin / TEI short-circuit branches in
+// model resolution.
+//
+// Those branches must accept a bare model name (no provider suffix) where
+// parseModelName would return an error, while still preserving any '@'
+// characters embedded in the modelName portion of a multi-segment key.
+// Returns the modelName, instanceName ("default" for the 2-segment form),
+// and providerName ("" for the 1-segment form).
+func splitRightAnchoredModelName(compositeName string) (modelName, instanceName, providerName string) {
+	parts := strings.Split(compositeName, "@")
+	switch len(parts) {
+	case 3:
+		return parts[0], parts[1], parts[2]
+	case 2:
+		// The 2-segment form "model@X" is ambiguous: X could be a provider
+		// suffix (only "Builtin" is recognised by the TEI / Builtin
+		// short-circuits that consume this helper) or part of the model
+		// name itself (e.g. a quantization tag like "q8_0" in
+		// "text-embedding-nomic-embed-text-v1.5@q8_0"). Treat the last
+		// token as a provider only when it actually is one; otherwise
+		// the whole string is the bare model name and the caller falls
+		// through to its non-short-circuit path. The TEI short-circuit's
+		// `modelName == teiModel` exact-match fast path already covers
+		// the bare-default case where the embedded '@' happens to match
+		// the TEI model identifier verbatim.
+		if parts[1] == "Builtin" {
+			return parts[0], "default", parts[1]
+		}
+		return compositeName, "", ""
+	case 1:
+		return parts[0], "", ""
+	}
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
+}
+
+type tenantModelExtra struct {
+	MaxTokens    *int     `json:"max_tokens"`
+	ModelTypes   []string `json:"model_types"`
+	MaxDimension *int     `json:"max_dimension"`
+	MaxBatchSize *int     `json:"max_batch_size"`
+	Dimensions   []int    `json:"dimensions"`
+	Thinking     *bool    `json:"thinking"`
+}
+
+func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel) (*modelModule.Model, error) {
+	if modelInfo == nil || modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
+		return modelInfo, nil
+	}
+
+	var extra tenantModelExtra
+	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
+		return nil, err
+	}
+
+	model := *modelInfo
+	model.ModelTypes = append([]string(nil), modelInfo.ModelTypes...)
+	model.Dimensions = append([]int(nil), modelInfo.Dimensions...)
+	model.Alias = append([]string(nil), modelInfo.Alias...)
+	if modelInfo.ModelTypeMap != nil {
+		model.ModelTypeMap = make(map[string]bool, len(modelInfo.ModelTypeMap))
+		for modelType, enabled := range modelInfo.ModelTypeMap {
+			model.ModelTypeMap[modelType] = enabled
+		}
+	}
+	if modelInfo.Thinking != nil {
+		thinking := *modelInfo.Thinking
+		model.Thinking = &thinking
+	}
+
+	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
+		model.MaxOutput = extra.MaxTokens
+		model.MaxTokens = extra.MaxTokens
+	}
+	if len(extra.ModelTypes) > 0 {
+		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
+		model.ModelTypeMap = make(map[string]bool, len(extra.ModelTypes))
+		for _, modelType := range extra.ModelTypes {
+			model.ModelTypeMap[modelType] = true
+		}
+	}
+	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
+		model.MaxDimension = extra.MaxDimension
+	}
+	if extra.MaxBatchSize != nil && *extra.MaxBatchSize > 0 {
+		model.MaxBatchSize = extra.MaxBatchSize
+	}
+	if len(extra.Dimensions) > 0 {
+		model.Dimensions = append([]int(nil), extra.Dimensions...)
+	}
+	if extra.Thinking != nil {
+		if model.Thinking == nil {
+			model.Thinking = &modelModule.ModelThinking{}
+		}
+		model.Thinking.DefaultValue = *extra.Thinking
+	}
+
+	return &model, nil
+}
+
+func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int) (int, error) {
+	if modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
+		return fallback, nil
+	}
+	var extra tenantModelExtra
+	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
+		return 0, err
+	}
+	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
+		return *extra.MaxTokens, nil
+	}
+	return fallback, nil
+}
+
+func maxTokensFromModelInfo(modelInfo *modelModule.Model, modelType entity.ModelType) int {
+	if modelInfo == nil {
+		return 0
+	}
+	if (modelType == entity.ModelTypeEmbedding || modelType == entity.ModelTypeRerank) && modelInfo.MaxTokens != nil {
+		return *modelInfo.MaxTokens
+	}
+	if modelInfo.MaxOutput != nil {
+		return *modelInfo.MaxOutput
+	}
+	return 0
+}
+
+// modelTargetRef renders a resolved model as the lookups' reference: its
+// tenant_model id, or the composite "model@instance@provider" form.
+func modelTargetRef(target *ModelTarget) string {
+	if target == nil {
+		return ""
+	}
+	if target.ModelID != "" {
+		return target.ModelID
+	}
+	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
+}
+
+// tenantCanReachProviderTenant reports whether userID owns the provider's tenant
+// or is a joined member of it. Mirrors Python's tenant_model_service
+// get_model_config_by_id tenant check (:342-347).
+func (s *ModelSolver) tenantCanReachProviderTenant(ctx context.Context, userID, ownerTenantID string) (bool, error) {
+	if userID == ownerTenantID {
+		return true, nil
+	}
+	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, rel := range userTenants {
+		if rel != nil && rel.TenantID == ownerTenantID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *ModelProviderService) modelSolver() *ModelSolver {
 	return &ModelSolver{service: m}
 }
@@ -370,7 +581,7 @@ func (s *ModelSolver) modelIdentity(ctx context.Context, tenantID string, modelE
 		return nil, fmt.Errorf("%w: provider id=%s not found for model %q", errModelConfigUnavailable, modelEntity.ProviderID, modelRef)
 	}
 
-	allowed, err := s.service.tenantCanReachProviderTenant(ctx, tenantID, providerEntity.TenantID)
+	allowed, err := s.tenantCanReachProviderTenant(ctx, tenantID, providerEntity.TenantID)
 	if err != nil {
 		return nil, err
 	}

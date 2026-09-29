@@ -68,11 +68,11 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 		}
 		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	} else {
-		var err error
-		model, err = e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
+		target, err := e.modelSvc.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, name)
 		if err != nil {
 			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 		}
+		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 	nonEmpty := make([]string, 0, len(texts))
 	for _, t := range texts {

@@ -15,7 +15,6 @@ type DatasetService struct {
 	documentDAO    *dao.DocumentDAO
 	connectorDAO   *dao.ConnectorDAO
 	tenantDAO      *dao.TenantDAO
-	tenantLLMDAO   *dao.TenantLLMDAO
 	pipelineLogDAO *dao.PipelineOperationLogDAO
 	userTenantDAO  *dao.UserTenantDAO
 	taskDAO        *dao.TaskDAO
@@ -38,7 +37,6 @@ func NewDatasetService() *DatasetService {
 		documentDAO:    dao.NewDocumentDAO(),
 		connectorDAO:   dao.NewConnectorDAO(),
 		tenantDAO:      dao.NewTenantDAO(),
-		tenantLLMDAO:   dao.NewTenantLLMDAO(),
 		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
 		taskDAO:        dao.NewTaskDAO(),

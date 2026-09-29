@@ -26,16 +26,13 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -63,6 +60,8 @@
 
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
+로컬 배포는 [자체 호스팅](#-자체-호스팅)을 참조하세요.
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -70,18 +69,17 @@
 
 ## 🔥 업데이트
 
-- 2026-06-15 Feishu, Discord, Telegram, Line 등 다양한 채팅 채널을 지원합니다.
-- 2026-04-24 DeepSeek v4를 지원합니다.
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw를 통해 RAGFlow 데이터셋에 접근하는 공식 스킬 제공.
-- 2025-12-26 AI 에이전트의 '메모리' 기능 지원.
-- 2025-11-19 Gemini 3 Pro를 지원합니다.
-- 2025-11-12 Confluence, S3, Notion, Discord, Google Drive에서 데이터 동기화를 지원합니다.
-- 2025-10-23 문서 파싱 방법으로 MinerU 및 Docling을 지원합니다.
-- 2025-10-15 조정된 데이터 파이프라인 지원.
-- 2025-08-08 OpenAI의 최신 GPT-5 시리즈 모델을 지원합니다.
-- 2025-08-01 에이전트 워크플로우와 MCP를 지원합니다.
-- 2025-05-23 Agent에 Python/JS 코드 실행기 구성 요소를 추가합니다.
-- 2025-03-19 PDF 또는 DOCX 파일 내의 이미지를 이해하기 위해 다중 모드 모델을 사용하는 것을 지원합니다.
+- 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
+- 2026-08-19 Knowledge Compilation을 도입했습니다. 문서 및 데이터셋 수준에서 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills를 생성할 수 있습니다.
+- 2026-08-19 Low, Medium, High, Ultra 사고 모드를 지원하는 Agentic RAG를 도입했습니다.
+- 2026-07-02 Google BigQuery 데이터 소스 수집 및 증분 동기화를 추가했습니다.
+- 2026-06-29 WhatsApp, DingTalk, WeCom 채팅 채널을 추가했습니다.
+- 2026-05-26 Agent가 웹 페이지를 탐색하고 조작할 수 있는 Browser 구성 요소를 추가했습니다.
+- 2026-04-21 기본 제공 데이터 수집 파이프라인 템플릿 7종을 추가했습니다.
+- 2026-04-21 Agent 애플리케이션 게시, Sandbox 코드 실행, 차트 생성을 추가했습니다.
+- 2026-04-21 사용자 수준 메모리 저장 및 검색을 추가했습니다.
+
+자세한 내용은 [전체 릴리스 노트](./docs/release_notes.md)를 참조하세요.
 
 
 ## 🎉 계속 지켜봐 주세요
@@ -96,13 +94,28 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- [심층 문서 이해](./deepdoc/README.md)를 기반으로 복잡한 형식의 비정형 데이터에서 지식을 추출합니다.
+- 심층 문서 이해를 기반으로 복잡한 형식의 비정형 데이터에서 지식을 추출합니다.
 - 문자 그대로 무한한 토큰에서 "데이터 속의 바늘"을 찾아냅니다.
 
 ### 🍱 **템플릿 기반의 chunking**
 
 - 똑똑하고 설명 가능한 방식.
 - 다양한 템플릿 옵션을 제공합니다.
+
+### 🧩 **지식 컴파일(Knowledge Compilation)**
+
+- 문서와 데이터셋의 콘텐츠를 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills 등의 구조화된 지식 산출물로 정리합니다.
+- 컴파일 모델과 처리 규칙을 설정하고 산출물을 확인, 업데이트, 재생성할 수 있습니다.
+
+### 🧠 **Agentic Retrieval**
+
+- 복잡한 질문을 분석하고 필요하면 여러 단계로 질문을 분해하고 지식을 검색하며 근거를 검증합니다.
+- Low, Medium, High, Ultra 사고 모드로 질문 복잡도에 따라 검색 및 추론 깊이를 조절할 수 있습니다.
+
+### ⚙️ **Go 네이티브 서비스 아키텍처**
+
+- 통합 Go 서비스가 API, Admin, Ingestor, Syncer를 제공합니다. DeepDoc은 Go 프로세스 안에서 레이아웃 분석, OCR, 표 인식을 수행합니다.
+- Go 서비스는 CGO를 통해 네이티브 문서 파싱 라이브러리와 ONNX Runtime을 호출합니다. MCP와 Sandbox Executor는 필요할 때 활성화할 수 있습니다.
 
 ### 🌱 **할루시네이션을 줄인 신뢰할 수 있는 인용**
 
@@ -123,24 +136,25 @@
 ## 🔎 시스템 아키텍처
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow 시스템 아키텍처" width="1000" />
 </div>
 
 ## 🎬 자체 호스팅
 
-### 📝 사전 준비 사항
+### 🐳 Docker 배포
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
+#### 📝 Docker 배포 사전 요구 사항
+
+- 권장 시작 구성: CPU 4코어, RAM 16 GB, 사용 가능한 디스크 공간 50 GB. 실제 요구 사항은 문서 엔진, 데이터 양, 파싱 작업, 동시 실행 수에 따라 달라집니다. 로컬 모델과 기타 선택적 구성 요소에는 추가 리소스가 필요할 수 있습니다.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlow의 코드 실행기(샌드박스) 기능을 사용하려는 경우에만 필요합니다.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-Managed 컨테이너 Sandbox를 사용하는 경우에만 필요합니다.
+
+Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Managed 컨테이너 Sandbox는 gVisor 설치와 설정이 필요하지만, 다른 Sandbox 공급자는 RAGFlow 호스트에 gVisor를 설치할 필요가 없습니다.
 
 > [!TIP]
 > 로컬 머신(Windows, Mac, Linux)에 Docker가 설치되지 않은 경우, [Docker 엔진 설치](https://docs.docker.com/engine/install/)를 참조하세요.
 
-### 🚀 서버 시작하기
+#### 🚀 서버 시작하기
 
 1. `vm.max_map_count`가 262144 이상인지 확인하세요:
 
@@ -169,202 +183,112 @@
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
+3. Go 릴리스 태그로 전환하고 사전 빌드된 Go 이미지를 Docker Compose로 시작하세요:
 
 > [!CAUTION]
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 아래 명령어는 RAGFlow Docker 이미지의 v0.27.2 버전을 다운로드합니다. 다양한 RAGFlow 버전에 대한 설명은 다음 표를 참조하십시오. v0.27.2와 다른 RAGFlow 버전을 다운로드하려면, docker/.env 파일에서 RAGFLOW_IMAGE 변수를 적절히 업데이트한 후 docker compose를 사용하여 서버를 시작하십시오.
+
 
    ```bash
+   # Docker 배포 디렉터리로 이동합니다.
    cd ragflow/docker
-
-   git checkout v0.27.2
-   # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
-   # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
-
-   # Use CPU for DeepDoc tasks:
+   # Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+   git checkout v1.0.0-rc1
+   # Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
    docker compose -f docker-compose.yml up -d
+   ```
 
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> 참고: `v0.22.0` 이전 버전에서는 embedding 모델이 포함된 이미지와 embedding 모델이 포함되지 않은 slim 이미지를 모두 제공했습니다. 자세한 내용은 다음과 같습니다:
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
+> RAGFlow 오픈 소스 1.0의 DeepDoc은 레이아웃 분석, OCR, 표 인식에 CPU 추론을 사용합니다.
 
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
-
-   _다음 출력 결과로 시스템이 성공적으로 시작되었음을 확인합니다:_
-
-   ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network abnormal` 오류가 발생할 수 있습니다.
 
 2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
-3. [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일에서 원하는 LLM 팩토리를 `user_default_llm`에 선택하고, `API_KEY` 필드를 해당 API 키로 업데이트하세요.
+3. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
 
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
    _이제 쇼가 시작됩니다!_
 
-## 🔧 설정
+#### ⚙️ Docker 구성 및 조정
 
-시스템 설정과 관련하여 다음 파일들을 관리해야 합니다:
+Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 제한과 macOS 요구 사항은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
 
-- [.env](./docker/.env): `SVR_HTTP_PORT`, `MYSQL_PASSWORD`, `MINIO_PASSWORD`와 같은 시스템의 기본 설정을 포함합니다.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): 백엔드 서비스를 구성합니다.
-- [docker-compose.yml](./docker/docker-compose.yml): 시스템은 [docker-compose.yml](./docker/docker-compose.yml)을 사용하여 시작됩니다.
+문서 엔진 전환, 구성 변경 후 서비스 재시작, 기존 데이터 보존 또는 삭제 작업도 위 Docker 구성 가이드를 따르세요.
 
-[.env](./docker/.env) 파일의 변경 사항이 [service_conf.yaml.template](./docker/service_conf.yaml.template) 파일의 내용과 일치하도록 해야 합니다.
+### 🔨 소스 코드로 서비스를 시작합니다.
 
-> [./docker/README](./docker/README.md) 파일 ./docker/README은 service_conf.yaml.template 파일에서 ${ENV_VARS}로 사용할 수 있는 환경 설정과 서비스 구성에 대한 자세한 설명을 제공합니다.
+#### 📝 소스 빌드 사전 요구 사항
 
-기본 HTTP 서비스 포트(80)를 업데이트하려면 [docker-compose.yml](./docker/docker-compose.yml) 파일에서 `80:80`을 `<YOUR_SERVING_PORT>:80`으로 변경하세요.
+1. `go.mod`에 지정된 Go 버전(현재 Go 1.27), Clang 20, LLD 20, CMake 4.0 이상, PCRE2 개발 파일을 설치합니다. Go 서비스는 CGO와 네이티브 라이브러리에 의존하며 [build.sh](./build.sh)가 필요한 빌드 매개변수를 설정합니다.
 
-> 모든 시스템 구성 업데이트는 적용되기 위해 시스템 재부팅이 필요합니다.
->
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Elasticsearch 에서 Infinity 로 문서 엔진 전환
-
-RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 벡터를 저장합니다. [Infinity]로 전환(https://github.com/infiniflow/infinity/), 다음 절차를 따르십시오.
-
-1. 실행 중인 모든 컨테이너를 중지합니다.
-   ```bash
-   $docker compose-f docker/docker-compose.yml down -v
-   ```
-   Note: `-v` 는 docker 컨테이너의 볼륨을 삭제하고 기존 데이터를 지우며, 이 작업은 컨테이너를 중지하는 것과 동일합니다.
-2. **docker/.env**의 "DOC_ENGINE" 을 "infinity" 로 설정합니다.
-3. 컨테이너 부팅:
-   ```bash
-   $docker compose-f docker/docker-compose.yml up -d
-   ```
-   > [!WARNING]
-   > Linux/arm64 시스템에서 Infinity로 전환하는 것은 공식적으로 지원되지 않습니다.
-
-## 🔧 소스 코드로 Docker 이미지를 컴파일합니다
-
-이 Docker 이미지의 크기는 약 1GB이며, 외부 대형 모델과 임베딩 서비스에 의존합니다.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-프록시 환경인 경우, 프록시 인수를 전달할 수 있습니다：
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 소스 코드로 서비스를 시작합니다.
-
-1. `uv` 와 `pre-commit` 을 설치하거나, 이미 설치된 경우 이 단계를 건너뜁니다:
-
-   ```bash
-   pipx install uv
-   ```
-
-2. 소스 코드를 클론하고 Python 의존성을 설치합니다:
+2. 저장소를 클론하고 빌드에 필요한 네이티브 라이브러리와 모델 파일을 준비한 뒤 Go 서비스를 빌드합니다:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
 
-3. Docker Compose를 사용하여 의존 서비스(MinIO, Elasticsearch, Redis 및 MySQL)를 시작합니다:
+   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+
+3. Docker Compose를 사용하여 필요한 의존 서비스(Elasticsearch, MySQL, MinIO, NATS, Kvrocks, ClickHouse)를 시작합니다:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   `/etc/hosts` 에 다음 줄을 추가하여 **conf/service_conf.yaml** 에 지정된 모든 호스트를 `127.0.0.1` 로 해결합니다:
+   소스에서 실행하는 Go 서비스는 `localhost:6379`로 Kvrocks에 연결하므로 제공된 구성에서는 `/etc/hosts`를 수정할 필요가 없습니다.
 
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
 
-4. HuggingFace에 접근할 수 없는 경우, `HF_ENDPOINT` 환경 변수를 설정하여 미러 사이트를 사용하세요:
+4. 데이터베이스 마이그레이션 후 서비스를 순서대로 시작합니다. 각 명령은 저장소 루트에서 별도의 터미널로 실행하고, 네 개의 서비스 터미널을 계속 열어 둡니다:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
-5. 만약 운영 체제에 jemalloc이 없으면 다음 방식으로 설치하세요:
+   시작 모드의 역할은 다음과 같습니다:
 
-   ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
-   ```
+   - `--migrate`: 데이터베이스 마이그레이션을 실행한 뒤 종료합니다.
+   - `--admin`: 관리 및 초기화 작업을 위한 Admin 서비스를 시작합니다.
+   - `--ingestor`: 데이터 수집 및 파싱 작업을 위한 Ingestor 서비스를 시작합니다.
+   - `--syncer`: 데이터 동기화 작업을 위한 Syncer 서비스를 시작합니다.
+   - `--api`: Web UI, SDK 및 외부 클라이언트를 위한 API 서비스를 시작합니다.
 
-6. 백엔드 서비스를 시작합니다:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-
-7. 프론트엔드 의존성을 설치합니다:
+   `RAGFLOW_DEV_MODE=true`는 개발 전용입니다. 코드 버전과 데이터베이스 마이그레이션 버전 사이의 다운그레이드 검사를 비활성화하지만 마이그레이션을 실행하거나 스키마를 변경하지 않습니다. 프로덕션에서는 설정하지 마세요. Admin을 다른 서비스보다 먼저 시작하세요. 마이그레이션 후 `RAGFLOW_DEV_MODE=true bash build.sh --run`은 Admin, Ingestor, API를 시작하지만 Syncer는 시작하지 않습니다. 전체 서비스 체인에는 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`를 별도로 실행하세요.
+5. 프론트엔드를 개발할 때만 Node.js와 npm을 설치한 다음 React 프론트엔드를 시작합니다:
 
    ```bash
    cd web
    npm install
+   API_PROXY_SCHEME=go npm run dev
    ```
 
-8. 프론트엔드 서비스를 시작합니다:
+   다른 터미널에서 Go API가 준비되었는지 확인합니다:
 
    ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   _다음 인터페이스는 시스템이 성공적으로 시작되었음을 나타냅니다:_
+   HTTP 200 응답은 API가 정상적으로 응답함을 의미합니다. 개발이 끝나면 각 서비스 터미널에서 `Ctrl+C`를 누릅니다. 컨테이너를 유지한 채 의존 서비스를 중지하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`를 실행합니다. 명명된 볼륨을 유지하면서 의존 컨테이너와 Compose 네트워크를 삭제하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`을 실행합니다.
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
-
-9. 개발이 완료된 후 RAGFlow 프론트엔드 및 백엔드 서비스를 중지합니다.
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 
 
 ## 📚 문서

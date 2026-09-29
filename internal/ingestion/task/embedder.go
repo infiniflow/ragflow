@@ -35,6 +35,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/service"
@@ -686,6 +687,7 @@ func newEmbedderResolver(
 // so the concrete resolver is injected here - the task package is the
 // composition root for ingestion runs.
 func init() {
+	modelSolver := service.NewModelSolver()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
@@ -697,6 +699,12 @@ func init() {
 			}
 			return kb.EmbdID, nil
 		},
-		service.NewModelProviderService().GetEmbeddingModel,
+		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
+			target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+			if err != nil {
+				return nil, err
+			}
+			return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
+		},
 	)
 }

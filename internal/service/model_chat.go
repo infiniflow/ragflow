@@ -24,6 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -35,18 +36,19 @@ const streamDoneSentinel = "[DONE]"
 var errStreamDone = errors.New("chat stream done")
 
 func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := m.GetChatModel(ctx, tenantID, modelID)
+	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
 	if err != nil {
 		return nil, err
 	}
-	return chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil)
+	return target.Driver.ChatWithMessages(ctx, target.ModelName, messages, target.APIConfig, config, nil)
 }
 
 func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	chatModel, err := m.GetChatModel(ctx, tenantID, modelID)
+	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
 	if err != nil {
 		return nil, nil, err
 	}
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
 	return ch, errCh, nil
 }
