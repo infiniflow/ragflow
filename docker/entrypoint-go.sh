@@ -154,6 +154,13 @@ function run_go_migrations() {
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
+    if [[ "$db_type" == "postgres" || "$db_type" == "postgresql" ]]; then
+        # Go migrations use MySQL-specific SQL; postgres in-place upgrades use the
+        # shared Python stages (model_type_merge, tenant_model_id_migration).
+        echo "Running model provider table migrations (postgres)..."
+        tools/scripts/run_migrations.sh
+        return 0
+    fi
     echo "Running model provider table migrations..."
     bin/ragflow_server --migrate
 }

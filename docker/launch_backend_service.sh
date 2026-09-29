@@ -248,6 +248,12 @@ run_migrations() {
         return 0
     fi
 
+    if [ "$db_type" = "postgres" ] || [ "$db_type" = "postgresql" ]; then
+        # Go --migrate uses MySQL-specific SQL; postgres upgrades use the Python stages.
+        tools/scripts/run_migrations.sh
+        return 0
+    fi
+
     if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
         # The Go backend owns the model provider tables. --migrate is a
         # standalone action: it runs the migrations and exits, so it is
