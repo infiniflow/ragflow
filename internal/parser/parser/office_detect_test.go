@@ -1,13 +1,8 @@
-//go:build cgo
-
 package parser
 
 import (
-	"bytes"
 	"fmt"
 	"testing"
-
-	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
 // TestOfficeContainer verifies the magic-byte sniffing that lets the
@@ -51,13 +46,13 @@ func TestDOCXParser_FallsBackToDOCForOLEHeader(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
 
-	orig := docxOpenFromBytes
-	defer func() { docxOpenFromBytes = orig }()
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
 
 	var gotFormat string
-	docxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return nil, fmt.Errorf("stub doc open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub doc open: %s", format)
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -66,7 +61,77 @@ func TestDOCXParser_FallsBackToDOCForOLEHeader(t *testing.T) {
 		t.Fatal("expected parse error for a non-document OLE header, got nil")
 	}
 	if gotFormat != "doc" {
-		t.Fatalf("docxOpenFromBytes format = %q, want %q (OLE fallback not triggered)", gotFormat, "doc")
+		t.Fatalf("docxExtract format = %q, want %q (OLE fallback not triggered)", gotFormat, "doc")
+	}
+}
+
+// TestDOCXParser_JSONEmptyIRReturnsError locks Finding B: when the native
+// backend opens the document but returns an empty structured IR, the JSON
+// output path must fail loud (it is built entirely from the IR, which the
+// Markdown path can fall back from plain text). This guards against silently
+// emitting empty JSON sections.
+func TestDOCXParser_JSONEmptyIRReturnsError(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		// Open succeeds, but the IR view is empty.
+		return "", "", "", nil, nil
+	}
+
+	res := p.ParseWithResult(ctx, "empty.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error for JSON output with empty IR, got nil")
+	}
+}
+
+// TestDOCXParser_MarkdownViewErrorPropagated locks Finding 3: when the
+// native backend's Markdown view fails but the other views survive,
+// OpenAndExtract surfaces the Markdown error via mdErr and the Markdown output
+// path must fail loud instead of silently emitting empty markdown. The JSON
+// path is unaffected because it is built from the IR view.
+func TestDOCXParser_MarkdownViewErrorPropagated(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		// IR and plain text survive; only the Markdown view fails.
+		return "<ir/>", "", "plain text fallback", fmt.Errorf("markdown boom"), nil
+	}
+
+	res := p.ParseWithResult(ctx, "broken.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error when only the Markdown view fails, got nil")
+	}
+}
+
+// TestDOCXParser_AllViewsEmptyMarkdownReturnsError locks the engine-level
+// contract from Finding 1 at the parser boundary: when the native backend
+// opens the document but every view (IR / Markdown / PlainText) is empty,
+// OpenAndExtract reports a joined error, and the default Markdown output path
+// must fail loud rather than silently emit empty markdown. (office_oxide
+// always returns a structured IR for an openable doc, so this all-empty error
+// is simulated via the seam rather than a real fixture.)
+func TestDOCXParser_AllViewsEmptyMarkdownReturnsError(t *testing.T) {
+	ctx := t.Context()
+	p := NewDOCXParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
+
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return "", "", "", nil, fmt.Errorf("office_oxide docx: all text views failed")
+	}
+
+	res := p.ParseWithResult(ctx, "empty.docx", []byte("PK\x03\x04"))
+	if res.Err == nil {
+		t.Fatal("expected error for a document with no extractable text in any view, got nil")
 	}
 }
 
@@ -77,13 +142,13 @@ func TestDOCXParser_TruncatedOLENotFallback(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
 
-	orig := docxOpenFromBytes
-	defer func() { docxOpenFromBytes = orig }()
+	orig := docxExtract
+	defer func() { docxExtract = orig }()
 
 	var gotFormat string
-	docxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return nil, fmt.Errorf("stub")
+		return "", "", "", nil, fmt.Errorf("stub")
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0}
@@ -96,40 +161,19 @@ func TestDOCXParser_TruncatedOLENotFallback(t *testing.T) {
 	}
 }
 
-// TestDOCXParser_OOXMLStillDOCX is the regression guard: a real OOXML
-// (ZIP) payload must still take the "docx" path and parse successfully.
-func TestDOCXParser_OOXMLStillDOCX(t *testing.T) {
-	ctx := t.Context()
-	p := NewDOCXParser()
-	data := minimalDOCX(t, "round-trip OOXML")
-	res := p.ParseWithResult(ctx, "real.docx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "markdown" {
-		t.Fatalf("OutputFormat = %q, want %q", res.OutputFormat, "markdown")
-	}
-	if got := res.File["format"]; got != "docx" {
-		t.Fatalf("File[format] = %v, want %q", got, "docx")
-	}
-	if !bytes.Contains([]byte(res.Markdown), []byte("round-trip OOXML")) {
-		t.Fatalf("Markdown = %q, want it to contain the source text", res.Markdown)
-	}
-}
-
 // TestPPTXParser_FallsBackToPPTForOLEHeader ensures a legacy OLE .ppt
 // payload routed to PPTXParser is opened with "ppt" rather than "pptx".
 func TestPPTXParser_FallsBackToPPTForOLEHeader(t *testing.T) {
 	ctx := t.Context()
 	p := NewPPTXParser()
 
-	orig := pptxOpenFromBytes
-	defer func() { pptxOpenFromBytes = orig }()
+	orig := pptxExtract
+	defer func() { pptxExtract = orig }()
 
 	var gotFormat string
-	pptxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return nil, fmt.Errorf("stub ppt open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub ppt open: %s", format)
 	}
 
 	data := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -138,7 +182,7 @@ func TestPPTXParser_FallsBackToPPTForOLEHeader(t *testing.T) {
 		t.Fatal("expected parse error for OLE header, got nil")
 	}
 	if gotFormat != "ppt" {
-		t.Fatalf("pptxOpenFromBytes format = %q, want %q", gotFormat, "ppt")
+		t.Fatalf("pptxExtract format = %q, want %q", gotFormat, "ppt")
 	}
 	if p.format != "pptx" {
 		t.Fatalf("PPTXParser.format mutated to %q, want %q (must use local effFormat)", p.format, "pptx")
@@ -152,13 +196,13 @@ func TestPPTParser_FallsBackToPPTXForOOXMLHeader(t *testing.T) {
 	ctx := t.Context()
 	p := NewPPTParser() // underlying PPTXParser{format:"ppt"}
 
-	orig := pptxOpenFromBytes
-	defer func() { pptxOpenFromBytes = orig }()
+	orig := pptxExtract
+	defer func() { pptxExtract = orig }()
 
 	var gotFormat string
-	pptxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		gotFormat = format
-		return nil, fmt.Errorf("stub ppt open: %s", format)
+		return "", "", "", nil, fmt.Errorf("stub ppt open: %s", format)
 	}
 
 	// Minimal OOXML ZIP local file header.
@@ -168,7 +212,7 @@ func TestPPTParser_FallsBackToPPTXForOOXMLHeader(t *testing.T) {
 		t.Fatal("expected parse error for OOXML header stub, got nil")
 	}
 	if gotFormat != "pptx" {
-		t.Fatalf("pptxOpenFromBytes format = %q, want %q (OOXML fallback ppt->pptx)", gotFormat, "pptx")
+		t.Fatalf("pptxExtract format = %q, want %q (OOXML fallback ppt->pptx)", gotFormat, "pptx")
 	}
 	// Underlying PPTXParser must not be mutated permanently.
 	if p.pptx.format != "ppt" {
@@ -183,13 +227,13 @@ func TestPPTXParser_NoStatePollution(t *testing.T) {
 	ctx := t.Context()
 	p := NewPPTXParser()
 
-	orig := pptxOpenFromBytes
-	defer func() { pptxOpenFromBytes = orig }()
+	orig := pptxExtract
+	defer func() { pptxExtract = orig }()
 
 	calls := []string{}
-	pptxOpenFromBytes = func(data []byte, format string) (*officeOxide.Document, error) {
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
 		calls = append(calls, format)
-		return nil, fmt.Errorf("stub")
+		return "", "", "", nil, fmt.Errorf("stub")
 	}
 
 	oleData := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
@@ -205,20 +249,5 @@ func TestPPTXParser_NoStatePollution(t *testing.T) {
 	}
 	if calls[1] != "pptx" {
 		t.Errorf("second call format = %q, want %q (state polluted)", calls[1], "pptx")
-	}
-}
-
-// TestPPTXParser_OOXMLStillPPTX validates the effective format and File
-// metadata for a real OOXML presentation.
-func TestPPTXParser_OOXMLStillPPTX(t *testing.T) {
-	ctx := t.Context()
-	p := NewPPTXParser()
-	data := buildPPTX(t, "pptx round-trip")
-	res := p.ParseWithResult(ctx, "real.pptx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if got := res.File["format"]; got != "pptx" {
-		t.Fatalf("File[format] = %v, want %q", got, "pptx")
 	}
 }

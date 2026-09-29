@@ -458,8 +458,10 @@ func BuildAskStreamOptions(searchID string, searchConfig map[string]interface{})
 	if value, ok := floatFromSearchConfig(searchConfig["similarity_threshold"]); ok {
 		opts.SimilarityThreshold = &value
 	}
-	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
-		opts.VectorSimilarityWeight = &value
+	keywordsSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "keywords_similarity_weight")
+	vectorSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "vector_similarity_weight")
+	if value, err := ResolveVectorSimilarityWeight(keywordsSimilarityWeight, vectorSimilarityWeight); err == nil && value != nil {
+		opts.VectorSimilarityWeight = value
 	}
 	if llmSetting, ok := searchConfigMapValue(searchConfig["llm_setting"]); ok {
 		opts.Temperature = generationFloat(llmSetting, "temperature", DefaultAskTemperature)
@@ -612,6 +614,9 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		if len(existing) > 0 {
 			return nil, fmt.Errorf("duplicated search name")
 		}
+	}
+	if err := NormalizeSimilarityWeights(req.SearchConfig); err != nil {
+		return nil, err
 	}
 
 	// Step 4: Merge search_config
