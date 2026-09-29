@@ -327,7 +327,7 @@ func HasModelFiles(dir string) bool {
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
-// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// (v1.29.0 <-> ORT 1.29.x) and is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
