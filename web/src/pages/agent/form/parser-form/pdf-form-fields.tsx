@@ -1,5 +1,4 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { useWatch } from 'react-hook-form';
@@ -17,8 +16,6 @@ import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
 export function PdfFormFields({ prefix }: CommonProps) {
-  const isGo = useIsGoBackend();
-
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
   const parseMethod = useWatch({
     name: parseMethodName,
@@ -41,7 +38,8 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
       <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
-      {isGo && <DynamicPageRange prefix={prefix} />}
+      <DynamicPageRange prefix={prefix} />
+
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       <TcadpFormFields prefix={prefix} />
     </>

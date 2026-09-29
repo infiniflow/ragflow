@@ -417,6 +417,50 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
 }
 
+// ASRModel wraps a ModelDriver with speech-to-text configuration.
+type ASRModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewASRModel creates a new ASRModel.
+func NewASRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ASRModel {
+	return &ASRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Transcribe converts audio to text.
+func (m *ASRModel) Transcribe(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage) (*ASRResponse, error) {
+	return m.ModelDriver.TranscribeAudio(ctx, m.ModelName, audioFile, m.APIConfig, config, usage)
+}
+
+// TranscribeWithSender streams transcription results through sender.
+func (m *ASRModel) TranscribeWithSender(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.TranscribeAudioWithSender(ctx, m.ModelName, audioFile, m.APIConfig, config, usage, sender)
+}
+
+// TTSModel wraps a ModelDriver with text-to-speech configuration.
+type TTSModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewTTSModel creates a new TTSModel.
+func NewTTSModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *TTSModel {
+	return &TTSModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Speech converts text to audio.
+func (m *TTSModel) Speech(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage) (*TTSResponse, error) {
+	return m.ModelDriver.AudioSpeech(ctx, m.ModelName, audioContent, m.APIConfig, config, usage)
+}
+
+// SpeechWithSender streams synthesized audio through sender.
+func (m *TTSModel) SpeechWithSender(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.AudioSpeechWithSender(ctx, m.ModelName, audioContent, m.APIConfig, config, usage, sender)
+}
+
 // ToolConfig bundles tool-calling configuration for a ChatModel.
 type ToolConfig struct {
 	Tools           string          // JSON-encoded tools list

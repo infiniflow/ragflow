@@ -254,7 +254,7 @@ COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).
-COPY api/db/init_data/compilation_templates ./api/db/init_data/compilation_templates
+COPY internal/ingestion/knowledge_compile/templates ./internal/ingestion/knowledge_compile/templates
 
 
 # Copy compiled web pages

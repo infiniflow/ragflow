@@ -534,7 +534,7 @@ func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
 // ---------------------------------------------------------------------------
 // Over-limit handling: the marker set, the shrink ladder, and the refusal every
 // embedder shares. The embedding side of this - the loop that trims, calls the
-// driver, and walks the ladder - is EmbeddingModel.EmbedWithinLimit in
+// driver, and walks the ladder - is EmbeddingModel.Embed in
 // internal/entity/models, next to the RerankModel cut it mirrors.
 // ---------------------------------------------------------------------------
 

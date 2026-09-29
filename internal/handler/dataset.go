@@ -1199,10 +1199,20 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 

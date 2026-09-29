@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -60,6 +61,12 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	}
 	if result["parser_id"] != string(entity.ParserTypeGeneral) {
 		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
+	}
+	if got, ok := result["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > 1e-9 {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", result["keywords_similarity_weight"])
+	}
+	if _, exists := result["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
 	}
 }
 

@@ -391,11 +391,7 @@ jobs:
           # Pick the Dockerfile matching the API proxy scheme:
           #   - go  -> Dockerfile  (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
-          #if [ "${API_PROXY_SCHEME}" = "go" ]; then
           DOCKERFILE=Dockerfile
-          #else
-          #  DOCKERFILE=Dockerfile_ci
-          #fi
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
@@ -644,11 +640,7 @@ jobs:
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -662,11 +654,7 @@ jobs:
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
@@ -674,11 +662,7 @@ jobs:
                  # server refuses to boot against the marker it just wrote.
                  echo "RAGFLOW_DEV_MODE=true"
                } >> .env
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -954,11 +938,7 @@ jobs:
           # Pick the Dockerfile matching the API proxy scheme:
           #   - go  -> Dockerfile (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
-          #if [ "${API_PROXY_SCHEME}" = "go" ]; then
           DOCKERFILE=Dockerfile
-          #else
-          #  DOCKERFILE=Dockerfile_ci
-          #fi
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
@@ -1207,11 +1187,7 @@ jobs:
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -1225,11 +1201,7 @@ jobs:
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
@@ -1237,11 +1209,7 @@ jobs:
                  # server refuses to boot against the marker it just wrote.
                  echo "RAGFLOW_DEV_MODE=true"
                } >> .env
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -1704,19 +1672,15 @@ jobs:
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
-                # first, otherwise the engine service never starts. We drop
-                # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
-                # because this job runs the Go tests on the runner host against
-                # the dependency services directly — no server container needed.
-                # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
-                # service; `metadata-mysql` the mysql metadata store.
-                if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
-                else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
-                fi
-                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+                 # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
+                 # first, otherwise the engine service never starts. We drop
+                 # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
+                 # because this job runs the Go tests on the runner host against
+                 # the dependency services directly — no server container needed.
+                 # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                 # service; `metadata-mysql` the mysql metadata store.
+                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
@@ -1727,18 +1691,10 @@ jobs:
           # either yml-interpolation-only or already correct in .env.
                {
                  echo ""
-                if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
-                else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
-                fi
-                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
-              } >> .env
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+               } >> .env
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 

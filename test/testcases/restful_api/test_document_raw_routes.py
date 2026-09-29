@@ -15,6 +15,7 @@
 #
 
 import pytest
+
 from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient

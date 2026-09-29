@@ -1662,7 +1662,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
-		var ttsModel *modelModule.ChatModel
+		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
 				target, ttsErr := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
@@ -1671,7 +1671,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						zap.String("tenant_id", chat.TenantID),
 						zap.Error(ttsErr))
 				} else {
-					ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			}
 		}
@@ -2298,7 +2298,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.EmbeddingModel,
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
-	*modelModule.ChatModel, // TTS model
+	*modelModule.TTSModel, // TTS model
 	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
@@ -2368,12 +2368,12 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// TTS model.
-	var ttsModel *modelModule.ChatModel
+	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
 			target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
 			if err == nil {
-				ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+				ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
 		}
 	}
@@ -2596,7 +2596,7 @@ func cleanTTSText(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 // Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2604,9 +2604,7 @@ func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *model
 	if text == "" {
 		return nil
 	}
-	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
-	)
+	ttsResp, err := ttsModel.Speech(ctx, &text, &modelModule.TTSConfig{Format: "mp3"}, nil)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
 		return nil
@@ -3088,7 +3086,7 @@ func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([]
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Embed inside the model's window: the caller supplies arbitrary text and the
 	// provider rejects an over-window input with 400/20015 instead of truncating it.
-	embeds, err := e.embModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
+	embeds, err := e.embModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3117,7 +3115,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	embModel *modelModule.EmbeddingModel,
 	vectorSimilarityWeight float64,
 	quote bool,
-	ttsModel *modelModule.ChatModel,
+	ttsModel *modelModule.TTSModel,
 	langfuseTraceID string,
 	llmModelConfig map[string]interface{},
 	tenantID string,

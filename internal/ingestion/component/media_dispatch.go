@@ -260,7 +260,8 @@ func maybeDispatchAudio(
 	}
 	defer os.Remove(tmpFile)
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
+	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
+	resp, err := asrModel.Transcribe(ctx, &tmpFile, nil, nil)
 	if err != nil {
 		return parser.ParseResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)

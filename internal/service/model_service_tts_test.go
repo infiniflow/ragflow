@@ -53,9 +53,9 @@ func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-1", nil)
 
-	svc := NewModelProviderService()
+	svc := NewModelCallService()
 	text := "hello"
-	resp, code, err := svc.AudioSpeech(t.Context(), nil, nil, nil, nil, "tenant-1", &text, nil, nil)
+	resp, code, err := svc.AudioSpeech(t.Context(), "", "tenant-1", &text, nil)
 	if err == nil {
 		t.Fatalf("expected error for missing default TTS model, got resp=%v", resp)
 	}
@@ -67,29 +67,6 @@ func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
 	}
 	if resp != nil {
 		t.Errorf("resp = %v, want nil", resp)
-	}
-}
-
-// TestAudioSpeech_PartialNamesRejected verifies the by-name lookup guard:
-// a modelName without provider/instance names (the shape the auto_play
-// dispatch used to send, e.g. "gtts") returns a clear error instead of
-// panicking.
-func TestAudioSpeech_PartialNamesRejected(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	pushServiceDB(t, testDB)
-
-	svc := NewModelProviderService()
-	text := "hello"
-	badModel := "gtts"
-	resp, code, err := svc.AudioSpeech(t.Context(), nil, nil, &badModel, nil, "tenant-1", &text, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for partial model names, got resp=%v", resp)
-	}
-	if !strings.Contains(err.Error(), "provider name, instance name and model name are required") {
-		t.Fatalf("err = %v, want it to mention the required-name guard", err)
-	}
-	if code != common.CodeNotFound {
-		t.Errorf("code = %d, want %d", code, common.CodeNotFound)
 	}
 }
 
