@@ -26,16 +26,13 @@
         <img alt="Çevrimiçi Demo" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Son%20S%C3%BCr%C3%BCm" alt="Son Sürüm">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/Lisans-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="lisans">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -81,6 +78,8 @@
 
 Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
+Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma) bölümüne bakın.
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -88,18 +87,17 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 
 ## 🔥 Son Güncellemeler
 
-- 2026-06-15 Feishu, Discord, Telegram, Line vb. gibi birden fazla sohbet kanalını destekleyin.
-- 2026-04-24 DeepSeek v4 desteği.
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw üzerinden RAGFlow veri setlerine erişmek için resmi bir skill sağlar.
-- 2025-12-26 Yapay zeka ajanı için 'Bellek' desteği eklendi.
-- 2025-11-19 Gemini 3 Pro desteği eklendi.
-- 2025-11-12 Confluence, S3, Notion, Discord, Google Drive'dan veri senkronizasyonu desteği eklendi.
-- 2025-10-23 Doküman ayrıştırma yöntemi olarak MinerU ve Docling desteği eklendi.
-- 2025-10-15 Düzenlenebilir veri alım hattı desteği eklendi.
-- 2025-08-08 OpenAI'ın en yeni GPT-5 serisi modelleri için destek eklendi.
-- 2025-08-01 Ajanlı iş akışı ve MCP desteği eklendi.
-- 2025-05-23 Ajana Python/JavaScript kod çalıştırıcı bileşeni eklendi.
-- 2025-03-19 PDF veya DOCX dosyalarındaki görselleri yorumlamak için çok modlu model desteği eklendi.
+- 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
+- 2026-08-19 Belge ve veri kümesi düzeyinde Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills üretmek için Knowledge Compilation tanıtıldı.
+- 2026-08-19 Low, Medium, High ve Ultra düşünme modlarına sahip Agentic RAG tanıtıldı.
+- 2026-07-02 Google BigQuery veri kaynağı alımı ve artımlı eşitleme eklendi.
+- 2026-06-29 WhatsApp, DingTalk ve WeCom sohbet kanalları eklendi.
+- 2026-05-26 Agent'ların web sayfalarında gezinip işlem yapmasını sağlayan Browser bileşeni eklendi.
+- 2026-04-21 Yedi yerleşik veri alım hattı şablonu eklendi.
+- 2026-04-21 Agent uygulamalarını yayımlama, sandbox kod yürütme ve grafik oluşturma eklendi.
+- 2026-04-21 Kullanıcı düzeyinde bellek depolama ve erişimi eklendi.
+
+Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) bakın.
 
 ## 🎉 Bizi Takip Edin
 
@@ -113,13 +111,28 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 
 ### 🍭 **"Kaliteli girdi, kaliteli çıktı"**
 
-- Karmaşık formatlara sahip yapılandırılmamış verilerden [derin doküman anlayışı](./deepdoc/README.md) tabanlı bilgi çıkarımı.
+- Karmaşık formatlara sahip yapılandırılmamış verilerden derin doküman anlayışı tabanlı bilgi çıkarımı.
 - Kelimenin tam anlamıyla sınırsız token içinde "samanlıkta iğne bulma" yeteneği.
 
 ### 🍱 **Şablon tabanlı parçalama**
 
 - Akıllı ve açıklanabilir.
 - Aralarından seçim yapabileceğiniz çok sayıda şablon seçeneği.
+
+### 🧩 **Bilgi Derleme (Knowledge Compilation)**
+
+- Belge ve veri kümesi içeriğini Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills gibi yapılandırılmış bilgi çıktılarına dönüştürün.
+- Derleme modellerini ve işleme kurallarını yapılandırın; bilgi çıktılarını görüntüleyin, güncelleyin veya yeniden oluşturun.
+
+### 🧠 **Agentic Retrieval**
+
+- Karmaşık soruları analiz edin; gerektiğinde soruları alt parçalara ayırın, bilgi arayın ve kanıtları birden fazla adımda doğrulayın.
+- Low, Medium, High ve Ultra düşünme modlarıyla arama ve akıl yürütme derinliğini sorunun karmaşıklığına göre ayarlayın.
+
+### ⚙️ **Go yerel servis mimarisi**
+
+- API, Admin, Ingestor ve Syncer birleşik bir Go servisi tarafından sunulur. DeepDoc, Go süreci içinde sayfa düzeni analizi, OCR ve tablo tanımayı yürütür.
+- Go servisleri CGO üzerinden yerel belge ayrıştırma kitaplıklarını ve ONNX Runtime'ı çağırır. MCP ve Sandbox Executor gerektiğinde etkinleştirilebilir.
 
 ### 🌱 **Azaltılmış halüsinasyonlarla temellendirilmiş alıntılar**
 
@@ -140,24 +153,25 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 ## 🔎 Sistem Mimarisi
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow sistem mimarisi" width="1000" />
 </div>
 
 ## 🎬 Kendi Sunucusunda Barındırma
 
-### 📝 Ön Koşullar
+### 🐳 Docker Dağıtımı
 
-- CPU >= 4 çekirdek
-- RAM >= 16 GB
-- Disk >= 50 GB
+#### 📝 Docker Dağıtımı Ön Koşulları
+
+- Önerilen başlangıç yapılandırması: 4 CPU çekirdeği, 16 GB RAM ve 50 GB kullanılabilir disk alanı. Gerçek gereksinimler belge motoruna, veri hacmine, ayrıştırma görevlerine ve eşzamanlılığa bağlıdır. Yerel modeller ve diğer isteğe bağlı bileşenler ek kaynak gerektirebilir.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca RAGFlow'un kod çalıştırıcı (sandbox) özelliğini kullanmayı planlıyorsanız gereklidir.
+- [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca Self-Managed kapsayıcı Sandbox kullanılırken gereklidir.
+
+Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kapsayıcı Sandbox, gVisor kurulumu ve yapılandırması gerektirir; diğer Sandbox sağlayıcıları RAGFlow ana makinesinde gVisor gerektirmez.
 
 > [!TIP]
 > Yerel makinenize (Windows, Mac veya Linux) Docker yüklemediyseniz, [Docker Engine Kurulumu](https://docs.docker.com/engine/install/) sayfasına bakın.
 
-### 🚀 Sunucuyu Başlatma
+#### 🚀 Sunucuyu Başlatma
 
 1. `vm.max_map_count` değerinin >= 262144 olduğundan emin olun:
 
@@ -186,206 +200,111 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Önceden oluşturulmuş Docker imajlarını kullanarak sunucuyu başlatın:
+3. Go sürüm etiketine geçin ve önceden oluşturulmuş Go imajını Docker Compose ile başlatın:
 
 > [!CAUTION]
 > Tüm Docker imajları x86 platformları için oluşturulmuştur. Şu anda ARM64 için Docker imajı sunmuyoruz.
 > ARM64 platformundaysanız, sisteminizle uyumlu bir Docker imajı oluşturmak için [bu kılavuzu](https://ragflow.io/docs/dev/build_docker_image) takip edin.
 
-> Aşağıdaki komut RAGFlow Docker imajının `v0.27.2` sürümünü indirir. Farklı RAGFlow sürümleri için aşağıdaki tabloya bakın. `v0.27.2` dışında bir sürüm indirmek için, `docker compose` ile sunucuyu başlatmadan önce **docker/.env** dosyasındaki `RAGFLOW_IMAGE` değişkenini güncelleyin.
-
-```bash
+   ```bash
+   # Docker dağıtım dizinine girin.
    cd ragflow/docker
-
-   git checkout v0.27.2
-   # İsteğe bağlı: Kararlı bir etiket kullanın (sürümler: https://github.com/infiniflow/ragflow/releases)
-   # Bu adım, koddaki **entrypoint.sh** dosyasının Docker imaj sürümüyle eşleşmesini sağlar.
-
-   # DeepDoc görevleri için CPU kullanımı:
+   # Go v1.0.0-rc1 sürüm etiketine geçin.
+   git checkout v1.0.0-rc1
+   # Go hizmetlerini ve bağımlılıklarını arka planda başlatın.
    docker compose -f docker-compose.yml up -d
+   ```
 
-   # DeepDoc görevlerini hızlandırmak için GPU kullanımı:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> Not: `v0.22.0` öncesinde hem gömme modelleri içeren imajlar hem de gömme modelleri içermeyen ince (slim) imajlar sunuyorduk. Detaylar aşağıdadır:
-
-| RAGFlow imaj etiketi | İmaj boyutu (GB) | Gömme modelleri var mı? | Kararlı mı?    |
-|-----------------------|-------------------|-------------------------|-----------------|
-| v0.21.1               | &approx;9        | ✔️                      | Kararlı sürüm   |
-| v0.21.1-slim          | &approx;2        | ❌                       | Kararlı sürüm   |
-
-> `v0.22.0`'dan itibaren yalnızca ince (slim) sürümü sunuyoruz ve imaj etiketine artık **-slim** son eki eklemiyoruz.
+> RAGFlow açık kaynak 1.0 sürümünde DeepDoc, düzen analizi, OCR ve tablo tanıma için CPU çıkarımı kullanır.
 
 4. Sunucu çalışır duruma geldikten sonra sunucu durumunu kontrol edin:
 
    ```bash
-   docker logs -f docker-ragflow-cpu-1
+   docker compose -f docker-compose.yml ps
+   curl -f http://localhost/api/v1/system/healthz
    ```
 
-   _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
-
-   ```bash
-
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
-   ```
-
-   > Bu onay adımını atlayıp doğrudan RAGFlow'a giriş yaparsanız, o anda RAGFlow tam olarak başlatılmamış olabileceğinden
-   > tarayıcınız `ağ hatası` uyarısı verebilir.
-   >
 5. Web tarayıcınıza sunucunuzun IP adresini girin ve RAGFlow'a giriş yapın.
 
    > Varsayılan ayarlarla, yalnızca `http://MAKİNENİZİN_IP_ADRESİ` girmeniz yeterlidir (port numarası **gerekmez**),
    > çünkü varsayılan HTTP sunucu portu `80` varsayılan yapılandırmalar kullanıldığında ihmal edilebilir.
    >
-6. [service_conf.yaml.template](./docker/service_conf.yaml.template) dosyasında, `user_default_llm` içinde istediğiniz LLM sağlayıcısını seçin ve
-   `API_KEY` alanını ilgili API anahtarıyla güncelleyin.
+6. RAGFlow'a giriş yaptıktan sonra model sağlayıcıları sayfasından LLM, embedding modeli ve reranker ekleyin; model adını, servis adresini ve API anahtarını girin.
 
    > Daha fazla bilgi için [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) sayfasına bakın.
    >
 
    _Gösteri başlasın!_
 
-## 🔧 Yapılandırmalar
+#### ⚙️ Docker Yapılandırması ve Ayarlama
 
-Sistem yapılandırmaları söz konusu olduğunda, aşağıdaki dosyaları yönetmeniz gerekecektir:
+Go Docker dağıtımı `docker/.env` ve `docker/docker-compose.yml` dosyalarını kullanır; önbellek ve Checkpoint depolaması için Kvrocks, mesaj kuyruğu olarak da NATS JetStream kullanılır. İmajı, bağlantı noktalarını, parolaları, belge motorunu ve model imajı kaynağını değiştirmek için [Docker yapılandırma kılavuzunu](./docker/README.md) izleyin. Platform sınırlamaları ve macOS gereksinimleri için [Go Docker imajı oluşturma ve platform desteği kılavuzuna](./docs/develop/build_docker_image.mdx) bakın.
 
-- [.env](./docker/.env): `SVR_HTTP_PORT`, `MYSQL_PASSWORD` ve `MINIO_PASSWORD` gibi temel sistem ayarlarını içerir.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): Arka uç hizmetlerini yapılandırır. Bu dosyadaki ortam değişkenleri, Docker konteyneri başladığında otomatik olarak doldurulacaktır. Docker konteyneri içinde ayarlanan tüm ortam değişkenleri kullanıma hazır olacak ve hizmet davranışını dağıtım ortamına göre özelleştirmenize olanak tanıyacaktır.
-- [docker-compose.yml](./docker/docker-compose.yml): Sistem, başlatılmak için [docker-compose.yml](./docker/docker-compose.yml) dosyasına dayanır.
+Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetleri yeniden başlatma ve mevcut verileri koruma veya temizleme işlemleri için de yukarıdaki Docker yapılandırma kılavuzunu izleyin.
 
-> [./docker/README](./docker/README.md) dosyası, [service_conf.yaml.template](./docker/service_conf.yaml.template) dosyasında `${ENV_VARS}` olarak kullanılabilen ortam ayarları ve hizmet yapılandırmalarının ayrıntılı bir açıklamasını sağlar.
+### 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
 
-Varsayılan HTTP sunucu portunu (80) değiştirmek için [docker-compose.yml](./docker/docker-compose.yml) dosyasında `80:80` ifadesini `<SUNUCU_PORTUNUZ>:80` olarak değiştirin.
+#### 📝 Kaynaktan Derleme Ön Koşulları
 
-Yukarıdaki yapılandırma değişikliklerinin etkili olması için tüm konteynerlerin yeniden başlatılması gerekir:
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Doküman Motorunu Elasticsearch'ten Infinity'ye Geçirme
-
-RAGFlow varsayılan olarak tam metin ve vektörlerin depolanması için Elasticsearch kullanır. [Infinity](https://github.com/infiniflow/infinity/)'ye geçmek için şu adımları izleyin:
-
-1. Çalışan tüm konteynerleri durdurun:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> `-v` seçeneği Docker konteyner birimlerini silecek ve mevcut veriler temizlenecektir.
-
-2. **docker/.env** dosyasında `DOC_ENGINE` değerini `infinity` olarak ayarlayın.
-3. Konteynerleri başlatın:
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Linux/arm64 makinesinde Infinity'ye geçiş henüz resmi olarak desteklenmemektedir.
-
-## 🔧 Docker İmajı Oluşturma
-
-Bu imaj yaklaşık 2 GB boyutundadır ve harici LLM ile gömme hizmetlerine bağlıdır.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Veya bir proxy arkasındaysanız, proxy parametrelerini iletebilirsiniz:
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://PROXY_ADRESINIZ:PORT \
-  --build-arg https_proxy=http://PROXY_ADRESINIZ:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 Geliştirme İçin Kaynaktan Hizmet Başlatma
-
-1. `uv` yükleyin veya zaten yüklüyse bu adımı atlayın:
-
-   ```bash
-   pipx install uv
-   ```
-2. Kaynak kodunu klonlayın ve Python bağımlılıklarını yükleyin:
+1. `go.mod` dosyasında belirtilen Go sürümünü (şu anda Go 1.27), Clang 20, LLD 20, CMake 4.0 veya üzerini ve PCRE2 geliştirme dosyalarını yükleyin. Go hizmetleri CGO ve yerel kitaplıklara bağlıdır; [build.sh](./build.sh) gerekli derleme parametrelerini ayarlar.
+2. Depoyu klonlayın, gerekli yerel kitaplıkları ve model dosyalarını hazırlayın, ardından Go hizmetlerini derleyin:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   python3 -m venv /tmp/ragflow-go-download-venv
+   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   bash build.sh --all
    ```
-3. Bağımlı hizmetleri (MinIO, Elasticsearch, Redis ve MySQL) Docker Compose kullanarak başlatın:
+
+   Betik, Go derlemesi için gerekli yerel kitaplıkları ve model kaynaklarını hazırlar ve `requests` ile `huggingface-hub` gerektirir. Aynı kaynakları başka bir yöntemle hazırladıysanız bu adımı atlayabilirsiniz. Depo kökünden başlatıldığında Go hizmetleri `rag/res/deepdoc` dizinini otomatik olarak bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini mutlak yola ayarlayın.
+3. Gerekli bağımlılıkları (Elasticsearch, MySQL, MinIO, NATS, Kvrocks ve ClickHouse) Docker Compose ile başlatın:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
+     up -d --wait es01 mysql minio nats kvrocks clickhouse
    ```
 
-   **docker/.env** dosyasında belirtilen tüm ana bilgisayar adlarını `127.0.0.1`'e çözümlemek için `/etc/hosts` dosyasına aşağıdaki satırı ekleyin:
+   Kaynaktan çalıştırılan Go hizmetleri Kvrocks'a `localhost:6379` üzerinden bağlanır; sağlanan yapılandırmada `/etc/hosts` değişikliği gerekmez.
 
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. HuggingFace'e erişemiyorsanız, bir ayna site kullanmak için `HF_ENDPOINT` ortam değişkenini ayarlayın:
-
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-5. İşletim sisteminizde jemalloc yoksa, aşağıdaki şekilde yükleyin:
+4. Veritabanı geçişinden sonra hizmetleri belirtilen sırayla başlatın. Her komutu deponun kök dizininden ayrı bir terminalde çalıştırın ve dört hizmet terminalini açık bırakın:
 
    ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
+   ./bin/ragflow_server --migrate
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
-6. Arka uç hizmetini başlatın:
 
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-7. Ön yüz bağımlılıklarını yükleyin:
+   Başlatma modları şu şekilde çalışır:
+
+   - `--migrate`: Veritabanı geçişlerini çalıştırır ve tamamlanınca çıkar.
+   - `--admin`: Yönetim ve başlatma işlemleri için Admin hizmetini başlatır.
+   - `--ingestor`: Veri alımı ve ayrıştırma görevleri için Ingestor hizmetini başlatır.
+   - `--syncer`: Veri eşitleme görevleri için Syncer hizmetini başlatır.
+   - `--api`: Web UI, SDK'lar ve harici istemciler için API hizmetini başlatır.
+
+   `RAGFLOW_DEV_MODE=true` yalnızca geliştirme içindir. Kod sürümü ile veritabanı geçiş sürümü arasındaki sürüm düşürme denetimini devre dışı bırakır ancak geçiş çalıştırmaz veya şemayı değiştirmez. Üretimde kullanmayın. Admin'i diğer hizmetlerden önce başlatın. Geçişten sonra `RAGFLOW_DEV_MODE=true bash build.sh --run` Admin, Ingestor ve API'yi başlatır ancak Syncer'ı başlatmaz; tam hizmet zinciri için `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` komutunu ayrıca çalıştırın.
+5. Yalnızca ön yüz geliştirirken Node.js ve npm'i yükleyin, ardından React ön yüzünü başlatın:
 
    ```bash
    cd web
    npm install
+   API_PROXY_SCHEME=go npm run dev
    ```
-8. Ön yüz hizmetini başlatın:
+
+   Başka bir terminalde Go API'nin hazır olduğunu doğrulayın:
 
    ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   _Aşağıdaki çıktı, sistemin başarıyla başlatıldığını onaylar:_
+   HTTP 200 yanıtı API'nin yanıt verdiğini gösterir. Geliştirme tamamlandığında her hizmet terminalinde `Ctrl+C` tuşlarına basın. Kapsayıcıları koruyarak bağımlılıkları durdurmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` komutunu çalıştırın. Adlandırılmış birimleri koruyarak bağımlılık kapsayıcılarını ve Compose ağını kaldırmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` komutunu çalıştırın.
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Geliştirme tamamlandıktan sonra RAGFlow ön yüz ve arka uç hizmetini durdurun:
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+Ayrıntılar için [Hizmeti Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
 ## 📚 Dokümantasyon
 
