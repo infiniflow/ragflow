@@ -19,12 +19,19 @@ import (
 	"go.uber.org/zap"
 )
 
+// BatchUpdateDocumentStatus changes the lifecycle status (RUNNING /
+// CANCELLED) of the given document IDs in bulk, scoped to datasetID. The
+// caller must have access to the dataset (owning tenant or TEAM-permission
+// member) per kbDAO.Accessible; non-owners receive a CodeDataError with
+// "you don't own the dataset". The kb is loaded separately via GetByID so
+// the per-document processing below can use kb.TenantID unchanged.
+//
+// The per-document results are returned as a map keyed by document ID;
+// entries that could not be processed carry an {"error": ...} sub-map.
+// Returns CodeServerError + "partial failure" if at least one document
+// failed (the result map is still populated for callers that want to
+// surface per-row outcomes).
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	// Tenant authorization: GetByIDAndTenantID compares the dataset's tenant_id
-	// to its second argument, but here the caller passes userID. Resolve the
-	// ownership via Accessible (matches DeleteDocuments / GetDocumentPreview)
-	// and load the kb separately so subsequent code can keep using kb.TenantID
-	// (#20411).
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
@@ -115,13 +122,22 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	return result, common.CodeSuccess, nil
 }
 
+// UpdateDatasetDocument applies a partial update to the given documentID
+// inside datasetID. The `present` map carries the set of top-level JSON keys
+// actually present in the request body so the validator can distinguish
+// "field omitted" (no-op) from "field set to zero value" (apply zero). The
+// caller must have access to the dataset (owning tenant or TEAM-permission
+// member) per kbDAO.Accessible; non-owners receive a CodeDataError with
+// "you don't own the dataset". Counter fields (chunk_count, token_num,
+// progress, etc.) cannot be mutated by this path — those are managed by
+// the ingestion pipeline and rejected via validateDatasetDocumentUpdate.
+//
+// Returns the persisted response (current document state after the
+// partial update, or an empty response if nothing changed) along with the
+// error code and any error. Caller-side authorization is enforced here;
+// the document's own row is also validated to belong to datasetID via
+// GetByDocumentIDAndDatasetID as a second line of defence.
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	// Tenant authorization: GetByIDAndTenantID compares the dataset's tenant_id
-	// to its second argument; the previous code passed userID through a variable
-	// named tenantID, which only happened to work when userID happened to equal
-	// the dataset's tenant_id. Resolve ownership via Accessible (matches
-	// DeleteDocuments / GetDocumentPreview) and load the kb separately so the
-	// rest of the function can keep using kb.TenantID (#20411).
 	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("you don't own the dataset")
 	}
