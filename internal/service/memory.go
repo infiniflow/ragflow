@@ -921,7 +921,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
-	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+	if s.docEngine != nil && (engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType())) {
 		if err := s.docEngine.DropChunkStore(ctx, MemoryIndexName(memory.TenantID), memoryID); err != nil {
 			return fmt.Errorf("delete memory messages: %w", err)
 		}
@@ -956,9 +956,9 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	updates := map[string]interface{}{
 		"forget_at": forgetTime,
 	}
-	// OceanBase/SeekDB memory tables contain forget_at but no forget_at_flt.
-	// Keep the existing companion-field update for other engines.
-	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+	// OceanBase/SeekDB/Vastbase memory tables contain forget_at but no
+	// forget_at_flt. Keep the existing companion-field update for other engines.
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) && !engine.IsVastbase(s.docEngine.GetType()) {
 		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{

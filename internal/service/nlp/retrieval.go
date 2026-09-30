@@ -454,6 +454,9 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 	qb := GetQueryBuilder()
 	useInfinity := engine.GetEngineType() == "infinity"
 	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
+	// Vastbase fusion returns a single fused score per chunk, so the
+	// tsim/vsim decomposition below needs the local rerank — same as OB.
+	useVastbase := engine.IsVastbase(s.docEngine.GetType())
 
 	if req.RerankModel != nil && searchResult.Total > 0 {
 		return RerankByModel(
@@ -487,7 +490,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		return sim, sim, sim, nil
 	}
 
-	if useOceanBase {
+	if useOceanBase || useVastbase {
 		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
@@ -783,7 +786,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if engine.GetEngineType() == "elasticsearch" || engine.IsOceanBaseFamily(engine.GetEngineType()) {
+			if engine.GetEngineType() == "elasticsearch" || engine.IsOceanBaseFamily(engine.GetEngineType()) || engine.IsVastbase(engine.GetEngineType()) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

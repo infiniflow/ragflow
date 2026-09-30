@@ -29,6 +29,7 @@ type DocEngineConfig struct {
 	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
 	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
 	SereneDB  SereneDBConfig      `mapstructure:"serenedb"`
+	Vastbase  VastbaseConfig      `mapstructure:"vastbase"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -78,13 +79,75 @@ type SereneDBConfig struct {
 	SSLMode string `mapstructure:"ssl_mode"`
 }
 
+// VastbaseConfig Vastbase G100 configuration. Vastbase is PostgreSQL-wire
+// based (database/sql + lib/pq). DBCompatibility selects the compatibility
+// mode of the instance: "PG" (pgvector-style <=> cosine distance, GIN
+// to_tsvector full-text index) or "B" (Oracle-flavored <+> distance operator,
+// per-column ADD INDEX USING "fulltext").
+type VastbaseConfig struct {
+	Host            string `mapstructure:"host"`
+	Port            int    `mapstructure:"port"`
+	User            string `mapstructure:"user"`
+	Password        string `mapstructure:"password"`
+	DBName          string `mapstructure:"db_name"`
+	DBCompatibility string `mapstructure:"dbcompatibility"`
+	SSLMode         string `mapstructure:"ssl_mode"`
+}
+
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
 	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
+	c.parseVastbaseConfig(v)
 	return nil
+}
+
+func (c *Config) parseVastbaseConfig(v *viper.Viper) {
+	// Default Vastbase config
+	c.docEngine.Vastbase.Host = "vastbase"
+	c.docEngine.Vastbase.Port = 5432
+	c.docEngine.Vastbase.User = "ragflow"
+	c.docEngine.Vastbase.Password = "Infini_Rag@123"
+	c.docEngine.Vastbase.DBName = "ragflow"
+	c.docEngine.Vastbase.DBCompatibility = "PG"
+	c.docEngine.Vastbase.SSLMode = "disable"
+
+	if !v.IsSet("vastbase") {
+		return
+	}
+	sub := v.Sub("vastbase")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("host") {
+		c.docEngine.Vastbase.Host = sub.GetString("host")
+	}
+	if sub.IsSet("port") {
+		c.docEngine.Vastbase.Port = sub.GetInt("port")
+	}
+	if sub.IsSet("user") {
+		c.docEngine.Vastbase.User = sub.GetString("user")
+	}
+	if sub.IsSet("password") {
+		c.docEngine.Vastbase.Password = sub.GetString("password")
+	}
+	if sub.IsSet("db_name") {
+		c.docEngine.Vastbase.DBName = sub.GetString("db_name")
+	}
+	if sub.IsSet("dbcompatibility") {
+		c.docEngine.Vastbase.DBCompatibility = sub.GetString("dbcompatibility")
+	}
+	if sub.IsSet("ssl_mode") {
+		c.docEngine.Vastbase.SSLMode = sub.GetString("ssl_mode")
+	}
+
+	c.docEngine.Vastbase.DBCompatibility = strings.ToUpper(strings.TrimSpace(c.docEngine.Vastbase.DBCompatibility))
+	if c.docEngine.Vastbase.DBCompatibility != "B" {
+		c.docEngine.Vastbase.DBCompatibility = "PG"
+	}
 }
 
 func (c *Config) parseSereneDBConfig(v *viper.Viper) {
@@ -324,4 +387,20 @@ func (i InfinityConfig) ExportConfigs() map[string]interface{} {
 
 func (c *Config) GetSereneDBConfig() SereneDBConfig {
 	return c.docEngine.SereneDB
+}
+
+func (c *Config) GetVastbaseConfig() VastbaseConfig {
+	return c.docEngine.Vastbase
+}
+
+func (v VastbaseConfig) ExportConfigs() map[string]interface{} {
+	return map[string]interface{}{
+		"host":            v.Host,
+		"port":            v.Port,
+		"user":            v.User,
+		"password":        v.Password,
+		"db_name":         v.DBName,
+		"dbcompatibility": v.DBCompatibility,
+		"ssl_mode":        v.SSLMode,
+	}
 }

@@ -74,6 +74,14 @@ oceanbase:
     password: 'infini_rag_flow'
     host: 'localhost'
     port: 2881
+vastbase:
+  host: 'localhost'
+  port: 5432
+  user: 'ragflow'
+  password: 'Infini_Rag@123'
+  db_name: 'ragflow'
+  dbcompatibility: 'B'
+  ssl_mode: 'disable'
 kvrocks:
   db: 1
   username: ''
