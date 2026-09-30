@@ -1,48 +1,78 @@
 ---
-sidebar_position: 1
-title: Database Schema and Migration
-sidebar_label: Database Schema and Migration
+sidebar_position: 3
+title: Database Migration for Docker Deployments (v1.0.0-rc1 and Later)
+sidebar_label: Docker Database Migration (v1.0.0-rc1+)
 slug: /database_schema_and_migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Database Schema and Migration
+# Database Migration for Docker Deployments (v1.0.0-rc1 and Later)
 
-For a manually started Go backend, run database migration as a standalone step before starting any server process:
+:::info Version scope
+This document applies to RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade to v1.0.0-rc1](./upgrade_guide.md).
+:::
+
+The standard Docker startup process runs the required database migration before starting the RAGFlow services. Start one application replica first and wait for its migration to finish before starting additional replicas.
+
+## Before upgrading
+
+1. Stop document imports, parsing jobs, data-source synchronization, and other processes that can write data.
+2. Back up the metadata database and all other persistent data from the same stopped deployment. Verify that the backup can be restored. See [Backup and Migration (v1.0.0-rc1 and Later)](./backup_and_migration.md).
+3. Use the Docker Compose files, environment template, and image shipped with the target release. Copy the required settings from the existing deployment into the new template.
+4. Keep enough free time in the maintenance window for schema changes and data backfills. Large databases can take longer to migrate.
+
+## Run the migration
+
+Stop the existing deployment while preserving its volumes:
 
 ```bash
-./bin/ragflow_server --migrate
+docker compose --env-file docker/.env -f docker/docker-compose.yml down
 ```
 
-The command loads the same database configuration as the Go server, applies schema and data changes, then exits. Use `-f` or `--config` to select a configuration file when needed. Do not combine `--migrate` with `--admin`, `--api`, `--ingestor`, or `--syncer`. Allow enough time for data backfills and schema changes on large databases.
+This command stops and removes the containers while retaining the Compose project's named volumes.
 
-The migration process does not start a server mode or initialize the document engine, Kvrocks cache, object storage, or NATS JetStream message queue. It needs access to the configured metadata database and local configuration files. Run it where `conf/models` is available: database initialization loads the model provider definitions from that relative path and fails if the directory cannot be read. The model data migration also tries to read `conf/llm_factories.json`; if the file is absent or unreadable, that input is skipped. Keep the matching configuration files with the new binary.
+After installing the target release files and updating `docker/.env`, start the deployment:
 
-## Where migrations are defined
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
+```
 
-Go migration logic lives in `internal/dao/`. `database.go` runs the migration sequence: manual changes in `migration.go` and related files, GORM `AutoMigrate` for the Go entities in `internal/entity/`, and the conversation history backfill. Model provider data migration is in `model_migration.go`; its version handling is in `migration_version.go`. These are Go source files, not a directory of generated, numbered SQL migration files.
+The container entrypoint runs the database migration before starting the enabled server modes. In a deployment with multiple replicas, allow one migration attempt to finish before starting the remaining replicas.
 
-The standalone command runs the full sequence. Ordinary server startup connects to the database and may create or update a limited set of runtime tables, but does not run the full manual and data migration sequence. Do not rely on server startup to perform an upgrade.
+## Monitor the migration
 
-## Database version and startup check
+Follow the container logs while the deployment starts:
 
-The Go migration marker is stored in `system_settings` under the fixed key `mysql_migration.database.version`. The key name is retained for database compatibility and does not select another migration implementation. The Go implementation writes `v0.26.0` after the base tenant-model step and `v0.27.2` after the follow-up model-data step. When the stored version is below `v1.0.0-rc1`, the conversation-history migration writes that value after it completes, even if the old history columns or rows are absent and no data needs copying. A step already covered by the stored version is skipped. The last completed step therefore determines the value that remains in the row. This marker is **not** a complete version number for every table or schema change. A missing or unparseable marker does not prove that the database is up to date.
+```bash
+docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f
+```
 
-Each Go server process compares its code version with this marker after database initialization. That initialization may already have updated runtime tables, indexes, or built-in templates before the check runs. The comparison uses the release-number portion of each version; development suffixes are not used to establish ordering. If the database version is newer, startup fails with `Refusing to start: database was migrated by a newer version`. If the marker is absent or the versions cannot be compared, this downgrade check does not block startup. The check does not apply pending migrations, and the standalone `--migrate` command does not run the downgrade check. Verify the binary and target database before invoking it.
+Wait until the migration finishes before allowing users, ingestion workers, or synchronization jobs to write data. Review warnings as well as errors. A running container or a successful process exit does not by itself prove that every schema change and built-in data update succeeded.
 
-## Upgrade procedure
+If the logs report a migration failure, stop the deployment, inspect the reported error and current database state, resolve the cause, and then retry the migration.
 
-1. Back up the metadata database and verify that you can restore it. See [Backup and Migration](./backup_and_migration.md).
-2. Stop or drain all Go server processes that use the database.
-3. Deploy the new Go binary and its matching configuration. For a manually started deployment, run `./bin/ragflow_server --migrate` against the target database and wait for it to exit before starting servers. In a deployment with multiple replicas, coordinate a single migration job and wait for it to finish before starting the replicas. The Go-only Docker entrypoint runs this command before its enabled Go server modes; account for that behavior when planning a separate migration job.
-4. Start `--admin` first, then `--api` and `--ingestor`; start `--syncer` if file synchronization is enabled.
+## Verify the upgraded deployment
 
-Check the migration logs as well as the exit status before starting services. Some schema conflicts are logged and skipped, and built-in template seeding failures are logged as warnings; a successful exit alone does not verify every schema change or template row. The migration command can be rerun after a failure, but do not assume every database DDL operation is transactional. Check the error and database state before retrying. The Go backend has no supported automatic rollback command or generated reverse migration. To return to an older release, restore a compatible database backup along with the older binary.
+After migration, confirm that:
 
-## Development mode
+- All expected containers are running and healthy.
+- Existing users can sign in.
+- Existing knowledge bases and files are visible.
+- Existing files can be opened and retrieved.
+- A new document can be uploaded, parsed, and retrieved.
+- Existing conversation history is available.
+- Model providers and tenant default models are configured correctly.
+- Enabled ingestion and file-synchronization services can complete new jobs.
 
-`RAGFLOW_DEV_MODE=true` disables only the code-versus-database downgrade check for Go server processes. It does not run migrations, reverse schema changes, or make an older binary compatible with a newer database. This is especially relevant to development builds: the conversation-history migration records `v1.0.0-rc1.dev1` even when the checkout still reports a `v0.27.x` release. Use it only for a development database in that situation. Set it for each affected server process; keep it unset in production.
+## Roll back after a failed migration
 
-This migration procedure applies to the default MySQL metadata database.
+Rollback is performed by restoring the complete pre-upgrade backup together with its matching RAGFlow release and configuration.
+
+To return to the previous release:
+
+1. Stop the failed deployment.
+2. Restore the metadata database, object storage, search index, cache, queue, and other persistent data from the same pre-upgrade backup point.
+3. Restore the matching Docker Compose files and configuration.
+4. Start the previous RAGFlow release and repeat the verification checks.
