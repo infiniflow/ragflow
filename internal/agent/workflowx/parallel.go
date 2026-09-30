@@ -350,6 +350,7 @@ func runParallelInvoke[I, O any](
 
 	bridgeState := defaultBridge
 	outputs := make([]O, totalCount)
+	completedResults := make(map[int]any)
 
 	if isResume && prev != nil {
 		totalCount = prev.TotalCount
@@ -370,6 +371,7 @@ func runParallelInvoke[I, O any](
 				return nil, fmt.Errorf("%w: cannot coerce completed result at index %d (type %T) to target type", ErrParallelResumeStateInvalid, idx, v)
 			}
 			outputs[idx] = typed
+			completedResults[idx] = typed
 		}
 		// Only re-invoke the previously-interrupted indices.
 		indicesToProcess = append([]int(nil), prev.InterruptedIndices...)
@@ -384,7 +386,6 @@ func runParallelInvoke[I, O any](
 	// Drain the result channel, categorising each entry.
 	var normalErr error
 	var interruptErrs []error
-	completedResults := make(map[int]any)
 	for r := range results {
 		if r.err == nil {
 			if r.index >= 0 && r.index < len(outputs) {
