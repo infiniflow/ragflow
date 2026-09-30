@@ -368,6 +368,9 @@ type RerankModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	MaxTokens   int
+
+	limiter    tokenizer.Limiter
+	limiterErr error
 }
 
 // NewRerankModel creates a new RerankModel
@@ -375,11 +378,17 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	tokenizerID := ""
+	if modelName != nil {
+		tokenizerID = GetModelTokenizer(*modelName)
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
+		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
+		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
 }
 
@@ -402,11 +411,10 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
-	tokenizerID := r.ResolveTokenizerID()
-	if err := tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"); err != nil {
-		return nil, err
+	if r.limiterErr != nil {
+		return nil, r.limiterErr
 	}
-	limiter := tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration())
+	limiter := r.limiter
 	counter := limiter.Counter()
 	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
@@ -419,7 +427,8 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if mode != "passthrough" && len(request.Documents) > 0 {
 		queryTokens := counter.Count(request.Query)
 		if mode == "truncate" {
-			documentTokens := max(effectiveMaxTokens-queryTokens, 0)
+			documentBudget := max(effectiveMaxTokens-queryTokens, 0)
+			documentTokens := tokenizer.OverLimitLadder(documentBudget)[0]
 			documents := make([]string, len(request.Documents))
 			for i, document := range request.Documents {
 				documents[i] = counter.TrimToLimit(document, documentTokens)
