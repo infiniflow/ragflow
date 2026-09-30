@@ -14,9 +14,6 @@
 //  limitations under the License.
 //
 
-// OTP / captcha helpers for the forgot-password flow.
-// Constants and key shapes mirror api/utils/web_utils.py so the Python
-// and Go backends share the same Redis namespace and contract.
 package utility
 
 import (

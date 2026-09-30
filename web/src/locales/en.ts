@@ -563,9 +563,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
-      vectorSimilarityWeight: 'Vector similarity weight',
-      vectorSimilarityWeightTip:
-        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
@@ -2764,9 +2761,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'All parsed sections will be merged in order into a single chunk.',
-      flattenMediaToText: 'Disable vision model',
-      flattenMediaToTextTip:
-        'Treat image and table sections as plain text and skip vision enhancement.',
+      enableVisionEnhancement: 'Enable vision enhancement',
+      enableVisionEnhancementTip:
+        'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',

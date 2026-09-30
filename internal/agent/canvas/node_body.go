@@ -120,11 +120,11 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	return out
 }
 
-func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
-	return buildNodeBodyWithOptions(ctx, cpnID, name, params, runtime.ComponentExecutionOptions{})
+func buildNodeBody(ctx context.Context, cpnID, name, displayName string, params map[string]any) (nodeBodyFn, error) {
+	return buildNodeBodyWithOptions(ctx, cpnID, name, displayName, params, runtime.ComponentExecutionOptions{})
 }
 
-func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
+func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
 	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
@@ -158,7 +158,7 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 		// without the runtime.Component interface needing to expose Name().
 		// The factory returns the class name as the DSL's `component_name`
 		// field, which is also what ComponentBase.Name() would have returned.
-		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
+		return realComponentBodyWithOptions(cpnID, name, displayName, comp, opts), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -216,19 +216,22 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 //     dataflow-result UI can show per-node timing without each
 //     component repeating the bookkeeping.
 //
-// Timeout errors are surfaced as `timeout after Xs: <wrapped>`;
-// parent-context cancellation as `cancelled: <wrapped>`; all other
-// errors wrap the component's own error with the cpn_id for diagnostics.
+// Invocation errors identify the component by display name, falling back to the
+// cpn_id when no display name is available.
 //
 // The output map is tagged with __cpn_id__ before return so statePost
 // can attribute the result; if the component already populated that
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
-func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
-	return realComponentBodyWithOptions(cpnID, componentClass, comp, runtime.ComponentExecutionOptions{})
+func realComponentBody(cpnID, componentClass, displayName string, comp runtime.Component) nodeBodyFn {
+	return realComponentBodyWithOptions(cpnID, componentClass, displayName, comp, runtime.ComponentExecutionOptions{})
 }
 
-func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
+func realComponentBodyWithOptions(cpnID, componentClass, displayName string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
+	logName := strings.TrimSpace(displayName)
+	if logName == "" {
+		logName = cpnID
+	}
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		// The framework imposes no wall-clock deadline on component execution.
 		// Long-running components (notably knowledge compilation, which fans out
@@ -261,12 +264,12 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 				common.Debug("agent: component invoke cancelled",
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: cancelled: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
 			case errors.Is(invokeErr, context.DeadlineExceeded):
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
 			default:
 				// Surface the failure as a structured log line. The wrapped error
 				// already carries the full cause chain (e.g. deepseek DNS/timeout),
@@ -275,7 +278,7 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
 			}
 		}
 		if out == nil {

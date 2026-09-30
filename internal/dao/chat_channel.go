@@ -21,7 +21,7 @@ func (dao *ChatChannelDAO) Create(ctx context.Context, db *gorm.DB, channel *ent
 // Callers must enforce tenant authorization themselves (see service.accessible).
 func (dao *ChatChannelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatChannel, error) {
 	var channel entity.ChatChannel
-	if err := db.WithContext(ctx).Where("id = ?", id).First(&channel).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&channel, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &channel, nil

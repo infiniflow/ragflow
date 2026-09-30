@@ -275,11 +275,11 @@
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   Скрипт подготавливает нативные библиотеки и ресурсы моделей для сборки Go и требует `requests` и `huggingface-hub`. Пропустите этот шаг, если те же ресурсы подготовлены другим способом. При запуске из корня репозитория сервисы Go автоматически находят `rag/res/deepdoc`; для запуска из другого каталога задайте `DEEPDOC_MODEL_DIR` как абсолютный путь к нему.
+   Скрипт подготавливает нативные библиотеки и ресурсы моделей для сборки Go и требует `requests` и `huggingface-hub`. Пропустите этот шаг, если те же ресурсы подготовлены другим способом. При запуске из корня репозитория сервисы Go автоматически находят `internal/rag/res/deepdoc`; для запуска из другого каталога задайте `DEEPDOC_MODEL_DIR` как абсолютный путь к нему.
 
 3. Запустите необходимые зависимости (Elasticsearch, MySQL, MinIO, NATS, Kvrocks и ClickHouse):
 

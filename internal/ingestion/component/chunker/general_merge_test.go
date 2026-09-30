@@ -201,6 +201,73 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	}
 }
 
+func TestMergeMarkdownUnitsStripsFoldedHeadingFromTableContextAbove(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "## Section", DocType: "text", CKType: "heading", TKNums: intPtr(1)},
+		{
+			Text:         "<table></table>",
+			DocType:      "table",
+			CKType:       "table",
+			ContextAbove: "## Section",
+			TKNums:       intPtr(1),
+		},
+	}
+	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	if len(got) != 1 {
+		t.Fatalf("chunks = %#v, want one table chunk", got)
+	}
+	if got[0].ContextAbove != "" {
+		t.Fatalf("ContextAbove = %q, want empty after heading fold", got[0].ContextAbove)
+	}
+	if got[0].Text != "## Section\n<table></table>" {
+		t.Fatalf("text = %q, want heading folded into body", got[0].Text)
+	}
+}
+
+func TestMergeMarkdownUnitsStripsOnlyFoldedHeadingFromTableContextAbove(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "intro", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "## Section", DocType: "text", CKType: "heading", TKNums: intPtr(1)},
+		{
+			Text:         "<table></table>",
+			DocType:      "table",
+			CKType:       "table",
+			ContextAbove: "intro\n## Section",
+			TKNums:       intPtr(1),
+		},
+	}
+	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	if len(got) != 2 {
+		t.Fatalf("chunks = %#v, want intro text and table", got)
+	}
+	if got[1].ContextAbove != "intro" {
+		t.Fatalf("ContextAbove = %q, want intro only", got[1].ContextAbove)
+	}
+}
+
+func TestMergeMarkdownUnitsKeepsImageWithMediaContextStandalone(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "before", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{
+			Text:         "figure",
+			DocType:      "image",
+			CKType:       "image",
+			ContextAbove: "before",
+			ContextBelow: "after",
+			Image:        "data:image/png;base64,AAAA",
+			TKNums:       intPtr(1),
+		},
+		{Text: "after", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+	}
+	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	if len(got) != 3 {
+		t.Fatalf("chunks = %d, want text, image, text", len(got))
+	}
+	if got[1].CKType != "image" || got[1].ContextAbove != "before" || got[1].ContextBelow != "after" {
+		t.Fatalf("image chunk = %#v, want preserved media context", got[1])
+	}
+}
+
 func TestMergeMarkdownUnitsStartsNewChunkForIncomingHeading(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "Background details", DocType: "text", CKType: "text", TKNums: intPtr(1)},
