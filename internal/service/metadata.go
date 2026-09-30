@@ -65,6 +65,15 @@ func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }
 
+// EngineType names the document engine this service reads through, which is how
+// a caller decides whether the indexed structured columns can be queried at all.
+func (s *MetadataService) EngineType() string {
+	if s == nil || s.docEngine == nil {
+		return ""
+	}
+	return s.docEngine.GetType()
+}
+
 // EnsureMetadataStore creates the metadata index/table for a tenant if it
 // does not already exist. This is the create-on-first-write logic that
 // belongs in the service layer; the engine layer should assume the store

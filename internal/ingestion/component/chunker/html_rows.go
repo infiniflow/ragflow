@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"ragflow/internal/ingestion/table"
 )
 
 // ---------------------------------------------------------------------------
@@ -97,6 +99,27 @@ func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 		headerCount = 1
 	}
 	return rows, headerCount
+}
+
+// SpreadsheetHeaderColumns derives the column identity of one rendered
+// spreadsheet table from its header row, using the same normalisation the
+// chunker applies when it writes a row's chunk_data. The column probe and the
+// chunker cannot disagree about what a header is called, because there is only
+// one reader of the wire here.
+//
+// ok=false means the markup holds no header row to take names from.
+func SpreadsheetHeaderColumns(html string) (columns []table.Column, ok bool) {
+	rows, headerCount := tableRowsWithHeader(html)
+	if headerCount < 1 || len(rows) < headerCount {
+		return nil, false
+	}
+	// A multi-row header is not the spreadsheet wire — buildSheetItems emits
+	// exactly one <th> row per segment — so refuse rather than treat the first
+	// of several header rows as the whole heading.
+	if headerCount > 1 {
+		return nil, false
+	}
+	return table.DeriveColumns(rows[0]), true
 }
 
 // isTableStrictHTML reports whether block text is an outer <table> element

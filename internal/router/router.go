@@ -398,6 +398,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.PATCH("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.UpdateChunk)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
 				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
+				// Table column discovery: which columns a file offers, and which
+				// indexed columns a dataset can be queried on.
+				datasets.POST("/:dataset_id/documents/probe-table", r.documentHandler.ProbeTableColumns)
+				datasets.GET("/:dataset_id/documents/:document_id/table-columns", r.documentHandler.GetDocumentTableColumns)
+				datasets.GET("/:dataset_id/table-schema", r.datasetsHandler.GetDatasetTableSchema)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
 				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)

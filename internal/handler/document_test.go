@@ -136,6 +136,8 @@ type fakeDocumentService struct {
 	stopErr                error
 	stopIngestionTasks     []*entity.IngestionTask
 	stopIngestionTaskErr   error
+	tableProbeResult       *document.TableProbeResult
+	tableProbeErr          error
 	removeIngestionTasks   []map[string]string
 	removeIngestionTaskErr error
 	thumbnails             map[string]string
@@ -372,6 +374,12 @@ func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, us
 }
 func (f *fakeDocumentService) ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
+}
+func (f *fakeDocumentService) ProbeTableColumns(ctx context.Context, filename string, data []byte) (*document.TableProbeResult, error) {
+	return f.tableProbeResult, f.tableProbeErr
+}
+func (f *fakeDocumentService) ProbeDocumentTableColumns(ctx context.Context, datasetID, documentID string) (*document.TableProbeResult, error) {
+	return f.tableProbeResult, f.tableProbeErr
 }
 func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return f.stopIngestionTasks, f.stopIngestionTaskErr
