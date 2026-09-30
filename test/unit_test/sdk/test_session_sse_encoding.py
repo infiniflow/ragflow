@@ -111,3 +111,46 @@ def test_chat_stream_still_respects_explicit_utf8_charset_header():
     messages = list(s.ask("q", stream=True))
 
     assert messages[0].content == UTF8_ANSWER
+
+
+@pytest.mark.p1
+def test_chat_stream_forces_utf8_when_charset_claims_utf16():
+    """A charset that merely contains "utf" (e.g. ``utf-16``) must not defeat the override.
+
+    The SSE stream is UTF-8 by spec, so trusting a ``utf-16`` declaration would decode
+    the UTF-8 wire bytes as UTF-16 and corrupt every answer.
+    """
+    s = _make_session("chat")
+
+    def stub(*args, **kwargs):
+        resp = _sse_response([CHAT_EVENT], content_type="text/event-stream; charset=utf-16")
+        resp.encoding = "utf-16"  # what requests' Session.send would set from that header
+        return resp
+
+    s._ask_chat = stub
+
+    messages = list(s.ask("q", stream=True))
+
+    assert messages[0].content == UTF8_ANSWER
+
+
+@pytest.mark.p1
+def test_non_stream_ask_leaves_response_encoding_untouched():
+    """The SSE override is stream-only: non-streamed answers must keep requests' own detection.
+
+    ``res.json()`` handles UTF-16/UTF-32 bodies through BOM sniffing when no charset is
+    declared; forcing UTF-8 on that path would break those parses.
+    """
+    body = json.dumps({"code": 0, "data": {"answer": "plain answer", "id": "x"}}).encode("utf-8")
+    resp = requests.Response()
+    resp.status_code = 200
+    resp.headers["Content-Type"] = "application/json"
+    resp.raw = io.BytesIO(body)
+
+    s = _make_session("chat")
+    s._ask_chat = lambda *a, **kw: resp
+
+    messages = list(s.ask("q", stream=False))
+
+    assert messages[0].content == "plain answer"
+    assert resp.encoding is None
