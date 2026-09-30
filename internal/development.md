@@ -54,7 +54,7 @@ docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
 ```
 
-The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `rag/res/deepdoc/` for local use.
+The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash

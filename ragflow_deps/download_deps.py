@@ -15,7 +15,7 @@
 # dev can run the in-process backend locally. It also downloads the cl100k BPE
 # table and installs the local stagehand driver in the Go SDK's cache.
 # Archives and tokenizer assets land under ragflow_deps/; DeepDoc weights land
-# under rag/res/deepdoc/, regardless of the caller's working directory.
+# under internal/rag/res/deepdoc/, regardless of the caller's working directory.
 #
 # Downloaded archives and tokenizer assets land under `ragflow_deps/`.
 #

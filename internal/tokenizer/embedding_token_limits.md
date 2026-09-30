@@ -436,7 +436,7 @@ an operator can point at whichever tree they have:
 The variable is deliberately **not** embedding-specific: `resolveDeepDocModelDir`
 also checks `<dir>/huggingface.co/InfiniFlow/deepdoc` when `MODEL_ASSETS_DIR`
 points at `<dir>`. The downloader prepares the five Go DeepDoc files in that tree
-under `ragflow_deps/`, as well as in `rag/res/deepdoc/` for local use.
+under `ragflow_deps/`, as well as in `internal/rag/res/deepdoc/` for local use.
 One mounted `ragflow_deps/` directory can therefore serve both asset types.
 `ragflow_deps/Dockerfile` packages the tree under `/huggingface.co/` when built
 from `ragflow_deps/`.
