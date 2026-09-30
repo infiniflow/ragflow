@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"ragflow/internal/cli/utils"
 	"strconv"
 	"strings"
@@ -499,19 +500,21 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 		return nil, fmt.Errorf("dataset ID not found")
 	}
 
-	// Build query parameters
-	params := make(map[string]string)
+	params := url.Values{}
 	if opts != nil {
-		if opts.Limit > 0 {
-			params["page_size"] = fmt.Sprintf("%d", opts.Limit)
+		pageSize := opts.Limit
+		if pageSize <= 0 {
+			pageSize = 100
 		}
-		if opts.Offset > 0 {
-			params["page"] = fmt.Sprintf("%d", opts.Offset/opts.Limit+1)
-		}
+		params.Set("page_size", strconv.Itoa(pageSize))
+		params.Set("page", strconv.Itoa(max(opts.Offset, 0)/pageSize+1))
 	}
 
 	path := utils.APIPath("/datasets", datasetID, "documents")
-	resp, err := p.httpClient.Request("GET", path, "auto", params, nil)
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
