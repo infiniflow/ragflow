@@ -83,3 +83,39 @@ def test_retrieval_uses_parent_when_parent_metadata_matches_children():
     assert result[0]["chunk_id"] == "legacy-colliding-id"
     assert result[0]["content_with_weight"] == "parent content"
     assert result[0]["doc_id"] == "doc-a"
+
+
+def test_retrieval_falls_back_when_only_parent_dataset_differs():
+    child = _child()
+    parent = {
+        "content_with_weight": "parent from another dataset",
+        "doc_id": "doc-a",
+        "kb_id": "kb-b",
+    }
+
+    assert _dealer(parent).retrieval_by_children([child], ["tenant"]) == [child]
+
+
+def test_retrieval_uses_parent_with_list_valued_dataset_id():
+    child = _child()
+    parent = {
+        "content_with_weight": "parent content",
+        "doc_id": "doc-a",
+        "kb_id": ["kb-a"],
+    }
+
+    result = _dealer(parent).retrieval_by_children([child], ["tenant"])
+
+    assert result[0]["content_with_weight"] == "parent content"
+    assert result[0]["doc_id"] == "doc-a"
+
+
+def test_retrieval_keeps_children_from_different_documents():
+    children = [_child(), _child(doc_id="doc-b")]
+    parent = {
+        "content_with_weight": "parent content",
+        "doc_id": "doc-a",
+        "kb_id": "kb-a",
+    }
+
+    assert _dealer(parent).retrieval_by_children(children.copy(), ["tenant"]) == children
