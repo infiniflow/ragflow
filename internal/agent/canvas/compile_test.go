@@ -194,26 +194,23 @@ func TestCompile_RejectsUserFillUpInResumeMode(t *testing.T) {
 }
 
 // TestCompile_PropagatesCheckPointID verifies Compile stores the stable id
-// on the returned CompiledCanvas. The assertion only fires when the canvas
-// actually compiles end-to-end in this environment (component factories /
-// DB may be unavailable in unit scope) — matching the repo convention in
-// the other Compile tests that ignore compile errors. The option-side
-// contract is independently covered by TestWithCheckPointID_OptionSetsField.
+// on the returned CompiledCanvas. Compilation constructs components but does
+// not invoke them, so this test requires the canvas to compile successfully.
 func TestCompile_PropagatesCheckPointID(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"begin":    {Obj: CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}}},
 			"llm:0":    {Obj: CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{}}, Downstream: []string{"answer:0"}},
-			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Answer", Params: map[string]any{}}},
+			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}}},
 		},
 	}
 	ctx := t.Context()
 	compiled, err := Compile(ctx, c, WithCheckPointID("task-9"))
 	if err != nil {
-		t.Skipf("skipping propagation assertion: canvas did not compile in unit scope: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 	if compiled == nil {
-		t.Skip("skipping propagation assertion: nil CompiledCanvas")
+		t.Fatal("Compile returned nil CompiledCanvas")
 	}
 	if compiled.CheckPointID != "task-9" {
 		t.Errorf("CompiledCanvas.CheckPointID = %q, want %q", compiled.CheckPointID, "task-9")

@@ -272,12 +272,12 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow
    ```
-2. 使用 [Go 依賴下載腳本](./ragflow_deps/download_go_deps.py)準備原生程式庫和模型檔案，再編譯 Go 服務：
+2. 使用 [Go 依賴下載腳本](./ragflow_deps/download_deps.py)準備原生程式庫、模型檔案和 tokenizer 資源，再編譯 Go 服務：
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 

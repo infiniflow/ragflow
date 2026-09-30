@@ -39,15 +39,28 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-python3 ragflow_deps/download_go_deps.py
+uv run ragflow_deps/download_deps.py
 ```
 
+Install `uv` before running the downloader; it installs the script's declared Python dependencies.
+
+This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64.
+
+Build the Go resource image from `ragflow_deps/` after preparing these files:
+
+```shell
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
+```
+
+The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
-> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
+> # NOTE: the ONNX Runtime static lib fetched by download_deps.py is
 > # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
 > # PLATFORM values the production DeepDoc backend cannot be linked, so those
 > # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
@@ -97,7 +110,7 @@ python3 ragflow_deps/download_go_deps.py
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run python3 ragflow_deps/download_go_deps.py` (or pre-seed
+> `uv run ragflow_deps/download_deps.py` (or pre-seed
 > `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
 > no ORT-free production build path — if ORT is absent the binary fails at
 > startup, so the remedy is always to seed the static lib above, never to build
@@ -107,8 +120,8 @@ python3 ragflow_deps/download_go_deps.py
 > that must stay in sync. Bumping it in one spot and not the others fails the
 > build with `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
-> - `Dockerfile_go` — `ARG ORT_VERSION`
-> - `ragflow_deps/download_go_deps.py` and `ragflow_deps/download_deps.py` — `ORT_VERSION`
+> - `Dockerfile` — `ARG ORT_VERSION`
+> - `ragflow_deps/download_deps.py` — `ORT_VERSION`
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
@@ -120,13 +133,12 @@ python3 ragflow_deps/download_go_deps.py
 > **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
 > **link cache**, because a silently-stale `.a` is easy to miss:
 > - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
->   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the published
->   `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar — the same source of
->   truth the download scripts use. If they differ (the archive was re-issued
->   under the same tag/asset name, or an older download is present) the build
->   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
->   expected/actual sha256 and the exact refresh command
->   (`rm -f <zip>` + `uv run python3 ragflow_deps/download_go_deps.py`). CI seeds
+>   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the SHA-256 digest pinned in
+>   `build.sh`, without a network request. The downloader separately checks the
+>   published `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar. A local ZIP
+>   mismatch only emits a warning with the expected/actual SHA-256 and the
+>   refresh command (`rm -f <zip>` + `uv run ragflow_deps/download_deps.py`);
+>   the build continues checking and linking the extracted static libraries. CI seeds
 >   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
 >   is authoritative). This matters because the `onnxruntime_go` binding reaches
 >   ORT only through the OrtApi function-pointer table
@@ -139,7 +151,7 @@ python3 ragflow_deps/download_go_deps.py
 >   would otherwise silently reuse a stale linked binary. Stamping the path with
 >   the archive's sha256 changes the flag string whenever the content changes →
 >   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
->   re-run `uv run python3 ragflow_deps/download_go_deps.py` (or `download_deps.py`)
+>   re-run `uv run ragflow_deps/download_deps.py`
 >   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow
@@ -174,9 +186,10 @@ supersedes the other, so do not delete one to "clean up".
 | Format | `.ort`                                                   | `.onnx`                                                      |
 | Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
-`download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
-`ocr.res` — into `internal/rag/res/deepdoc/`; `download_deps.py` snapshots the whole
-`InfiniFlow/deepdoc` repo and therefore carries both formats.
+`download_deps.py` (§1.4) fetches the five required files — four `.ort` plus
+`ocr.res` — into `internal/rag/res/deepdoc/`. Python `.onnx` weights require separate provisioning.
+The resource image packages these files under
+`/huggingface.co/InfiniFlow/deepdoc/` for the Go runtime image.
 
 Auto-discovery is **relative to the server process's working directory**:
 `resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes
@@ -191,14 +204,14 @@ missing from the model directory.
 
 > **Note**: A `internal/rag/res/deepdoc/` populated before the `.ort` switch holds only
 > `.onnx` and will NOT serve the Go backend, even though the directory looks
-> fully populated. Re-run `download_go_deps.py` after updating.
+> fully populated. Re-run `download_deps.py` after updating.
 
 - **Confirm it is serving** — the server logs, at startup:
   `in-process DeepDoc backend registered (production backend)`
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run python3 ragflow_deps/download_go_deps.py` and rebuild
+  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 

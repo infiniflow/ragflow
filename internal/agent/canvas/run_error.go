@@ -63,5 +63,5 @@ func runErrorEvent(err error) ErrorEvent {
 			Kind:    RunErrorKindInternal,
 		}
 	}
-	return ErrorEvent{Message: err.Error()}
+	return ErrorEvent{Message: runtime.MarkdownSafeErrorText(err)}
 }

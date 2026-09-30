@@ -27,7 +27,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
-- Python 3.10 or later only for `ragflow_deps/download_go_deps.py`, which downloads the native libraries and model resources required by the Go build.
+- Python 3.10 or later only for `ragflow_deps/download_deps.py`, which downloads the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
@@ -59,10 +59,12 @@ Download the native libraries and Go DeepDoc model weights with a small, isolate
 ```bash
 python3 -m venv /tmp/ragflow-go-download-venv
 /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-/tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+/tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
 ```
 
-The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `internal/rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
+The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `internal/rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
+
+It also downloads `ragflow_deps/cl100k_base.tiktoken` and the embedding tokenizer assets, and installs the stagehand driver into `${XDG_CACHE_HOME:-$HOME/.cache}/stagehand/lib/go_<SDK version>/`. Native archives support Linux x86_64.
 
 The isolated download environment can be removed after the resources have been prepared.
 
@@ -72,7 +74,7 @@ Build the C++ bindings and Go binaries:
 bash build.sh --all
 ```
 
-For a smaller production binary, use `bash build.sh --strip --all` instead. The build script also tries to place `ragflow_deps/cl100k_base.tiktoken` in the repository. If it reports that the BPE table could not be provisioned, download it before starting the server:
+For a smaller production binary, use `bash build.sh --strip --all` instead. The dependency downloader prepares `ragflow_deps/cl100k_base.tiktoken`. If the table is missing, download it before starting the server:
 
 ```bash
 curl -fsSL -o ragflow_deps/cl100k_base.tiktoken https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
@@ -87,6 +89,16 @@ Check that the newly built executable can load and parse API arguments:
 It should print API usage information and may exit with status 1. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
 The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
+
+To prepare the resource image used by the Go Dockerfile, run the downloader above, then build from `ragflow_deps/`:
+
+```bash
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
+```
+
+The downloader prepares the five Go DeepDoc files under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for the resource image, as well as `internal/rag/res/deepdoc/` for local use. The Go Dockerfile copies these models into the runtime model directory. Analyzer dictionaries and fonts are installed separately by the Go Dockerfile.
 
 ## 2. Start supporting services
 

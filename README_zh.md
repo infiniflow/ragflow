@@ -279,12 +279,12 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
    cd ragflow
    ```
 
-2. 按 [Go 依赖下载脚本](./ragflow_deps/download_go_deps.py)准备原生库和模型文件，再编译 Go 服务：
+2. 按 [Go 依赖下载脚本](./ragflow_deps/download_deps.py)准备原生库、模型文件和 tokenizer 资源，再编译 Go 服务：
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
