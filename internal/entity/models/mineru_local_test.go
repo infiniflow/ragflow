@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,53 @@ func TestMinerULocalParseFileResolvesServerURLFromProviderAPIKey(t *testing.T) {
 	}
 	if gotServerURL != "http://vllm:30000" {
 		t.Fatalf("server_url = %q, want http://vllm:30000", gotServerURL)
+	}
+}
+
+func TestMinerULocalVerification(t *testing.T) {
+	authHeaders := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/health" {
+			http.Error(w, "unexpected verification request", http.StatusNotFound)
+			return
+		}
+		authHeaders <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	driver := NewMinerLocalUModel(map[string]string{"default": "http://127.0.0.1:1"}, URLSuffix{DocumentParse: "file_parse"})
+	baseURL := server.URL + "/"
+	response, err := driver.OCRFile(t.Context(), nil, []byte("verification image"), nil, &APIConfig{BaseURL: &baseURL}, nil, nil)
+	if err != nil {
+		t.Fatalf("OCRFile() = %v, want successful provider verification", err)
+	}
+	if response == nil {
+		t.Fatal("OCRFile() returned a nil response")
+	}
+	if got := <-authHeaders; got != "" {
+		t.Fatalf("Authorization = %q, want no bearer token", got)
+	}
+
+	apiKey := `{"mineru_api_key":"secret"}`
+	if err := driver.CheckConnection(t.Context(), &APIConfig{BaseURL: &baseURL, ApiKey: &apiKey}); err != nil {
+		t.Fatalf("CheckConnection() = %v, want success", err)
+	}
+	if got := <-authHeaders; got != "Bearer secret" {
+		t.Fatalf("Authorization = %q, want bearer token from provider config", got)
+	}
+}
+
+func TestMinerULocalVerificationRejectsUnhealthyServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	driver := NewMinerLocalUModel(map[string]string{"default": server.URL}, URLSuffix{})
+	_, err := driver.OCRFile(t.Context(), nil, nil, nil, &APIConfig{}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Fatalf("OCRFile() error = %v, want HTTP 503", err)
 	}
 }
 
