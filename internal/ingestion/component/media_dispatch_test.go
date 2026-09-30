@@ -674,6 +674,31 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 	}
 }
 
+type unhealthyPictureOCRAnalyzer struct {
+	deepdoctype.DocAnalyzer
+}
+
+func (*unhealthyPictureOCRAnalyzer) Health() bool { return false }
+
+func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	// OCR methods are unimplemented: calling them would panic.
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		return &unhealthyPictureOCRAnalyzer{}, true
+	}
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false)
+	if err != nil || result.Err != nil {
+		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
+	}
+	if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" {
+		t.Fatalf("unhealthy OCR should retain an image without text: result = %+v, handled = %v", result, handled)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "image OCR unavailable: local OCR analyzer is unavailable") {
+		t.Fatalf("missing unhealthy OCR warning: %v", result.Warnings)
+	}
+}
+
 func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
