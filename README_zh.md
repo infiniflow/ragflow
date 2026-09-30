@@ -288,7 +288,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
    bash build.sh --all
    ```
 
-   下载脚本负责准备 Go 构建所需的原生库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
+   下载脚本负责准备 Go 构建所需的原生库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
 
 3. 启动本地依赖服务，并确认 **conf/service_conf.yaml** 中的主机与端口对应宿主机可访问的地址。Go 源码服务通过 `localhost:6379` 连接 Compose 暴露的 Kvrocks；Go Docker 服务则在容器网络中连接 Kvrocks。如果使用默认 Elasticsearch，还需先将 Docker 主机的 `vm.max_map_count` 设为至少 `262144`。
 

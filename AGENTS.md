@@ -18,7 +18,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 ## Go-only target
 - Remove all Python code and Python-specific dependencies, scripts, containers, CI jobs, documentation, SDKs, and tests from the repository. Do not add new Python code while this removal is in progress. Replace Python-based preparation of Go native libraries, DeepDoc models, and the BPE table before removing the existing download scripts.
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
-- Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
+- Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `internal/rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
 - Remove the frontend's Go/Python backend variants and update `web/CLAUDE.md` when the frontend no longer needs them. Until then, treat its dual-backend instructions as migration-only guidance; new frontend work should target the Go API.
 - Update Docker's default entrypoint, dependency image, and CI workflows when removing their Python paths. Until then, select Go explicitly with `API_PROXY_SCHEME=go` where that variable controls startup.
 - Keep this guide aligned with the checked-in tree. Once the Python directories are deleted, remove their migration inventory below.
