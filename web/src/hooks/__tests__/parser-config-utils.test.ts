@@ -16,13 +16,6 @@
 
 import { normalizeParserConfig } from '@/hooks/parser-config-utils';
 
-// Drive the backend variant the same way the existing frontend tests do.
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-  subscribeBackendLanguage: jest.fn(),
-}));
-
 const baseConfig = {
   chunk_token_num: 128,
   layout_recognize: 'DeepDOC',
@@ -64,25 +57,6 @@ describe('normalizeParserConfig backend awareness', () => {
     // graphrag/raptor are always stripped.
     expect(out).not.toHaveProperty('graphrag');
     expect(out).not.toHaveProperty('raptor');
-  });
-
-  it('keeps the flat-key contract for the Python backend', () => {
-    mockIsGoBackend = false;
-    const out = normalizeParserConfig({
-      ...baseConfig,
-    }) as Record<string, any>;
-
-    expect(out.metadata).toEqual({
-      enabled: true,
-      metadata: [],
-      built_in_metadata: [],
-    });
-    expect(out.parent_child).toEqual({
-      children_delimiter: '!?;',
-      use_parent_child: true,
-    });
-    expect(out).not.toHaveProperty('Extractor:AutoExtractDefault');
-    expect(out).not.toHaveProperty('GeneralChunker:SixApplesFall');
   });
 
   it('does not scope anything when metadata/parent_child are absent but still re-homes chunk_token_num', () => {

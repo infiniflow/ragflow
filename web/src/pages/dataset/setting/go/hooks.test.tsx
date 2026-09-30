@@ -2,10 +2,6 @@ import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { renderHook } from '@testing-library/react';
 import { useSaveDatasetSetting } from './hooks';
 
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-}));
 jest.mock('@/hooks/use-knowledge-request', () => ({
   useFetchDatasetPipelineConfiguration: jest.fn(),
   useUpdateKnowledge: jest.fn(),
@@ -21,7 +17,6 @@ const mockUseUpdateKnowledge = jest.mocked(useUpdateKnowledge);
 
 describe('useSaveDatasetSetting parser_config metadata scoping', () => {
   beforeEach(() => {
-    mockIsGoBackend = true;
     mockUseUpdateKnowledge.mockReset();
   });
 

@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.9"
+OFFICE_OXIDE_VERSION="0.1.12"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -1181,10 +1181,10 @@ main() {
                 pkgs=(./internal/deepdoc/parser/pdf/inference/native_analyzer/...)
             fi
             # The in-process (Go) DeepDoc backend needs the .ort weights. Default
-            # MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so a
+            # MODEL_DIR to the canonical repo model dir (internal/rag/res/deepdoc) so a
             # local run needs no MODEL_DIR export after `download_go_deps.py`.
             REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-            export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
+            export MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/internal/rag/res/deepdoc}"
             run_go_tests_tagged "cgo integration" "${pkgs[@]}"
             run_native_integration_tests
             ;;

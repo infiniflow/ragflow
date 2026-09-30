@@ -385,10 +385,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 // extracts from context for us (via WithGenLocalState — wired in compile.go).
 func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string]any, map[string]any], error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if len(c.Components) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 
 	// GenLocalState copies the request-initialized *CanvasState when the
@@ -485,7 +485,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				ctx, wf, cpnID, exp.Sub, exp.ShouldQuit, opts...,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("canvas: install loop %q: %w", cpnID, err)
+				return nil, fmt.Errorf("agent: install loop %q: %w", cpnID, err)
 			}
 			macroNodes[cpnID] = node
 			for m := range exp.Members {
@@ -550,7 +550,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
-			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
+			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
 		deferToMessage := directMessageDownstream(c, cpnID)
 		nodeOpts := runtime.ComponentExecutionOptions{
@@ -637,14 +637,14 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		wired[e] = struct{}{}
 		if e.cpn == e.up {
-			return nil, fmt.Errorf("canvas: self-edge on %q", e.cpn)
+			return nil, fmt.Errorf("agent: self-edge on %q", e.cpn)
 		}
 		if resolveNode(e.up) == nil {
-			return nil, fmt.Errorf("canvas: component %q has unknown upstream %q", e.cpn, e.up)
+			return nil, fmt.Errorf("agent: component %q has unknown upstream %q", e.cpn, e.up)
 		}
 		cpnNode := resolveNode(e.cpn)
 		if cpnNode == nil {
-			return nil, fmt.Errorf("canvas: pending edge references unknown cpn %q", e.cpn)
+			return nil, fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
 		}
 		if !first[e.cpn] {
 			cpnNode.AddInput(e.up)
@@ -758,7 +758,7 @@ func wireWorkflowTerminals(
 ) error {
 	if len(terminals) == 0 {
 		if fallback == "" {
-			return fmt.Errorf("canvas: end node not set")
+			return fmt.Errorf("agent: end node not set")
 		}
 		terminals = []string{fallback}
 	}

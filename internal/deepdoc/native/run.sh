@@ -14,11 +14,11 @@ cd "$SCRIPT_DIR"
 # ONNX Runtime is statically linked (libonnxruntime.a) and resolved via
 # dlopen(NULL); no ORT_LIB is needed.
 #
-# Default MODEL_DIR to the canonical repo model dir (rag/res/deepdoc) so running
+# Default MODEL_DIR to the canonical repo model dir (internal/rag/res/deepdoc) so running
 # `download_go_deps.py` is enough — no MODEL_DIR export is required for local
 # Go DeepDoc runs. Override with `MODEL_DIR=... bash run.sh` if needed.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/rag/res/deepdoc}"
+MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/internal/rag/res/deepdoc}"
 export MODEL_DIR
 
 run_task() {

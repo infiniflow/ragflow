@@ -3,7 +3,6 @@ import React, { useCallback, useEffect } from 'react';
 // import { shallow } from 'zustand/shallow';
 import { settledModelVariableMap } from '@/constants/knowledge';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { get, lowerFirst, omit } from 'lodash';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +10,7 @@ import { Operator, RestrictedUpstreamMap } from './constant';
 import { useIsPipeline } from './hooks/use-is-pipeline';
 import useGraphStore, { RFState } from './store';
 import { buildCategorizeObjectFromList, replaceIdWithText } from './utils';
-import { isValidGoPipelineConnection } from './utils/pipeline-connection';
+import { isValidPipelineConnection } from './utils/pipeline-connection';
 
 const selector = (state: RFState) => ({
   nodes: state.nodes,
@@ -131,9 +130,8 @@ export const useHandleFormValuesChange = (
 export const useValidateConnection = () => {
   const { getOperatorTypeFromId, getParentIdById, edges, nodes } =
     useGraphStore((state) => state);
-  const isGoBackend = useIsGoBackend();
   const isPipeline = useIsPipeline();
-  const restrictPipelineTopology = isGoBackend && isPipeline;
+  const restrictPipelineTopology = isPipeline;
 
   const isSameNodeChild = useCallback(
     (connection: Connection | Edge) => {
@@ -189,7 +187,7 @@ export const useValidateConnection = () => {
         isSameNodeChild(connection) &&
         hasCanvasCycle(connection) &&
         (!restrictPipelineTopology ||
-          isValidGoPipelineConnection(
+          isValidPipelineConnection(
             getOperatorTypeFromId(connection.source) as Operator,
             getOperatorTypeFromId(connection.target) as Operator,
           ));

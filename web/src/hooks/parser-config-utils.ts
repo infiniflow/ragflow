@@ -14,8 +14,6 @@
  *  limitations under the License.
  */
 
-import { pickByBackend } from '@/utils/backend-variant';
-
 /**
  * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
  * top-level key containing ":" marks the pipeline structure, which must be
@@ -109,32 +107,10 @@ export const normalizeParserConfig = (
         ? { use_parent_child: false }
         : undefined;
 
-  // Python backend: keep the legacy flat-key contract unchanged.
-  if (!pickByBackend({ go: true, python: false })) {
-    return {
-      auto_keywords,
-      auto_questions,
-      chunk_token_num,
-      delimiter,
-      html4excel,
-      layout_recognize,
-      tag_kb_ids,
-      topn_tags,
-      filename_embd_weight,
-      task_page_size,
-      pages,
-      children_delimiter,
-      enable_children,
-      metadata,
-      ...(parentChild ? { parent_child: parentChild } : {}),
-      ...additionalParserConfig,
-    };
-  }
-
-  // Go backend: emit ONLY component-scoped keys. The legacy flat parser-level
-  // keys have no consumer on the Go backend (the built-in path reads component
-  // nodes, e.g. GeneralChunker:SixApplesFall.chunk_token_size), so they are
-  // dropped rather than forwarded. Already-scoped keys pass through untouched.
+  // Emit ONLY component-scoped keys. The legacy flat parser-level keys have no
+  // consumer (the built-in path reads component nodes, e.g.
+  // GeneralChunker:SixApplesFall.chunk_token_size), so they are dropped rather
+  // than forwarded. Already-scoped keys pass through untouched.
   const scoped: Record<string, any> = {};
   for (const [key, value] of Object.entries(additionalParserConfig)) {
     if (key.includes(':')) {

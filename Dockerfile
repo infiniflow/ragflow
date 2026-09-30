@@ -16,7 +16,7 @@ WORKDIR /ragflow
 # layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
 # exclude them from the tar extract and symlink them to layout.onnx instead,
 # saving ~219MB in the image.
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' \
         --exclude='layout.laws.onnx' \
@@ -32,13 +32,13 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.laws.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.laws.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.manual.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.paper.ort
+        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.manual.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.paper.onnx
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.laws.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.manual.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.paper.ort
 
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously

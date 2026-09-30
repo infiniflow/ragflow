@@ -35,7 +35,7 @@
 #
 # Go DeepDoc weights: in addition to the native libs, this script downloads the
 # five Go model files (internal/common.DeepDocModelFiles) from InfiniFlow/deepdoc
-# straight into the repo's canonical model directory `rag/res/deepdoc/` (one level
+# straight into the repo's canonical model directory `internal/rag/res/deepdoc/` (one level
 # up from this script). The Go server auto-discovers that directory via
 # resolveDeepDocModelDir(), and build.sh --test-native / internal/deepdoc/native/run.sh
 # default MODEL_DIR there too — so after running this script NO MODEL_DIR env needs
@@ -226,7 +226,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://gh-proxy.com/https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -255,7 +255,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.9/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
+            ["https://github.com/yfedoseev/office_oxide/releases/download/v0.1.12/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -287,7 +287,7 @@ def download_go_models(use_china_mirrors=False):
     backend with no further setup.
 
     The files are written into the repo's canonical model directory
-    `rag/res/deepdoc/` (relative to the repo root, one level up from this
+    `internal/rag/res/deepdoc/` (relative to the repo root, one level up from this
     script). The Go server auto-discovers that directory via
     resolveDeepDocModelDir(), and build.sh --test-native / run.sh default
     MODEL_DIR there too — so after this script runs, no MODEL_DIR env needs to
@@ -305,7 +305,7 @@ def download_go_models(use_china_mirrors=False):
 
     # Canonical local-dev model dir the Go backend auto-discovers.
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    target_dir = os.path.join(repo_root, "rag", "res", "deepdoc")
+    target_dir = os.path.join(repo_root, "internal", "rag", "res", "deepdoc")
     os.makedirs(target_dir, exist_ok=True)
 
     missing = []

@@ -16,23 +16,10 @@
 
 import { normalizeParserConfig } from './parser-config-utils';
 
-// Force the Go backend branch inside normalizeParserConfig.
-let mockIsGo = true;
-
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: () => mockIsGo,
-  pickByBackend: (variants: { go: unknown; python: unknown }) =>
-    mockIsGo ? variants.go : variants.python,
-}));
-
 const CHUNKER = 'GeneralChunker:SixApplesFall';
 const EXTRACTOR = 'Extractor:AutoExtractDefault';
 
-describe('normalizeParserConfig (Go backend)', () => {
-  beforeEach(() => {
-    mockIsGo = true;
-  });
-
+describe('normalizeParserConfig', () => {
   it('drops flat parser-level keys and keeps only component-scoped keys', () => {
     const out = normalizeParserConfig({
       chunk_token_num: 256,

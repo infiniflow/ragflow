@@ -5,7 +5,6 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { GenerateStatus } from '@/constants/knowledge';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { useTranslation } from 'react-i18next';
 
 import { useCompilationNav } from './hooks/use-compilation-nav';
@@ -14,7 +13,6 @@ import { NavTreeLeftPanel } from './nav-tree-left-panel';
 
 export function NavTreeView() {
   const { t } = useTranslation();
-  const isGo = useIsGoBackend();
   const {
     navList,
     navLoading,
@@ -25,22 +23,16 @@ export function NavTreeView() {
     childrenErrorParents,
     structureMap,
     selectedNode,
-    deleteNavLoading,
-    deleteNodeLoading,
     navRunData,
     navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
     handleEntityClick,
-    handleDeleteAll,
-    handleDeleteNode,
   } = useCompilationNav();
 
   const compiling =
-    isGo &&
-    (navStatus === GenerateStatus.Running ||
-      navStatus === GenerateStatus.Failed);
+    navStatus === GenerateStatus.Running || navStatus === GenerateStatus.Failed;
   // First compile: no tree content to show yet, so replace the panels with
   // the progress board. A keywords-filtered empty result keeps the panels so
   // the user can keep editing the filter.
@@ -68,15 +60,11 @@ export function NavTreeView() {
             childrenMap={childrenMap}
             childrenErrorParents={childrenErrorParents}
             structureMap={structureMap}
-            deleteNavLoading={deleteNavLoading}
-            deleteNodeLoading={deleteNodeLoading}
             traceData={navRunData}
             onKeywordsChange={handleKeywordsChange}
             onNodeClick={handleNodeClick}
             onNodeExpand={handleNodeExpand}
             onEntityClick={handleEntityClick}
-            onDeleteAll={handleDeleteAll}
-            onDeleteNode={handleDeleteNode}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />

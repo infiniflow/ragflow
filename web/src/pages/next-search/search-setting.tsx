@@ -104,8 +104,7 @@ function SearchSetting({
       search_config: {
         kb_ids: search_config?.kb_ids || [],
         keywords_similarity_weight:
-          search_config?.keywords_similarity_weight ??
-          1 - (search_config?.vector_similarity_weight ?? 0.3),
+          search_config?.keywords_similarity_weight ?? 0.7,
         web_search: search_config?.web_search || false,
         doc_ids: [],
         similarity_threshold: search_config?.similarity_threshold ?? 0.2,

@@ -72,6 +72,24 @@ type ChatWithKBNames struct {
 	TenantAvatar *string  `json:"tenant_avatar,omitempty"`
 }
 
+// MarshalJSON exposes the keyword weight while keeping the persisted vector
+// weight internal to the service.
+func (chat *ChatWithKBNames) MarshalJSON() ([]byte, error) {
+	data, err := structToMap(chat.Chat)
+	if err != nil {
+		return nil, err
+	}
+	data["kb_names"] = chat.KBNames
+	data["dataset_ids"] = chat.DatasetIDs
+	data["nickname"] = chat.Nickname
+	if chat.TenantAvatar != nil {
+		data["tenant_avatar"] = *chat.TenantAvatar
+	}
+	data["keywords_similarity_weight"] = 1 - chat.VectorSimilarityWeight
+	delete(data, "vector_similarity_weight")
+	return json.Marshal(data)
+}
+
 // ListChatsResponse list chats response
 type ListChatsResponse struct {
 	Total int64              `json:"total"`
@@ -601,6 +619,7 @@ func (s *ChatService) buildCreateChatResponse(ctx context.Context, chat *entity.
 	data["kb_names"] = kbNames
 	data["meta_data_filter"] = normalizeMetaDataFilter(chat.MetaDataFilter)
 	data["keywords_similarity_weight"] = 1 - chat.VectorSimilarityWeight
+	delete(data, "vector_similarity_weight")
 	return data, nil
 }
 
@@ -1161,7 +1180,6 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 		"prompt_config":              chat.PromptConfig,
 		"meta_data_filter":           normalizeMetaDataFilter(chat.MetaDataFilter),
 		"similarity_threshold":       chat.SimilarityThreshold,
-		"vector_similarity_weight":   chat.VectorSimilarityWeight,
 		"top_n":                      chat.TopN,
 		"keywords_similarity_weight": 1 - chat.VectorSimilarityWeight,
 		"rerank_candidates_count":    chat.RerankCandidatesCount,

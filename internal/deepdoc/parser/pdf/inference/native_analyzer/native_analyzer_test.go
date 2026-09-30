@@ -47,7 +47,7 @@ func TestNativeAnalyzerUninitializedNegative(t *testing.T) {
 	}
 	modelDir := os.Getenv("MODEL_DIR")
 	if modelDir == "" {
-		modelDir = filepath.Join("..", "..", "..", "..", "rag", "res", "deepdoc")
+		modelDir = filepath.Join("..", "..", "..", "..", "internal", "rag", "res", "deepdoc")
 	}
 	if _, err := NewAnalyzer(modelDir, DefaultDropScore); err == nil {
 		t.Error("NewAnalyzer succeeded before ONNX Runtime init; expected error")

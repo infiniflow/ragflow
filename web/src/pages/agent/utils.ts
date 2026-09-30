@@ -9,7 +9,6 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
 import { parseDelimiterListForDisplay } from '@/utils/delimiter-preview';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
@@ -233,10 +232,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-            ...pickByBackend({
-              go: { pages: cur.pages?.map((x) => [x.from, x.to]) ?? [] },
-              python: {},
-            }),
+            pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -337,12 +333,8 @@ export function transformParserParams(params: ParserFormSchemaType) {
     return pre;
   }, {});
 
-  // The Go backend expects the setups map flattened into top-level params,
-  // while the Python backend reads them from the nested `setups` object.
-  return pickByBackend({
-    go: { ...omit(params, ['setups']), ...setups },
-    python: { ...params, setups },
-  });
+  // Flatten the setups map into the top-level params.
+  return { ...omit(params, ['setups']), ...setups };
 }
 
 // Decides whether an empty delimiter list should be re-seeded with the
@@ -413,23 +405,15 @@ export function transformTokenChunkerParams(
   };
 }
 
-// The two backends honor the chunker's delimiter list differently: the Go
-// chunker treats a bare entry as a soft split point (the split pieces are still
-// merged up to the chunk token size) while the Python flow TokenChunker only
-// activates backtick-wrapped entries. The shared chunker form shows the tip
-// that matches the running backend.
+// The Go chunker treats a bare entry as a soft split point (the split pieces
+// are still merged up to the chunk token size). The shared chunker form shows
+// the matching tip.
 export function getChunkerDelimiterTipKey() {
-  return pickByBackend({
-    go: 'flow.delimitersTip',
-    python: 'flow.delimitersTipPython',
-  });
+  return 'flow.delimitersTip';
 }
 
 export function getChunkerDelimiterPreview(values: (string | undefined)[]) {
-  return pickByBackend({
-    go: parseDelimiterListForDisplay(values, { keepBare: true }),
-    python: parseDelimiterListForDisplay(values, { keepBare: false }),
-  });
+  return parseDelimiterListForDisplay(values, { keepBare: true });
 }
 
 // The child split activates every non-empty entry on both backends, so the
@@ -510,14 +494,6 @@ export const LlmSettingParamKeys = [
   'maxTokensEnabled',
 ];
 
-// The Python extractor only reads the legacy flat fields.
-function transformExtractorParamsPython(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  const raw = params as Record<string, any>;
-  return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
-}
-
 // An unopened legacy node can still flow through here with flat keys
 // (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
 // the transitional "metadata_config", ...). Accept them as read
@@ -597,10 +573,7 @@ function transformExtractorParamsGo(
 export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorParamsGo,
-    python: transformExtractorParamsPython,
-  })(params);
+  return transformExtractorParamsGo(params);
 }
 
 // The Compiler reads the compilation template group plus the same LLM runtime

@@ -273,7 +273,7 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    bash build.sh --all
    ```
 
-   Le script prépare les bibliothèques natives et les ressources de modèles nécessaires à la compilation Go et requiert `requests` et `huggingface-hub`. Ignorez cette étape si vous avez préparé les mêmes ressources autrement. Depuis la racine du dépôt, les services Go trouvent automatiquement `rag/res/deepdoc` ; depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
+   Le script prépare les bibliothèques natives et les ressources de modèles nécessaires à la compilation Go et requiert `requests` et `huggingface-hub`. Ignorez cette étape si vous avez préparé les mêmes ressources autrement. Depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 3. Lancez les dépendances requises (Elasticsearch, MySQL, MinIO, NATS, Kvrocks et ClickHouse) avec Docker Compose :
 
    ```bash

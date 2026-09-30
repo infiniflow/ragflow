@@ -134,7 +134,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           'update_date',
           'id',
           'top_k',
-          'vector_similarity_weight',
         ]),
         ...nextValues,
       },
@@ -153,11 +152,9 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ? { ...referenceMetadata, fields: undefined }
         : referenceMetadata;
 
-    const keywordsSimilarityWeight =
-      data.keywords_similarity_weight ??
-      1 - (data.vector_similarity_weight ?? 0.3);
+    const keywordsSimilarityWeight = data.keywords_similarity_weight ?? 0.7;
     const nextData = {
-      ...omit(data, ['top_k', 'vector_similarity_weight']),
+      ...omit(data, ['top_k']),
       prompt_config: {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field

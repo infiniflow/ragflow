@@ -249,7 +249,7 @@ const (
 
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// the RAGFlow default model dir (rag/res/deepdoc).
+	// the RAGFlow default model dir (internal/rag/res/deepdoc).
 	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
 	// EnvDeepDocDropScore overrides the confidence threshold below which the
 	// in-process (Go) DeepDoc backend blanks recognized text while preserving
