@@ -24,21 +24,3 @@ export function AudioFormFields({ prefix }: OutputFormatFormFieldProps) {
     </>
   );
 }
-
-export function VideoFormFields({ prefix }: OutputFormatFormFieldProps) {
-  const { t } = useTranslation();
-  const ownerTenantId = useOwnerTenantId();
-
-  return (
-    <>
-      {/* Multimodal Model */}
-      <ModelTreeSelectFormField
-        name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
-        label={t('chat.model')}
-        modelTypes={ModelTypeMap.img2txt_id}
-        allowClear
-        ownerTenantId={ownerTenantId}
-      />
-    </>
-  );
-}

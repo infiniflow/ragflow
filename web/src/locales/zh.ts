@@ -504,9 +504,6 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
-      vectorSimilarityWeight: '向量相似度权重',
-      vectorSimilarityWeightTip:
-        '此项用于设置混合相似度分数中的向量相似度权重，该权重可用于向量余弦相似度或重排序分数。两个权重的总和必须等于 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
         '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
@@ -2344,8 +2341,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
-      flattenMediaToText: '禁用视觉模型',
-      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableVisionEnhancement: '启用视觉增强',
+      enableVisionEnhancementTip:
+        '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
       enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',

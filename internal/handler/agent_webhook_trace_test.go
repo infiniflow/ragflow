@@ -59,7 +59,7 @@ func newWebhookTraceTestHandler(t *testing.T) (*AgentHandler, *goredis.Client) {
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = originalDB })
 	if err := db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")}).Error; err != nil {
-		t.Fatalf("create canvas: %v", err)
+		t.Fatalf("create agent: %v", err)
 	}
 
 	mr, err := miniredis.Run()

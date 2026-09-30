@@ -152,7 +152,7 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		// returns an interrupt error or panics on engine misuse. Keep
 		// the guard so test runs without a runner surface a clear
 		// message rather than a panic.
-		return nil, fmt.Errorf("canvas: UserFillUp %q: interrupt did not halt execution", cpnID)
+		return nil, fmt.Errorf("agent: UserFillUp %q: interrupt did not halt execution", cpnID)
 	}
 	return body
 }

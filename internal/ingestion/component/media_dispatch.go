@@ -14,21 +14,25 @@
 // limitations under the License.
 //
 
-// Media dispatch: image, audio, and video branches that require model access
-// (IMAGE2TEXT, SPEECH2TEXT) at the component layer.
+// Media dispatch runs image OCR and optional vision enhancement, audio
+// transcription, and video dispatch at the component layer.
 
 package component
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -71,7 +75,7 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: IMAGE2TEXT vision describe ---
+// Image dispatch: OCR followed by optional IMAGE2TEXT enhancement.
 
 func maybeDispatchImage(
 	ctx context.Context,
@@ -90,50 +94,108 @@ func maybeDispatchImage(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	if !enableVisionEnhancement {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image has no searchable text because vision enhancement is disabled")
+	method := getStringOr(setup, "parse_method", "")
+	useOCR := method == "" || strings.EqualFold(method, "ocr")
+	release, err := parser.AcquireImageMedia(ctx)
+	if err != nil {
+		return parser.ParseResult{}, true, err
 	}
+	defer release()
+	img, err := decodeDispatchImage(binary, useOCR)
+	if err != nil {
+		return parser.ParseResult{}, true, err
+	}
+	var text string
+	if useOCR {
+		text, err = extractImageText(ctx, img)
+	}
+	release()
 	parsed := dispatchParse(ctx, fileType, filename, binary, setups)
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}
 	if len(parsed.JSON) == 0 {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image item")
+		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
 	}
+	parsed.OutputFormat = "json"
 	imageData, _ := parsed.JSON[0]["image"].(string)
-	if imageData == "" {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image payload")
+	parsed.JSON[0]["text"] = text
+	if err != nil {
+		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", err))
+	} else if useOCR && strings.TrimSpace(text) == "" {
+		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
-	result, handled, err := maybeDispatchImageVLM(ctx, db, imageData, tenantID, setup, inputs)
-	result.Warnings = append(result.Warnings, parsed.Warnings...)
-	result.File = parsed.File
-	if err == nil && len(result.JSON) > 0 {
-		text, _ := result.JSON[0]["text"].(string)
-		if strings.TrimSpace(text) == "" {
-			if len(result.Warnings) > 0 {
-				return result, true, fmt.Errorf("parser: image has no searchable text: %s", result.Warnings[0])
-			}
-			return result, true, fmt.Errorf("parser: vision enhancement returned no searchable text")
+	if err := ctx.Err(); err != nil {
+		return parsed, true, err
+	}
+	if enableVisionEnhancement {
+		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs)
+		parsed.Warnings = append(parsed.Warnings, warnings...)
+		if description != "" {
+			appendItemText(parsed.JSON[0], description)
 		}
 	}
-	return result, handled, err
+	return parsed, true, nil
 }
 
-func maybeDispatchImageVLM(
+func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
+	if len(data) == 0 || len(data) > parser.MaxImagePayloadBytes {
+		return nil, fmt.Errorf("parser: image payload exceeds size limits")
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parser: decode image: %w", err)
+	}
+	if config.Width <= 0 || config.Height <= 0 || config.Width > parser.MaxImageEdge || config.Height > parser.MaxImageEdge || int64(config.Width)*int64(config.Height) > parser.MaxImagePixels {
+		return nil, fmt.Errorf("parser: image dimensions %dx%d exceed limits", config.Width, config.Height)
+	}
+	// VLM consumes the original bytes; only local OCR needs a decoded raster.
+	if !decodeRaster {
+		return nil, nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parser: decode image: %w", err)
+	}
+	return img, nil
+}
+
+func extractImageText(ctx context.Context, img image.Image) (string, error) {
+	analyzer, err := parser.GetDocAnalyzer()
+	if err != nil {
+		return "", err
+	}
+	if analyzer == nil || !analyzer.Health() {
+		return "", fmt.Errorf("local OCR analyzer is unavailable")
+	}
+	boxes := deepdocpdf.OCRImage(ctx, img, analyzer, 1.0)
+	sort.SliceStable(boxes, func(i, j int) bool {
+		if boxes[i].Top == boxes[j].Top {
+			return boxes[i].X0 < boxes[j].X0
+		}
+		return boxes[i].Top < boxes[j].Top
+	})
+	texts := make([]string, 0, len(boxes))
+	for _, box := range boxes {
+		if text := strings.TrimSpace(box.Text); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n"), nil
+}
+
+func describeImage(
 	ctx context.Context,
 	db *gorm.DB,
 	dataURI string,
 	tenantID string,
 	setup schema.ParserSetup,
 	inputs map[string]any,
-) (parser.ParseResult, bool, error) {
+) (string, []string) {
 	// --- Optional VLM description ---
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 	if tenantID == "" {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, "image VLM enhancement skipped: tenant ID is missing")
-		return result, true, nil
+		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
 
 	// Use the configured image VLM or the tenant default.
@@ -156,9 +218,7 @@ func maybeDispatchImageVLM(
 		err = fmt.Errorf("no usable vision model")
 	}
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err))
-		return result, true, nil
+		return "", []string{fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err)}
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
@@ -176,33 +236,17 @@ func maybeDispatchImageVLM(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement failed: %v", err))
-		return result, true, nil
+		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
 		vlmText = strings.TrimSpace(*resp.Answer)
 	}
 
-	return imageDispatchResult(vlmText, dataURI), true, nil
-}
-
-// imageDispatchResult builds the structured JSON payload for the image
-// family: a single item carrying the VLM description, the image attachment
-// (data URI), and doc_type_kwd "image". Mirrors Python
-// rag/app/picture.py:71-72.
-func imageDispatchResult(text, dataURI string) parser.ParseResult {
-	return parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{{
-			"text":         text,
-			"image":        dataURI,
-			"doc_type_kwd": "image",
-		}},
-	}
+	return vlmText, nil
 }
 
 // Audio dispatch: SPEECH2TEXT transcription ---

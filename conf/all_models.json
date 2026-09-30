@@ -1062,6 +1062,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "xlmr-spm",
       "context_length": 1024,
       "max_output": 1024
     },
@@ -1096,6 +1097,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_batch_size": 2048
     },
     {
@@ -2111,6 +2113,7 @@
       "model_types": [
         "embedding"
       ],
+      "tokenizer": "bert-wordpiece",
       "max_batch_size": 2048
     },
     {
@@ -13589,6 +13592,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 8192,
       "max_output": 8192
     },
@@ -13600,6 +13604,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 8192,
       "max_output": 8192
     },
@@ -13611,6 +13616,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 8192,
       "max_output": 8192
     },
@@ -13656,6 +13662,7 @@
     },
     {
       "name": "jinaai/jina-colbert-v2",
+      "tokenizer": "xlmr-spm",
       "alias": [
         "jina-colbert-v2"
       ],
@@ -13672,6 +13679,7 @@
     },
     {
       "name": "jinaai/jina-colbert-v2-64",
+      "tokenizer": "xlmr-spm",
       "alias": [
         "jina-colbert-v2-64"
       ],
@@ -13796,6 +13804,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "xlmr-spm",
       "context_length": 8192,
       "max_output": 8192
     },
@@ -28411,6 +28420,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768
     },
@@ -28422,6 +28432,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768
     },
@@ -28433,6 +28444,7 @@
       "model_types": [
         "rerank"
       ],
+      "tokenizer": "qwen-bpe",
       "context_length": 32768,
       "max_output": 32768
     },
@@ -33945,6 +33957,7 @@
     },
     {
       "name": "sentence-transformers/all-MiniLM-L12-v2",
+      "tokenizer": "bert-wordpiece",
       "alias": [
         "all-MiniLM-L12-v2"
       ],
@@ -33958,6 +33971,7 @@
     },
     {
       "name": "sentence-transformers/all-MiniLM-L6-v2",
+      "tokenizer": "bert-wordpiece",
       "alias": [
         "all-MiniLM-L6-v2"
       ],
@@ -33984,6 +33998,7 @@
     },
     {
       "name": "sentence-transformers/paraphrase-MiniLM-L6-v2",
+      "tokenizer": "bert-wordpiece",
       "alias": [
         "paraphrase-MiniLM-L6-v2"
       ],
@@ -34085,6 +34100,7 @@
     },
     {
       "name": "shibing624/text2vec-base-chinese",
+      "tokenizer": "bert-wordpiece",
       "alias": [
         "text2vec-base-chinese"
       ],

@@ -38,7 +38,7 @@ RAGFlow supports multiple sandbox providers. Configure the active provider in Ad
 
 ### Tenki
 
-`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterward. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
 
 Configure it in **Admin > Sandbox Settings**:
 
