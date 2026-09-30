@@ -62,7 +62,7 @@ python3 -m venv /tmp/ragflow-go-download-venv
 /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
 ```
 
-The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
+The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `internal/rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
 
 The isolated download environment can be removed after the resources have been prepared.
 
@@ -147,7 +147,7 @@ If you changed a dependency's published port or credentials, update `conf/servic
 
 `RAGFLOW_DEV_MODE=true` bypasses the code-versus-database version check. Use it only for development, not to run an older production binary against a newer database. The standalone `--migrate` action must still complete first.
 
-If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `ragflow_deps/`.
+If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `internal/rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `ragflow_deps/`.
 
 ## 4. Start the frontend
 
