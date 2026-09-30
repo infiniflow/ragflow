@@ -20,6 +20,7 @@ import firecrawlLogo from '@/assets/firecrawl.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
 import queritLogo from '@/assets/querit.png';
+import serpApiLogo from '@/assets/svg/serpapi.svg';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
@@ -68,6 +69,11 @@ const webSearchProviderCatalog = [
     name: 'Querit',
     logo: queritLogo,
     value: WebSearchProvider.Querit,
+  },
+  {
+    name: 'SerpApi',
+    logo: serpApiLogo,
+    value: WebSearchProvider.SerpApi,
   },
   {
     name: 'Serply',
@@ -147,6 +153,12 @@ const providerKeyConfig = {
     tip: 'queritApiKeyTip',
     placeholder: 'queritApiKeyMessage',
     helpUrl: 'https://querit.ai',
+  },
+  [WebSearchProvider.SerpApi]: {
+    name: 'prompt_config.serpapi_api_key',
+    tip: 'serpapiApiKeyTip',
+    placeholder: 'serpapiApiKeyMessage',
+    helpUrl: 'https://serpapi.com/manage-api-key',
   },
   [WebSearchProvider.Serply]: {
     name: 'prompt_config.serply_api_key',

@@ -41,6 +41,7 @@ const (
 	webSearchProviderLinkup    = "linkup"
 	webSearchProviderParallel  = "parallel"
 	webSearchProviderQuerit    = "querit"
+	webSearchProviderSerpApi   = "serpapi"
 	webSearchProviderSerply    = "serply"
 	webSearchProviderTavily    = "tavily"
 	webSearchProviderYouCom    = "youcom"
@@ -52,6 +53,7 @@ const (
 	linkupWebSearchEndpoint    = "https://api.linkup.so/v1/search"
 	parallelWebSearchEndpoint  = "https://api.parallel.ai/v1/search"
 	queritWebSearchEndpoint    = "https://api.querit.ai/v1/search"
+	serpApiWebSearchEndpoint   = "https://serpapi.com/search"
 	serplyWebSearchEndpoint    = "https://api.serply.io/v1/search/"
 	// You.com serves the same response shape from two endpoints. The keyless
 	// one is rate-limited but needs no credentials; the keyed one lifts those
@@ -82,6 +84,7 @@ var (
 	linkupWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	parallelWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
+	serpApiWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
 	serplyWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	youComWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	// Tavily is reached from two call sites (the chat pipeline and the deep
@@ -133,6 +136,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "parallel_api_key"
 	case webSearchProviderQuerit:
 		apiKeyField = "querit_api_key"
+	case webSearchProviderSerpApi:
+		apiKeyField = "serpapi_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
 	case webSearchProviderTavily:
@@ -235,6 +240,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			queritWebSearchHTTPClient,
 			queritWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderSerpApi:
+		return retrieveSerpApiWebSearch(
+			ctx,
+			serpApiWebSearchHTTPClient,
+			serpApiWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -818,6 +831,81 @@ func decodeQueritWebSearchResults(responseBody []byte) ([]queritWebSearchResult,
 	var results []queritWebSearchResult
 	if err := json.Unmarshal(resultValue, &results); err != nil {
 		return nil, fmt.Errorf("querit: response field results.result must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type serpApiWebSearchResult struct {
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveSerpApiWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	parameters := url.Values{}
+	parameters.Set("engine", "google")
+	parameters.Set("q", query)
+	parameters.Set("api_key", apiKey)
+	parameters.Set("num", strconv.Itoa(webSearchResultCount))
+	parameters.Set("output", "json")
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodGet,
+		endpoint+"?"+parameters.Encode(), map[string]string{
+			"Accept":     "application/json",
+			"User-Agent": "ragflow-web-search",
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("serpapi: %w", err)
+	}
+	results, err := decodeSerpApiWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.Link,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("serpapi", hits), nil
+}
+
+func decodeSerpApiWebSearchResults(responseBody []byte) ([]serpApiWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("serpapi: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("serpapi: response must be an object")
+	}
+
+	if errVal, exists := envelope["error"]; exists {
+		var errStr string
+		if err := json.Unmarshal(errVal, &errStr); err == nil && errStr != "" {
+			return nil, fmt.Errorf("serpapi: %s", errStr)
+		}
+	}
+
+	resultsValue, exists := envelope["organic_results"]
+	if !exists {
+		return []serpApiWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("serpapi: response field organic_results must be an array")
+	}
+
+	var results []serpApiWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("serpapi: response field organic_results must be an array: %w", err)
 	}
 	return results, nil
 }

@@ -177,6 +177,11 @@ describe('keyed providers added in 2026-09', () => {
       keyName: 'parallel_api_key',
       key: 'parallel-test',
     },
+    {
+      provider: WebSearchProvider.SerpApi,
+      keyName: 'serpapi_api_key',
+      key: 'serpapi-test',
+    },
   ] as const;
 
   it.each(cases)(
@@ -226,6 +231,9 @@ describe('provider key field mapping', () => {
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Querit)).toBe(
       'querit_api_key',
+    );
+    expect(getWebSearchApiKeyField(WebSearchProvider.SerpApi)).toBe(
+      'serpapi_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Serply)).toBe(
       'serply_api_key',

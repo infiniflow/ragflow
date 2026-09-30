@@ -266,6 +266,146 @@ func TestDecodeQueritWebSearchResultsRejectsMalformedContainers(t *testing.T) {
 	}
 }
 
+func TestRetrieveSerpApiWebSearchSendsParametersAndReturnsReferenceShape(t *testing.T) {
+	ctx := t.Context()
+	var requestQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requestQuery = request.URL.Query()
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{
+			"organic_results": [{
+				"title": "RAGFlow",
+				"link": "https://example.com/ragflow",
+				"snippet": "RAGFlow is an open-source RAG engine."
+			}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSerpApiWebSearch(
+		ctx,
+		server.Client(),
+		server.URL,
+		"serpapi-test",
+		"What is RAGFlow?",
+	)
+	if err != nil {
+		t.Fatalf("retrieve SerpApi web search: %v", err)
+	}
+
+	if got := requestQuery.Get("engine"); got != "google" {
+		t.Fatalf("engine = %q, want %q", got, "google")
+	}
+	if got := requestQuery.Get("q"); got != "What is RAGFlow?" {
+		t.Fatalf("q = %q, want %q", got, "What is RAGFlow?")
+	}
+	if got := requestQuery.Get("api_key"); got != "serpapi-test" {
+		t.Fatalf("api_key = %q, want %q", got, "serpapi-test")
+	}
+	if got := requestQuery.Get("num"); got != "6" {
+		t.Fatalf("num = %q, want %q", got, "6")
+	}
+	if got := requestQuery.Get("output"); got != "json" {
+		t.Fatalf("output = %q, want %q", got, "json")
+	}
+
+	chunks, ok := result["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", result["chunks"])
+	}
+	if chunks[0]["chunk_id"] != "serpapi-https://example.com/ragflow" {
+		t.Fatalf("chunk_id = %#v", chunks[0]["chunk_id"])
+	}
+	if chunks[0]["content_with_weight"] != "RAGFlow is an open-source RAG engine." {
+		t.Fatalf("content = %#v", chunks[0]["content_with_weight"])
+	}
+	if chunks[0]["docnm_kwd"] != "RAGFlow" {
+		t.Fatalf("title = %#v", chunks[0]["docnm_kwd"])
+	}
+	if chunks[0]["url"] != "https://example.com/ragflow" {
+		t.Fatalf("url = %#v", chunks[0]["url"])
+	}
+	if chunks[0]["similarity"] != float64(1) {
+		t.Fatalf("similarity = %#v, want 1", chunks[0]["similarity"])
+	}
+
+	aggs, ok := result["doc_aggs"].([]interface{})
+	if !ok || len(aggs) != 1 {
+		t.Fatalf("doc_aggs = %#v, want one aggregate", result["doc_aggs"])
+	}
+}
+
+func TestRetrieveSerpApiWebSearchSkipsResultsWithoutSnippet(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{
+			"organic_results": [
+				{"title": "No snippet", "link": "https://example.com/empty", "snippet": ""},
+				{"title": "Blank snippet", "link": "https://example.com/blank", "snippet": "   \n"},
+				{"title": "RAGFlow", "link": "https://example.com/ragflow", "snippet": "An open-source RAG engine."}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSerpApiWebSearch(ctx, server.Client(), server.URL, "serpapi-test", "ragflow")
+	if err != nil {
+		t.Fatalf("retrieve SerpApi web search: %v", err)
+	}
+
+	chunks, ok := result["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", result["chunks"])
+	}
+	if chunks[0]["docnm_kwd"] != "RAGFlow" {
+		t.Fatalf("title = %#v", chunks[0]["docnm_kwd"])
+	}
+	if chunks[0]["content_with_weight"] != "An open-source RAG engine." {
+		t.Fatalf("content = %#v", chunks[0]["content_with_weight"])
+	}
+}
+
+func TestDecodeSerpApiWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null results", body: `{"organic_results":null}`},
+		{name: "object results", body: `{"organic_results":{}}`},
+		{name: "string results", body: `{"organic_results":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeSerpApiWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+func TestDecodeSerpApiWebSearchResultsAcceptsMissingResults(t *testing.T) {
+	results, err := decodeSerpApiWebSearchResults([]byte(`{"search_metadata": {}}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
+	}
+}
+
+func TestDecodeSerpApiWebSearchResultsHandlesErrorField(t *testing.T) {
+	_, err := decodeSerpApiWebSearchResults([]byte(`{"error": "Invalid API key"}`))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got != "serpapi: Invalid API key" {
+		t.Fatalf("err = %q, want %q", got, "serpapi: Invalid API key")
+	}
+}
+
 func TestRetrieveSerplyWebSearchSendsHeadersAndReturnsReferenceShape(t *testing.T) {
 	ctx := t.Context()
 	var requestQuery url.Values
@@ -449,7 +589,7 @@ func TestResolveWebSearchProviderTrimsOptionalYouComKey(t *testing.T) {
 
 func TestResolveWebSearchProviderStillRequiresKeysForKeyedProviders(t *testing.T) {
 	// The You.com carve-out must not relax any other provider.
-	for _, provider := range []string{"querit", "serply", "tavily"} {
+	for _, provider := range []string{"querit", "serpapi", "serply", "tavily"} {
 		t.Run(provider, func(t *testing.T) {
 			if got := resolveWebSearchProvider(map[string]interface{}{
 				"web_search_provider": provider,
@@ -680,6 +820,7 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "firecrawl", apiKeyName: "firecrawl_api_key", apiKey: "firecrawl-test"},
 		{provider: "linkup", apiKeyName: "linkup_api_key", apiKey: "linkup-test"},
 		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
+		{provider: "serpapi", apiKeyName: "serpapi_api_key", apiKey: "serpapi-test"},
 	}
 
 	for _, tc := range cases {
