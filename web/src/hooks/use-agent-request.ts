@@ -1211,9 +1211,10 @@ export function useCreateAgentSession() {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchSessionsByCanvasId],
         });
+        return data.data;
       }
 
-      return data?.data ?? {};
+      throw new Error(data.message);
     },
   });
 

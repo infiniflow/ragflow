@@ -24,7 +24,7 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		common.Debug("llm credentials: no canvas state in ctx")
 		return apiKey, baseURL
@@ -220,7 +220,7 @@ func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiK
 	if !isBareTenantModelID(modelRef) {
 		return "", "", apiKey, baseURL, false, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return "", "", apiKey, baseURL, false, nil
 	}
@@ -355,21 +355,22 @@ func isBareTenantModelID(s string) bool {
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
-// provider segments.
+// provider segments. The split is right-anchored — provider is the last
+// segment, instance the second-to-last, and everything left of them is the
+// model name, which may itself contain '@' (e.g. LM Studio quant-suffixed
+// ids). Mirrors Python's split_model_name (rsplit("@", 2)).
 //
 //	"model@provider"          -> ("model", "default", "provider")
 //	"model@instance@provider" -> ("model", "instance", "provider")
-//	4+ parts                  -> ("parts[0]", "parts[1]", "parts[2]")
+//	"model@tag@inst@provider" -> ("model@tag", "inst", "provider")
 func parseLLMIDParts(s string) (modelName, instanceName, providerName string) {
 	parts := strings.Split(strings.TrimSpace(s), "@")
 	switch len(parts) {
 	case 2:
 		return parts[0], "default", parts[1]
-	case 3:
-		return parts[0], parts[1], parts[2]
 	default:
-		if len(parts) >= 4 {
-			return parts[0], parts[1], parts[2]
+		if len(parts) >= 3 {
+			return strings.Join(parts[:len(parts)-2], "@"), parts[len(parts)-2], parts[len(parts)-1]
 		}
 		return s, "", ""
 	}

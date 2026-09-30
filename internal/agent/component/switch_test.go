@@ -240,6 +240,51 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	}
 }
 
+func TestSwitch_EmptyConditionUsesLatestExplicitBeginInput(t *testing.T) {
+	begin, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"a": map[string]any{}},
+	})
+	switchNode, _ := NewSwitchComponent(map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "begin@a", "operator": "empty"},
+				},
+				"to": []any{"if_target"},
+			},
+		},
+		"end_cpn_ids": []any{"else_target"},
+	})
+	state := canvas.NewCanvasState("run-begin-switch", "task-begin-switch")
+	ctx := withStateForTest(t.Context(), state)
+
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "non-empty", value: "hello", want: "else_target"},
+		{name: "empty", value: "", want: "if_target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			beginOut, err := begin.Invoke(ctx, nil, map[string]any{"query": map[string]any{"a": tc.value}})
+			if err != nil {
+				t.Fatalf("Begin.Invoke: %v", err)
+			}
+			state.SetVar("begin", "a", beginOut["a"])
+			out, err := switchNode.Invoke(ctx, nil, nil)
+			if err != nil {
+				t.Fatalf("Switch.Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != tc.want {
+				t.Fatalf("_next = %v, want [%q]", targets, tc.want)
+			}
+		})
+	}
+}
+
 // TestSwitch_NilUpstreamContainsEmptyNeedleMatches ports the
 // regression covered by python PR #16320: when an upstream
 // component yields nil and the configured value is the empty

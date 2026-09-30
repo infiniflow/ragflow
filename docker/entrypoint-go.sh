@@ -21,6 +21,7 @@ function usage() {
     echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
     echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
     echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
+
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -221,8 +222,8 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     run_with_restart "RAGFlow go server" bin/ragflow_server --api &
 fi
 
-# MCP needs no separate process: --api serves it in-process at POST /mcp on the
-# main API port.
+# MCP configuration comes from service_conf.yaml and RAGFLOW_MCP_* environment
+# variables. The API process owns its optional standalone listener.
 
 # Task execution is the Go ingestor's job. This image ships no Python task
 # executor (rag/svr/task_executor.py is not copied), so --ingestor is the only

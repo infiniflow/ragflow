@@ -26,18 +26,31 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// recordUsageFromResponse records one chat call's token usage to both
-// cm.LastUsage and the context-level run sink (if installed). Callers
-// should invoke this after each ChatWithMessages / ChatStreamlyWithSender
-// call so the canvas-layer aggregator and Langfuse both see the split.
-func recordUsageFromResponse(ctx context.Context, cm *ChatModel) {
+// recordCallUsage feeds ONE chat call's token split to the context-level run sink (if
+// installed). The caller passes the numbers it already holds: the ChatModel is shared
+// by every call on it, so a per-call field would let a concurrent call's tokens be
+// attributed to this one. The canvas component gets its own copy from the message
+// metadata (ResponseMeta.Usage) for the same reason.
+func recordCallUsage(ctx context.Context, cm *ChatModel, prompt, completion, total int) {
 	if cm == nil {
 		return
 	}
-	if cm.LastUsage == nil {
+	model := ""
+	if cm.ModelName != nil {
+		model = *cm.ModelName
+	}
+	recordUsage(ctx, model, &TokenUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total})
+}
+
+// recordUsage records one chat call's token usage to the context-level run sink (if
+// installed). The caller passes the usage its own call returned: nothing about one
+// call's tokens is parked on the shared *ChatModel, where a concurrent call could
+// replace them between the write and the read and attribute them to the wrong request.
+func recordUsage(ctx context.Context, model string, usage *TokenUsage) {
+	if usage == nil {
 		return
 	}
-	tokenizer.RecordRunTokenUsage(ctx, cm.LastUsage.PromptTokens, cm.LastUsage.CompletionTokens, cm.LastUsage.TotalTokens)
+	tokenizer.RecordRunTokenUsageFor(ctx, model, usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
 }
 
 const (
@@ -96,9 +109,6 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 	// Mirrors Python PR #16420 fix: previously the total was overwritten
 	// each round; now we accumulate so multi-round tool conversations
 	// report the correct grand total.
-	// Reset stale per-call usage from a previous call so a response
-	// without usage doesn't leak the prior call's data.
-	cm.LastUsage = nil
 	var totalTokens int
 	aggUsage := &TokenUsage{}
 
@@ -113,10 +123,7 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		totalTokens = aggUsage.TotalTokens
 		// Store per-round delta (not cumulative) so RecordRunTokenUsage
 		// records each round's contribution exactly once.
-		cm.LastUsage = &TokenUsage{
-			PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
-		}
-		recordUsageFromResponse(ctx, cm)
+		recordCallUsage(ctx, cm, u.PromptTokens, u.CompletionTokens, u.TotalTokens)
 	}
 
 	for round := 0; round <= maxRounds; round++ {
@@ -253,8 +260,6 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	// Aggregate token counts across every tool-calling round (each round is a
 	// separate provider request). Committing per round avoids the previous
 	// bug where a later round's total overwrote earlier rounds.
-	// Reset stale per-call usage from a previous call.
-	cm.LastUsage = nil
 	var totalTokens int
 	aggUsage := &TokenUsage{}
 
@@ -276,10 +281,7 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			aggUsage.TotalTokens += deltaTotal
 		}
 		totalTokens = aggUsage.TotalTokens
-		cm.LastUsage = &TokenUsage{
-			PromptTokens: deltaPrompt, CompletionTokens: deltaCompletion, TotalTokens: deltaTotal,
-		}
-		recordUsageFromResponse(ctx, cm)
+		recordCallUsage(ctx, cm, deltaPrompt, deltaCompletion, deltaTotal)
 	}
 
 	for round := 0; round <= maxRounds; round++ {

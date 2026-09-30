@@ -119,10 +119,12 @@ export default {
         'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
       similarityThreshold: 'Ngưỡng tương đồng',
       similarityThresholdTip:
-        'RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số hoặc kết hợp giữa độ tương đồng từ khóa được trọng số và điểm xếp hạng được tính lại trong quá trình truy hồi. Tham số này đặt ngưỡng cho sự tương đồng giữa truy vấn của người dùng và các khối. Bất kỳ khối nào có điểm tương đồng dưới ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều đó có nghĩa là chỉ những đoạn có điểm tương đồng hỗn hợp từ 20 trở lên mới được truy xuất.',
+        'Trong quá trình truy hồi, RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosin vectơ có trọng số, hoặc kết hợp giữa độ tương đồng từ khóa có trọng số và điểm tái xếp hạng có trọng số khi một mô hình tái xếp hạng được chọn. Tham số này đặt ngưỡng tương đồng giữa truy vấn của người dùng và các đoạn. Mọi đoạn có điểm tương đồng thấp hơn ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều này có nghĩa là chỉ những đoạn có điểm tương đồng kết hợp từ 20 trở lên mới được truy hồi. Nếu trọng số tương đồng vectơ được đặt thành 0, ngưỡng này không được áp dụng.',
       vectorSimilarityWeight: 'Trọng số tương đồng từ khóa',
       vectorSimilarityWeightTip:
-        'Cài đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng vectơ cosin hoặc với điểm xếp hạng được tính lại. Tổng của hai trọng số phải bằng 1.0.',
+        'Đặt trọng số của độ tương đồng vectơ trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng cosin vectơ hoặc điểm tái xếp hạng. Tổng của hai trọng số phải bằng 1.0.',
+      keywordSimilarityWeightTip:
+        'Đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp. Tổng trọng số vectơ và từ khóa phải bằng 1.0.',
       testText: 'Văn bản kiểm tra',
       testTextPlaceholder: 'Nhập câu hỏi của bạn tại đây!',
       testingLabel: 'Kiểm tra',
@@ -166,7 +168,7 @@ export default {
       cancel: 'Hủy bỏ',
       rerankModel: 'Mô hình xếp hạng lại',
       rerankPlaceholder: 'Vui lòng chọn',
-      rerankTip: `Tùy chọn. Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosine vector có trọng số; nếu chọn mô hình rerank, điểm rerank có trọng số sẽ thay thế độ tương đồng cosine vector có trọng số. Xin lưu ý rằng việc sử dụng mô hình rerank sẽ làm tăng đáng kể thời gian phản hồi của hệ thống. Nếu bạn muốn sử dụng mô hình rerank, hãy đảm bảo sử dụng SaaS reranker; nếu bạn muốn sử dụng mô hình rerank triển khai cục bộ, hãy khởi động RAGFlow bằng docker-compose-gpu.yml.`,
+      rerankTip: `Tùy chọn. Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosine vector có trọng số; nếu chọn mô hình rerank, điểm rerank có trọng số sẽ thay thế độ tương đồng cosine vector có trọng số. Xin lưu ý rằng việc sử dụng mô hình rerank sẽ làm tăng đáng kể thời gian phản hồi của hệ thống.`,
       topK: 'Top-K',
       topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',

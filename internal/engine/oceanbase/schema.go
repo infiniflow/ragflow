@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 )
 
 const (
@@ -324,7 +324,7 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 		}
 	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
-	distributed := redis.NewDistributedLock(lockName, "", timeout, timeout)
+	distributed := kvrocks.NewDistributedLock(lockName, "", timeout, timeout)
 	if distributed != nil && !distributed.Acquire(ctx) {
 		deadline := time.NewTimer(timeout)
 		defer deadline.Stop()

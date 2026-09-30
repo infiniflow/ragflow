@@ -10,6 +10,22 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
+func TestClaimProgressReporterEmitsMilestonesAndFinalResult(t *testing.T) {
+	reporter := newClaimProgressReporter(100)
+	var reported []int
+	for completed := 1; completed <= 100; completed++ {
+		if reporter.shouldReport(completed) {
+			reported = append(reported, completed)
+		}
+	}
+	if len(reported) != 21 {
+		t.Fatalf("reported %d milestones, want 21: %v", len(reported), reported)
+	}
+	if reported[0] != 1 || reported[1] != 5 || reported[len(reported)-1] != 100 {
+		t.Fatalf("reported milestones = %v, want first 1, then 5-step milestones through 100", reported)
+	}
+}
+
 // recordingEmbedder captures the texts it was asked to embed, so a test can
 // assert what actually reached the vector.
 type recordingEmbedder struct {

@@ -199,6 +199,7 @@ func newTestConfluenceConnector(t *testing.T, wikiBase string, overrides map[str
 
 func newConfluenceFixtureServer(t *testing.T, validateStatus int) *httptest.Server {
 	t.Helper()
+	withConnectorLoopbackTestHook(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if validateStatus != http.StatusOK && strings.HasPrefix(r.URL.Path, "/wiki/rest/api/space") {
 			http.Error(w, "unauthorized", validateStatus)

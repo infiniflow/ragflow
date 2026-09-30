@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
@@ -153,7 +152,7 @@ func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: &http.Client{Transport: newProviderLoggingTransport(http.DefaultTransport)},
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }

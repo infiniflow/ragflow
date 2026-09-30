@@ -402,10 +402,11 @@ func TestBuildFilterFromCondition_UnconstrainedFilter(t *testing.T) {
 }
 
 // TestBuildFilterFromCondition_StringSliceIDPreservesScope pins the shape the
-// document availability switch relies on: updateSourceChunkAvailability passes a
-// typed []string id list, and Infinity must render it as an IN clause. Dropping
-// it leaves whatever other clauses the caller passed (none, for that path), i.e.
-// an update scoped to the whole dataset table.
+// document availability switch relies on: the doc-service caller of
+// UpdateChunks (updateDocumentChunkAvailability) passes a typed []string id
+// list, and Infinity must render it as an IN clause. Dropping it leaves whatever
+// other clauses the caller passed (none, for that path), i.e. an update scoped
+// to the whole dataset table.
 func TestBuildFilterFromCondition_StringSliceIDPreservesScope(t *testing.T) {
 	clmns := map[string]struct {
 		Type    string
@@ -421,5 +422,50 @@ func TestBuildFilterFromCondition_StringSliceIDPreservesScope(t *testing.T) {
 	// unconstrained filter — the case UpdateChunks/DeleteChunks refuse.
 	if got := buildFilterFromCondition(map[string]interface{}{"id": []string{}}, clmns); got != "1=1" {
 		t.Errorf("empty []string id: got %q, want '1=1'", got)
+	}
+}
+
+func TestBuildFilterFromConditionJSONListMembership(t *testing.T) {
+	jsonColumns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"source_doc_ids": {Type: "Json", Default: "[]"},
+	}
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1", "doc-2"}}
+	want := `(json_contains(source_doc_ids, '"doc-1"') OR json_contains(source_doc_ids, '"doc-2"'))`
+	if got := buildFilterFromCondition(condition, jsonColumns); got != want {
+		t.Errorf("JSON-list condition = %q, want %q", got, want)
+	}
+	if got := equivalentConditionToStr(condition, jsonColumns); got != want {
+		t.Errorf("JSON-list search condition = %q, want %q", got, want)
+	}
+}
+
+func TestBuildFilterFromConditionLegacyJSONListMembership(t *testing.T) {
+	legacyColumns := map[string]struct {
+		Type    string
+		Default interface{}
+	}{
+		"source_doc_ids": {Type: "Varchar", Default: ""},
+	}
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1"}}
+	want := `(filter_fulltext('source_doc_ids', 'doc-1'))`
+	if got := buildFilterFromCondition(condition, legacyColumns); got != want {
+		t.Errorf("legacy JSON-list condition = %q, want %q", got, want)
+	}
+	if got := equivalentConditionToStr(condition, legacyColumns); got != want {
+		t.Errorf("legacy JSON-list search condition = %q, want %q", got, want)
+	}
+}
+
+func TestBuildFilterFromConditionMissingJSONListColumnNeverMatches(t *testing.T) {
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-1"}}
+	want := `(1=0)`
+	if got := buildFilterFromCondition(condition, map[string]struct {
+		Type    string
+		Default interface{}
+	}{}); got != want {
+		t.Errorf("missing JSON-list column condition = %q, want %q", got, want)
 	}
 }

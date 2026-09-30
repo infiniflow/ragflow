@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -67,7 +67,7 @@ export function SofyaWidgets() {
               {t('sofyaSearchDepth')}
             </FormLabel>
             <FormControl>
-              <RAGFlowSelect {...field} options={searchDepthOptions} />
+              <SelectWithSearch {...field} options={searchDepthOptions} />
             </FormControl>
             <FormMessage />
           </FormItem>

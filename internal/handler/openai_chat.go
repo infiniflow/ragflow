@@ -133,5 +133,8 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 
 	// All early-rejection checks passed. Delegate to the service for the
 	// actual LLM call.
+	// Long agentic runs stream for minutes or compute before their single
+	// write; clear http.Server.WriteTimeout so neither is cut off mid-response.
+	clearResponseWriteDeadline(c)
 	h.svc.OpenAIChatCompletions(c, user.ID, chatID, bodyBytes)
 }

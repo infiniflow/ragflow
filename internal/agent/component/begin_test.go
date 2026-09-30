@@ -141,6 +141,28 @@ func TestBegin_PreservesStarterInputAcrossQueries(t *testing.T) {
 	}
 }
 
+func TestBegin_ExplicitNamedInputUpdatesStarterValue(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-explicit-update", "task-explicit-update")
+	ctx := canvas.WithState(t.Context(), state)
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{"query": map[string]any{"name": "Alice"}}); err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": map[string]any{"name": "Bob"}})
+	if err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+	if out["name"] != "Bob" {
+		t.Fatalf("name = %v, want Bob", out["name"])
+	}
+	if value, ok := state.GetGlobal("begin@name"); !ok || value != "Bob" {
+		t.Fatalf("begin@name = %v, %v; want Bob, true", value, ok)
+	}
+}
+
 func TestBegin_InitializesNilGlobalsAfterRestore(t *testing.T) {
 	c, _ := NewBeginComponent(map[string]any{
 		"inputs": map[string]any{"name": map[string]any{}},

@@ -98,6 +98,77 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
+// TestUpdateDataset_ParentChildConfigReachesGeneralChunker verifies an edit to
+// the dataset setting updates the runtime chunker parameter, not only the UI
+// payload retained in parser_config.
+func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"parent_child": map[string]interface{}{
+				"use_parent_child":   true,
+				"children_delimiter": "|",
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	chunker, ok := persisted.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", persisted.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+	parentChild, ok := persisted.ParserConfig["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("parent_child = %#v, want persisted public setting", persisted.ParserConfig["parent_child"])
+	}
+}
+
+func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	existingConfig := entity.JSONMap{
+		"parent_child": map[string]interface{}{
+			"use_parent_child":   true,
+			"children_delimiter": "|",
+		},
+	}
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", existingConfig).Error; err != nil {
+		t.Fatalf("seed parent-child parser config: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{"chunk_token_num": float64(256)},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("load updated dataset: %v", err)
+	}
+	chunker, ok := persisted.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", persisted.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+}
+
 func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -181,6 +252,71 @@ func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 	// parser_id should keep the original value.
 	if result["pipeline_id"] != strings.ToLower(pipelineID) {
 		t.Fatalf("expected pipeline_id %q, got %#v", strings.ToLower(pipelineID), result["pipeline_id"])
+	}
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if _, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{}); !ok {
+		t.Fatalf("expected pipeline defaults in parser_config, got %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	pipelineID := "abcdef0123456789abcdef0123456789"
+	parseType := 2
+	dslJSON, err := json.Marshal(map[string]any{
+		"components": map[string]any{
+			"Parser:CustomP": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"pdf": map[string]any{"remove_toc": false},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal canvas DSL: %v", err)
+	}
+	seedDatasetUpdateCanvas(t, pipelineID, "tenant-1", dslJSON)
+
+	ctx := t.Context()
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		PipelineID: &pipelineID,
+		ParseType:  &parseType,
+		ParserConfig: map[string]interface{}{
+			"Parser:CustomP": map[string]interface{}{
+				"pdf": map[string]interface{}{"remove_toc": true},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	parserParams, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Parser:CustomP in parser_config, got %#v", persisted.ParserConfig)
+	}
+	pdfParams, ok := parserParams["pdf"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected pdf parser config, got %#v", parserParams)
+	}
+	if removeTOC, ok := pdfParams["remove_toc"].(bool); !ok || !removeTOC {
+		t.Fatalf("remove_toc = %#v, want true", pdfParams["remove_toc"])
 	}
 }
 
@@ -1248,5 +1384,44 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 	}
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
+	}
+}
+
+// TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity pins Python's guard: the
+// engine capability is consulted ONLY when the requested pagerank differs from
+// the stored one (`if "pagerank" in req and req["pagerank"] != kb.pagerank`,
+// dataset_api_service.py:392). A settings form re-sending the value the dataset
+// already has must not fail on a non-ES engine; a real change still must
+// (Python's own tests assert that message:
+// test/testcases/restful_api/test_datasets.py:620).
+func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	// fakeChatDocEngine.SupportsPageRank() == false — the Infinity case.
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = fakeChatDocEngine{}
+
+	unchanged := int64(0) // insertDatasetUpdateKB stores pagerank 0
+	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &unchanged}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("unchanged pagerank: code=%d err=%v, want success (a no-op, as in Python)", code, err)
+	}
+
+	changed := int64(7)
+	_, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+		service.UpdateDatasetRequest{Pagerank: &changed})
+	if err == nil || !strings.Contains(err.Error(), "can only be set when doc_engine is elasticsearch") {
+		t.Fatalf("changed pagerank: code=%d err=%v, want the doc_engine message", code, err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("changed pagerank: code=%d, want CodeDataError", code)
+	}
+	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if getErr != nil {
+		t.Fatalf("get kb: %v", getErr)
+	}
+	if persisted.Pagerank != 0 {
+		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
 	}
 }

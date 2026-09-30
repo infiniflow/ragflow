@@ -18,15 +18,19 @@ package sandbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/dao"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"ragflow/internal/entity"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -98,16 +102,6 @@ func TestProviderManager_BuildProvider_UnknownType(t *testing.T) {
 	if _, err := buildProvider("not-a-real-provider"); err == nil {
 		t.Errorf("buildProvider on unknown: got nil error, want one")
 	}
-}
-
-func TestE2BProvider_AllOps_LoudFail(t *testing.T) {
-	// v3: e2b is now a real implementation. The "all ops loud-fail"
-	// expectation is obsolete. The new "no creds → error" path is
-	// covered by TestE2BProvider_Initialize_MissingCreds in
-	// e2b_test.go. This stub is kept as a no-op marker to make the
-	// migration trace explicit; remove once the test has been
-	// confirmed obsolete in a later cleanup pass.
-	t.Skip("removed in v3 — see e2b_test.go for the new behavior")
 }
 
 func TestAliyun_ProviderTypeAndLanguages(t *testing.T) {
@@ -268,11 +262,11 @@ func TestNewAliyunProviderFromConfig_Minimal(t *testing.T) {
 func TestNewAliyunProviderFromConfig_TimeoutCap(t *testing.T) {
 	t.Parallel()
 	p := newAliyunProviderFromConfig(map[string]any{
-		"ACCESS_KEY_ID":     "k",
-		"ACCESS_KEY_SECRET": "s",
-		"ACCOUNT_ID":        "a",
-		"REGION":            "cn-shanghai",
-		"TIMEOUT":           float64(120),
+		"access_key_id":     "k",
+		"access_key_secret": "s",
+		"account_id":        "a",
+		"region":            "cn-shanghai",
+		"timeout":           float64(120),
 	})
 	if p.timeout != 30 {
 		t.Errorf("timeout = %d, want 30 (hard cap)", p.timeout)
@@ -303,13 +297,13 @@ func TestNewLocalProviderFromConfig_Defaults(t *testing.T) {
 func TestNewLocalProviderFromConfig_FullConfig(t *testing.T) {
 	t.Parallel()
 	cfg := map[string]any{
-		"PYTHON_BIN":         "python3.12",
-		"NODE_BIN":           "node22",
-		"WORK_DIR":           "/var/sandbox",
-		"TIMEOUT":            float64(60),
-		"MAX_OUTPUT_BYTES":   float64(2_000_000),
-		"MAX_ARTIFACTS":      float64(50),
-		"MAX_ARTIFACT_BYTES": float64(20_000_000),
+		"python_bin":         "python3.12",
+		"node_bin":           "node22",
+		"work_dir":           "/var/sandbox",
+		"timeout":            float64(60),
+		"max_output_bytes":   float64(2_000_000),
+		"max_artifacts":      float64(50),
+		"max_artifact_bytes": float64(20_000_000),
 	}
 	p := newLocalProviderFromConfig(cfg)
 	if p.pythonBin != "python3.12" {
@@ -394,20 +388,193 @@ func TestBuildProviderFromConfig_SelfManaged_HappyPath(t *testing.T) {
 	}
 }
 
-// fakeSettingsReader is the test double for SettingsReader. It
-// serves a hard-coded map keyed by setting name and returns
-// fakeErr when non-nil (so the tests can exercise the
-// "DAO returns an error → fall back to env" branch).
+// fakeSettingsReader supplies a settings snapshot or a database error.
 type fakeSettingsReader struct {
 	rows    map[string][]entity.SystemSettings
 	fakeErr error
 }
 
-func (f *fakeSettingsReader) GetByName(_ context.Context, _ *gorm.DB, name string) ([]entity.SystemSettings, error) {
+func (f *fakeSettingsReader) GetByNamePrefix(_ context.Context, _ *gorm.DB, prefix string) ([]entity.SystemSettings, error) {
 	if f.fakeErr != nil {
 		return nil, f.fakeErr
 	}
-	return f.rows[name], nil
+	var rows []entity.SystemSettings
+	for name, values := range f.rows {
+		if strings.HasPrefix(name, prefix) {
+			rows = append(rows, values...)
+		}
+	}
+	return rows, nil
+}
+
+func TestProviderManager_RefreshCommittedSettings(t *testing.T) {
+	var initializations atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		initializations.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	d := dao.NewSystemSettingsDAO()
+	ctx := t.Context()
+	if err := d.SaveOrCreate(ctx, db, "sandbox.provider_type", "self_managed", "admin", "string"); err != nil {
+		t.Fatal(err)
+	}
+	save := func(timeout int) {
+		t.Helper()
+		cfg, _ := json.Marshal(map[string]any{"endpoint": srv.URL, "timeout": timeout})
+		if err := d.SaveOrCreate(ctx, db, "sandbox.self_managed", string(cfg), "admin", "json"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save(10)
+	a, b := &ProviderManager{}, &ProviderManager{}
+	for _, m := range []*ProviderManager{a, b} {
+		if err := m.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldA, oldB := a.Provider(), b.Provider()
+	if err := a.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+		t.Fatal(err)
+	}
+	if a.Provider() != oldA || initializations.Load() != 2 {
+		t.Fatal("unchanged settings rebuilt provider")
+	}
+	if err := d.SaveOrCreate(ctx, db, "sandbox.self_managed", `{"timeout":10, "endpoint":"`+srv.URL+`"}`, "admin", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+		t.Fatal(err)
+	}
+	if a.Provider() != oldA {
+		t.Fatal("equivalent JSON rebuilt provider")
+	}
+	if err := d.SaveOrCreate(ctx, db, "sandbox.ssh", `{"host":"inactive"}`, "admin", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+		t.Fatal(err)
+	}
+	if a.Provider() != oldA {
+		t.Fatal("inactive save rebuilt active provider")
+	}
+	save(20)
+	for _, m := range []*ProviderManager{a, b} {
+		if err := m.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+			t.Fatal(err)
+		}
+		if m.Provider().(*SelfManagedProvider).timeout != 20*time.Second {
+			t.Fatal("manager retained stale settings")
+		}
+	}
+	if a.Provider() == oldA || b.Provider() == oldB {
+		t.Fatal("changed settings did not replace providers")
+	}
+	last := a.Provider()
+	dbErr := errors.New("database unavailable after configuration")
+	if err := a.LoadFromSettingsWithReader(ctx, db, &fakeSettingsReader{fakeErr: dbErr}); !errors.Is(err, dbErr) {
+		t.Fatalf("database error after load = %v", err)
+	}
+	if a.Provider() != last {
+		t.Fatal("database failure discarded running provider")
+	}
+	if err := d.SaveOrCreate(ctx, db, "sandbox.self_managed", `{"endpoint":":invalid"}`, "admin", "json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LoadFromSettingsWithReader(ctx, db, d); err == nil {
+		t.Fatal("invalid replacement silently used old settings")
+	}
+	if a.Provider() != last {
+		t.Fatal("failed replacement discarded running provider")
+	}
+	if err := d.DeleteByName(ctx, db, "sandbox.provider_type"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.DeleteByName(ctx, db, "sandbox.self_managed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.LoadFromSettingsWithReader(ctx, db, d); err == nil {
+		t.Fatal("configured manager silently fell back to environment")
+	}
+	localConfig, _ := json.Marshal(map[string]any{"work_dir": t.TempDir()})
+	if err := d.Transaction(ctx, db, func(tx *gorm.DB) error {
+		if err := d.SaveOrCreate(ctx, tx, "sandbox.local", string(localConfig), "admin", "json"); err != nil {
+			return err
+		}
+		return d.SaveOrCreate(ctx, tx, "sandbox.provider_type", "local", "admin", "string")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []*ProviderManager{a, b} {
+		if err := m.LoadFromSettingsWithReader(ctx, db, d); err != nil {
+			t.Fatal(err)
+		}
+		if m.Provider().ProviderType() != ProviderLocal {
+			t.Fatal("selected provider type was not refreshed")
+		}
+	}
+}
+
+func TestProviderManager_ConcurrentRefreshBuildsOnce(t *testing.T) {
+	var initializations atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		initializations.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	r := &fakeSettingsReader{rows: map[string][]entity.SystemSettings{
+		"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "self_managed"}},
+		"sandbox.self_managed":  {{Name: "sandbox.self_managed", Value: `{"endpoint":"` + srv.URL + `"}`}},
+	}}
+	m := &ProviderManager{}
+	done := make(chan error, 12)
+	for range 12 {
+		go func() { done <- m.LoadFromSettingsWithReader(t.Context(), nil, r) }()
+	}
+	for range 12 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if initializations.Load() != 1 {
+		t.Fatalf("initializations = %d, want 1", initializations.Load())
+	}
+}
+
+func TestLoadSettingsConfig_RejectsInvalidSnapshots(t *testing.T) {
+	for _, value := range []string{`null`, `[]`, `"text"`, `42`, `true`, `{broken`} {
+		t.Run(value, func(t *testing.T) {
+			r := &fakeSettingsReader{rows: map[string][]entity.SystemSettings{
+				"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "local"}},
+				"sandbox.local":         {{Name: "sandbox.local", Value: value}},
+			}}
+			if _, _, err := loadSettingsConfig(t.Context(), nil, r); !errors.Is(err, errSettingsMalformed) {
+				t.Fatalf("error = %v, want malformed settings", err)
+			}
+		})
+	}
+	for _, rows := range []map[string][]entity.SystemSettings{
+		{"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "local"}}},
+		{"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: ""}}},
+		{"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "local"}, {Name: "sandbox.provider_type", Value: "ssh"}}},
+	} {
+		if _, _, err := loadSettingsConfig(t.Context(), nil, &fakeSettingsReader{rows: rows}); err == nil || errors.Is(err, errSettingsNotConfigured) {
+			t.Fatalf("explicit invalid snapshot error = %v", err)
+		}
+	}
 }
 
 // TestLoadFromSettingsWithReader_HappyPath pins the settings-driven
@@ -502,10 +669,7 @@ func TestLoadFromSettingsWithReader_EmptyFallback(t *testing.T) {
 	}
 }
 
-// TestLoadFromSettingsWithReader_DAOErrorFallback: when the
-// reader returns an error, the manager falls back to env-driven
-// init (same path as the empty-rows case).
-func TestLoadFromSettingsWithReader_DAOErrorFallback(t *testing.T) {
+func TestLoadFromSettingsWithReader_DAOError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.WriteHeader(http.StatusOK)
@@ -522,18 +686,15 @@ func TestLoadFromSettingsWithReader_DAOErrorFallback(t *testing.T) {
 
 	r := &fakeSettingsReader{fakeErr: errors.New("db is down")}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
-		t.Fatalf("LoadFromSettingsWithReader (DAO error fallback): %v", err)
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); !errors.Is(err, r.fakeErr) {
+		t.Fatalf("LoadFromSettingsWithReader error = %v, want database error", err)
 	}
-	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {
-		t.Errorf("provider type = %q, want self_managed (env fallback after DAO error)", got)
+	if m.Provider() != nil {
+		t.Fatal("database error silently selected an environment provider")
 	}
 }
 
-// TestLoadFromSettingsWithReader_MalformedJSONFallback: when the
-// settings row exists but contains invalid JSON, the manager
-// uses an empty config and falls through to env defaults.
-func TestLoadFromSettingsWithReader_MalformedJSONFallback(t *testing.T) {
+func TestLoadFromSettingsWithReader_MalformedJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.WriteHeader(http.StatusOK)
@@ -555,25 +716,14 @@ func TestLoadFromSettingsWithReader_MalformedJSONFallback(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
-		t.Fatalf("LoadFromSettingsWithReader (malformed JSON fallback): %v", err)
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); !errors.Is(err, errSettingsMalformed) {
+		t.Fatalf("LoadFromSettingsWithReader error = %v, want malformed settings", err)
 	}
-	sm, ok := m.Provider().(*SelfManagedProvider)
-	if !ok {
-		t.Fatalf("provider type = %T, want *SelfManagedProvider", m.Provider())
-	}
-	// Empty config → default endpoint (the test server URL was
-	// set via env, so the manager's InitFromEnv would have used
-	// it; the settings path fell through to env defaults when
-	// JSON was malformed).
-	if sm.endpoint == "" {
-		t.Errorf("endpoint should be the env default, got empty")
+	if m.Provider() != nil {
+		t.Fatal("malformed settings silently selected an environment provider")
 	}
 }
 
-// TestLoadFromSettingsWithReader_UnknownProviderType covers the
-// "settings row says 'foo' which we don't know" branch. The
-// manager falls back to env.
 func TestLoadFromSettingsWithReader_UnknownProviderType(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
@@ -591,25 +741,20 @@ func TestLoadFromSettingsWithReader_UnknownProviderType(t *testing.T) {
 
 	r := &fakeSettingsReader{
 		rows: map[string][]entity.SystemSettings{
-			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "mystery_provider"}},
+			"sandbox.provider_type":    {{Name: "sandbox.provider_type", Value: "mystery_provider"}},
+			"sandbox.mystery_provider": {{Name: "sandbox.mystery_provider", Value: `{}`}},
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err != nil {
-		t.Fatalf("LoadFromSettingsWithReader (unknown type fallback): %v", err)
+	if err := m.LoadFromSettingsWithReader(ctx, dao.DB, r); err == nil {
+		t.Fatal("unknown provider accepted")
 	}
-	// Falls back to env-driven self_managed, NOT the unknown type.
-	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {
-		t.Errorf("provider type = %q, want self_managed (env fallback)", got)
+	if m.Provider() != nil {
+		t.Fatal("unknown provider silently selected an environment provider")
 	}
 }
 
-// TestLoadFromSettingsWithReader_AlreadyLoaded_NoOp: once a
-// provider is loaded, subsequent LoadFromSettings calls are
-// no-ops. The reader is intentionally rigged to return a
-// different provider type — if LoadFromSettings honored that,
-// the manager would re-init; the test asserts it doesn't.
-func TestLoadFromSettingsWithReader_AlreadyLoaded_NoOp(t *testing.T) {
+func TestLoadFromSettingsWithReader_ExplicitOverride(t *testing.T) {
 	m := &ProviderManager{}
 	m.SetProvider(newSelfManagedProviderFromEnv())
 	original := m.Provider()

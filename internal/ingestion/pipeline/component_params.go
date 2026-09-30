@@ -3,6 +3,8 @@ package pipeline
 import (
 	"encoding/json"
 	"fmt"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // ComponentParamsSchema describes the full set of user-configurable parameters
@@ -56,6 +58,12 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 				continue
 			}
 			params[k] = deepCopyValue(v)
+		}
+		// Canvases saved by the Python-era frontend nest the Parser's
+		// per-family setups under a "setups" key; lift them so the extracted
+		// defaults (and the parser_config built from them) stay flat.
+		if isParserComponent(cpnID, comp.Obj.ComponentName) {
+			params = schema.FlattenLegacyParserSetups(params)
 		}
 		out = append(out, ComponentParamsSchema{
 			CpnID:          cpnID,

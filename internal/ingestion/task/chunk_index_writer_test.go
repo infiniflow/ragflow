@@ -18,7 +18,11 @@ package task
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestChunkIndexWriter_EmptyChunks(t *testing.T) {
@@ -95,6 +99,29 @@ func TestChunkIndexWriter_MultipleBatches(t *testing.T) {
 	}
 }
 
+func TestChunkIndexWriter_UsesFinalInserterForLastBatch(t *testing.T) {
+	var calls []string
+	w := newChunkIndexWriter(
+		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			calls = append(calls, fmt.Sprintf("regular:%d", len(chunks)))
+			return nil, nil
+		},
+		"base",
+		"kb-1",
+		3,
+	).withFinalInsertFunc(func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+		calls = append(calls, fmt.Sprintf("final:%d", len(chunks)))
+		return nil, nil
+	})
+
+	if err := w.Write(t.Context(), make([]map[string]any, 7)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []string{"regular:3", "regular:3", "final:1"}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("insert calls = %v, want %v", calls, want)
+	}
+}
+
 func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
 	var lastBatchSize int
 	w := newChunkIndexWriter(
@@ -112,5 +139,44 @@ func TestChunkIndexWriter_BulkSizeZero(t *testing.T) {
 	}
 	if lastBatchSize != 20 {
 		t.Fatalf("batch size = %d, want 20 (bulkSize=0 should degrade to len(chunks))", lastBatchSize)
+	}
+}
+
+func TestChunkIndexWriterRetriesFailedBatch(t *testing.T) {
+	attempts := 0
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("temporary parent write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "child"}, {"id": "parent", "available_int": 0}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("insert attempts = %d, want 2", attempts)
+	}
+}
+
+func TestChunkIndexWriterWaitsBeforeRetryingFailedBatch(t *testing.T) {
+	attempts := make([]time.Time, 0, 2)
+	writer := newChunkIndexWriter(func(_ context.Context, _ []map[string]any, _, _ string) ([]string, error) {
+		attempts = append(attempts, time.Now())
+		if len(attempts) == 1 {
+			return nil, errors.New("temporary write failure")
+		}
+		return nil, nil
+	}, "ragflow_tenant", "kb", 0)
+
+	if err := writer.Write(t.Context(), []map[string]any{{"id": "chunk"}}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("insert attempts = %d, want 2", len(attempts))
+	}
+	if delay := attempts[1].Sub(attempts[0]); delay < 50*time.Millisecond {
+		t.Fatalf("retry delay = %s, want at least 50ms", delay)
 	}
 }

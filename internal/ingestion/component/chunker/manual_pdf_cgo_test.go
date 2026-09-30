@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	native_analyzer "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/parser/parser"
 )
 
@@ -38,6 +40,28 @@ import (
 // no-op'ing. The assertion is layout-independent: whether or not the reading
 // order differed from the physical order, the sorted result must be monotonic.
 func TestManualChunker_RealPDFResort(t *testing.T) {
+	// The real-PDF resort exercises the in-process DeepDoc backend — now the sole
+	// inference path. Register it here (following the convention used by the other
+	// integration tests) so the test runs for real wherever the models + static
+	// ONNX Runtime are present. The CI runner bakes both (MODEL_DIR is set to
+	// /opt/ragflow-deepdoc-models), so the generic integration job exercises this
+	// path instead of skipping it. When DEEPDOC_NATIVE_REQUIRED=1 the backend is
+	// mandatory, so a missing prerequisite fails loudly rather than silently.
+	modelDir := os.Getenv("MODEL_DIR")
+	if modelDir == "" {
+		if os.Getenv("DEEPDOC_NATIVE_REQUIRED") == "1" {
+			t.Fatalf("MODEL_DIR must be set: the in-process DeepDoc backend is required (DEEPDOC_NATIVE_REQUIRED=1)")
+		}
+		t.Skip("set MODEL_DIR to run the real-PDF resort test (in-process DeepDoc backend)")
+	}
+	if err := native_analyzer.Register(modelDir, native_analyzer.DefaultDropScore); err != nil {
+		if os.Getenv("DEEPDOC_NATIVE_REQUIRED") == "1" {
+			t.Fatalf("in-process DeepDoc backend unavailable but required (DEEPDOC_NATIVE_REQUIRED=1): %v", err)
+		}
+		t.Skipf("in-process DeepDoc backend unavailable, skipping real-PDF resort test: %v", err)
+	}
+	t.Cleanup(func() { deepdoctype.SetNativeDocAnalyzerFactory(nil) })
+
 	path := filepath.Join("..", "..", "..", "..", "test", "benchmark", "test_docs", "Doc1.pdf")
 	data, err := os.ReadFile(path)
 	if err != nil {

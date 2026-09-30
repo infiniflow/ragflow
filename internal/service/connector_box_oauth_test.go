@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
-	redisengine "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -20,7 +20,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 func forceNilConnectorRedis(t *testing.T) {
 	t.Helper()
 	previous := connectorRedisGet
-	connectorRedisGet = func() *redisengine.Client { return nil }
+	connectorRedisGet = func() *kvrocks.Client { return nil }
 	t.Cleanup(func() {
 		connectorRedisGet = previous
 	})

@@ -28,7 +28,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -78,7 +78,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -128,7 +128,7 @@
                         "exception_method": "",
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 1,
@@ -201,7 +201,7 @@
                                 ]
                             }
                         },
-                        "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                        "llm_id": "",
                         "message_history_window_size": 1,
                         "outputs": {
                             "category_name": {
@@ -547,7 +547,7 @@
                                     "uuid": "81a65fca-a460-4a3b-a4d5-50e76da760bb"
                                 }
                             ],
-                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "message_history_window_size": 1,
@@ -634,7 +634,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -732,7 +732,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -791,7 +791,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-v4-pro@default@DeepSeek",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,

@@ -538,7 +538,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 		// termParts collects query parts for each term in the segment.
 		var termParts []string
 		for _, termWeight := range terms {
-			termParts = append(termParts, fmt.Sprintf("(%s)^%.1f", termWeight.term, termWeight.weight))
+			// %v, not %.1f: the reference (rag/nlp/query.py:152) writes the raw
+			// weight, and one decimal flattens every weight below 0.05 to ^0.0.
+			termParts = append(termParts, fmt.Sprintf("(%s)^%v", termWeight.term, termWeight.weight))
 		}
 		// tmsStr is the query string for the current segment.
 		tmsStr := strings.Join(termParts, " ")
@@ -572,8 +574,6 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 		if tmsStr != "" {
 			qs = append(qs, tmsStr)
-		} else {
-			fmt.Println("tmsStr is empty")
 		}
 	}
 

@@ -16,10 +16,11 @@ package tree
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -70,7 +71,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// here must not abort the whole tree compile — the summary nodes are already
 	// valid on their own — so it is best-effort and surfaced as a log.
 	if graphProds, err := buildTreeGraph(ctx, deps, docID, products); err != nil {
-		log.Printf("tree: graph projection failed (best-effort, continuing): %v", err)
+		rfcommon.Warn("tree: graph projection failed, continuing", zap.Error(err))
 	} else {
 		products = append(products, graphProds...)
 	}
@@ -79,7 +80,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// directly instead of only reaching them through beam descent. Also
 	// best-effort: a failure here must not cost us the tree.
 	if claimProds, err := buildTreeClaimProducts(ctx, deps, docID, claimsByChunk, param.TemplateID); err != nil {
-		log.Printf("tree: claim rows failed (best-effort, continuing): %v", err)
+		rfcommon.Warn("tree: claim rows failed, continuing", zap.Error(err))
 	} else {
 		products = append(products, claimProds...)
 	}
@@ -212,7 +213,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		claimsByChunk = ExtractClaimsForChunks(ctx, deps, llmID, chunks,
 			ParseEvidenceGateMode(param.Extra["evidence_gate_mode"]), resolveClaimPrompt(param))
 		if len(claimsByChunk) > 0 {
-			log.Printf("tree: extracted claims for %d/%d chunk(s)", len(claimsByChunk), len(chunks))
+			rfcommon.Info("tree: extracted claims", zap.Int("chunks_with_claims", len(claimsByChunk)), zap.Int("chunks", len(chunks)))
 		}
 	}
 	if claimOut != nil {
@@ -243,7 +244,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		if len(digests) > 0 {
 			if claimVecs, err := deps.Embed.Encode(ctx, digests); err != nil {
-				log.Printf("tree: claim-view embedding failed; clustering on raw chunk vectors: %v", err)
+				rfcommon.Warn("tree: claim-view embedding failed, clustering on raw chunk vectors", zap.Error(err))
 			} else {
 				claimView := make(map[string][]float32, len(digestIDs))
 				for i, cid := range digestIDs {
@@ -263,7 +264,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 					embeddings[i] = toFloat64Slice(view)
 					replaced++
 				}
-				log.Printf("tree: %d/%d chunk(s) clustered on claim-view embeddings", replaced, len(chunkIDs))
+				rfcommon.Info("tree: clustered on claim-view embeddings", zap.Int("replaced", replaced), zap.Int("chunks", len(chunkIDs)))
 			}
 		}
 	}
@@ -323,7 +324,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			if errorCount >= maxErrors {
 				return fmt.Errorf("tree: aborted after %d summarization errors: %w", errorCount, err)
 			}
-			log.Printf("tree: skipping cluster due to summarization error (continuing): %v", err)
+			rfcommon.Warn("tree: skipping cluster due to summarization error", zap.Error(err))
 			continue
 		}
 		nodeID := common.StableRowID(tenantID, docID, string(common.VariantTree),
@@ -409,7 +410,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		// No summaries survived (e.g. every deepest cluster failed while the
 		// error budget was not yet exhausted). Return the partial tree without a
 		// root node — Python drops the root in this case rather than crashing.
-		log.Printf("tree: no top-level summaries produced, skipping root node")
+		rfcommon.Warn("tree: no top-level summaries produced, skipping root node")
 		return nil
 	}
 	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.ModelContextLen, maxToken)
@@ -419,16 +420,16 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	if err != nil {
 		// A failed root must not abort the whole tree: Python drops the root
 		// node and returns the rest of the tree.
-		log.Printf("tree: root synthesis failed, skipping root node: %v", err)
+		rfcommon.Warn("tree: root synthesis failed, skipping root node", zap.Error(err))
 		return nil
 	}
 	embedding, err := deps.Embed.Encode(ctx, []string{rootSummary})
 	if err != nil {
-		log.Printf("tree: root embedding failed, skipping root node: %v", err)
+		rfcommon.Warn("tree: root embedding failed, skipping root node", zap.Error(err))
 		return nil
 	}
 	if len(embedding) == 0 {
-		log.Printf("tree: root embedding returned no vectors, skipping root node")
+		rfcommon.Warn("tree: root embedding returned no vectors, skipping root node")
 		return nil
 	}
 	*products = append(*products, common.Product{

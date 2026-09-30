@@ -7,5 +7,6 @@
     "embedding": "embeddings",
     "rerank": "rerank"
   },
+  "url_hint": "http://host.docker.internal:8000/v1",
   "class": "local"
 }

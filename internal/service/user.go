@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"hash"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
@@ -595,7 +595,7 @@ func defaultUserLanguage() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -663,12 +663,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		lastLoginTime = user.LastLoginTime.Format("2006-01-02T15:04:05")
 	}
 
-	// Get access token
-	var accessToken string
-	if user.AccessToken != nil {
-		accessToken = *user.AccessToken
-	}
-
 	// Get avatar
 	var avatar interface{}
 	if user.Avatar != nil {
@@ -701,12 +695,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		loginChannel = *user.LoginChannel
 	}
 
-	// Get password
-	var password string
-	if user.Password != nil {
-		password = *user.Password
-	}
-
 	// Get status
 	status := "1"
 	if user.Status != nil {
@@ -719,8 +707,10 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		isSuperuser = *user.IsSuperuser
 	}
 
+	// NOTE: access_token and password (hash) are intentionally omitted. This map
+	// is serialized into user-facing API responses (login/register/oauth/profile);
+	// the auth token is delivered via the Authorization header + cookie, not here.
 	return map[string]interface{}{
-		"access_token":     accessToken,
 		"avatar":           avatar,
 		"color_schema":     colorSchema,
 		"create_date":      createDate,
@@ -735,7 +725,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		"last_login_time":  lastLoginTime,
 		"login_channel":    loginChannel,
 		"nickname":         user.Nickname,
-		"password":         password,
 		"status":           status,
 		"timezone":         timezone,
 		"update_date":      updateDate,
@@ -1085,7 +1074,7 @@ func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (cap
 		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
-	if ok := redis.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
+	if ok := kvrocks.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
 	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
@@ -1105,7 +1094,7 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	captchaKey := utility.CaptchaIDRedisKey(captchaID)
 	stored, _ := rc.Get(ctx, captchaKey)
 	if stored == "" {
@@ -1204,7 +1193,7 @@ func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (c
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
 	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
@@ -1274,7 +1263,7 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
 	}
 
-	rc := redis.Get()
+	rc := kvrocks.Get()
 	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
 	if v, _ := rc.Get(ctx, verifiedKey); v != "1" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")

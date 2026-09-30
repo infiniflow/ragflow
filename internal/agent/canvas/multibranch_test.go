@@ -17,8 +17,8 @@
 // multibranch_test.go — MultiBranch integration tests.
 //
 // The canvas scheduler (scheduler.go) installs an eino MultiBranch on
-// every Switch / Categorize parent that has at least two declared
-// downstream children. This file exercises two layers:
+// every Switch / Categorize parent that has at least one declared
+// downstream child. This file exercises two layers:
 //
 //   1. Pure unit tests for makeSwitchBranchCondition — the closure
 //      that turns outputs["_next"] into an end-node set (map[string]bool).
@@ -100,6 +100,20 @@ func TestMakeSwitchBranchCondition_UnknownKey(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("cond on unknown _next = %v, want empty map", got)
+	}
+}
+
+// TestMakeSwitchBranchCondition_SingleChildUnmatched: a one-child Switch
+// must not fall through to its only static edge when the selected target is
+// absent or different.
+func TestMakeSwitchBranchCondition_SingleChildUnmatched(t *testing.T) {
+	cond := makeSwitchBranchCondition(map[string]bool{"if_branch": true})
+	got, err := cond(t.Context(), map[string]any{"_next": []any{"else_branch"}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("cond on unmatched single-child target = %v, want empty map", got)
 	}
 }
 
@@ -185,10 +199,9 @@ func TestWireMultiBranches_NoBranchable(t *testing.T) {
 	}
 }
 
-// TestWireMultiBranches_SingleChildSkipped: a Switch with only one
-// downstream child is degenerate — branch is meaningless. The
-// helper should skip it and the AddInput edge handles invocation.
-func TestWireMultiBranches_SingleChildSkipped(t *testing.T) {
+// TestWireMultiBranches_SingleChild: a Switch with one downstream child
+// still needs a branch so an unmatched condition cannot execute it.
+func TestWireMultiBranches_SingleChild(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"sw": {
@@ -200,8 +213,8 @@ func TestWireMultiBranches_SingleChildSkipped(t *testing.T) {
 	}
 	wf := compose.NewWorkflow[map[string]any, map[string]any]()
 	regs := wireMultiBranches(wf, c, nil)
-	if len(regs) != 0 {
-		t.Errorf("expected no branch for single-child Switch, got %d: %+v", len(regs), regs)
+	if len(regs) != 1 {
+		t.Errorf("expected one branch for single-child Switch, got %d: %+v", len(regs), regs)
 	}
 }
 

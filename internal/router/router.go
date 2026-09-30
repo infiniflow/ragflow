@@ -217,8 +217,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
 		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
 
-		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		// Public bot endpoints (authenticated with an SDK beta token, not a session).
+		// The image/thumbnail routes accept the beta token like Python's
+		// login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA]); shared
+		// chats render their images through them. Ownership is enforced in the
+		// service layer, not by the middleware group.
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/documents/:id/thumbnail", r.documentHandler.GetDocumentThumbnail)
+		apiBetaAuth.GET("/documents/:id/images/:image_id", r.documentHandler.GetDocumentImageForDocument)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
@@ -235,19 +241,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User info endpoint
-		authorized.GET("/v1/user/info", r.userHandler.Info)
-		// User tenant info endpoint
-		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
-		// Tenant list endpoint
-		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
-		// User settings endpoint
-		authorized.POST("/v1/user/setting", r.userHandler.Setting)
-		// User change password endpoint
-		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
-		// User set tenant info endpoint
-		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
-
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
@@ -348,9 +341,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
-				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
-				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
-				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
@@ -388,6 +378,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
 				// Metadata Config
@@ -446,7 +437,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				files.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				files.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				files.GET("/:id", r.fileHandler.Download)
-				files.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
+			}
+
+			workspaceFiles := v1.Group("/workspace-files")
+			{
+				workspaceFiles.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
 			// File routes
@@ -470,17 +465,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
-			commitWorkspace := v1.Group("/workspace")
+			// /workspaces/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			commitWorkspaces := v1.Group("/workspaces")
 			{
-				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+				commitWorkspaces.POST("/:workspace_id/commits", r.fileCommitHandler.CreateCommit)
+				commitWorkspaces.GET("/:workspace_id/commits", r.fileCommitHandler.ListCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitWorkspaces.GET("/:workspace_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
 			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
@@ -689,6 +684,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete key /api/v1/system/keys/:key DELETE
 					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
+
+				system.GET("/hardware", r.systemHandler.GetHardwareInfo)
+
+				system.GET("/cores", r.systemHandler.GetCores)
+				system.PUT("/cores", r.systemHandler.SetCores)
+				system.GET("/memory", r.systemHandler.GetMemory)
+				system.PUT("/memory", r.systemHandler.SetMemory)
+				system.GET("/concurrency", r.systemHandler.GetConcurrency)
+				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
 			}
 
 			// Document routes

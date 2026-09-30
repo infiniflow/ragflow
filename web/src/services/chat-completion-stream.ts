@@ -1,7 +1,7 @@
 /**
  * Chat completion SSE streaming.
  *
- * NOTE on the network layering convention (see web/CLAUDE.md): this file
+ * NOTE on the network layering convention (see web/AGENTS.md): this file
  * deliberately uses the native `fetch` API instead of the shared axios instance
  * in `@/utils/next-request`. Streaming requires access to the raw
  * `Response.body` `ReadableStream`, which axios cannot expose in the browser.

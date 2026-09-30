@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderModelItem } from '@/interfaces/request/llm';
+import { modelNameKey } from '@/utils/llm-util';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { z } from 'zod';
@@ -255,7 +256,9 @@ export const AddCustomModelDialog = ({
                 if (
                   typeof value === 'string' &&
                   value &&
-                  existingNames.includes(value)
+                  existingNames.some(
+                    (n) => modelNameKey(n) === modelNameKey(value),
+                  )
                 ) {
                   return t('modelNameDuplicate');
                 }

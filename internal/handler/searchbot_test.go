@@ -176,20 +176,18 @@ func TestSearchBotsRetrieval_ServiceError(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	code, _ := resp["code"].(float64)
-	if code == 0 {
-		t.Errorf("expected non-zero error code, got %v", code)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Errorf("expected code %d, got %v", common.CodeDataError, resp["code"])
 	}
-	msg, _ := resp["message"].(string)
-	if msg == "" || msg == "success" {
-		t.Errorf("expected error message, got %q", msg)
+	if resp["message"] != "db error" {
+		t.Errorf("expected message %q, got %v", "db error", resp["message"])
 	}
 }
 

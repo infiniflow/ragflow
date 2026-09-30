@@ -99,6 +99,25 @@ func (dao *TenantModelDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []stri
 	return models, nil
 }
 
+// GetActiveChatModelsByProviderAndInstanceIDs returns every ACTIVE model whose
+// model_type bitmask covers `modelType`, scoped to the given provider /
+// instance pairs. Used to enumerate a tenant's chat-capable models for the
+// EinoChatModel failover chain: each returned row's ID doubles as the
+// "model ref" that ModelProviderService.ResolveModelConfig accepts.
+func (dao *TenantModelDAO) GetActiveModelsByProviderAndInstanceIDsAndType(ctx context.Context, db *gorm.DB, providerIDs, instanceIDs []string, modelType int) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	q := db.WithContext(ctx).
+		Where("provider_id IN ?", providerIDs).
+		Where("instance_id IN ?", instanceIDs).
+		Where("model_type & ? != 0", modelType).
+		Where("status = ?", "active")
+	err := q.Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
 func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
 	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error

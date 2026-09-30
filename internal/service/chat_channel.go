@@ -18,9 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/utility"
 
@@ -325,7 +326,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		nil,
 	)
 	if err != nil {
-		log.Printf("chat channel %s completion failed: %v", channel.ID, err)
+		common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
 		return "Sorry, I couldn't process your message right now.", nil
 	}
 	if result == nil {

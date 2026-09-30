@@ -235,7 +235,8 @@ func TestRunPlan_PromptMaxPagesNeverExceedsCap(t *testing.T) {
 		entities = append(entities, wikiEntity{Name: "Ent " + itoa(i) + big})
 	}
 	p := &wikiPipeline{
-		ctx: context.Background(),
+		ctx:   context.Background(),
+		param: topicModeParam(),
 		deps: common.Deps{
 			ModelContextLen: 1024,
 			Chat: chatFunc(func(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
@@ -352,7 +353,8 @@ func TestRunPlan_TruncatesToGlobalHardCap(t *testing.T) {
 	}
 	payload := map[string]any{"pages": pages}
 	p := &wikiPipeline{
-		ctx: context.Background(),
+		ctx:   context.Background(),
+		param: topicModeParam(),
 		deps: common.Deps{
 			Chat: reconcileChatStub{resp: mustJSON(payload)},
 		},
@@ -440,7 +442,8 @@ func TestRunPlan_ParallelBatchesMergeInOrder(t *testing.T) {
 	// batch2 (token budget 3500).
 	big := strings.Repeat("x", 7000)
 	p := &wikiPipeline{
-		ctx: context.Background(),
+		ctx:   context.Background(),
+		param: topicModeParam(),
 		deps: common.Deps{
 			Chat: batchPlanChatStub{},
 		},
@@ -499,7 +502,8 @@ func TestRunPlan_ParallelBatchesFirstError(t *testing.T) {
 	big := strings.Repeat("x", 7000)
 	boom := errors.New("planning failed")
 	p := &wikiPipeline{
-		ctx: context.Background(),
+		ctx:   context.Background(),
+		param: topicModeParam(),
 		deps: common.Deps{
 			Chat: failPlanChatStub{err: boom},
 		},
@@ -548,7 +552,8 @@ func TestRunPlan_CancelledCtxAborts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	p := &wikiPipeline{
-		ctx: ctx,
+		ctx:   ctx,
+		param: topicModeParam(),
 		deps: common.Deps{
 			Chat: batchPlanChatStub{},
 		},
@@ -564,4 +569,9 @@ func TestRunPlan_CancelledCtxAborts(t *testing.T) {
 	if _, err := p.runPlan(); err == nil {
 		t.Fatalf("runPlan err = nil, want context cancelled")
 	}
+}
+
+func topicModeParam() common.Param {
+	enabled := true
+	return common.Param{Plan: &enabled}
 }

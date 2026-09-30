@@ -19,7 +19,7 @@ package syncer
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/utility"
 	"sync"
 	"time"
@@ -43,12 +43,12 @@ type ConnectorLock struct {
 	holder string
 	mu     sync.Mutex
 	local  map[string]struct{}
-	redis  map[string]*redis.DistributedLock
+	redis  map[string]*kvrocks.DistributedLock
 }
 
 // NewConnectorLock creates an empty connector/KB lock.
 func NewConnectorLock() *ConnectorLock {
-	return &ConnectorLock{holder: utility.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*redis.DistributedLock{}}
+	return &ConnectorLock{holder: utility.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*kvrocks.DistributedLock{}}
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.
@@ -65,8 +65,8 @@ func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, b
 	l.local[key] = struct{}{}
 	l.mu.Unlock()
 
-	if client := redis.Get(); client != nil {
-		lock := redis.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
+	if client := kvrocks.Get(); client != nil {
+		lock := kvrocks.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
 		if lock == nil || !lock.Acquire(context.Background()) {
 			l.mu.Lock()
 			delete(l.local, key)

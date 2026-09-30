@@ -27,7 +27,6 @@
 package serenedb
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"sync"

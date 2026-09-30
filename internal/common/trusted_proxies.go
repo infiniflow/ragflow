@@ -26,7 +26,7 @@ import (
 // headers gin honours when no `ragflow.trusted_proxies` list is configured.
 // It covers the nginx that docker/entrypoint.sh starts inside the same
 // container as this server: docker/nginx/ragflow.conf.golang proxies /v1 and
-// /api to 127.0.0.1:9384 and proxy.conf appends the caller to
+// /api to 127.0.0.1:9380 and proxy.conf appends the caller to
 // X-Forwarded-For. Nothing else is trusted, so a request that reaches the
 // server from any other peer is attributed to that peer regardless of the
 // headers it carries.

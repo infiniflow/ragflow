@@ -1,0 +1,124 @@
+[
+  {
+    "name": "ragflow_retrieval",
+    "description": "Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "dataset_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional array of dataset IDs to search. If not provided or empty, all datasets will be searched."
+        },
+        "document_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional array of document IDs to search within."
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or query to search for."
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1,
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Number of results to return per page (default: 10, max recommended: 50 to avoid token limits)",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 100
+        },
+        "similarity_threshold": {
+          "type": "number",
+          "description": "Minimum similarity threshold for results",
+          "default": 0.2,
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "vector_similarity_weight": {
+          "type": "number",
+          "description": "Weight for vector similarity vs term similarity",
+          "default": 0.3,
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "keyword": {
+          "type": "boolean",
+          "description": "Enable keyword-based search",
+          "default": false
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Maximum results to consider before ranking",
+          "default": 1024,
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "rerank_id": {
+          "type": "string",
+          "description": "Optional reranking model identifier"
+        },
+        "force_refresh": {
+          "type": "boolean",
+          "description": "Set to true only if fresh dataset and document metadata is explicitly required. Otherwise, cached metadata is used (default: false).",
+          "default": false
+        }
+      },
+      "required": [
+        "question"
+      ]
+    }
+  },
+  {
+    "name": "ragflow_list_datasets",
+    "description": "List all accessible datasets (knowledge bases) in RAGFlow. Returns dataset IDs, names, and descriptions. Use this tool to discover which datasets are available before performing retrieval.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "default": 1,
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Results per page",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    }
+  },
+  {
+    "name": "ragflow_list_chats",
+    "description": "List all accessible chat assistants in RAGFlow. Returns chat assistant IDs, names, and descriptions. Use this tool to discover available chat assistants that can be used for conversations.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "default": 1,
+          "minimum": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Results per page",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    }
+  }
+]

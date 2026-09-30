@@ -1,7 +1,6 @@
 package dataset
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -96,24 +95,45 @@ func TestDatasetServiceListDatasetsRejectsIDAndIDsTogether(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceListDatasetsRejectsDeniedIDs(t *testing.T) {
+func TestDatasetServiceListDatasetsFiltersInaccessibleIDs(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-valid", "user-1", "Valid")
+	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
+
+	ctx := t.Context()
+	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
+		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
+		"", nil, "", "user-1", []string{"kb-valid", "kb-private", "kb-missing"},
+	)
+	if err != nil {
+		t.Fatalf("ListDatasets failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if total != 1 || len(data) != 1 || data[0]["id"] != "kb-valid" {
+		t.Fatalf("expected only the valid dataset, got total=%d data=%#v", total, data)
+	}
+}
+
+func TestDatasetServiceListDatasetsReturnsEmptyForAllInaccessibleIDs(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
 
 	ctx := t.Context()
-	_, _, code, err := testDatasetListService(t).ListDatasets(ctx,
+	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-		"", nil, "", "user-1", []string{"kb-private"},
+		"", nil, "", "user-1", []string{"kb-private", "kb-missing"},
 	)
-	if err == nil {
-		t.Fatal("expected permission error")
+	if err != nil {
+		t.Fatalf("ListDatasets failed: %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	expected := "user 'user-1' lacks permission for datasets: 'kb-private'"
-	if !strings.Contains(err.Error(), expected) {
-		t.Fatalf("unexpected error: %v", err)
+	if data == nil || len(data) != 0 || total != 0 {
+		t.Fatalf("expected a non-nil empty result, got total=%d data=%#v", total, data)
 	}
 }

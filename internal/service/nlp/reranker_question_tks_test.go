@@ -130,10 +130,11 @@ func TestRerankByModelPrefersNaturalText(t *testing.T) {
 	}
 }
 
-// TestRerankByModelNaturalTextKeepsAccentedSpacing guards against
-// RemoveRedundantSpaces being applied to natural text: it treats every
-// non-ASCII letter as punctuation and would collapse "sécurité des" into
-// "sécuritédes".
+// TestRerankByModelNaturalTextKeepsAccentedSpacing guards against the
+// redundant-space cleanup being applied to natural text: an ASCII-only word
+// class treats every non-Latin letter as punctuation and collapses
+// "sécurité des" into "sécuritédes". The cleanup itself is pinned in
+// common.TestRemoveRedundantSpaces.
 func TestRerankByModelNaturalTextKeepsAccentedSpacing(t *testing.T) {
 	chunk := fullChunk()
 	chunk["content_with_weight"] = "sécurité des données"
@@ -142,9 +143,6 @@ func TestRerankByModelNaturalTextKeepsAccentedSpacing(t *testing.T) {
 
 	if doc != "sécurité des données" {
 		t.Errorf("natural text was altered: got %q", doc)
-	}
-	if got := RemoveRedundantSpaces("sécurité des données"); got == "sécurité des données" {
-		t.Errorf("test premise broken: RemoveRedundantSpaces no longer mangles accented text (%q)", got)
 	}
 }
 

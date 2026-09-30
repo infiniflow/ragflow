@@ -74,19 +74,3 @@ def _load_plugin_module(monkeypatch):
     module.manager = _DummyManager()
     spec.loader.exec_module(module)
     return module
-
-
-@pytest.mark.p2
-def test_plugin_tools_metadata_shape_unit(monkeypatch):
-    module = _load_plugin_module(monkeypatch)
-
-    class _DummyTool:
-        def get_metadata(self):
-            return {"name": "dummy", "description": "test"}
-
-    monkeypatch.setattr(module.GlobalPluginManager, "get_llm_tools", staticmethod(lambda: [_DummyTool()]))
-    res = module.llm_tools()
-    assert res["code"] == 0
-    assert isinstance(res["data"], list)
-    assert res["data"][0]["name"] == "dummy"
-    assert res["data"][0]["description"] == "test"

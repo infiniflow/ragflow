@@ -198,10 +198,10 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 	posD := json.RawMessage(`[[4,0,40,0,16]]`)
 	posE := json.RawMessage(`[[5,0,50,0,20]]`)
 	posF := json.RawMessage(`[[6,0,60,0,24]]`)
-	// 6 single-token items. With chunkTokens=9 (5 item tokens + 4 joinSep "\n"
-	// tokens), items 0..4 merge into one chunk — the re-tokenize guard lets the
-	// joined text fill the cap exactly (9 tokens), and item5 starts a fresh
-	// chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of the
+	// 6 single-token items. The JSON path joins with joinSep="" (no synthetic
+	// "\n"), so the budget is pure item tokens. With chunkTokens=5, items 0..4
+	// merge into one chunk (5 tokens, filling the cap exactly), and item5 starts
+	// a fresh chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of the
 	// 5-item previous chunk's text => only the last item ("e", posE) intersects
 	// the tail. So chunk[1] must carry posE (tail) + posF (own), but NOT
 	// posA/posB/posC/posD. (Texts are single-token so the re-tokenize guard's
@@ -216,7 +216,7 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 9, 20)
+	got := mergeByTokenSizeFromJSON(items, 5, 20)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (5 items merge, 6th starts fresh with partial overlap), got %d", len(merged))
@@ -257,7 +257,7 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -266,11 +266,15 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	if p0[0][3] != 0 || math.Abs(p0[0][4]-20) > 1e-9 {
-		t.Errorf("piece 0 bounds = [%v,%v], want [0,20]", p0[0][3], p0[0][4])
+	// The custom ("`\n`") delimiter is DROPPED (Python-compatible split
+	// instruction), so piece 0 is "AAAA" (4 runes) and piece 1 is "BBBB" (4);
+	// the slice is therefore proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
+	if p0[0][3] != 0 || math.Abs(p0[0][4]-wantSplit) > 1e-9 {
+		t.Errorf("piece 0 bounds = [%v,%v], want [0,%v]", p0[0][3], p0[0][4], wantSplit)
 	}
-	if math.Abs(p1[0][3]-20) > 1e-9 || p1[0][4] != 40 {
-		t.Errorf("piece 1 bounds = [%v,%v], want [20,40]", p1[0][3], p1[0][4])
+	if math.Abs(p1[0][3]-wantSplit) > 1e-9 || p1[0][4] != 40 {
+		t.Errorf("piece 1 bounds = [%v,%v], want [%v,40]", p1[0][3], p1[0][4], wantSplit)
 	}
 }
 
@@ -357,7 +361,7 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -366,11 +370,15 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	if math.Abs(p0[0][4]-20) > 1e-9 {
-		t.Errorf("piece 0 bottom = %v, want 20 (tag runes must not shift ratio)", p0[0][4])
+	// The parser tag is excluded from the ratio (removeTag strips it), and the
+	// custom ("`\n`") delimiter is DROPPED, so piece 0 is "AAAA" (4 runes) and
+	// piece 1 is "CCCC" (4); the split is proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
+	if math.Abs(p0[0][4]-wantSplit) > 1e-9 {
+		t.Errorf("piece 0 bottom = %v, want %v (tag runes excluded, retained delimiter counted)", p0[0][4], wantSplit)
 	}
-	if math.Abs(p1[0][3]-20) > 1e-9 {
-		t.Errorf("piece 1 top = %v, want 20 (tag runes must not shift ratio)", p1[0][3])
+	if math.Abs(p1[0][3]-wantSplit) > 1e-9 {
+		t.Errorf("piece 1 top = %v, want %v (tag runes excluded, retained delimiter counted)", p1[0][3], wantSplit)
 	}
 }
 

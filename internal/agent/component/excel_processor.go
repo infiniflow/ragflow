@@ -159,7 +159,7 @@ func (e *ExcelProcessorComponent) Invoke(ctx context.Context, db *gorm.DB, input
 	// ExcelProcessor does not currently read from canvas state for
 	// binary blobs, but we still pull state so a nil-state error is
 	// surfaced early.
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("ExcelProcessor: %w", err)
 	}
 

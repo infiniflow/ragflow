@@ -90,6 +90,29 @@ func TestCropSectionImage_InvalidTag(t *testing.T) {
 	}
 }
 
+func TestCropSectionImage_NegativeCoordNotDropped(t *testing.T) {
+	// Regression: a content box extending slightly above the page top
+	// (top=-3.0) must still produce a cropped image instead of being dropped
+	// with "cropSectionImage: empty position list". This is the exact tag that
+	// previously triggered the warning.
+	pageImages := map[int]image.Image{
+		49: makeTestPageImage(600, 800, color.RGBA{255, 0, 0, 255}),
+	}
+	posTag := FormatPositionTag(49, 45.0, 549.7, -3.0, 737.9) // -> "@@50\t45.0\t549.7\t-3.0\t737.9##"
+	b64 := CropSectionImage(posTag, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("negative-coord tag must produce an image, not be dropped")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	img := decodePNG(t, decoded)
+	if img.Bounds().Dx() <= 0 || img.Bounds().Dy() <= 0 {
+		t.Errorf("decoded image is degenerate: %v", img.Bounds())
+	}
+}
+
 func TestCropSectionImage_ContextPadding(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
