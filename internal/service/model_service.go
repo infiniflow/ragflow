@@ -974,7 +974,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					Query:     "test",
 					Documents: []string{"test"},
 				}
-				_, err = driver.Rerank(ctx, &modelName, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
+				rerankModel := modelModule.NewRerankModel(driver, &modelName, apiConfig, 0)
+				_, err = rerankModel.Rerank(ctx, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
 				ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)

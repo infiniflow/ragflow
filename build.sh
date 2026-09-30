@@ -369,12 +369,28 @@ check_office_oxide_deps() {
     if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
-        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
-        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
-        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
-        echo "    uv run python3 ragflow_deps/download_go_deps.py"
-        exit 1
+        echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
+        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/office_oxide-linux-x86_64.tar.gz"
+        if ! (cd "${PROJECT_ROOT}" && uv run python3 ragflow_deps/download_go_deps.py); then
+            echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+            echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+            echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+            echo "    uv run python3 ragflow_deps/download_go_deps.py"
+            exit 1
+        fi
+        lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
+        header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
+        if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
+            echo -e "${RED}Error: office_oxide native library not found after refresh${NC}"
+            exit 1
+        fi
+        if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
+            found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
+            echo -e "${RED}Error: office_oxide native lib version mismatch after refresh${NC}"
+            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+            exit 1
+        fi
     fi
 
     echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
