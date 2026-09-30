@@ -273,6 +273,7 @@ type EmbeddingModel struct {
 	APIConfig    *APIConfig
 	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
 	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
+	info         *ModelInfo
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
@@ -283,6 +284,24 @@ func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConf
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
 	}
+}
+
+// NewEmbeddingModelWithInfo creates an embedding model with resolved metadata.
+func NewEmbeddingModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int, info *ModelInfo) *EmbeddingModel {
+	model := NewEmbeddingModel(driver, modelName, apiConfig, maxTokens)
+	model.info = cloneModelInfo(info)
+	if info != nil && info.Catalog != nil {
+		model.MaxBatchSize = info.Catalog.MaxBatchSize
+	}
+	return model
+}
+
+// Info returns metadata for this selected embedding model.
+func (m *EmbeddingModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
 }
 
 // ResolveBatchSize returns the max texts per Embed request for this embedding
@@ -373,6 +392,7 @@ type RerankModel struct {
 
 	limiter    tokenizer.Limiter
 	limiterErr error
+	info       *ModelInfo
 }
 
 // NewRerankModel creates a new RerankModel
@@ -392,6 +412,21 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
 		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
+}
+
+// NewRerankModelWithInfo creates a rerank model with resolved metadata.
+func NewRerankModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int, info *ModelInfo) *RerankModel {
+	model := NewRerankModel(driver, modelName, apiConfig, maxTokens)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected rerank model.
+func (r *RerankModel) Info() *ModelInfo {
+	if r == nil {
+		return nil
+	}
+	return cloneModelInfo(r.info)
 }
 
 // Rerank calculates similarity between query and texts. Rerank input is measured
@@ -439,16 +474,68 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
 }
 
+// OCRModel wraps a ModelDriver with optical-character-recognition configuration.
+type OCRModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+	info        *ModelInfo
+}
+
+// NewOCRModel creates an OCR model wrapper.
+func NewOCRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *OCRModel {
+	return &OCRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewOCRModelWithInfo creates an OCR model with resolved metadata.
+func NewOCRModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *OCRModel {
+	model := NewOCRModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected OCR model.
+func (m *OCRModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
+}
+
+// OCRFile extracts text from an image or document.
+func (m *OCRModel) OCRFile(ctx context.Context, content []byte, url *string, config *OCRConfig, usage *common.ModelUsage) (*OCRFileResponse, error) {
+	if m == nil || m.ModelDriver == nil {
+		return nil, errors.New("OCR model: driver is nil")
+	}
+	return m.ModelDriver.OCRFile(ctx, m.ModelName, content, url, m.APIConfig, config, usage)
+}
+
 // ASRModel wraps a ModelDriver with speech-to-text configuration.
 type ASRModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	info        *ModelInfo
 }
 
 // NewASRModel creates a new ASRModel.
 func NewASRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ASRModel {
 	return &ASRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewASRModelWithInfo creates an ASR model with resolved metadata.
+func NewASRModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *ASRModel {
+	model := NewASRModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected ASR model.
+func (m *ASRModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
 }
 
 // Transcribe converts audio to text.
@@ -466,11 +553,27 @@ type TTSModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	info        *ModelInfo
 }
 
 // NewTTSModel creates a new TTSModel.
 func NewTTSModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *TTSModel {
 	return &TTSModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewTTSModelWithInfo creates a TTS model with resolved metadata.
+func NewTTSModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *TTSModel {
+	model := NewTTSModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected TTS model.
+func (m *TTSModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
 }
 
 // Speech converts text to audio.
@@ -503,6 +606,7 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
+	info        *ModelInfo
 }
 
 // NewChatModel creates a new ChatModel
@@ -514,10 +618,29 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 	}
 }
 
+// NewChatModelWithInfo creates a chat model with resolved metadata.
+func NewChatModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *ChatModel {
+	model := NewChatModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected chat model.
+func (m *ChatModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
+}
+
 // ChatWithMessages sends a non-streaming chat request through the model wrapper.
 func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
 	if m == nil || m.ModelDriver == nil {
 		return nil, errors.New("chat model: driver is nil")
+	}
+	config = m.withDefaults(config)
+	if err := m.validateMaxOutput(config); err != nil {
+		return nil, err
 	}
 	modelName := ""
 	if m.ModelName != nil {
@@ -531,11 +654,43 @@ func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Messa
 	if m == nil || m.ModelDriver == nil {
 		return errors.New("chat model: driver is nil")
 	}
+	config = m.withDefaults(config)
+	if err := m.validateMaxOutput(config); err != nil {
+		return err
+	}
 	modelName := ""
 	if m.ModelName != nil {
 		modelName = *m.ModelName
 	}
 	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
+}
+
+func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
+	if config == nil {
+		config = &ChatConfig{}
+	}
+	if m.info == nil {
+		return config
+	}
+	if config.ModelClass == nil && m.info.ModelClass != "" {
+		modelClass := m.info.ModelClass
+		config.ModelClass = &modelClass
+	}
+	if config.Thinking == nil && m.info.Thinking != nil {
+		thinking := m.info.Thinking.DefaultValue
+		config.Thinking = &thinking
+	}
+	return config
+}
+
+func (m *ChatModel) validateMaxOutput(config *ChatConfig) error {
+	if m == nil || m.info == nil || m.info.MaxOutput <= 0 || config == nil || config.MaxTokens == nil {
+		return nil
+	}
+	if *config.MaxTokens > m.info.MaxOutput {
+		return fmt.Errorf("chat max_tokens %d exceeds model max_output %d", *config.MaxTokens, m.info.MaxOutput)
+	}
+	return nil
 }
 
 // BindTools registers tools for the ChatModel to call.
@@ -574,4 +729,42 @@ func (cm *ChatModel) SetTerminalTools(names ...string) {
 		term[n] = struct{}{}
 	}
 	cm.ToolConfig.TerminalTools = term
+}
+
+// ModelInfo describes the selected model without exposing its driver
+// credentials. ContextLength is the input/context window; MaxOutput is the
+// provider's maximum generated-token budget.
+type ModelInfo struct {
+	ID            string
+	Name          string
+	ProviderName  string
+	InstanceID    string
+	InstanceName  string
+	ModelTypes    []string
+	ContextLength int
+	MaxOutput     int
+	SupportsTools bool
+	ModelClass    string
+	Thinking      *ModelThinking
+	Catalog       *Model
+}
+
+func cloneModelInfo(info *ModelInfo) *ModelInfo {
+	if info == nil {
+		return nil
+	}
+	copy := *info
+	copy.ModelTypes = append([]string(nil), info.ModelTypes...)
+	if info.Thinking != nil {
+		thinking := *info.Thinking
+		copy.Thinking = &thinking
+	}
+	if info.Catalog != nil {
+		catalog := *info.Catalog
+		catalog.ModelTypes = append([]string(nil), info.Catalog.ModelTypes...)
+		catalog.Dimensions = append([]int(nil), info.Catalog.Dimensions...)
+		catalog.Alias = append([]string(nil), info.Catalog.Alias...)
+		copy.Catalog = &catalog
+	}
+	return &copy
 }

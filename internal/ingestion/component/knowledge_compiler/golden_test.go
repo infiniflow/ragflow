@@ -56,7 +56,7 @@ func signedVec(str string, dim int) []float32 {
 // installSignedProseDeps wires a prose LLM + signed deterministic embedder.
 func installSignedProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: signedEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
