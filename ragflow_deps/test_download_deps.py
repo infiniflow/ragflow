@@ -154,7 +154,7 @@ def test_build_provisions_bpe_from_configured_cache_offline(tmp_path, variable):
     filename = "cl100k_base.tiktoken" if variable == "MODEL_ASSETS_DIR" else "9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
     (cache / filename).write_bytes(b"configured table")
     root = Path(__file__).resolve().parents[1]
-    script = '''
+    script = """
 source "$1/build.sh"
 PROJECT_ROOT="$2/repo"
 SYSTEM_DEPS_TOKENIZER="$2/absent"
@@ -163,8 +163,8 @@ export "$3=$2/cache"
 curl() { return 7; }
 wget() { return 7; }
 _ensure_cl100k_table
-'''
-    result = subprocess.run(["bash", "-c", script, "review", str(root), str(tmp_path), variable], capture_output=True, text=True)
+"""
+    result = subprocess.run(["bash", "-c", script, "review", str(root), str(tmp_path), variable], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert (tmp_path / "repo/ragflow_deps/cl100k_base.tiktoken").read_bytes() == b"configured table"
 
