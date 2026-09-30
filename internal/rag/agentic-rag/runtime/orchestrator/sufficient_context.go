@@ -408,14 +408,19 @@ func scaChunkText(c map[string]any) string {
 }
 
 // boundedExcerpt: a bounded window around a
-// term from the draft. Table text is returned whole.
+// term from the draft. Table text is returned whole, serialized to Markdown.
 func boundedExcerpt(text, hints string, maxChars int) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
 	if isTableText(text) {
-		return text
+		// The SCA is a plain LLM call: raw <table>/<td> markup makes it parse cells
+		// itself, and the same table costs ~61% more in HTML than in Markdown. The
+		// renderer never prunes rows (a row can carry the answer mid-table), so the
+		// SCA still sees the complete row set — just in a readable form. No-op for
+		// non-tables.
+		return runtime.TableViewOrRaw(text)
 	}
 	if maxChars < 80 {
 		maxChars = 80

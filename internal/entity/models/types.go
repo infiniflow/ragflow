@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -93,7 +94,11 @@ type TokenUsage struct {
 type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
-	// FIXME: add implementation
+	// TokenCount is what this input cost, taken from the provider's reported
+	// usage. Embedding APIs report usage per *request*, not per input, so the
+	// ingest path distributes the request total across the inputs it sent
+	// (internal/ingestion/task/embedder.go). It stays 0 for providers that
+	// report no usage at all — by design, rather than inventing a number.
 	TokenCount int `json:"token_count"`
 }
 
@@ -257,6 +262,8 @@ type OCRConfig struct {
 
 type ParseFileConfig struct {
 	ParseMethod string `json:"parse_method"`
+	Backend     string `json:"backend"`
+	ServerURL   string `json:"server_url"`
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
@@ -294,12 +301,78 @@ func (m *EmbeddingModel) ResolveBatchSize() int {
 	return GetEmbeddingBatchSize(name)
 }
 
+// ResolveMaxTokens is ResolveBatchSize's counterpart for the input window: the
+// model's own declaration wins, then the provider catalog's context_length, then
+// 0, which tells the caller to apply its own default. Deliberately not 8192:
+// the catalog has embedding models with 512-token windows, and overshooting a
+// window is a rejected request while undershooting only truncates.
+func (m *EmbeddingModel) ResolveMaxTokens() int {
+	if m == nil {
+		return 0
+	}
+	if m.MaxTokens > 0 {
+		return m.MaxTokens
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingMaxTokens(name)
+}
+
+// ResolveTokenizerID returns the tokenizer family declared for this model, or ""
+// when the model's own tokenizer is unknown (the caller then counts with cl100k
+// and a calibrated ratio).
+func (m *EmbeddingModel) ResolveTokenizerID() string {
+	if m == nil {
+		return ""
+	}
+	var name string
+	if m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetModelTokenizer(name)
+}
+
+// QuotaKey names the deployment this embedding model counts against: endpoint,
+// region, model name and an API-key prefix. The tokenizer belongs to the model, but
+// what a provider accepts is per deployment - the same model behind two endpoints
+// can have different windows - so everything that learns a real/own token ratio
+// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
+// has to key that ratio the same way; otherwise each path re-learns the same
+// rejection and none of them tightens for the others.
+func (m *EmbeddingModel) QuotaKey() string {
+	if m == nil {
+		return ""
+	}
+	var baseURL, region, apiKey, modelName string
+	if cfg := m.APIConfig; cfg != nil {
+		if cfg.BaseURL != nil {
+			baseURL = *cfg.BaseURL
+		}
+		if cfg.Region != nil {
+			region = *cfg.Region
+		}
+		if cfg.ApiKey != nil {
+			apiKey = *cfg.ApiKey
+		}
+	}
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	sum := sha256.Sum256([]byte(apiKey))
+	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
+}
+
 // RerankModel wraps a ModelDriver with rerank-specific configuration
 type RerankModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
 	MaxTokens   int
+
+	limiter    tokenizer.Limiter
+	limiterErr error
 }
 
 // NewRerankModel creates a new RerankModel
@@ -307,20 +380,45 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	tokenizerID := ""
+	if modelName != nil {
+		tokenizerID = GetModelTokenizer(*modelName)
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
+		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
+		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
 }
 
-// Rerank calculates similarity between query and texts
+// ResolveTokenizerID returns the tokenizer family declared for this reranker, or
+// an empty string when the model catalog does not provide one.
+func (r *RerankModel) ResolveTokenizerID() string {
+	if r == nil || r.ModelName == nil {
+		return ""
+	}
+	return GetModelTokenizer(*r.ModelName)
+}
+
+// Rerank calculates similarity between query and texts. Rerank input is measured
+// and truncated with the model's declared tokenizer, just like embedding input.
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if r == nil || r.ModelDriver == nil {
+		return nil, errors.New("rerank model: driver is nil")
+	}
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	if r.limiterErr != nil {
+		return nil, r.limiterErr
+	}
+	limiter := r.limiter
+	counter := limiter.Counter()
+	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
 	if mode == "" {
 		mode = "truncate"
@@ -328,25 +426,70 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
 		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
 	}
-	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
-		queryTokens := tokenizer.NumTokensFromString(request.Query)
+	if mode != "passthrough" && len(request.Documents) > 0 {
+		queryTokens := counter.Count(request.Query)
 		if mode == "truncate" {
-			documentTokens := max(maxTokens-queryTokens, 0)
+			documentBudget := max(effectiveMaxTokens-queryTokens, 0)
+			documentTokens := tokenizer.OverLimitLadder(documentBudget)[0]
 			documents := make([]string, len(request.Documents))
 			for i, document := range request.Documents {
-				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+				documents[i] = counter.TrimToLimit(document, documentTokens)
 			}
 			request.Documents = documents
 		} else {
 			for i, document := range request.Documents {
-				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
-				if inputTokens > maxTokens {
-					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				inputTokens := queryTokens + counter.Count(document)
+				if inputTokens > effectiveMaxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 				}
 			}
 		}
 	}
 	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
+}
+
+// ASRModel wraps a ModelDriver with speech-to-text configuration.
+type ASRModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewASRModel creates a new ASRModel.
+func NewASRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ASRModel {
+	return &ASRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Transcribe converts audio to text.
+func (m *ASRModel) Transcribe(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage) (*ASRResponse, error) {
+	return m.ModelDriver.TranscribeAudio(ctx, m.ModelName, audioFile, m.APIConfig, config, usage)
+}
+
+// TranscribeWithSender streams transcription results through sender.
+func (m *ASRModel) TranscribeWithSender(ctx context.Context, audioFile *string, config *ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.TranscribeAudioWithSender(ctx, m.ModelName, audioFile, m.APIConfig, config, usage, sender)
+}
+
+// TTSModel wraps a ModelDriver with text-to-speech configuration.
+type TTSModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+}
+
+// NewTTSModel creates a new TTSModel.
+func NewTTSModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *TTSModel {
+	return &TTSModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// Speech converts text to audio.
+func (m *TTSModel) Speech(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage) (*TTSResponse, error) {
+	return m.ModelDriver.AudioSpeech(ctx, m.ModelName, audioContent, m.APIConfig, config, usage)
+}
+
+// SpeechWithSender streams synthesized audio through sender.
+func (m *TTSModel) SpeechWithSender(ctx context.Context, audioContent *string, config *TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return m.ModelDriver.AudioSpeechWithSender(ctx, m.ModelName, audioContent, m.APIConfig, config, usage, sender)
 }
 
 // ToolConfig bundles tool-calling configuration for a ChatModel.
@@ -369,10 +512,6 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
-	// LastUsage holds the token usage (prompt/completion/total) of the most
-	// recent chat call. Consumed by callers for accurate Langfuse reporting
-	// and per-run token aggregation. Reset before each call.
-	LastUsage *TokenUsage
 }
 
 // NewChatModel creates a new ChatModel
@@ -382,6 +521,30 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 	}
+}
+
+// ChatWithMessages sends a non-streaming chat request through the model wrapper.
+func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
+	if m == nil || m.ModelDriver == nil {
+		return nil, errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatWithMessages(ctx, modelName, messages, m.APIConfig, config, usage)
+}
+
+// ChatStreamlyWithSender streams chat deltas through sender.
+func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	if m == nil || m.ModelDriver == nil {
+		return errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
 }
 
 // BindTools registers tools for the ChatModel to call.

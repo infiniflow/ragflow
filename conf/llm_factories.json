@@ -192,6 +192,41 @@
             "url": "https://api.openai.com/v1",
             "llm": [
                 {
+                    "llm_name": "gpt-5.6",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-sol",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-cyber",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-luna",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-terra",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5.5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -2326,8 +2361,8 @@
                 },
                 {
                     "llm_name": "gemini-3-flash-preview",
-                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
-                    "max_tokens": 256000,
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
                     "model_type": [
                         "chat",
                         "vision"
@@ -3221,64 +3256,157 @@
             "rank": "997",
             "llm": [
                 {
-                    "llm_name": "gemini-3-pro-preview",
-                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "llm_name": "gemini-3.8-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
-                    "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,1024K,IMAGE2TEXT",
+                    "llm_name": "gemini-3.6-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-pro",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-flash-lite",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-flash-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-pro-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
-                    "tags": "LLM,1024K,IMAGE2TEXT",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ],
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gemini-2.0-flash-lite",
-                    "tags": "LLM,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-embedding-001",

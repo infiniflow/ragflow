@@ -276,6 +276,44 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.EmbeddingModel != embeddingModel {
 		t.Fatal("EmbeddingModel was not passed to nlp retrieval request")
 	}
+	if got.VectorOnly {
+		t.Fatal("mixed retrieval must not be vector-only")
+	}
+}
+
+func TestNLPRequestFromRetrieval_DerivesPureModesFromKeywordWeight(t *testing.T) {
+	embeddingModel := &modelModule.EmbeddingModel{}
+	vectorOnlyWeight := 0.0
+	vectorOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &vectorOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if !vectorOnly.VectorOnly {
+		t.Fatal("keywords weight 0 must derive vector-only search")
+	}
+	if vectorOnly.EmbeddingModel != embeddingModel {
+		t.Fatal("vector-only search must retain the embedding model")
+	}
+	if vectorOnly.VectorSimilarityWeight == nil || *vectorOnly.VectorSimilarityWeight != 1 {
+		t.Fatalf("vector-only vector weight = %v, want 1", vectorOnly.VectorSimilarityWeight)
+	}
+
+	keywordOnlyWeight := 1.0
+	keywordOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &keywordOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if keywordOnly.VectorOnly {
+		t.Fatal("keywords weight 1 must not derive vector-only search")
+	}
+	if keywordOnly.EmbeddingModel != nil {
+		t.Fatal("keywords weight 1 must disable the vector leg")
+	}
+	if keywordOnly.VectorSimilarityWeight == nil || *keywordOnly.VectorSimilarityWeight != 0 {
+		t.Fatalf("keyword-only vector weight = %v, want 0", keywordOnly.VectorSimilarityWeight)
+	}
 }
 
 func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {

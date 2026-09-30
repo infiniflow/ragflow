@@ -1,12 +1,14 @@
 package parser
 
 import (
-	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 )
 
 func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
@@ -223,11 +225,11 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if len(res.JSON) < 2 {
-		t.Fatalf("JSON items = %d, want at least header and one data row", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
-		t.Fatalf("JSON items = %#v; want header and row", res.JSON)
+	if res.JSON[0]["ck_type"] != "table" {
+		t.Fatalf("JSON item = %#v; want a table item", res.JSON[0])
 	}
 }
 
@@ -263,14 +265,14 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 }
 
 func TestSpreadsheetParserWarnsForDeprecatedChunkRows(t *testing.T) {
-	var logs bytes.Buffer
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
 
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"chunk_rows": 32})
-	if !strings.Contains(logs.String(), "deprecated chunk_rows") {
-		t.Fatalf("logs = %q, want deprecated chunk_rows warning", logs.String())
+	if logs.FilterMessage("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker").Len() != 1 {
+		t.Fatalf("logs = %v, want deprecated chunk_rows warning", logs.All())
 	}
 }

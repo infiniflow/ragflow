@@ -36,10 +36,10 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
-// MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
+// mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}

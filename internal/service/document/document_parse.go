@@ -58,10 +58,10 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeTaskStateForCleanup removes resumable checkpoint, tracker, and chunk
-// cache state before a task row is deleted. The bounded context makes Redis
-// outages and hung clients observable to the caller instead of allowing a
-// destructive task/document delete to proceed with stale resume state.
+// purgeTaskStateForCleanup removes the per-chunk cache state for a task before
+// its row is deleted. The bounded context makes Redis outages and hung clients
+// observable to the caller instead of allowing a destructive task/document
+// delete to proceed with stale cache state.
 func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
@@ -186,7 +186,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
-	_, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
+	variants, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
 	if err != nil {
 		return fmt.Errorf("resolve generated products for document %s: %w", doc.ID, err)
 	}
@@ -199,9 +199,13 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
 	}
+	if len(variants) == 0 {
+		common.Warn(fmt.Sprintf("skip document cleanup event for %s: existing knowledge products have no routing metadata", doc.ID))
+		return nil
+	}
 	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
-	if err := knowledge_compile.PublishDeleted(publishCtx, tenantID, doc.KbID, doc.ID, taskTypes); err != nil {
+	if err := knowledge_compile.PublishDeleted(publishCtx, tenantID, doc.KbID, doc.ID, variants, taskTypes); err != nil {
 		return fmt.Errorf("publish document cleanup for %s: %w", doc.ID, err)
 	}
 	return nil
@@ -588,7 +592,10 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 			return err
 		}
 	}
-	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	// A status transition changes document availability, not its parsed
+	// content. The status event handles dataset-level retraction/re-enable;
+	// scheduling a delayed Wiki recompilation here creates duplicate events
+	// and a visible 20-second oscillation.
 	s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, doc.ID, status)
 	return nil
 }

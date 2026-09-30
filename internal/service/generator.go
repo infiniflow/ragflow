@@ -32,6 +32,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// KeywordDelimiter separates the original question from the keywords appended
+// by keyword extraction. Without it the question's last token merges with the
+// first keyword during tokenization, which silently degrades lexical matching.
+// Every question-augmentation callsite uses this one delimiter.
+const KeywordDelimiter = ","
+
+// AppendKeywords joins question with the keywords extracted from it, separated
+// by KeywordDelimiter. An empty keywords string (failed or empty extraction)
+// leaves question untouched, so a dangling delimiter is never appended.
+func AppendKeywords(question, keywords string) string {
+	if keywords == "" {
+		return question
+	}
+	return question + KeywordDelimiter + keywords
+}
+
 // KeywordExtraction extracts keywords from content using LLM.
 //
 // Uses ChatModel to call the LLM with a keyword extraction prompt.
@@ -73,7 +89,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract keywords: %w", err)
 	}
@@ -176,7 +192,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return query, fmt.Errorf("failed to translate question: %w", err)
 	}
@@ -332,17 +348,11 @@ func FullQuestion(
 	}
 	system := buf.String()
 
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: "Output: "},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, nil, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, nil, nil)
 	if err != nil {
 		return fallbackToLatestUser(messages), err
 	}

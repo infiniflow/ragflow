@@ -24,8 +24,8 @@ package handler
 //
 //   - max body size (with the 10 MB cap at agent_api.py:1652)
 //   - IP whitelist (CIDR + exact match)
-//   - rate limit (token bucket via redis.EvalTokenBucketStrict — strict
-//     fail-closed; see redis.go)
+//   - rate limit (token bucket via kvrocks.EvalTokenBucketStrict — strict
+//     fail-closed; see kvrocks.go)
 //   - token auth (header check)
 //   - basic auth (HTTP Basic)
 //   - JWT (HS/RS256, audience/issuer/required-claims)
@@ -48,7 +48,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 
-	rediscli "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 const (
@@ -291,7 +291,7 @@ func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any)
 	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
-	rdb := rediscli.Get()
+	rdb := kvrocks.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}

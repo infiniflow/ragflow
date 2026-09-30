@@ -249,11 +249,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		modelType := entity.ModelTypeChat
-		if s.pipeline.ModelProviderSvc.isImage2TextLLM(ctx, dialog.TenantID, resolvedModel) {
-			modelType = entity.ModelTypeImage2Text
-		}
-		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, modelType, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
@@ -339,7 +335,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if docIDsStr != "" {
 		chatKwargs["doc_ids"] = docIDsStr
 	}
-
 	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
@@ -368,13 +363,13 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			for result := range asyncResults {
 				lastResult = result
 
-				if result.StartToThink || result.EndToThink {
-					// Think markers only toggle routing state; no SSE event
-					// emitted. Matches Python's _stream_chat_completion_sse
-					// which ignores start_to_think/end_to_think flags and
-					// never emits "<think>" or "</think>" as content.
-					continue
-				}
+				// Think markers only toggle routing state — Python never emits
+				// "<think>"/"</think>" as content — but the result carrying a
+				// marker can also carry the first delta of the text it delimits
+				// (the first content delta after a think block IS the EndToThink
+				// result). The event must therefore fall through to the emission
+				// below instead of being dropped: dropping it loses that text,
+				// which is what left an answer opening mid-sentence.
 
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)

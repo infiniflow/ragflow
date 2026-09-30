@@ -105,6 +105,7 @@ type ChunkDoc struct {
 	TKNums        *int                       `json:"tk_nums,omitempty"`
 	Mom           string                     `json:"mom,omitempty"`
 	ImgID         string                     `json:"img_id,omitempty"`
+	ID            string                     `json:"id,omitempty"`
 	Layout        string                     `json:"layout,omitempty"`
 	LayoutType    string                     `json:"layout_type,omitempty"`
 	LayoutNo      string                     `json:"layoutno,omitempty"`
@@ -119,20 +120,12 @@ type ChunkDoc struct {
 	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
 	ContentLtks   string                     `json:"content_ltks,omitempty"`
 	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	TagKwd        []string                   `json:"tag_kwd,omitempty"`
 	PageNumber    *int                       `json:"page_number,omitempty"`
 	TopInt        []int                      `json:"top_int,omitempty"`
 	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
 	Positions     json.RawMessage            `json:"positions,omitempty"`
-	TableID       string                     `json:"table_id,omitempty"`
 	Sheet         string                     `json:"sheet,omitempty"`
 	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Headers       []string                   `json:"headers,omitempty"`
-	Cells         []string                   `json:"cells,omitempty"`
-	RowStart      *int                       `json:"row_start,omitempty"`
-	RowEnd        *int                       `json:"row_end,omitempty"`
-	ColStart      *int                       `json:"col_start,omitempty"`
-	ColEnd        *int                       `json:"col_end,omitempty"`
 	Extra         map[string]json.RawMessage `json:"-"`
 }
 
@@ -146,13 +139,17 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	// Known ChunkDoc fields plus tag_kwd, which has no ChunkDoc field: Go's
+	// tagger emits tag_feas and the vocabulary comes from a tag source file,
+	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
+	// cannot fall through to Extra and be re-emitted by MarshalJSON.
 	for _, key := range []string{
 		"text", "doc_type_kwd", "mom", "img_id",
 		"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"table_id", "sheet", "sheet_index", "headers", "cells", "row_start", "row_end", "col_start", "col_end",
+		"sheet", "sheet_index",
 	} {
 		delete(raw, key)
 	}

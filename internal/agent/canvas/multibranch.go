@@ -47,7 +47,6 @@ package canvas
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/cloudwego/eino/compose"
@@ -74,14 +73,13 @@ func isBranchableControl(name string) bool {
 }
 
 // wireMultiBranches registers an eino MultiBranch on every
-// branchable parent that has at least two declared downstream
-// children. Pass-2 already wired AddInput edges from parent to each
+// branchable parent that has at least one declared downstream
+// child. Pass-2 already wired AddInput edges from parent to each
 // child; the branch adds the control-only gating so only the
 // chosen child fires at runtime.
 //
 // The function is a no-op for:
-//   - parents with < 2 downstreams (a single-child "switch" is
-//     degenerate — no branching needed, AddInput is enough)
+//   - parents with no downstreams
 //   - parents inside loop subgraphs (their children live in the
 //     loop's sub-workflow; the outer graph can't see them)
 //   - Loop cpns themselves (their children are inside the loop
@@ -122,20 +120,15 @@ func wireMultiBranches(
 			}
 			endNodes[child] = true
 		}
-		if len(endNodes) < 2 {
-			// Either no outer-graph children, or fewer than
-			// two — a MultiBranch with < 2 end-nodes is
-			// either meaningless (0/1 end-nodes) or
-			// equivalent to plain AddInput. Skip it so we
-			// don't pay the branch-evaluation cost when the
-			// DSL doesn't actually branch.
+		if len(endNodes) == 0 {
+			// There is no valid outer-graph child to route to.
 			continue
 		}
 		endNodesList := make([]string, 0, len(endNodes))
 		for n := range endNodes {
 			endNodesList = append(endNodesList, n)
 		}
-		cond := makeSwitchBranchCondition(endNodes)
+		cond := makeSwitchBranchCondition(endNodes, branchTargetDependencies(c, cpnID, endNodes))
 		wf.AddBranch(cpnID, compose.NewGraphMultiBranch(cond, endNodes))
 		out = append(out, branchRegistration{
 			Parent:   cpnID,
@@ -161,10 +154,9 @@ type branchRegistration struct {
 //     statePost handler has already written to state.Outputs and
 //     the lambda has returned).
 //  2. When `_next` is a []any (list of cpn_ids — Python's Switch
-//     can route to multiple targets simultaneously), all entries
-//     that are in the endNodes whitelist are returned as the chosen
-//     set. This mirrors the Python behavior where Switch's "to"
-//     field is a list and every listed cpn_id fires.
+//     can route to multiple targets simultaneously), whitelisted
+//     entries are returned together with their direct branch
+//     dependencies so referenced outputs exist before invocation.
 //  3. When `_next` is a string (single target — legacy or default
 //     path), it is validated against the whitelist and returned as
 //     a single-entry map.
@@ -172,17 +164,21 @@ type branchRegistration struct {
 //     contains no whitelisted entries. eino treats an empty chosen
 //     set as "no successor" — the workflow simply doesn't continue
 //     past the parent on this path.
-func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphMultiBranchCondition[map[string]any] {
+func makeSwitchBranchCondition(endNodes map[string]bool, dependencySets ...map[string]map[string]bool) compose.GraphMultiBranchCondition[map[string]any] {
+	var dependencies map[string]map[string]bool
+	if len(dependencySets) > 0 {
+		dependencies = dependencySets[0]
+	}
 	return func(_ context.Context, in map[string]any) (map[string]bool, error) {
 		raw, ok := in["_next"]
 		if !ok {
 			return nil, nil
 		}
-		chosen := make(map[string]bool, 1)
+		requested := make(map[string]bool, 1)
 		switch v := raw.(type) {
 		case string:
 			if v != "" && endNodes[v] {
-				chosen[v] = true
+				requested[v] = true
 			}
 		case []string:
 			for _, s := range v {
@@ -190,7 +186,7 @@ func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphMultiBranc
 					continue
 				}
 				if endNodes[s] {
-					chosen[s] = true
+					requested[s] = true
 				}
 			}
 		case []any:
@@ -200,25 +196,45 @@ func makeSwitchBranchCondition(endNodes map[string]bool) compose.GraphMultiBranc
 					continue
 				}
 				if endNodes[s] {
-					chosen[s] = true
+					requested[s] = true
 				}
+			}
+		}
+		chosen := make(map[string]bool, len(requested))
+		for target := range requested {
+			chosen[target] = true
+			for dependency := range dependencies[target] {
+				chosen[dependency] = true
 			}
 		}
 		return chosen, nil
 	}
 }
 
-// fmtBranchRegistrations is a small debug helper kept here so the
-// table of installed branches can be dumped from a test or a future
-// verbose-logging path without pulling in fmt at the call site.
-// Currently unused; lives next to its data type for symmetry.
-func fmtBranchRegistrations(regs []branchRegistration) string {
-	if len(regs) == 0 {
-		return "no multi-branches installed"
+// branchTargetDependencies records direct-child dependencies so selecting a
+// target also activates any producer needed by its declared inputs.
+func branchTargetDependencies(c *Canvas, parent string, endNodes map[string]bool) map[string]map[string]bool {
+	dependencies := make(map[string]map[string]bool)
+	var visit func(string, map[string]bool)
+	visit = func(target string, seen map[string]bool) {
+		comp, ok := c.Components[target]
+		if !ok {
+			return
+		}
+		for _, upstream := range comp.Upstream {
+			if upstream == parent || !endNodes[upstream] || seen[upstream] {
+				continue
+			}
+			seen[upstream] = true
+			visit(upstream, seen)
+		}
 	}
-	var b strings.Builder
-	for _, r := range regs {
-		fmt.Fprintf(&b, "%s -> %v\n", r.Parent, r.EndNodes)
+	for target := range endNodes {
+		seen := make(map[string]bool)
+		visit(target, seen)
+		if len(seen) > 0 {
+			dependencies[target] = seen
+		}
 	}
-	return b.String()
+	return dependencies
 }

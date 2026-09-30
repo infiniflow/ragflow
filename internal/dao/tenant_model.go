@@ -78,7 +78,7 @@ func (dao *TenantModelDAO) UpdateStatusByIDAndScope(ctx context.Context, db *gor
 // GetByID get tenant model by primary key (id)
 func (dao *TenantModelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := db.WithContext(ctx).Where("id = ?", id).First(&model).Error
+	err := db.WithContext(ctx).Take(&model, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +93,25 @@ func (dao *TenantModelDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []stri
 	}
 	var models []*entity.TenantModel
 	err := db.WithContext(ctx).Where("id IN ?", ids).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+// GetActiveChatModelsByProviderAndInstanceIDs returns every ACTIVE model whose
+// model_type bitmask covers `modelType`, scoped to the given provider /
+// instance pairs. Used to enumerate a tenant's chat-capable models for the
+// EinoChatModel failover chain: each returned row's ID doubles as the
+// "model ref" that ModelProviderService.ResolveModelConfig accepts.
+func (dao *TenantModelDAO) GetActiveModelsByProviderAndInstanceIDsAndType(ctx context.Context, db *gorm.DB, providerIDs, instanceIDs []string, modelType int) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	q := db.WithContext(ctx).
+		Where("provider_id IN ?", providerIDs).
+		Where("instance_id IN ?", instanceIDs).
+		Where("model_type & ? != 0", modelType).
+		Where("status = ?", "active")
+	err := q.Find(&models).Error
 	if err != nil {
 		return nil, err
 	}

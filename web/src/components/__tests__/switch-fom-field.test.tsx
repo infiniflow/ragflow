@@ -3,7 +3,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { SwitchFormField } from '../switch-fom-field';
+import { SwitchFormField } from '../switch-form-field';
 
 function Harness() {
   const form = useForm({ defaultValues: { flag: false } });

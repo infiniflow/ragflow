@@ -17,13 +17,14 @@
 package utility
 
 import (
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
 
 func TestAssertURLSafe(t *testing.T) {
-	orig := LookupHost
-	defer func() { LookupHost = orig }()
+	orig := common.LookupHost
+	defer func() { common.LookupHost = orig }()
 
 	type want struct {
 		errSubstr string
@@ -165,15 +166,14 @@ func TestAssertURLSafe(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			LookupHost = func(host string) ([]string, error) {
+			common.LookupHost = func(host string) ([]string, error) {
 				if tc.err != "" {
 					return nil, &mockErr{tc.err}
 				}
 				return tc.ips, nil
 			}
-			host, ip, err := AssertURLSafe(tc.url)
+			host, ip, err := common.AssertURLSafe(tc.url)
 			if tc.want.errSubstr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.want.errSubstr) {
 					t.Fatalf("expected error containing %q, got %v", tc.want.errSubstr, err)

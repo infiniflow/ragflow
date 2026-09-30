@@ -9,7 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	redis2 "ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 
 	"go.uber.org/zap"
@@ -286,6 +286,7 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 		"progress":         float64(0),
 		"chunk_num":        int64(0),
 		"token_num":        int64(0),
+		"process_duration": float64(0),
 		"process_begin_at": time.Now(),
 	}); err != nil {
 		common.Warn(fmt.Sprintf("prepare validated run: mark document %s running for task %s: %v", task.DocumentID, task.ID, err))
@@ -317,9 +318,9 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 			return nil, err
 		}
 		// Mirror Python's cancel_all_task_of: set Redis cancel flag so the
-		// running worker's pollCancel detects the stop immediately rather
-		// than waiting for the next DB poll (up to 3s).
-		if rc := redis2.Get(); rc != nil {
+		// running worker's pollCancel detects the stop on its next 500ms
+		// tick instead of the slower DB fallback path.
+		if rc := kvrocks.Get(); rc != nil {
 			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
 		}
 		return task, nil
@@ -423,6 +424,13 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 }
 
 func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
+	if dao.DB == nil {
+		// Every task-status write funnels through here (MarkFailed/Stopped/
+		// Completed), and that includes the panic-recovery path in the ingestor
+		// worker. Dereferencing a nil handle there turns a recovered task panic
+		// into a panicking recovery handler, which kills the worker process.
+		return nil, errors.New("ingestion task: nil database")
+	}
 	task, err := s.ingestionTaskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -462,6 +470,14 @@ func (s *IngestionTaskService) ReloadAndValidateRunIdentity(ctx context.Context,
 		return nil, &InvalidRunIdentityError{TaskID: taskID, Reason: "invalid_run_count"}
 	}
 	return task, nil
+}
+
+// GetTaskByDocument returns the document's latest ingestion task. A document
+// may be parsed multiple times over its lifetime; the newest task (by
+// create_time) is the current parse round, so doc-level run state derives from
+// it alone.
+func (s *IngestionTaskService) GetTaskByDocument(ctx context.Context, documentID string) (*entity.IngestionTask, error) {
+	return s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
 }
 
 func validateTransition(from, to string) error {
@@ -716,7 +732,7 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 // RequestStop sets for a RUNNING task. No-op when Redis is unavailable —
 // the DB STOPPING status remains the fallback cancel signal.
 func clearCancelFlag(ctx context.Context, taskID string) {
-	if rc := redis2.Get(); rc != nil {
+	if rc := kvrocks.Get(); rc != nil {
 		rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 	}
 }
@@ -1046,10 +1062,4 @@ func (s *IngestionTaskService) truncateIngestionEventMessage(message string) str
 		return string([]rune(marker)[:limits.MaxMessageChars])
 	}
 	return marker
-}
-
-// AggregateTaskProgressByPipelineLogID returns component progress for one
-// immutable ingestion run.
-func (s *IngestionTaskService) AggregateTaskProgressByPipelineLogID(ctx context.Context, pipelineLogID string, total int) (*dao.TaskProgress, error) {
-	return s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, pipelineLogID, total)
 }

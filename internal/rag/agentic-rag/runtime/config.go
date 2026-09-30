@@ -32,6 +32,7 @@ import "strings"
 var allTools = []string{
 	"retrieve",
 	"search_chunks",
+	"metadata_search",
 	"list_chunks",
 	"navigate_tree",
 	"navigate_structure",

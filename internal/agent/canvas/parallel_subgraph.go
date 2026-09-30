@@ -43,14 +43,14 @@ type parallelExpansion struct {
 
 func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (*parallelExpansion, error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if parallelID == "" {
-		return nil, fmt.Errorf("canvas: buildParallelExpansion: empty parallelID")
+		return nil, fmt.Errorf("agent: buildParallelExpansion: empty parallelID")
 	}
 	comp, ok := c.Components[parallelID]
 	if !ok {
-		return nil, fmt.Errorf("canvas: buildParallelExpansion: unknown cpn %q", parallelID)
+		return nil, fmt.Errorf("agent: buildParallelExpansion: unknown cpn %q", parallelID)
 	}
 
 	members := collectGroupedMembers(c, parallelID)
@@ -60,17 +60,17 @@ func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (
 
 	itemsRef, maxConcurrency, outputRefs, err := readParallelParams(comp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	sub, err := buildParallelItemWorkflow(ctx, c, parallelID, members)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	graph, err := buildParallelOuterWorkflow(ctx, parallelID, itemsRef, maxConcurrency, outputRefs, sub)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	return &parallelExpansion{
@@ -159,9 +159,9 @@ func buildParallelItemWorkflow(
 	collector := wrapper.AddLambdaNode(
 		parallelItemCollectNodeKey,
 		compose.InvokableLambda(func(ctx context.Context, in map[string]any) (map[string]any, error) {
-			localState, _, err := GetStateFromContext[*CanvasState](ctx)
+			localState, err := GetStateFromContext(ctx)
 			if err != nil || localState == nil {
-				return nil, fmt.Errorf("canvas: parallel %q item collector: no canvas state in context", parallelID)
+				return nil, fmt.Errorf("agent: parallel %q item collector: no canvas state in context", parallelID)
 			}
 			out := map[string]any{
 				"item":  localState.Globals["__item__"],
@@ -201,13 +201,13 @@ func buildParallelOuterWorkflow(
 	toBatch := outer.AddLambdaNode(
 		batchInputKey,
 		compose.InvokableLambda(func(ctx context.Context, _ map[string]any) ([]map[string]any, error) {
-			state, _, err := GetStateFromContext[*CanvasState](ctx)
+			state, err := GetStateFromContext(ctx)
 			if err != nil || state == nil {
-				return nil, fmt.Errorf("canvas: parallel %q: no canvas state in context", key)
+				return nil, fmt.Errorf("agent: parallel %q: no canvas state in context", key)
 			}
 			raw, err := state.GetVar(itemsRef)
 			if err != nil {
-				return nil, fmt.Errorf("canvas: parallel %q items_ref %q: %w", key, itemsRef, err)
+				return nil, fmt.Errorf("agent: parallel %q items_ref %q: %w", key, itemsRef, err)
 			}
 			return toParallelItems(raw)
 		}),
@@ -223,7 +223,7 @@ func buildParallelOuterWorkflow(
 	parOpts = append(parOpts, workflowx.WithParallelContextBuilder(func(
 		ctx context.Context, item any, index int,
 	) context.Context {
-		parentState, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		parentState, err := runtime.GetStateFromContext(ctx)
 		if err != nil || parentState == nil {
 			return ctx
 		}

@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -50,31 +51,37 @@ var (
 // (stdout only). When Path is set, the file is written under ./logs/<Path>
 // and rotated by lumberjack according to MaxSize / MaxBackups / MaxAge / Compress.
 //
-// Numeric zero values are replaced with defaults (100 MB / 10 / 30 days) inside
-// Init. Compress is left as the caller-provided value; the project default is
-// applied by callers (see resolveCompress) so that "not set" can be distinguished
-// from "explicitly false" via the *bool LogConfig.Compress field.
+// Numeric zero values (MaxSize/MaxBackups/MaxAge) are replaced with defaults
+// (100 MB / 10 / 30 days) inside Init. Compress is a *bool so that "not set"
+// (nil) can be distinguished from "explicitly false"; when nil it defaults to
+// DefaultLogCompress (true).
 type FileOutput struct {
 	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
 	MaxAge     int
-	Compress   bool
+	Compress   *bool
 }
 
 const (
-	defaultMaxSizeMB  = 100
-	defaultMaxBackups = 10
-	defaultMaxAgeDays = 30
-	cyanLogMarker     = "[[RAGFLOW_CYAN_LOG]]"
-	greenLogMarker    = "[[RAGFLOW_GREEN_LOG]]"
-	redLogMarker      = "[[RAGFLOW_RED_LOG]]"
-	resetLogMarker    = "[[RAGFLOW_RESET_LOG]]"
-	ansiBrightCyan    = "\x1b[96m"
-	ansiGreen         = "\x1b[32m"
-	ansiRed           = "\x1b[31m"
-	ansiReset         = "\x1b[0m"
+	cyanLogMarker  = "[[RAGFLOW_CYAN_LOG]]"
+	greenLogMarker = "[[RAGFLOW_GREEN_LOG]]"
+	redLogMarker   = "[[RAGFLOW_RED_LOG]]"
+	resetLogMarker = "[[RAGFLOW_RESET_LOG]]"
+	ansiBrightCyan = "\x1b[96m"
+	ansiGreen      = "\x1b[32m"
+	ansiRed        = "\x1b[31m"
+	ansiReset      = "\x1b[0m"
+	// DefaultLogMaxSizeMB is the default rotation threshold (lumberjack
+	// MaxSize is in MB, not bytes).
+	DefaultLogMaxSizeMB = 100
+	// DefaultLogMaxBackups is the default number of rotated files retained.
+	DefaultLogMaxBackups = 10
+	// DefaultLogMaxAgeDays is the default retention window for rotated files.
+	DefaultLogMaxAgeDays = 30
+	// DefaultLogCompress is the project default for gzipping rotated files.
+	DefaultLogCompress = true
 )
 
 type coloredLineWriteSyncer struct {
@@ -129,11 +136,12 @@ func parseZapLevel(level string) (zapcore.Level, error) {
 	}
 }
 
-func logLevelName(level zapcore.Level) string {
-	if level == zapcore.WarnLevel {
-		return "WARNING"
+func LogLevelHigherThanInfo(level string) bool {
+	l, err := parseZapLevel(level)
+	if err != nil {
+		return false
 	}
-	return strings.ToUpper(level.String())
+	return l > zapcore.InfoLevel
 }
 
 // InitLogger initializes the global logger. stdout is always written. If file.Path
@@ -176,45 +184,65 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 
 	maxSize := file.MaxSize
 	if maxSize <= 0 {
-		maxSize = defaultMaxSizeMB
+		maxSize = DefaultLogMaxSizeMB
 	}
 	maxBackups := file.MaxBackups
 	if maxBackups <= 0 {
-		maxBackups = defaultMaxBackups
+		maxBackups = DefaultLogMaxBackups
 	}
 	maxAge := file.MaxAge
 	if maxAge <= 0 {
-		maxAge = defaultMaxAgeDays
+		maxAge = DefaultLogMaxAgeDays
 	}
 
-	ljLogger := &lumberjack.Logger{
-		Filename:   filepath.Join(file.Path, file.Filename),
-		MaxSize:    maxSize,
-		MaxBackups: maxBackups,
-		MaxAge:     maxAge,
-		Compress:   file.Compress,
-		LocalTime:  true,
+	compress := DefaultLogCompress
+	if file.Compress != nil {
+		compress = *file.Compress
 	}
 	stdoutSyncer := zapcore.AddSync(os.Stdout)
-	fileSyncer := zapcore.AddSync(ljLogger)
+	syncers := []zapcore.WriteSyncer{stdoutSyncer}
+	// File sink only when a destination is actually configured. The cmd/*
+	// entry points init the logger TWICE: a pre-config temporary logger
+	// (before the port is known, e.g. "api_server" → logs/api_server.log)
+	// and the real one after server.Init renames it (e.g.
+	// "api_server_9384" → logs/api_server_9384.log). The temporary pass now
+	// passes an empty FileOutput and stays stdout-only, so the pre-config
+	// startup window no longer litters a second, orphaned log file next to
+	// the real one (and ragflow-cli no longer drops a lumberjack file into
+	// os.TempDir()).
+	if file.Path != "" && file.Filename != "" {
+		ljLogger := &lumberjack.Logger{
+			Filename:   filepath.Join(file.Path, file.Filename),
+			MaxSize:    maxSize,
+			MaxBackups: maxBackups,
+			MaxAge:     maxAge,
+			Compress:   compress,
+			LocalTime:  true,
+		}
+		syncers = append(syncers, zapcore.AddSync(ljLogger))
+	}
+
 	var core zapcore.Core
 	if IsLLMDebugEnabled() {
-		core = zapcore.NewTee(
+		cores := []zapcore.Core{
 			zapcore.NewCore(
 				zapcore.NewConsoleEncoder(encoderConfig),
 				coloredLineWriteSyncer{WriteSyncer: stdoutSyncer, color: true},
 				atomicLevel,
 			),
-			zapcore.NewCore(
+		}
+		if len(syncers) > 1 {
+			cores = append(cores, zapcore.NewCore(
 				zapcore.NewConsoleEncoder(encoderConfig),
-				coloredLineWriteSyncer{WriteSyncer: fileSyncer},
+				coloredLineWriteSyncer{WriteSyncer: syncers[1]},
 				atomicLevel,
-			),
-		)
+			))
+		}
+		core = zapcore.NewTee(cores...)
 	} else {
 		core = zapcore.NewCore(
 			zapcore.NewConsoleEncoder(encoderConfig),
-			zap.CombineWriteSyncers(stdoutSyncer, fileSyncer),
+			zap.CombineWriteSyncers(syncers...),
 			atomicLevel,
 		)
 	}
@@ -324,6 +352,81 @@ func (stdLogRouter) Write(p []byte) (int, error) {
 	}
 	Logger.Info(strings.TrimRight(string(p), "\n"))
 	return len(p), nil
+}
+
+// --- per-request log correlation -------------------------------------------
+//
+// One conversation turn (a chat completion request) fans out into dozens of
+// log lines across packages — agent, delivery gate, auditor, tools, retrieval,
+// token usage — and concurrent benchmark questions interleave them. Attaching
+// the session id to the request context and reading it back in the Ctx-variant
+// log helpers below lets a single `grep session_id=<id>` reconstruct one
+// turn's full trail (the q71 postmortem had to reconstruct it from timestamps).
+
+type ctxKey int
+
+const sessionIDCtxKey ctxKey = iota
+
+// WithSessionID returns a context that tags every Ctx-variant log call with
+// the conversation turn's session id. Empty ids are a no-op so callers do not
+// need to guard.
+func WithSessionID(ctx context.Context, sessionID string) context.Context {
+	if strings.TrimSpace(sessionID) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, sessionIDCtxKey, strings.TrimSpace(sessionID))
+}
+
+// SessionIDFromContext extracts the correlation id ("" when absent).
+func SessionIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(sessionIDCtxKey).(string)
+	return id
+}
+
+func sessionFields(ctx context.Context) []zap.Field {
+	if id := SessionIDFromContext(ctx); id != "" {
+		return []zap.Field{zap.String("session_id", id)}
+	}
+	return nil
+}
+
+// InfoCtx is Info plus the session_id correlation field when ctx carries one.
+func InfoCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Info(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// WarnCtx is Warn plus the session_id correlation field when ctx carries one.
+func WarnCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Warn(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// DebugCtx is Debug plus the session_id correlation field when ctx carries one.
+func DebugCtx(ctx context.Context, msg string, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	Logger.Debug(msg, append(sessionFields(ctx), fields...)...)
+}
+
+// ErrorCtx is Error plus the session_id correlation field when ctx carries one.
+func ErrorCtx(ctx context.Context, msg string, err error, fields ...zap.Field) {
+	if Logger == nil {
+		return
+	}
+	detail := fmt.Sprintf("%s, %v", msg, err)
+	if IsDebugEnabled() {
+		detail = fmt.Sprintf("%s, %+v", msg, err)
+	}
+	Logger.Error(detail, append(sessionFields(ctx), fields...)...)
 }
 
 // IsDebugEnabled returns true if debug logging is enabled.

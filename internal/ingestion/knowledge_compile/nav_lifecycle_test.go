@@ -140,3 +140,38 @@ func TestProcessBatchReaddsEnabledDocumentToNavigation(t *testing.T) {
 		t.Fatalf("upserted navigation input = %+v, want enabled document summary", recorder.upserted[0])
 	}
 }
+
+func TestProcessBatchRemovesNavigationForGraphOnlyDocument(t *testing.T) {
+	previous := nav.GetNavService()
+	recorder := &recordingNavService{}
+	nav.SetNavService(recorder)
+	defer nav.SetNavService(previous)
+
+	consumer := NewConsumer(
+		NewFakeScheduler(),
+		WithReader(&fakeReader{products: []kccommon.Product{{
+			DocID:    "doc-graph",
+			TenantID: "tenant-1",
+			Variant:  kccommon.VariantStructure,
+			Kind:     "knowledge_graph",
+			Content:  `{"name":"Graph entity","description":"not navigation"}`,
+			Meta:     map[string]any{"kind": "entity"},
+		}}}),
+		WithWriter(&fakeWriter{}),
+		WithDeduperFactory(func(string) (Deduper, error) { return NewNoopDeduper(), nil }),
+		withWikiContributionStore(&memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}),
+	)
+
+	err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "", []BacklogEntry{{
+		DocID: "doc-graph", EventType: string(EventTypeCompleted), Variants: []string{string(kccommon.VariantStructure)}, TaskTypes: []string{kccommon.TaskTypeGraph},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("processBatch failed: %v", err)
+	}
+	if len(recorder.upserted) != 0 {
+		t.Fatalf("Graph-only document upserted navigation: %+v", recorder.upserted)
+	}
+	if len(recorder.removed) != 1 || recorder.removed[0] != "doc-graph" {
+		t.Fatalf("removed navigation docs = %v, want [doc-graph]", recorder.removed)
+	}
+}

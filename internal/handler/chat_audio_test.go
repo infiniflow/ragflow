@@ -15,7 +15,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
-	"ragflow/internal/utility"
 )
 
 // The chat TTS response may carry model/driver context but never the provider's
@@ -28,9 +27,9 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	prevAllow := utility.AllowAnyHostForTest
-	utility.AllowAnyHostForTest = true
-	t.Cleanup(func() { utility.AllowAnyHostForTest = prevAllow })
+	prevAllow := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = prevAllow })
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {

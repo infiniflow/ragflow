@@ -120,10 +120,12 @@ export default {
         '完成召回測試：確保你的設定可以從資料庫正確地召回文字區塊。請注意這裡的改動不會被自動保存。如果你調整了這裡的默認設置，比如關鍵詞相似度權重，請務必在聊天助手設置或者召回算子設置處同步更新相關設置。',
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
-        '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 20，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
+        'RAGFlow 在檢索時會使用加權關鍵詞相似度與加權向量餘弦相似度的組合；選擇重排序模型時，則使用加權關鍵詞相似度與加權重排序分數的組合。此參數設定使用者查詢與文字區塊之間的相似度閾值。相似度分數低於此閾值的文字區塊將從結果中排除。預設閾值為 20，這表示只有混合相似度分數達到 20 或以上的文字區塊才會被檢索。如果向量相似度權重設定為 0，則此閾值不適用。',
       vectorSimilarityWeight: '矢量相似度權重',
       vectorSimilarityWeightTip:
-        '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
+        '此項用於設定混合相似度分數中的向量相似度權重，該權重可套用於向量餘弦相似度或重排序分數。兩個權重的總和必須等於 1.0。',
+      keywordSimilarityWeightTip:
+        '此項用於設定混合相似度分數中的關鍵詞相似度權重。向量與關鍵詞相似度權重的總和必須等於 1.0。',
       testText: '測試文本',
       testTextPlaceholder: '請輸入您的問題！',
       testingLabel: '測試',
@@ -167,7 +169,7 @@ export default {
       cancel: '取消',
       rerankModel: 'rerank模型',
       rerankPlaceholder: '請選擇',
-      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。如需選用 rerank 模型，建議使用 SaaS 的 rerank 模型服務；如果你傾向使用本地部署的 rerank 模型，請務必確保你使用 docker-compose-gpu.yml 啟動 RAGFlow。`,
+      rerankTip: `非必選項：若不選擇 rerank 模型，系統將默認採用關鍵詞相似度與向量餘弦相似度相結合的混合查詢方式；如果設定了 rerank 模型，則混合查詢中的向量相似度部分將被 rerank 打分替代。請注意：採用 rerank 模型會非常耗時。`,
       topK: 'Top-K',
       topKTip: `與 Rerank 模型配合使用，用於設定傳給 Rerank 模型的文本塊數量。`,
       delimiter: `文字分段標識符`,
@@ -580,10 +582,41 @@ export default {
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
+      webSearchProvider: '網路搜尋服務',
+      webSearchProviderTip: '選擇啟用聯網搜尋時使用的搜尋服務。',
+      webSearchProviderPlaceholder: '請選擇網路搜尋服務',
+      webSearchApiKeyRequired:
+        '所選服務必須填寫 API Key —— 否則不會發起聯網搜尋，聊天框中也不會出現聯網開關。',
+      // 密鑰輸入框的標籤。{{provider}} 是 provider 的品牌名，故意不翻譯，
+      // 因此一個範本即可涵蓋全部 9 個 provider。
+      webSearchApiKeyLabel: '{{provider}} API Key',
       tavilyApiKeyTip:
         '如果 API 金鑰設定正確，它將利用 Tavily 進行網路搜尋作為知識庫的補充。',
       tavilyApiKeyMessage: '請輸入你的 Tavily API Key',
-      tavilyApiKeyHelp: '如何獲取？',
+      // 每個 provider 一組 Tip/Message，按 provider id 字典序排列。
+      braveApiKeyTip:
+        '選擇 Brave Search 後，將使用其搜尋結果補充知識庫檢索。Brave 的所有端點都需要 Key。',
+      braveApiKeyMessage: '請輸入你的 Brave Search API Key',
+      exaApiKeyTip:
+        '必填。選擇 Exa 後，將使用其搜尋結果補充知識庫檢索。即使是每月 1,000 次的免費額度，也仍然需要 Key。',
+      exaApiKeyMessage: '請輸入你的 Exa API Key',
+      firecrawlApiKeyTip:
+        '選擇 Firecrawl 後，將使用其搜尋結果補充知識庫檢索。只取搜尋摘要，不抓取整頁。',
+      firecrawlApiKeyMessage: '請輸入你的 Firecrawl API Key',
+      linkupApiKeyTip: '選擇 Linkup 後，將使用其搜尋結果補充知識庫檢索。',
+      linkupApiKeyMessage: '請輸入你的 Linkup API Key',
+      parallelApiKeyTip: '選擇 Parallel 後，將使用其搜尋摘錄補充知識庫檢索。',
+      parallelApiKeyMessage: '請輸入你的 Parallel API Key',
+      queritApiKeyTip:
+        '選擇 Querit 後，將使用 Querit 的網路搜尋結果補充知識庫檢索。',
+      queritApiKeyMessage: '請輸入你的 Querit API Key',
+      serplyApiKeyTip:
+        '選擇 Serply 後，將使用 Serply 的網路搜尋結果補充知識庫檢索。',
+      serplyApiKeyMessage: '請輸入你的 Serply API Key',
+      youcomApiKeyTip:
+        '可選。You.com 在限速端點上無需 API Key 即可使用；填寫 Key 可解除限速。',
+      youcomApiKeyMessage: '可選 —— 留空則使用免費額度',
+      webSearchApiKeyHelp: '如何獲取？',
       crossLanguage: '跨語言搜尋',
       crossLanguageTip: `選擇一種或多種語言進行跨語言搜尋。如果沒有選擇語言，系統將使用原始查詢進行搜尋。 `,
       showChunkMetadata: '顯示區塊中繼資料',

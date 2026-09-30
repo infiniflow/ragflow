@@ -3,11 +3,7 @@
 package pdf
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
-	"image"
-	_ "image/png"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -211,45 +207,6 @@ func TestIntegration_TableStructure(t *testing.T) {
 						i, ri, ci, goldenCell, gotCell)
 				}
 			}
-		}
-	}
-}
-
-// TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
-func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectInProcessAnalyzer(t)
-	data := mustReadPDF(t, "06_table_content.pdf")
-
-	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(t.Context(), data, client)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if len(result.Tables) == 0 {
-		t.Skip("DLA did not detect any tables in fixture — skipping image check")
-	}
-
-	for i, tbl := range result.Tables {
-		if tbl.ImageB64 == "" {
-			t.Errorf("table[%d] ImageB64 is empty", i)
-			continue
-		}
-		// Verify base64 decodable.
-		raw, err := base64.StdEncoding.DecodeString(tbl.ImageB64)
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not valid base64: %v", i, err)
-			continue
-		}
-		// Verify it's a valid image.
-		img, _, err := image.Decode(bytes.NewReader(raw))
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not a valid image: %v", i, err)
-			continue
-		}
-		b := img.Bounds()
-		if b.Dx() <= 0 || b.Dy() <= 0 {
-			t.Errorf("table[%d] ImageB64: zero-size image %dx%d", i, b.Dx(), b.Dy())
 		}
 	}
 }

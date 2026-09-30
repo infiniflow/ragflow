@@ -6,7 +6,7 @@ import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
   FormControl,
@@ -216,7 +216,11 @@ export function ChatPromptEngine({
         <SimilaritySliderFormField
           isTooltipShown
           similarityName={prefixName(prefix, 'similarity_threshold')}
-          similarityWeightName={prefixName(prefix, 'vector_similarity_weight')}
+          similarityWeightName={prefixName(
+            prefix,
+            'keywords_similarity_weight',
+          )}
+          similarityWeightType="keyword"
         ></SimilaritySliderFormField>
         <RerankCandidatesCountFormField
           name={prefixName(prefix, 'rerank_candidates_count')}

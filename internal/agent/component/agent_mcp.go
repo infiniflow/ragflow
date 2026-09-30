@@ -39,7 +39,7 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		if len(selection.Tools) == 0 {
 			continue
 		}
-		state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, err := runtime.GetStateFromContext(ctx)
 		if err != nil || state == nil || db == nil {
 			return nil, fmt.Errorf("MCP server %q: missing runtime tenant or database", selection.ID)
 		}

@@ -4,10 +4,10 @@ import {
   LargeModelFormField,
 } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
-import { SliderInputSwitchFormField } from '@/components/llm-setting-items/slider';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -22,6 +22,10 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import NumberInputStepper from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableModelFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
@@ -34,6 +38,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -96,6 +101,12 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const ownerTenantId = useOwnerTenantId();
+  const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
+    FormSchema,
+    { ownerTenantId },
+  );
+
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
@@ -111,7 +122,7 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
   });
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
@@ -159,12 +170,16 @@ function AgentForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
+  // A persisted model from a shared canvas may be unusable to the current
+  // user — surface the error once the model list has loaded.
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
+
   return (
     <>
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField></LargeModelFormField>
+          <LargeModelFormField ownerTenantId={ownerTenantId} />
           {(mcpIds.length > 0 || hasSubAgentOrTool(edges, node?.id)) && (
             <FormField
               control={form.control}
@@ -232,22 +247,10 @@ function AgentForm({ node }: INextOperatorForm) {
           <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
-              <FormField
-                control={form.control}
-                name={`cite`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel tooltip={t('chat.quoteTip')}>
-                      {t('flow.cite')}
-                    </FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                  </FormItem>
-                )}
+              <SwitchFormField
+                name="cite"
+                label={t('flow.cite')}
+                tooltip={t('chat.quoteTip')}
               />
               <FormField
                 control={form.control}

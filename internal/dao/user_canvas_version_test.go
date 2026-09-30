@@ -64,13 +64,13 @@ func TestUserCanvasVersionDAO_NotFoundSentinel(t *testing.T) {
 // UserCanvasVersionDAO. Asserting at compile time that the concrete DAO
 // satisfies it prevents accidental signature drift in future refactors.
 type daoInterface interface {
-	Create(ctx context.Context, db *gorm.DB, v *entity.UserCanvasVersion) error
 	GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.UserCanvasVersion, error)
 	ListByCanvasID(ctx context.Context, db *gorm.DB, canvasID string) ([]*entity.UserCanvasVersion, error)
 	GetLatest(ctx context.Context, db *gorm.DB, canvasID string) (*entity.UserCanvasVersion, error)
-	SaveOrReplaceLatest(ctx context.Context, db *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error)
-	Delete(ctx context.Context, db *gorm.DB, id string) error
-	DeleteByCanvasID(ctx context.Context, db *gorm.DB, canvasID string) (int64, error)
+	CreateTx(ctx context.Context, tx *gorm.DB, v *entity.UserCanvasVersion) error
+	SaveOrReplaceLatestTx(ctx context.Context, tx *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error)
+	DeleteTx(ctx context.Context, tx *gorm.DB, id string) error
+	DeleteByCanvasIDTx(ctx context.Context, tx *gorm.DB, canvasID string) (int64, error)
 }
 
 var _ daoInterface = (*UserCanvasVersionDAO)(nil)

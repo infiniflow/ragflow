@@ -4,9 +4,11 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateStatus } from '@/constants/knowledge';
 import { useTranslation } from 'react-i18next';
 
 import { useCompilationNav } from './hooks/use-compilation-nav';
+import { NavCompilingState } from './nav-compiling-state';
 import { NavTreeLeftPanel } from './nav-tree-left-panel';
 
 export function NavTreeView() {
@@ -21,15 +23,29 @@ export function NavTreeView() {
     childrenErrorParents,
     structureMap,
     selectedNode,
-    deleteNavLoading,
-    deleteNodeLoading,
+    navRunData,
+    navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
     handleEntityClick,
-    handleDeleteAll,
-    handleDeleteNode,
   } = useCompilationNav();
+
+  const compiling =
+    navStatus === GenerateStatus.Running || navStatus === GenerateStatus.Failed;
+  // First compile: no tree content to show yet, so replace the panels with
+  // the progress board. A keywords-filtered empty result keeps the panels so
+  // the user can keep editing the filter.
+  const firstCompileRunning =
+    compiling &&
+    !navLoading &&
+    !navError &&
+    !activeKeywords &&
+    (navList?.total ?? 0) === 0;
+
+  if (firstCompileRunning) {
+    return <NavCompilingState status={navStatus} data={navRunData} />;
+  }
 
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
@@ -44,14 +60,11 @@ export function NavTreeView() {
             childrenMap={childrenMap}
             childrenErrorParents={childrenErrorParents}
             structureMap={structureMap}
-            deleteNavLoading={deleteNavLoading}
-            deleteNodeLoading={deleteNodeLoading}
+            traceData={navRunData}
             onKeywordsChange={handleKeywordsChange}
             onNodeClick={handleNodeClick}
             onNodeExpand={handleNodeExpand}
             onEntityClick={handleEntityClick}
-            onDeleteAll={handleDeleteAll}
-            onDeleteNode={handleDeleteNode}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />

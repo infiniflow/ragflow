@@ -477,6 +477,42 @@ func ExpandRangeCitations(answer string, poolSize int) string {
 	return b.String()
 }
 
+// Keep an unfinished citation until its closing delimiter arrives. Retaining
+// the trailing word also preserves the word boundaries used by refN markers.
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+
+func stripCitations(text string) string {
+	text = cleanCitationMarkers(text)
+	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
+	text = slotCitationPattern.ReplaceAllString(text, "")
+	text = rangeCitationPattern.ReplaceAllString(text, "")
+	for _, pattern := range badCitationPatterns {
+		text = pattern.ReplaceAllString(text, "")
+	}
+	return text
+}
+
+type citationStreamFilter struct {
+	pending string
+}
+
+func (f *citationStreamFilter) write(delta string) string {
+	f.pending += delta
+	end := len(f.pending)
+	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil {
+		end = tail[0]
+	}
+	text := stripCitations(f.pending[:end])
+	f.pending = f.pending[end:]
+	return text
+}
+
+func (f *citationStreamFilter) flush() string {
+	text := stripCitations(f.pending)
+	f.pending = ""
+	return text
+}
+
 // ResolveCitationMarkers drops the answer's canonical [ID:n] markers that name
 // nothing and returns the pool positions of the markers that do resolve.
 //
@@ -529,7 +565,7 @@ func ResolveCitationMarkers(answer string, citeIdx []int) (string, []int) {
 // "ID:" prefix — the form the citation rules prescribe, and the only one that can
 // be removed from the answer without risking ordinary text like "[2024]".
 var canonicalIDMarkerPattern = regexp.MustCompile(
-	`(?i)^\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]$`)
+	`(?i)\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]`)
 
 // rawCitationMarkers returns the citation numbers the model wrote, in order and
 // including duplicates — the repetition is what the citation observability log in
@@ -554,6 +590,62 @@ func rawCitationMarkers(answer string, limit int) []int {
 		}
 	}
 	return out
+}
+
+// notFoundPhrases are the shipped system-prompt lines that instruct the model to
+// answer "no answer in the knowledge base" verbatim (web/src/locales/zh.ts,
+// systemInitialValue / emptyResponsePlaceholder). They are the fallback signal
+// when the dialog configures no empty_response of its own.
+var notFoundPhrases = []string{
+	"知识库中未找到您要的答案",
+	"在知识库中未找到您要寻找的答案",
+}
+
+// reportsNoAnswer reports whether the answer only announces that the knowledge
+// base holds no answer. Such an answer cites nothing, so it must not carry
+// citation markers or a document reference.
+//
+// The dialog's configured empty_response is the primary signal; when it is unset
+// the shipped not-found lines above are the fallback. Both sides are stripped of
+// citation markers and whitespace before matching, so a marker the model injected
+// mid-sentence ("因 [ID:3]此") does not hide the phrase.
+func reportsNoAnswer(answer, emptyResponse string) bool {
+	flat := flattenForMatch(stripCitations(answer))
+	if flat == "" {
+		return false
+	}
+	if phrase := flattenForMatch(emptyResponse); phrase != "" && strings.Contains(flat, phrase) {
+		return true
+	}
+	for _, phrase := range notFoundPhrases {
+		if strings.Contains(flat, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// decorateQuote reports whether the answer should be decorated with its citation
+// markers and document reference. An answer that only reports the knowledge base
+// holds no answer is decorated as if quoting were off — otherwise the markers and
+// the document list present sources for a reply that cited nothing.
+func decorateQuote(quote bool, answer, emptyResponse string) bool {
+	return quote && !reportsNoAnswer(answer, emptyResponse)
+}
+
+// flattenForMatch drops all whitespace so a phrase match survives line breaks and
+// the spaces a citation marker leaves behind when it is stripped.
+func flattenForMatch(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch r {
+		case ' ', '\t', '\n', '\r', '\v', '\f', '\u00a0', '\u3000':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // markerNumber parses a citation marker's digits (Arabic-Indic digits accepted)

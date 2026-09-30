@@ -324,3 +324,53 @@ func TestReachLineNamesWhatTheBatchMissed(t *testing.T) {
 		t.Errorf("empty reach = %q, want no line", got)
 	}
 }
+
+// TestNarrowByTermsExemptsTables pins the whole-table exemption: a table chunk is never
+// re-windowed and never char-trimmed, even when the total budget is tight.
+//
+// A head slice keeps the header and the first rows and drops the answer row, and the
+// dropped rows carry no marker — the model then reads a truncated table as a complete
+// one. The budget therefore bounds prose only.
+func TestNarrowByTermsExemptsTables(t *testing.T) {
+	prose := strings.Repeat("曹操引军退去诸将皆惊。", 12) +
+		"关羽赶上荀正交马一合砍荀正于马下。" +
+		strings.Repeat("河北军大半落水。", 12)
+	table := "<table>" + strings.Repeat("<tr><td>19</td><td>Danilo</td></tr>", 100) + "</table>"
+	chunks := []map[string]any{
+		{"id": "c1", "content_with_weight": prose},
+		{"id": "c2", "content_with_weight": table},
+	}
+
+	res := NarrowByTerms(chunks, []string{"荀正"}, nil, "", NarrowContext{Before: 1, After: 0}, 200, 500)
+
+	if !res.Stats.Matched {
+		t.Fatalf("stats = %+v, want the prose hit to set matched", res.Stats)
+	}
+	if len(res.Kept) != 2 {
+		t.Fatalf("kept = %d chunk(s), want 2", len(res.Kept))
+	}
+	if got := ChunkTextOf(res.Kept[1]); got != table {
+		t.Errorf("table came back %d chars, want the %d-char original verbatim", len(got), len(table))
+	}
+	if got := ChunkTextOf(res.Kept[0]); len(got) >= len(prose) {
+		t.Errorf("prose kept %d of %d bytes: it was not narrowed", len(got), len(prose))
+	}
+}
+
+// TestNarrowByTermsKeepsTableOnlyInputVerbatim pins the boundary: with nothing but
+// tables there is nothing to locate, so narrowing reports no match and every table is
+// returned untouched (the caller must not read that as an answer failure).
+func TestNarrowByTermsKeepsTableOnlyInputVerbatim(t *testing.T) {
+	table := "| Rank | Rider |\n|---|---|\n" +
+		strings.Repeat("| 19 | Danilo |\n", 40)
+	chunks := []map[string]any{{"id": "c1", "content_with_weight": table}}
+
+	res := NarrowByTerms(chunks, []string{"Danilo"}, nil, "", NarrowContext{Before: 1, After: 0}, 200, 500)
+
+	if res.Stats.Matched {
+		t.Errorf("stats = %+v, want matched=false for a table-only input", res.Stats)
+	}
+	if len(res.Kept) != 1 || ChunkTextOf(res.Kept[0]) != table {
+		t.Errorf("kept = %d chunk(s), want the table verbatim", len(res.Kept))
+	}
+}

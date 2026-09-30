@@ -23,6 +23,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func disableWriteDeadlineForSSE(c *gin.Context) {
+// clearResponseWriteDeadline removes http.Server.WriteTimeout from the current
+// response so handlers that stream over minutes or compute before their first
+// write (SSE, agentic chats) are not cut off mid-response by the connection
+// write deadline.
+func clearResponseWriteDeadline(c *gin.Context) {
 	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 }

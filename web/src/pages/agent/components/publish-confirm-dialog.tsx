@@ -7,7 +7,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { IFlow } from '@/interfaces/database/agent';
 import { IDataset } from '@/interfaces/database/dataset';
@@ -21,6 +20,9 @@ interface PublishConfirmDialogProps {
   agentDetail: IFlow;
   loading: boolean;
   onPublish: () => void;
+  // Returning true blocks the dialog from opening (e.g. unresolved canvas
+  // checklist issues) — the caller is responsible for the user-facing notice.
+  onBeforeOpen?: () => boolean;
 }
 
 function AssociatedDataset({
@@ -64,6 +66,7 @@ export function PublishConfirmDialog({
   agentDetail,
   loading,
   onPublish,
+  onBeforeOpen,
 }: PublishConfirmDialogProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -86,17 +89,28 @@ export function PublishConfirmDialog({
     setOpen(false);
   }, [onPublish]);
 
+  // A plain button instead of DialogTrigger: Radix opens the dialog on click
+  // regardless of preventDefault, so the guard has to own `setOpen`.
+  const handleTriggerClick = useCallback(() => {
+    if (onBeforeOpen?.()) {
+      return;
+    }
+    setOpen(true);
+  }, [onBeforeOpen]);
+
   if (isPipeline) {
     return null;
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <ButtonLoading variant={'secondary'} loading={loading}>
-          <BookPlus /> {t('flow.release')}
-        </ButtonLoading>
-      </DialogTrigger>
+      <ButtonLoading
+        variant={'secondary'}
+        loading={loading}
+        onClick={handleTriggerClick}
+      >
+        <BookPlus /> {t('flow.release')}
+      </ButtonLoading>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('flow.confirmPublish')}</DialogTitle>

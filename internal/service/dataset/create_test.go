@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -61,6 +62,55 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if result["parser_id"] != string(entity.ParserTypeGeneral) {
 		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
+	if got, ok := result["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > 1e-9 {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", result["keywords_similarity_weight"])
+	}
+	if _, exists := result["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:         "ds-default-parent-child",
+		ParserConfig: map[string]interface{}{},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	chunker := findChunkerNodeInTest(t, map[string]interface{}(config))
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("chunker parent_child = %#v, want default map", chunker["parent_child"])
+	}
+	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
+		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
+	}
+}
+
+// findChunkerNodeInTest returns the first chunker component params from a
+// parser_config (the component-scoped home of the parent_child setting).
+func findChunkerNodeInTest(t *testing.T, config map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	for cpnID, raw := range config {
+		lower := strings.ToLower(cpnID)
+		if strings.HasPrefix(lower, "generalchunker:") || strings.HasPrefix(lower, "tokenchunker:") {
+			if params, ok := raw.(map[string]interface{}); ok {
+				return params
+			}
+		}
+	}
+	t.Fatalf("no chunker node found in parser_config: %#v", config)
+	return nil
 }
 
 func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
@@ -87,9 +137,10 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	chunkMethod := "general"
 	parseType := 1
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:      "ds-with-cp",
-		ParserID:  &chunkMethod,
-		ParseType: &parseType,
+		Name:         "ds-with-cp",
+		ParserID:     &chunkMethod,
+		ParserConfig: map[string]interface{}{},
+		ParseType:    &parseType,
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -107,6 +158,79 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	}
 	if extractor["llm_id"] != "llm-default" {
 		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
+	}
+}
+
+// TestCreateDataset_ParentChildConfigReachesGeneralChunker verifies the public
+// parent-child setting controls the component that actually performs the
+// secondary split. Dropping this mapping silently leaves parent-child disabled.
+func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	parserID := "general"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:      "ds-parent-child",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
+			},
+		},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	chunker, ok := config["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", config["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [\"|\"]", chunker["children_delimiters"])
+	}
+}
+
+func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	parserID := "general"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:      "ds-chunker-override",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"chunk_token_size": float64(256),
+			},
+		},
+	}, "tenant-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+
+	config, ok := result["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
+	}
+	chunker, ok := config["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", config["GeneralChunker:SixApplesFall"])
+	}
+	if got := chunker["chunk_token_size"]; got != float64(256) {
+		t.Fatalf("chunk_token_size = %#v, want 256", got)
 	}
 }
 

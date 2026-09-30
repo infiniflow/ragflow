@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -132,6 +133,18 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 				return fmt.Errorf("failed to add vector column %s: %w", vectorColName, err)
 			}
 			common.Info("Successfully added vector column", zap.String("column", vectorColName))
+		}
+
+		// Reconcile the parser-specific column on the existing-table path: the
+		// table may have been created ahead of its first table-parser document.
+		if parserID == "table" {
+			chunkDataExists, checkErr := e.columnExists(table, "chunk_data")
+			if checkErr != nil {
+				return fmt.Errorf("failed to check chunk_data column: %w", checkErr)
+			}
+			if err := e.ensureChunkDataColumn(table, chunkDataExists); err != nil {
+				return err
+			}
 		}
 	} else {
 		// Table doesn't exist, create it with vector column in the initial schema
@@ -266,6 +279,32 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	return nil
 }
 
+// parserIDFromChunks reports the parser that produced a batch: a chunk carrying
+// chunk_data comes from the table parser (Python's create_idx(parser_id)).
+func parserIDFromChunks(chunks []map[string]interface{}) string {
+	for _, chunk := range chunks {
+		if chunkData, ok := chunk["chunk_data"].(map[string]interface{}); ok && chunkData != nil {
+			return "table"
+		}
+	}
+	return ""
+}
+
+// ensureChunkDataColumn adds the column the table parser writes when a table
+// created ahead of its first table-parser document lacks it. exists is the
+// caller's already-known column existence.
+func (e *Engine) ensureChunkDataColumn(table *infinity.Table, exists bool) error {
+	if exists {
+		return nil
+	}
+	if _, err := table.AddColumns(infinity.TableSchema{
+		&infinity.ColumnDefinition{Name: "chunk_data", DataType: "json", Default: "{}"},
+	}); err != nil {
+		return fmt.Errorf("failed to add chunk_data column: %w", err)
+	}
+	return nil
+}
+
 // InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
@@ -307,14 +346,8 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			return nil, fmt.Errorf("cannot infer vector size from chunks")
 		}
 
-		// Determine parser_id from chunk structure
-		parserID := ""
-		if chunkData, ok := chunks[0]["chunk_data"].(map[string]interface{}); ok && chunkData != nil {
-			parserID = "table"
-		}
-
 		// Create table
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID); err != nil {
+		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserIDFromChunks(chunks)); err != nil {
 			return nil, fmt.Errorf("failed to create table: %w", err)
 		}
 
@@ -337,17 +370,30 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	// ShowColumns returns a result set where Data contains arrays of column values
 	re := regexp.MustCompile(`Embedding\([a-z]+,(\d+)\)`)
+	hasChunkData := false
 	if nameArr, ok := result.Data["name"]; ok {
 		if typeArr, ok := result.Data["type"]; ok {
 			for i := 0; i < len(nameArr); i++ {
 				colName, _ := nameArr[i].(string)
 				colType, _ := typeArr[i].(string)
+				if colName == "chunk_data" {
+					hasChunkData = true
+				}
 				matches := re.FindStringSubmatch(colType)
 				if len(matches) >= 2 {
 					size, _ := strconv.Atoi(matches[1])
 					embeddingCols = append(embeddingCols, [2]interface{}{colName, size})
 				}
 			}
+		}
+	}
+
+	// Reconcile the parser column here too: an existing table is opened through
+	// GetTable and never reaches createChunkStoreWithDB. Best effort, like Python's
+	// ensure_columns — a column that stays missing surfaces on the insert below.
+	if parserIDFromChunks(chunks) == "table" {
+		if err := e.ensureChunkDataColumn(table, hasChunkData); err != nil {
+			common.Warn("Failed to add chunk_data column", zap.Error(err))
 		}
 	}
 
@@ -385,6 +431,14 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	// Insert chunks to dataset
 	_, err = table.Insert(insertChunks)
 	if err != nil {
+		common.Warn("Infinity insert failed",
+			zap.String("tableName", tableName),
+			zap.Int("rows", len(insertChunks)),
+			zap.Strings("rowFields", rowFieldNames(insertChunks)),
+			zap.Error(err))
+		if isConnectionLevelError(err) {
+			e.client.dropConnectionFor(db, "InsertChunks")
+		}
 		return nil, fmt.Errorf("failed to insert chunks to dataset: %w", err)
 	}
 
@@ -546,6 +600,13 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 	common.Info(fmt.Sprintf("INFINITY update: table=%s, filter=%s, newValue=%v", tableName, filter, newValue))
 	_, err = table.Update(filter, newValue)
 	if err != nil {
+		common.Warn("Infinity update failed",
+			zap.String("tableName", tableName),
+			zap.String("filter", filter),
+			zap.Error(err))
+		if isConnectionLevelError(err) {
+			e.client.dropConnectionFor(db, "UpdateChunks")
+		}
 		return fmt.Errorf("failed to update chunks: %w", err)
 	}
 
@@ -700,6 +761,13 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 	delResp, err := table.Delete(filter)
 	if err != nil {
+		common.Warn("Infinity delete failed",
+			zap.String("tableName", tableName),
+			zap.String("filter", filter),
+			zap.Error(err))
+		if isConnectionLevelError(err) {
+			e.client.dropConnectionFor(db, "DeleteChunks")
+		}
 		return 0, fmt.Errorf("failed to delete: %w", err)
 	}
 
@@ -793,6 +861,14 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
+	// Infinity binds a "_score" projection to SCORE(), which it allows only with
+	// MATCH TEXT/TENSOR or Fusion — otherwise 3013. Elasticsearch tolerates
+	// "_score" for every shape, so callers pass it unconditionally (the nav
+	// cluster descent and navScan do): drop theirs and re-add the one form this
+	// shape accepts. calculateScores() materializes "_score" for readers either
+	// way.
+	outputColumns = stripScorePseudoColumns(outputColumns)
+
 	if hasTextMatch || hasVectorMatch {
 		if hasTextMatch {
 			outputColumns = append(outputColumns, "score()")
@@ -818,23 +894,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		outputColumns = append(outputColumns, "row_id()")
 	}
 
-	// Strip score pseudo-columns when there's no match expression — Infinity
-	// rejects SCORE()/SCORE_FACTORS() without MATCH TEXT/TENSOR/Fusion with
-	// "InfinityException(3013)". This protects callers (e.g. the no-match
-	// fallback in retrieval.go) that reuse a SelectFields list containing
-	// "_score" across both matched and unmatched queries.
-	if !hasTextMatch && !hasVectorMatch {
-		filtered := outputColumns[:0]
-		for _, c := range outputColumns {
-			switch c {
-			case "_score", "SCORE", "score()", "similarity()":
-				continue
-			}
-			filtered = append(filtered, c)
-		}
-		outputColumns = filtered
-	}
-
 	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
 		outputColumns = append(outputColumns, matchDense.VectorColumnName)
@@ -848,29 +907,26 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
 			} else if status, ok := req.Filter["status"]; ok {
 				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
-			} else if !isSkillIndex {
+			} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 				filterParts = append(filterParts, "available_int=1")
 			}
-		} else if !isSkillIndex {
+		} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
-	// Build filter string from req.Filter
+	// Build the backend-independent portion of the filter. JSON-list predicates
+	// are completed per table below because legacy tables stored those columns
+	// as varchar while current tables use JSON.
+	var filterCopy map[string]interface{}
 	if req.Filter != nil {
-		filterCopy := make(map[string]interface{})
+		filterCopy = make(map[string]interface{})
 		for k, v := range req.Filter {
 			if k != "kb_id" {
 				filterCopy[k] = v
 			}
 		}
-
-		condStr := equivalentConditionToStr(filterCopy)
-		if condStr != "" {
-			filterParts = append(filterParts, condStr)
-		}
 	}
-	filterStr := strings.Join(filterParts, " AND ")
 
 	orderBy := req.OrderBy
 	var rankFeature map[string]float64
@@ -887,6 +943,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	var allResults []map[string]interface{}
 	totalHits := int64(0)
+	// queryErr keeps the first per-table failure. A failed table query used to be
+	// swallowed (warn + continue), which turned schema/query mismatches into
+	// silently empty results — a partial-wildcard projection ("q_*_vec", 3013)
+	// made the knowledge-compile reader see no products, so the dataset
+	// navigation tree silently never materialized. Failures stay tolerable while
+	// another table answered, but surface when nothing did.
+	var queryErr error
 
 	for _, indexName := range req.IndexNames {
 		var tableNames []string
@@ -946,9 +1009,50 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		for _, tableName := range tableNames {
 			tbl, err := db.GetTable(tableName)
 			if err != nil {
+				// A dataset whose table does not exist yet is normal (tables are
+				// created on first write): skip it. A transport failure leaves the
+				// socket unusable, so it is recorded like the failures below.
+				if isConnectionLevelError(err) {
+					e.client.dropConnectionFor(db, "Search")
+					if queryErr == nil {
+						queryErr = fmt.Errorf("open table %s: %w", tableName, err)
+					}
+				}
 				continue
 			}
-			table := tbl.Output(outputColumns)
+			// Resolve partial-wildcard projections ("q_*_vec") against this table's
+			// real columns: Infinity parses "q_*_vec" as the arithmetic expression
+			// "q_" * "_vec" and fails to bind it (3013), while Elasticsearch expands
+			// the pattern in _source. Embedding dims differ per table, so this is
+			// decided per table. A bare "*" is left alone: Infinity supports it.
+			wildcardSelect := hasPartialWildcard(outputColumns)
+			var tableColumns map[string]struct {
+				Type    string
+				Default interface{}
+			}
+			if wildcardSelect || (len(filterCopy) > 0 && hasJSONListFilter(filterCopy)) {
+				tableColumns, err = loadTableColumns(tbl)
+				if err != nil {
+					common.Warn("Failed to load Infinity columns for search",
+						zap.String("tableName", tableName), zap.Error(err))
+					if queryErr == nil {
+						queryErr = fmt.Errorf("load columns for %s: %w", tableName, err)
+					}
+					continue
+				}
+			}
+			tableOutputColumns := outputColumns
+			if wildcardSelect {
+				tableOutputColumns = expandSelectWildcards(outputColumns, tableColumns)
+			}
+			tableFilterParts := append([]string(nil), filterParts...)
+			if len(filterCopy) > 0 {
+				if condition := equivalentConditionToStr(filterCopy, tableColumns); condition != "" {
+					tableFilterParts = append(tableFilterParts, condition)
+				}
+			}
+			filterStr := strings.Join(tableFilterParts, " AND ")
+			table := tbl.Output(tableOutputColumns)
 
 			var textFields []string
 			if matchText != nil && len(matchText.Fields) > 0 {
@@ -1042,7 +1146,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" && !isSkillIndex {
+				if denseFilterStr == "" && shouldDefaultAvailableFilter(req, isSkillIndex) {
 					denseFilterStr = "available_int=1"
 				}
 
@@ -1138,12 +1242,25 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Execute query
 			df, err := table.ToDataFrame()
 			if err != nil {
+				// Log the full request, not just its shape: a failing search used
+				// to be indistinguishable from any other, which made a recurring
+				// 7018/EOF impossible to attribute to a caller.
 				common.Warn("Infinity query failed",
 					zap.String("tableName", tableName),
+					zap.String("filter", filterStr),
+					zap.Strings("selectFields", tableOutputColumns),
+					zap.Int("limit", pageSize),
+					zap.Int("offset", offset),
 					zap.Bool("hasTextMatch", hasTextMatch),
 					zap.Bool("hasVectorMatch", hasVectorMatch),
 					zap.Bool("hasFusion", fusionExpr != nil),
 					zap.Error(err))
+				if isConnectionLevelError(err) {
+					e.client.dropConnectionFor(db, "Search")
+				}
+				if queryErr == nil {
+					queryErr = fmt.Errorf("query table %s: %w", tableName, err)
+				}
 				continue
 			}
 
@@ -1151,12 +1268,29 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			searchChunks := make([]map[string]interface{}, 0)
 			for colName, colData := range df.ColumnData {
 				for i, val := range colData {
+					// A null cell must not materialize a row of its own. Infinity
+					// can return a single all-null cell for a projection it
+					// matched nothing for (observed with a full-text filter plus a
+					// json-list projection: source_chunk_ids came back as a nil
+					// slice while the other columns were empty), and fabricating
+					// one empty row out of it leaks phantom documents to callers —
+					// GetWikiGraph then read an empty slug_kwd off it and issued
+					// filter_fulltext('from_kwd', ''), which Infinity rejects.
+					if isEmptyEngineCell(val) {
+						continue
+					}
 					for len(searchChunks) <= i {
 						searchChunks = append(searchChunks, make(map[string]interface{}))
 					}
 					searchChunks[i][colName] = val
 				}
 			}
+
+			// Infinity returns a Json/Array column as ONE cell holding one
+			// length-prefixed segment per row, so the loop above parks the whole
+			// column on row 0. Redistribute it before applyFieldMappings renames
+			// anything.
+			realignJSONColumnCells(searchChunks, df.ColumnData)
 
 			// Apply field name mapping and row_id handling
 			// Skill index uses different schema
@@ -1171,6 +1305,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 						delete(chunk, "ROW_ID")
 					}
 				}
+			}
+
+			// Filter-only queries (e.g. the management chunk list) are the ones
+			// that can silently span KBs, so echo per-table outcome at debug
+			// level: which table was queried with which filter, and how many
+			// rows came back.
+			if !hasTextMatch && !hasVectorMatch {
+				common.Debug("Infinity filter-only search",
+					zap.String("table", tableName),
+					zap.String("filter", filterStr),
+					zap.Int("rows", len(searchChunks)))
 			}
 
 			// Parse total_hits_count from ExtraInfo
@@ -1216,12 +1361,22 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults = allResults[:pageSize]
 	}
 
+	// Every table failed: return the error instead of an empty result set, so a
+	// backend-specific query mismatch cannot masquerade as "no data".
+	if len(allResults) == 0 && totalHits == 0 && queryErr != nil {
+		return nil, fmt.Errorf("infinity search failed on all tables: %w", queryErr)
+	}
+
 	common.Debug("Search in Infinity completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
 
 	return &types.SearchResult{
 		Chunks: allResults,
 		Total:  totalHits,
 	}, nil
+}
+
+func shouldDefaultAvailableFilter(req *types.SearchRequest, isSkillIndex bool) bool {
+	return !isSkillIndex && !req.IncludeUnavailable
 }
 
 // GetChunk gets a chunk by ID
@@ -1308,6 +1463,7 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 	}
 
 	common.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
+	decodeJSONFields(chunk)
 
 	// Apply field mappings (same as in GetFields)
 	// docnm -> docnm_kwd, title_tks, title_sm_tks
@@ -1365,6 +1521,7 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 // Used by Search() to mutate chunks with derived fields before returning.
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
+		decodeJSONFields(chunk)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val
@@ -1521,6 +1678,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 	needImportantKwdEmptyCount := fieldsAll["important_kwd"]
 
 	for _, chunk := range chunks {
+		decodeJSONFields(chunk)
 		// Build column map for case-insensitive lookup (Python line 747)
 		columnMap := make(map[string]string)
 		for k := range chunk {
@@ -2100,6 +2258,138 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	return result
 }
 
+// rowFieldNames returns the sorted field names of the first row, so a failed
+// insert logs which columns were sent without dumping values (a vector column
+// would make the log unusable).
+func rowFieldNames(rows []map[string]interface{}) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(rows[0]))
+	for k := range rows[0] {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// isEmptyEngineCell reports whether a cell Infinity returned carries no value:
+// an untyped null, or a nil slice/map/pointer. Infinity can hand back such a cell
+// for a projection it found no row for, so it must not turn into a row by itself.
+func isEmptyEngineCell(val interface{}) bool {
+	if val == nil {
+		return true
+	}
+	rv := reflect.ValueOf(val)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Map, reflect.Ptr, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
+}
+
+// scorePseudoColumns are the score columns a caller may put in a SelectFields
+// list. Elasticsearch returns "_score" for every query shape, so callers pass it
+// unconditionally; Infinity only accepts the SCORE()/SIMILARITY() function form,
+// and only together with a compatible MATCH.
+var scorePseudoColumns = map[string]bool{
+	"_score":       true,
+	"SCORE":        true,
+	"score()":      true,
+	"similarity()": true,
+	"SIMILARITY":   true,
+}
+
+// stripScorePseudoColumns removes caller-supplied score columns so Search can
+// add back the single form Infinity accepts for the query shape it is about to
+// run (none for a filter-only query, similarity() for MATCH VECTOR only,
+// score() when a MATCH TEXT/TENSOR or Fusion is present).
+func stripScorePseudoColumns(fields []string) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if scorePseudoColumns[f] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// hasPartialWildcard reports whether any requested column contains a wildcard
+// without being the bare "*" Infinity reads as "all columns".
+func hasPartialWildcard(fields []string) bool {
+	for _, f := range fields {
+		if f != "*" && strings.Contains(f, "*") {
+			return true
+		}
+	}
+	return false
+}
+
+// expandSelectWildcards replaces partial wildcards ("q_*_vec" — the only
+// pattern RAGFlow uses) with the table columns they match. Infinity cannot
+// project a partial wildcard: it parses "q_*_vec" as the arithmetic expression
+// "q_" * "_vec" and fails to bind it ("Fail to bind the expression: q_", 3013),
+// whereas Elasticsearch expands the same pattern in _source. Embedding dims
+// differ per dataset table, so the expansion is resolved per table. A pattern
+// matching no column is dropped, so one unmatched pattern cannot fail the query.
+func expandSelectWildcards(fields []string, columns map[string]struct {
+	Type    string
+	Default interface{}
+}) []string {
+	names := make([]string, 0, len(columns))
+	for name := range columns {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	appendField := func(f string) {
+		if f == "" || seen[f] {
+			return
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	for _, f := range fields {
+		if f == "*" || !strings.Contains(f, "*") {
+			appendField(f)
+			continue
+		}
+		for _, name := range names {
+			if wildcardMatchColumn(f, name) {
+				appendField(name)
+			}
+		}
+	}
+	return out
+}
+
+// wildcardMatchColumn matches a column name against a "*"-wildcard pattern,
+// where "*" stands for any run of characters.
+func wildcardMatchColumn(pattern, name string) bool {
+	parts := strings.Split(pattern, "*")
+	if len(parts) == 1 {
+		return pattern == name
+	}
+	if !strings.HasPrefix(name, parts[0]) {
+		return false
+	}
+	rest := name[len(parts[0]):]
+	for _, part := range parts[1 : len(parts)-1] {
+		if part == "" {
+			continue
+		}
+		idx := strings.Index(rest, part)
+		if idx < 0 {
+			return false
+		}
+		rest = rest[idx+len(part):]
+	}
+	return strings.HasSuffix(rest, parts[len(parts)-1])
+}
+
 // convertMatchingField converts field names for matching
 // For regular document indices: maps _tks/_kwd fields to column@index_name format
 // For skill indices: maps raw field names to column@index_name format
@@ -2216,7 +2506,10 @@ func floatsEqual(a, b float64) bool {
 }
 
 // equivalentConditionToStr converts a condition map to an Infinity filter string
-func equivalentConditionToStr(condition map[string]interface{}) string {
+func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
 	if len(condition) == 0 {
 		return ""
 	}
@@ -2247,39 +2540,54 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 			continue
 		}
 
-		// Handle keyword fields (using full-text filter)
+		// JSON-list fields use member containment. Legacy varchar columns keep
+		// the old full-text behavior.
+		if fieldJSONList(k) && tableColumns != nil {
+			if jsonConditions := jsonListFilterConditions(k, v, tableColumns); len(jsonConditions) > 0 {
+				cond = append(cond, joinBalanced(jsonConditions, " OR "))
+			}
+			continue
+		}
+
+		// Handle keyword fields (exact match, or full-text for the single-token
+		// values Infinity can tokenize — see keywordFilterCondition)
 		if fieldKeyword(k) {
-			// For keyword fields, values are always treated as strings for filter_fulltext
+			// For keyword fields, values are always treated as strings. Blank
+			// entries are dropped: Infinity rejects a filter with an empty query
+			// ("Trying to match:  on fields: <column> failed", 3052) and fails
+			// the whole statement, so one empty element in an IN-list built from
+			// optional values (e.g. GetWikiGraph's from_kwd list when an entity
+			// has no slug) must not poison the condition.
+			var inCond []string
+			appendKeywordCond := func(raw string) {
+				if strings.TrimSpace(raw) == "" {
+					return
+				}
+				inCond = append(inCond, keywordFilterCondition(k, raw))
+			}
 			switch val := v.(type) {
 			case []string:
-				var inCond []string
 				for _, item := range val {
-					inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
-						convertMatchingField(k), escapeFilterValue(item)))
-				}
-				if len(inCond) > 0 {
-					cond = append(cond, "("+strings.Join(inCond, " or ")+")")
+					appendKeywordCond(item)
 				}
 			case []interface{}:
-				var inCond []string
 				for _, item := range val {
 					if s, ok := item.(string); ok {
-						inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
-							convertMatchingField(k), escapeFilterValue(s)))
+						appendKeywordCond(s)
 					} else {
-						inCond = append(inCond, fmt.Sprintf("filter_fulltext('%s', '%s')",
-							convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", item))))
+						appendKeywordCond(fmt.Sprintf("%v", item))
 					}
 				}
-				if len(inCond) > 0 {
-					cond = append(cond, "("+strings.Join(inCond, " or ")+")")
-				}
 			case string:
-				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
-					convertMatchingField(k), escapeFilterValue(val)))
+				appendKeywordCond(val)
 			default:
-				cond = append(cond, fmt.Sprintf("filter_fulltext('%s', '%s')",
-					convertMatchingField(k), escapeFilterValue(fmt.Sprintf("%v", v))))
+				appendKeywordCond(fmt.Sprintf("%v", v))
+			}
+			if len(inCond) > 0 {
+				// Balanced, not a flat "a or b or ... " chain: a long keyword list
+				// (22 wiki slugs) otherwise exceeds Infinity's Thrift expression
+				// depth and kills the connection (see joinBalanced).
+				cond = append(cond, joinBalanced(inCond, " or "))
 			}
 			continue
 		}
@@ -2371,6 +2679,207 @@ func equivalentConditionToStr(condition map[string]interface{}) string {
 		return ""
 	}
 	return strings.Join(cond, " AND ")
+}
+
+// decodeJSONFields converts Infinity JSON-column values back into their Go
+// representation, mirroring Python's read-side parse_json_list for the list
+// columns (infinity_conn.py:937-947): a slice passes through, nil becomes [], a
+// JSON non-list value is wrapped, a legacy "###" string is split, and object
+// columns such as source_chunk_hashes keep their shape.
+func decodeJSONFields(chunk map[string]interface{}) {
+	for fieldName, value := range chunk {
+		if !fieldJSON(fieldName) {
+			continue
+		}
+		listField := fieldJSONList(fieldName)
+		text, ok := value.(string)
+		if !ok {
+			// Infinity hands a Json/Array column back as the raw
+			// length-prefixed multi-value byte blob (see
+			// decodeInfinityJSONBytes) rather than the JSON text a legacily
+			// typed varchar column returns, so decode that shape too. Without
+			// it every reader of such a column saw raw bytes: the structure
+			// graph could not read compilation_template_ids off the entity /
+			// relation rows, so it could not bucket them per template — it fell
+			// back to a synthetic "legacy" bucket with zero relations and the
+			// navigation tree's document level stayed flat instead of nesting
+			// into its entity tree.
+			if raw, isBytes := value.([]byte); isBytes {
+				if decoded, ok := decodeInfinityJSONBytes(raw); ok {
+					if listField {
+						decoded = asJSONList(decoded)
+					}
+					chunk[fieldName] = decoded
+					continue
+				}
+			}
+			if listField {
+				chunk[fieldName] = asJSONList(value)
+			}
+			continue
+		}
+		if text == "" {
+			if listField {
+				chunk[fieldName] = []interface{}{}
+			}
+			continue
+		}
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+			if listField {
+				decoded = asJSONList(decoded)
+			}
+			chunk[fieldName] = decoded
+			continue
+		}
+		if listField {
+			parts := strings.Split(text, "###")
+			decodedList := make([]interface{}, 0, len(parts))
+			for _, part := range parts {
+				if part != "" {
+					decodedList = append(decodedList, part)
+				}
+			}
+			chunk[fieldName] = decodedList
+		}
+	}
+}
+
+// splitLengthPrefixedSegments splits Infinity's `[int32 little-endian
+// length][payload]` framing into its payloads, each the JSON text of one value.
+// parseLengthPrefixedJSON (metadata.go) unpacks the same framing for the
+// metadata column.
+func splitLengthPrefixedSegments(data []byte) [][]byte {
+	var out [][]byte
+	for offset := 0; offset+4 <= len(data); {
+		length := int(uint32(data[offset]) |
+			uint32(data[offset+1])<<8 |
+			uint32(data[offset+2])<<16 |
+			uint32(data[offset+3])<<24)
+		offset += 4
+		if length < 0 || offset+length > len(data) {
+			break
+		}
+		out = append(out, data[offset:offset+length])
+		offset += length
+	}
+	return out
+}
+
+// realignJSONColumnCells redistributes a Json/Array column that Infinity returns
+// as ONE cell holding one length-prefixed segment per returned row, in row
+// order (the quirk realignMetaFieldsColumn documents for the metadata column).
+// Without it the column-oriented loop in Search parks the whole column on row 0
+// and rows 1..N lose it: a five-row entity/relation read carried
+// compilation_template_ids on exactly one row, so the structure graph could not
+// bucket rows per template and answered with a synthetic "legacy" template with
+// zero relations.
+//
+// Each row receives its own segment as JSON text, which decodeJSONFields then
+// decodes through the ordinary string path. The blob must frame into exactly one
+// valid JSON value per row, so a column that is already aligned (one cell per
+// row) or any other byte shape is left untouched.
+func realignJSONColumnCells(rows []map[string]interface{}, columns map[string][]interface{}) {
+	if len(rows) < 2 {
+		return
+	}
+	for colName, cells := range columns {
+		if !fieldJSON(colName) || len(cells) != 1 {
+			continue
+		}
+		raw, isBytes := cells[0].([]byte)
+		if !isBytes {
+			continue
+		}
+		segments := splitLengthPrefixedSegments(raw)
+		if len(segments) != len(rows) {
+			continue
+		}
+		valid := true
+		for _, segment := range segments {
+			var value interface{}
+			if err := json.Unmarshal(segment, &value); err != nil {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			continue
+		}
+		for i := range rows {
+			rows[i][colName] = string(segments[i])
+		}
+	}
+}
+
+// decodeInfinityJSONBytes decodes a Json/Array column value that arrived as raw
+// length-prefixed bytes rather than JSON text: the shape of a single-value cell
+// (a one-row result, or a value realignJSONColumnCells left alone). Every segment
+// must parse as JSON — anything else reports ok=false so the caller keeps its
+// previous behavior. Array segments concatenate (duplicates dropped, so a
+// repeated value cannot fabricate a second identical entry); a non-array segment
+// replaces the accumulated value.
+func decodeInfinityJSONBytes(raw []byte) (interface{}, bool) {
+	var (
+		items  []interface{}
+		scalar interface{}
+	)
+	segments := splitLengthPrefixedSegments(raw)
+	if len(segments) == 0 {
+		return nil, false
+	}
+	for _, segment := range segments {
+		var value interface{}
+		if err := json.Unmarshal(segment, &value); err != nil {
+			return nil, false
+		}
+		if arr, isArray := value.([]interface{}); isArray {
+			items = appendJSONUnique(items, arr)
+			continue
+		}
+		scalar = value
+	}
+	if len(items) > 0 {
+		return items, true
+	}
+	return scalar, true
+}
+
+// appendJSONUnique appends the elements of add that dst does not already hold,
+// comparing them by their JSON encoding (Infinity stores scalars here, so the
+// encoding is a stable identity for a value).
+func appendJSONUnique(dst, add []interface{}) []interface{} {
+	for _, item := range add {
+		key, err := json.Marshal(item)
+		if err != nil {
+			dst = append(dst, item)
+			continue
+		}
+		dup := false
+		for _, existing := range dst {
+			if other, err := json.Marshal(existing); err == nil && string(other) == string(key) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			dst = append(dst, item)
+		}
+	}
+	return dst
+}
+
+// asJSONList normalizes a list-column value the way Python's parse_json_list
+// does (infinity_conn.py:938-944): a slice passes through unchanged, a nil value
+// becomes [] and any other scalar is wrapped in a single-element list.
+func asJSONList(value interface{}) interface{} {
+	if value == nil {
+		return []interface{}{}
+	}
+	if rv := reflect.ValueOf(value); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+		return value
+	}
+	return []interface{}{value}
 }
 
 // calculateScores calculates _score = score_column + pagerank
@@ -2474,7 +2983,7 @@ func numericRow(row interface{}, out *[]interface{}) bool {
 // flat []interface{} the hex encoder takes. Two shapes reach the engine: values
 // decoded from JSON arrive as []interface{} (numbers as float64), while a chunk
 // built IN PROCESS carries Go's typed slices (the ingestion pipeline's
-// AddPositions emits []int / [][]int). Both must be encoded, because these
+// addPDFPositions emits []int / [][]int). Both must be encoded, because these
 // columns are VARCHAR holding the hex form: handing Infinity the typed slice
 // makes it try to store an int64 tensor and fail with
 // "Not support to convert Tensor(int64,5) to Varchar" (InfinityException 3049).
@@ -2535,9 +3044,11 @@ func numericSlice(v interface{}) ([]interface{}, bool) {
 // Also handles:
 // - kb_id: extracts first element if it's a list
 // - position_int, page_num_int, top_int: converts arrays to hex strings
+// - fieldJSON / fieldJSONList: json column -> JSON string (Infinity json columns)
 // - tag_kwd: joins with ### separator
 // - question_kwd: joins with newline separator
-// - chunk_data: dict -> JSON string
+// - other *_kwd keyword fields: lists join with ###
+// - chunk_data / extra: dict -> JSON string (chunk-table varchar columns)
 // - Missing embeddings filled with zeros if embeddingCols provided
 func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]interface{}) map[string]interface{} {
 	d := make(map[string]interface{})
@@ -2547,8 +3058,20 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		case "docnm_kwd":
 			d["docnm"] = v
 		case "title_kwd":
+			// title_kwd is a column of its own in the Infinity mapping: the
+			// compiled wiki/nav rows carry their label there, and nav keys its
+			// cluster updates on it (title_kwd = <cluster name>). Folding it away
+			// into docnm (Python's chunk-title alias, infinity_conn.py:522-527)
+			// wrote ONLY docnm, so on Infinity every reader of title_kwd saw ""
+			// while ES returned the field verbatim: nav labels degraded to the
+			// description's first line and every cluster lookup matched nothing,
+			// so each document opened a new root cluster instead of merging.
+			// Keep the column, and still mirror it into docnm when the row has no
+			// docnm_kwd, preserving the chunk-title search behavior.
+			title := utility.ConvertToString(v)
+			d["title_kwd"] = title
 			if _, exists := chunk["docnm_kwd"]; !exists {
-				d["docnm"] = utility.ConvertToString(v)
+				d["docnm"] = title
 			}
 		case "title_sm_tks":
 			if _, exists := chunk["docnm_kwd"]; !exists {
@@ -2613,6 +3136,10 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			if _, exists := chunk["question_kwd"]; !exists {
 				d["questions"] = utility.ConvertToString(v)
 			}
+		case "tenant_id":
+			// Infinity isolates tenants by table name (ragflow_<tenant>), so
+			// tenant_id is an internal routing field, not a table column.
+			continue
 		case "kb_id":
 			// 1. First check if it's a string
 			if str, ok := v.(string); ok {
@@ -2627,7 +3154,7 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		case "position_int", "page_num_int", "top_int":
 			// Python flattens the position rows and hex-encodes every number
 			// (infinity_conn.py: `[num for row in v for num in row]`, "%08x").
-			// The input may be Go-NATIVE: the ingestion pipeline's AddPositions
+			// The input may be Go-NATIVE: the ingestion pipeline's addPDFPositions
 			// emits []int / [][]int, and those used to miss the
 			// []interface{}-only branch and reach Infinity as a raw tensor
 			// ("Not support to convert Tensor(int64,5) to Varchar", 3049).
@@ -2638,16 +3165,27 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 			}
 		case "chunk_data":
 			d["chunk_data"] = utility.ConvertMapToJSONString(v)
+		case "extra":
+			// Python json-encodes a dict-valued `extra` (infinity_conn.py:572-581);
+			// raw, the SDK reads the map as a sparse-vector literal and rejects the
+			// string keys. meta_fields is not a chunk column — InsertMetadata
+			// encodes it on the doc-meta path (infinity/metadata.go).
+			d[k] = utility.ConvertMapToJSONString(v)
 		default:
-			// Check for *_feas fields
-			if strings.HasSuffix(k, "_feas") {
+			if fieldJSON(k) {
+				d[k] = encodeJSONField(k, v)
+			} else if strings.HasSuffix(k, "_feas") {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
 			} else if fieldKeyword(k) {
-				// keyword fields with list values -> ### joined
-				if list, ok := v.([]interface{}); ok {
+				// keyword fields with list values -> ### joined; accept the
+				// Go-native []string as well as []interface{}.
+				switch list := v.(type) {
+				case []string:
+					d[k] = strings.Join(list, "###")
+				case []interface{}:
 					d[k] = strings.Join(utility.ConvertToStringSlice(list), "###")
-				} else {
+				default:
 					d[k] = v
 				}
 			} else {
@@ -2680,6 +3218,38 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 	}
 
 	return d
+}
+
+// encodeJSONField renders a json column value as the string Infinity stores. The
+// Go SDK cannot encode a []string constant (3058), so a list is JSON-dumped; a
+// non-list value falls back to the column default ("[]" for the json-list columns,
+// infinity_conn.py:557-558; "{}" for the object one). Strings pass through, so
+// re-transforming a row stays idempotent.
+func encodeJSONField(fieldName string, value interface{}) interface{} {
+	listField := fieldJSONList(fieldName)
+	fallback := "{}"
+	if listField {
+		fallback = "[]"
+	}
+	if text, ok := value.(string); ok {
+		if text == "" {
+			return fallback
+		}
+		return text
+	}
+	if value == nil {
+		return fallback
+	}
+	if listField {
+		if rv := reflect.ValueOf(value); rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+			return fallback
+		}
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fallback
+	}
+	return string(encoded)
 }
 
 // DropChunkStore drops a chunk table from Infinity

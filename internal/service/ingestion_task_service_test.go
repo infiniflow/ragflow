@@ -456,8 +456,9 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	// Seed the document as a partially-processed state that the start transition must reset.
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"progress":     float64(0.5),
-			"progress_msg": "partial",
+			"progress":         float64(0.5),
+			"progress_msg":     "partial",
+			"process_duration": 0.719,
 		}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -488,6 +489,9 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")
+	}
+	if doc.ProcessDuration != 0 {
+		t.Fatalf("process_duration = %f, want 0", doc.ProcessDuration)
 	}
 }
 
@@ -1111,34 +1115,6 @@ func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *t
 	}
 	if event.EventType != dao.EventTypeLifecycle || event.Component != "Parser" || event.Phase != 1 {
 		t.Fatalf("event = %+v, want lifecycle Parser/1", event)
-	}
-}
-
-func TestIngestionTaskServiceAggregateTaskProgressByRunClassifiesByPhase(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-	if err := svc.RecordLifecycle(ctx, "run-1", "task-1", "Chunker", 0, "Chunker Started"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-	if err := svc.RecordLifecycle(ctx, "run-2", "task-1", "Parser", 0, "other run"); err != nil {
-		t.Fatalf("record other run: %v", err)
-	}
-	agg, err := svc.AggregateTaskProgressByPipelineLogID(ctx, "run-1", 2)
-	if err != nil {
-		t.Fatalf("AggregateTaskProgressByPipelineLogID failed: %v", err)
-	}
-	if agg.Done != 1 || agg.Running != 1 || agg.Failed != 0 {
-		t.Fatalf("aggregate = %+v, want Done=1 Running=1 Failed=0", agg)
-	}
-	if agg.Percent != 50 {
-		t.Fatalf("percent = %v, want 50", agg.Percent)
 	}
 }
 

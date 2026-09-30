@@ -248,7 +248,7 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_email"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:BirdsFlutterHigh",
@@ -298,7 +298,7 @@
                             "overlapped_percent": 0
                         },
                         "label": "TokenChunker",
-                        "name": "Token Chunker_email"
+                        "name": "Email Chunker"
                     },
                     "id": "TokenChunker:WarmBreadSmells",
                     "measured": {
@@ -326,7 +326,7 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_email"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:NiceWordsSpoken",
                     "measured": {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -105,6 +106,15 @@ func NewHandler(resolve func(context.Context, string) (string, error), connector
 		})
 	}
 	protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Apply the SDK's localhost protection before authentication on BOTH
+		// transports; the custom SSE transport does not pass through its handler.
+		if local, ok := r.Context().Value(http.LocalAddrContextKey).(*net.TCPAddr); ok && local.IP.IsLoopback() {
+			host := (&url.URL{Host: r.Host}).Hostname()
+			if host != "localhost" && !net.ParseIP(host).IsLoopback() {
+				http.Error(w, "invalid host", http.StatusForbidden)
+				return
+			}
+		}
 		// Reject cross-origin browser access, including GET streams.
 		if origin := r.Header.Get("Origin"); origin != "" {
 			u, err := url.Parse(origin)

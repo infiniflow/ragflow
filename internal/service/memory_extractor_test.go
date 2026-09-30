@@ -1003,3 +1003,28 @@ func TestTypeInstructionsStayInLockstepWithPython(t *testing.T) {
 		}
 	}
 }
+
+// TestMemoryLLMErrorDetectsInBandChatModelFailures pins the check that keeps a
+// driver-reported "**ERROR**: ..." answer out of the JSON parser: the failure is
+// logged and the extraction stays empty, so the task completes with the same
+// "No memory extracted from raw message." outcome Python reports.
+func TestMemoryLLMErrorDetectsInBandChatModelFailures(t *testing.T) {
+	cases := []struct {
+		name   string
+		answer string
+		want   string
+	}{
+		{name: "detail", answer: "**ERROR**: rate limit exceeded", want: "rate limit exceeded"},
+		{name: "no colon", answer: "**ERROR** quota exceeded", want: "quota exceeded"},
+		{name: "reasoning prefix", answer: "<think>ok</think>\n**ERROR**: upstream 503", want: "upstream 503"},
+		{name: "no detail", answer: "**ERROR**:", want: "chat model returned an error without detail"},
+		{name: "json answer", answer: `{"profile": []}`, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := memoryLLMError(tc.answer); got != tc.want {
+				t.Fatalf("memoryLLMError(%q) = %q, want %q", tc.answer, got, tc.want)
+			}
+		})
+	}
+}

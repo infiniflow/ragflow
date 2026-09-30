@@ -27,23 +27,22 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 // connectorAssertURLSafe is the SSRF guard shared by all connectors. It is an
-// indirection over utility.AssertURLSafe so unit tests can substitute a stub
+// indirection over common.AssertURLSafe so unit tests can substitute a stub
 // without touching the shared utility guard (same pattern as sitemap.go and
 // azure_blob.go).
-var connectorAssertURLSafe = utility.AssertURLSafe
+var connectorAssertURLSafe = common.AssertURLSafe
 
 // connectorAssertHostSafe is the host-type SSRF guard shared by the host-based
 // connectors (IMAP/MySQL/PostgreSQL). It is an indirection over
 // utility.AssertHostSafe so unit tests can substitute a stub without touching
 // the shared utility guard (same pattern as connectorAssertURLSafe).
-var connectorAssertHostSafe = utility.AssertHostSafe
+var connectorAssertHostSafe = common.AssertHostSafe
 
 // assertConnectorHostSafe validates a bare host (hostname or literal IP, no
 // scheme or port) with the shared strict SSRF guard and returns the first
@@ -132,7 +131,7 @@ func loopbackTestAllow(hostname string) (string, net.IP, bool) {
 	if lower != "localhost" && !strings.HasSuffix(lower, ".localhost") {
 		return "", nil, false
 	}
-	addrs, err := utility.LookupHost(hostname)
+	addrs, err := common.LookupHost(hostname)
 	if err != nil {
 		return "", nil, false
 	}

@@ -16,7 +16,11 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"github.com/spf13/viper"
+
+	"ragflow/internal/common"
+)
 
 // LogConfig logging configuration.
 //
@@ -36,24 +40,25 @@ import "github.com/spf13/viper"
 // defaults (100 MB / 10 files / 30 days) and there is no operator-meaningful
 // reason to distinguish "not set" from "0".
 type LogConfig struct {
-	Level      string `mapstructure:"level"`       // debug, info, warn, error; default "info"
+	Level      string `mapstructure:"level"`       // debug, info, warn, error; default "warn"
 	Format     string `mapstructure:"format"`      // json, text (reserved for future use); default "json"
 	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
 	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100
 	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 10
 	MaxAge     int    `mapstructure:"max_age"`     // days; default 30
-	Compress   bool   `mapstructure:"compress"`    // gzip rotated files; default false
+	Compress   *bool  `mapstructure:"compress"`    // gzip rotated files; nil = project default (true)
 }
 
 func (c *Config) ParseLogConfig(v *viper.Viper) error {
-	// Default Log config
-	c.log.Level = "info"
+	// Default Log config. Rotation defaults come from common so they stay
+	// in sync with the logger's own fallback values.
+	c.log.Level = "warn"
 	c.log.Format = "json"
 	c.log.Path = "logs"
-	c.log.MaxSize = 100 * 1024 * 1024 // 1024MB
-	c.log.MaxBackups = 10
-	c.log.MaxAge = 30
-	c.log.Compress = false
+	c.log.MaxSize = common.DefaultLogMaxSizeMB
+	c.log.MaxBackups = common.DefaultLogMaxBackups
+	c.log.MaxAge = common.DefaultLogMaxAgeDays
+	c.log.Compress = boolPtr(common.DefaultLogCompress)
 
 	if !v.IsSet("log") {
 		return nil
@@ -88,10 +93,17 @@ func (c *Config) ParseLogConfig(v *viper.Viper) error {
 	}
 
 	if sub.IsSet("compress") {
-		c.log.Compress = sub.GetBool("compress")
+		v := sub.GetBool("compress")
+		c.log.Compress = &v
 	}
 
 	return nil
+}
+
+// boolPtr returns a pointer to the given bool, used to populate *bool config
+// fields so that "not set" (nil) is distinguishable from an explicit value.
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func (c *Config) GetLogConfig() LogConfig {
