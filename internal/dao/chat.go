@@ -148,7 +148,7 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 // GetByID gets chat by ID
 func (dao *ChatDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Chat, error) {
 	var chat entity.Chat
-	err := db.WithContext(ctx).Where("id = ?", id).First(&chat).Error
+	err := db.WithContext(ctx).Take(&chat, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

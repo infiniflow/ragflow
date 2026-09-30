@@ -602,6 +602,7 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitMarkdownUnits(units, primaryPattern)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	units = mergeMarkdownUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
@@ -619,6 +620,9 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 		unit = cloneChunkDoc(unit)
 		unit.Text = strings.TrimSpace(normalizeGeneralNewlines(itemTextOrFallback(unit)))
 		unit.DocType = itemDocType(unit)
+		if unit.DocType == "table" || unit.DocType == "image" {
+			unit.CKType = unit.DocType
+		}
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)
@@ -638,11 +642,37 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schem
 	return result
 }
 
+// stripTextLinesFromMediaContextAbove removes folded unit text from collected
+// media context so materializeMediaContext does not emit it twice.
+func stripTextLinesFromMediaContextAbove(contextAbove, folded string) string {
+	folded = strings.TrimSpace(folded)
+	if folded == "" || contextAbove == "" {
+		return contextAbove
+	}
+	parts := strings.Split(contextAbove, "\n")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == folded {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return strings.Join(filtered, "\n")
+}
+
+// markdownImageUnitHasMediaContext reports whether attachGeneralMediaContext
+// populated context on a markdown image unit. Such units stay out of the text
+// merge so ContextAbove and ContextBelow survive until materialization.
+func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
+	return unit.ContextAbove != "" || unit.ContextBelow != ""
+}
+
 // mergeMarkdownUnits mirrors the Markdown branch of Python naive.chunk:
 // ordinary units use a projected token cap, while a short heading is always
 // kept with the following unit. Markdown images are block attachments rather
 // than standalone media chunks, so image-bearing units participate in the
-// text merge and retain their image payload.
+// text merge and retain their image payload. Images with configured media
+// context are emitted as standalone chunks instead.
 func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
 	overlapPct = max(0, min(100, overlapPct))
 	merged := make([]schema.ChunkDoc, 0, len(units))
@@ -672,6 +702,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				table.Image = mergedImage
 				table.DocType = "table"
 				table.CKType = "table"
+				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
 				merged[current] = table
 				current = -1
 				currentTokens = 0
@@ -680,6 +711,21 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 			merged = append(merged, cloneChunkDoc(unit))
 			current = -1
 			currentTokens = 0
+			continue
+		}
+
+		if itemDocType(unit) == "image" && markdownImageUnitHasMediaContext(unit) {
+			if current >= 0 {
+				current = -1
+				currentTokens = 0
+			}
+			standalone := cloneChunkDoc(unit)
+			standalone.DocType = "image"
+			if standalone.CKType == "" {
+				standalone.CKType = "image"
+			}
+			standalone.TKNums = intPtr(generalUnitTokens(standalone))
+			merged = append(merged, standalone)
 			continue
 		}
 
@@ -937,6 +983,7 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	if !hasCustomDelim(c.param.Delimiters) {
 		// Python naive_merge prefixes each delimiter atom with a newline before
 		// counting it. The prefix is a budgeting detail, not emitted content;

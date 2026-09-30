@@ -269,7 +269,7 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    bash build.sh --all
    ```
 
-   O script prepara as bibliotecas nativas e os recursos de modelo necessários para o build Go e requer `requests` e `huggingface-hub`. Ignore esta etapa se você já preparou os mesmos recursos de outra forma. Quando iniciados na raiz do repositório, os serviços Go encontram automaticamente `rag/res/deepdoc`; para iniciar em outro diretório, defina `DEEPDOC_MODEL_DIR` como o caminho absoluto correspondente.
+   O script prepara as bibliotecas nativas e os recursos de modelo necessários para o build Go e requer `requests` e `huggingface-hub`. Ignore esta etapa se você já preparou os mesmos recursos de outra forma. Quando iniciados na raiz do repositório, os serviços Go encontram automaticamente `internal/rag/res/deepdoc`; para iniciar em outro diretório, defina `DEEPDOC_MODEL_DIR` como o caminho absoluto correspondente.
 3. Inicie as dependências necessárias (Elasticsearch, MySQL, MinIO, NATS, Kvrocks e ClickHouse) usando Docker Compose:
 
    ```bash

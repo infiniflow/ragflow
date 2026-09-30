@@ -78,8 +78,8 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	response, err := target.Driver.ChatWithMessages(ctx, modelName, messages, target.APIConfig, config, usage)
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -108,8 +108,8 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	if err := target.Driver.ChatStreamlyWithSender(ctx, modelName, messages, target.APIConfig, config, usage, sender); err != nil {
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil

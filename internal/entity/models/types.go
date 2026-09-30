@@ -262,6 +262,8 @@ type OCRConfig struct {
 
 type ParseFileConfig struct {
 	ParseMethod string `json:"parse_method"`
+	Backend     string `json:"backend"`
+	ServerURL   string `json:"server_url"`
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
@@ -329,7 +331,7 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 	if m.ModelName != nil {
 		name = *m.ModelName
 	}
-	return GetEmbeddingTokenizer(name)
+	return GetModelTokenizer(name)
 }
 
 // QuotaKey names the deployment this embedding model counts against: endpoint,
@@ -368,6 +370,9 @@ type RerankModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	MaxTokens   int
+
+	limiter    tokenizer.Limiter
+	limiterErr error
 }
 
 // NewRerankModel creates a new RerankModel
@@ -375,20 +380,45 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	tokenizerID := ""
+	if modelName != nil {
+		tokenizerID = GetModelTokenizer(*modelName)
+	}
 	return &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
+		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
+		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
 }
 
-// Rerank calculates similarity between query and texts
+// ResolveTokenizerID returns the tokenizer family declared for this reranker, or
+// an empty string when the model catalog does not provide one.
+func (r *RerankModel) ResolveTokenizerID() string {
+	if r == nil || r.ModelName == nil {
+		return ""
+	}
+	return GetModelTokenizer(*r.ModelName)
+}
+
+// Rerank calculates similarity between query and texts. Rerank input is measured
+// and truncated with the model's declared tokenizer, just like embedding input.
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if r == nil || r.ModelDriver == nil {
+		return nil, errors.New("rerank model: driver is nil")
+	}
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	if r.limiterErr != nil {
+		return nil, r.limiterErr
+	}
+	limiter := r.limiter
+	counter := limiter.Counter()
+	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
 	if mode == "" {
 		mode = "truncate"
@@ -396,20 +426,21 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
 		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
 	}
-	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
-		queryTokens := tokenizer.NumTokensFromString(request.Query)
+	if mode != "passthrough" && len(request.Documents) > 0 {
+		queryTokens := counter.Count(request.Query)
 		if mode == "truncate" {
-			documentTokens := max(maxTokens-queryTokens, 0)
+			documentBudget := max(effectiveMaxTokens-queryTokens, 0)
+			documentTokens := tokenizer.OverLimitLadder(documentBudget)[0]
 			documents := make([]string, len(request.Documents))
 			for i, document := range request.Documents {
-				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+				documents[i] = counter.TrimToLimit(document, documentTokens)
 			}
 			request.Documents = documents
 		} else {
 			for i, document := range request.Documents {
-				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
-				if inputTokens > maxTokens {
-					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				inputTokens := queryTokens + counter.Count(document)
+				if inputTokens > effectiveMaxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 				}
 			}
 		}
@@ -490,6 +521,30 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 	}
+}
+
+// ChatWithMessages sends a non-streaming chat request through the model wrapper.
+func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
+	if m == nil || m.ModelDriver == nil {
+		return nil, errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatWithMessages(ctx, modelName, messages, m.APIConfig, config, usage)
+}
+
+// ChatStreamlyWithSender streams chat deltas through sender.
+func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	if m == nil || m.ModelDriver == nil {
+		return errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
 }
 
 // BindTools registers tools for the ChatModel to call.

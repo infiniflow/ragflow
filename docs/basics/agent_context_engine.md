@@ -47,11 +47,11 @@ The necessity of an Agent Context Engine becomes clear when we examine the alter
 
 The shift from Context Engineering to a Context Platform/Engine marks the maturation of enterprise AI, as summarized in the table below:
 
-| Dimension           | Context engineering (present)                                              | Context engineering/Platform (future)                                                               |
-| ------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Context creation    | Manual, artisanal work by developers and prompt engineers.                 | Automated, driven by intelligent ingestion pipelines and configurable rules.                        |
-| Context delivery    | Hard-coded prompts and static retrieval logic embedded in agent workflows. | Dynamic, real-time retrieval and assembly based on the agent's live state and intent.               |
-| Context maintenance | A development and operational burden, logic locked in code.                | A manageable platform function, with visibility and control returned to the business.               |
+| Dimension           | Context engineering (present)                                              | Context engineering/Platform (future)                                                 |
+|---------------------|----------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| Context creation    | Manual, artisanal work by developers and prompt engineers.                 | Automated, driven by intelligent ingestion pipelines and configurable rules.          |
+| Context delivery    | Hard-coded prompts and static retrieval logic embedded in agent workflows. | Dynamic, real-time retrieval and assembly based on the agent's live state and intent. |
+| Context maintenance | A development and operational burden, logic locked in code.                | A manageable platform function, with visibility and control returned to the business. |
 
 
 ## RAGFlow: A Resolute March Toward the Context Engine of Agents

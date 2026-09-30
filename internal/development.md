@@ -166,7 +166,7 @@ binary carries it and registers the backend at startup.
 #### Model weights
 
 The Go backend loads **`.ort`** (FlatBuffer) weights; the Python side loads
-**`.onnx`**. Both formats live side by side in `rag/res/deepdoc/` — neither
+**`.onnx`**. Both formats live side by side in `internal/rag/res/deepdoc/` — neither
 supersedes the other, so do not delete one to "clean up".
 
 |        | Go (in-process)                                          | Python                                                       |
@@ -175,12 +175,12 @@ supersedes the other, so do not delete one to "clean up".
 | Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
 `download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
-`ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
+`ocr.res` — into `internal/rag/res/deepdoc/`; `download_deps.py` snapshots the whole
 `InfiniFlow/deepdoc` repo and therefore carries both formats.
 
 Auto-discovery is **relative to the server process's working directory**:
 `resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes
-`<cwd>/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
+`<cwd>/internal/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
 Launching `./bin/ragflow_server` from the repo root therefore needs no
 `MODEL_DIR` / `DEEPDOC_MODEL_DIR` export; from any other CWD — or an image with
 a different WORKDIR — set `MODEL_DIR` explicitly.
@@ -189,7 +189,7 @@ a different WORKDIR — set `MODEL_DIR` explicitly.
 authoritative list — `HasModelFiles()` refuses to serve when any file in it is
 missing from the model directory.
 
-> **Note**: A `rag/res/deepdoc/` populated before the `.ort` switch holds only
+> **Note**: A `internal/rag/res/deepdoc/` populated before the `.ort` switch holds only
 > `.onnx` and will NOT serve the Go backend, even though the directory looks
 > fully populated. Re-run `download_go_deps.py` after updating.
 
