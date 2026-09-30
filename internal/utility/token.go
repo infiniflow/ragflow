@@ -194,11 +194,11 @@ func bytesToInt(data []byte) int64 {
 
 // GenerateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))
 func GenerateSecretKey() (string, error) {
-	bytes := make([]byte, 32) // 32 bytes = 256 bits
-	if _, err := rand.Read(bytes); err != nil {
+	byteArray := make([]byte, 32) // 32 bytes = 256 bits
+	if _, err := rand.Read(byteArray); err != nil {
 		return "", fmt.Errorf("failed to generate random key: %w", err)
 	}
-	return hex.EncodeToString(bytes), nil
+	return hex.EncodeToString(byteArray), nil
 }
 
 func GenerateToken() string {
@@ -217,13 +217,13 @@ func GenerateUUID() string {
 // GenerateAPIToken generates secure random access key
 func GenerateAPIToken() string {
 	// Generate 32 random bytes
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
+	bytesArray := make([]byte, 32)
+	if _, err := rand.Read(bytesArray); err != nil {
 		// Fallback to UUID if random generation fails
 		return "ragflow-" + strings.ReplaceAll(uuid.New().String(), "-", "")
 	}
 	// Use URL-safe base64 encoding
-	return "ragflow-" + base64.RawURLEncoding.EncodeToString(bytes)
+	return "ragflow-" + base64.RawURLEncoding.EncodeToString(bytesArray)
 }
 
 // GenerateBetaAPIToken generates a beta access key

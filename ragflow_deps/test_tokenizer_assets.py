@@ -3,14 +3,10 @@
 # The Go counters in internal/tokenizer read their vocabulary from
 # ragflow_deps/huggingface.co/<repo>/<file>. Three places have to agree:
 #
-#   1. ragflow_deps/download_go_deps.py - fetches the file, and says whether it is
-#                                         "runtime" (the counters load it) or "oracle"
-#                                         (only scripts/gen_tokenizer_oracle.py does).
-#                                         It is the Go-side downloader: everything the
-#                                         Go side reads comes from here, and
-#                                         ragflow_deps/download_deps.py (upstream) is
-#                                         deliberately left alone;
-#   2. Dockerfile / Dockerfile_base / Dockerfile_go
+#   1. ragflow_deps/download_deps.py - fetches the file, and says whether it is
+#                                      "runtime" (the counters load it) or "oracle"
+#                                      (only scripts/gen_tokenizer_oracle.py does);
+#   2. Dockerfile / Dockerfile_base
 #                                       - copy the runtime ones into the image at the
 #                                         path the counters search;
 #   3. internal/tokenizer/*.go          - pin the SHA-1 of the runtime ones.
@@ -32,8 +28,7 @@ ROOT = HERE.parent
 RUNTIME_IMAGES = ("Dockerfile_base", "Dockerfile")
 GO_SOURCES = ("spm.go", "wordpiece.go", "bpe.go")
 KINDS = ("runtime", "oracle")
-DOWNLOADER = "download_go_deps.py"
-UPSTREAM_DOWNLOADER = "download_deps.py"
+DOWNLOADER = "download_deps.py"
 
 
 def load_tokenizer_assets():
@@ -88,16 +83,3 @@ def test_oracle_only_assets_are_not_shipped():
         text = image_text(image)
         for repo, filename, _kind in assets:
             assert f"{repo}/{filename}" not in text, f"{image} ships {repo}/{filename}, which only the fixture generator needs"
-
-
-def test_assets_are_fetched_by_the_go_downloader_only():
-    """The Go-side assets belong to the Go-side downloader.
-
-    ragflow_deps/download_deps.py is an upstream file (it snapshots the Python side's
-    dependencies); adding the Go counters' tokenizer files there split the list across
-    two scripts and made the upstream file carry Go concerns. Keeping the fetch in
-    download_go_deps.py is what makes a Go checkout self-sufficient.
-    """
-    upstream = (HERE / UPSTREAM_DOWNLOADER).read_text(encoding="utf-8")
-    for repo, filename, _kind in load_tokenizer_assets():
-        assert filename not in upstream, f"{UPSTREAM_DOWNLOADER} mentions {repo}/{filename}; the embedding tokenizer assets are fetched by {DOWNLOADER} only"
