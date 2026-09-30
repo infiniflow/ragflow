@@ -408,9 +408,18 @@ func TestChatStreamlyWithToolsFinalAnswerForcesNoToolsAndLimitPrompt(t *testing.
 		MaxRounds:       1,
 	}
 
-	_, err := cm.ChatStreamlyWithTools(t.Context(), "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{}, func(_ *string, _ *string) error { return nil })
+	var streamed []string
+	_, err := cm.ChatStreamlyWithTools(t.Context(), "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{}, func(delta *string, _ *string) error {
+		if delta != nil && *delta != "" && *delta != "[DONE]" {
+			streamed = append(streamed, *delta)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("ChatStreamlyWithTools: %v", err)
+	}
+	if len(streamed) != 1 || streamed[0] != "final answer" {
+		t.Fatalf("streamed answer = %v, want [final answer]", streamed)
 	}
 	if driver.lastCfg != nil {
 		if driver.lastCfg.Tools != nil {

@@ -410,12 +410,40 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
+	reasoningStarted := false
+	pendingThinkClose := false
 	err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
-		if delta != nil && *delta != "" && *delta != "[DONE]" {
-			exceedTokens += tokenizer.NumTokensFromString(*delta)
+		if reason != nil && *reason != "" {
+			if !reasoningStarted {
+				reasoningStarted = true
+				thinkOpen := "<think>"
+				if err := sender(&thinkOpen, nil); err != nil {
+					return err
+				}
+			}
+			pendingThinkClose = true
+			exceedTokens += tokenizer.NumTokensFromString(*reason)
+			return sender(reason, nil)
 		}
-		return nil
+		if pendingThinkClose {
+			pendingThinkClose = false
+			thinkClose := "</think>"
+			if err := sender(&thinkClose, nil); err != nil {
+				return err
+			}
+		}
+		if delta == nil || *delta == "" || *delta == "[DONE]" {
+			return nil
+		}
+		exceedTokens += tokenizer.NumTokensFromString(*delta)
+		return sender(delta, nil)
 	})
+	if pendingThinkClose {
+		thinkClose := "</think>"
+		if closeErr := sender(&thinkClose, nil); err == nil {
+			err = closeErr
+		}
+	}
 	commitRound(&cfg, exceedTokens)
 	return totalTokens, err
 }
