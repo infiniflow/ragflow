@@ -144,8 +144,10 @@ func normalizeAgentSession(session *entity.API4Conversation, includeDSL bool) ma
 		}
 
 		for i := 0; i < len(assistantMessages) && i < len(references); i++ {
-			rawChunks, _ := references[i]["chunks"].([]interface{})
-			assistantMessages[i]["reference"] = normalizeAgentReferenceChunks(rawChunks)
+			reference := normalizeAgentReferenceEntry(references[i])
+			rawChunks, _ := reference["chunks"].([]interface{})
+			reference["chunks"] = normalizeAgentReferenceChunks(rawChunks)
+			assistantMessages[i]["reference"] = reference
 		}
 	}
 

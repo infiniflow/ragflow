@@ -17,11 +17,43 @@
 package service
 
 import (
+	"context"
 	"sort"
 	"testing"
 
 	"ragflow/internal/common"
 )
+
+func TestApplyMetaDataFilterWithDiagnosticsGenerationErrors(t *testing.T) {
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method, func(t *testing.T) {
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"author"}
+			}
+			diagnostic := &common.MetadataFilterDiagnostic{}
+			docIDs, empty := ApplyMetaDataFilterWithDiagnostics(
+				context.Background(),
+				filter,
+				common.MetaData{"author": {"Ada": {"doc-1"}}},
+				"question",
+				nil,
+				[]string{"doc-1"},
+				nil,
+				diagnostic,
+			)
+			if empty {
+				t.Fatal("generation error should preserve unfiltered retrieval")
+			}
+			if len(docIDs) != 1 || docIDs[0] != "doc-1" {
+				t.Fatalf("docIDs = %v, want [doc-1]", docIDs)
+			}
+			if diagnostic.Method != method || diagnostic.Status != "not_generated" {
+				t.Fatalf("diagnostic = %+v, want method %q and status not_generated", diagnostic, method)
+			}
+		})
+	}
+}
 
 func TestApplyMetaFilter_Equals(t *testing.T) {
 	metas := common.MetaData{
