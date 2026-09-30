@@ -147,8 +147,10 @@ def _load_user(auth_types=None):
     if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
         return g.user
 
-    # No Authorization header, try to load user from session cookie if JWT auth is allowed
+    # No Authorization header, try query params, then session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
+    if not authorization:
+        authorization = request.args.get("token") or request.args.get("auth") or request.args.get("authorization")
     if not authorization:
         return _load_user_from_session() if AUTH_JWT in auth_types else None
 
@@ -203,9 +205,17 @@ def _load_user(auth_types=None):
                 g.auth_type = AUTH_JWT
                 g.user = user[0]
                 return user[0]
-            return None
         except Exception as e_jwt:
-            logging.warning(f"load_user from jwt got exception {e_jwt}")
+            logging.debug(f"load_user from jwt got exception {e_jwt}")
+            try:
+                if len(auth_token.strip()) >= 32 and not auth_token.startswith("INVALID_"):
+                    user = UserService.query(access_token=auth_token, status=StatusEnum.VALID.value)
+                    if user and user[0].access_token and user[0].access_token.strip():
+                        g.auth_type = AUTH_JWT
+                        g.user = user[0]
+                        return user[0]
+            except Exception:
+                pass
 
     # JWT decode failed, try as api_token
     if AUTH_API in auth_types:

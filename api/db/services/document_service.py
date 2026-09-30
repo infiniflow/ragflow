@@ -1035,7 +1035,13 @@ class DocumentService(CommonService):
         if not e:
             return None
 
-        filters = {"img_id": image_id}
+        target_keys = [image_id]
+        if "-" in image_id:
+            target_keys.append(image_id.split("-", 1)[1])
+        else:
+            target_keys.append(f"{kb_id}-{image_id}")
+
+        filters = {"img_id": target_keys}
         if doc_id:
             filters["doc_id"] = doc_id
         try:
@@ -1056,7 +1062,7 @@ class DocumentService(CommonService):
             return None
 
         for row in (rows or {}).values():
-            if row.get("img_id") == image_id and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
+            if row.get("img_id") in target_keys and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
                 return row["doc_id"]
 
         # Multimodal inline image fallback:

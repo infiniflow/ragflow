@@ -291,7 +291,13 @@ def restore_image_tags(text: str, session_image_map: dict, url_prefix: str = "/a
         if url_prefix == "fig:":
             return f"fig:{target}"
         if target.startswith(("http://", "https://", "/")):
+            if target.startswith("/api/v1/documents/images/") and "?" in url_prefix and "?" not in target:
+                _, query = url_prefix.split("?", 1)
+                return f"{target}?{query}"
             return target
+        if "?" in url_prefix:
+            prefix, query = url_prefix.split("?", 1)
+            return f"{prefix}{target}?{query}"
         return f"{url_prefix}{target}"
 
     # 1. 识别标准 Markdown 图片语法: ![caption](fig:1) / ![caption](Fig. 1)

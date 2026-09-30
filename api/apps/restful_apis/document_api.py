@@ -1859,8 +1859,12 @@ async def get_document_image_for_document(doc_id, image_id):
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_data_error_result(message="Image not found.")
         e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Image not found.")
         parsed = parse_storage_composite_id(image_id)
-        if not e or not parsed or not DocumentService.image_belongs_to_document(doc, image_id):
+        if not parsed:
+            parsed = (doc.kb_id, image_id)
+        if not DocumentService.image_belongs_to_document(doc, image_id):
             return get_data_error_result(message="Image not found.")
         data = await _get_document_image_bytes(*parsed)
         if not data:

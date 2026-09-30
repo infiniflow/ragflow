@@ -821,6 +821,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if not image_protocol:
         image_protocol = prompt_config.get("image_protocol", "url")
     url_prefix = "fig:" if image_protocol == "fig" else "/api/v1/documents/images/"
+    if url_prefix != "fig:":
+        try:
+            from quart import request
+            auth_header = request.headers.get("Authorization") if request else None
+            if auth_header:
+                auth_token = auth_header.split(maxsplit=1)[1] if auth_header[:7].lower() == "bearer " else auth_header
+                if auth_token:
+                    url_prefix = f"/api/v1/documents/images/?token={auth_token}"
+        except Exception:
+            pass
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     session_image_map = {}

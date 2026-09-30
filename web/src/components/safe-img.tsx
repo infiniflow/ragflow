@@ -15,11 +15,13 @@
  */
 
 import type { ReactNode } from 'react';
+import { AuthenticatedImg } from '@/components/image';
 
 interface SafeImgProps {
   src?: unknown;
   alt?: string;
   title?: string;
+  className?: string;
 }
 
 const SAFE_SRC_REGEXP = /^(https?:|\/|\.\/|\.\.\/|data:image\/)/i;
@@ -43,16 +45,22 @@ const isSafeImgSrc = (src: unknown): src is string =>
 /**
  * Render an <img> safely for react-markdown overrides.
  *
- * - Safe src (http(s) / relative / `data:image`): render a real <img>,
- *   explicitly picking only src/alt/title so event handlers like `onerror` /
- *   `onload` that rehypeRaw may pass through cannot execute.
+ * - Safe src (http(s) / relative / `data:image`): render an AuthenticatedImg,
+ *   fetching authenticated document images with user credentials when needed.
  * - Non-string or unsafe src (`javascript:` / `vbscript:` / unknown
  *   schemes): render the original `<img>` tag as a literal string. React
  *   escapes it, so the markup stays visible without executing scripts.
  */
-export const SafeImg = ({ src, alt, title }: SafeImgProps): ReactNode => {
+export const SafeImg = ({ src, alt, title, className }: SafeImgProps): ReactNode => {
   if (!isSafeImgSrc(src)) return <>{buildImgTagString(src, alt, title)}</>;
-  return <img src={src} alt={alt ?? ''} title={title} />;
+  return (
+    <AuthenticatedImg
+      src={src}
+      alt={alt ?? ''}
+      title={title}
+      className={className ?? 'max-w-full h-auto rounded my-2 block'}
+    />
+  );
 };
 
 export default SafeImg;

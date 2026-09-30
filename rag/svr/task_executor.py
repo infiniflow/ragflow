@@ -469,21 +469,27 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 if img_val:
                     temp_d = {"image": img_val}
                     await image2id(temp_d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), tag_key, task["kb_id"])
-                    if not d.get("img_id") and tag_key in image_map:
+                    if tag_key in image_map:
                         d["img_id"] = image_map[tag_key]
+                    elif temp_d.get("img_id"):
+                        d["img_id"] = temp_d["img_id"]
 
             d.pop("images", None)
-            if not d.get("img_id"):
+            if d.get("img_id"):
+                clean_id = d["img_id"]
+                if task.get("kb_id") and not clean_id.startswith(f"{task['kb_id']}-"):
+                    d["img_id"] = f"{task['kb_id']}-{clean_id}"
+            else:
                 if not d.get("image"):
                     _ = d.pop("image", None)
                     d.setdefault("img_id", "")
                     docs.append(d)
                     return
                 await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
-            else:
-                if not isinstance(d.get("image"), bytes) and hasattr(d.get("image"), "close"):
-                    d["image"].close()
-                d.pop("image", None)
+
+            if not isinstance(d.get("image"), bytes) and hasattr(d.get("image"), "close"):
+                d["image"].close()
+            d.pop("image", None)
             docs.append(d)
         except Exception:
             logging.exception("Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
