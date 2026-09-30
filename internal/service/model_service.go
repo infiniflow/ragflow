@@ -949,7 +949,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			switch mtLower {
 			case "chat", "vision":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
-				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
+				chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+				_, err = chatModel.ChatWithMessages(ctx, msg, nil, nil)
 			case "embedding":
 				// Provider discovery can return models without catalog limits. Apply
 				// the strict validator whenever the model has the metadata required
@@ -974,10 +975,12 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					Query:     "test",
 					Documents: []string{"test"},
 				}
-				_, err = driver.Rerank(ctx, &modelName, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
+				rerankModel := modelModule.NewRerankModel(driver, &modelName, apiConfig, 0)
+				_, err = rerankModel.Rerank(ctx, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
-				_, err = driver.AudioSpeech(ctx, &modelName, &content, apiConfig, nil, nil)
+				ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
+				_, err = ttsModel.Speech(ctx, &content, nil, nil)
 			case "asr":
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
@@ -1099,7 +1102,8 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	}
 	tmpFile.Close()
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, nil, nil)
+	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, nil, nil)
 	if err != nil {
 		return err
 	}

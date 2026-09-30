@@ -2,6 +2,8 @@ package canvas
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,5 +226,67 @@ func TestBuildParallelExpansion_PrefersGroupedMembersOverDescendants(t *testing.
 	}
 	if exp.OutputRefs["lines"] != "StringTransform:FmtItem@result" {
 		t.Fatalf("lines output ref = %q, want StringTransform:FmtItem@result", exp.OutputRefs["lines"])
+	}
+}
+
+type failingParallelCloneValue struct{}
+
+func (failingParallelCloneValue) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("clone failure")
+}
+
+func TestParallelCloneFailureStopsItemBeforeInvocation(t *testing.T) {
+	c := &Canvas{Components: map[string]CanvasComponent{
+		"Message:body": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"done"}}}},
+	}}
+	sub, err := buildParallelItemWorkflow(t.Context(), c, "parallel", map[string]bool{"Message:body": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := buildParallelOuterWorkflow(t.Context(), "parallel", "sys.items", 1, nil, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnable, err := outer.Compile(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := NewCanvasState("run", "session")
+	state.Sys["items"] = []any{"one"}
+	state.Sys["broken"] = failingParallelCloneValue{}
+	_, err = runnable.Invoke(withState(t.Context(), state), map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "clone failure") {
+		t.Fatalf("Invoke error = %v; want clone failure", err)
+	}
+}
+
+type failingParallelCloneValue struct{}
+
+func (failingParallelCloneValue) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("clone failure")
+}
+
+func TestParallelCloneFailureStopsItemBeforeInvocation(t *testing.T) {
+	c := &Canvas{Components: map[string]CanvasComponent{
+		"Message:body": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"done"}}}},
+	}}
+	sub, err := buildParallelItemWorkflow(t.Context(), c, "parallel", map[string]bool{"Message:body": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := buildParallelOuterWorkflow(t.Context(), "parallel", "sys.items", 1, nil, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnable, err := outer.Compile(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := NewCanvasState("run", "session")
+	state.Sys["items"] = []any{"one"}
+	state.Sys["broken"] = failingParallelCloneValue{}
+	_, err = runnable.Invoke(withState(t.Context(), state), map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "clone failure") {
+		t.Fatalf("Invoke error = %v; want clone failure", err)
 	}
 }

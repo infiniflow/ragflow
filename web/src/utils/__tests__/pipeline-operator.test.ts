@@ -5,11 +5,6 @@ import {
   transformFormConfigToApi,
 } from '@/utils/pipeline-operator';
 
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-}));
-
 const extractorNode = {
   id: 'Extractor:AutoExtractDefault',
   data: { form: {} },
@@ -182,10 +177,6 @@ describe('Parser nested setups compatibility', () => {
 });
 
 describe('buildOperatorNode dataset-level metadata precedence', () => {
-  beforeEach(() => {
-    mockIsGoBackend = true;
-  });
-
   it('seeds the extractor metadata toggle from the dataset-level object', () => {
     const node = buildOperatorNode(extractorNode, {
       'Extractor:AutoExtractDefault': {

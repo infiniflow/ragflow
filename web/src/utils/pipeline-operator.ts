@@ -35,7 +35,6 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -68,14 +67,24 @@ export function transformParserConfigSetups(
   // a Python canvas) nest the per-family setups under a "setups" key; the Go
   // shape lists file families at the top level. Lift the nested group —
   // top-level families win — and drop the non-family protocol keys so they
-  // never render as a bogus file format.
+  // never render as a bogus file format. The vision options
+  // (enable_vision_enhancement / vlm) are global params-level keys, not
+  // families, so they are dropped here too (the caller lifts them back onto
+  // the form's top level).
   let source = setups;
   const nested = source.setups;
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     source = { ...nested, ...omit(source, ['setups']) };
   }
 
-  return Object.entries(omit(source, ['outputs', 'allowed_output_format']))
+  return Object.entries(
+    omit(source, [
+      'outputs',
+      'allowed_output_format',
+      'enable_vision_enhancement',
+      'vlm',
+    ]),
+  )
     .map(([fileFormat, config]) => {
       const { pages, ...rest } = (config ?? {}) as Record<string, any>;
       const normalizedPages = Array.isArray(pages)
@@ -112,8 +121,8 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-// Python form: flatten the DSL prompts array into the form's single field;
-// the Python extractor form consumes the legacy flat fields as-is.
+// Base normalization: flatten the DSL prompts array into the form's single
+// field. The Go transform below builds on top of this.
 function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -208,10 +217,7 @@ function transformExtractorConfigToFormGo(
 export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorConfigToFormGo,
-    python: transformExtractorConfigToFormPython,
-  })(config);
+  return transformExtractorConfigToFormGo(config);
 }
 
 /**
@@ -337,7 +343,16 @@ export function transformApiConfigToForm(
 ): Record<string, any> {
   switch (operatorType) {
     case Operator.Parser:
-      return { setups: transformParserConfigSetups(config) };
+      // Lift the global vision options back onto the form's top level; omit
+      // them when absent so an explicit undefined cannot clobber template or
+      // default baselines downstream (Object.assign/spread copies undefined).
+      return {
+        setups: transformParserConfigSetups(config),
+        ...(config?.enable_vision_enhancement !== undefined
+          ? { enable_vision_enhancement: config.enable_vision_enhancement }
+          : {}),
+        ...(config?.vlm !== undefined ? { vlm: config.vlm } : {}),
+      };
     case Operator.Extractor:
       return transformExtractorConfigToForm(config);
     case Operator.Tokenizer:

@@ -505,7 +505,7 @@ func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
 }
 
 // TestRunCanvasPipelineDebug_WiresMessageIDAndLog asserts the full write-side wiring
-// of runCanvasPipelineDebug without a live Redis or real canvas: a fake executor
+// of runCanvasPipelineDebug without a live Redis or real agent: a fake executor
 // emits component progress, the injected DebugLogSink flushes the
 // [{component_id, trace}] array (with the END marker last) to the captured
 // store under the key "{canvasID}-{messageID}-logs", and the returned result

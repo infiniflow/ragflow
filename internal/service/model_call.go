@@ -78,8 +78,8 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	response, err := target.Driver.ChatWithMessages(ctx, modelName, messages, target.APIConfig, config, usage)
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -108,8 +108,8 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	if err := target.Driver.ChatStreamlyWithSender(ctx, modelName, messages, target.APIConfig, config, usage, sender); err != nil {
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -173,7 +173,8 @@ func (s *ModelCallService) TranscribeAudio(ctx context.Context, modelRef, userID
 	}
 
 	modelName := target.ModelName
-	response, err := target.Driver.TranscribeAudio(ctx, &modelName, audioFile, target.APIConfig, config, nil)
+	asrModel := modelModule.NewASRModel(target.Driver, &modelName, target.APIConfig)
+	response, err := asrModel.Transcribe(ctx, audioFile, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -195,7 +196,8 @@ func (s *ModelCallService) TranscribeAudioStream(ctx context.Context, modelRef, 
 	}
 
 	modelName := target.ModelName
-	if err := target.Driver.TranscribeAudioWithSender(ctx, &modelName, audioFile, target.APIConfig, config, nil, sender); err != nil {
+	asrModel := modelModule.NewASRModel(target.Driver, &modelName, target.APIConfig)
+	if err := asrModel.TranscribeWithSender(ctx, audioFile, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -231,7 +233,8 @@ func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID str
 	}
 
 	modelName := target.ModelName
-	response, err := target.Driver.AudioSpeech(ctx, &modelName, audioContent, target.APIConfig, config, nil)
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -263,7 +266,8 @@ func (s *ModelCallService) AudioSpeechForTenant(ctx context.Context, modelRef, t
 	}
 
 	modelName := target.ModelName
-	response, err := target.Driver.AudioSpeech(ctx, &modelName, audioContent, target.APIConfig, config, nil)
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -285,7 +289,8 @@ func (s *ModelCallService) AudioSpeechStream(ctx context.Context, modelRef, user
 	}
 
 	modelName := target.ModelName
-	if err := target.Driver.AudioSpeechWithSender(ctx, &modelName, audioContent, target.APIConfig, config, nil, sender); err != nil {
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	if err := ttsModel.SpeechWithSender(ctx, audioContent, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil

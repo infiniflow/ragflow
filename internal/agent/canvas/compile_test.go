@@ -119,7 +119,7 @@ func TestCompile_NoLogOnCleanCanvas(t *testing.T) {
 
 	got := buf.String()
 	if strings.Contains(got, "LoopItem/IterationItem") {
-		t.Errorf("unexpected legacy-node log on clean canvas: %q", got)
+		t.Errorf("unexpected legacy-node log on clean agent: %q", got)
 	}
 }
 

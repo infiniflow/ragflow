@@ -70,7 +70,7 @@ func applyUserCanvasTagFilter(ctx context.Context, db *gorm.DB, query *gorm.DB, 
 	return query.Where(tagQuery)
 }
 
-var ErrUserCanvasNotFound = errors.New("user_canvas: not found or access denied")
+var ErrUserCanvasNotFound = errors.New("agent: not found or access denied")
 
 // UserCanvasDAO user canvas data access object
 type UserCanvasDAO struct{}
@@ -88,7 +88,7 @@ func (dao *UserCanvasDAO) Create(ctx context.Context, db *gorm.DB, userCanvas *e
 // GetByID get user canvas by ID
 func (dao *UserCanvasDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.UserCanvas, error) {
 	var canvas entity.UserCanvas
-	err := db.WithContext(ctx).Where("id = ?", id).First(&canvas).Error
+	err := db.WithContext(ctx).Take(&canvas, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserCanvasNotFound
