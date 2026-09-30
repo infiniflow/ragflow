@@ -2563,7 +2563,8 @@ Example: Virtual Hosted Style`,
       navDeleteNodeTitle: 'Delete node',
       navDeleteNodeDescription:
         'Are you sure you want to delete this node and its children?',
-      representationEmpty: 'No artifact templates available.',
+      representationEmpty:
+        'The pipeline compiler is not configured, or no artifact was extracted.',
       representationUnsupported:
         'This representation type is not supported yet.',
       claimsPanelTitle: 'Claims · {{name}}',
@@ -2757,8 +2758,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       delimiters: 'Delimiters',
       delimitersTip:
         'One delimiter per row; multi-character delimiters can be typed as-is (e.g. ##). With backticks (e.g. `##`): hard split — every delimiter starts its own chunk and no token-size merge is applied. Without backticks: soft split — the delimiter is only a split point, and the pieces are still merged up to the chunk token size, so short documents may show no visible change.',
-      delimitersTipPython:
-        'One delimiter per row. Only backtick-wrapped entries (e.g. `##`) take effect: every delimiter starts its own chunk and no token-size merge is applied. Entries without backticks are ignored.',
       childrenDelimitersTip:
         'Child split: each parent chunk is split again at these delimiters into child chunks used for retrieval; the chunk token size does not apply.',
       one: 'One',

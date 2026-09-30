@@ -295,26 +295,6 @@ services:
       timeout: 10s
       retries: 120
 
-  redis:
-    # Valkey 8 is the cache/queue backend for the Python services. The Go
-    # services use a separate `kvrocks` service (defined below) so the Python
-    # path is left unchanged by the Valkey -> apache/kvrocks migration.
-    image: valkey/valkey:8
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "1gb", "--maxmemory-policy", "volatile-lru"]
-    env_file: .env
-    ports:
-      - ${REDIS_PORT}:6379
-    volumes:
-      - redis_data:/data
-    networks:
-      - ragflow
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-
   kvrocks:
     # Apache Kvrocks: a RocksDB-backed, Redis-protocol-compatible store used
     # ONLY by the Go services (ragflow-cpu / ragflow-gpu), which override

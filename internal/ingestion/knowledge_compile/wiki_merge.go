@@ -175,7 +175,7 @@ func unionWikiProvenance(a, b map[string]any) map[string]any {
 	}
 	// The incoming page replaces current page metadata. Identity and creation
 	// time remain from the existing row.
-	for _, key := range []string{"summary", "kind"} {
+	for _, key := range []string{"summary", "kind", "content_md_raw"} {
 		if v, ok := b[key]; ok {
 			out[key] = v
 		}

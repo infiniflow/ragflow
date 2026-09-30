@@ -56,8 +56,7 @@ const defaultAgentDeferredTimeout = 10 * time.Minute
 // provider is `parts[1]` for the 2-part shape and `parts[2]` for
 // the 3+ shape. Any middle `@<seg>` segments (the "instance" in
 // Python's split_model_name) are intentionally dropped — the Go
-// drivers and the tenant_llm lookup both key on the bare model
-// name + factory, not on the instance.
+// drivers key on the bare model name, not on the instance.
 //
 // Mirrors Python's split_model_name at
 // api/db/joint_services/tenant_model_service.py:163-178:
@@ -1130,9 +1129,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// llm_id format. The RAGFlow DSL stores the model identifier as
 	// "<model>@<instance>@<provider>" (mirrors Python's
 	// split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178 and the
-	// Go-side SplitModelNameAndFactory at
-	// internal/service/tenant.go:168). Two-part
+	// api/db/joint_services/tenant_model_service.py:163-178. Two-part
 	// "<model>@<provider>" and bare "<model>" are also accepted —
 	// bare means no driver known, which falls through to the dummy
 	// driver below. The trailing "@<provider>" suffix must also be

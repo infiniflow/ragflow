@@ -265,6 +265,7 @@ func collectCanvasTypes(rawType, rawTypes any) entity.JSONSlice {
 
 func findAgentTemplatesDir() string {
 	candidates := []string{
+		"internal/agent/templates",
 		"agent/templates",
 		filepath.Join("..", "agent", "templates"),
 		filepath.Join("..", "..", "agent", "templates"),

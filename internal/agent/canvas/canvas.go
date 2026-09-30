@@ -125,7 +125,7 @@ func walkAndClose(v any, seen map[any]bool) {
 func safeClose(closer interface{ Close() }) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			common.Warn("canvas: Close() panicked", zap.Any("recover", rec))
+			common.Warn("agent: Close() panicked", zap.Any("recover", rec))
 		}
 	}()
 	closer.Close()

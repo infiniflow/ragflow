@@ -214,7 +214,7 @@ jobs:
           fi
 
           api_proxy_schemes='["go"]'
-          
+
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
@@ -385,17 +385,13 @@ jobs:
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
-          # Dockerfile_go / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
+          # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           # Pick the Dockerfile matching the API proxy scheme:
-          #   - go  -> Dockerfile_go  (Go-native image)
+          #   - go  -> Dockerfile  (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            DOCKERFILE=Dockerfile_go
-          else
-            DOCKERFILE=Dockerfile_ci
-          fi
+          DOCKERFILE=Dockerfile
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
@@ -439,7 +435,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=3000
                # Keep every (base + offset) host port BELOW the Linux ephemeral
                # range (net.ipv4.ip_local_port_range, default 32768-60999). An
@@ -603,8 +599,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               GO_HTTP_PORT=$((9384 + PORT_OFFSET))
-               GO_ADMIN_PORT=$((9383 + PORT_OFFSET))
                SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
@@ -613,15 +607,15 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
-          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # TEI_MODEL from .env (not .env). Without syncing these two,
           # the Go server's checkModelAvailable TEI bypass never triggers
-          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # because .env's COMPOSE_PROFILES lacks "tei-", causing
           # PATCH /models/default to fail for the Builtin/Local embedding
           # model and datasets to be created with an empty embedding_model.
-               sed -i '/^COMPOSE_PROFILES=/d;/^RAGFLOW_DEV_MODE=/d;/^TEI_MODEL=/d' .env-go
+               sed -i '/^COMPOSE_PROFILES=/d;/^RAGFLOW_DEV_MODE=/d;/^TEI_MODEL=/d' .env
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -641,48 +635,34 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "GO_HTTP_PORT=${GO_HTTP_PORT}"
-                 echo "GO_ADMIN_PORT=${GO_ADMIN_PORT}"
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
-          # server container (env_file: .env-go) sees the same TEI bypass
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env so the Go
+          # server container (env_file: .env) sees the same TEI bypass
           # config as the Python container. Only these two affect the
           # in-process checkModelAvailable logic; other .env keys are
-          # either yml-interpolation-only or already correct in .env-go.
+          # either yml-interpolation-only or already correct in .env.
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
                  # v1.0.0-rc1.dev1 database marker. Without the override the Go
                  # server refuses to boot against the marker it just wrote.
                  echo "RAGFLOW_DEV_MODE=true"
-               } >> .env-go
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+               } >> .env
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -691,17 +671,10 @@ jobs:
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
-
       - name: Start ragflow:nightly for Infinity
         run: |
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            COMPOSE_FILE=docker/docker-compose-go.yml
-          else
-            COMPOSE_FILE=docker/docker-compose.yml
-          fi
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose.yml
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
@@ -762,11 +735,8 @@ jobs:
       - name: Stop ragflow:nightly for Infinity
         if: ${{ always() }}
         run: |
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            COMPOSE_FILE=docker/docker-compose-go.yml
-          else
-            COMPOSE_FILE=docker/docker-compose.yml
-          fi
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose.yml
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -962,17 +932,13 @@ jobs:
           BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
-          # Dockerfile_go / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
+          # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           # Pick the Dockerfile matching the API proxy scheme:
-          #   - go  -> Dockerfile_go  (Go-native image)
+          #   - go  -> Dockerfile (Go-native image)
           #   - *   -> Dockerfile_ci  (Python/legacy image)
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            DOCKERFILE=Dockerfile_go
-          else
-            DOCKERFILE=Dockerfile_ci
-          fi
+          DOCKERFILE=Dockerfile
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME} (dockerfile=${DOCKERFILE})"
@@ -1016,7 +982,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=3000
                # Keep every (base + offset) host port BELOW the Linux ephemeral
                # range (net.ipv4.ip_local_port_range, default 32768-60999). An
@@ -1180,8 +1146,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               GO_HTTP_PORT=$((9384 + PORT_OFFSET))
-               GO_ADMIN_PORT=$((9383 + PORT_OFFSET))
                SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
@@ -1190,15 +1154,15 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
-          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # TEI_MODEL from .env (not .env). Without syncing these two,
           # the Go server's checkModelAvailable TEI bypass never triggers
-          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # because .env's COMPOSE_PROFILES lacks "tei-", causing
           # PATCH /models/default to fail for the Builtin/Local embedding
           # model and datasets to be created with an empty embedding_model.
-               sed -i '/^COMPOSE_PROFILES=/d;/^RAGFLOW_DEV_MODE=/d;/^TEI_MODEL=/d' .env-go
+               sed -i '/^COMPOSE_PROFILES=/d;/^RAGFLOW_DEV_MODE=/d;/^TEI_MODEL=/d' .env
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -1218,48 +1182,34 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "GO_HTTP_PORT=${GO_HTTP_PORT}"
-                 echo "GO_ADMIN_PORT=${GO_ADMIN_PORT}"
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
-          # server container (env_file: .env-go) sees the same TEI bypass
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env so the Go
+          # server container (env_file: .env) sees the same TEI bypass
           # config as the Python container. Only these two affect the
           # in-process checkModelAvailable logic; other .env keys are
-          # either yml-interpolation-only or already correct in .env-go.
+          # either yml-interpolation-only or already correct in .env.
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
-                 else
-                   echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
-                 fi
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
                  # v1.0.0-rc1.dev1 database marker. Without the override the Go
                  # server refuses to boot against the marker it just wrote.
                  echo "RAGFLOW_DEV_MODE=true"
-               } >> .env-go
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+               } >> .env
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -1268,17 +1218,9 @@ jobs:
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
 
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
-
       - name: Start ragflow:nightly for Elasticsearch
         run: |
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            COMPOSE_FILE=docker/docker-compose-go.yml
-          else
-            COMPOSE_FILE=docker/docker-compose.yml
-          fi
+          COMPOSE_FILE=docker/docker-compose.yml
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
@@ -1331,11 +1273,8 @@ jobs:
       - name: Stop ragflow:nightly for Elasticsearch
         if: ${{ always() }}
         run: |
-          if [ "${API_PROXY_SCHEME}" = "go" ]; then
-            COMPOSE_FILE=docker/docker-compose-go.yml
-          else
-            COMPOSE_FILE=docker/docker-compose.yml
-          fi
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose.yml
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1528,7 +1467,7 @@ jobs:
           # Engine-specific offset partitions keep concurrent engine jobs from
           # choosing the same host ports when they land on the same self-hosted runner.
           # A lock plus reservation file closes the check/start race between parallel jobs.
-               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9384 9383 9385 80 443 4222 8222 9900 8123)
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9385 80 443 4222 8222 9900 8123)
                PARTITION_SIZE=3000
                # Keep every (base + offset) host port BELOW the Linux ephemeral
                # range (net.ipv4.ip_local_port_range, default 32768-60999). An
@@ -1692,8 +1631,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               GO_HTTP_PORT=$((9384 + PORT_OFFSET))
-               GO_ADMIN_PORT=$((9383 + PORT_OFFSET))
                SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
@@ -1702,15 +1639,15 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^GO_HTTP_PORT=/d;/^GO_ADMIN_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d;/^API_PROXY_SCHEME=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
-          # TEI_MODEL from .env-go (not .env). Without syncing these two,
+          # TEI_MODEL from .env (not .env). Without syncing these two,
           # the Go server's checkModelAvailable TEI bypass never triggers
-          # because .env-go's COMPOSE_PROFILES lacks "tei-", causing
+          # because .env's COMPOSE_PROFILES lacks "tei-", causing
           # PATCH /models/default to fail for the Builtin/Local embedding
           # model and datasets to be created with an empty embedding_model.
-               sed -i '/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d' .env-go
+               sed -i '/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d' .env
                {
                  echo ""
                  echo "ES_PORT=${ES_PORT}"
@@ -1730,48 +1667,34 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "GO_HTTP_PORT=${GO_HTTP_PORT}"
-                 echo "GO_ADMIN_PORT=${GO_ADMIN_PORT}"
                  echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
-                # first, otherwise the engine service never starts. We drop
-                # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
-                # because this job runs the Go tests on the runner host against
-                # the dependency services directly — no server container needed.
-                # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
-                # service; `metadata-mysql` the mysql metadata store.
-                if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
-                else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
-                fi
-                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+                 # NOTE: the engine profile (${DOC_ENGINE} -> "infinity") MUST be
+                 # first, otherwise the engine service never starts. We drop
+                 # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
+                 # because this job runs the Go tests on the runner host against
+                 # the dependency services directly — no server container needed.
+                 # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                 # service; `metadata-mysql` the mysql metadata store.
+                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                  echo "API_PROXY_SCHEME=${API_PROXY_SCHEME}"
                } >> .env
-          # Sync COMPOSE_PROFILES and TEI_MODEL into .env-go so the Go
-          # server container (env_file: .env-go) sees the same TEI bypass
+          # Sync COMPOSE_PROFILES and TEI_MODEL into .env so the Go
+          # server container (env_file: .env) sees the same TEI bypass
           # config as the Python container. Only these two affect the
           # in-process checkModelAvailable logic; other .env keys are
-          # either yml-interpolation-only or already correct in .env-go.
+          # either yml-interpolation-only or already correct in .env.
                {
                  echo ""
-                if [ "${API_PROXY_SCHEME}" = "go" ]; then
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
-                else
-                  echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql"
-                fi
-                echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
-              } >> .env-go
-               if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-                 RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
-               else
-                 RAGFLOW_HTTP_PORT=${SVR_HTTP_PORT}
-               fi
+                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+               } >> .env
+               RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
                echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
                echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
 
@@ -1779,10 +1702,6 @@ jobs:
                  -e 's#${NATS_PORT:-4222}:4222#${EXPOSE_NATS_PORT}:4222#' \
                  -e 's#"8222:8222"#"${NATS_MONITORING_PORT}:8222"#' \
                  docker-compose-base.yml
-
-               # Patch entrypoint.sh for coverage
-               sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
-
 
       - name: Start ragflow CI service stack (infinity)
         # COMPOSE_PROFILES (set in .env by the prepare step) drops `cpu`, so the
@@ -1799,7 +1718,7 @@ jobs:
             echo "KVROCKS_PORT missing from docker/.env — compose would fall back to host 6379" >&2
             exit 1
           }
-          COMPOSE_FILE=docker/docker-compose-go.yml
+          COMPOSE_FILE=docker/docker-compose.yml
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
@@ -1952,7 +1871,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          COMPOSE_FILE=docker/docker-compose-go.yml
+          COMPOSE_FILE=docker/docker-compose.yml
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.

@@ -21,6 +21,10 @@ import (
 type memNavEngine struct {
 	rows   []map[string]interface{}
 	nextID int
+
+	// searches records every SearchRequest so a test can pin the request shape
+	// (e.g. that nav reads opt out of the retrieval-only available_int=1 default).
+	searches []*types.SearchRequest
 }
 
 func newMemNavEngine() *memNavEngine { return &memNavEngine{} }
@@ -28,8 +32,16 @@ func newMemNavEngine() *memNavEngine { return &memNavEngine{} }
 func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for _, c := range chunks {
-		m.nextID++
-		id := "nav" + strconvItoa(m.nextID)
+		// A caller-provided row id is kept, exactly as the real engines do it
+		// (elasticsearch: chunk["id"] becomes the document id; infinity: the id
+		// column is written verbatim). Nav addresses its cluster rows by the
+		// deterministic id they were written with, so generating a fresh one here
+		// would make every update/delete miss.
+		id, _ := c["id"].(string)
+		if id == "" {
+			m.nextID++
+			id = "nav" + strconvItoa(m.nextID)
+		}
 		cp := make(map[string]interface{}, len(c)+2)
 		for k, v := range c {
 			cp[k] = v
@@ -68,6 +80,7 @@ func (m *memNavEngine) DeleteChunks(_ context.Context, cond map[string]interface
 }
 
 func (m *memNavEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	m.searches = append(m.searches, req)
 	var matched []map[string]interface{}
 	// This engine implements the DENSE leg only. A lexical match expression is
 	// deliberately a no-op rather than a dense one: treating a text expression
@@ -275,13 +288,9 @@ func (stubNavEmbedder) Encode(_ context.Context, _ string, texts []string) ([][]
 	out := make([][]float32, len(texts))
 	for i, t := range texts {
 		// The ES document index template (mapping.json, the ragflow_*
-		// dynamic_templates) maps q_<dim>_vec to a dense_vector field only for
-		// the standard embedding dimensions 512/768/1024/1536. The integration
-		// test runs NavService.Search as a real knn query against that index,
-		// so the synthetic vector must use one of those dimensions — otherwise
-		// ES dynamically maps q_<dim>_vec as a plain float array and the knn
-		// query fails with "[knn] queries are only supported on [dense_vector]
-		// fields". 1024 is the canonical RAGFlow embedding size.
+		// dynamic_templates) maps any q_<dim>_vec field to dense_vector, so the
+		// synthetic vector may use any dimension. 1024 is the canonical
+		// RAGFlow embedding size.
 		dim := 1024
 		v := make([]float32, dim)
 		for d := 0; d < dim; d++ {
@@ -1414,8 +1423,13 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	// Seed the overfull cluster directly: one nav_cluster (parent=root sentinel,
 	// depth 1) carrying 55 nav_doc children.
 	idx := sTestNavIndex(ns)
+	// The seeded rows carry the row ids production writes: nav addresses its
+	// clusters by id (navClusterID, exactly like Python's _nav_cluster_id), so a
+	// fixture without them would leave the locate/update/delete steps matching no
+	// row at all.
 	rows := []map[string]interface{}{
 		{
+			"id":            navClusterID("t1", "kb1", clusterName),
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
 			"type_kwd":      "nav_cluster",
@@ -1428,6 +1442,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	}
 	for i := 0; i < 55; i++ {
 		rows = append(rows, map[string]interface{}{
+			"id":            navDocID("t1", "kb1", fmt.Sprintf("d%02d", i)),
 			"compile_kwd":   navCompileKwd,
 			"available_int": 0,
 			"type_kwd":      "nav_doc",
@@ -1694,4 +1709,238 @@ func intValAny(v any) int {
 		return int(n)
 	}
 	return 0
+}
+
+// TestNavService_ReadsIncludeUnavailableRows pins that nav reads opt out of the
+// retrieval-only available_int=1 default Infinity applies to every MATCH query:
+// nav rows carry available_int=0, so without it the cluster descent and navScan
+// would see an empty tree. ES never filters available_int.
+func TestNavService_ReadsIncludeUnavailableRows(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa")); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) == 0 {
+		t.Fatal("UpsertDoc wrote no nav row")
+	}
+	if v := eng.rows[0]["available_int"]; v != 0 {
+		t.Fatalf("nav row available_int = %#v, want 0", v)
+	}
+
+	if _, _, err := ns.ListClusters(t.Context(), "t1", "kb1", "", 0, 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.searches) == 0 {
+		t.Fatal("ListClusters issued no search")
+	}
+	for i, req := range eng.searches {
+		if !req.IncludeUnavailable {
+			t.Errorf("search %d did not opt out of the available_int=1 default (SelectFields=%#v)", i, req.SelectFields)
+		}
+	}
+}
+
+// TestNavService_MultiTokenClusterUpdatesByRowID pins the write path for a
+// cluster whose label is multi-token and whose title_kwd is empty. Such a row is
+// addressable only by its deterministic row id: a name filter on Infinity matched
+// nothing, so the membership/count update and the cleanup lookup silently
+// no-op'd.
+func TestNavService_MultiTokenClusterUpdatesByRowID(t *testing.T) {
+	const clusterName = "Imperial Memorial and Governance Advice 59cbfbef"
+	clusterRowID := navClusterID("t1", "kb1", clusterName)
+
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows,
+		map[string]interface{}{
+			"id":    clusterRowID,
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+			"available_int": 0,
+			// The legacy Infinity layout: the label only reached docnm.
+			"title_kwd": "", "docnm_kwd": clusterName,
+			"parent_kwd": navRootParent, "depth_int": 1,
+			"doc_count_int": 2, "doc_ids_kwd": []string{"d1", "d2"},
+			"content_with_weight": `{"description":"two memorials"}`,
+		},
+		map[string]interface{}{
+			"id":    navDocID("t1", "kb1", "d1"),
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"available_int": 0, "title_kwd": "memorial of d1",
+			"parent_kwd": clusterName, "depth_int": 2,
+			"doc_id": "d1", "doc_count_int": 1,
+		})
+	ns := newTestNav(eng)
+
+	// The read side must answer the stored key so the frontend can expand it.
+	clusters, _, err := ns.ListClusters(context.Background(), "t1", "kb1", "", 0, 10)
+	if err != nil {
+		t.Fatalf("ListClusters: %v", err)
+	}
+	if len(clusters) != 1 || clusters[0].Name != clusterName {
+		t.Fatalf("clusters = %#v, want the stored key %q", clusters, clusterName)
+	}
+
+	if err := ns.RemoveDoc(context.Background(), "t1", "kb1", "d1"); err != nil {
+		t.Fatalf("RemoveDoc: %v", err)
+	}
+
+	row := navRowByID(eng, clusterRowID)
+	if row == nil {
+		t.Fatal("cluster row vanished")
+	}
+	if got := intValAny(row["doc_count_int"]); got != 1 {
+		t.Errorf("cluster doc_count_int = %d, want 1 (the update must reach a row whose title_kwd is empty)", got)
+	}
+	if ids := firstStringSlice(row["doc_ids_kwd"]); len(ids) != 1 || ids[0] != "d2" {
+		t.Errorf("cluster doc_ids_kwd = %v, want [d2]", ids)
+	}
+}
+
+// TestNavService_MaybeSplitClusterRefusesUnidentifiableChild pins the guard that
+// dropping blank keyword values made necessary: a child with neither a row id nor
+// a document id must abort the split. Falling back to a label would leave a
+// type-only condition, and with the blank label dropped before rendering that
+// condition reparents every row of that type in the dataset instead of failing.
+func TestNavService_MaybeSplitClusterRefusesUnidentifiableChild(t *testing.T) {
+	const clusterName = "overfull_no_ids"
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navClusterID("t1", "kb1", clusterName), "kb_id": "kb1",
+		"compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+		"title_kwd": clusterName, "docnm_kwd": clusterName,
+		"parent_kwd": navRootParent, "depth_int": 1,
+		"doc_count_int": navMaxDocsPerCluster + 1, "doc_ids_kwd": []string{},
+	})
+	// Directly seeded (not via InsertChunks) so they carry NO row id, and no
+	// doc_id either: every fallback the rehome could use is unavailable.
+	for i := 0; i <= navMaxDocsPerCluster; i++ {
+		eng.rows = append(eng.rows, map[string]interface{}{
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"title_kwd": fmt.Sprintf("kid %02d", i), "parent_kwd": clusterName,
+			"depth_int": 2, "doc_count_int": 1,
+		})
+	}
+	ns := newTestNav(eng)
+
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+		t.Fatal("a child without a row id or document id must abort the split")
+	}
+	// Nothing may be reparented, and the original cluster must still be there.
+	reparented := 0
+	originalPresent := false
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_cluster" && row["title_kwd"] == clusterName {
+			originalPresent = true
+		}
+		if p, _ := row["parent_kwd"].(string); strings.HasSuffix(p, ":A") || strings.HasSuffix(p, ":B") {
+			reparented++
+		}
+	}
+	if reparented != 0 {
+		t.Errorf("%d rows were reparented by a type-only condition", reparented)
+	}
+	if !originalPresent {
+		t.Error("the original cluster must not be deleted when the split aborts")
+	}
+}
+
+// TestNavService_MaybeSplitClusterValidatesEveryChildFirst pins the pre-pass: an
+// unaddressable child anywhere in the list must stop the split before the first
+// write. The rehome points children at splitA/splitB, whose rows are inserted
+// only after the original cluster is deleted, so aborting mid-loop would leave
+// the already-moved children hanging off a name no query can reach.
+func TestNavService_MaybeSplitClusterValidatesEveryChildFirst(t *testing.T) {
+	const clusterName = "overfull_second_child_broken"
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navClusterID("t1", "kb1", clusterName), "kb_id": "kb1",
+		"compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+		"title_kwd": clusterName, "docnm_kwd": clusterName,
+		"parent_kwd": navRootParent, "depth_int": 1,
+		"doc_count_int": navMaxDocsPerCluster + 1, "doc_ids_kwd": []string{},
+	})
+	// The first child IS addressable, so a loop that validated lazily would have
+	// reparented it before reaching the broken child below.
+	eng.rows = append(eng.rows, map[string]interface{}{
+		"id": navDocID("t1", "kb1", "d0"), "kb_id": "kb1", "compile_kwd": navCompileKwd,
+		"type_kwd": "nav_doc", "title_kwd": "good child", "doc_id": "d0",
+		"parent_kwd": clusterName, "depth_int": 2, "doc_count_int": 1,
+	})
+	for i := 1; i <= navMaxDocsPerCluster; i++ {
+		eng.rows = append(eng.rows, map[string]interface{}{
+			"kb_id": "kb1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"title_kwd": fmt.Sprintf("broken %02d", i), "parent_kwd": clusterName,
+			"depth_int": 2, "doc_count_int": 1,
+		})
+	}
+	ns := newTestNav(eng)
+
+	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+		t.Fatal("an unaddressable child must abort the split")
+	}
+	for _, row := range eng.rows {
+		if p, _ := row["parent_kwd"].(string); strings.HasSuffix(p, ":A") || strings.HasSuffix(p, ":B") {
+			t.Fatalf("row %v was reparented before every child had been validated", row["id"])
+		}
+	}
+	if navRowByID(eng, navClusterID("t1", "kb1", clusterName)) == nil {
+		t.Error("the original cluster must not be deleted when the split aborts")
+	}
+}
+
+// navRowByID returns the stored row with the given id, or nil.
+func navRowByID(eng *memNavEngine, id string) map[string]interface{} {
+	for _, r := range eng.rows {
+		if s, _ := r["id"].(string); s == id {
+			return r
+		}
+	}
+	return nil
+}
+
+// TestNavService_LabelsFallBackToDocnm pins the label read for rows persisted
+// before Infinity kept title_kwd as its own column (the label reached docnm
+// only). The name must be the STORED key, not a display fallback: the frontend
+// looks children up with it, so a description-derived name left the tree flat.
+func TestNavService_LabelsFallBackToDocnm(t *testing.T) {
+	const clusterName = "忠臣进谏与托孤遗志 27577543"
+	eng := newMemNavEngine()
+	eng.rows = append(eng.rows,
+		map[string]interface{}{
+			"id": "dataset_nav_cluster_1", "compile_kwd": navCompileKwd, "type_kwd": "nav_cluster",
+			"kb_id": "kb1", "available_int": 0, "title_kwd": "", "docnm_kwd": clusterName,
+			"parent_kwd": "root", "depth_int": 0, "doc_count_int": 1, "doc_ids_kwd": []string{"d1"},
+		},
+		map[string]interface{}{
+			"id": "dataset_nav_doc_1", "compile_kwd": navCompileKwd, "type_kwd": "nav_doc",
+			"kb_id": "kb1", "available_int": 0, "title_kwd": "", "docnm_kwd": "出师表中的忠诚与北伐决心",
+			"parent_kwd": clusterName, "depth_int": 1, "doc_count_int": 1, "doc_id": "d1",
+		})
+	ns := newTestNav(eng)
+
+	clusters, _, err := ns.ListClusters(context.Background(), "t1", "kb1", "", 0, 10)
+	if err != nil {
+		t.Fatalf("ListClusters: %v", err)
+	}
+	if len(clusters) != 1 {
+		t.Fatalf("clusters = %#v, want exactly one root cluster", clusters)
+	}
+	if clusters[0].Name != clusterName {
+		t.Fatalf("cluster name = %q, want the stored key %q", clusters[0].Name, clusterName)
+	}
+	if !clusters[0].HasChildren {
+		t.Error("cluster must expose has_children so the frontend can expand it")
+	}
+
+	// The frontend expands with the name it was given.
+	children, _, err := ns.ListChildren(context.Background(), "t1", "kb1", clusters[0].Name, "", 0, 10)
+	if err != nil {
+		t.Fatalf("ListChildren: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("children = %#v, want the doc leaf", children)
+	}
+	if children[0].Name != "出师表中的忠诚与北伐决心" || children[0].DocID != "d1" {
+		t.Fatalf("child = %#v, want the doc leaf labelled from docnm_kwd", children[0])
+	}
 }

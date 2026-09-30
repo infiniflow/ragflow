@@ -23,7 +23,6 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
@@ -347,7 +346,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const { id: routeId } = useParams();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const datasetId = knowledgeId || routeId;
-  const isGoBackend = useIsGoBackend();
   const {
     data: messages,
     fetchPreviousPage,
@@ -375,9 +373,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     if (!logInfo) {
       return undefined;
     }
-    if (!isGoBackend) {
-      return logInfo;
-    }
     return {
       ...logInfo,
       // Keep the seeded progress_msg visible until events arrive: blanking
@@ -394,7 +389,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       isLoadingPreviousEvents: isFetchingPreviousPage,
     };
   }, [
-    isGoBackend,
     logInfo,
     messages,
     fetchPreviousPage,

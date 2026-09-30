@@ -249,28 +249,43 @@ const (
 
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// deepdoc_server.py's --model-dir (default rag/res/deepdoc).
+	// the RAGFlow default model dir (rag/res/deepdoc).
 	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
 	// EnvDeepDocDropScore overrides the confidence threshold below which the
 	// in-process (Go) DeepDoc backend blanks recognized text while preserving
-	// the real score. It MUST match the Python inference service's
-	// Recognizer.drop_score (deepdoc/vision/ocr.py, default 0.5) so both
-	// backends apply the same text-blanking contract.
+	// the real score. It defaults to 0.5, matching the historical DeepDoc
+	// recognizer drop_score, so recognized text is blanked consistently.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
-	// Runs may be in flight at once (each uses one core). It overrides the
-	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
+	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
+	// total cores inference may occupy is at most N. It overrides the
+	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// ingestor runs in parallel (the NATS consumer worker count). It overrides
+	// the ingestor.max_concurrent_workers config key and is itself overridden
+	// by the --ingestor-max-concurrent-workers CLI flag.
+	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// EnvIngestorPageConcurrency bounds how many pages of a single document are
+	// parsed concurrently inside one ingestor worker. It overrides the
+	// ingestor.page_concurrency config key and is itself overridden by the
+	// --ingestor-page-concurrency CLI flag.
+	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
+	// in-process inference (0 = all cores). It overrides the
+	// ingestor.inference_cpu_cores config key and is itself overridden by the
+	// --deepdoc-inference-cpu-cores CLI flag.
+	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
 // the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
-// into the Go binary supports .ort only, not the protobuf .onnx format. The
-// Python DeepDoc service keeps the legacy .onnx files and lists them
-// independently (see deepdoc/server/download_deps.py), so this slice must NOT
-// re-add the .onnx names; it is the Go presence check, not a shared list.
+// into the Go binary supports .ort only, not the protobuf .onnx format, so
+// this slice must NOT re-add the .onnx names; it is the Go presence check,
+// not a shared list.
 // cmd/ resolves the model directory against it; the native analyzer validates
 // file presence against it via HasModelFiles. Order is insignificant (callers
 // do set-membership checks); keep it stable so logs and diffs stay readable.
@@ -280,9 +295,7 @@ const (
 //     (it fetches the files one by one, so it MUST be edited by hand when this
 //     slice changes);
 //   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
-//     (so .ort lands in the model dir automatically — no FILES edit needed);
-//   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
-//     image) keeps the .onnx list and must NOT be changed to .ort.
+//     (so .ort lands in the model dir automatically — no FILES edit needed).
 var DeepDocModelFiles = []string{
 	"det.ort",
 	"layout.ort",
@@ -314,7 +327,7 @@ func HasModelFiles(dir string) bool {
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
-// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// (v1.29.0 <-> ORT 1.29.x) and is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //

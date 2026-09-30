@@ -227,7 +227,7 @@ check_ort_version_consistency() {
     env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
     d1="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_go_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
     d2="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
-    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile_go" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
+    dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
     if [ -z "$env_go" ] || [ -z "$d1" ] || [ -z "$d2" ] || [ -z "$dockerfile" ]; then
         echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
@@ -239,7 +239,7 @@ check_ort_version_consistency() {
         printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
         printf '  %-10s  %s\n' "$d1" "ragflow_deps/download_go_deps.py:ORT_VERSION"
         printf '  %-10s  %s\n' "$d2" "ragflow_deps/download_deps.py:ORT_VERSION"
-        printf '  %-10s  %s\n' "$dockerfile" "Dockerfile_go:ARG ORT_VERSION"
+        printf '  %-10s  %s\n' "$dockerfile" "dockerfile:ARG ORT_VERSION"
         exit 1
     fi
 
@@ -999,13 +999,13 @@ run() {
     ADMIN_PID=$!
     # One trap for both background services: a second `trap ... EXIT INT TERM`
     # would replace this one rather than add to it, leaving admin_server holding
-    # port 9383 after the foreground server exits. INGESTOR_PID is cleared first
+    # port 9381 after the foreground server exits. INGESTOR_PID is cleared first
     # so a value inherited from the environment cannot be signalled during the
     # window before the ingestor starts.
     INGESTOR_PID=""
     trap 'kill "$ADMIN_PID" ${INGESTOR_PID:+"$INGESTOR_PID"} 2>/dev/null || true' EXIT INT TERM
 
-    # Give admin_server a moment to bind its listening port (9383) before
+    # Give admin_server a moment to bind its listening port (9381) before
     # ragflow_server starts sending heartbeats to it.
     sleep 1
 

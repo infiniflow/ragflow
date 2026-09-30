@@ -32,7 +32,6 @@ type Router struct {
 	systemHandler        *handler.SystemHandler
 	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
-	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
 	langfuseHandler      *handler.LangfuseHandler
@@ -71,7 +70,6 @@ func NewRouter(
 	systemHandler *handler.SystemHandler,
 	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
-	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
 	langfuseHandler *handler.LangfuseHandler,
@@ -107,7 +105,6 @@ func NewRouter(
 		systemHandler:        systemHandler,
 		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
 		langfuseHandler:      langfuseHandler,
@@ -241,19 +238,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User info endpoint
-		authorized.GET("/v1/user/info", r.userHandler.Info)
-		// User tenant info endpoint
-		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
-		// Tenant list endpoint
-		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
-		// User settings endpoint
-		authorized.POST("/v1/user/setting", r.userHandler.Setting)
-		// User change password endpoint
-		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
-		// User set tenant info endpoint
-		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
-
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{

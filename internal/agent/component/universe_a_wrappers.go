@@ -232,12 +232,14 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
-		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
+		return nil, fmt.Errorf("agent: Retrieval: %w", err)
 	}
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
+
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
+
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -582,7 +584,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	attachCodeExecArtifacts(ctx, decoded)
 
 	if err != nil {
-		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+		return decoded, fmt.Errorf("agent: CodeExec: %w", err)
 	}
 	return decoded, nil
 }

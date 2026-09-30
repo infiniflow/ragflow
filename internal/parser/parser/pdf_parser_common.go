@@ -334,6 +334,61 @@ func (p *PDFParser) validateParseMethod() error {
 	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer)", p.ParseMethod)
 }
 
+// ParseWithResult parses a PDF into a ParseResult, dispatching on the
+// configured ParseMethod. The native extraction — the deepdoc default and the
+// plain_text strategy — lives in the internal/deepdoc/parser/pdf engine; this
+// method is the facade that wires strategies and post-processing. It is
+// build-tag agnostic: under !cgo the deepdoc path transparently reports
+// ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
+func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := p.validateParseMethod(); err != nil {
+		return ParseResult{Err: err}
+	}
+	common.Info(fmt.Sprintf("------------file: %s, parse_method: %s", filename, p.ParseMethod))
+	switch normalizePDFParseMethod(p.ParseMethod) {
+	case "plain_text":
+		if len(data) == 0 {
+			return emptyPDFResult(filename)
+		}
+		items, pageCount, err := deepdocpdf.PlainText(data)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: plain_text: %w", err)}
+		}
+		return pdfItemsToResult(filename, items, p.OutputFormat, pageCount)
+	case "mineru":
+		return parsePDFWithMinerU(ctx, filename, data, p)
+	case "paddleocr":
+		return parsePDFWithPaddleOCR(ctx, filename, data, p)
+	case "docling":
+		return parsePDFWithDocling(ctx, filename, data, p)
+	case "opendataloader":
+		return parsePDFWithOpenDataLoader(ctx, filename, data, p)
+	case "somark":
+		return parsePDFWithSoMark(filename, data, p)
+	case "tcadp":
+		return parsePDFWithTCADP(filename, data, p)
+	}
+	cfg := deepdoctype.DefaultParserConfig()
+	cfg.Pages = p.Pages
+	cfg.RemoveTOC = p.RemoveTOC
+	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
+	cfg.OnPageDone = p.OnPageDone
+	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
+		outputFormat:       p.OutputFormat,
+		zoom:               cfg.Zoom,
+		enableMultiColumn:  p.EnableMultiColumn,
+		flattenMediaToText: p.FlattenMediaToText,
+	}, deepdocpdf.NewParser(cfg).Parse)
+	if res.Err != nil {
+		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
+			strings.Contains(res.Err.Error(), "deepdoc/pdf: cgo required") ||
+			strings.Contains(res.Err.Error(), "no in-process DeepDoc backend") {
+			return ParseResult{Err: fmt.Errorf("%w: %s", ErrPDFEngineUnavailable, filename)}
+		}
+	}
+	return res
+}
+
 func emptyPDFResult(filename string) ParseResult {
 	return ParseResult{
 		OutputFormat: "json",
@@ -380,8 +435,8 @@ func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoc
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
 // single production entry point now that the external HTTP service is no longer
-// a backend. Callers outside the parser package (e.g. standalone image OCR in
-// the ingestion component) use this instead of constructing a client.
+// a backend. PDF and non-PDF image parsers use it instead of constructing a
+// client.
 func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
 	return deepDocAnalyzerFromEnv()
 }
@@ -784,10 +839,10 @@ func normalizePDFPositions(raw any) [][]any {
 // normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
 // 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
 // 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
-// and every downstream consumer (AddPositions for ES storage,
+// and every downstream consumer (addPDFPositions for ES storage,
 // PositionsFromMatrix for the PDFium render path) expects 1-indexed input.
 // Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
-// consistent; the old heuristic left page>=1 unconverted, which AddPositions
+// consistent; the old heuristic left page>=1 unconverted, which addPDFPositions
 // then double-incremented and PositionsFromMatrix mis-decremented.
 func normalizePDFPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {

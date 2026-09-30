@@ -149,10 +149,10 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 	if factory := resolveComponentFactory(ctx); factory != nil {
 		comp, err := factory(name, params)
 		if err != nil {
-			return nil, fmt.Errorf("canvas: component %q (%s): factory: %w", cpnID, name, err)
+			return nil, fmt.Errorf("agent: component %q (%s): factory: %w", cpnID, name, err)
 		}
 		if comp == nil {
-			return nil, fmt.Errorf("canvas: component %q (%s): factory returned nil component", cpnID, name)
+			return nil, fmt.Errorf("agent: component %q (%s): factory returned nil component", cpnID, name)
 		}
 		// Pass the class name through to the body for structured logging
 		// without the runtime.Component interface needing to expose Name().
@@ -164,7 +164,7 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
 	if !isKnownPrimitive(name) {
-		return nil, fmt.Errorf("canvas: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
+		return nil, fmt.Errorf("agent: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
 	}
 	return placeholderBody(cpnID), nil
 }
@@ -258,24 +258,24 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 				// A user cancel is a normal control path; the authoritative
 				// "Task ... cancelled" line is logged by the service layer, so
 				// keep this at debug to avoid duplicate noise.
-				common.Debug("canvas: component invoke cancelled",
+				common.Debug("agent: component invoke cancelled",
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: cancelled: %w", cpnID, invokeErr)
 			case errors.Is(invokeErr, context.DeadlineExceeded):
-				common.Error("canvas: component invoke failed", invokeErr,
+				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
 			default:
 				// Surface the failure as a structured log line. The wrapped error
 				// already carries the full cause chain (e.g. deepseek DNS/timeout),
 				// but without this the failure only showed up as a generic
 				// "Task ... failed" line with no clear cause in the logs.
-				common.Error("canvas: component invoke failed", invokeErr,
+				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
+				return nil, fmt.Errorf("agent: component %q invoke: %w", cpnID, invokeErr)
 			}
 		}
 		if out == nil {

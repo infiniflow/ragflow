@@ -236,7 +236,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 		"created_by":    search.CreatedBy,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {
@@ -360,7 +360,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		"status":        updatedSearch.Status,
 		"create_time":   updatedSearch.CreateTime,
 		"update_time":   updatedSearch.UpdateTime,
-		"search_config": updatedSearch.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(updatedSearch.SearchConfig),
 	}
 
 	if updatedSearch.Avatar != nil {

@@ -223,7 +223,7 @@ missing from the model directory.
 
 - Start dependencies
 ```bash
-docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
+docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 ```
 
 - Point the host-run Go binaries at Kvrocks. Kvrocks is published on
@@ -252,7 +252,7 @@ otherwise, they will encounter errors when sending heartbeats.
 `--migrate` writes the database version marker that server modes check on
 startup, and a development branch regularly records a version for a release
 that has not been tagged yet — a build from a `v0.27.x` commit that writes
-`v1.0.0-rc1.dev1` refuses to start afterwards, because the recorded version
+`v1.0.0-rc1` refuses to start afterwards, because the recorded version
 looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
 such a checkout: it turns the "code version must not be older than the database
 version" guard off. Leave it off in production.
@@ -291,8 +291,8 @@ cd web && export API_PROXY_SCHEME=hybrid && npm run dev
 ```
 
 ## 4. Service Ports & API Routing
-- api server listens on port 9384 by default
-- admin server listens on port 9383 by default
+- api server listens on port 9380 by default
+- admin server listens on port 9381 by default
 
 After updating or implementing an API, update the frontend development environment routes in web/vite.config.ts under proxySchemes.
 

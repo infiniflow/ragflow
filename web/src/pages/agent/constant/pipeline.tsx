@@ -2,7 +2,6 @@ import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
 import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum PdfOutputFormat {
@@ -415,12 +414,7 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return pickByBackend<
-    typeof initialGoExtractorValues | typeof initialExtractorValues
-  >({
-    go: initialGoExtractorValues,
-    python: initialExtractorValues,
-  });
+  return initialGoExtractorValues;
 }
 
 export const initialCompilationValues = {
