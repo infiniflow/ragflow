@@ -18,6 +18,7 @@ package utility
 
 import (
 	"container/list"
+	"strconv"
 	"sync"
 )
 
@@ -46,18 +47,18 @@ func NewEmbeddingLRU(capacity int) *EmbeddingLRU {
 }
 
 // buildKey creates a composite key from question and embedding ID.
+// Length prefixes keep the key unambiguous: question "a::b" with model "c"
+// and question "a" with model "b::c" produce different keys.
 func buildKey(question, embeddingID string) string {
-	// Use a delimiter that is unlikely to appear in the strings.
-	// If needed, a more robust key generation can be implemented.
-	return question + "::" + embeddingID
+	return strconv.Itoa(len(question)) + ":" + question + strconv.Itoa(len(embeddingID)) + ":" + embeddingID
 }
 
 // Get retrieves the embedding for the given question and embedding ID.
 // Returns the embedding and true if found, otherwise nil and false.
 func (lru *EmbeddingLRU) Get(question, embeddingID string) ([]float64, bool) {
 	key := buildKey(question, embeddingID)
-	lru.mu.RLock()
-	defer lru.mu.RUnlock()
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
 
 	if elem, ok := lru.cache[key]; ok {
 		// Move to front (most recently used)
@@ -135,7 +136,7 @@ func (lru *EmbeddingLRU) Clear() {
 
 // Len returns the number of items in the cache.
 func (lru *EmbeddingLRU) Len() int {
-	lru.mu.RLock()
-	defer lru.mu.RUnlock()
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
 	return lru.list.Len()
 }
