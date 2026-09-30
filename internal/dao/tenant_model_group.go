@@ -34,7 +34,7 @@ func NewTenantModelGroupDAO() *TenantModelGroupDAO {
 // GetByID get tenant model group by primary key (id)
 func (dao *TenantModelGroupDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelGroup, error) {
 	var group entity.TenantModelGroup
-	err := db.WithContext(ctx).Where("id = ?", id).First(&group).Error
+	err := db.WithContext(ctx).Take(&group, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
