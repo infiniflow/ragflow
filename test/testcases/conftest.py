@@ -95,7 +95,7 @@ import time
 
 import pytest
 import requests
-from test.testcases.configs import EMAIL, HOST_ADDRESS, IS_GO_PROXY, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
+from test.testcases.configs import EMAIL, HOST_ADDRESS, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -179,13 +179,7 @@ def _auth_with_admin_bootstrap_retry():
 
 @pytest.fixture(scope="session")
 def auth():
-    if IS_GO_PROXY:
-        return _auth_with_admin_bootstrap_retry()
-    try:
-        register()
-    except Exception as e:
-        print(e)
-    return login()
+    return _auth_with_admin_bootstrap_retry()
 
 
 @pytest.fixture(scope="session")
