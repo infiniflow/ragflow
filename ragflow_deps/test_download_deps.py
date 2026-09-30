@@ -218,3 +218,36 @@ def test_incomplete_native_archive_preserves_existing_directory(tmp_path):
     with pytest.raises(RuntimeError, match="missing required native file"):
         deps._extract_native_archive(archive, target, ["lib/library.a"])
     assert (target / "existing").read_bytes() == b"keep"
+
+
+@pytest.mark.parametrize("kind", ["traversal", "absolute", "symlink", "hardlink", "fifo", "device"])
+def test_native_archive_rejects_unsafe_members(tmp_path, kind):
+    target = tmp_path / "native"
+    target.mkdir()
+    (target / "existing").write_bytes(b"keep")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"untouched")
+    archive_path = tmp_path / "unsafe.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        library = tarfile.TarInfo("./lib/library.a")
+        library.size = len(b"payload")
+        archive.addfile(library, io.BytesIO(b"payload"))
+        member = tarfile.TarInfo("unexpected")
+        if kind == "traversal":
+            member.name = "../outside"
+        elif kind == "absolute":
+            member.name = str(outside)
+        else:
+            member.type = {"symlink": tarfile.SYMTYPE, "hardlink": tarfile.LNKTYPE, "fifo": tarfile.FIFOTYPE, "device": tarfile.CHRTYPE}[kind]
+            member.linkname = str(outside)
+        payload = b"unsafe" if member.isfile() else b""
+        member.size = len(payload)
+        archive.addfile(member, io.BytesIO(payload))
+
+    with pytest.raises(tarfile.TarError, match="Unsafe native archive member"):
+        deps._extract_native_archive(archive_path, str(target), ["lib/library.a"])
+
+    assert outside.read_bytes() == b"untouched"
+    assert (target / "existing").read_bytes() == b"keep"
+    assert not (target / "lib/library.a").exists()
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["native", "outside", "unsafe.tar.gz"]

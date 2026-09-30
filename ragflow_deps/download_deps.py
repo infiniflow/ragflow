@@ -308,7 +308,11 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with tempfile.TemporaryDirectory(dir=os.path.dirname(target)) as staging:
         with tarfile.open(archive_path) as archive:
-            archive.extractall(staging)
+            members = archive.getmembers()
+            for member in members:
+                if os.path.isabs(member.name) or ".." in member.name.split("/") or not (member.isfile() or member.isdir()):
+                    raise tarfile.TarError(f"Unsafe native archive member: {member.name}")
+            archive.extractall(staging, members=members)
         if not complete(staging):
             raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
         if os.path.isdir(target):
