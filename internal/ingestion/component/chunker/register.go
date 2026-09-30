@@ -104,6 +104,13 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		if id, ok := ck["id"]; ok && id != "" {
 			continue
 		}
+		// A spreadsheet row is identified by where it came from, not by what
+		// it says: two source rows can render identical text, and a re-parse
+		// with different column roles must still land on the same chunk.
+		if identity, ok := tableRowIdentity(ck); ok {
+			ck["id"] = common.ChunkID(docID, identity)
+			continue
+		}
 		text, err := requireChunkText(ck)
 		if err != nil {
 			return nil, err

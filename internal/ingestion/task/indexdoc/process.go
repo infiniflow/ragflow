@@ -17,11 +17,13 @@
 package indexdoc
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
+	"sort"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/schema"
 	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/utility"
 )
@@ -159,8 +161,11 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 var pipelineOnlyFields = []string{
 	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 	"context_above", "context_below", "page_number",
-	"table_id", "sheet", "sheet_index", "headers", "cells",
-	"row_start", "row_end", "col_start", "col_end",
+	"sheet", "sheet_index",
+	// The row markers become index columns together with the structured SQL
+	// path; until a backend has them, they are bookkeeping only, and Infinity
+	// rejects an insert that names a column its table does not have.
+	"table_row_source", "table_row_int", "table_profile_key",
 }
 
 // stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
@@ -256,88 +261,69 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 	return ok && sheet != ""
 }
 
-// AggregateTableDocMetadata collects unique per-column values across all
-// chunks for manual-mode columns with an explicit "metadata" or "both" role
-// and merges them into document metadata. auto mode puts every column into
-// row body text and chunk_data but never emits document-level column values.
-func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, roles := resolveTableColumnConfig(parserConfig)
-	if mode != ingestiontable.ModeManual {
-		return nil
-	}
-	var metaCols []string
-	for col, role := range roles {
-		if role == ingestiontable.RoleMetadata || role == ingestiontable.RoleBoth {
-			metaCols = append(metaCols, col)
-		}
-	}
-	if len(metaCols) == 0 {
-		return nil
-	}
-
-	acc := make(map[string]map[string]struct{}, len(metaCols))
-	for _, col := range metaCols {
-		acc[col] = make(map[string]struct{})
-	}
+// AggregateTableDocMetadata collects the unique per-column values of the
+// spreadsheet rows a run indexed, for the columns whose role was metadata or
+// both at index time, and returns them as document metadata keyed by column
+// name.
+//
+// Each row carries its own column identity and effective roles
+// ("table_row_source"), so aggregation reads what was actually written instead
+// of re-deriving configuration from parser_config: a canvas with several
+// TableChunker nodes, or a document re-parsed under changed roles, then cannot
+// be attributed to whichever node the config map happens to yield first. auto
+// mode puts every column in body text and chunk_data but never emits
+// document-level column values, so it contributes nothing here.
+func AggregateTableDocMetadata(chunks []map[string]any) map[string]any {
+	acc := make(map[string]map[string]struct{})
 	for _, ck := range chunks {
-		cd, _ := ck["chunk_data"].(map[string]interface{})
-		if cd == nil {
+		if ck["table_row_source"] == nil {
 			continue
 		}
-		for _, col := range metaCols {
-			val, ok := cd[col]
-			if !ok {
+		raw, err := json.Marshal(ck["table_row_source"])
+		if err != nil {
+			continue
+		}
+		var src schema.TableRowSource
+		if err := json.Unmarshal(raw, &src); err != nil {
+			continue
+		}
+		if src.Mode != ingestiontable.ModeManual {
+			continue
+		}
+		data, _ := ck["chunk_data"].(map[string]any)
+		if len(data) == 0 {
+			continue
+		}
+		for _, col := range src.Columns {
+			switch src.Roles[col.Key] {
+			case ingestiontable.RoleMetadata, ingestiontable.RoleBoth:
+			default:
 				continue
 			}
-			s, _ := val.(string)
+			s, _ := data[col.DataKey].(string)
 			if s == "" {
 				continue
 			}
-			acc[col][s] = struct{}{}
+			values, ok := acc[col.Key]
+			if !ok {
+				values = make(map[string]struct{})
+				acc[col.Key] = values
+			}
+			values[s] = struct{}{}
 		}
+	}
+	if len(acc) == 0 {
+		return nil
 	}
 
 	out := make(map[string]any, len(acc))
 	for col, vals := range acc {
-		if len(vals) == 0 {
-			continue
-		}
 		deduped := make([]string, 0, len(vals))
 		for v := range vals {
 			deduped = append(deduped, v)
 		}
+		sort.Strings(deduped)
 		out[col] = deduped
 	}
 	return out
-}
-
-// resolveTableColumnConfig reads the effective column mode and roles from a
-// TableChunker entry of a component-scoped parser_config. When the canvas has
-// several TableChunker nodes the first match applies; per-node row identity
-// arrives with the chunker's column output.
-func resolveTableColumnConfig(parserConfig map[string]interface{}) (string, map[string]string) {
-	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "TableChunker:") {
-			continue
-		}
-		comp, _ := raw.(map[string]interface{})
-		if comp == nil {
-			continue
-		}
-		mode := ingestiontable.ModeAuto
-		if v, ok := comp["column_mode"].(string); ok && v != "" {
-			mode = v
-		}
-		var roles map[string]string
-		if rawRoles, ok := comp["column_roles"].(map[string]interface{}); ok {
-			roles = make(map[string]string, len(rawRoles))
-			for k, v := range rawRoles {
-				if s, ok := v.(string); ok {
-					roles[k] = s
-				}
-			}
-		}
-		return mode, roles
-	}
-	return ingestiontable.ModeAuto, nil
 }

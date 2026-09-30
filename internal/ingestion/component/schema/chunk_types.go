@@ -16,7 +16,11 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"ragflow/internal/ingestion/table"
+)
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
 // wire payloads.
@@ -99,34 +103,60 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text          string                     `json:"text,omitempty"`
-	DocType       string                     `json:"doc_type_kwd,omitempty"`
-	CKType        string                     `json:"ck_type,omitempty"`
-	TKNums        *int                       `json:"tk_nums,omitempty"`
-	Mom           string                     `json:"mom,omitempty"`
-	ImgID         string                     `json:"img_id,omitempty"`
-	ID            string                     `json:"id,omitempty"`
-	Layout        string                     `json:"layout,omitempty"`
-	LayoutType    string                     `json:"layout_type,omitempty"`
-	LayoutNo      string                     `json:"layoutno,omitempty"`
-	Image         string                     `json:"image,omitempty"`
-	ContextAbove  string                     `json:"context_above,omitempty"`
-	ContextBelow  string                     `json:"context_below,omitempty"`
-	Questions     string                     `json:"questions,omitempty"`
-	Keywords      string                     `json:"keywords,omitempty"`
-	Summary       string                     `json:"summary,omitempty"`
-	ChunkOrderInt *int                       `json:"chunk_order_int,omitempty"`
-	TitleTks      string                     `json:"title_tks,omitempty"`
-	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
-	ContentLtks   string                     `json:"content_ltks,omitempty"`
-	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	PageNumber    *int                       `json:"page_number,omitempty"`
-	TopInt        []int                      `json:"top_int,omitempty"`
-	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
-	Positions     json.RawMessage            `json:"positions,omitempty"`
-	Sheet         string                     `json:"sheet,omitempty"`
-	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Extra         map[string]json.RawMessage `json:"-"`
+	Text            string                     `json:"text,omitempty"`
+	DocType         string                     `json:"doc_type_kwd,omitempty"`
+	CKType          string                     `json:"ck_type,omitempty"`
+	TKNums          *int                       `json:"tk_nums,omitempty"`
+	Mom             string                     `json:"mom,omitempty"`
+	ImgID           string                     `json:"img_id,omitempty"`
+	ID              string                     `json:"id,omitempty"`
+	Layout          string                     `json:"layout,omitempty"`
+	LayoutType      string                     `json:"layout_type,omitempty"`
+	LayoutNo        string                     `json:"layoutno,omitempty"`
+	Image           string                     `json:"image,omitempty"`
+	ContextAbove    string                     `json:"context_above,omitempty"`
+	ContextBelow    string                     `json:"context_below,omitempty"`
+	Questions       string                     `json:"questions,omitempty"`
+	Keywords        string                     `json:"keywords,omitempty"`
+	Summary         string                     `json:"summary,omitempty"`
+	ChunkOrderInt   *int                       `json:"chunk_order_int,omitempty"`
+	TitleTks        string                     `json:"title_tks,omitempty"`
+	TitleSmTks      string                     `json:"title_sm_tks,omitempty"`
+	ContentLtks     string                     `json:"content_ltks,omitempty"`
+	ContentSmLtks   string                     `json:"content_sm_ltks,omitempty"`
+	PageNumber      *int                       `json:"page_number,omitempty"`
+	TopInt          []int                      `json:"top_int,omitempty"`
+	PDFPositions    json.RawMessage            `json:"_pdf_positions,omitempty"`
+	Positions       json.RawMessage            `json:"positions,omitempty"`
+	Sheet           string                     `json:"sheet,omitempty"`
+	SheetIndex      *int                       `json:"sheet_index,omitempty"`
+	ChunkData       map[string]any             `json:"chunk_data,omitempty"`
+	TableRowInt     int                        `json:"table_row_int,omitempty"`
+	TableProfileKey string                     `json:"table_profile_key,omitempty"`
+	TableRowSource  *TableRowSource            `json:"table_row_source,omitempty"`
+	Extra           map[string]json.RawMessage `json:"-"`
+}
+
+// TableRowSource records which TableChunker node emitted a spreadsheet row
+// chunk, which sheet row it came from, and which column roles were in force
+// for it. Row identity has to outlive body-text filtering: two source rows can
+// render identical text, and a re-parse with changed roles must still land on
+// the same chunk. It is pipeline-only bookkeeping — indexdoc reads it at the
+// index boundary and drops it, so it never becomes a chunk-store column.
+type TableRowSource struct {
+	// NodeID is the DSL node id of the TableChunker that produced the row.
+	NodeID string `json:"node_id"`
+	// SheetIndex is the 1-based sheet index the row came from.
+	SheetIndex int `json:"sheet_index"`
+	// SourceRow is the 1-based spreadsheet row number of the data row.
+	SourceRow int `json:"source_row"`
+	// Mode is the column mode actually applied to this row.
+	Mode string `json:"mode"`
+	// Columns is the sheet's column identity in header order.
+	Columns []table.Column `json:"columns"`
+	// Roles is the effective role of each column key in this row: the
+	// configured roles plus the resolved default for unconfigured columns.
+	Roles map[string]string `json:"roles"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -149,7 +179,8 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index",
+		"sheet", "sheet_index", "chunk_data", "table_row_int",
+		"table_profile_key", "table_row_source",
 	} {
 		delete(raw, key)
 	}

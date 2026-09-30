@@ -279,6 +279,9 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	// Read before ProcessChunksForPipeline: it collects the document-level
+	// column values off the row source info that the index boundary drops.
+	tableMeta := indexdoc.AggregateTableDocMetadata(chunks)
 	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
@@ -290,7 +293,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	parentChunks := indexdoc.MaterializeParentChunks(s.taskCtx.Doc.KbID, chunks)
 
-	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)

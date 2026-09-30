@@ -289,6 +289,27 @@ func BindComponentFraction(ctx context.Context, component string) context.Contex
 	})
 }
 
+// componentNodeIDKey carries the DSL node id (cpnID) of the running
+// component, so a component that must attribute its own output to the exact
+// node — rather than to its component class — can read it instead of guessing.
+type componentNodeIDKey struct{}
+
+// BindComponentNodeID attaches the node's DSL id to the component context.
+// realComponentBody is the single caller, alongside BindComponentFraction.
+func BindComponentNodeID(ctx context.Context, cpnID string) context.Context {
+	return context.WithValue(ctx, componentNodeIDKey{}, cpnID)
+}
+
+// ComponentNodeID returns the DSL id of the node being executed, or "" when
+// the component was invoked outside a canvas node body.
+func ComponentNodeID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(componentNodeIDKey{}).(string)
+	return id
+}
+
 // ReportComponentFraction forwards a component's in-flight completion
 // fraction to the run-level sink. Components call it from their progress
 // loops without knowing their own node id; the framework-bound closure

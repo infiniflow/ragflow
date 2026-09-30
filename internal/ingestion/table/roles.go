@@ -1,6 +1,8 @@
 package table
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -96,6 +98,16 @@ func CanonicalProfile(mode string, roles map[string]string) string {
 	}
 	out += "}}"
 	return out
+}
+
+// ProfileKey renders a mode/roles pair into the stable key stored beside an
+// indexed row, so a later recomputation can recover the roles that were in
+// force when the row was written. It is the SHA-256 of the canonical
+// profile, so two configurations that behave identically share one key and
+// an explicit "both" never collides with a manual default "both".
+func ProfileKey(mode string, roles map[string]string) string {
+	sum := sha256.Sum256([]byte(CanonicalProfile(mode, roles)))
+	return "p_" + hex.EncodeToString(sum[:])
 }
 
 func escapeJSONString(s string) string {

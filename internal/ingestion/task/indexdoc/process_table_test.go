@@ -3,32 +3,52 @@ package indexdoc
 import (
 	"encoding/json"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
+	ingestiontable "ragflow/internal/ingestion/table"
 )
 
-func tableChunkerParserConfig(t *testing.T, params map[string]any) map[string]interface{} {
+// tableRowChunk renders one indexed row the way the chunker hands it over: the
+// column identity travels with the row, and chunk_data is keyed by data_key.
+func tableRowChunk(t *testing.T, mode string, roles map[string]string, headers []string, values map[string]string) map[string]any {
 	t.Helper()
-	raw, err := json.Marshal(map[string]any{"TableChunker:FastFoxesJump": params})
+	cols := ingestiontable.DeriveColumns(headers)
+	data := make(map[string]any, len(cols))
+	for _, col := range cols {
+		if v, ok := values[col.Key]; ok {
+			data[col.DataKey] = v
+			continue
+		}
+		data[col.DataKey] = ""
+	}
+	src := schema.TableRowSource{
+		NodeID:     "TableChunker:FastFoxesJump",
+		SheetIndex: 1,
+		SourceRow:  2,
+		Mode:       mode,
+		Columns:    cols,
+		Roles:      roles,
+	}
+	raw, err := json.Marshal(map[string]any{"table_row_source": src, "chunk_data": data})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(raw, &out); err != nil {
+	var ck map[string]any
+	if err := json.Unmarshal(raw, &ck); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	return out
+	return ck
 }
 
 func TestAggregateTableDocMetadataManualRoles(t *testing.T) {
-	cfg := tableChunkerParserConfig(t, map[string]any{
-		"column_mode":  "manual",
-		"column_roles": map[string]any{"金额": "metadata", "编号": "both", "名称": "indexing"},
-	})
+	cols := []string{"金额", "编号", "名称"}
+	roles := map[string]string{"金额": "metadata", "编号": "both", "名称": "indexing"}
 	chunks := []map[string]any{
-		{"chunk_data": map[string]any{"金额": "100", "编号": "A-1", "名称": "x"}},
-		{"chunk_data": map[string]any{"金额": "200", "编号": "A-1"}},
-		{"chunk_data": map[string]any{"金额": ""}},
+		tableRowChunk(t, "manual", roles, cols, map[string]string{"金额": "100", "编号": "A-1", "名称": "x"}),
+		tableRowChunk(t, "manual", roles, cols, map[string]string{"金额": "200", "编号": "A-1"}),
+		tableRowChunk(t, "manual", roles, cols, map[string]string{"金额": ""}),
 	}
-	got := AggregateTableDocMetadata(chunks, cfg)
+	got := AggregateTableDocMetadata(chunks)
 	want := map[string][]string{"金额": {"100", "200"}, "编号": {"A-1"}}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -38,16 +58,12 @@ func TestAggregateTableDocMetadataManualRoles(t *testing.T) {
 		if !ok {
 			t.Fatalf("metadata[%s] type %T, want []string", col, got[col])
 		}
-		set := map[string]bool{}
-		for _, s := range g {
-			set[s] = true
+		if len(g) != len(values) {
+			t.Fatalf("metadata[%s] = %v, want %v", col, g, values)
 		}
-		if len(set) != len(g) {
-			t.Errorf("metadata[%s] not deduped: %v", col, g)
-		}
-		for _, s := range values {
-			if !set[s] {
-				t.Errorf("metadata[%s] missing %q, got %v", col, s, g)
+		for i := range values {
+			if g[i] != values[i] {
+				t.Errorf("metadata[%s][%d] = %q, want %q", col, i, g[i], values[i])
 			}
 		}
 	}
@@ -57,37 +73,21 @@ func TestAggregateTableDocMetadataManualRoles(t *testing.T) {
 }
 
 func TestAggregateTableDocMetadataAutoEmitsNothing(t *testing.T) {
-	cfg := tableChunkerParserConfig(t, map[string]any{
-		"column_mode":  "auto",
-		"column_roles": map[string]any{"金额": "metadata"},
-	})
-	chunks := []map[string]any{{"chunk_data": map[string]any{"金额": "100"}}}
-	if got := AggregateTableDocMetadata(chunks, cfg); got != nil {
+	roles := map[string]string{"金额": "metadata"}
+	chunks := []map[string]any{
+		tableRowChunk(t, "auto", roles, []string{"金额"}, map[string]string{"金额": "100"}),
+	}
+	if got := AggregateTableDocMetadata(chunks); got != nil {
 		t.Errorf("auto mode must not aggregate, got %v", got)
 	}
 }
 
-func TestAggregateTableDocMetadataIgnoresLegacyKeys(t *testing.T) {
-	cfg := map[string]interface{}{
-		"table_column_mode":  "manual",
-		"table_column_roles": map[string]interface{}{"金额": "metadata"},
-		"table_column_names": []interface{}{"金额"},
-		"Parser:HipSignsRhyme": map[string]interface{}{
-			"spreadsheet": map[string]interface{}{
-				"column_mode":  "manual",
-				"column_roles": map[string]interface{}{"金额": "metadata"},
-			},
-		},
+func TestAggregateTableDocMetadataIgnoresNonTableRowChunks(t *testing.T) {
+	chunks := []map[string]any{
+		{"chunk_data": map[string]any{"金额": "100"}},
+		{"content_with_weight": "prose"},
 	}
-	chunks := []map[string]any{{"chunk_data": map[string]any{"金额": "100"}}}
-	if got := AggregateTableDocMetadata(chunks, cfg); got != nil {
-		t.Errorf("legacy config must not aggregate, got %v", got)
-	}
-}
-
-func TestResolveTableColumnConfigDefaults(t *testing.T) {
-	mode, roles := resolveTableColumnConfig(map[string]interface{}{})
-	if mode != "auto" || roles != nil {
-		t.Errorf("empty config: mode=%q roles=%#v", mode, roles)
+	if got := AggregateTableDocMetadata(chunks); got != nil {
+		t.Errorf("a chunk without row identity must not aggregate, got %v", got)
 	}
 }
