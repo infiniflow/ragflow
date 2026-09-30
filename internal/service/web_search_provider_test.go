@@ -269,6 +269,8 @@ func TestDecodeQueritWebSearchResultsRejectsMalformedContainers(t *testing.T) {
 	}
 }
 
+// TestRetrieveSerpApiWebSearchSendsParametersAndReturnsReferenceShape verifies that SerpApi
+// query parameters are correctly set and organic results are transformed into standard search chunks.
 func TestRetrieveSerpApiWebSearchSendsParametersAndReturnsReferenceShape(t *testing.T) {
 	ctx := t.Context()
 	var requestQuery url.Values
@@ -338,6 +340,8 @@ func TestRetrieveSerpApiWebSearchSendsParametersAndReturnsReferenceShape(t *test
 	}
 }
 
+// TestRetrieveSerpApiWebSearchSkipsResultsWithoutSnippet verifies that SerpApi results
+// with missing or whitespace-only snippets are omitted from the final chunks list.
 func TestRetrieveSerpApiWebSearchSkipsResultsWithoutSnippet(t *testing.T) {
 	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -369,6 +373,8 @@ func TestRetrieveSerpApiWebSearchSkipsResultsWithoutSnippet(t *testing.T) {
 	}
 }
 
+// TestDecodeSerpApiWebSearchResultsRejectsMalformedContainers verifies that malformed JSON
+// structures for the SerpApi response or organic_results field return errors.
 func TestDecodeSerpApiWebSearchResultsRejectsMalformedContainers(t *testing.T) {
 	cases := []struct {
 		name string
@@ -389,6 +395,8 @@ func TestDecodeSerpApiWebSearchResultsRejectsMalformedContainers(t *testing.T) {
 	}
 }
 
+// TestDecodeSerpApiWebSearchResultsAcceptsMissingResults verifies that a valid response
+// without organic_results yields an empty slice without error.
 func TestDecodeSerpApiWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	results, err := decodeSerpApiWebSearchResults([]byte(`{"search_metadata": {}}`))
 	if err != nil {
@@ -399,6 +407,8 @@ func TestDecodeSerpApiWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	}
 }
 
+// TestDecodeSerpApiWebSearchResultsHandlesErrorField verifies that SerpApi error payloads
+// are converted to descriptive Go errors.
 func TestDecodeSerpApiWebSearchResultsHandlesErrorField(t *testing.T) {
 	_, err := decodeSerpApiWebSearchResults([]byte(`{"error": "Invalid API key"}`))
 	if err == nil {
@@ -409,6 +419,8 @@ func TestDecodeSerpApiWebSearchResultsHandlesErrorField(t *testing.T) {
 	}
 }
 
+// TestRetrieveSerpApiWebSearchRedactsAPIKeyOnTransportFailure verifies that transport-level
+// errors redact sensitive query parameters from URLs to prevent credential leaks.
 func TestRetrieveSerpApiWebSearchRedactsAPIKeyOnTransportFailure(t *testing.T) {
 	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
@@ -444,6 +456,8 @@ func TestRetrieveSerpApiWebSearchRedactsAPIKeyOnTransportFailure(t *testing.T) {
 	}
 }
 
+// TestRetrieveSerpApiWebSearchPreservesContextCancellation verifies that context cancellation
+// is preserved across HTTP request execution.
 func TestRetrieveSerpApiWebSearchPreservesContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // canceled before request

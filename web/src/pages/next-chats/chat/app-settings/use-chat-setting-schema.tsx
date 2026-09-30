@@ -16,6 +16,9 @@ import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
+/**
+ * Hook providing the Zod validation schema for chat dialog application settings.
+ */
 export function useChatSettingSchema() {
   const { t } = useTranslate('chat');
 

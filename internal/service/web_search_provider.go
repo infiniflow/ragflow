@@ -101,6 +101,8 @@ type webSearchProviderConfig struct {
 	APIKey   string
 }
 
+// resolveWebSearchProvider extracts and validates the web search provider configuration
+// from promptConfig, resolving the appropriate API key and determining whether keys are optional.
 func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchProviderConfig {
 	if promptConfig == nil {
 		return nil
@@ -336,11 +338,8 @@ func webSearchPayload(idPrefix string, hits []webSearchHit) map[string]interface
 	}
 }
 
-// webSearchRequest performs one provider call and returns the response body.
-// Providers differ only in method, headers and body — the status check and the
-// read are identical everywhere, and a request that never reached the provider
-// must be reported the same way regardless of which one was called. Callers
-// wrap the error with their own provider name.
+// webSearchRequest performs one provider call with the given headers and body,
+// sanitizing transport errors and returning the raw response body.
 func webSearchRequest(
 	ctx context.Context,
 	client *http.Client,

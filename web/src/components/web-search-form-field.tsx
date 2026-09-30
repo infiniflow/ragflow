@@ -113,6 +113,9 @@ const providerOptions = webSearchProviderCatalog
     value,
   }));
 
+/**
+ * Resolves the user-facing display name of a web search provider from the catalog.
+ */
 const providerDisplayName = (provider?: WebSearchProvider) =>
   webSearchProviderCatalog.find((entry) => entry.value === provider)?.name ??
   '';
@@ -181,6 +184,9 @@ const providerKeyConfig = {
   },
 } as const;
 
+/**
+ * Renders the form fields for selecting a web search provider and entering its API key.
+ */
 export function WebSearchFormField({ prefix = '' }: IProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
