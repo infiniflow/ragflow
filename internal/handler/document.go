@@ -1837,6 +1837,14 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 	if present["parser_config"] && req.ParserConfig != nil {
+		if dropped := dataset.DropUnscopedParserConfigKeys(req.ParserConfig); len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("user_id", user.ID),
+				zap.String("dataset_id", datasetID),
+				zap.String("document_id", documentID),
+			)
+		}
 		if err := dataset.ValidateDocumentParserConfig(req.ParserConfig); err != nil {
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 			return
