@@ -51,26 +51,6 @@ func GetProjectBaseDirectory() string {
 	return cwd
 }
 
-// StringPtr converts a string to a pointer of string.
-// If the input string is empty, it returns nil.
-//
-// Parameters:
-//   - s: The string to convert to a pointer.
-//
-// Returns:
-//   - *string: A pointer to the input string, or nil if the input is empty.
-//
-// Example:
-//
-//	name := utility.StringPtr("example")  // returns &"example"
-//	empty := utility.StringPtr("")        // returns nil
-func StringPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // ConfigBool reads a Python JSON bool/string flag.
 func ConfigBool[M ~map[string]any](config M, key string) bool {
 	value, ok := config[key]
@@ -85,34 +65,6 @@ func ConfigBool[M ~map[string]any](config M, key string) bool {
 	default:
 		return false
 	}
-}
-
-// ParseInt64 parses a string to int64.
-// If parsing fails, it returns 0.
-//
-// Parameters:
-//   - s: The string to parse.
-//
-// Returns:
-//   - int64: The parsed integer value, or 0 if parsing fails.
-//
-// Example:
-//
-//	val := utility.ParseInt64("123")   // returns 123
-//	val := utility.ParseInt64("abc")   // returns 0
-//	val := utility.ParseInt64("")      // returns 0
-func ParseInt64(s string) int64 {
-	var result int64
-	fmt.Sscanf(s, "%d", &result)
-	return result
-}
-
-// FormatTime formats time for display
-func FormatTime(t time.Time) string {
-	if t.IsZero() {
-		return "N/A (Perpetual)"
-	}
-	return t.Format("2006-01-02 15:04:05")
 }
 
 // FormatTimeToString converts time.Time to string in specified format
@@ -154,26 +106,6 @@ func ConvertHexToPositionIntArray(hexStr string) interface{} {
 	}
 
 	return result
-}
-
-// ConvertPositionIntArrayToHex converts position_int list (2D) to hex string
-// e.g. [[1,2],[3,4]] -> "0000000100000002_0000000300000004"
-func ConvertPositionIntArrayToHex(list []interface{}) string {
-	var hexParts []string
-	for _, item := range list {
-		if inner, ok := item.([]interface{}); ok {
-			for _, num := range inner {
-				if n, ok := num.(float64); ok {
-					hexParts = append(hexParts, fmt.Sprintf("%08x", int64(n)))
-				} else if n, ok := num.(int64); ok {
-					hexParts = append(hexParts, fmt.Sprintf("%08x", n))
-				} else if n, ok := num.(int); ok {
-					hexParts = append(hexParts, fmt.Sprintf("%08x", n))
-				}
-			}
-		}
-	}
-	return strings.Join(hexParts, "_")
 }
 
 // ConvertHexToIntArray converts hex string to int array (split by "_")
@@ -354,13 +286,4 @@ func ConvertMapToJSONString(v interface{}) interface{} {
 		return string(jsonBytes)
 	}
 	return v
-}
-
-// FloatToString formats a float like Python's str() - adds ".0" if needed
-func FloatToString(f float64) string {
-	s := strconv.FormatFloat(f, 'f', -1, 64)
-	if !strings.Contains(s, ".") && !strings.Contains(s, "e") {
-		s = s + ".0"
-	}
-	return s
 }

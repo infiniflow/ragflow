@@ -37,7 +37,7 @@ func allowLoopbackForTests(t *testing.T) func() {
 	orig := common.LookupHost
 	common.LookupHost = func(host string) ([]string, error) {
 		// Return a public IPv4 so the guard sees the host as global; the
-		// httptest server is on loopback but we connect via raw URL.
+		// httptest server is on loopback, but we connect via raw URL.
 		return []string{"8.8.8.8"}, nil
 	}
 	return func() { common.LookupHost = orig }
