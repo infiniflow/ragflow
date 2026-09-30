@@ -19,7 +19,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"image"
+	"image/png"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -28,20 +31,89 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
 
-func TestMaybeDispatchImageWithoutVisionReportsNoContent(t *testing.T) {
-	result, handled, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL,
-		"photo.png", []byte("image bytes"), nil, defaultSetups(), false)
-	if !handled {
-		t.Fatal("image was not handled")
+type pictureOCRAnalyzer struct {
+	deepdoctype.DocAnalyzer
+	empty bool
+}
+
+func (*pictureOCRAnalyzer) Health() bool { return true }
+
+func (a *pictureOCRAnalyzer) OCRDetect(ctx context.Context, img image.Image) ([]deepdoctype.OCRBox, error) {
+	if a.empty {
+		return nil, nil
 	}
-	if err == nil || !strings.Contains(err.Error(), "vision enhancement") {
-		t.Fatalf("error = %v, want explicit vision requirement; result = %+v", err, result)
+	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 9, Y1: 1, X2: 9, Y2: 9, X3: 1, Y3: 9}}, nil
+}
+
+func (*pictureOCRAnalyzer) OCRRecognize(ctx context.Context, img image.Image) ([]deepdoctype.OCRText, error) {
+	return []deepdoctype.OCRText{{Text: "OCR text"}}, nil
+}
+
+func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
+	templateData, err := os.ReadFile("../pipeline/template/ingestion_pipeline_picture.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var template struct {
+		DSL struct {
+			Components map[string]struct {
+				Obj struct{ Params map[string]any }
+			}
+		}
+	}
+	if err := json.Unmarshal(templateData, &template); err != nil {
+		t.Fatal(err)
+	}
+	params := template.DSL.Components["Parser:ViewsCaptureLight"].Obj.Params
+	original := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{}, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	data := picturePNG(t)
+	for _, tc := range []struct {
+		name    string
+		method  string
+		enabled bool
+		tenant  string
+		want    string
+	}{
+		{"disabled", "ocr", false, "", "OCR text"},
+		{"enabled", "ocr", true, "t1", "OCR text\ncaptured"},
+		{"unavailable", "ocr", true, "", "OCR text"},
+		{"default", "", false, "", "OCR text"},
+		{"vlm-only", "custom-vlm", false, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originalResolver := resolveTenantModelByType
+			resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+			}
+			t.Cleanup(func() { resolveTenantModelByType = originalResolver })
+			params["image"].(map[string]any)["parse_method"] = tc.method
+			component, err := NewParserComponent(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pc := component.(*ParserComponent)
+			pc.enableVisionEnhancement = tc.enabled
+			result, err := pc.Invoke(t.Context(), nil, map[string]any{"name": "photo.png", "file_type": "image", "binary": data, "tenant_id": tc.tenant})
+			if err != nil {
+				t.Fatal(err)
+			}
+			items, _ := result["json"].([]map[string]any)
+			if len(items) != 1 || items[0]["text"] != tc.want {
+				t.Fatalf("items = %+v, want text %q", items, tc.want)
+			}
+			if items[0]["image"] == "" || items[0]["doc_type_kwd"] != "image" {
+				t.Fatalf("missing image attachment: %+v", items)
+			}
+		})
 	}
 }
 
@@ -117,7 +189,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
 		true,
@@ -169,7 +241,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		setups,
 		true,
@@ -212,7 +284,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
 		true,
@@ -264,7 +336,7 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
 		true,
@@ -456,7 +528,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
 		true,
@@ -534,13 +606,12 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 }
 
 // TestImageDecoders_RegisteredFormats validates that image decoders for WebP, BMP,
-// TIFF, PNG, JPEG, and GIF are registered by vision_image.go and can decode
+// TIFF, PNG, JPEG, and GIF are registered by media dispatch and can decode
 // their respective binary payloads via image.Decode without importing the decoder
 // packages directly in the test file.
 func TestImageDecoders_RegisteredFormats(t *testing.T) {
 	// Fixed binary fixtures for image formats decoded via decoders registered in
-	// vision_image.go (neither standard library nor x/image decoders are imported
-	// in this test file).
+	// media dispatch.
 	const (
 		webpB64 = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAD8D+JaQAA3AA/ua1AAA="
 		bmpB64  = "Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABACAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AP8AAP//AAAAAA=="
@@ -580,4 +651,39 @@ func TestImageDecoders_RegisteredFormats(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	for _, available := range []bool{false, true} {
+		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{empty: true}, available }
+		for _, method := range []string{"ocr", ""} {
+			setups := defaultSetups()
+			setups["image"]["parse_method"] = method
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" || len(result.Warnings) == 0 {
+				t.Fatalf("method %q, available %v: result = %+v, handled = %v", method, available, result, handled)
+			}
+		}
+	}
+}
+
+func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
+	_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, defaultSetups(), false)
+	if err == nil || !strings.Contains(err.Error(), "decode") {
+		t.Fatalf("error = %v, want decode error", err)
+	}
+}
+
+func picturePNG(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 12, 12))); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
 }
