@@ -272,14 +272,14 @@ func TestFetchToolsUnsupportedType(t *testing.T) {
 		ServerType: "stdio",
 		Timeout:    time.Second,
 	})
-	if err == nil || !strings.Contains(err.Error(), "Unsupported MCP server type") {
+	if err == nil || !strings.Contains(err.Error(), "unsupported MCP server type") {
 		t.Fatalf("expected unsupported-type error, got %v", err)
 	}
 }
 
 func TestFetchToolsEmptyURL(t *testing.T) {
 	_, err := FetchTools(t.Context(), FetchOptions{URL: "", ServerType: TransportSSE})
-	if err == nil || !strings.Contains(err.Error(), "Invalid url") {
+	if err == nil || !strings.Contains(err.Error(), "invalid url") {
 		t.Fatalf("expected Invalid url error, got %v", err)
 	}
 }
