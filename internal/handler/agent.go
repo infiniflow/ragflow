@@ -39,6 +39,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
 
@@ -71,12 +72,19 @@ type chatAgentService interface {
 	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
 }
 
+type documentRerunService interface {
+	RerunDocument(ctx context.Context, userID, logID string, dsl map[string]interface{}, componentID string) error
+}
+
+var _ documentRerunService = (*document.DocumentService)(nil)
+
 // AgentHandler agent handler
 type AgentHandler struct {
-	agentService *service.AgentService
-	chatRunner   chatAgentService
-	fileService  agentFileService
-	loader       canvasLoader
+	agentService    *service.AgentService
+	chatRunner      chatAgentService
+	fileService     agentFileService
+	loader          canvasLoader
+	documentService documentRerunService
 	// redisGet fetches a raw string from Redis. Defaults to the global
 	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
@@ -102,6 +110,11 @@ type AgentHandler struct {
 type debugExecutor interface {
 	WithProgressSink(sink pipelinepkg.ProgressSink) *task.PipelineExecutor
 	Execute(ctx context.Context) (*task.PipelineResult, error)
+}
+
+func (h *AgentHandler) WithDocumentService(s documentRerunService) *AgentHandler {
+	h.documentService = s
+	return h
 }
 
 // NewAgentHandler create agent handler
@@ -1481,6 +1494,56 @@ func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[
 	}
 	values["query"] = query
 	return values
+}
+
+func (h *AgentHandler) RerunAgent(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	var body struct {
+		ID          string                 `json:"id"`
+		DSL         map[string]interface{} `json:"dsl"`
+		ComponentID string                 `json:"component_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		return
+	}
+	missing := make([]string, 0, 3)
+	if body.ID == "" {
+		missing = append(missing, "id")
+	}
+	if body.DSL == nil {
+		missing = append(missing, "dsl")
+	}
+	if body.ComponentID == "" {
+		missing = append(missing, "component_id")
+	}
+	if len(missing) > 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "required argument are missing: "+strings.Join(missing, ",")+"; ")
+		return
+	}
+	if h.documentService == nil {
+		zap.L().Error("RerunAgent: documentService is nil; refusing request to prevent auth bypass")
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "server misconfiguration: document service not wired")
+		return
+	}
+	if err := h.documentService.RerunDocument(c.Request.Context(), user.ID, body.ID, body.DSL, body.ComponentID); err != nil {
+		var processingErr *document.RerunDocumentProcessingError
+		switch {
+		case errors.Is(err, document.ErrRerunDocumentNotFound):
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		case errors.As(err, &processingErr):
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		default:
+			zap.L().Error("RerunAgent: rerun failed", zap.String("log_id", body.ID), zap.Error(err))
+			common.ResponseWithCodeData(c, common.CodeServerError, nil, "rerun failed, please try again later")
+		}
+		return
+	}
+	common.SuccessWithData(c, true, "success")
 }
 
 // TestDBConnection POST /api/v1/agents/test_db_connection

@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	"ragflow/internal/tokenizer"
 )
 
@@ -1716,6 +1717,23 @@ func decodeOpenAICompatStream(t *testing.T, body string) ([]map[string]interface
 		}
 	}
 	return chunks, done
+}
+
+func TestRerunAgent_RequiresAllFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/agents/rerun", strings.NewReader(`{}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("user_id", "u1")
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.RerunAgent(c)
+	var resp map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeArgumentError) {
+		t.Fatalf("code = %v, want 101", code)
+	}
 }
 
 // TestPromptsReturnsHardcodedFields covers the contract: the data

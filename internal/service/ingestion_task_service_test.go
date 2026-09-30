@@ -115,7 +115,7 @@ func TestIngestionTaskServiceCreateForDocumentsRejectsMissingRunMetadata(t *test
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	responses, err := svc.CreateForDocuments(t.Context(), "missing-kb", "user-1", []string{"doc-1"})
+	responses, err := svc.CreateForDocuments(t.Context(), "missing-kb", "user-1", []string{"doc-1"}, nil)
 	if err != nil {
 		t.Fatalf("CreateForDocuments returns per-document failures: %v", err)
 	}
@@ -1440,7 +1440,7 @@ func TestIngestionTaskServiceCreateForDocumentsOpensPreTerminalPipelineLog(t *te
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = &recordingTaskPublisher{}
 	ctx := t.Context()
-	if _, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}); err != nil {
+	if _, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}, nil); err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
 
@@ -1507,7 +1507,7 @@ func TestIngestionTaskServiceStartRunningAdvancesPreTerminalPipelineLog(t *testi
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = &recordingTaskPublisher{}
 	ctx := t.Context()
-	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}, nil)
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -1548,7 +1548,7 @@ func TestIngestionTaskServiceRequestStopBeforeRunClosesPreTerminalPipelineLog(t 
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = &recordingTaskPublisher{}
 	ctx := t.Context()
-	if _, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}); err != nil {
+	if _, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"}, nil); err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
 	loadOpenPipelineLog(t, ctx, db, "doc-1")
@@ -1735,7 +1735,7 @@ func TestIngestionTaskServiceOpensPreTerminalLogBeforePublish(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	if _, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"}); err != nil {
+	if _, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"}, nil); err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
 	if logIDAtPublish == "" {
