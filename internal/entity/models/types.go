@@ -329,7 +329,7 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 	if m.ModelName != nil {
 		name = *m.ModelName
 	}
-	return GetEmbeddingTokenizer(name)
+	return GetModelTokenizer(name)
 }
 
 // QuotaKey names the deployment this embedding model counts against: endpoint,
@@ -383,12 +383,32 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	}
 }
 
-// Rerank calculates similarity between query and texts
+// ResolveTokenizerID returns the tokenizer family declared for this reranker, or
+// an empty string when the model catalog does not provide one.
+func (r *RerankModel) ResolveTokenizerID() string {
+	if r == nil || r.ModelName == nil {
+		return ""
+	}
+	return GetModelTokenizer(*r.ModelName)
+}
+
+// Rerank calculates similarity between query and texts. Rerank input is measured
+// and truncated with the model's declared tokenizer, just like embedding input.
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	if r == nil || r.ModelDriver == nil {
+		return nil, errors.New("rerank model: driver is nil")
+	}
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
+	tokenizerID := r.ResolveTokenizerID()
+	if err := tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"); err != nil {
+		return nil, err
+	}
+	limiter := tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration())
+	counter := limiter.Counter()
+	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
 	if mode == "" {
 		mode = "truncate"
@@ -396,20 +416,20 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
 		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
 	}
-	if mode != "passthrough" && request.Query != "" && len(request.Documents) > 0 {
-		queryTokens := tokenizer.NumTokensFromString(request.Query)
+	if mode != "passthrough" && len(request.Documents) > 0 {
+		queryTokens := counter.Count(request.Query)
 		if mode == "truncate" {
-			documentTokens := max(maxTokens-queryTokens, 0)
+			documentTokens := max(effectiveMaxTokens-queryTokens, 0)
 			documents := make([]string, len(request.Documents))
 			for i, document := range request.Documents {
-				documents[i] = tokenizer.TrimContentToTokenLimit(document, documentTokens)
+				documents[i] = counter.TrimToLimit(document, documentTokens)
 			}
 			request.Documents = documents
 		} else {
 			for i, document := range request.Documents {
-				inputTokens := queryTokens + tokenizer.NumTokensFromString(document)
-				if inputTokens > maxTokens {
-					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, maxTokens)
+				inputTokens := queryTokens + counter.Count(document)
+				if inputTokens > effectiveMaxTokens {
+					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 				}
 			}
 		}
