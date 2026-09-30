@@ -167,6 +167,7 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
+	modelRef string,
 ) (parser.ParseResult, bool, error) {
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
@@ -205,7 +206,6 @@ func maybeDispatchVisionEnhancement(
 	vlmReady := false
 	var resolveErr error
 	if tenantID != "" {
-		modelRef := configuredMediaModelID(setup, family)
 		var err error
 		if modelRef != "" {
 			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
