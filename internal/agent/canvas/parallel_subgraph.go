@@ -239,18 +239,18 @@ func buildParallelOuterWorkflow(
 		func(ctx context.Context, _ compose.NodePath, state any) error {
 			saved, ok := state.(*parallelItemState)
 			if !ok || saved == nil || saved.Canvas == nil {
-				return fmt.Errorf("canvas: parallel %q: invalid item checkpoint state %T", key, state)
+				return fmt.Errorf("agent: parallel %q: invalid item checkpoint state %T", key, state)
 			}
 			current, err := GetStateFromContext(ctx)
 			if err != nil || current == nil {
-				return fmt.Errorf("canvas: parallel %q: no item state in context", key)
+				return fmt.Errorf("agent: parallel %q: no item state in context", key)
 			}
 			data, err := json.Marshal(saved.Canvas)
 			if err != nil {
-				return fmt.Errorf("canvas: parallel %q: marshal item state: %w", key, err)
+				return fmt.Errorf("agent: parallel %q: marshal item state: %w", key, err)
 			}
 			if err := json.Unmarshal(data, current); err != nil {
-				return fmt.Errorf("canvas: parallel %q: restore item state: %w", key, err)
+				return fmt.Errorf("agent: parallel %q: restore item state: %w", key, err)
 			}
 			saved.Canvas = current
 			return nil
