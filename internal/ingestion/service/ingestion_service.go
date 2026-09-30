@@ -1226,7 +1226,12 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		return err
 	}
 	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
-	e.docState.apply(ctx, result)
+	// A spreadsheet run that cannot publish its derived profile leaves columns
+	// the retriever would quote without rows behind them, so the failure is the
+	// task's failure rather than a warning.
+	if err := e.docState.apply(ctx, result); err != nil {
+		return err
+	}
 	return nil
 }
 

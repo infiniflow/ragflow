@@ -52,6 +52,17 @@ func (p *Profile) FieldMap() map[string]string {
 	return out
 }
 
+// OwnedKeys returns the document-metadata keys this record says the table
+// system wrote. It is nil-safe so a caller holding a run's result can compare
+// what the previous run owned against what this one produces without first
+// checking whether either side exists.
+func (p *Profile) OwnedKeys() []string {
+	if p == nil {
+		return nil
+	}
+	return p.OwnedMetadata
+}
+
 // SpecFor returns the configuration recorded under a profile key.
 func (p *Profile) SpecFor(key string) (Spec, bool) {
 	spec, ok := p.Specs[key]

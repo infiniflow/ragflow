@@ -135,8 +135,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 
 	// Return metadata if found
 	if len(searchResult.MetadataRecords) > 0 {
-		metadata := searchResult.MetadataRecords[0]
-		fields, err := service.ExtractMetaFields(metadata)
+		fields, err := s.documentMetadataRaw(searchResult.MetadataRecords[0])
 		if err != nil {
 			return nil, err
 		}
@@ -144,6 +143,36 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 	}
 
 	return make(map[string]interface{}), nil
+}
+
+// GetDocumentMetadataRaw reads a document's metadata including the keys no
+// reader should see, for a caller that is about to write the record back.
+// Filtering the system record out of that baseline would delete it on the next
+// read-modify-write round trip, because the engines write the field map whole.
+func (s *DocumentService) GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]interface{}, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil {
+		return nil, fmt.Errorf("document not found: %w", err)
+	}
+
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
+	if err != nil {
+		return nil, err
+	}
+
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, doc.KbID, tenantID, []string{docID}, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(searchResult.MetadataRecords) == 0 {
+		return make(map[string]interface{}), nil
+	}
+	return s.documentMetadataRaw(searchResult.MetadataRecords[0])
+}
+
+// documentMetadataRaw extracts a search record's metadata fields untouched.
+func (s *DocumentService) documentMetadataRaw(record map[string]interface{}) (map[string]interface{}, error) {
+	return service.ExtractMetaFields(record)
 }
 
 // GetMetadataByKBs get metadata for knowledge bases

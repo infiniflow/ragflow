@@ -17,14 +17,10 @@
 package indexdoc
 
 import (
-	"encoding/json"
 	"fmt"
-	"sort"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/ingestion/component/schema"
-	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/utility"
 )
 
@@ -259,71 +255,4 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 	}
 	sheet, ok := ck["sheet"].(string)
 	return ok && sheet != ""
-}
-
-// AggregateTableDocMetadata collects the unique per-column values of the
-// spreadsheet rows a run indexed, for the columns whose role was metadata or
-// both at index time, and returns them as document metadata keyed by column
-// name.
-//
-// Each row carries its own column identity and effective roles
-// ("table_row_source"), so aggregation reads what was actually written instead
-// of re-deriving configuration from parser_config: a canvas with several
-// TableChunker nodes, or a document re-parsed under changed roles, then cannot
-// be attributed to whichever node the config map happens to yield first. auto
-// mode puts every column in body text and chunk_data but never emits
-// document-level column values, so it contributes nothing here.
-func AggregateTableDocMetadata(chunks []map[string]any) map[string]any {
-	acc := make(map[string]map[string]struct{})
-	for _, ck := range chunks {
-		if ck["table_row_source"] == nil {
-			continue
-		}
-		raw, err := json.Marshal(ck["table_row_source"])
-		if err != nil {
-			continue
-		}
-		var src schema.TableRowSource
-		if err := json.Unmarshal(raw, &src); err != nil {
-			continue
-		}
-		if src.Mode != ingestiontable.ModeManual {
-			continue
-		}
-		data, _ := ck["chunk_data"].(map[string]any)
-		if len(data) == 0 {
-			continue
-		}
-		for _, col := range src.Columns {
-			switch src.Roles[col.Key] {
-			case ingestiontable.RoleMetadata, ingestiontable.RoleBoth:
-			default:
-				continue
-			}
-			s, _ := data[col.DataKey].(string)
-			if s == "" {
-				continue
-			}
-			values, ok := acc[col.Key]
-			if !ok {
-				values = make(map[string]struct{})
-				acc[col.Key] = values
-			}
-			values[s] = struct{}{}
-		}
-	}
-	if len(acc) == 0 {
-		return nil
-	}
-
-	out := make(map[string]any, len(acc))
-	for col, vals := range acc {
-		deduped := make([]string, 0, len(vals))
-		for v := range vals {
-			deduped = append(deduped, v)
-		}
-		sort.Strings(deduped)
-		out[col] = deduped
-	}
-	return out
 }

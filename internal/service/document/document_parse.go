@@ -173,6 +173,11 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}
+	// Before any early return below: the indexed output is being discarded
+	// whether or not this document still has a chunk store to clear.
+	if err := s.revokeTableProfile(ctx, doc.ID); err != nil {
+		return err
+	}
 
 	if s.docEngine == nil {
 		return nil
@@ -441,6 +446,11 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
 		return errors.New("document not found")
+	}
+	// The parse method is changing, so whatever columns the previous run indexed
+	// stop describing this document's rows.
+	if err := s.revokeTableProfile(ctx, doc.ID); err != nil {
+		return err
 	}
 
 	if doc.TokenNum > 0 {

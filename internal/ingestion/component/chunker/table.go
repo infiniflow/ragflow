@@ -140,14 +140,26 @@ func (p tableProfile) roleFor(key string) string {
 	return ingestiontable.RoleBoth
 }
 
-// rowProfile returns the columns' effective roles, which every emitted row
-// carries so a later recomputation knows what was in force at index time.
-func (p tableProfile) rowRoles(cols []ingestiontable.Column) map[string]string {
+// effectiveRoles resolves each column's role for building a row. An unset
+// manual column behaves as both.
+func (p tableProfile) effectiveRoles(cols []ingestiontable.Column) map[string]string {
 	roles := make(map[string]string, len(cols))
 	for _, col := range cols {
 		roles[col.Key] = p.roleFor(col.Key)
 	}
 	return roles
+}
+
+// declaredRoles returns only the roles the configuration states. A row carries
+// these rather than the effective ones, because "unset means both" must stay
+// recoverable after the fact: document-level column values are aggregated for
+// explicitly configured metadata/both columns, and a row written under auto must
+// not look like it declared every column.
+func (p tableProfile) declaredRoles() map[string]string {
+	if !p.manual {
+		return nil
+	}
+	return p.roles
 }
 
 func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
@@ -301,7 +313,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 	}
 
 	cols := ingestiontable.DeriveColumns(names)
-	rowRoles := profile.rowRoles(cols)
+	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
 		sourceRow := 0
@@ -354,7 +366,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 			SourceRow:  sourceRow,
 			Mode:       profile.mode,
 			Columns:    cols,
-			Roles:      rowRoles,
+			Roles:      profile.declaredRoles(),
 		}
 		out = append(out, doc)
 	}

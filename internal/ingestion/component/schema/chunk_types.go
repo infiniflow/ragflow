@@ -154,9 +154,11 @@ type TableRowSource struct {
 	Mode string `json:"mode"`
 	// Columns is the sheet's column identity in header order.
 	Columns []table.Column `json:"columns"`
-	// Roles is the effective role of each column key in this row: the
-	// configured roles plus the resolved default for unconfigured columns.
-	Roles map[string]string `json:"roles"`
+	// Roles holds only the roles the configuration states — empty for auto,
+	// and never the resolved default. A column missing from it under manual was
+	// indexed as "both", which is the difference between a column whose values
+	// belong in document metadata and one whose values only live in the row.
+	Roles map[string]string `json:"roles,omitempty"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {

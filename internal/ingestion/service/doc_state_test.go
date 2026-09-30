@@ -18,10 +18,14 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	taskpkg "ragflow/internal/ingestion/task"
+	ingestiontable "ragflow/internal/ingestion/table"
 )
 
 type stubDocStateSvc struct {
@@ -32,10 +36,16 @@ type stubDocStateSvc struct {
 	gotTokenNum     int
 	gotDuration     float64
 	setCalled       bool
+	deletedKeys     []string
 	incrementCalled bool
+	setErr          error
+	readErr         error
 }
 
-func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error) {
+func (s *stubDocStateSvc) GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]any, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
 	if s.metaData == nil {
 		return make(map[string]any), nil
 	}
@@ -43,12 +53,20 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 }
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
-	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
+	if s.setErr != nil {
+		return s.setErr
 	}
-	for k, v := range meta {
-		s.metaData[k] = v
+	s.setCalled = true
+	// The engines write the record whole, so the stub replaces it rather than
+	// folding the new map into the old one.
+	s.metaData = meta
+	return nil
+}
+
+func (s *stubDocStateSvc) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
+	s.deletedKeys = append(s.deletedKeys, keys...)
+	for _, key := range keys {
+		delete(s.metaData, key)
 	}
 	return nil
 }
@@ -281,4 +299,191 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 	if svc.metaData["author"] != "Alice" {
 		t.Fatalf("custom metadata should still be written even when built_in is off, got %v", svc.metaData)
 	}
+}
+
+func tableProfileForTest(owned []string) *ingestiontable.Profile {
+	roles := map[string]string{"金额": ingestiontable.RoleMetadata}
+	spec := ingestiontable.Spec{Mode: ingestiontable.ModeManual, Roles: roles}
+	return &ingestiontable.Profile{
+		Engine:        "infinity",
+		Columns:       ingestiontable.DeriveColumns([]string{"金额"}),
+		Specs:         map[string]ingestiontable.Spec{spec.Key(): spec},
+		OwnedMetadata: owned,
+	}
+}
+
+func TestPublishTableProfileWritesRecordAndValues(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{"作者": "张三"}}
+	u := &docStateUpdater{docSvc: svc}
+
+	err := u.apply(context.Background(), &taskpkg.PipelineResult{
+		DocID:        "doc-1",
+		Metadata:     map[string]any{"金额": []string{"100", "200"}},
+		TableProfile: tableProfileForTest([]string{"金额"}),
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	raw, ok := svc.metaData[ingestiontable.ProfileMetadataField].(string)
+	if !ok {
+		t.Fatalf("profile not published: %v", svc.metaData)
+	}
+	stored, decoded, err := ingestiontable.DecodeProfile(raw)
+	if err != nil || !decoded {
+		t.Fatalf("stored profile unreadable: ok=%v err=%v", decoded, err)
+	}
+	if stored.Engine != "infinity" || len(stored.Columns) != 1 || stored.Columns[0].Key != "金额" {
+		t.Errorf("stored profile = %#v", stored)
+	}
+	if strings.Join(stored.OwnedMetadata, ",") != "金额" {
+		t.Errorf("owned metadata = %v", stored.OwnedMetadata)
+	}
+	if svc.metaData["作者"] != "张三" {
+		t.Errorf("user metadata lost: %v", svc.metaData)
+	}
+	if got := fmt.Sprintf("%v", svc.metaData["金额"]); got != "[100 200]" {
+		t.Errorf("column values = %v", svc.metaData["金额"])
+	}
+}
+
+func profileKeyOf(mode string, roles map[string]string) string {
+	return ingestiontable.Spec{Mode: mode, Roles: roles}.Key()
+}
+
+// TestPublishNarrowsPreviousColumnValues is the reason the profile carries an
+// ownership list: re-parsing a document whose rows changed must not leave the
+// values of rows that no longer exist.
+func TestPublishNarrowsPreviousColumnValues(t *testing.T) {
+	previous := tableProfileForTest([]string{"金额"})
+	encoded, err := previous.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		ingestiontable.ProfileMetadataField: encoded,
+		"金额":                                []string{"100", "200", "300"},
+		"作者":                                "张三",
+	}}
+	u := &docStateUpdater{docSvc: svc}
+
+	narrowed := tableProfileForTest([]string{"金额"})
+	err = u.apply(context.Background(), &taskpkg.PipelineResult{
+		DocID:        "doc-1",
+		Metadata:     map[string]any{"金额": []string{"100"}},
+		TableProfile: narrowed,
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	got, ok := svc.metaData["金额"].([]string)
+	if !ok {
+		t.Fatalf("金额 = %T %v, want the narrowed list", svc.metaData["金额"], svc.metaData["金额"])
+	}
+	if len(got) != 1 || got[0] != "100" {
+		t.Errorf("金额 = %v, want only the values this run indexed", got)
+	}
+	if svc.metaData["作者"] != "张三" {
+		t.Errorf("unrelated metadata lost: %v", svc.metaData)
+	}
+}
+
+// TestPublishRetiredColumnIsDeleted covers the delete, not just the omission: an
+// engine that folds an update into the stored map would keep the old value when
+// a write merely leaves it out, and the column would go on looking queryable.
+func TestPublishRetiredColumnIsDeleted(t *testing.T) {
+	previous := tableProfileForTest([]string{"金额"})
+	encoded, err := previous.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		ingestiontable.ProfileMetadataField: encoded,
+		"金额":                                []string{"100"},
+		"作者":                                "张三",
+	}}
+	u := &docStateUpdater{docSvc: svc}
+
+	// This run extracts a non-table key and indexes no spreadsheet rows.
+	if err := u.apply(context.Background(), &taskpkg.PipelineResult{
+		DocID:    "doc-1",
+		Metadata: map[string]any{"摘要": "季度销售"},
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if _, still := svc.metaData["金额"]; still {
+		t.Errorf("a retired column must be deleted: %v", svc.metaData)
+	}
+	if _, still := svc.metaData[ingestiontable.ProfileMetadataField]; still {
+		t.Errorf("a document with no table rows must not keep a profile: %v", svc.metaData)
+	}
+	if !containsKey(svc.deletedKeys, ingestiontable.ProfileMetadataField) || !containsKey(svc.deletedKeys, "金额") {
+		t.Errorf("expected explicit deletes, got %v", svc.deletedKeys)
+	}
+	if svc.metaData["作者"] != "张三" || svc.metaData["摘要"] != "季度销售" {
+		t.Errorf("unrelated metadata changed: %v", svc.metaData)
+	}
+}
+
+// TestPublishDoesNotRevokeTakenOverKey: a key the table system no longer owns
+// was written by a user or the LLM, so a re-parse must leave it alone.
+func TestPublishDoesNotRevokeTakenOverKey(t *testing.T) {
+	previous := tableProfileForTest(nil)
+	encoded, err := previous.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		ingestiontable.ProfileMetadataField: encoded,
+		"金额":                                []string{"用户写的"},
+	}}
+	u := &docStateUpdater{docSvc: svc}
+
+	if err := u.apply(context.Background(), &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if svc.metaData["金额"] == nil {
+		t.Errorf("a key the table system does not own was deleted: %v", svc.metaData)
+	}
+}
+
+func TestPublishFailureFailsTheRun(t *testing.T) {
+	// A profile that could not be published would leave the retrieval path
+	// quoting columns with no rows behind them, so the task must not complete.
+	svc := &stubDocStateSvc{
+		metaData: map[string]any{},
+		setErr:   errors.New("engine down"),
+	}
+	u := &docStateUpdater{docSvc: svc}
+	err := u.apply(context.Background(), &taskpkg.PipelineResult{
+		DocID:        "doc-1",
+		Metadata:     map[string]any{"金额": []string{"100"}},
+		TableProfile: tableProfileForTest([]string{"金额"}),
+	})
+	if err == nil {
+		t.Fatal("expected the publish failure to surface")
+	}
+	if svc.incrementCalled {
+		t.Error("a failed publish must not continue to counter bookkeeping")
+	}
+}
+
+func TestPublishReadFailureFailsTheRun(t *testing.T) {
+	svc := &stubDocStateSvc{readErr: errors.New("no record")}
+	u := &docStateUpdater{docSvc: svc}
+	if err := u.apply(context.Background(), &taskpkg.PipelineResult{
+		DocID:        "doc-1",
+		TableProfile: tableProfileForTest(nil),
+	}); err == nil {
+		t.Fatal("expected the read failure to surface")
+	}
+}
+
+func containsKey(keys []string, want string) bool {
+	for _, key := range keys {
+		if key == want {
+			return true
+		}
+	}
+	return false
 }
