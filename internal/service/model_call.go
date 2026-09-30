@@ -45,7 +45,15 @@ type ModelCallService struct {
 // NewModelCallService creates a model-call service with the standard model
 // provider and model resolver.
 func NewModelCallService() *ModelCallService {
-	providerService := NewModelProviderService()
+	return NewModelCallServiceWithProviderService(NewModelProviderService())
+}
+
+// NewModelCallServiceWithProviderService creates a model-call service using
+// an existing provider service and its DAO configuration.
+func NewModelCallServiceWithProviderService(providerService *ModelProviderService) *ModelCallService {
+	if providerService == nil {
+		providerService = NewModelProviderService()
+	}
 	return &ModelCallService{
 		providerService: providerService,
 		modelSolver:     &ModelSolver{service: providerService},
@@ -70,8 +78,8 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	response, err := target.Driver.ChatWithMessages(ctx, modelName, messages, target.APIConfig, config, usage)
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -100,8 +108,8 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	}
 	populateModelUsage(usage, target, tenantID, userID)
 
-	modelName := target.ModelName
-	if err := target.Driver.ChatStreamlyWithSender(ctx, modelName, messages, target.APIConfig, config, usage, sender); err != nil {
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -120,8 +128,8 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef, userID strin
 		return nil, common.CodeBadRequest, err
 	}
 
-	modelName := target.ModelName
-	embeddings, err := target.Driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: texts}, target.APIConfig, config, nil)
+	embeddingModel := modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -165,7 +173,8 @@ func (s *ModelCallService) TranscribeAudio(ctx context.Context, modelRef, userID
 	}
 
 	modelName := target.ModelName
-	response, err := target.Driver.TranscribeAudio(ctx, &modelName, audioFile, target.APIConfig, config, nil)
+	asrModel := modelModule.NewASRModel(target.Driver, &modelName, target.APIConfig)
+	response, err := asrModel.Transcribe(ctx, audioFile, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -187,7 +196,8 @@ func (s *ModelCallService) TranscribeAudioStream(ctx context.Context, modelRef, 
 	}
 
 	modelName := target.ModelName
-	if err := target.Driver.TranscribeAudioWithSender(ctx, &modelName, audioFile, target.APIConfig, config, nil, sender); err != nil {
+	asrModel := modelModule.NewASRModel(target.Driver, &modelName, target.APIConfig)
+	if err := asrModel.TranscribeWithSender(ctx, audioFile, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -196,7 +206,25 @@ func (s *ModelCallService) TranscribeAudioStream(ctx context.Context, modelRef, 
 // AudioSpeech converts audioContent to speech with the model selected by
 // modelRef.
 func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+	var target *ModelTarget
+	var code common.ErrorCode
+	var err error
+	if strings.TrimSpace(modelRef) == "" {
+		tenantID, tenantErr := s.ownerTenantID(ctx, userID)
+		if tenantErr != nil {
+			// Audio synthesis supplies the tenant ID directly, while HTTP
+			// model calls supply a user ID. Fall back to the former when no
+			// owner tenant can be resolved from the latter.
+			tenantID = userID
+		}
+		code = common.CodeNotFound
+		target, err = s.modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeTTS)
+		if err == nil {
+			code = common.CodeSuccess
+		}
+	} else {
+		target, _, code, err = s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+	}
 	if err != nil {
 		return nil, code, err
 	}
@@ -205,7 +233,41 @@ func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID str
 	}
 
 	modelName := target.ModelName
-	response, err := target.Driver.AudioSpeech(ctx, &modelName, audioContent, target.APIConfig, config, nil)
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty audio speech response")
+	}
+	return response, common.CodeSuccess, nil
+}
+
+// AudioSpeechForTenant synthesizes audio using a tenant ID supplied by the audio dispatcher.
+func (s *ModelCallService) AudioSpeechForTenant(ctx context.Context, modelRef, tenantID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
+	var target *ModelTarget
+	var code common.ErrorCode
+	var err error
+	if strings.TrimSpace(modelRef) == "" {
+		code = common.CodeNotFound
+		target, err = s.modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeTTS)
+		if err == nil {
+			code = common.CodeSuccess
+		}
+	} else {
+		target, code, err = s.resolveTargetByTenant(ctx, modelRef, tenantID, entity.ModelTypeTTS)
+	}
+	if err != nil {
+		return nil, code, err
+	}
+	if config == nil {
+		config = &modelModule.TTSConfig{}
+	}
+
+	modelName := target.ModelName
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -227,7 +289,8 @@ func (s *ModelCallService) AudioSpeechStream(ctx context.Context, modelRef, user
 	}
 
 	modelName := target.ModelName
-	if err := target.Driver.AudioSpeechWithSender(ctx, &modelName, audioContent, target.APIConfig, config, nil, sender); err != nil {
+	ttsModel := modelModule.NewTTSModel(target.Driver, &modelName, target.APIConfig)
+	if err := ttsModel.SpeechWithSender(ctx, audioContent, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -305,6 +368,17 @@ func (s *ModelCallService) ParseFile(ctx context.Context, modelRef, userID strin
 	return response, common.CodeSuccess, nil
 }
 
+func (s *ModelCallService) resolveTargetByTenant(ctx context.Context, modelRef, tenantID string, modelType entity.ModelType) (*ModelTarget, common.ErrorCode, error) {
+	if s == nil || s.providerService == nil || s.modelSolver == nil {
+		return nil, common.CodeServerError, errors.New("model call service is not initialized")
+	}
+	target, err := s.modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
+	}
+	return target, common.CodeSuccess, nil
+}
+
 func (s *ModelCallService) resolveTarget(ctx context.Context, modelRef, userID string, modelType entity.ModelType) (*ModelTarget, string, common.ErrorCode, error) {
 	if s == nil || s.providerService == nil || s.modelSolver == nil {
 		return nil, "", common.CodeServerError, errors.New("model call service is not initialized")
@@ -344,6 +418,7 @@ func populateModelUsage(usage *common.ModelUsage, target *ModelTarget, tenantID,
 	usage.UserID = userID
 	usage.TenantID = tenantID
 	usage.ProviderName = target.ProviderName
+	usage.InstanceID = target.InstanceID
 	usage.ModelName = target.ModelName
 	if target.APIConfig != nil && target.APIConfig.ApiKey != nil {
 		usage.APIKey = *target.APIConfig.ApiKey

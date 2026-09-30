@@ -72,6 +72,24 @@ type ChatWithKBNames struct {
 	TenantAvatar *string  `json:"tenant_avatar,omitempty"`
 }
 
+// MarshalJSON exposes the keyword weight while keeping the persisted vector
+// weight internal to the service.
+func (chat *ChatWithKBNames) MarshalJSON() ([]byte, error) {
+	data, err := structToMap(chat.Chat)
+	if err != nil {
+		return nil, err
+	}
+	data["kb_names"] = chat.KBNames
+	data["dataset_ids"] = chat.DatasetIDs
+	data["nickname"] = chat.Nickname
+	if chat.TenantAvatar != nil {
+		data["tenant_avatar"] = *chat.TenantAvatar
+	}
+	data["keywords_similarity_weight"] = 1 - chat.VectorSimilarityWeight
+	delete(data, "vector_similarity_weight")
+	return json.Marshal(data)
+}
+
 // ListChatsResponse list chats response
 type ListChatsResponse struct {
 	Total int64              `json:"total"`
@@ -113,22 +131,9 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, i
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, terms, keywords, id, name)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, page, pageSize, terms, keywords, id, name)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				chats = chats[start:end]
-			} else {
-				chats = []*entity.ChatListItem{}
-			}
 		}
 	}
 
@@ -224,6 +229,9 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		return nil, common.CodeDataError, err
 	}
 	req["name"] = name
+	if err := NormalizeSimilarityWeights(req); err != nil {
+		return nil, common.CodeDataError, err
+	}
 
 	if datasetIDsValue, ok := req["dataset_ids"]; ok {
 		kbIDs, err := s.validateCreateDatasetIDs(ctx, datasetIDsValue, userID)
@@ -599,6 +607,8 @@ func (s *ChatService) buildCreateChatResponse(ctx context.Context, chat *entity.
 	delete(data, "kb_ids")
 	data["kb_names"] = kbNames
 	data["meta_data_filter"] = normalizeMetaDataFilter(chat.MetaDataFilter)
+	data["keywords_similarity_weight"] = 1 - chat.VectorSimilarityWeight
+	delete(data, "vector_similarity_weight")
 	return data, nil
 }
 
@@ -851,6 +861,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 
 	if !patch && isTruthy(req["tenant_id"]) {
 		return nil, errors.New("`tenant_id` must not be provided")
+	}
+	if err := NormalizeSimilarityWeights(req); err != nil {
+		return nil, err
 	}
 
 	if value, ok := req["name"]; ok {
@@ -1143,33 +1156,33 @@ func mergeJSONMap(base entity.JSONMap, patch map[string]interface{}) entity.JSON
 func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Chat) map[string]interface{} {
 	kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
 	return map[string]interface{}{
-		"id":                       chat.ID,
-		"tenant_id":                chat.TenantID,
-		"name":                     chat.Name,
-		"description":              chat.Description,
-		"icon":                     chat.Icon,
-		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
-		"tenant_llm_id":            chat.TenantLLMID,
-		"llm_setting":              chat.LLMSetting,
-		"prompt_type":              chat.PromptType,
-		"prompt_config":            chat.PromptConfig,
-		"meta_data_filter":         normalizeMetaDataFilter(chat.MetaDataFilter),
-		"similarity_threshold":     chat.SimilarityThreshold,
-		"vector_similarity_weight": chat.VectorSimilarityWeight,
-		"top_n":                    chat.TopN,
-		"rerank_candidates_count":  chat.RerankCandidatesCount,
-		"top_k":                    chat.TopK,
-		"do_refer":                 chat.DoRefer,
-		"rerank_id":                chat.RerankID,
-		"tenant_rerank_id":         chat.TenantRerankID,
-		"dataset_ids":              datasetIDs,
-		"kb_names":                 kbNames,
-		"status":                   chat.Status,
-		"create_time":              chat.CreateTime,
-		"create_date":              chat.CreateDate,
-		"update_time":              chat.UpdateTime,
-		"update_date":              chat.UpdateDate,
+		"id":                         chat.ID,
+		"tenant_id":                  chat.TenantID,
+		"name":                       chat.Name,
+		"description":                chat.Description,
+		"icon":                       chat.Icon,
+		"language":                   chat.Language,
+		"llm_id":                     chat.LLMID,
+		"tenant_llm_id":              chat.TenantLLMID,
+		"llm_setting":                chat.LLMSetting,
+		"prompt_type":                chat.PromptType,
+		"prompt_config":              chat.PromptConfig,
+		"meta_data_filter":           normalizeMetaDataFilter(chat.MetaDataFilter),
+		"similarity_threshold":       chat.SimilarityThreshold,
+		"top_n":                      chat.TopN,
+		"keywords_similarity_weight": 1 - chat.VectorSimilarityWeight,
+		"rerank_candidates_count":    chat.RerankCandidatesCount,
+		"top_k":                      chat.TopK,
+		"do_refer":                   chat.DoRefer,
+		"rerank_id":                  chat.RerankID,
+		"tenant_rerank_id":           chat.TenantRerankID,
+		"dataset_ids":                datasetIDs,
+		"kb_names":                   kbNames,
+		"status":                     chat.Status,
+		"create_time":                chat.CreateTime,
+		"create_date":                chat.CreateDate,
+		"update_time":                chat.UpdateTime,
+		"update_date":                chat.UpdateDate,
 	}
 }
 

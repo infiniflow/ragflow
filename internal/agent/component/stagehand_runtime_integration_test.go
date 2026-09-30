@@ -241,7 +241,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	}
 
 	ctx := canvas.WithState(t.Context(), canvas.NewCanvasState("run-1", "task-1"))
-	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, _ := runtime.GetStateFromContext(ctx)
 	state.Sys["user_id"] = "tenant-1"
 
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)

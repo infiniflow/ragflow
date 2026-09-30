@@ -592,6 +592,62 @@ func rawCitationMarkers(answer string, limit int) []int {
 	return out
 }
 
+// notFoundPhrases are the shipped system-prompt lines that instruct the model to
+// answer "no answer in the knowledge base" verbatim (web/src/locales/zh.ts,
+// systemInitialValue / emptyResponsePlaceholder). They are the fallback signal
+// when the dialog configures no empty_response of its own.
+var notFoundPhrases = []string{
+	"知识库中未找到您要的答案",
+	"在知识库中未找到您要寻找的答案",
+}
+
+// reportsNoAnswer reports whether the answer only announces that the knowledge
+// base holds no answer. Such an answer cites nothing, so it must not carry
+// citation markers or a document reference.
+//
+// The dialog's configured empty_response is the primary signal; when it is unset
+// the shipped not-found lines above are the fallback. Both sides are stripped of
+// citation markers and whitespace before matching, so a marker the model injected
+// mid-sentence ("因 [ID:3]此") does not hide the phrase.
+func reportsNoAnswer(answer, emptyResponse string) bool {
+	flat := flattenForMatch(stripCitations(answer))
+	if flat == "" {
+		return false
+	}
+	if phrase := flattenForMatch(emptyResponse); phrase != "" && strings.Contains(flat, phrase) {
+		return true
+	}
+	for _, phrase := range notFoundPhrases {
+		if strings.Contains(flat, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// decorateQuote reports whether the answer should be decorated with its citation
+// markers and document reference. An answer that only reports the knowledge base
+// holds no answer is decorated as if quoting were off — otherwise the markers and
+// the document list present sources for a reply that cited nothing.
+func decorateQuote(quote bool, answer, emptyResponse string) bool {
+	return quote && !reportsNoAnswer(answer, emptyResponse)
+}
+
+// flattenForMatch drops all whitespace so a phrase match survives line breaks and
+// the spaces a citation marker leaves behind when it is stripped.
+func flattenForMatch(text string) string {
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch r {
+		case ' ', '\t', '\n', '\r', '\v', '\f', '\u00a0', '\u3000':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // markerNumber parses a citation marker's digits (Arabic-Indic digits accepted)
 // into a position. ok is false for an empty or non-numeric capture.
 func markerNumber(digits string) (int, bool) {

@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/deepdoc/parser/pdf/table"
 	"strings"
 )
 
@@ -137,16 +138,18 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 		if html == "" {
 			html = strings.TrimSpace(stringValue(el["html_content"]))
 		}
+		if html == "" {
+			if rows := openDataLoaderCellRows(el["cells"]); rowsHaveText(rows) {
+				html = table.SimpleRowsToHTML(rows)
+			}
+		}
 		if html != "" {
 			text = html
 		}
 		if text == "" {
-			text = openDataLoaderCellsText(el["cells"])
-		}
-		if text == "" {
 			return nil
 		}
-		return map[string]any{"text": text, "doc_type_kwd": "table", "layout": "table"}
+		return map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
 	case "image", "picture", "figure":
 		if text == "" {
 			text = "[Image]"
@@ -169,10 +172,10 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 	}
 }
 
-func openDataLoaderCellsText(raw any) string {
+func openDataLoaderCellRows(raw any) [][]string {
 	cells, ok := raw.([]any)
 	if !ok {
-		return ""
+		return nil
 	}
 	rows := make(map[int][]string)
 	maxRow := -1
@@ -191,15 +194,15 @@ func openDataLoaderCellsText(raw any) string {
 		}
 	}
 	if len(rows) == 0 || maxRow < 0 {
-		return ""
+		return nil
 	}
-	parts := make([]string, 0, len(rows))
+	ordered := make([][]string, 0, len(rows))
 	for i := 0; i <= maxRow; i++ {
 		if cols, ok := rows[i]; ok {
-			parts = append(parts, strings.Join(cols, " | "))
+			ordered = append(ordered, cols)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return ordered
 }
 
 func openDataLoaderPageCount(root any) int {

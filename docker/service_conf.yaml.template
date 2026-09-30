@@ -91,15 +91,6 @@ seekdb:
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
     port: ${SEEKDB_PORT:-2881}
-redis:
-  db: 1
-  username: '${REDIS_USERNAME:-}'
-  password: '${REDIS_PASSWORD:-infini_rag_flow}'
-  host: '${REDIS_HOST:-redis}:6379'
-# Kvrocks is the RocksDB-backed, Redis-protocol store used ONLY by the Go
-# services. It has no in-memory maxmemory cap, so it does not OOM the way
-# Valkey/Redis does. The Go services read this section; the Python services
-# keep using the `redis:` section above.
 kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'
@@ -123,7 +114,16 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
-  max_concurrent_workers: 2
+  # NATS consumer worker count (K). How many ingestion tasks run in parallel.
+  # Override with the env var RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS, or the
+  # CLI flag --ingestor-max-concurrent-workers (highest precedence).
+  # Valid range [1, 256]. Default 1.
+  max_concurrent_workers: 1
+  # Process-wide page concurrency (N). Total PDF pages parsed concurrently across
+  # the whole process (shared by all ingestor workers). Override with the env var
+  # RAGFLOW_INGESTOR_PAGE_CONCURRENCY, or the CLI flag --ingestor-page-concurrency
+  # (highest precedence). Valid range [1, 16]. Default 2.
+  page_concurrency: 2
   compiler_pool_size: 0
 file_syncer:
   max_concurrent_syncs: 5

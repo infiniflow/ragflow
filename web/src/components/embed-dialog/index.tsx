@@ -55,7 +55,7 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
 import { RAGFlowFormItem } from '../ragflow-form';
-import { SwitchFormField } from '../switch-fom-field';
+import { SwitchFormField } from '../switch-form-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
 

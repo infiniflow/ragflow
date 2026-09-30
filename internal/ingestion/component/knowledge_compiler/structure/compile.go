@@ -71,6 +71,12 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 		known = append(known, v)
 	}
 
+	// Relations can only reference entities from this batch. If entity extraction
+	// returned nothing, skip the second LLM call and avoid creating orphan edges.
+	if len(known) == 0 {
+		return nodes, nil, nil
+	}
+
 	if strings.TrimSpace(edgePromptTmpl) == "" {
 		return nodes, nil, nil
 	}

@@ -29,21 +29,13 @@ import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  ChunkMethodItem,
-  EmbeddingModelItem,
-} from '../dataset/setting/python/configuration/common-item';
-import { BackendVariant, pickByBackend } from '@/utils/backend-variant';
+import { EmbeddingModelItem } from '../dataset/setting/common-item';
 
 const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
   const defaultModelDictionary = useFetchDefaultModelDictionary(true);
-  const ChunkMethodName = pickByBackend<'parser_id' | 'chunk_method'>({
-    go: 'parser_id',
-    python: 'chunk_method',
-  });
 
   const FormSchema = z
     .object({
@@ -60,20 +52,16 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeConfiguration.embeddingModelPlaceholder'),
         })
         .trim(),
-      // Go registers parser_id, Python registers chunk_method; only the
-      // active key is set at runtime (see ChunkMethodName).
       parser_id: z.string().optional(),
-      chunk_method: z.string().optional(),
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      const chunkMethod = data[ChunkMethodName];
-      // When parseType === BuiltIn, chunk_method is required
-      if (data.parseType === ParseType.BuiltIn && !chunkMethod?.trim()) {
+      // When parseType === BuiltIn, parser_id is required
+      if (data.parseType === ParseType.BuiltIn && !data.parser_id?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
-          path: [ChunkMethodName],
+          path: ['parser_id'],
         });
       }
       // When parseType === Pipeline, pipeline_id required
@@ -91,7 +79,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
     defaultValues: {
       name: '',
       parseType: ParseType.BuiltIn,
-      [ChunkMethodName]: '',
+      parser_id: '',
       embedding_model: defaultModelDictionary?.embd_id,
     },
   });
@@ -105,7 +93,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
     const nextData =
       parseType === ParseType.BuiltIn
         ? omit(data, ['pipeline_id'])
-        : omit(data, [ChunkMethodName]);
+        : omit(data, ['parser_id']);
     onOk?.(nextData);
   }
 
@@ -113,10 +101,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-    if (defaultModelDictionary?.embd_id) {
-      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
+  }, [parseType, form]);
+
+  // Backfill the default embedding model once the async query resolves, but
+  // never overwrite a model the user has already picked.
+  useEffect(() => {
+    if (defaultModelDictionary?.embd_id && !form.getValues('embedding_model')) {
+      form.setValue('embedding_model', defaultModelDictionary.embd_id);
     }
-  }, [parseType, form, defaultModelDictionary]);
+  }, [defaultModelDictionary, form]);
 
   return (
     <Form {...form}>
@@ -150,10 +143,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
           pipelineLabelKey="knowledgeList.ingestionPipeline"
         />
         {parseType === ParseType.BuiltIn && (
-          <BackendVariant
-            go={<BuiltinPipelineItem name={ChunkMethodName} />}
-            python={<ChunkMethodItem name={ChunkMethodName}></ChunkMethodItem>}
-          />
+          <BuiltinPipelineItem name="parser_id" />
         )}
         {parseType === ParseType.Pipeline && (
           <DataFlowSelect

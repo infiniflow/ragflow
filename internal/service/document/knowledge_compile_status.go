@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	knowledge_compile "ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/knowledge_compile"
 
 	"go.uber.org/zap"
 )
@@ -65,12 +65,13 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	for offset := 0; ; offset += 1000 {
 		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        1000,
-			SelectFields: []string{"compile_kwd", "compilation_template_kind_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
+			IndexNames:         []string{indexName},
+			KbIDs:              []string{datasetID},
+			Offset:             offset,
+			Limit:              1000,
+			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd"},
+			Filter:             map[string]any{"doc_id": []string{documentID}},
+			IncludeUnavailable: true,
 		})
 		cancel()
 		if err != nil {

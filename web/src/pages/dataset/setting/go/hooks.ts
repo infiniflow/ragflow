@@ -1,4 +1,3 @@
-import { Operator } from '@/constants/agent';
 import { ParseType } from '@/constants/knowledge';
 import {
   useFetchDatasetPipelineConfiguration,
@@ -85,33 +84,24 @@ export const useSaveDatasetSetting = () => {
     async (values: z.infer<typeof formSchema>) => {
       const payload = { ...values };
 
-      // Apply forward transforms to parser_config if in pipeline mode
+      // Apply forward transforms to parser_config if in pipeline mode. Each node
+      // (e.g. Extractor:AutoExtractDefault) already carries its own modular
+      // metadata, so no flat top-level `metadata`/`parent_child` key is emitted
+      // — the Go backend requires component-scoped keys. Skip any non-operator
+      // (flat, key-without-":") entries that may linger from a stale form copy.
       if (payload.parser_config) {
         const transformedConfig: Record<string, any> = {};
-        let extractorMetadataGroup: Record<string, any> | undefined;
         for (const [operatorId, config] of Object.entries(
           payload.parser_config,
         )) {
+          if (!operatorId.includes(':')) {
+            continue;
+          }
           const operatorType = getOperatorType(operatorId);
-          const transformed = transformFormConfigToApi(
+          transformedConfig[operatorId] = transformFormConfigToApi(
             operatorType,
             config as Record<string, any>,
           );
-          transformedConfig[operatorId] = transformed;
-          if (
-            operatorType === Operator.Extractor &&
-            extractorMetadataGroup === undefined
-          ) {
-            extractorMetadataGroup = transformed?.metadata;
-          }
-        }
-        // parser_config.metadata is the dataset-level object the backend
-        // preserves and re-scopes into every Extractor node. The extractor
-        // tab is the only place the user edits it, so lift its metadata
-        // group to the top level — otherwise the stale copy loaded with the
-        // form would silently revert the toggle the user just set.
-        if (extractorMetadataGroup) {
-          transformedConfig.metadata = extractorMetadataGroup;
         }
         payload.parser_config = transformedConfig;
       }

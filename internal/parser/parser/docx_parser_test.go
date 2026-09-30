@@ -29,7 +29,7 @@ func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"Hello world"}],"style":"Normal"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -46,7 +46,7 @@ func TestBuildDOCXJSONSections_Headings(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"heading","level":1,"content":[{"type":"text","text":"Chapter 1"}]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -67,7 +67,7 @@ func TestBuildDOCXJSONSections_Images(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"image","data":"` + b64 + `"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -90,7 +90,7 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 			{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"A2"}]}]},{"content":[{"type":"paragraph","content":[{"type":"text","text":"B2"}]}]}]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -120,7 +120,7 @@ func TestBuildDOCXJSONSections_MixedContent(t *testing.T) {
 		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"cell"}]}]}]}]},
 		{"type":"heading","level":2,"content":[{"type":"text","text":"Sub title"}]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 4 {
 		t.Fatalf("got %d sections, want 4", len(sections))
 	}
@@ -153,7 +153,7 @@ func TestBuildDOCXJSONSections_List(t *testing.T) {
 			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Item 3"}]}]}
 		],"level":0}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 3 {
 		t.Fatalf("got %d sections, want 3 (each list item should be a section)", len(sections))
 	}
@@ -171,7 +171,7 @@ func TestBuildDOCXJSONSections_TextBox(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"text","text":"Boxed paragraph"}]}],"width_emu":null}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1 (text_box content should become a section)", len(sections))
 	}
@@ -192,7 +192,7 @@ func TestBuildDOCXJSONSections_MixedWithList(t *testing.T) {
 		],"level":0},
 		{"type":"paragraph","content":[{"type":"text","text":"Trailer"}],"style":"Normal"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 4 {
 		t.Fatalf("got %d sections, want 4 (para + 2 list items + para)", len(sections))
 	}
@@ -210,7 +210,7 @@ func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"Only this matters"}]},
 		{"type":"table","rows":[]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir)
+	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1 (only non-empty paragraph)", len(sections))
 	}

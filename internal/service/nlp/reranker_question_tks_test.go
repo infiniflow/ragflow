@@ -47,7 +47,7 @@ func rerankOneChunk(t *testing.T, chunk map[string]interface{}) string {
 
 	RerankByModel(
 		context.Background(),
-		&models.RerankModel{ModelDriver: driver},
+		models.NewRerankModel(driver, nil, nil, 0),
 		[]map[string]interface{}{chunk},
 		ids,
 		field,

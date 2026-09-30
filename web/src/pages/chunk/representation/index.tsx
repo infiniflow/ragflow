@@ -1,15 +1,8 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { ExpandableSearchInput } from '@/components/expandable-search-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SkeletonCard } from '@/components/skeleton-card';
-import { Button } from '@/components/ui/button';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import {
-  useDeleteDocumentStructureGraph,
-  useFetchDocumentClaims,
-} from '@/hooks/use-document-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
-import { Trash2 } from 'lucide-react';
+import { useFetchDocumentClaims } from '@/hooks/use-document-request';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -44,9 +37,6 @@ function Representation({
   onEvidencePanelChange,
 }: RepresentationProps) {
   const { t } = useTranslation();
-  const isGo = useIsGoBackend();
-  const { deleteDocumentStructureGraph, loading: deleting } =
-    useDeleteDocumentStructureGraph();
 
   const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
   const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
@@ -204,11 +194,6 @@ function Representation({
     [handleNodeClick, supportsClaims],
   );
 
-  const handleDelete = useCallback(async () => {
-    if (!selectedTemplateId) return;
-    await deleteDocumentStructureGraph(selectedTemplateId);
-  }, [deleteDocumentStructureGraph, selectedTemplateId]);
-
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
       <div className="flex items-center gap-2">
@@ -236,20 +221,6 @@ function Representation({
             />
           )}
         </div>
-        {templates.length > 0 && !isGo && (
-          <ConfirmDeleteDialog onOk={handleDelete}>
-            <Button
-              variant="ghost"
-              size="icon"
-              type="button"
-              disabled={deleting}
-              aria-label={t('common.delete', 'Delete')}
-              className="ml-auto shrink-0"
-            >
-              <Trash2 className="h-5 w-5" />
-            </Button>
-          </ConfirmDeleteDialog>
-        )}
       </div>
       {loading && !data && <SkeletonCard className="mt-6" />}
       {!(loading && !data) && templates.length === 0 && (

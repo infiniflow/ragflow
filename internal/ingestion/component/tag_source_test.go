@@ -16,7 +16,16 @@
 
 package component
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+)
 
 func TestBoundedTagCacheEvictsOldest(t *testing.T) {
 	c := newBoundedTagCache(2)
@@ -90,5 +99,40 @@ func TestBoundedTagCacheEvictionSurvivesRecentDrift(t *testing.T) {
 	}
 	if len(c.items) > c.cap {
 		t.Fatalf("cache exceeded its cap: %d > %d", len(c.items), c.cap)
+	}
+}
+
+// GetByIDAndTenant returns database errors unchanged, so only a genuine
+// not-found may carry the sentinel. Wrapping a transient failure too would let
+// AggregateTags treat "the database blipped" as "the file was deleted", skip it
+// for a document-only source and report an incomplete vocabulary as success.
+func TestIsTagSourceNotFoundExcludesDatabaseFailures(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&entity.File{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	prev := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = prev })
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	// A closed handle fails every query with a database error and never a
+	// not-found — the transient case this test exists for.
+	if err = sqlDB.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	_, err = resolveTagSourceFile(context.Background(), "file-transient-db", "tenant-1")
+	if err == nil {
+		t.Fatal("expected the query against a closed database to fail")
+	}
+	if IsTagSourceNotFound(err) {
+		t.Fatalf("a transient database error was classified as not-found: %v", err)
 	}
 }

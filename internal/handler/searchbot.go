@@ -50,27 +50,24 @@ type SearchBotMindMapRequest struct {
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
 type SearchBotRetrievalTestRequest struct {
-	KbIDs                  common.StringSlice     `json:"kb_ids" binding:"required"`
-	Question               string                 `json:"question" binding:"required"`
-	Page                   *int                   `json:"page,omitempty"`
-	Size                   *int                   `json:"size,omitempty"`
-	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
-	DocIDs                 []string               `json:"doc_ids,omitempty"`
-	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
-	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
-	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
-	RerankID               *string                `json:"rerank_id,omitempty"`
-	Keyword                *bool                  `json:"keyword,omitempty"`
-	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
-	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
-	//        → search.py highlightFields → ES get_highlight()
-	// Issue: https://github.com/infiniflow/ragflow/issues/15712
-	// Highlight           *bool                   `json:"highlight,omitempty"`
+	KbIDs                    common.StringSlice     `json:"kb_ids" binding:"required"`
+	Question                 string                 `json:"question" binding:"required"`
+	Page                     *int                   `json:"page,omitempty"`
+	Size                     *int                   `json:"size,omitempty"`
+	RerankCandidatesCount    *int                   `json:"rerank_candidates_count,omitempty"`
+	DocIDs                   []string               `json:"doc_ids,omitempty"`
+	UseKG                    *bool                  `json:"use_kg,omitempty"`
+	TopK                     *int                   `json:"top_k,omitempty"`
+	CrossLanguages           []string               `json:"cross_languages,omitempty"`
+	SearchID                 *string                `json:"search_id,omitempty"`
+	MetaDataFilter           map[string]interface{} `json:"meta_data_filter,omitempty"`
+	TenantRerankID           *string                `json:"tenant_rerank_id,omitempty"`
+	RerankID                 *string                `json:"rerank_id,omitempty"`
+	Keyword                  *bool                  `json:"keyword,omitempty"`
+	Highlight                *bool                  `json:"highlight,omitempty"`
+	SimilarityThreshold      *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
+	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 }
 
 // UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
@@ -198,6 +195,13 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
+
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
@@ -261,13 +265,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	// Resolve chat model ID.
 	modelID := ""
+	options := service.AskStreamOptions{}
 	if req.SearchID != "" && h.searchSvc != nil {
 		ctx := c.Request.Context()
 		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
-			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
-				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
-					modelID = cid
-				}
+			searchConfig := searchConfigFromDetail(detail)
+			options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
+			if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
+				modelID = chatID
 			}
 		}
 	}
@@ -298,7 +303,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
-	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
@@ -529,6 +534,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		TenantRerankID:         h.TenantRerankID,
 		RerankID:               h.RerankID,
 		Keyword:                h.Keyword,
+		Highlight:              h.Highlight,
 		SimilarityThreshold:    h.SimilarityThreshold,
 		VectorSimilarityWeight: h.VectorSimilarityWeight,
 	}

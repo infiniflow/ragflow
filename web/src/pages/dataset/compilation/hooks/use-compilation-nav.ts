@@ -5,8 +5,6 @@ import {
 } from '@/hooks/use-dataset-generate';
 import {
   DatasetNavKeys,
-  useDeleteDatasetNav,
-  useDeleteDatasetNavNode,
   useFetchDatasetNav,
   useFetchDatasetNavChildren,
 } from '@/hooks/use-dataset-nav-request';
@@ -14,7 +12,6 @@ import { useFetchDocumentStructureGraphById } from '@/hooks/use-document-request
 import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
 import { DatasetNavNode } from '@/interfaces/database/dataset-nav';
 import { IStructureGraphTemplate } from '@/interfaces/database/document-structure';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { trim } from 'lodash';
@@ -45,9 +42,6 @@ export function useCompilationNav() {
     loading: navLoading,
     isError: navError,
   } = useFetchDatasetNav(debouncedKeywords);
-  const { deleteNav, loading: deleteNavLoading } = useDeleteDatasetNav();
-  const { deleteNavNode, loading: deleteNodeLoading } =
-    useDeleteDatasetNavNode();
 
   const [loadingParent, setLoadingParent] = useState<string | null>(null);
   const [childrenMap, setChildrenMap] = useState<
@@ -66,12 +60,11 @@ export function useCompilationNav() {
 
   const { data: childrenData, isError: childrenError } =
     useFetchDatasetNavChildren(loadingParent, activeKeywords);
+  // Opened documents get their FULL structure graph, without the nav keywords: a
+  // keyword-filtered read would hide every entity that does not match (keyword
+  // drill-down lives in the structure view's own search box).
   const { data: structureData, isPlaceholderData: structurePlaceholder } =
-    useFetchDocumentStructureGraphById(
-      kbId,
-      loadingDocId ?? '',
-      activeKeywords || undefined,
-    );
+    useFetchDocumentStructureGraphById(kbId, loadingDocId ?? '');
 
   useEffect(() => {
     if (!loadingParent || !childrenData) {
@@ -139,12 +132,11 @@ export function useCompilationNav() {
   }, [activeKeywords, clearExpandedData]);
 
   const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
-  // Go: the nav tree is a by-product of tree/structure knowledge compilation.
+  // The nav tree is a by-product of tree/structure knowledge compilation.
   // Poll the Tree-scoped scheduler status (kind "raptor" normalizes to "Tree")
   // so the view can surface compile progress/logs and refresh the tree when a
-  // run ends. Python keeps the read-only behavior (no polling, no log UI).
-  const { data: navRunData } = useTraceRunData(GenerateType.Raptor, isGo);
+  // run ends.
+  const { data: navRunData } = useTraceRunData(GenerateType.Raptor);
   const { status: navStatus } = useGenerateStatus(navRunData);
 
   const handleCompileRunEnd = useCallback(() => {
@@ -181,54 +173,6 @@ export function useCompilationNav() {
     },
     [structureMap],
   );
-
-  const removeChild = useCallback((parentName: string, childName: string) => {
-    setChildrenMap((prev) => {
-      const children = prev[parentName];
-      if (!children) {
-        return prev;
-      }
-      return {
-        ...prev,
-        [parentName]: children.filter((node) => node.name !== childName),
-      };
-    });
-  }, []);
-
-  const dropChildren = useCallback((name: string) => {
-    setChildrenMap((prev) => {
-      if (!(name in prev)) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
-    setChildrenErrorParents((prev) => {
-      if (!(name in prev)) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
-  }, []);
-
-  const dropStructure = useCallback((docId: string) => {
-    setStructureMap((prev) => {
-      if (!(docId in prev)) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[docId];
-      return next;
-    });
-  }, []);
-
-  const resetNav = useCallback(() => {
-    setSelectedNode(null);
-    clearExpandedData();
-  }, [clearExpandedData]);
 
   const handleKeywordsChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,52 +219,6 @@ export function useCompilationNav() {
     [],
   );
 
-  const handleDeleteAll = useCallback(async () => {
-    const data = await deleteNav();
-    if (data?.code === 0) {
-      resetNav();
-    }
-  }, [deleteNav, resetNav]);
-
-  const handleDeleteNode = useCallback(
-    async (name: string, parentName: string | null) => {
-      const removed = parentName
-        ? childrenMap[parentName]?.find((node) => node.name === name)
-        : undefined;
-      const data = await deleteNavNode(name);
-      if (data?.code === 0) {
-        if (parentName) {
-          // The children query of this parent may have no active observer, so
-          // invalidation alone would not refetch — filter the local map too.
-          removeChild(parentName, name);
-          // A deleted sub-cluster may have loaded children; a deleted document
-          // may have a loaded structure graph. Drop both from the local maps.
-          dropChildren(name);
-          if (removed?.doc_id) {
-            dropStructure(removed.doc_id);
-          }
-          setSelectedNode((current) =>
-            (current?.parentName === parentName && current?.name === name) ||
-            (removed?.doc_id && current?.docId === removed.doc_id)
-              ? null
-              : current,
-          );
-        } else {
-          dropChildren(name);
-          // Clear the selection when the deleted root is the selected node
-          // itself or the parent of the selected child.
-          setSelectedNode((current) =>
-            current?.parentName === name ||
-            (current?.parentName === null && current?.name === name)
-              ? null
-              : current,
-          );
-        }
-      }
-    },
-    [deleteNavNode, childrenMap, removeChild, dropChildren, dropStructure],
-  );
-
   return {
     navList,
     navLoading,
@@ -331,15 +229,11 @@ export function useCompilationNav() {
     childrenErrorParents,
     structureMap,
     selectedNode,
-    deleteNavLoading,
-    deleteNodeLoading,
     navRunData,
     navStatus,
     handleKeywordsChange,
     handleNodeClick,
     handleNodeExpand,
     handleEntityClick,
-    handleDeleteAll,
-    handleDeleteNode,
   };
 }

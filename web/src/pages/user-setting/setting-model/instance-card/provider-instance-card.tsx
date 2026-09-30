@@ -134,6 +134,7 @@ const GenericProviderInstanceCard = forwardRef<
 
   // ── Form initial values + fields ────────────────────────────────
   const initialValues = useProviderInitialValues(
+    providerName,
     instance,
     instanceDetails,
     isDraft,

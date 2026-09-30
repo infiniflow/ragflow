@@ -59,14 +59,16 @@ func filterUnsupportedProviders(providers []map[string]interface{}) []map[string
 type ProviderHandler struct {
 	userService          *service.UserService
 	modelProviderService *service.ModelProviderService
+	modelCallService     *service.ModelCallService
 	userTenantDAO        *dao.UserTenantDAO
 }
 
 // NewProviderHandler create provider handler
-func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService) *ProviderHandler {
+func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService, modelCallService *service.ModelCallService) *ProviderHandler {
 	return &ProviderHandler{
 		userService:          userService,
 		modelProviderService: modelProviderService,
+		modelCallService:     modelCallService,
 		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
 }
@@ -245,13 +247,13 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		remoteNames := make(map[string]struct{}, len(remoteModels))
 		for _, model := range remoteModels {
 			if name, ok := model["name"].(string); ok {
-				remoteNames[name] = struct{}{}
+				remoteNames[providerModelKey(name)] = struct{}{}
 			}
 		}
 		filtered := staticModels[:0]
 		for _, model := range staticModels {
 			if name, ok := model["name"].(string); ok {
-				if _, exists := remoteNames[name]; exists {
+				if _, exists := remoteNames[providerModelKey(name)]; exists {
 					filtered = append(filtered, model)
 				}
 			}
@@ -265,47 +267,82 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	// 4. Merge: static as base, remote overrides on name conflicts
-	merged := make(map[string]map[string]interface{})
+	// 4. Merge: static as base, remote overrides on name conflicts.
+	result := mergeProviderModels(staticModels, remoteModels)
+
+	// 5. Fill missing model types using only the merged list.
+	fillProviderModelMapTypes(result)
+
+	common.SuccessWithData(c, result, "success")
+}
+
+// mergeProviderModels collapses the bundled catalog listing and a live upstream
+// listing into a single entry per model, sorted by name.
+//
+// Names are matched case-insensitively and trimmed — an upstream listing can
+// spell a model differently from the catalog (e.g. "GPT-4o" vs "gpt-4o"), and
+// both must collapse instead of showing up as two rows. The first spelling seen
+// wins, so a model already saved under the catalog's name keeps it.
+//
+// Remote entries override the catalog entry, with two exceptions: a remote
+// entry that carries no model types inherits the catalog's types, and
+// `max_tokens` always comes from the catalog when the catalog declares one —
+// an upstream listing reports the provider's ceiling, which is not the value
+// RAGFlow is configured to send.
+func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
+	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
 		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
 			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
 				m["max_tokens"] = maxOutput
 			}
 		}
-		if name, ok := m["name"].(string); ok {
-			merged[name] = m
+		name, ok := m["name"].(string)
+		if !ok {
+			continue
 		}
+		key := providerModelKey(name)
+		if key == "" {
+			continue
+		}
+		m["name"] = strings.TrimSpace(name)
+		merged[key] = m
 	}
 	for _, m := range remoteModels {
-		if name, ok := m["name"].(string); ok {
-			if existing, exists := merged[name]; exists {
-				if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
-					m["model_types"] = existing["model_types"]
-				}
-				if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
-					m["max_tokens"] = maxTokens
-				}
-			}
-			merged[name] = m
+		name, ok := m["name"].(string)
+		if !ok {
+			continue
 		}
+		key := providerModelKey(name)
+		if key == "" {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if existing, exists := merged[key]; exists {
+			if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
+				m["model_types"] = existing["model_types"]
+			}
+			if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
+				m["max_tokens"] = maxTokens
+			}
+			if existingName, ok := existing["name"].(string); ok {
+				name = existingName
+			}
+		}
+		m["name"] = name
+		merged[key] = m
 	}
 
-	// 5. Fill missing model types using only the merged list.
 	result := make([]map[string]interface{}, 0, len(merged))
 	for _, m := range merged {
 		result = append(result, m)
 	}
-	fillProviderModelMapTypes(result)
-
-	// 6. Sort by name
 	sort.Slice(result, func(i, j int) bool {
 		ni, _ := result[i]["name"].(string)
 		nj, _ := result[j]["name"].(string)
-		return ni < nj
+		return providerModelKey(ni) < providerModelKey(nj)
 	})
-
-	common.SuccessWithData(c, result, "success")
+	return result
 }
 
 func fillProviderModelMapTypes(result []map[string]interface{}) {
@@ -327,6 +364,13 @@ func fillProviderModelMapTypes(result []map[string]interface{}) {
 	for i, model := range list {
 		result[indexes[i]]["model_types"] = model.ModelTypes
 	}
+}
+
+// providerModelKey is the identity of a model name. Upstream listings and the
+// bundled catalog can spell the same model with different case or padding, so
+// everything that merges or matches models compares this normalized form.
+func providerModelKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 func providerModelMapTypes(model map[string]interface{}) []string {
@@ -971,15 +1015,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return
 		}
 	}
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
+	}
 
 	if !req.Thinking {
 		req.Effort = nil
 		req.Verbosity = nil
-	}
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
 	}
 
 	chatConfig := models.ChatConfig{
@@ -998,12 +1043,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	userID := c.GetString("user_id")
 	email := c.GetString("email")
 	modelUsage := common.ModelUsage{
-		UserID:       userID,
-		UserEmail:    email,
-		ProviderName: *req.ProviderName,
-		ModelName:    *req.ModelName,
-		Type:         "chat",
-		StartAt:      time.Now(),
+		UserID:    userID,
+		UserEmail: email,
+		Type:      "chat",
+		StartAt:   time.Now(),
+	}
+	if req.ProviderName != nil {
+		modelUsage.ProviderName = *req.ProviderName
+	}
+	if req.ModelName != nil {
+		modelUsage.ModelName = *req.ModelName
 	}
 	// Check if it's a stream request
 	if req.Stream {
@@ -1047,15 +1096,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (the best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(
+		errorCode, err := h.modelCallService.ChatToModelStreamWithSender(
 			ctx,
-			req.ProviderName,
-			req.InstanceName,
-			req.ModelName,
-			req.ModelID,
+			modelRef,
 			userID,
 			messages,
-			&apiConfig,
 			&chatConfig,
 			&modelUsage,
 			sender,
@@ -1078,15 +1123,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		content := msg["content"]
 		messages[i] = models.Message{Role: role, Content: content}
 	}
-	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(
+	response, errorCode, err = h.modelCallService.ChatToModelWithMessages(
 		ctx,
-		req.ProviderName,
-		req.InstanceName,
-		req.ModelName,
-		req.ModelID,
+		modelRef,
 		userID,
 		messages,
-		&apiConfig,
 		&chatConfig,
 		&modelUsage,
 	)
@@ -1145,10 +1186,11 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	embeddingConfig := models.EmbeddingConfig{
@@ -1160,7 +1202,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.EmbedText(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Texts, &apiConfig, &embeddingConfig)
+	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, userID, req.Texts, &embeddingConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1211,10 +1253,11 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	rerankConfig := models.RerankConfig{
@@ -1226,7 +1269,7 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.RerankDocument(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Query, req.Documents, &apiConfig, &rerankConfig)
+	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, userID, req.Query, req.Documents, &rerankConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1278,10 +1321,11 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	asrConfig := models.ASRConfig{}
@@ -1323,7 +1367,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.TranscribeAudioStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig, sender)
+		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, userID, req.File, &asrConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1335,7 +1379,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.TranscribeAudio(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig)
+	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, userID, req.File, &asrConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1386,10 +1430,11 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	ttsConfig := models.TTSConfig{}
@@ -1431,7 +1476,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.AudioSpeechStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig, sender)
+		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, userID, req.Text, &ttsConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1443,7 +1488,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.AudioSpeech(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig)
+	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, userID, req.Text, &ttsConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1494,9 +1539,11 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	OCRConfig := models.OCRConfig{}
@@ -1506,7 +1553,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.OCRFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &OCRConfig)
+	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, userID, req.Content, req.URL, &OCRConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1522,6 +1569,9 @@ type ParseFileRequest struct {
 	ModelID      *string `json:"model_id"`
 	Content      []byte  `json:"content"`
 	URL          *string `json:"url"`
+	// Optional MinerU async /file/parse overrides (setup → provider api_key JSON → env).
+	Backend   *string `json:"backend"`
+	ServerURL *string `json:"server_url"`
 }
 
 func (h *ProviderHandler) ParseFile(c *gin.Context) {
@@ -1557,19 +1607,27 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	parseFileConfig := models.ParseFileConfig{}
+	if req.Backend != nil {
+		parseFileConfig.Backend = strings.TrimSpace(*req.Backend)
+	}
+	if req.ServerURL != nil {
+		parseFileConfig.ServerURL = strings.TrimRight(strings.TrimSpace(*req.ServerURL), "/")
+	}
 
 	// Non-stream response
 	var response *models.ParseFileResponse
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.ParseFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &parseFileConfig)
+	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, userID, req.Content, req.URL, &parseFileConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return

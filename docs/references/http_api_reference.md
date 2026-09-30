@@ -7,7 +7,7 @@ sidebar_custom_props: {
 ---
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -49,11 +49,27 @@ RAGFlow responses may contain both an HTTP status code and a business code in th
 | 500 | Server error |
 ---
 
-## Deprecated API Aliases
+## Migrate to 1.0
 
-The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
+RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
 
-| Deprecated endpoint                                                               | Replacement endpoint                                                                |
+The following changes require client updates:
+
+| Area | RAGFlow 1.0 Go change | Client action |
+|------|------------------------|---------------|
+| Dataset parser selection | Dataset create and update use `parser_id`; responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `parser_id`. For the general parser, send `"parser_id": "general"`. |
+| Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
+| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
+
+:::note
+Go responses include `X-API-Source: go`, which can be used to verify the serving backend during rollout.
+:::
+
+### Removed API aliases
+
+The following paths remain available only on the Python backend. They are not registered by the RAGFlow 1.0 Go backend.
+
+| Removed endpoint                                                                  | Replacement endpoint                                                                |
 |-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
 | **POST** `/api/v1/chats_openai/{chat_id}/chat/completions`                        | **POST** `/api/v1/openai/{chat_id}/chat/completions`                                |
 | **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`                           |
@@ -73,7 +89,7 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 | **GET** `/api/v1/file/get/{file_id}`                                              | **GET** `/api/v1/files/{file_id}`                                                   |
 | **POST** `/api/v1/file/mv`                                                        | **POST** `/api/v1/files/move`                                                       |
 | **POST** `/api/v1/file/convert`                                                   | **POST** `/api/v1/files/link-to-datasets`                                           |
-| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions` | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true` |
+| **POST** `/api/v1/agents_openai/{agent_id}/chat/completions`                      | **POST** `/api/v1/agents/chat/completions` with `"openai-compatible": true`         |
 
 ---
 
@@ -87,8 +103,8 @@ The following v0.24.0 REST API paths are deprecated. They remain available throu
 
 Creates a model response for a given chat conversation.
 
-:::caution DEPRECATED
-`POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats_openai/{chat_id}/chat/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
@@ -101,7 +117,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"model"`: `string`
+  - `"model"`: `string` (optional)
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
   - `"extra_body"`: `object` (optional)
@@ -142,7 +158,7 @@ curl --request POST \
 - `chat_id` (*Path parameter*) `string`, *Required*
   Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`
   The model used to generate the response. When `chat_id` is provided, you may also use the legacy placeholder value `"model"` to keep using the chat assistant's configured model.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
@@ -239,13 +255,13 @@ Failure:
 
 ---
 
-### Create agent completion
+### Create OpenAI-compatible agent completion
 
-:::caution DEPRECATED
-This endpoint remains available for backward compatibility but may be removed in a future release. New integrations should use `POST /api/v1/agents/chat/completions` with `"openai-compatible": true`.
+:::caution REMOVED ALIAS
+RAGFlow 1.0 Go does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
 :::
 
-**POST** `/api/v1/agents_openai/{agent_id}/chat/completions`
+**POST** `/api/v1/agents/chat/completions`
 
 Creates a model response for a given chat conversation.
 
@@ -254,24 +270,27 @@ This API follows the same request and response format as OpenAI's API. It allows
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents_openai/{agent_id}/chat/completions`
+- URL: `/api/v1/agents/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"model"`: `string`
+  - `"agent_id"`: `string`
+  - `"openai-compatible"`: `boolean`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"session_id"`: `string` (optional)
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents_openai/{agent_id}/chat/completions \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-        "model": "model",
+        "agent_id": "{agent_id}",
+        "openai-compatible": true,
         "messages": [{"role": "user", "content": "Say this is a test!"}],
         "stream": true
       }'
@@ -279,8 +298,11 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
-  The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
+- `agent_id` (*Body parameter*) `string`, *Required*
+  The ID of the agent to run.
+
+- `openai-compatible` (*Body parameter*) `boolean`, *Required*
+  Set this field to `true` to use the OpenAI-compatible request and response format.
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
@@ -571,14 +593,10 @@ curl --request POST \
   - Maximum 65535 characters
 
 - `"language"`: (*Body parameter*), `string`
-  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
-  Leading and trailing whitespace are stripped.
-  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
-  No restricted list of language values is enforced.
-  If omitted, the server/database default is used.
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the server/database default is used.
 
 - `"embedding_model"`: (*Body parameter*), `string`
-  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
+  The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
@@ -690,7 +708,7 @@ Success:
         "token_num": 0,
         "update_date": "2025-04-28T18:40:41",
         "update_time": 1745836841611,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
     },
 }
 ```
@@ -752,7 +770,7 @@ curl --request DELETE \
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
 - `"delete_all"`: (*Body parameter*), `boolean`
-  Whether to delete all datasets owned by the current user when`"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
+  Whether to delete all datasets owned by the current user when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
 
@@ -831,17 +849,13 @@ curl --request PUT \
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 - `"language"`: (*Body parameter*), `string`
-  Optional document/dataset language, for example: `"English"` or `"Chinese"`.
-  Leading and trailing whitespace are stripped.
-  After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes.
-  No restricted list of language values is enforced.
-  If omitted, the existing dataset language remains unchanged.
+  Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the existing dataset language remains unchanged.
 - `"permission"`: (*Body parameter*), `string`
   The updated dataset permission. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 - `"pagerank"`: (*Body parameter*), `int`
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  Refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank).
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
@@ -880,7 +894,7 @@ curl --request PUT \
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
+    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
       - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
@@ -1004,7 +1018,7 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1045,7 +1059,7 @@ Success (with `include_parsing_status=true`):
             "unstart_count": 0,
             "update_date": "2026-03-09T18:59:32",
             "update_time": 1773053972723,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1455,7 +1469,7 @@ curl --request GET \
 
 ```bash
 curl -G \
-  --url "http://localhost:9222/api/v1/datasets/{{KB_ID}}/documents" \
+  --url "http://{address}/api/v1/datasets/{dataset_id}/documents" \
   --header 'Authorization: Bearer <YOUR_API_KEY>' \
   --data-urlencode 'metadata_condition={"logic":"and","conditions":[{"name":"tags","comparison_operator":"is","value":"bar"},{"name":"author","comparison_operator":"is","value":"alice"}]}'
 ```
@@ -2116,8 +2130,8 @@ Failure:
 
 Updates content or configurations for a specified chunk.
 
-:::caution DEPRECATED
-`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -2458,7 +2472,8 @@ Retrieves chunks from specified datasets.
   - `"page"`: `integer`
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
-  - `"vector_similarity_weight"`: `float`
+  - `"keywords_similarity_weight"`: `float`
+  - `"vector_similarity_weight"`: `float` (legacy fallback)
   - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
   - `"knn_top_k"`: `integer`
   - `"knn_num_candidates"`: `integer`
@@ -2469,7 +2484,6 @@ Retrieves chunks from specified datasets.
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
-  - `"toc_enhance"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
 
 ##### Request example
@@ -2520,8 +2534,10 @@ curl --request POST \
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
-  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
+  Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: (*Body parameter*), `integer`
   **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
 - `"knn_top_k"`: (*Body parameter*), `integer`
@@ -2534,8 +2550,6 @@ curl --request POST \
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
 - `"use_kg"`: (*Body parameter*), `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
-- `"toc_enhance"`: (*Body parameter*), `boolean`
-  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `string`
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`
@@ -2694,7 +2708,6 @@ curl --request POST \
   - `"quote"`: `boolean` Whether the source of text should be displayed. Defaults to `true`.
   - `"tts"`: `boolean`
   - `"refine_multiturn"`: `boolean`
-  - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
@@ -2702,9 +2715,9 @@ curl --request POST \
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
-  - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2751,7 +2764,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "prompt_type": "simple",
         "status": "1",
@@ -2819,7 +2832,7 @@ curl --request PUT \
                "quote":true
           },
           "similarity_threshold":0.2,
-          "vector_similarity_weight":0.3,
+          "keywords_similarity_weight":0.7,
           "top_n":6,
           "top_k":1024,
           "rerank_id":""
@@ -2852,7 +2865,8 @@ curl --request PUT \
     Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2888,7 +2902,7 @@ Success: returns the full updated chat assistant object.
             "parameters": [{"key": "knowledge", "optional": false}]
         },
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "top_k": 1024,
         "rerank_id": "",
@@ -2968,7 +2982,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
@@ -3099,10 +3113,6 @@ Failure:
 **DELETE** `/api/v1/chats`
 
 Deletes chat assistants by ID.
-
-:::caution DEPRECATED
-The `chat_id` in the request body is deprecated, please use `ids` list.
-:::
 
 #### Request
 
@@ -3254,7 +3264,7 @@ Success:
                 },
                 "rerank_id": "",
                 "similarity_threshold": 0.2,
-                "vector_similarity_weight": 0.3,
+                "keywords_similarity_weight": 0.7,
                 "top_n": 6,
                 "prompt_type": "simple",
                 "status": "1",
@@ -3364,8 +3374,8 @@ Failure:
 
 Updates a session of a specified chat assistant.
 
-:::caution DEPRECATED
-`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -3795,8 +3805,8 @@ Failure:
 
 Starts a chat completion request. The same endpoint supports three modes:
 
-:::caution DEPRECATED
-`POST /api/v1/chats/{chat_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/chats/{chat_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
@@ -4093,10 +4103,6 @@ Failure:
 
 ### Create session with agent
 
-:::danger DEPRECATED
-This method is deprecated and no longer recommended. Use `Converse with agent` (`POST /api/v1/agents/chat/completions`) instead; it automatically creates a session ID for the associated agent when `session_id` is not specified.
-:::
-
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
 Creates a session with an agent.
@@ -4348,8 +4354,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-:::caution DEPRECATED
-`POST /api/v1/agents/{agent_id}/completions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/agents/{agent_id}/completions` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -4474,15 +4480,15 @@ curl --request POST \
   The ID of the session. If it is not provided, a new session will be generated.
 - `"inputs"`: (*Body parameter*), `object`
   Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
+- `"files"`: (*Body parameter*), `array`
+  File descriptors returned by the Agent file upload endpoint. RAGFlow makes the uploaded files available to the Agent through `sys.files`.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
 - `"chat_template_kwargs"`: (*Body parameter*), `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
-For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
-`http://{address}/v1/canvas/upload/{agent_id}`
-*You will get a corresponding file ID from its response body.*
+Before sending a file in a conversation, upload it as multipart form data with the field name `file` to `POST http://{address}/api/v1/agents/{agent_id}/upload`. The endpoint accepts one or more files and returns a file descriptor for one file or an array of descriptors for multiple files. Pass the returned descriptor or descriptors in the `files` array of the conversation request.
 :::
 
 ##### Response
@@ -5106,8 +5112,8 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-:::caution DEPRECATED
-`POST /api/v1/sessions/related_questions` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/sessions/related_questions` is not available in 1.0. Use this endpoint instead.
 :::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
@@ -5639,9 +5645,9 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
 
 - `memory_size`: (*Body parameter*), `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: (*Body parameter*), `enum<string>`, *Optional*
 
@@ -6512,10 +6518,10 @@ Failure
 
 **GET** `/api/v1/system/healthz`
 
-Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
+Check the health status of RAGFlow's dependencies: metadata database, Kvrocks cache, document engine, object storage, and NATS message queue.
 
-:::caution DEPRECATED
-`GET /v1/system/healthz` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /v1/system/healthz` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6554,6 +6560,7 @@ Content-Type: application/json
   "redis": "ok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "ok"
 }
 ```
@@ -6569,6 +6576,7 @@ Content-Type: application/json
   "redis": "nok",
   "doc_engine": "ok",
   "storage": "ok",
+  "message_queue": "ok",
   "status": "nok",
   "_meta": {
     "redis": {
@@ -6582,6 +6590,7 @@ Content-Type: application/json
 Explanation:
 
 - Each service is reported as "ok" or "nok".
+- The `redis` field reports the Redis-compatible Kvrocks cache; `message_queue` reports the NATS connection.
 - The top-level `status` reflects overall health.
 - If any service is "nok", detailed error info appears in `_meta`.
 
@@ -6597,8 +6606,8 @@ Explanation:
 
 Uploads one or multiple files to the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/upload` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/upload` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6669,8 +6678,8 @@ Failure:
 
 Uploads a file and creates the respective document.
 
-:::caution DEPRECATED
-`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /v1/document/upload_info` and `POST /api/v1/file/upload_info` are not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6748,8 +6757,8 @@ Failure:
 
 **GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
-:::caution DEPRECATED
-The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are not available in 1.0. Use this endpoint instead.
 :::
 
 Downloads a runtime attachment previously uploaded for use in the agent system.
@@ -6808,8 +6817,8 @@ Failure:
 
 Creates a new file or folder in the system.
 
-:::caution DEPRECATED
-`POST /api/v1/file/create` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/create` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6884,8 +6893,8 @@ Failure:
 
 Lists files and folders under a specific folder.
 
-:::caution DEPRECATED
-`GET /api/v1/file/list` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/list` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -6965,8 +6974,8 @@ Failure:
 
 Retrieves the immediate parent folder information of a specified file.
 
-:::caution DEPRECATED
-`GET /api/v1/file/parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7022,8 +7031,8 @@ Failure:
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
 
-:::caution DEPRECATED
-`GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/all_parent_folder?file_id=...` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7085,8 +7094,8 @@ Failure:
 
 Deletes one or multiple files or folders.
 
-:::caution DEPRECATED
-`POST /api/v1/file/rm` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/rm` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7152,8 +7161,8 @@ Failure:
 
 Downloads a file from the system.
 
-:::caution DEPRECATED
-`GET /api/v1/file/get/{file_id}` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`GET /api/v1/file/get/{file_id}` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7200,8 +7209,8 @@ Failure:
 
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
 
-:::caution DEPRECATED
-The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are not available in 1.0. Use this endpoint instead.
 :::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
@@ -7303,8 +7312,8 @@ or
 
 Converts files to documents and links them to specified datasets.
 
-:::caution DEPRECATED
-`POST /api/v1/file/convert` is deprecated. Use this endpoint instead.
+:::caution REMOVED ALIAS
+`POST /api/v1/file/convert` is not available in 1.0. Use this endpoint instead.
 :::
 
 #### Request
@@ -7379,8 +7388,7 @@ or
 
 **POST** `/api/v1/workspaces/{workspace_id}/commits`
 
-Creates a new snapshot commit for the specified workspace.
-This endpoint also supports:
+Creates a new snapshot commit for the specified workspace. This endpoint also supports:
 - `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its workspace)
 
 #### Request
@@ -7466,8 +7474,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination.
-Also available at:
+Lists all commits for the specified folder with pagination. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7533,8 +7540,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes.
-Also available at:
+Retrieves the details of a specific commit, including its file changes. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7603,8 +7609,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit.
-Also available at:
+Lists the file changes associated with a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7651,8 +7656,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences.
-Also available at:
+Compares two commits and returns the differences. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7718,8 +7722,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`).
-Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7770,8 +7773,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit.
-Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7837,8 +7839,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit.
-Also available at:
+Retrieves the file content as it existed at a specific commit. Also available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request

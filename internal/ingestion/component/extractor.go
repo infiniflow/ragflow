@@ -1421,7 +1421,7 @@ type extractorChatConfig struct {
 // Returns nil error when there is no canvas state (unit tests) —
 // the caller's @ split fallback handles that case.
 func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return extractorChatConfig{}, nil
 	}
@@ -1473,7 +1473,7 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 // model when no explicit llm_id is provided. Returns empty config when
 // no canvas state or tenant_id is available (unit-test context).
 func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return extractorChatConfig{}
 	}
@@ -1561,7 +1561,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if db == nil {
 		db = dao.DB
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return 0
 	}

@@ -24,6 +24,13 @@ import (
 // only to its own local max width — exactly what the Python reference does.
 const recBatchNum = 16
 
+// OCRImage detects and recognizes text using the same de-skewing, rotation
+// selection, and batched recognition as PDF pages. zoom converts image pixels
+// to output coordinates; standalone images use 1.
+func OCRImage(ctx context.Context, img image.Image, doc pdf.DocAnalyzer, zoom float64) []pdf.TextBox {
+	return (&Parser{}).ocrDetectAndRecognize(ctx, img, doc, 0, "image", zoom)
+}
+
 func (p *Parser) ocrDetectAndRecognize(ctx context.Context, pageImg image.Image, doc pdf.DocAnalyzer, pageNum int, logLabel string, zoom float64) []pdf.TextBox {
 	boxes, err := p.inferOCRDetect(ctx, doc, pageImg)
 	if err != nil || len(boxes) == 0 {

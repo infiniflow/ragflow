@@ -106,6 +106,37 @@ func isCompilerComponent(cpnID string) bool {
 		strings.HasPrefix(lowerID, "compiler_")
 }
 
+// isParserComponent returns true if the component name or component ID
+// indicates a Parser component.
+func isParserComponent(cpnID, componentName string) bool {
+	return strings.EqualFold(componentName, "parser") ||
+		strings.HasPrefix(strings.ToLower(cpnID), "parser:")
+}
+
+// NormalizeParserConfigSetups lifts legacy nested Parser "setups" entries in
+// a parser_config-shaped map ({cpnID: params}) into the flat per-family
+// shape. The runtime merges such a map over the DSL-baked component params
+// with override-wins-on-top-level-key semantics, so a nested entry must be
+// flattened BEFORE the merge — otherwise the DSL's flat families win over
+// the override once NewParserComponent applies its own top-level-wins
+// flattening. Non-Parser entries and nil maps pass through untouched.
+func NormalizeParserConfigSetups(parserConfig map[string]any) map[string]any {
+	if parserConfig == nil {
+		return nil
+	}
+	for cpnID, raw := range parserConfig {
+		if !isParserComponent(cpnID, "") {
+			continue
+		}
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		parserConfig[cpnID] = schema.FlattenLegacyParserSetups(params)
+	}
+	return parserConfig
+}
+
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	if isExtractorComponent(cpnID, "") {
@@ -144,6 +175,11 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 		if IsChunkerComponent(s.CpnID) {
 			keys["enable_children"] = struct{}{}
+			// parent_child is the component-scoped home of the parent/child
+			// split setting; it must survive cleaning so the chunker node keeps
+			// it (ApplyParentChildChunkerConfig derives children_delimiters
+			// from it). No flat top-level parent_child is accepted.
+			keys["parent_child"] = struct{}{}
 		}
 		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
 			keys[k] = struct{}{}
@@ -171,6 +207,13 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		}
 		if componentNames[key] == "GeneralChunker" {
 			params = normalizeGeneralComponentParams(params)
+		}
+		// Legacy parser_config rows (or canvases) saved by the Python-era
+		// frontend nest the Parser's setups under a "setups" key; lift them
+		// before filtering, otherwise the families are dropped as unknown
+		// params against the flat DSL schema keys.
+		if isParserComponent(key, componentNames[key]) {
+			params = schema.FlattenLegacyParserSetups(params)
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
 		if isExtractorComponent(key, "") {
@@ -317,34 +360,33 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the
-// top-level parent_child setting unless the request explicitly configures the
-// chunker itself.
+// parent_child setting scoped onto each chunker component. The setting must live
+// as a "parent_child" sub-object on the chunker node itself (component-scoped);
+// flat top-level parent_child keys are not accepted.
 func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map[string]interface{}) {
-	parentChild, ok := rawConfig["parent_child"].(map[string]interface{})
-	if !ok {
-		return
-	}
-	componentConfig["parent_child"] = parentChild
-	useParentChild, _ := parentChild["use_parent_child"].(bool)
-	childrenDelimiters := []string{}
-	if useParentChild {
-		if delimiter, ok := parentChild["children_delimiter"].(string); ok {
-			childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
-		}
-	}
-
 	for componentID, value := range componentConfig {
 		if !IsChunkerComponent(componentID) {
 			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		parentChild, ok := params["parent_child"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		useParentChild, _ := parentChild["use_parent_child"].(bool)
+		childrenDelimiters := []string{}
+		if useParentChild {
+			if delimiter, ok := parentChild["children_delimiter"].(string); ok {
+				childrenDelimiters = parserchunk.ParseDelimiterField(delimiter)
+			}
 		}
 		if requested, ok := rawConfig[componentID].(map[string]interface{}); ok {
 			if _, provided := requested["children_delimiters"]; provided {
 				continue
 			}
-		}
-		params, ok := value.(map[string]interface{})
-		if !ok {
-			continue
 		}
 		params["children_delimiters"] = childrenDelimiters
 	}

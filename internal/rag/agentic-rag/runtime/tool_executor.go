@@ -1983,7 +1983,7 @@ func passageFromChunk(c map[string]any) map[string]any {
 // caller sits in the parent agentic_rag package (agentic_rag.go), not
 // inside retrieval.
 func PublishReferences(ctx context.Context, kb *Kbinfos) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return
 	}
@@ -2041,11 +2041,11 @@ func (r *RuntimeRetriever) Retrieve(ctx context.Context, req RetrieveRequest) ([
 		SimilarityThreshold:      req.SimilarityThreshold,
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		TenantID:                 req.TenantID,
+		MetaDataFilter:           req.MetaDataFilter,
 		RankFeature:              &req.RankFeature,
-		// ExcludeCompiled maps Python hybrid_search's
-		// must_not={"exists":"compile_kwd"} onto the runtime request's
-		// OnlyOriginalText (the "no compile_kwd" exclusion).
-		OnlyOriginalText: req.ExcludeCompiled,
+		// Python hybrid_search always excludes compile_kwd rows from the base
+		// retrieval; use_compiled controls a separate expansion step.
+		ExcludeCompiled: req.ExcludeCompiled,
 	})
 	if err != nil {
 		return nil, err
@@ -2096,7 +2096,7 @@ func chunksToMaps(chunks []runtime.RetrievalChunk) []map[string]any {
 // what CanvasState.GetVar exposes. Exported so the agentic_rag package's Run can call
 // it.
 func TenantIDFromContext(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}
