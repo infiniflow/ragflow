@@ -607,8 +607,7 @@ func main() {
 
 	// Initialize database. The migrate mode stops here: it needs neither the
 	// downgrade check nor any of the engines started below, so it can run
-	// before any server mode boots (see docker/entrypoint-go.sh and
-	// docker/launch_backend_service.sh).
+	// before any server mode boots (see docker/entrypoint-go.sh).
 	migrate := *arguments.mode == "migrate"
 	if migrate {
 		common.Info("Running database migrations")

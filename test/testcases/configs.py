@@ -39,7 +39,7 @@ def _config_value(name: str, default: str | None = None) -> str | None:
     return os.getenv(name) or _docker_env_value(name) or default
 
 
-API_PROXY_SCHEME = _config_value("API_PROXY_SCHEME", "python")
+API_PROXY_SCHEME = _config_value("API_PROXY_SCHEME", "go")
 IS_GO_PROXY = API_PROXY_SCHEME == "go"
 SDK_UNAUTHORIZED_ERROR_MESSAGE = "Invalid access token" if IS_GO_PROXY else "<Unauthorized '401: Unauthorized'>"
 
