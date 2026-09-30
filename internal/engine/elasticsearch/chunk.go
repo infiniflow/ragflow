@@ -1997,6 +1997,31 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			}
 			continue
 		}
+		if k == "knowledge_graph_kwd" {
+			var graphTypeClauses []interface{}
+			for _, field := range []string{"type_kwd", "knowledge_graph_kwd"} {
+				switch val := v.(type) {
+				case []interface{}:
+					if len(val) > 0 {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"terms": map[string]interface{}{field: val}})
+					}
+				case []string:
+					if len(val) > 0 {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"terms": map[string]interface{}{field: val}})
+					}
+				case string:
+					if val != "" {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"term": map[string]interface{}{field: val}})
+					}
+				}
+			}
+			if len(graphTypeClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{"bool": map[string]interface{}{
+					"should": graphTypeClauses, "minimum_should_match": 1,
+				}})
+			}
+			continue
+		}
 		if k == "id" {
 			if v == nil || v == "" {
 				continue

@@ -2505,6 +2505,33 @@ func floatsEqual(a, b float64) bool {
 	return diff < 1e-9
 }
 
+func buildGraphTypeFilterCondition(value interface{}) string {
+	var values []string
+	switch val := value.(type) {
+	case []string:
+		values = val
+	case []interface{}:
+		for _, item := range val {
+			values = append(values, fmt.Sprintf("%v", item))
+		}
+	case string:
+		values = []string{val}
+	default:
+		values = []string{fmt.Sprintf("%v", value)}
+	}
+	conditions := make([]string, 0, len(values)*2)
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		conditions = append(conditions,
+			keywordFilterCondition("type_kwd", value),
+			fmt.Sprintf("knowledge_graph_kwd='%s'", escapeFilterValue(value)),
+		)
+	}
+	return joinBalanced(conditions, " OR ")
+}
+
 // equivalentConditionToStr converts a condition map to an Infinity filter string
 func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
@@ -2537,6 +2564,13 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle exists specially (without table schema, use string comparison)
 		if k == "exists" {
 			cond = append(cond, fmt.Sprintf("%v!=''", v))
+			continue
+		}
+
+		if k == "knowledge_graph_kwd" {
+			if graphTypeCondition := buildGraphTypeFilterCondition(v); graphTypeCondition != "" {
+				cond = append(cond, graphTypeCondition)
+			}
 			continue
 		}
 
