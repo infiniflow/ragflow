@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 5
 title: Database Change Log
 sidebar_label: Database Change Log
 slug: /database_change_log
@@ -37,7 +37,7 @@ Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/b
 | `v1.0.0-rc1.dev1` | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
 | `v1.0.0-rc2.dev1` | Delete the retired `raptor` and `graphrag` sections from `knowledgebase.parser_config`                       | `knowledgebaseParserConfigTargetVersion` |
 
-The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
+The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v0.27.2` step, and a database at or above `v0.27.2` runs neither.
 
 ---
 
@@ -52,7 +52,7 @@ The two tenant model steps are cumulative: a database at `v0.26.0` still runs th
 | `tenant_model_instance` | Created if missing. Columns: `id` (PK), `instance_name`, `provider_id`, `api_key`, `status`, `extra`, base timestamps.                                                   |
 | `tenant_model`          | Created if missing. Columns: `id` (PK), `model_name`, `provider_id`, `instance_id`, `model_type`, `status`, `extra`, base timestamps.                                    |
 
-The three tables are created only when the legacy `tenant_llm` table exists and the target table does not, mirroring the `CREATE TABLE IF NOT EXISTS` the Python stages run. Existing tables are never altered by this step: `tenant_model.model_type` deliberately keeps the text shape the Python migration left behind so the `v1.0.0-rc1` merge can still read the legacy model names.
+The three tables are created only when the legacy `tenant_llm` table exists and the target table does not, mirroring the `CREATE TABLE IF NOT EXISTS` the Python stages run. Existing tables are never altered by this step: `tenant_model.model_type` deliberately keeps the text shape the Python migration left behind so the `v0.27.2` merge can still read the legacy model names.
 
 ### Data migration
 
@@ -93,7 +93,7 @@ On success the step writes `v0.27.2` into the version marker.
 
 ---
 
-## v1.0.0-rc1.dev1
+## v1.0.0-rc1
 
 This step only prepares the schema owned by `v1.0.0-rc1`; dropping the legacy payload columns is out of its scope.
 
