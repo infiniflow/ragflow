@@ -1719,18 +1719,24 @@ def _build_cks(sections, delimiter):
         document order and swapping context_above / context_below in
         _add_context() (which decides "above"/"below" by array position).
         """
-        nonlocal seg
+        nonlocal seg, seg_images, seg_image
         if seg and seg.strip():
             s = seg.strip()
-            cks.append(
-                {
-                    "text": s,
-                    "image": None,
-                    "ck_type": "text",
-                    "tk_nums": num_tokens_from_string(s),
-                }
-            )
+            ck_dict = {
+                "text": s,
+                "image": seg_image,
+                "ck_type": "text",
+                "tk_nums": num_tokens_from_string(s),
+            }
+            if seg_images:
+                ck_dict["images"] = dict(seg_images)
+            cks.append(ck_dict)
         seg = ""
+        seg_images = {}
+        seg_image = None
+
+    seg_images = {}
+    seg_image = None
 
     for text, image, table in sections:
         # normalize text: ensure string and prepend newline for continuity
@@ -1759,25 +1765,26 @@ def _build_cks(sections, delimiter):
             # Check if this is an inline image with markdown tag
             fig_tags = re.findall(r"!\[.*?\]\(fig:([^\)]+)\)", text)
             if fig_tags:
-                if seg and seg.strip():
-                    text = seg.strip() + "\n" + text.strip()
-                    seg = ""
-                images_dict = {tag: image for tag in fig_tags}
+                # Add to text stream so inline image tags remain part of the text chunks
+                seg = (seg + "\n" + text) if seg else text
+                seg_images.update({tag: image for tag in fig_tags})
+                if not seg_image:
+                    seg_image = image
+                # ALSO emit standalone image chunk for VLM description & image preview
+                idx = len(cks)
                 cks.append(
                     {
                         "text": text,
                         "image": image,
-                        "images": images_dict,
-                        "ck_type": "text",
+                        "ck_type": "image",
                         "tk_nums": num_tokens_from_string(text),
                     }
                 )
+                images.append(idx)
                 continue
             else:
                 # Standalone image chunk (text kept as-is for context)
-                if seg and seg.strip():
-                    text = seg.strip() + "\n" + text.strip()
-                    seg = ""
+                _flush_seg()
                 idx = len(cks)
                 cks.append(
                     {
@@ -1800,32 +1807,12 @@ def _build_cks(sections, delimiter):
                 # ① matched delimiter (exact capture; do not strip — wrapped
                 # whitespace delimiters such as `` ` ` `` or `\n` must match here)
                 if re.fullmatch(split_pattern, sub_sec):
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    _flush_seg()
                     continue
 
                 # ② empty or whitespace-only ordinary segment → flush current buffer
                 if not sub_sec.strip():
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    _flush_seg()
                     continue
 
                 # ③ normal text content → accumulate
