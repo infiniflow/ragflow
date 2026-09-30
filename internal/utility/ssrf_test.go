@@ -17,9 +17,16 @@
 package utility
 
 import (
-	"ragflow/internal/common"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"ragflow/internal/common"
 )
 
 func TestAssertURLSafe(t *testing.T) {
@@ -196,3 +203,131 @@ func TestAssertURLSafe(t *testing.T) {
 type mockErr struct{ s string }
 
 func (e *mockErr) Error() string { return e.s }
+
+// TestPinnedHTTPClientRedirectRefusesNonPublicHop covers the regression the
+// issue flagged: a host passes ValidateAndServe and replies 302 to a
+// loopback / private address. Before the fix the client followed the hop
+// through the un-pinned fallback DialContext and the internal server saw
+// the request. The redirect must now be refused by CheckRedirect.
+//
+// Setup:
+//   - server A (the "validated" public host) replies 302 → server B's URL.
+//   - server B is the "internal" target the guard must reject.
+//
+// LookupHost is stubbed so every name resolves to 127.0.0.1 — that makes
+// the redirect target fail AssertURLSafe ("non-public address") without
+// any DNS traffic. AllowAnyHostForTest is left at its zero value so the
+// public-IP check runs.
+func TestPinnedHTTPClientRedirectRefusesNonPublicHop(t *testing.T) {
+	orig := common.LookupHost
+	defer func() { common.LookupHost = orig }()
+	origAllow := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = false
+	defer func() { common.AllowAnyHostForTest = origAllow }()
+
+	internalHit := atomic.Int32{}
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		internalHit.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer internal.Close()
+
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", internal.URL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer public.Close()
+
+	common.LookupHost = func(host string) ([]string, error) {
+		return []string{"127.0.0.1"}, nil
+	}
+
+	// PinnedHTTPClient itself does not run AssertURLSafe on the seed URL
+	// — the caller is expected to have done that. We seed with the loopback
+	// IP so the dial rewrite is a no-op for the first hop (which still hits
+	// the httptest server). CheckRedirect then runs AssertURLSafe on the
+	// redirect target's URL, which fails because the resolved IP is private.
+	publicParsed, _ := url.Parse(public.URL)
+	client := PinnedHTTPClient(publicParsed.Hostname(), "127.0.0.1", 5*time.Second)
+	resp, err := client.Get(public.URL)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatalf("expected error from refused redirect, got status %d", resp.StatusCode)
+	}
+	if !strings.Contains(err.Error(), "non-public address") {
+		t.Fatalf("expected non-public address error, got: %v", err)
+	}
+	if got := internalHit.Load(); got != 0 {
+		t.Errorf("internal server received %d requests, want 0 (redirect must be refused)", got)
+	}
+}
+
+// TestPinnedHTTPClientRedirectFollowsPublicHopPinned pins the "happy
+// path": a redirect chain proceeds through public hops. Both legs resolve
+// to a public IP under the test stub. The redirect target must be
+// followed AND dialed through the per-client pin table (so the redirect
+// hop cannot race a DNS rebinding to a private address).
+//
+// To assert the redirect pin is what actually routes the second hop, each
+// server gets its own synthetic hostname (both still listen on loopback via
+// the stubbed LookupHost). The seed pin only covers "a.invalid", so reaching
+// "b.invalid" is possible only because CheckRedirect recorded its pin:
+// without that entry the dial would fall back to real DNS for the reserved
+// ".invalid" TLD, which never resolves, and the second server would see zero
+// requests.
+func TestPinnedHTTPClientRedirectFollowsPublicHopPinned(t *testing.T) {
+	orig := common.LookupHost
+	defer func() { common.LookupHost = orig }()
+	origAllow := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true // exercise the path; AssertURLSafe must still resolve and parse.
+	defer func() { common.AllowAnyHostForTest = origAllow }()
+
+	var bDialed atomic.Int32
+	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bDialed.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer b.Close()
+	bURL := rewriteTestHost(t, b.URL, "b.invalid")
+
+	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", bURL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer a.Close()
+
+	common.LookupHost = func(host string) ([]string, error) {
+		return []string{"127.0.0.1"}, nil
+	}
+
+	// Distinct hostnames keep the seed pin from covering the redirect target:
+	// only the pin recorded in CheckRedirect can route the second dial.
+	aURL := rewriteTestHost(t, a.URL, "a.invalid")
+
+	aParsed, _ := url.Parse(aURL)
+	client := PinnedHTTPClient(aParsed.Hostname(), "127.0.0.1", 5*time.Second)
+	resp, err := client.Get(aURL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200 (redirect should follow)", resp.StatusCode)
+	}
+	if got := bDialed.Load(); got != 1 {
+		t.Errorf("hop target received %d requests, want 1", got)
+	}
+}
+
+// rewriteTestHost keeps a test server's port but presents it under a
+// synthetic hostname, so a client pin keyed on the host cannot be satisfied
+// by an unrelated server that happens to share the loopback address.
+func rewriteTestHost(t *testing.T, rawURL, host string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse %s: %v", rawURL, err)
+	}
+	parsed.Host = net.JoinHostPort(host, parsed.Port())
+	return parsed.String()
+}
