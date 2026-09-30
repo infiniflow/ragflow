@@ -227,10 +227,12 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 // ValidateParserConfig validates the shared REST parser_config schema. Flat
 // (non-component-scoped) keys are no longer rejected: they are silently dropped
 // because downstream consumers never read them. The size limit is still
-// enforced.
-func ValidateParserConfig(parserConfig map[string]interface{}) error {
-	DropUnscopedParserConfigKeys(parserConfig)
-	return validateDatasetParserConfigSize(parserConfig)
+// enforced. It returns the names of the dropped (unscoped) keys so the caller
+// can log the silent drop; this is the single drop point shared by every entry
+// path, so callers should not call DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // ValidateDocumentParserConfig validates the parser_config attached to a
@@ -238,10 +240,11 @@ func ValidateParserConfig(parserConfig map[string]interface{}) error {
 // every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
 // or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
 // nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
-// (not kept) and the size limit is enforced.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	DropUnscopedParserConfigKeys(parserConfig)
-	return validateDatasetParserConfigSize(parserConfig)
+// (not kept) and the size limit is enforced. It returns the dropped key names
+// for logging, mirroring ValidateParserConfig.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its

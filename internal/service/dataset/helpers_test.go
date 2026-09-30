@@ -253,8 +253,12 @@ func TestDropUnscopedParserConfigKeys_DropsFlatKeys(t *testing.T) {
 
 func TestValidateParserConfig_DropsFlatKeys(t *testing.T) {
 	flat := map[string]any{"chunk_token_num": float64(128), "delimiter": "\n"}
-	if err := ValidateParserConfig(flat); err != nil {
+	dropped, err := ValidateParserConfig(flat)
+	if err != nil {
 		t.Fatalf("expected nil after dropping flat keys, got %v", err)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("expected 2 dropped keys, got %#v", dropped)
 	}
 	if len(flat) != 0 {
 		t.Fatalf("expected flat keys to be dropped, got %#v", flat)
@@ -264,8 +268,12 @@ func TestValidateParserConfig_DropsFlatKeys(t *testing.T) {
 		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": float64(512)},
 		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
 	}
-	if err := ValidateParserConfig(scoped); err != nil {
+	dropped, err = ValidateParserConfig(scoped)
+	if err != nil {
 		t.Fatalf("expected nil for component-scoped keys, got %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("expected no dropped keys for component-scoped config, got %#v", dropped)
 	}
 	if len(scoped) != 2 {
 		t.Fatalf("expected component-scoped keys preserved, got %#v", scoped)
@@ -285,12 +293,69 @@ func TestValidateDocumentParserConfig_DropsFlatKeys(t *testing.T) {
 		for k, v := range flat {
 			cfg[k] = v
 		}
-		if err := ValidateDocumentParserConfig(cfg); err != nil {
+		dropped, err := ValidateDocumentParserConfig(cfg)
+		if err != nil {
 			t.Fatalf("expected nil after dropping flat key %#v, got %v", flat, err)
+		}
+		if len(dropped) != 1 {
+			t.Fatalf("expected exactly 1 dropped key for %#v, got %#v", flat, dropped)
 		}
 		if len(cfg) != 0 {
 			t.Fatalf("expected flat key dropped, got %#v", cfg)
 		}
+	}
+}
+
+// TestValidateParserConfig_ReturnsDroppedKeys asserts that ValidateParserConfig
+// returns the names of the flat (unscoped) keys it dropped so the caller can log
+// the silent drop. This is the single drop point shared by every entry path.
+func TestValidateParserConfig_ReturnsDroppedKeys(t *testing.T) {
+	cfg := map[string]any{
+		"chunk_token_num": float64(128),
+		"delimiter":       "\n",
+		"Parser:abc":      map[string]any{"chunk_size": float64(512)},
+	}
+	dropped, err := ValidateParserConfig(cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	sort.Strings(dropped)
+	want := []string{"chunk_token_num", "delimiter"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %#v, want %#v", dropped, want)
+	}
+	if _, ok := cfg["Parser:abc"]; !ok {
+		t.Error("component-scoped Parser:abc was dropped")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
+	}
+}
+
+// TestValidateDocumentParserConfig_ReturnsDroppedKeys mirrors the dataset
+// variant for the document path: the function drops the flat keys and reports
+// them, preserving component-scoped nodes.
+func TestValidateDocumentParserConfig_ReturnsDroppedKeys(t *testing.T) {
+	cfg := map[string]any{
+		"metadata":                     map[string]any{},
+		"parent_child":                 map[string]any{},
+		"File":                         map[string]any{},
+		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
+	}
+	dropped, err := ValidateDocumentParserConfig(cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	sort.Strings(dropped)
+	want := []string{"File", "metadata", "parent_child"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %#v, want %#v", dropped, want)
+	}
+	if _, ok := cfg["Extractor:AutoExtractDefault"]; !ok {
+		t.Error("component-scoped Extractor was dropped")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
 	}
 }
 
