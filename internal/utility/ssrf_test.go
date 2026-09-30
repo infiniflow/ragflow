@@ -17,6 +17,7 @@
 package utility
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -267,11 +268,13 @@ func TestPinnedHTTPClientRedirectRefusesNonPublicHop(t *testing.T) {
 // followed AND dialed through the per-client pin table (so the redirect
 // hop cannot race a DNS rebinding to a private address).
 //
-// To assert the pin is honored, the test deliberately switches the
-// stubbed LookupHost to return a private IP for the redirect hop's host
-// AFTER CheckRedirect has recorded the pin. If the client fell back to
-// plain DNS on the second dial, the stub's new answer would steer it
-// to a private IP and the second server would never see the request.
+// To assert the redirect pin is what actually routes the second hop, each
+// server gets its own synthetic hostname (both still listen on loopback via
+// the stubbed LookupHost). The seed pin only covers "a.invalid", so reaching
+// "b.invalid" is possible only because CheckRedirect recorded its pin:
+// without that entry the dial would fall back to real DNS for the reserved
+// ".invalid" TLD, which never resolves, and the second server would see zero
+// requests.
 func TestPinnedHTTPClientRedirectFollowsPublicHopPinned(t *testing.T) {
 	orig := common.LookupHost
 	defer func() { common.LookupHost = orig }()
@@ -285,9 +288,10 @@ func TestPinnedHTTPClientRedirectFollowsPublicHopPinned(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer b.Close()
+	bURL := rewriteTestHost(t, b.URL, "b.invalid")
 
 	a := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Location", b.URL)
+		w.Header().Set("Location", bURL)
 		w.WriteHeader(http.StatusFound)
 	}))
 	defer a.Close()
@@ -296,9 +300,13 @@ func TestPinnedHTTPClientRedirectFollowsPublicHopPinned(t *testing.T) {
 		return []string{"127.0.0.1"}, nil
 	}
 
-	aParsed, _ := url.Parse(a.URL)
+	// Distinct hostnames keep the seed pin from covering the redirect target:
+	// only the pin recorded in CheckRedirect can route the second dial.
+	aURL := rewriteTestHost(t, a.URL, "a.invalid")
+
+	aParsed, _ := url.Parse(aURL)
 	client := PinnedHTTPClient(aParsed.Hostname(), "127.0.0.1", 5*time.Second)
-	resp, err := client.Get(a.URL)
+	resp, err := client.Get(aURL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,4 +317,17 @@ func TestPinnedHTTPClientRedirectFollowsPublicHopPinned(t *testing.T) {
 	if got := bDialed.Load(); got != 1 {
 		t.Errorf("hop target received %d requests, want 1", got)
 	}
+}
+
+// rewriteTestHost keeps a test server's port but presents it under a
+// synthetic hostname, so a client pin keyed on the host cannot be satisfied
+// by an unrelated server that happens to share the loopback address.
+func rewriteTestHost(t *testing.T, rawURL, host string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse %s: %v", rawURL, err)
+	}
+	parsed.Host = net.JoinHostPort(host, parsed.Port())
+	return parsed.String()
 }
