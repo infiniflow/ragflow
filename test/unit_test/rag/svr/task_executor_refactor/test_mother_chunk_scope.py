@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+# Initialize settings before search to avoid the settings/redis_conn import cycle.
+import common.settings  # noqa: F401
 from rag.nlp.search import Dealer
 from rag.svr.task_executor_refactor.chunk_service import ChunkService, make_mother_chunk_id
 

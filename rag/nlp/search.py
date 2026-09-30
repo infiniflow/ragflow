@@ -33,6 +33,8 @@ from common import settings
 
 from common.misc_utils import thread_pool_exec
 
+logger = logging.getLogger(__name__)
+
 
 def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
     """Build the Infinity weighted-sum expression from the vector weight."""
@@ -1131,7 +1133,7 @@ class Dealer:
                 chunks.extend(cks)
                 continue
             if not _parent_matches_children(chunk, cks):
-                logging.warning(
+                logger.warning(
                     "Parent chunk '%s' metadata does not match its child scope; falling back to %d child chunk(s).",
                     id,
                     len(cks),
