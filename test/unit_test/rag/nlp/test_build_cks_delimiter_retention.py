@@ -58,26 +58,55 @@ def test_bare_delimiter_retained_in_text_chunk():
 
 
 def test_lossless_reproduces_source_across_sections():
-    # Two text sections with sentence punctuation; each section survives with
-    # its delimiter attached. (Consecutive text sections are buffered into one
-    # chunk by _build_cks, so the inter-section newline is preserved — the
-    # delimiters themselves are never dropped.)
+    # Two text sections with sentence punctuation; each delimiter splits the
+    # text into its own chunk (the preceding text + the delimiter), and the
+    # delimiter punctuation is never dropped. #20384 regressed this by
+    # accumulating the delimiter into the buffer without ever flushing, which
+    # collapsed every section into a single chunk — so we now pin the chunk
+    # count, not just the concatenated text.
     cks, _, _, _ = _build_cks(
         [("A。B", None, None), ("C！D", None, None)],
         "。！",
     )
+    texts = _texts(cks)
+    # The pending buffer carries across sections (there is no per-section
+    # flush), so "A。B" -> ["A。", "B"] and "C！D" -> ["C！", "D"] combine with
+    # the inter-section newline into ["A。", "B\nC！", "D"] — three text chunks,
+    # never the single chunk the #20384 regression collapsed everything into.
+    assert len(texts) == 3, texts
     joined = _joined_texts(cks)
     assert "A。B" in joined, joined
     assert "C！D" in joined, joined
 
 
-def test_whitespace_between_delimiters_folded_no_empty_chunk():
-    # "a。 b" split on "。" — the whitespace between the delimiter and the next
-    # word is folded into the buffer, so no empty text chunk is emitted.
+def test_bare_delimiter_splits_into_multiple_chunks():
+    # Regression guard for the docx "不分块" bug (#20384 follow-up): a bare
+    # delimiter must flush and start a fresh chunk instead of accumulating the
+    # whole section into one. With more than one delimiter the result must be
+    # more than one text chunk.
+    cks, _, _, has_custom = _build_cks(
+        [("first part。second part。third part", None, None)],
+        "。",
+    )
+    assert has_custom is False
+    texts = _texts(cks)
+    assert len(texts) > 1, texts
+    # Each emitted chunk except the last carries its trailing delimiter.
+    assert texts[0].endswith("。"), texts
+    assert _joined_texts(cks) == "first part。second part。third part", _joined_texts(cks)
+
+
+def test_whitespace_between_delimiters_no_empty_chunk():
+    # "a。 b" split on "。" — the whitespace-only segment between the delimiter
+    # and the next word must never produce an empty text chunk. The delimiter
+    # is retained and both words survive; inter-chunk whitespace may be
+    # normalized at the boundary (this is expected for chunking, not a defect).
     cks, _, _, _ = _build_cks([("a。 b", None, None)], "。")
     texts = _texts(cks)
     assert all(t.strip() for t in texts), texts
-    assert _joined_texts(cks) == "a。 b", _joined_texts(cks)
+    joined = _joined_texts(cks)
+    assert "。" in joined, joined
+    assert "a" in joined and "b" in joined, joined
 
 
 def test_delimiter_before_table_is_retained_in_caption():
