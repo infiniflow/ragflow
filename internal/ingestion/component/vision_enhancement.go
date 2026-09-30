@@ -468,5 +468,6 @@ func defaultVisionChatInvoker(
 		thinking := false
 		config.Thinking = &thinking
 	}
-	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, config, nil)
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	return chatModel.ChatWithMessages(chatCtx, messages, config, nil)
 }

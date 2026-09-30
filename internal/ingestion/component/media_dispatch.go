@@ -236,7 +236,8 @@ func describeImage(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}
