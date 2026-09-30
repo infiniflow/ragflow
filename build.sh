@@ -92,6 +92,24 @@ _ensure_cl100k_table() {
         return 0
     fi
 
+    # Match the offline Go loader's explicit cache and model-asset locations.
+    local cache_name="9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
+    local candidate
+    local candidates=()
+    [ -z "${TIKTOKEN_CACHE_DIR:-}" ] || candidates+=("${TIKTOKEN_CACHE_DIR}/${cache_name}")
+    [ -z "${DATA_GYM_CACHE_DIR:-}" ] || candidates+=("${DATA_GYM_CACHE_DIR}/${cache_name}")
+    if [ -n "${MODEL_ASSETS_DIR:-}" ]; then
+        candidates+=("${MODEL_ASSETS_DIR}/cl100k_base.tiktoken")
+    fi
+    for candidate in "${candidates[@]}"; do
+        if [ -s "$candidate" ]; then
+            mkdir -p "$(dirname "$dest")"
+            cp "$candidate" "$dest"
+            echo "  cl100k_base.tiktoken → ${dest} (configured cache)"
+            return 0
+        fi
+    done
+
     if [ -s "$sys_copy" ]; then
         mkdir -p "$(dirname "$dest")"
         cp "$sys_copy" "$dest"
@@ -105,13 +123,14 @@ _ensure_cl100k_table() {
     local tmp="${dest}.download"
     mkdir -p "$(dirname "$dest")"
     if command -v curl >/dev/null 2>&1; then
-        if curl -fsSL -o "$tmp" "$CL100K_TABLE_URL"; then
+        if curl -fsSL --connect-timeout 15 --max-time 120 -o "$tmp" "$CL100K_TABLE_URL"; then
             mv "$tmp" "$dest"
             echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
             return 0
         fi
-    elif command -v wget >/dev/null 2>&1; then
-        if wget -q -O "$tmp" "$CL100K_TABLE_URL"; then
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        if wget -q --timeout=30 --tries=1 -O "$tmp" "$CL100K_TABLE_URL"; then
             mv "$tmp" "$dest"
             echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
             return 0

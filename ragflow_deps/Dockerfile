@@ -1,10 +1,12 @@
-# This builds an image that contains the resources needed by Dockerfile
-#
+# Build from the repository root after running download_deps.py:
+# docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest .
 FROM scratch
 
-# Copy resources from the prepared build context.
-COPY chromedriver-linux64-121-0-6167-85 chrome-linux64-121-0-6167-85 cl100k_base.tiktoken libssl1.1_1.1.1f-1ubuntu2_amd64.deb libssl1.1_1.1.1f-1ubuntu2_arm64.deb tika-server-standard-3.3.0.jar tika-server-standard-3.3.0.jar.md5 libssl*.deb uv-x86_64-unknown-linux-gnu.tar.gz uv-aarch64-unknown-linux-gnu.tar.gz stagehand-server-v3-linux-x64 stagehand-server-v3-linux-arm64 /
+COPY ragflow_deps/cl100k_base.tiktoken ragflow_deps/stagehand-server-v3-linux-x64 ragflow_deps/stagehand-server-v3-linux-arm64 /
 
-COPY nltk_data /nltk_data
+COPY rag/res/deepdoc/det.ort rag/res/deepdoc/layout.ort rag/res/deepdoc/tsr.ort rag/res/deepdoc/rec.ort rag/res/deepdoc/ocr.res /huggingface.co/InfiniFlow/deepdoc/
 
-COPY huggingface.co /huggingface.co
+COPY ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model /huggingface.co/BAAI/bge-m3/
+COPY ragflow_deps/huggingface.co/BAAI/bge-large-en-v1.5/vocab.txt /huggingface.co/BAAI/bge-large-en-v1.5/
+COPY ragflow_deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json /huggingface.co/Qwen/Qwen3-Embedding-0.6B/
+COPY ragflow_deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json /huggingface.co/intfloat/e5-mistral-7b-instruct/

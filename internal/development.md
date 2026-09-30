@@ -44,7 +44,15 @@ uv run ragflow_deps/download_deps.py
 
 Install `uv` before running the downloader; it installs the script's declared Python dependencies.
 
-This downloader provisions Go native libraries, `.ort` weights, and model tokenizer assets. `build.sh` provisions the `cl100k_base.tiktoken` table during Go builds and tests.
+This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64. `build.sh` can also provision the BPE table from explicit caches (`TIKTOKEN_CACHE_DIR`, `DATA_GYM_CACHE_DIR`, `MODEL_ASSETS_DIR`), system resources, or the network; Go builds stop when provisioning fails.
+
+Build the Go resource image from the repository root after preparing these files:
+
+```shell
+docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest .
+```
+
+The image contains Go DeepDoc weights, runtime tokenizer assets, the BPE table, and stagehand binaries. `ragflow_deps/Dockerfile.dockerignore` limits its build context to those resources.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
@@ -127,7 +135,7 @@ This downloader provisions Go native libraries, `.ort` weights, and model tokeni
 >   `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar — the same source of
 >   truth the download scripts use. If they differ (the archive was re-issued
 >   under the same tag/asset name, or an older download is present) the build
->   fails fast with `Error: ONNX Runtime archive ... is stale`, printing the
+>   emits a warning, printing the
 >   expected/actual sha256 and the exact refresh command
 >   (`rm -f <zip>` + `uv run ragflow_deps/download_deps.py`). CI seeds
 >   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
@@ -179,6 +187,8 @@ supersedes the other, so do not delete one to "clean up".
 
 `download_deps.py` (§1.4) fetches the five required files — four `.ort` plus
 `ocr.res` — into `internal/rag/res/deepdoc/`. Python `.onnx` weights require separate provisioning.
+The resource image packages these files under
+`/huggingface.co/InfiniFlow/deepdoc/` for the Go runtime image.
 
 Auto-discovery is **relative to the server process's working directory**:
 `resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes

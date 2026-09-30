@@ -19,11 +19,9 @@ package tokenizer
 // Offline BPE table loading for tiktoken.
 //
 // RAGFlow ships the cl100k_base table on disk (Dockerfile copies it from the
-// dependency image; build.sh provisions it under ragflow_deps/ for local Go
-// builds). tiktoken-go's
-// stock loader instead downloads it over HTTP and
-// relies on TIKTOKEN_CACHE_DIR, which the Go server never inherits, so a
-// missing table degrades every token count to 0. This loader resolves the
+// dependency image; download_deps.py and build.sh provision it under
+// ragflow_deps/ for local Go builds). tiktoken-go's stock loader downloads
+// it over HTTP. This loader honours explicitly configured caches and resolves the
 // table from disk only: it performs no network I/O, and when nothing is found
 // it reports every path it tried.
 

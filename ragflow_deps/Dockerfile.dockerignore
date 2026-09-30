@@ -1,0 +1,13 @@
+**
+!rag/res/deepdoc/det.ort
+!rag/res/deepdoc/layout.ort
+!rag/res/deepdoc/tsr.ort
+!rag/res/deepdoc/rec.ort
+!rag/res/deepdoc/ocr.res
+!ragflow_deps/cl100k_base.tiktoken
+!ragflow_deps/stagehand-server-v3-linux-x64
+!ragflow_deps/stagehand-server-v3-linux-arm64
+!ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model
+!ragflow_deps/huggingface.co/BAAI/bge-large-en-v1.5/vocab.txt
+!ragflow_deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+!ragflow_deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json

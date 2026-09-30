@@ -64,6 +64,8 @@ python3 -m venv /tmp/ragflow-go-download-venv
 
 The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `internal/rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
 
+It also downloads `ragflow_deps/cl100k_base.tiktoken` and the embedding tokenizer assets, and installs the stagehand driver into `${XDG_CACHE_HOME:-$HOME/.cache}/stagehand/lib/go_<SDK version>/`. Native archives support Linux x86_64.
+
 The isolated download environment can be removed after the resources have been prepared.
 
 Build the C++ bindings and Go binaries:
@@ -72,10 +74,11 @@ Build the C++ bindings and Go binaries:
 bash build.sh --all
 ```
 
-For a smaller production binary, use `bash build.sh --strip --all` instead. The build script also tries to place `ragflow_deps/cl100k_base.tiktoken` in the repository. If it reports that the BPE table could not be provisioned, download it before starting the server:
+For a smaller production binary, use `bash build.sh --strip --all` instead. If the BPE table is missing, the build script first checks `TIKTOKEN_CACHE_DIR`, `DATA_GYM_CACHE_DIR`, `MODEL_ASSETS_DIR`, and the system resource directory, then tries downloading it. A Go build stops if provisioning fails. Download the table and rerun the build:
 
 ```bash
 curl -fsSL -o ragflow_deps/cl100k_base.tiktoken https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
+bash build.sh --all
 ```
 
 Check that the newly built executable can load and parse API arguments:
@@ -87,6 +90,14 @@ Check that the newly built executable can load and parse API arguments:
 It should print API usage information and may exit with status 1. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
 The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
+
+To prepare the resource image used by the Go Dockerfile, run the downloader above, then build from the repository root:
+
+```bash
+docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest .
+```
+
+Its dedicated `Dockerfile.dockerignore` includes only model and tokenizer resources and the stagehand binaries. The resource image contains the five Go DeepDoc files under `/huggingface.co/InfiniFlow/deepdoc/`; the Go Dockerfile copies them into the runtime model directory. Analyzer dictionaries and fonts are installed separately by the Go Dockerfile.
 
 ## 2. Start supporting services
 

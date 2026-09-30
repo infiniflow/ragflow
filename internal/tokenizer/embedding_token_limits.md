@@ -180,7 +180,7 @@ that declares an unavailable counter fails instead of being calibrated silently.
 
 | id | family / models | asset (SHA-1 pinned) | implementation |
 |---|---|---|---|
-| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `ragflow_deps/cl100k_base.tiktoken` (`build.sh --go`) | tiktoken-go + offline loader (`bpe_loader.go`) |
+| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `ragflow_deps/cl100k_base.tiktoken` (`download_deps.py` or `build.sh --go`) | tiktoken-go + offline loader (`bpe_loader.go`) |
 | `xlmr-spm` | `bge-m3`, `multilingual-e5-*`, `m3e`, `gte-multilingual`, `jina-embeddings-v3` | `…/BAAI/bge-m3/sentencepiece.bpe.model` `7e88c49f…` | `spm.go`: Unigram Viterbi, byte fallback, NFKC + whitespace + charmap-lite |
 | `bert-wordpiece` | `bge-{large,base,small}-en-v1.5`, `bge-en-icl`, `e5-{base,large}-v2`, `gte-{base,large}`, `jina-embeddings-v2-*` | `…/BAAI/bge-large-en-v1.5/vocab.txt` `c3b41053…` | `wordpiece.go`: BertNormalizer + BertPreTokenizer + `##` longest-match |
 | `qwen-bpe` | `Qwen3-Embedding-*` | `…/Qwen/Qwen3-Embedding-0.6B/tokenizer.json` `e6592f4d…` | `bpe.go`: hand-written Split scanner, GPT-2 byte alphabet, BPE |
@@ -439,8 +439,9 @@ points at `<dir>`. The local `ragflow_deps/download_deps.py` puts the five Go
 DeepDoc files in `rag/res/deepdoc/`, outside that tree. To serve both asset types
 from one mounted directory, copy those five files into the DeepDoc path above;
 otherwise mount `rag/res/deepdoc/` separately and set `DEEPDOC_MODEL_DIR`.
-The published dependency image already contains the DeepDoc tree used by the
-runtime Dockerfiles. The layout and the precedence are pinned by tests:
+`ragflow_deps/Dockerfile` packages those local DeepDoc files under
+`/huggingface.co/InfiniFlow/deepdoc/` when built from the repository root.
+The layout and the precedence are pinned by tests:
 `internal/common/model_assets_test.go` for the candidate list, and
 `internal/tokenizer/asset_dir_test.go` for the end-to-end case (a child process with an
 unrelated working directory loads the SPM counter from the configured tree).
@@ -672,8 +673,8 @@ means "what the model does":
    against the model is not tagged in the catalog; it falls back to the calibrated
    path. Guessing a tag is the unsafe direction.
 2. **Nothing is hand-typed.** Fixtures and expected counts come from the model's
-   tokenizer; model tokenizer assets come from `download_deps.py`, and the cl100k
-   table is provisioned by `build.sh`. Both are SHA-1 pinned.
+   tokenizer; model tokenizer assets and the cl100k table come from `download_deps.py`.
+   `build.sh` also provisions cl100k for local builds. Both are SHA-1 pinned.
 3. **Equality, not resemblance** (see above), and the dangerous direction
    (under-count) is the one the tests are shaped around.
 4. **Every approximation is named** in §Known approximations together with the

@@ -36,8 +36,8 @@ target/
 # ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
 # Excluding the directory contents keeps the main build context small
 # regardless of which resources are prepared for the dependency image.
-# The deps image is built from this directory with:
-#   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
+# The deps image uses the repository root and its own Dockerfile.dockerignore:
+#   docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps .
 # The Go downloader is re-included because build.sh reads its ORT version pin.
 # Re-including requires NOT excluding the directory itself.
 ragflow_deps/*

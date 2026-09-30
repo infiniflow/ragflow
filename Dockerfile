@@ -12,33 +12,28 @@ ARG GITEE_TOKEN
 
 WORKDIR /ragflow
 
-# Copy model assets from the prepared dependency image.
-# layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
-# exclude them from the tar extract and symlink them to layout.onnx instead,
-# saving ~219MB in the image.
+# Copy only the five models used by the in-process Go DeepDoc backend.
 RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    tar --exclude='.*' \
-        --exclude='layout.laws.onnx' \
-        --exclude='layout.manual.onnx' \
-        --exclude='layout.paper.onnx' \
-        --exclude='layout.onnx' \
-        --exclude='det.onnx' \
-        --exclude='rec.onnx' \
-        --exclude='tsr.onnx' \
-        --exclude='layout.laws.ort' \
-        --exclude='layout.manual.ort' \
-        --exclude='layout.paper.ort' \
-        -cf - \
-        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
-        /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
-    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
-    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.manual.onnx && \
-    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.paper.onnx
-    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.laws.ort && \
-    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.manual.ort && \
-    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.paper.ort
+    cp /huggingface.co/InfiniFlow/deepdoc/{det.ort,layout.ort,tsr.ort,rec.ort,ocr.res} /ragflow/internal/rag/res/deepdoc/
+
+# Pre-install the Browser component's local driver in the SDK's versioned cache.
+# Read the SDK version from go.mod so module upgrades cannot leave a stale path.
+COPY go.mod /tmp/ragflow-go.mod
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    set -eux; \
+    case "$(uname -m)" in \
+        x86_64) stagehand_arch=x64 ;; \
+        aarch64|arm64) stagehand_arch=arm64 ;; \
+        *) echo "Unsupported stagehand architecture" >&2; exit 1 ;; \
+    esac; \
+    stagehand_version="$(awk '$1 == "github.com/browserbase/stagehand-go/v3" {sub(/^v/, "", $2); print $2}' /tmp/ragflow-go.mod)"; \
+    test -n "$stagehand_version"; \
+    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
+    mkdir -p "$stagehand_cache_dir"; \
+    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" "$stagehand_cache_dir/"; \
+    chmod +x "$stagehand_cache_dir/stagehand-server-v3-linux-${stagehand_arch}"; \
+    rm /tmp/ragflow-go.mod
 
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously
