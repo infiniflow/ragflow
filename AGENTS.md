@@ -129,7 +129,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries, Go DeepDoc models, tokenizer assets, and `ragflow_deps/cl100k_base.tiktoken` come from `ragflow_deps/download_deps.py`; see `README_zh.md` for its isolated setup. The downloader installs stagehand into the SDK cache using the version in `go.mod`. `build.sh` also provisions the BPE table from configured caches, system resources, or the network. Build the Go resource image with `cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
+Native libraries, Go DeepDoc models, tokenizer assets, and `ragflow_deps/cl100k_base.tiktoken` come from `ragflow_deps/download_deps.py`; see `README_zh.md` for its isolated setup. The downloader installs stagehand into the SDK cache using the version in `go.mod`. Build the Go resource image with `cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
 
 ### Frontend
 ```bash

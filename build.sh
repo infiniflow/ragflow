@@ -73,8 +73,10 @@ _seed_from_system() {
 # NumTokensFromString / TrimContentToTokenLimit when it is absent: a deployment
 # that forgot the file must not silently zero every token count (see
 # internal/tokenizer/bpe_loader.go and failfast_test.go). CI provisions it in a
-# workflow step before running the Go tests; build.sh also provisions it for
-# local Go builds. Order mirrors CI: system pre-seed first, then the network.
+# workflow step before running the Go tests; build.sh does the same so the
+# documented local test commands are self-contained. Order mirrors CI: system
+# pre-seed first, then the network. A failure here is deliberately NOT fatal —
+# the loader stays the final gate, and its panic message names the file.
 CL100K_TABLE_URL="https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
 CL100K_TABLE_RELPATH="ragflow_deps/cl100k_base.tiktoken"
 SYSTEM_DEPS_TOKENIZER="/opt/ragflow_deps"
@@ -92,24 +94,6 @@ _ensure_cl100k_table() {
         return 0
     fi
 
-    # Match the offline Go loader's explicit cache and model-asset locations.
-    local cache_name="9b5ad71b2ce5302211f9c61530b329a4922fc6a4"
-    local candidate
-    local candidates=()
-    [ -z "${TIKTOKEN_CACHE_DIR:-}" ] || candidates+=("${TIKTOKEN_CACHE_DIR}/${cache_name}")
-    [ -z "${DATA_GYM_CACHE_DIR:-}" ] || candidates+=("${DATA_GYM_CACHE_DIR}/${cache_name}")
-    if [ -n "${MODEL_ASSETS_DIR:-}" ]; then
-        candidates+=("${MODEL_ASSETS_DIR}/cl100k_base.tiktoken")
-    fi
-    for candidate in "${candidates[@]}"; do
-        if [ -s "$candidate" ]; then
-            mkdir -p "$(dirname "$dest")"
-            cp "$candidate" "$dest"
-            echo "  cl100k_base.tiktoken → ${dest} (configured cache)"
-            return 0
-        fi
-    done
-
     if [ -s "$sys_copy" ]; then
         mkdir -p "$(dirname "$dest")"
         cp "$sys_copy" "$dest"
@@ -123,14 +107,13 @@ _ensure_cl100k_table() {
     local tmp="${dest}.download"
     mkdir -p "$(dirname "$dest")"
     if command -v curl >/dev/null 2>&1; then
-        if curl -fsSL --connect-timeout 15 --max-time 120 -o "$tmp" "$CL100K_TABLE_URL"; then
+        if curl -fsSL -o "$tmp" "$CL100K_TABLE_URL"; then
             mv "$tmp" "$dest"
             echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
             return 0
         fi
-    fi
-    if command -v wget >/dev/null 2>&1; then
-        if wget -q --timeout=30 --tries=1 -O "$tmp" "$CL100K_TABLE_URL"; then
+    elif command -v wget >/dev/null 2>&1; then
+        if wget -q -O "$tmp" "$CL100K_TABLE_URL"; then
             mv "$tmp" "$dest"
             echo "  cl100k_base.tiktoken → ${dest} (downloaded)"
             return 0
@@ -139,8 +122,8 @@ _ensure_cl100k_table() {
     rm -f "$tmp"
 
     echo -e "  ${YELLOW}cl100k_base BPE table NOT provisioned${NC} (offline, or the network is blocked)"
-    echo "  The Go API and Ingestor cannot start without this table, and token-counting"
-    echo "  tests will fail. Recover with any of:"
+    echo "  internal/tokenizer panics on a missing table by design, so every test that"
+    echo "  counts tokens will fail loudly. Recover with any of:"
     echo "    - re-run this command (a transient network error usually clears);"
     echo "    - curl -fsSL -o ${CL100K_TABLE_RELPATH} ${CL100K_TABLE_URL}"
     echo "    - or point TIKTOKEN_CACHE_DIR at a directory holding the table."
@@ -316,7 +299,7 @@ check_onnxruntime_deps() {
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
-        echo "    uv run ragflow_deps/download_deps.py" >&2
+        echo "    uv run python3 ragflow_deps/download_deps.py" >&2
         echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         return 1
     fi
@@ -330,7 +313,7 @@ check_onnxruntime_deps() {
     # or GitHub was unreachable (curl had no connect timeout).
     #
     # A mismatch means the local copy is corrupt or stale; we only WARN (not
-    # fail) so a one-off re-issue cannot break the build. The download scripts
+    # fail) so a one-off re-issue cannot break the build. The downloader
     # ragflow_deps/download_deps.py still verifies against
     # the published sidecar at download time, so a re-issued archive is picked
     # up on the next download.
@@ -346,7 +329,7 @@ check_onnxruntime_deps() {
             echo "  local    sha256: $actual" >&2
             echo "  The local copy may be corrupt or stale. Refresh it with:" >&2
             echo "    rm -f ${zip_path}" >&2
-            echo "    uv run ragflow_deps/download_deps.py" >&2
+            echo "    uv run python3 ragflow_deps/download_deps.py" >&2
         else
             echo "  ✓ ${asset} sha256 matches pinned digest"
         fi
@@ -371,7 +354,7 @@ check_office_oxide_deps() {
     if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
         echo -e "${RED}Error: office_oxide native library not found${NC}"
         echo "  Expected: ${lib_path}"
-        echo "  Run: uv run ragflow_deps/download_deps.py"
+        echo "  Run: uv run python3 ragflow_deps/download_deps.py"
         echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
         exit 1
     fi
@@ -423,7 +406,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -529,7 +512,7 @@ check_pdf_oxide_deps() {
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
                 echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
-                echo "    uv run ragflow_deps/download_deps.py"
+                echo "    uv run python3 ragflow_deps/download_deps.py"
                 return 1
                 ;;
         esac
@@ -537,7 +520,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -625,10 +608,6 @@ build_go() {
 
     cd "$PROJECT_ROOT"
 
-    # API and Ingestor fail at startup without this table. A successful Go
-    # build must leave the local checkout ready to run the server.
-    _ensure_cl100k_table || return 1
-
     # Check if C++ library exists
     if [ ! -f "$BUILD_DIR/librag_tokenizer_c_api.a" ]; then
         echo -e "${RED}Error: C++ static library not found. Run with --cpp first.${NC}"
@@ -671,12 +650,12 @@ build_go() {
         echo "  -Wl,--dynamic-list). Without it the binary compiles but dies" >&2
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
-        echo "    uv run ragflow_deps/download_deps.py" >&2
+        echo "    uv run python3 ragflow_deps/download_deps.py" >&2
         echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         echo "  This production binary must statically include ORT — there is no" >&2
         echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
         echo "    - the ORT static_lib dir was never seeded: run" >&2
-        echo "      'uv run ragflow_deps/download_deps.py', or pre-seed" >&2
+        echo "      'uv run python3 ragflow_deps/download_deps.py', or pre-seed" >&2
         echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
         echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
@@ -1114,7 +1093,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.26.4
     - clang++ with C++20 support
-    - office_oxide native library (download with: uv run ragflow_deps/download_deps.py)
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev

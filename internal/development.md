@@ -44,7 +44,7 @@ uv run ragflow_deps/download_deps.py
 
 Install `uv` before running the downloader; it installs the script's declared Python dependencies.
 
-This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64. `build.sh` can also provision the BPE table from explicit caches (`TIKTOKEN_CACHE_DIR`, `DATA_GYM_CACHE_DIR`, `MODEL_ASSETS_DIR`), system resources, or the network; Go builds stop when provisioning fails.
+This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64.
 
 Build the Go resource image from `ragflow_deps/` after preparing these files:
 

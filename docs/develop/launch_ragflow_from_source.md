@@ -74,11 +74,10 @@ Build the C++ bindings and Go binaries:
 bash build.sh --all
 ```
 
-For a smaller production binary, use `bash build.sh --strip --all` instead. If the BPE table is missing, the build script first checks `TIKTOKEN_CACHE_DIR`, `DATA_GYM_CACHE_DIR`, `MODEL_ASSETS_DIR`, and the system resource directory, then tries downloading it. A Go build stops if provisioning fails. Download the table and rerun the build:
+For a smaller production binary, use `bash build.sh --strip --all` instead. The dependency downloader prepares `ragflow_deps/cl100k_base.tiktoken`. If the table is missing, download it before starting the server:
 
 ```bash
 curl -fsSL -o ragflow_deps/cl100k_base.tiktoken https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
-bash build.sh --all
 ```
 
 Check that the newly built executable can load and parse API arguments:
