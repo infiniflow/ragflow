@@ -43,7 +43,7 @@ func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entit
 // GetByID get document by ID
 func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
-	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
+	err := db.WithContext(ctx).Take(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
