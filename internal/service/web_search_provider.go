@@ -399,6 +399,8 @@ func sanitizeURLError(err error) error {
 	return err
 }
 
+// redactURLQuery parses rawURL and replaces known sensitive query parameters
+// (such as api_key or token) with "REDACTED", returning the sanitized URL string.
 func redactURLQuery(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -881,6 +883,8 @@ type serpApiWebSearchResult struct {
 	Snippet string `json:"snippet"`
 }
 
+// retrieveSerpApiWebSearch sends a Google search request to SerpApi, decodes the
+// organic search results, and returns normalized web search hits.
 func retrieveSerpApiWebSearch(
 	ctx context.Context,
 	client *http.Client,
@@ -919,6 +923,8 @@ func retrieveSerpApiWebSearch(
 	return webSearchPayload("serpapi", hits), nil
 }
 
+// decodeSerpApiWebSearchResults unmarshals the JSON response from SerpApi,
+// handling potential API error strings and extracting the list of organic results.
 func decodeSerpApiWebSearchResults(responseBody []byte) ([]serpApiWebSearchResult, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(responseBody, &envelope); err != nil {
