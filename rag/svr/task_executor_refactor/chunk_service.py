@@ -26,6 +26,7 @@ This module orchestrates the chunk building pipeline by delegating to:
 
 import asyncio
 import copy
+import json
 import logging
 import re
 from datetime import datetime

@@ -563,8 +563,13 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
             continue
         logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
+        d["image"] = image
+        add_positions(d, [[ii] * 5])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck.removeprefix("\n")
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
+            continue
         if image is not None:
-            d["image"] = image
             if not re.search(r"!\[.*?\]\(fig:[^\)]+\)", ck):
                 doc_id = doc.get("doc_id", "")
                 tag = f"{doc_id}_img_{ii}" if doc_id else f"img_{ii}"
@@ -575,11 +580,6 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
                 tags = re.findall(r"!\[.*?\]\(fig:([^\)]+)\)", ck)
                 if tags:
                     d["images"] = {tag: image for tag in tags}
-        add_positions(d, [[ii] * 5])
-        if child_delimiters_pattern:
-            d["mom_with_weight"] = ck.removeprefix("\n")
-            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
-            continue
         tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
@@ -1759,7 +1759,9 @@ def _build_cks(sections, delimiter):
             # Check if this is an inline image with markdown tag
             fig_tags = re.findall(r"!\[.*?\]\(fig:([^\)]+)\)", text)
             if fig_tags:
-                _flush_seg()
+                if seg and seg.strip():
+                    text = seg.strip() + "\n" + text.strip()
+                    seg = ""
                 images_dict = {tag: image for tag in fig_tags}
                 cks.append(
                     {
@@ -1773,7 +1775,9 @@ def _build_cks(sections, delimiter):
                 continue
             else:
                 # Standalone image chunk (text kept as-is for context)
-                _flush_seg()
+                if seg and seg.strip():
+                    text = seg.strip() + "\n" + text.strip()
+                    seg = ""
                 idx = len(cks)
                 cks.append(
                     {
