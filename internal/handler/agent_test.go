@@ -36,7 +36,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
-	"ragflow/internal/service/document"
 	"ragflow/internal/tokenizer"
 )
 

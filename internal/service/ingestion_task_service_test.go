@@ -763,6 +763,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 func TestIngestionTaskServiceCreateAndEnqueueClearsRerunSchemaOnNormalRetry(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	rerunSchema := entity.NewIngestionTaskRerunSchema(
 		entity.JSONMap{"components": map[string]interface{}{"c1": map[string]interface{}{}}},
