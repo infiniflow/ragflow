@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -350,14 +351,14 @@ func webSearchRequest(
 ) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return nil, fmt.Errorf("new request: %w", sanitizeURLError(err))
 	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("do request: %w", err)
+		return nil, fmt.Errorf("do request: %w", sanitizeURLError(err))
 	}
 	defer response.Body.Close()
 
@@ -377,6 +378,45 @@ func webSearchRequest(
 		return nil, fmt.Errorf("response body exceeds %d bytes", webSearchMaxResponseBytes)
 	}
 	return responseBody, nil
+}
+
+// sanitizeURLError redacts sensitive query parameters (such as api_key) from
+// *url.Error values returned by the HTTP transport, preventing credentials from
+// leaking in error messages and logs while preserving the underlying *url.Error
+// structure and timeout/cancellation classification.
+func sanitizeURLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return &url.Error{
+			Op:  urlErr.Op,
+			URL: redactURLQuery(urlErr.URL),
+			Err: urlErr.Err,
+		}
+	}
+	return err
+}
+
+func redactURLQuery(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	query := parsed.Query()
+	modified := false
+	for _, key := range []string{"api_key", "apiKey", "key", "token", "secret"} {
+		if query.Has(key) {
+			query.Set(key, "REDACTED")
+			modified = true
+		}
+	}
+	if modified {
+		parsed.RawQuery = query.Encode()
+		return parsed.String()
+	}
+	return rawURL
 }
 
 // --- Brave Search -----------------------------------------------------------

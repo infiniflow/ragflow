@@ -17,11 +17,14 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -403,6 +406,60 @@ func TestDecodeSerpApiWebSearchResultsHandlesErrorField(t *testing.T) {
 	}
 	if got := err.Error(); got != "serpapi: Invalid API key" {
 		t.Fatalf("err = %q, want %q", got, "serpapi: Invalid API key")
+	}
+}
+
+func TestRetrieveSerpApiWebSearchRedactsAPIKeyOnTransportFailure(t *testing.T) {
+	ctx := t.Context()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close() // closed immediately to cause a connection failure
+
+	rawKey := "secret-serpapi-key-12345"
+	_, err := retrieveSerpApiWebSearch(
+		ctx,
+		server.Client(),
+		serverURL,
+		rawKey,
+		"test query",
+	)
+	if err == nil {
+		t.Fatal("expected transport error, got nil")
+	}
+
+	errMsg := err.Error()
+	if strings.Contains(errMsg, rawKey) {
+		t.Fatalf("error message contains raw API key: %q", errMsg)
+	}
+	if strings.Contains(errMsg, url.QueryEscape(rawKey)) {
+		t.Fatalf("error message contains URL-encoded API key: %q", errMsg)
+	}
+	if !strings.Contains(errMsg, "api_key=REDACTED") {
+		t.Fatalf("error message should contain redacted api_key parameter: %q", errMsg)
+	}
+
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		t.Fatalf("expected *url.Error in chain, got %T: %v", err, err)
+	}
+}
+
+func TestRetrieveSerpApiWebSearchPreservesContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // canceled before request
+
+	_, err := retrieveSerpApiWebSearch(
+		ctx,
+		&http.Client{},
+		"https://127.0.0.1:0/search",
+		"secret-key",
+		"test query",
+	)
+	if err == nil {
+		t.Fatal("expected context canceled error, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected errors.Is(err, context.Canceled), got %v", err)
 	}
 }
 

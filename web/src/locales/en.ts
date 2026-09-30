@@ -1275,7 +1275,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyMessage: 'Please enter your Querit API Key',
       serpapiApiKeyTip:
         'When SerpApi is selected, Google search results via SerpApi supplement dataset retrieval.',
-      serpapiApiKeyMessage: 'Please enter your SerpApi API Key',
+      serpapiApiKeyMessage: 'Please enter your SerpApi API key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
