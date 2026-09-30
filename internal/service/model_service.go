@@ -64,7 +64,7 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 }
 
 func NewModelProviderService() *ModelProviderService {
-	return &ModelProviderService{
+	service := &ModelProviderService{
 		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
 		modelDAO:             dao.NewTenantModelDAO(),
@@ -73,6 +73,14 @@ func NewModelProviderService() *ModelProviderService {
 		tenantDAO:            dao.NewTenantDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
+	service.modelSolver = &ModelSolver{
+		tenantDAO:        service.tenantDAO,
+		modelProviderDAO: service.modelProviderDAO,
+		modelInstanceDAO: service.modelInstanceDAO,
+		modelDAO:         service.modelDAO,
+		userTenantDAO:    service.userTenantDAO,
+	}
+	return service
 }
 
 type ModelProviderService struct {
@@ -83,6 +91,7 @@ type ModelProviderService struct {
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
 	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
+	modelSolver          *ModelSolver
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector

@@ -56,7 +56,7 @@ func NewModelCallServiceWithProviderService(providerService *ModelProviderServic
 	}
 	return &ModelCallService{
 		providerService: providerService,
-		modelSolver:     &ModelSolver{service: providerService},
+		modelSolver:     providerService.modelSolver,
 	}
 }
 
@@ -151,7 +151,7 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, userID,
 
 	modelName := target.ModelName
 	rerankModel := modelModule.NewRerankModel(target.Driver, &modelName, target.APIConfig, target.MaxTokens)
-	response, err := rerankModel.Rerank(ctx, modelModule.RerankRequest{Query: query, Documents: documents}, target.APIConfig, config, nil)
+	response, err := rerankModel.Rerank(ctx, modelModule.RerankRequest{Query: query, Documents: documents}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

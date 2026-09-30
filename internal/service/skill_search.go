@@ -667,7 +667,7 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	target, err := s.modelProvider.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}

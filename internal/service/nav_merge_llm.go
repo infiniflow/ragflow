@@ -151,7 +151,7 @@ func (l *NavMergeLLM) chatModelID(ctx context.Context, tenantID string) (string,
 	if ref := strings.TrimSpace(l.llmID); ref != "" {
 		return ref, nil
 	}
-	target, err := l.modelSvc.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+	target, err := l.modelSvc.modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
 	if err != nil {
 		return "", fmt.Errorf("datasetnav: resolve default chat model for tenant %s: %w", tenantID, err)
 	}

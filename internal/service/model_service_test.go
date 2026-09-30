@@ -782,7 +782,7 @@ func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
 	}
 
 	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := svc.modelSolver
 	ctx := t.Context()
 
 	// A reference that passes validation still reads the persisted flag.
@@ -858,7 +858,7 @@ func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	}
 
 	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := svc.modelSolver
 	ctx := t.Context()
 
 	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
@@ -902,7 +902,7 @@ func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	}
 
 	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := svc.modelSolver
 	ctx := t.Context()
 	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("baseline = (%v, %v), want tool support", target, err)

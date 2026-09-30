@@ -54,13 +54,23 @@ type ModelTarget struct {
 // ModelProviderService API remains untouched so callers can migrate to this
 // resolver independently.
 type ModelSolver struct {
-	service *ModelProviderService
+	tenantDAO        *dao.TenantDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
+	userTenantDAO    *dao.UserTenantDAO
 }
 
 // NewModelSolver creates a model resolver backed by the standard model
 // provider service.
 func NewModelSolver() *ModelSolver {
-	return &ModelSolver{service: NewModelProviderService()}
+	return &ModelSolver{
+		tenantDAO:        dao.NewTenantDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+	}
 }
 
 // modelInstanceExtra contains the instance fields consumed during model
@@ -262,7 +272,10 @@ func (s *ModelSolver) tenantCanReachProviderTenant(ctx context.Context, userID, 
 	if userID == ownerTenantID {
 		return true, nil
 	}
-	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	if s == nil || s.userTenantDAO == nil {
+		return false, fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
+	}
+	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return false, err
 	}
@@ -272,10 +285,6 @@ func (s *ModelSolver) tenantCanReachProviderTenant(ctx context.Context, userID, 
 		}
 	}
 	return false, nil
-}
-
-func (m *ModelProviderService) modelSolver() *ModelSolver {
-	return &ModelSolver{service: m}
 }
 
 // ResolveModelConfig resolves a model by modelRef for the requested modelType.
@@ -362,7 +371,7 @@ func (s *ModelSolver) ResolveChatModelType(ctx context.Context, tenantID, modelR
 // for modelType. It first uses the tenant model ID when present and falls back
 // to the stored model reference if that ID is unavailable.
 func (s *ModelSolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error) {
-	if s == nil || s.service == nil {
+	if s == nil {
 		return nil, fmt.Errorf("%w: model solver is not initialized", errModelConfigUnavailable)
 	}
 	tenantID = strings.TrimSpace(tenantID)
@@ -375,11 +384,11 @@ func (s *ModelSolver) ResolveDefaultModelConfig(ctx context.Context, tenantID st
 	if modelType == entity.ModelTypeOCR {
 		return nil, fmt.Errorf("OCR model name is required")
 	}
-	if s.service.tenantDAO == nil {
+	if s.tenantDAO == nil {
 		return nil, fmt.Errorf("%w: tenant service is not initialized", errModelConfigUnavailable)
 	}
 
-	tenant, err := s.service.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
 	}
@@ -540,7 +549,7 @@ func catalogToolSupport(providerName, modelName string) bool {
 }
 
 func (s *ModelSolver) lookupTenantModel(ctx context.Context, tenantID, modelRef string) (*entity.TenantModel, error) {
-	if s == nil || s.service == nil {
+	if s == nil {
 		return nil, fmt.Errorf("%w: model solver is not initialized", errModelConfigUnavailable)
 	}
 	tenantID = strings.TrimSpace(tenantID)
@@ -550,11 +559,11 @@ func (s *ModelSolver) lookupTenantModel(ctx context.Context, tenantID, modelRef 
 	if modelRef == "" {
 		return nil, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
 	}
-	if s.service.modelDAO == nil {
+	if s.modelDAO == nil {
 		return nil, fmt.Errorf("%w: model service is not initialized", errModelConfigUnavailable)
 	}
 
-	return s.service.modelDAO.GetByID(ctx, dao.DB, modelRef)
+	return s.modelDAO.GetByID(ctx, dao.DB, modelRef)
 }
 
 func (s *ModelSolver) modelIdentity(ctx context.Context, tenantID string, modelEntity *entity.TenantModel, modelRef string) (*modelIdentity, error) {
@@ -569,11 +578,11 @@ func (s *ModelSolver) modelIdentity(ctx context.Context, tenantID string, modelE
 	if modelType == 0 {
 		return nil, fmt.Errorf("%w: tenant model %q has no model type", errModelConfigUnavailable, modelRef)
 	}
-	if s.service.modelProviderDAO == nil || s.service.modelInstanceDAO == nil {
+	if s.modelProviderDAO == nil || s.modelInstanceDAO == nil {
 		return nil, fmt.Errorf("%w: model service is not initialized", errModelConfigUnavailable)
 	}
 
-	providerEntity, err := s.service.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
+	providerEntity, err := s.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider id=%s not found for model %q", errModelConfigUnavailable, modelEntity.ProviderID, modelRef)
@@ -636,7 +645,7 @@ func (s *ModelSolver) resolveTenantModel(ctx context.Context, tenantID string, m
 	modelEntity := identity.modelEntity
 	providerEntity := identity.providerEntity
 
-	instanceEntity, err := s.service.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
+	instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: instance id=%s not found for model %q", errModelConfigUnavailable, modelEntity.InstanceID, modelRef)
@@ -750,7 +759,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 		}
 	}
 
-	provider, err := s.service.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
@@ -760,7 +769,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 	if provider == nil {
 		return nil, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
-	instance, err := s.service.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: instance %q lookup failed: %w", errModelConfigUnavailable, instanceName, err)
@@ -775,7 +784,7 @@ func (s *ModelSolver) resolveProviderInstanceModel(ctx context.Context, tenantID
 		return nil, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
 	region, baseURL, apiKey := extra.Region, extra.BaseURL, instance.APIKey
-	modelEntity, err := s.service.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
+	modelEntity, err := s.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
 	}
@@ -839,18 +848,18 @@ func (s *ModelSolver) resolveCompositeModelType(ctx context.Context, tenantID, m
 		}
 		return entity.ModelTypeEmbedding, nil
 	}
-	if s == nil || s.service == nil || s.service.modelProviderDAO == nil || s.service.modelInstanceDAO == nil || s.service.modelDAO == nil {
+	if s == nil || s.modelProviderDAO == nil || s.modelInstanceDAO == nil || s.modelDAO == nil {
 		return 0, fmt.Errorf("%w: model service is not initialized", errModelConfigUnavailable)
 	}
 
-	provider, err := s.service.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
 	}
 	if provider == nil {
 		return 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
-	instance, err := s.service.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: instance %q lookup failed: %w", errModelConfigUnavailable, instanceName, err)
 	}
@@ -858,7 +867,7 @@ func (s *ModelSolver) resolveCompositeModelType(ctx context.Context, tenantID, m
 		return 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
 
-	models, err := s.service.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
+	models, err := s.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: model %q lookup failed: %v", errModelConfigUnavailable, modelRef, err)
 	}

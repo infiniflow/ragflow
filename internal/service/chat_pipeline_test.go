@@ -2482,7 +2482,7 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	_, err := svc.ModelProviderSvc.modelSolver().ResolveModelConfig(
+	_, err := svc.ModelProviderSvc.modelSolver.ResolveModelConfig(
 		t.Context(), "tenant-1", entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {

@@ -36,7 +36,7 @@ const streamDoneSentinel = "[DONE]"
 var errStreamDone = errors.New("chat stream done")
 
 func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
+	target, err := m.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID strin
 }
 
 func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
+	target, err := m.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
 	if err != nil {
 		return nil, nil, err
 	}

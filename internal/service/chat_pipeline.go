@@ -1646,9 +1646,9 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		// 4. Build the chat model wrapper.
 		var target *ModelTarget
 		if strings.TrimSpace(chat.LLMID) == "" {
-			target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+			target, err = s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
 		} else {
-			target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+			target, err = s.ModelProviderSvc.modelSolver.ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 		}
 		if err != nil {
 			out <- AsyncChatResult{
@@ -1663,7 +1663,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				target, ttsErr := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
+				target, ttsErr := s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
 				if ttsErr != nil || target == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
@@ -2157,7 +2157,7 @@ func tokenizeText(text string) string {
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
-		target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		target, err := s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
 		if err != nil || target == nil {
 			return nil, "", "", "", err
 		}
@@ -2183,7 +2183,7 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	// This mirrors Python, which resolves chat_mdl once in get_models() and then
 	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
 	// the model that runs is by construction the model that was judged.
-	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+	target, err := s.ModelProviderSvc.modelSolver.ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
 	}
@@ -2243,7 +2243,7 @@ func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 // model_type value. Probe failures are conservative: they yield "chat", which
 // drops image attachments instead of risking a provider-side rejection.
 func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	return chatModelTypeName(s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, tenantID, llmRef))
+	return chatModelTypeName(s.ModelProviderSvc.modelSolver.ResolveChatModelType(ctx, tenantID, llmRef))
 }
 
 // chatModelTypeName renders a resolved model type as the model_type value
@@ -2325,7 +2325,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
+			target, err := s.ModelProviderSvc.modelSolver.ResolveModelConfig(
 				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
 			)
 			if err != nil {
@@ -2343,9 +2343,9 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var target *ModelTarget
 	var err error
 	if strings.TrimSpace(chat.LLMID) == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		target, err = s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
 	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		target, err = s.ModelProviderSvc.modelSolver.ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	}
 	var chatModel *modelModule.ChatModel
 	if err == nil {
@@ -2355,7 +2355,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
+		target, err := s.ModelProviderSvc.modelSolver.ResolveModelConfig(
 			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
@@ -2367,7 +2367,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
+			target, err := s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
 			if err == nil {
 				ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
@@ -2921,9 +2921,9 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	var target *ModelTarget
 	var err error
 	if strings.TrimSpace(chat.LLMID) == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		target, err = s.ModelProviderSvc.modelSolver.ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
 	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		target, err = s.ModelProviderSvc.modelSolver.ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	}
 	if err != nil {
 		return nil

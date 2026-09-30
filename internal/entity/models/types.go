@@ -394,18 +394,9 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	}
 }
 
-// ResolveTokenizerID returns the tokenizer family declared for this reranker, or
-// an empty string when the model catalog does not provide one.
-func (r *RerankModel) ResolveTokenizerID() string {
-	if r == nil || r.ModelName == nil {
-		return ""
-	}
-	return GetModelTokenizer(*r.ModelName)
-}
-
 // Rerank calculates similarity between query and texts. Rerank input is measured
 // and truncated with the model's declared tokenizer, just like embedding input.
-func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if r == nil || r.ModelDriver == nil {
 		return nil, errors.New("rerank model: driver is nil")
 	}
@@ -445,7 +436,7 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 			}
 		}
 	}
-	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
+	return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
 }
 
 // ASRModel wraps a ModelDriver with speech-to-text configuration.

@@ -920,7 +920,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	target, err := s.modelProvider.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -952,7 +952,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	target, err := s.modelProvider.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -988,7 +988,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	target, err := s.modelProvider.modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
