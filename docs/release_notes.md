@@ -956,7 +956,7 @@ Released on May 26, 2025.
 > The following features have been contributed by our community:
 
 - Agent component: Enables tool calling within the Generate Component. Thanks to [notsyncing](https://github.com/notsyncing).
-- Markdown rendering: Image references in a markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
+- Markdown rendering: Image references in a Markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
 - Document engine support: OpenSearch can now be used as RAGFlow's document engine. Thanks to [pyyuhao](https://github.com/pyyuhao).
 
 ### Documentation

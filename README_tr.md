@@ -281,7 +281,7 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    bash build.sh --all
    ```
 
-   Betik, Go derlemesi için gerekli yerel kitaplıkları ve model kaynaklarını hazırlar ve `requests` ile `huggingface-hub` gerektirir. Aynı kaynakları başka bir yöntemle hazırladıysanız bu adımı atlayabilirsiniz. Depo kökünden başlatıldığında Go hizmetleri `rag/res/deepdoc` dizinini otomatik olarak bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini mutlak yola ayarlayın.
+   Betik, Go derlemesi için gerekli yerel kitaplıkları ve model kaynaklarını hazırlar ve `requests` ile `huggingface-hub` gerektirir. Aynı kaynakları başka bir yöntemle hazırladıysanız bu adımı atlayabilirsiniz. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik olarak bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini mutlak yola ayarlayın.
 3. Gerekli bağımlılıkları (Elasticsearch, MySQL, MinIO, NATS, Kvrocks ve ClickHouse) Docker Compose ile başlatın:
 
    ```bash

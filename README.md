@@ -264,7 +264,7 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
    bash build.sh --all
    ```
 
-   The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
+   The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
 3. Start the local dependencies and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. Go source services connect to Compose-exposed Kvrocks at `localhost:6379`, while Go Docker services connect to Kvrocks on the container network. If using the default Elasticsearch engine, set `vm.max_map_count` on the Docker host to at least `262144` first.
 

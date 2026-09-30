@@ -78,7 +78,7 @@ func (dao *TenantModelDAO) UpdateStatusByIDAndScope(ctx context.Context, db *gor
 // GetByID get tenant model by primary key (id)
 func (dao *TenantModelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := db.WithContext(ctx).Where("id = ?", id).First(&model).Error
+	err := db.WithContext(ctx).Take(&model, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

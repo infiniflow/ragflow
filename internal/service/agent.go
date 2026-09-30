@@ -2932,9 +2932,9 @@ func canvasInvokeError(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "[GraphRunError] no tasks to execute") &&
 		strings.Contains(msg, "last completed nodes: [Switch:") {
-		return errors.New("canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
+		return errors.New("agent invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
 	}
-	return fmt.Errorf("canvas invoke: %w", err)
+	return fmt.Errorf("agent invoke: %w", err)
 }
 
 // markRunSucceeded records the run as completed successfully via

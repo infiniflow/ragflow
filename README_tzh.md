@@ -281,7 +281,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    bash build.sh --all
    ```
 
-   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `internal/rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
 3. 啟動本機依賴服務，並確認 **conf/service_conf.yaml** 中的主機與連接埠可從主機存取：
 
    ```bash

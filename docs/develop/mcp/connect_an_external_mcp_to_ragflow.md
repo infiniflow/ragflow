@@ -45,12 +45,12 @@ RAGFlow does not directly connect to MCP servers that use `stdio`. To use a `std
 6. Click the refresh button in **Tools available** to test the connection and discover tools.
 7. After the test succeeds and the discovered tools appear, click **Save**.
 
-| Field | Description | Example |
-| --- | --- | --- |
-| Name | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `web_search_tools` |
-| URL | The complete MCP endpoint | `https://example.com/mcp` |
-| Server type | The transport provided by the MCP server | `streamable-http` |
-| Authorization Token | Optional token sent as `Authorization: Bearer <token>` | The server's token |
+| Field               | Description                                                                       | Example                   |
+|---------------------|-----------------------------------------------------------------------------------|---------------------------|
+| Name                | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `web_search_tools`        |
+| URL                 | The complete MCP endpoint                                                         | `https://example.com/mcp` |
+| Server type         | The transport provided by the MCP server                                          | `streamable-http`         |
+| Authorization Token | Optional token sent as `Authorization: Bearer <token>`                            | The server's token        |
 
 The **Server type** must match the transport exposed by the MCP server:
 
@@ -82,13 +82,13 @@ Consequently, endpoints such as `localhost`, `127.0.0.1`, `::1`, `10.x.x.x`, `17
 
 ## Troubleshoot a failed connection
 
-| Symptom | What to check |
-| --- | --- |
-| `Invalid MCP url` or a disallowed-scheme error | Use a complete `http://` or `https://` endpoint with the correct `/mcp` or `/sse` path. |
-| `URL resolves to a non-public address` | Check DNS from the RAGFlow backend environment. Public hostnames are also rejected if any result is private or synthetic. Proxy tools in Fake-IP mode can cause this result. |
-| Connection or discovery timeout | Check outbound network access, the selected transport, endpoint path, and server availability. The default discovery timeout is 10 seconds. |
-| Authentication failure | Verify the token, or import string-valued custom headers when the server does not use a Bearer token. |
-| Save remains disabled | Test the current settings again and confirm that the server advertises at least one tool. |
+| Symptom                                        | What to check                                                                                                                                                                |
+|------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Invalid MCP url` or a disallowed-scheme error | Use a complete `http://` or `https://` endpoint with the correct `/mcp` or `/sse` path.                                                                                      |
+| `URL resolves to a non-public address`         | Check DNS from the RAGFlow backend environment. Public hostnames are also rejected if any result is private or synthetic. Proxy tools in Fake-IP mode can cause this result. |
+| Connection or discovery timeout                | Check outbound network access, the selected transport, endpoint path, and server availability. The default discovery timeout is 10 seconds.                                  |
+| Authentication failure                         | Verify the token, or import string-valued custom headers when the server does not use a Bearer token.                                                                        |
+| Save remains disabled                          | Test the current settings again and confirm that the server advertises at least one tool.                                                                                    |
 
 ## Example: add Parallel Search MCP tools
 

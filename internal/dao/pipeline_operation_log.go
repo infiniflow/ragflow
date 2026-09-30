@@ -298,7 +298,7 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 // GetByIDAndKBID instead.
 func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
-	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&log, "id = ?", logID).Error; err != nil {
 		return nil, err
 	}
 	return &log, nil

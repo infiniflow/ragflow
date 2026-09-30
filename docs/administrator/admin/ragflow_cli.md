@@ -101,15 +101,15 @@ ragflow-cli --admin \
 
 Avoid passing a real password with `--password`: command-line arguments can be visible to other local processes and may be retained in shell history. If you used the initial password, change it after logging in with `ALTER USER PASSWORD 'admin@ragflow.io' '<new_password>';`.
 
-| Option | Description |
-| --- | --- |
-| `--admin`, `-admin` | Start in Admin mode. |
-| `-h`, `--host <host:port>` | Admin Service address. The default is `127.0.0.1:9381`. |
-| `-u`, `--user <email>` | Administrator email address. |
+| Option                        | Description                                                                                           |
+|-------------------------------|-------------------------------------------------------------------------------------------------------|
+| `--admin`, `-admin`           | Start in Admin mode.                                                                                  |
+| `-h`, `--host <host:port>`    | Admin Service address. The default is `127.0.0.1:9381`.                                               |
+| `-u`, `--user <email>`        | Administrator email address.                                                                          |
 | `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
-| `-k`, `--key <path>` | Key file used by the client. |
-| `-o`, `--output <format>` | Output format: `table`, `plain`, or `json`. |
-| `-v`, `--verbose` | Enable verbose output. |
+| `-k`, `--key <path>`          | Key file used by the client.                                                                          |
+| `-o`, `--output <format>`     | Output format: `table`, `plain`, or `json`.                                                           |
+| `-v`, `--verbose`             | Enable verbose output.                                                                                |
 
 ## Commands
 
@@ -135,10 +135,10 @@ Logs in to the Admin Service with an administrator account. If `PASSWORD` is omi
 LOGIN ADMIN '<email>' [PASSWORD '<password>'];
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Administrator email address. |
-| `[PASSWORD '<password>']` | No | Administrator password. Omit this segment to enter the password interactively. |
+| Parameter                 | Required | Description                                                                    |
+|---------------------------|----------|--------------------------------------------------------------------------------|
+| `<email>`                 | Yes      | Administrator email address.                                                   |
+| `[PASSWORD '<password>']` | No       | Administrator password. Omit this segment to enter the password interactively. |
 
 **Example**
 
@@ -260,9 +260,9 @@ Shows the current status of one service. Use the service name returned by `LIST 
 SHOW SERVICE '<service_name>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<service_name>` | Yes | Service name returned by `LIST SERVICES`, such as `mysql`. |
+| Parameter        | Required | Description                                                |
+|------------------|----------|------------------------------------------------------------|
+| `<service_name>` | Yes      | Service name returned by `LIST SERVICES`, such as `mysql`. |
 
 **Example**
 
@@ -298,9 +298,9 @@ Shows details for one user.
 SHOW USER '<email>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
+| Parameter | Required | Description         |
+|-----------|----------|---------------------|
+| `<email>` | Yes      | User email address. |
 
 **Example**
 
@@ -318,10 +318,10 @@ Creates a user with the standard `user` role.
 CREATE USER '<email>' '<password>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Email address for the new user. |
-| `<password>` | Yes | Initial password for the new user. |
+| Parameter    | Required | Description                        |
+|--------------|----------|------------------------------------|
+| `<email>`    | Yes      | Email address for the new user.    |
+| `<password>` | Yes      | Initial password for the new user. |
 
 **Example**
 
@@ -340,10 +340,10 @@ Activates or deactivates a user.
 ALTER USER ACTIVE '<email>' <on|off>;
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
-| `<on\|off>` | Yes | `on` activates the user; `off` deactivates the user. |
+| Parameter   | Required | Description                                          |
+|-------------|----------|------------------------------------------------------|
+| `<email>`   | Yes      | User email address.                                  |
+| `<on\|off>` | Yes      | `on` activates the user; `off` deactivates the user. |
 
 **Example**
 
@@ -362,10 +362,10 @@ Changes a user's password.
 ALTER USER PASSWORD '<email>' '<new_password>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | User email address. |
-| `<new_password>` | Yes | New password. |
+| Parameter        | Required | Description         |
+|------------------|----------|---------------------|
+| `<email>`        | Yes      | User email address. |
+| `<new_password>` | Yes      | New password.       |
 
 **Example**
 
@@ -386,9 +386,9 @@ An active user cannot be deleted. Run `ALTER USER ACTIVE '<email>' off;` before 
 DROP USER '<email>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<email>` | Yes | Email address of a deactivated user. |
+| Parameter | Required | Description                          |
+|-----------|----------|--------------------------------------|
+| `<email>` | Yes      | Email address of a deactivated user. |
 
 **Example**
 
@@ -411,9 +411,9 @@ Shows a runtime setting by its exact name or name prefix.
 SHOW VAR '<name>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<name>` | Yes | Setting name or prefix, such as `mail.timeout`. |
+| Parameter | Required | Description                                     |
+|-----------|----------|-------------------------------------------------|
+| `<name>`  | Yes      | Setting name or prefix, such as `mail.timeout`. |
 
 **Example**
 
@@ -535,9 +535,9 @@ Shows one API server connection from the local CLI configuration.
 SHOW API SERVER '<server_name>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<server_name>` | Yes | Local API server configuration name, such as `default`. |
+| Parameter       | Required | Description                                             |
+|-----------------|----------|---------------------------------------------------------|
+| `<server_name>` | Yes      | Local API server configuration name, such as `default`. |
 
 **Example**
 
@@ -574,12 +574,8 @@ Lists messages currently retained in the task stream. The optional `PENDING` key
 **Syntax**
 
 ```sql
-MQ LIST [PENDING];
+MQ LIST;
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `[PENDING]` | No | Requests the pending-message form of the command. |
 
 **Example**
 
@@ -597,9 +593,9 @@ Publishes a test message to the ingestion task subject.
 MQ PUBLISH '<message>';
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `<message>` | Yes | String stored as the test task identifier. |
+| Parameter   | Required | Description                                |
+|-------------|----------|--------------------------------------------|
+| `<message>` | Yes      | String stored as the test task identifier. |
 
 **Example**
 
@@ -620,10 +616,10 @@ Manually pulls messages from the ingestion task consumer. The default count is `
 MQ PULL [<count>] [NOACK];
 ```
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `[<count>]` | No | Number of messages to pull, from `1` through `100`. The default is `1`. |
-| `[NOACK]` | No | Negatively acknowledges pulled messages instead of acknowledging them. |
+| Parameter   | Required | Description                                                             |
+|-------------|----------|-------------------------------------------------------------------------|
+| `[<count>]` | No       | Number of messages to pull, from `1` through `100`. The default is `1`. |
+| `[NOACK]`   | No       | Negatively acknowledges pulled messages instead of acknowledging them.  |
 
 **Example**
 
