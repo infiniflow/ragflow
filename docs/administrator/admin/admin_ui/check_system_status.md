@@ -18,16 +18,16 @@ For dependencies, `alive` means that the corresponding health check succeeded. `
 
 The open-source Go deployment reports the following entries:
 
-| Service type | Entry | How the status is determined |
-| --- | --- | --- |
-| `database` | MySQL | The server obtains the SQL connection and runs a database ping. |
-| `doc_engine` | The configured document engine, such as Elasticsearch or Infinity | The server calls the active document engine's ping operation. |
-| `storage_engine` | The configured object storage, such as MinIO | The server calls the active storage implementation's health check. |
-| `cache` | Kvrocks | The server checks the configured Kvrocks connection. |
-| `message_queue` | NATS | The server reads the status of the active message queue implementation. |
-| `api_server` | Each reporting API process | Admin evaluates the process heartbeat. |
-| `ingestor` | Each reporting Ingestor process | Admin evaluates the process heartbeat. |
-| `file_syncer` | Each reporting Syncer process | Admin evaluates the process heartbeat. |
+| Service type     | Entry                                                             | How the status is determined                                            |
+|------------------|-------------------------------------------------------------------|-------------------------------------------------------------------------|
+| `database`       | MySQL                                                             | The server obtains the SQL connection and runs a database ping.         |
+| `doc_engine`     | The configured document engine, such as Elasticsearch or Infinity | The server calls the active document engine's ping operation.           |
+| `storage_engine` | The configured object storage, such as MinIO                      | The server calls the active storage implementation's health check.      |
+| `cache`          | Kvrocks                                                           | The server checks the configured Kvrocks connection.                    |
+| `message_queue`  | NATS                                                              | The server reads the status of the active message queue implementation. |
+| `api_server`     | Each reporting API process                                        | Admin evaluates the process heartbeat.                                  |
+| `ingestor`       | Each reporting Ingestor process                                   | Admin evaluates the process heartbeat.                                  |
+| `file_syncer`    | Each reporting Syncer process                                     | Admin evaluates the process heartbeat.                                  |
 
 Only processes that have reported a heartbeat to Admin appear in the process portion of the list. For dependency rows, `elapsed` records timing information from the corresponding status check; for API, Ingestor, and Syncer rows, it records the time since the latest heartbeat. The host is shown as `-` and the port as `0` when the configured document engine or storage implementation does not provide an endpoint for the status row.
 

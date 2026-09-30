@@ -263,7 +263,7 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
    bash build.sh --all
    ```
 
-   このスクリプトはGoビルドに必要なネイティブライブラリとモデルリソースを準備し、`requests`と`huggingface-hub`を使用します。同じリソースを別の方法で準備済みの場合は、この手順を省略できます。リポジトリルートから起動するとGoサービスは`rag/res/deepdoc`を自動検出します。別のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR`にその絶対パスを設定してください。
+   このスクリプトはGoビルドに必要なネイティブライブラリとモデルリソースを準備し、`requests`と`huggingface-hub`を使用します。同じリソースを別の方法で準備済みの場合は、この手順を省略できます。リポジトリルートから起動するとGoサービスは`internal/rag/res/deepdoc`を自動検出します。別のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR`にその絶対パスを設定してください。
 3. Docker Composeで必要な依存サービス（Elasticsearch、MySQL、MinIO、NATS、Kvrocks、ClickHouse）を起動します:
 
    ```bash

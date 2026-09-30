@@ -88,7 +88,7 @@ func (dao *UserCanvasDAO) Create(ctx context.Context, db *gorm.DB, userCanvas *e
 // GetByID get user canvas by ID
 func (dao *UserCanvasDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.UserCanvas, error) {
 	var canvas entity.UserCanvas
-	err := db.WithContext(ctx).Where("id = ?", id).First(&canvas).Error
+	err := db.WithContext(ctx).Take(&canvas, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserCanvasNotFound

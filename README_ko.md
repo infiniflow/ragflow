@@ -263,7 +263,7 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    bash build.sh --all
    ```
 
-   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
 
 3. Docker Compose를 사용하여 필요한 의존 서비스(Elasticsearch, MySQL, MinIO, NATS, Kvrocks, ClickHouse)를 시작합니다:
 
