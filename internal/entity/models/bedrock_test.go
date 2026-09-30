@@ -517,6 +517,125 @@ func TestBedrockListModelsParsesCatalog(t *testing.T) {
 	}
 }
 
+// newBedrockCatalogServer serves the foundation-model catalog and the
+// system-defined inference profiles, which ListModels reads together.
+func newBedrockCatalogServer(t *testing.T, catalog string, profiles http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method=%s, want %s", r.Method, http.MethodGet)
+		}
+		if auth := r.Header.Get("Authorization"); !strings.HasPrefix(auth, "AWS4-HMAC-SHA256 ") {
+			t.Errorf("Authorization=%q, want SigV4 prefix", auth)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/foundation-models":
+			_, _ = w.Write([]byte(catalog))
+		case "/inference-profiles":
+			profiles(w, r)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+const bedrockProfileOnlyCatalog = `{
+	"modelSummaries": [
+		{"modelId":"amazon.nova-lite-v1:0","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["ON_DEMAND"]},
+		{"modelId":"anthropic.claude-opus-5-5","inputModalities":["TEXT","IMAGE"],"outputModalities":["TEXT"],"inferenceTypesSupported":["INFERENCE_PROFILE"]},
+		{"modelId":"openai.gpt-6-sol","inputModalities":["TEXT"],"outputModalities":["TEXT"],"inferenceTypesSupported":["INFERENCE_PROFILE"]},
+		{"modelId":"cohere.embed-v4:0","inputModalities":["TEXT"],"outputModalities":["EMBEDDING"],"inferenceTypesSupported":["INFERENCE_PROFILE"]}
+	]
+}`
+
+func TestBedrockListModelsListsInferenceProfileOnlyModels(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockCatalogServer(t, bedrockProfileOnlyCatalog, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("typeEquals"); got != "SYSTEM_DEFINED" {
+			t.Errorf("typeEquals=%q, want SYSTEM_DEFINED", got)
+		}
+		// Split across two pages so nextToken has to be followed.
+		if r.URL.Query().Get("nextToken") == "" {
+			_, _ = w.Write([]byte(`{
+				"inferenceProfileSummaries": [
+					{"inferenceProfileId":"us.anthropic.claude-opus-5-5","status":"ACTIVE","models":[
+						{"modelArn":"arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5"},
+						{"modelArn":"arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-opus-5-5"}]},
+					{"inferenceProfileId":"us.cohere.embed-v4:0","status":"ACTIVE","models":[
+						{"modelArn":"arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-v4:0"}]}
+				],
+				"nextToken": "page-2"
+			}`))
+			return
+		}
+		if got := r.URL.Query().Get("nextToken"); got != "page-2" {
+			t.Errorf("nextToken=%q, want page-2", got)
+		}
+		_, _ = w.Write([]byte(`{
+			"inferenceProfileSummaries": [
+				{"inferenceProfileId":"global.anthropic.claude-opus-5-5","status":"ACTIVE","models":[
+					{"modelArn":"arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5"}]},
+				{"inferenceProfileId":"us.openai.gpt-6-sol","status":"ACTIVE","models":[
+					{"modelArn":"arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6-sol"}]},
+				{"inferenceProfileId":"eu.openai.gpt-6-sol","status":"INACTIVE","models":[
+					{"modelArn":"arn:aws:bedrock:eu-west-1::foundation-model/openai.gpt-6-sol"}]}
+			]
+		}`))
+	})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	got, err := m.ListModels(ctx, &APIConfig{ApiKey: &key})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	// Profile-only chat models are offered under their profile ids,
+	// because Bedrock rejects the bare id for on-demand invocation.
+	// The profile-only embedding model stays out: Embed picks the
+	// request body from the bare "cohere." / "amazon." prefix.
+	want := []string{
+		"amazon.nova-lite-v1:0",
+		"us.anthropic.claude-opus-5-5",
+		"global.anthropic.claude-opus-5-5",
+		"us.openai.gpt-6-sol",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len(got)=%d want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i].Name != want[i] {
+			t.Errorf("got[%d]=%s want %q", i, got[i].Name, want[i])
+		}
+		if len(got[i].ModelTypes) != 1 || got[i].ModelTypes[0] != "chat" {
+			t.Errorf("got[%d] model types=%v, want [chat]", i, got[i].ModelTypes)
+		}
+	}
+}
+
+func TestBedrockListModelsKeepsOnDemandModelsWhenProfilesUnavailable(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockCatalogServer(t, bedrockProfileOnlyCatalog, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"not authorized to perform bedrock:ListInferenceProfiles"}`))
+	})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	got, err := m.ListModels(ctx, &APIConfig{ApiKey: &key})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "amazon.nova-lite-v1:0" {
+		t.Errorf("got %v, want only the on-demand model", got)
+	}
+}
+
 func TestBedrockCheckConnectionDelegates(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
