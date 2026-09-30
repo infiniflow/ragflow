@@ -57,6 +57,10 @@ func TestWorkerPoolShrinksThenRunsQueuedWork(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	deadline := time.Now().Add(time.Second)
+	for p.Stats().LiveWorkers != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if n := p.Stats().LiveWorkers; n != 1 {
 		t.Fatalf("shrink left %d workers, want 1", n)
 	}
