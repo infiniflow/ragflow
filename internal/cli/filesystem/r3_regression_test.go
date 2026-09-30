@@ -1,6 +1,7 @@
 package filesystem
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -17,8 +18,14 @@ func TestParseTimeRFC3339WithOffset(t *testing.T) {
 }
 
 func TestParseTimeMillisecondsRemainder(t *testing.T) {
-	got := parseTime(int64(1727700000123))
-	if got.UnixMilli() != 1727700000123 {
-		t.Fatalf("millisecond remainder lost: got %d", got.UnixMilli())
+	var record map[string]interface{}
+	if err := json.Unmarshal([]byte(`{"created_at":1727700000123}`), &record); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []interface{}{int64(1727700000123), record["created_at"]} {
+		got := parseTime(input)
+		if got.UnixMilli() != 1727700000123 {
+			t.Fatalf("millisecond remainder lost for %T: got %d", input, got.UnixMilli())
+		}
 	}
 }
