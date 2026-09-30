@@ -1005,6 +1005,56 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	requireJSONText(t, out, "MonkeyOCRv2 title")
 }
 
+func TestDispatch_PDFMonkeyOCRMarkdown_UsesFileParseEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantOCRModelByProvider = func(_ context.Context, _ *gorm.DB, tenantID, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+		if tenantID != "test-tenant" || providerName != "MonkeyOCR" {
+			t.Fatalf("tenant=%q provider=%q", tenantID, providerName)
+		}
+		return &monkeyOCRFakeDriver{}, "monkeyocr-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
+
+	component, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"parse_method": "monkeyocr", "output_format": "markdown"},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "MonkeyOCR title")
+}
+
+type monkeyOCRFakeDriver struct{ mineruTestDriver }
+
+func (d *monkeyOCRFakeDriver) Name() string { return "monkeyocr" }
+
 // mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
 type mineruTestDriver struct{}
 

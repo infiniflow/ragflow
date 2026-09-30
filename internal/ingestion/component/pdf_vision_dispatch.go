@@ -143,6 +143,19 @@ func maybeDispatchPDFVision(
 		return res, true, nil
 	}
 
+	// MonkeyOCR dispatch: parse_method "monkeyocr" or layout_recognizer "@MonkeyOCR".
+	if isMonkeyOCRPDFSelector(method, layoutLower) {
+		common.Info("pdf vision dispatch: MonkeyOCR branch matched",
+			zap.String("parse_method", method),
+			zap.String("layout_recognizer", layout),
+			zap.String("tenant_id", tenantID))
+		if tenantID == "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: MonkeyOCR requires tenant_id")
+		}
+		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup)
+		return res, true, err
+	}
+
 	// PaddleOCR dispatch: parse_method "paddleocr", a layout_recognizer whose
 	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
 	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
@@ -552,6 +565,93 @@ func dispatchMinerUPDF(
 	md := strings.Join(parts, "\n")
 
 	return buildMarkdownOCRDispatchResult(md), nil
+}
+
+func isMonkeyOCRPDFSelector(method, layoutLower string) bool {
+	if strings.EqualFold(strings.TrimSpace(method), "monkeyocr") {
+		return true
+	}
+	if strings.Contains(layoutLower, "@monkeyocrv2") || strings.HasPrefix(layoutLower, "monkeyocrv2") {
+		return false
+	}
+	return strings.HasPrefix(layoutLower, "monkeyocr") || strings.Contains(layoutLower, "@monkeyocr")
+}
+
+// dispatchMonkeyOCRPDF submits a PDF to the tenant's MonkeyOCR adapter
+// (MinerU-compatible /file_parse ZIP) and returns markdown sections.
+func dispatchMonkeyOCRPDF(
+	ctx context.Context,
+	db *gorm.DB,
+	_ string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+) (parser.ParseResult, error) {
+	driver, _, apiConfig, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR model: %w", err)
+	}
+	if !strings.EqualFold(driver.Name(), "monkeyocr") {
+		return parser.ParseResult{}, fmt.Errorf(
+			"parser: MonkeyOCR requires a MonkeyOCR OCR model; found %q", driver.Name())
+	}
+
+	apiKeyRaw := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	baseURL := strings.TrimSpace(common.GetEnv(common.EnvMonkeyOCRAPIServer))
+	if apiConfig != nil && apiConfig.BaseURL != nil {
+		if v := strings.TrimSpace(*apiConfig.BaseURL); v != "" {
+			baseURL = v
+		}
+	}
+	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_apiserver", common.EnvMonkeyOCRAPIServer); configured != "" {
+		baseURL = configured
+	}
+	if baseURL == "" {
+		return parser.ParseResult{}, fmt.Errorf(
+			"parser: MonkeyOCR requires MONKEYOCR_APISERVER or a tenant MonkeyOCR OCR model URL")
+	}
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+
+	parseMethod := getStringOr(setup, "parse_method", "raw")
+	if strings.EqualFold(parseMethod, "monkeyocr") {
+		parseMethod = "raw"
+	}
+	lang := getStringOr(setup, "lang", "")
+	if lang == "" {
+		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
+	}
+	mineruLang := mineruLangCode(lang)
+	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "monkeyocr_backend", "vlm-engine"), apiKeyRaw)
+	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_backend", common.EnvMonkeyOCRBackend); configured != "" {
+		backend = modelModule.ResolveMinerUBackend(configured, apiKeyRaw)
+	}
+	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "monkeyocr_server_url", ""), apiKeyRaw)
+	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_server_url", common.EnvMonkeyOCRServerURL); configured != "" {
+		serverURL = modelModule.ResolveMinerUServerURL(configured, apiKeyRaw)
+	}
+	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+		return parser.ParseResult{}, err
+	}
+
+	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
+	}
+	sections, err := mineruExtractSections(zipBytes)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR extract: %w", err)
+	}
+
+	var parts []string
+	for _, s := range sections {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return buildMarkdownOCRDispatchResult(strings.Join(parts, "\n")), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
