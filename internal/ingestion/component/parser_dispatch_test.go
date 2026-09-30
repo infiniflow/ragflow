@@ -797,12 +797,12 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 	}))
 	defer server.Close()
 
-	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
+	origResolver := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolver }()
 	baseURL := server.URL
 	apiKey := `{"mineru_backend":"vlm-http-client","mineru_server_url":"http://vllm-host:30000"}`
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
-		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
@@ -835,12 +835,12 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 }
 
 func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
+	origResolver := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolver }()
 	baseURL := "http://mineru-api:8888"
 	apiKey := `{"mineru_backend":"hybrid-http-client"}`
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (models.ModelDriver, string, *models.APIConfig, int, error) {
-		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	setups := defaultSetups()
