@@ -113,11 +113,7 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (
-      documentId: string,
-      chunk: IReferenceChunk,
-      documentUrl?: string,
-    ) => {
+    (documentId: string, chunk: IReferenceChunk, documentUrl?: string) => {
       return () => {
         // Web page documents carry their own url; the preview modal can't
         // render them, so open the link directly.
