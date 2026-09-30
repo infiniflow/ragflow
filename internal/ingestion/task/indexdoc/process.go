@@ -158,10 +158,10 @@ var pipelineOnlyFields = []string{
 	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 	"context_above", "context_below", "page_number",
 	"sheet", "sheet_index",
-	// The row markers become index columns together with the structured SQL
-	// path; until a backend has them, they are bookkeeping only, and Infinity
-	// rejects an insert that names a column its table does not have.
-	"table_row_source", "table_row_int", "table_profile_key",
+	// The row source map is what the derived profile is built from and is never
+	// a chunk column; table_row_int and table_profile_key are, and are written
+	// by the engines that support structured table queries.
+	"table_row_source",
 }
 
 // stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
