@@ -187,7 +187,10 @@ export function MetadataFilterConditions({
   const logic = prefix + 'meta_data_filter.logic';
   const metadata = useFetchKnowledgeMetadata(kbIds);
 
-  const metadataKeys = useMemo(() => Object.keys(metadata.data), [metadata.data]);
+  const metadataKeys = useMemo(
+    () => Object.keys(metadata.data),
+    [metadata.data],
+  );
 
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
