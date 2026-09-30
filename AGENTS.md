@@ -53,7 +53,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/python/`: legacy Python client SDK pending deletion.
-- `ragflow_deps/download_go_deps.py`: current Python helper for Go native libraries and model files; replace it before deleting it. `build.sh` currently reads its ONNX Runtime version pin.
+- `ragflow_deps/download_deps.py`: Python helper for Go native libraries, DeepDoc models, and tokenizer assets. Replace it with non-Python preparation before removing Python dependencies.
 - `test/`: contains Python tests, including tests that import the legacy Python implementation directly. Migrate needed coverage to Go tests or frontend tests, then remove the Python tests; keep only tests for supported code.
 
 ## Go-Specific Rules
@@ -129,7 +129,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries and Go DeepDoc models currently come from `ragflow_deps/download_go_deps.py`; see `README_zh.md` for its isolated setup. The Go tokenizer also needs `ragflow_deps/cl100k_base.tiktoken`, which the current Python dependency pipeline provides. These are build/runtime resource preparation steps, not a Python server requirement.
+Native libraries, Go DeepDoc models, tokenizer assets, and `ragflow_deps/cl100k_base.tiktoken` come from `ragflow_deps/download_deps.py`; see `README_zh.md` for its isolated setup. The downloader installs stagehand into the SDK cache using the version in `go.mod`. Build the Go resource image with `cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
 
 ### Frontend
 ```bash
