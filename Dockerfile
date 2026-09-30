@@ -15,7 +15,13 @@ WORKDIR /ragflow
 # Copy only the five models used by the in-process Go DeepDoc backend.
 RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    cp /huggingface.co/InfiniFlow/deepdoc/{det.ort,layout.ort,tsr.ort,rec.ort,ocr.res} /ragflow/internal/rag/res/deepdoc/
+    tar --exclude='.*' -cf - \
+        /huggingface.co/InfiniFlow/deepdoc/det.ort \
+        /huggingface.co/InfiniFlow/deepdoc/layout.ort \
+        /huggingface.co/InfiniFlow/deepdoc/tsr.ort \
+        /huggingface.co/InfiniFlow/deepdoc/rec.ort \
+        /huggingface.co/InfiniFlow/deepdoc/ocr.res \
+        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc
 
 # Pre-install the Browser component's local driver in the SDK's versioned cache.
 # Read the SDK version from go.mod so module upgrades cannot leave a stale path.

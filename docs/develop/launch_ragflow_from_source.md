@@ -91,13 +91,15 @@ It should print API usage information and may exit with status 1. This command o
 
 The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
 
-To prepare the resource image used by the Go Dockerfile, run the downloader above, then build from the repository root:
+To prepare the resource image used by the Go Dockerfile, run the downloader above, then build from `ragflow_deps/`:
 
 ```bash
-docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
 ```
 
-Its dedicated `Dockerfile.dockerignore` includes only model and tokenizer resources and the stagehand binaries. The resource image contains the five Go DeepDoc files under `/huggingface.co/InfiniFlow/deepdoc/`; the Go Dockerfile copies them into the runtime model directory. Analyzer dictionaries and fonts are installed separately by the Go Dockerfile.
+The downloader prepares the five Go DeepDoc files under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for the resource image, as well as `rag/res/deepdoc/` for local use. The Go Dockerfile copies these models into the runtime model directory. Analyzer dictionaries and fonts are installed separately by the Go Dockerfile.
 
 ## 2. Start supporting services
 

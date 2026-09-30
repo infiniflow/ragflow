@@ -186,13 +186,13 @@ require (
     required = {
         "pdfium-linux-x64-static.tgz": ("pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"]),
         "pdf_oxide-go-ffi-linux-amd64.tar.gz": ("pdf_oxide", ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"]),
-        "office_oxide-v0.1.12-linux-x86_64.tar.gz": ("office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"]),
+        "office_oxide-linux-x86_64.tar.gz": ("office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"]),
     }
     for archive_name, (directory, files) in required.items():
         (native / directory).mkdir(parents=True)
         with tarfile.open(context / archive_name, "w:gz") as archive:
             for name in files:
-                item = tarfile.TarInfo(name)
+                item = tarfile.TarInfo("./" + name)
                 payload = b"payload\x000.1.12\x00" if name.endswith("liboffice_oxide.a") else b"payload"
                 item.size = len(payload)
                 archive.addfile(item, io.BytesIO(payload))
@@ -227,6 +227,8 @@ require (
     stagehand = tmp_path / "cache/stagehand/lib/go_3.22.0/stagehand-server-v3-linux-x64"
     assert stagehand.read_bytes() == b"\x7fELFpayload"
     assert os.access(stagehand, os.X_OK)
+    for filename in ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]:
+        assert (context / "huggingface.co/InfiniFlow/deepdoc" / filename).read_bytes() == b"model"
 
 
 def test_incomplete_native_archive_preserves_existing_directory(tmp_path):

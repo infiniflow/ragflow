@@ -435,12 +435,11 @@ an operator can point at whichever tree they have:
 
 The variable is deliberately **not** embedding-specific: `resolveDeepDocModelDir`
 also checks `<dir>/huggingface.co/InfiniFlow/deepdoc` when `MODEL_ASSETS_DIR`
-points at `<dir>`. The local `ragflow_deps/download_deps.py` puts the five Go
-DeepDoc files in `rag/res/deepdoc/`, outside that tree. To serve both asset types
-from one mounted directory, copy those five files into the DeepDoc path above;
-otherwise mount `rag/res/deepdoc/` separately and set `DEEPDOC_MODEL_DIR`.
-`ragflow_deps/Dockerfile` packages those local DeepDoc files under
-`/huggingface.co/InfiniFlow/deepdoc/` when built from the repository root.
+points at `<dir>`. The downloader prepares the five Go DeepDoc files in that tree
+under `ragflow_deps/`, as well as in `rag/res/deepdoc/` for local use.
+One mounted `ragflow_deps/` directory can therefore serve both asset types.
+`ragflow_deps/Dockerfile` packages the tree under `/huggingface.co/` when built
+from `ragflow_deps/`.
 The layout and the precedence are pinned by tests:
 `internal/common/model_assets_test.go` for the candidate list, and
 `internal/tokenizer/asset_dir_test.go` for the end-to-end case (a child process with an

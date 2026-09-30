@@ -226,7 +226,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://gh-proxy.com/https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://gh-proxy.com/https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            [f"https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v{office_version}/native-linux-x86_64.tar.gz", f"office_oxide-v{office_version}-linux-x86_64.tar.gz"],
+            [f"https://gh-proxy.com/https://github.com/yfedoseev/office_oxide/releases/download/v{office_version}/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://gh-proxy.com/https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -256,7 +256,7 @@ def get_urls(use_china_mirrors=False) -> list[str | list[str]]:
             # functions — pre-downloaded to avoid network access during CI.
             ["https://github.com/kognitos/pdfium-static/releases/download/chromium%2F7809/pdfium-linux-x64-static.tgz", "pdfium-linux-x64-static.tgz"],
             ["https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.73/pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide-go-ffi-linux-amd64.tar.gz"],
-            [f"https://github.com/yfedoseev/office_oxide/releases/download/v{office_version}/native-linux-x86_64.tar.gz", f"office_oxide-v{office_version}-linux-x86_64.tar.gz"],
+            [f"https://github.com/yfedoseev/office_oxide/releases/download/v{office_version}/native-linux-x86_64.tar.gz", "office_oxide-linux-x86_64.tar.gz"],
             [
                 f"https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{ORT_VERSION}/{_ort_asset_name(ORT_VERSION)}",
                 _ort_asset_name(ORT_VERSION),
@@ -342,7 +342,23 @@ def _valid_download(filename):
     if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
         return False
     if filename.endswith((".tar.gz", ".tgz")):
-        return tarfile.is_tarfile(filename)
+        if not tarfile.is_tarfile(filename):
+            return False
+        if os.path.basename(filename) == "office_oxide-linux-x86_64.tar.gz":
+            version = _go_module_version("github.com/yfedoseev/office_oxide/go")
+            with tarfile.open(filename) as archive:
+                try:
+                    member = next((member for member in archive.getmembers() if os.path.normpath(member.name) == "lib/liboffice_oxide.a"), None)
+                    if member is None:
+                        return False
+                    library = archive.extractfile(member)
+                    if library is None:
+                        return False
+                    with library:
+                        return b"\x00" + version.encode() + b"\x00" in library.read()
+                except (KeyError, tarfile.TarError, EOFError):
+                    return False
+        return True
     if filename.endswith(".zip"):
         return zipfile.is_zipfile(filename)
     if os.path.basename(filename).startswith("stagehand-server-"):
@@ -408,6 +424,12 @@ def download_go_models(use_china_mirrors=False):
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Keep the dependency image's existing huggingface.co build-context layout.
+    image_dir = os.path.join(repo_root, "ragflow_deps", "huggingface.co", DEEPDOC_REPO)
+    os.makedirs(image_dir, exist_ok=True)
+    for fname in DEEPDOC_MODEL_FILES:
+        shutil.copyfile(os.path.join(target_dir, fname), os.path.join(image_dir, fname))
 
     print(f"  ✓ Go DeepDoc models ready under {target_dir}")
     print("    No MODEL_DIR env needed: the Go backend auto-discovers this directory.")
@@ -540,7 +562,7 @@ if __name__ == "__main__":
     extractions = [
         ("pdfium-linux-x64-static.tgz", "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
         ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide", ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], None),
-        (f"office_oxide-v{office_version}-linux-x86_64.tar.gz", "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
     ]
 
     for archive, subdir, required_files, version in extractions:

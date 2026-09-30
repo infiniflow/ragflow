@@ -46,13 +46,15 @@ Install `uv` before running the downloader; it installs the script's declared Py
 
 This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64. `build.sh` can also provision the BPE table from explicit caches (`TIKTOKEN_CACHE_DIR`, `DATA_GYM_CACHE_DIR`, `MODEL_ASSETS_DIR`), system resources, or the network; Go builds stop when provisioning fails.
 
-Build the Go resource image from the repository root after preparing these files:
+Build the Go resource image from `ragflow_deps/` after preparing these files:
 
 ```shell
-docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
 ```
 
-The image contains Go DeepDoc weights, runtime tokenizer assets, the BPE table, and stagehand binaries. `ragflow_deps/Dockerfile.dockerignore` limits its build context to those resources.
+The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
