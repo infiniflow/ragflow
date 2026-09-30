@@ -16,7 +16,7 @@
 import logging
 import os
 
-from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env, resolve_model_id
+from api.db.joint_services.tenant_model_service import ensure_mineru_from_env, ensure_monkeyocr_from_env, ensure_opendataloader_from_env, ensure_paddleocr_from_env, resolve_model_id
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_service import TenantModelService
@@ -305,6 +305,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str = None):
     ensure_mineru_from_env(tenant_id)
     ensure_paddleocr_from_env(tenant_id)
     ensure_opendataloader_from_env(tenant_id)
+    ensure_monkeyocr_from_env(tenant_id)
 
     model_type_filter_bin = calculate_model_type(model_type_filter.lower()) if model_type_filter else None
 

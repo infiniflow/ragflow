@@ -96,6 +96,7 @@ def test_normalize_layout_recognizer_strips_known_provider_suffix():
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@mineru") == ("MinerU", "my-llm@my-instance@my-provider@mineru")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@paddleocr") == ("PaddleOCR", "my-llm@my-instance@my-provider@paddleocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@opendataloader") == ("OpenDataLoader", "my-llm@my-instance@my-provider@opendataloader")
+    assert normalize_layout_recognizer("my-llm@my-instance@my-provider@monkeyocr") == ("MonkeyOCR", "my-llm@my-instance@my-provider@monkeyocr")
     assert normalize_layout_recognizer("my-llm@my-instance@my-provider@somark") == ("SoMark", "my-llm@my-instance@my-provider@somark")
 
 
@@ -158,6 +159,10 @@ class _ByDocling(_Parser):
 
 
 class _ByOpenDataLoader(_Parser):
+    pass
+
+
+class _ByMonkeyocr(_Parser):
     pass
 
 
@@ -256,6 +261,7 @@ def naive_module():
             ensure_opendataloader_from_env=lambda *a, **k: None,
             ensure_paddleocr_from_env=lambda *a, **k: None,
             ensure_somark_from_env=lambda *a, **k: None,
+            ensure_monkeyocr_from_env=lambda *a, **k: None,
             get_first_provider_model_name=lambda *a, **k: None,
             get_composite_model_name_by_id=lambda *a, **k: (_ for _ in ()).throw(LookupError()),
         )
@@ -286,6 +292,7 @@ def naive_module():
         module.PARSERS["monkeyocrv2"] = _ByMonkeyOCRv2
         module.PARSERS["docling"] = _ByDocling
         module.PARSERS["opendataloader"] = _ByOpenDataLoader
+        module.PARSERS["monkeyocr"] = _ByMonkeyocr
         module.PARSERS["plaintext"] = _ByPlaintext
 
         yield module
@@ -424,6 +431,18 @@ def test_dispatch_uses_resolved_layout_recognize_via_override_for_opendataloader
     assert op_name == resolved
 
 
+def test_dispatch_uses_resolved_layout_recognize_via_override_for_monkeyocr(naive_module):
+    resolved = "my-llm@my-instance@my-provider@monkeyocr"
+
+    parser, name, _lr, _op, model = naive_module._dispatch_pdf_parser(
+        {"layout_recognize": "06d85f8e819111f1995ef33d60f3a479"},
+        layout_recognize_override=resolved,
+    )
+    assert name == "monkeyocr"
+    assert parser is _ByMonkeyocr
+    assert model == resolved
+
+
 def test_merge_excel_items_keeps_sheets_separate(naive_module):
     items = [
         ("a b", (0, 2, 2, 1, 2)),
@@ -482,3 +501,28 @@ def test_by_paddleocr_not_found_path_unchanged(naive_module):
 
     assert (sections, tables, parser) == (None, None, None)
     callback.assert_called_once_with(-1, "PaddleOCR not found.")
+
+
+def test_by_monkeyocr_invokes_configured_ocr_model(naive_module, monkeypatch, tmp_path):
+    from unittest.mock import Mock
+
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+    selector = "ocr-model@default@MonkeyOCR"
+    mock_parser = types.SimpleNamespace(
+        parse_pdf=Mock(return_value=([("MonkeyOCR body", "text", "")], [])),
+    )
+    mock_bundle = types.SimpleNamespace(mdl=mock_parser)
+
+    monkeypatch.setattr(naive_module, "LLMBundle", Mock(return_value=mock_bundle))
+    monkeypatch.setattr(naive_module, "resolve_model_config", Mock(return_value={"model_name": selector}))
+
+    sections, _tables, parser = naive_module.by_monkeyocr(
+        filename=str(pdf_path),
+        monkeyocr_llm_name=selector,
+        tenant_id="tenant-1",
+    )
+
+    assert sections[0][0] == "MonkeyOCR body"
+    assert parser is mock_parser
+    mock_parser.parse_pdf.assert_called_once()
