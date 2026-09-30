@@ -187,6 +187,11 @@ export function MetadataFilterConditions({
   const logic = prefix + 'meta_data_filter.logic';
   const metadata = useFetchKnowledgeMetadata(kbIds);
 
+  const metadataKeys = useMemo(
+    () => Object.keys(metadata.data),
+    [metadata.data],
+  );
+
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
   const { fields, remove, append } = useFieldArray({
@@ -219,13 +224,19 @@ export function MetadataFilterConditions({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="max-h-[300px] !overflow-y-auto scrollbar-auto">
-            {Object.keys(metadata.data).map((key, idx) => {
-              return (
-                <DropdownMenuItem key={idx} onClick={add(key)}>
-                  {key}
-                </DropdownMenuItem>
-              );
-            })}
+            {metadataKeys.length === 0 ? (
+              <DropdownMenuItem disabled>
+                {t('knowledgeDetails.emptyMetadata')}
+              </DropdownMenuItem>
+            ) : (
+              metadataKeys.map((key, idx) => {
+                return (
+                  <DropdownMenuItem key={idx} onClick={add(key)}>
+                    {key}
+                  </DropdownMenuItem>
+                );
+              })
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

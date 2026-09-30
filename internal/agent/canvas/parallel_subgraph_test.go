@@ -1,8 +1,41 @@
 package canvas
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
+
+type failingParallelCloneValue struct{}
+
+func (failingParallelCloneValue) MarshalJSON() ([]byte, error) {
+	return nil, errors.New("clone failure")
+}
+
+func TestParallelCloneFailureStopsItemBeforeInvocation(t *testing.T) {
+	c := &Canvas{Components: map[string]CanvasComponent{
+		"Message:body": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"done"}}}},
+	}}
+	sub, err := buildParallelItemWorkflow(t.Context(), c, "parallel", map[string]bool{"Message:body": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, err := buildParallelOuterWorkflow(t.Context(), "parallel", "sys.items", 1, nil, sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnable, err := outer.Compile(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := NewCanvasState("run", "session")
+	state.Sys["items"] = []any{"one"}
+	state.Sys["broken"] = failingParallelCloneValue{}
+	_, err = runnable.Invoke(withState(t.Context(), state), map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "clone failure") {
+		t.Fatalf("Invoke error = %v; want clone failure", err)
+	}
+}
 
 func TestCollectGroupedMembers_UsesParentMetadata(t *testing.T) {
 	c := &Canvas{

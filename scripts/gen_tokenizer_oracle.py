@@ -180,7 +180,7 @@ ORACLES = {
 # the served behaviour comes from tokenizer.json above.
 SPM_MODEL = "huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model"
 
-# The cl100k table as shipped in ragflow_deps (the OpenAI blob download_deps.py fetches).
+# The cl100k table as provisioned by download_deps.py or build.sh in ragflow_deps.
 # The Go counter loads this file; tiktoken reads its own cached copy of the same blob, so
 # the check in main() is what keeps the check-out honest about what it ships.
 CL100K_TABLE = "cl100k_base.tiktoken"
@@ -337,7 +337,7 @@ def main() -> int:
     else:
         tokenizer_path = os.path.join(args.deps, rel)
         if not os.path.isfile(tokenizer_path):
-            print(f"missing oracle tokenizer: {tokenizer_path}\nrun `uv run ragflow_deps/download_go_deps.py`", file=sys.stderr)
+            print(f"missing oracle tokenizer: {tokenizer_path}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
             return 1
         tokenizer = Tokenizer.from_file(tokenizer_path)
         vocab = tokenizer.get_vocab()
@@ -379,7 +379,7 @@ def main() -> int:
             # --spm-crosscheck was asked for, so the asset it reads has to be there:
             # skipping quietly would turn "the second opinion agrees" into a claim
             # nobody made. Assets are not optional in this script - they are checked.
-            print(f"missing sentencepiece model: {model_file}\nrun `uv run ragflow_deps/download_go_deps.py`", file=sys.stderr)
+            print(f"missing sentencepiece model: {model_file}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
             return 1
         processor = spm.SentencePieceProcessor(model_file=model_file)
         divergent = 0

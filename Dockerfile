@@ -30,7 +30,6 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         --exclude='layout.manual.ort' \
         --exclude='layout.paper.ort' \
         -cf - \
-        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
     #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
@@ -186,9 +185,9 @@ COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
 # build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
-# ORT version pins from these files; without them the --go build fails with
+# ORT version pin from this file; without it the --go build fails with
 # "could not parse the ONNX Runtime version from one of the pinned locations".
-COPY ragflow_deps/download_go_deps.py ragflow_deps/download_deps.py ./ragflow_deps/
+COPY ragflow_deps/download_deps.py ./ragflow_deps/
 COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
