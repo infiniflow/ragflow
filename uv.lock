@@ -941,11 +941,11 @@ wheels = [
 
 [[package]]
 name = "hpack"
-version = "4.1.0"
+version = "4.2.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/2c/48/71de9ed269fdae9c8057e5a4c0aa7402e8bb16f2c6e90b3aa53327b113f8/hpack-4.1.0.tar.gz", hash = "sha256:ec5eca154f7056aa06f196a557655c5b009b382873ac8d1e66e79e87535f1dca" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/26/5b/fcabf6028144a8723726318b07a32c2f3314acdff6265743cf08a344b18e/hpack-4.2.0.tar.gz", hash = "sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/07/c6/80c95b1b2b94682a72cbdbfb85b81ae2daffa4291fbfa1b1464502ede10d/hpack-4.1.0-py3-none-any.whl", hash = "sha256:157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/71/b4/4a9fcfb2aef6ba44d9073ecd301443aa00b3dac95de5619f2a7de7ec8a91/hpack-4.2.0-py3-none-any.whl", hash = "sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986" },
 ]
 
 [[package]]
@@ -1924,7 +1924,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "1.0.0-rc1"
+version = "1.0.0rc1"
 source = { virtual = "." }
 dependencies = [
     { name = "agentrun-sdk" },
