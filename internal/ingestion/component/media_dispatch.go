@@ -14,21 +14,38 @@
 // limitations under the License.
 //
 
-// Media dispatch: image, audio, and video branches that require model access
-// (IMAGE2TEXT, SPEECH2TEXT) at the component layer.
+// Media dispatch: image, audio, video parser branches that require
+// model access (OCR, IMAGE2TEXT, SPEECH2TEXT) at the component
+// layer. Mirrors Python's _image / _audio / _video methods in
+// rag/flow/parser/parser.py and rag/app/picture.py.
+//
+// These follow the maybeDispatchPDFVision pattern: they bypass
+// dispatchParse and call the model directly from the component
+// layer, returning a parserDispatchResult.
 
 package component
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"log/slog"
+
+	// Import image decoders for common formats.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"unicode/utf8"
 
-	"go.uber.org/zap"
-
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -48,12 +65,12 @@ func maybeDispatchVideo(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parser.ParseResult, bool, error) {
+) (parserDispatchResult, bool, error) {
 	if fileType != utility.FileTypeVIDEO {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 	if _, ok := setups["video"]; !ok {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 
 	// Video parsing is intentionally not implemented yet: the underlying
@@ -64,14 +81,18 @@ func maybeDispatchVideo(
 	// video_url. Returning an explicit error is safer than silently producing
 	// a description from the prompt text alone. The real implementation must
 	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
-	// Gemini: raw-bytes inline_data; Qwen: file://).
-	// When video analysis is implemented, it emits standard Text JSON items:
-	// [{"text": transcript, "doc_type_kwd": "text"}] with output_format "json".
-	return parser.ParseResult{}, true,
+	// Gemini: raw-bytes inline_data; Qwen: file://)
+	return parserDispatchResult{}, true,
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: IMAGE2TEXT vision describe ---
+// Image dispatch: OCR + IMAGE2TEXT vision describe ---
+// Mirrors Python's rag/app/picture.py:chunk() image branch:
+//   1. Try PaddleOCR if layout_recognize is "@PaddleOCR"
+//   2. Fallback to local ONNX OCR (DeepDoc /predict/ocr endpoint)
+//   3. If OCR text is short (≤32 chars or ≤32 English words),
+//      also call IMAGE2TEXT VLM describe()
+//   4. Returns combined text
 
 func maybeDispatchImage(
 	ctx context.Context,
@@ -81,62 +102,65 @@ func maybeDispatchImage(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-	enableVisionEnhancement bool,
-) (parser.ParseResult, bool, error) {
+) (parserDispatchResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 	setup, ok := setups["image"]
 	if !ok {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	if !enableVisionEnhancement {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image has no searchable text because vision enhancement is disabled")
+	if tenantID == "" {
+		return parserDispatchResult{}, true,
+			fmt.Errorf("parser: image requires tenant_id")
 	}
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups)
-	if parsed.Err != nil {
-		return parsed, true, parsed.Err
-	}
-	if len(parsed.JSON) == 0 {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image item")
-	}
-	imageData, _ := parsed.JSON[0]["image"].(string)
-	if imageData == "" {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image payload")
-	}
-	result, handled, err := maybeDispatchImageVLM(ctx, db, imageData, tenantID, setup, inputs)
-	result.Warnings = append(result.Warnings, parsed.Warnings...)
-	result.File = parsed.File
-	if err == nil && len(result.JSON) > 0 {
-		text, _ := result.JSON[0]["text"].(string)
-		if strings.TrimSpace(text) == "" {
-			if len(result.Warnings) > 0 {
-				return result, true, fmt.Errorf("parser: image has no searchable text: %s", result.Warnings[0])
+
+	// --- Phase 1: OCR ---
+	var ocrText string
+
+	// Step 1a: Try PaddleOCR if layout_recognize is set to PaddleOCR.
+	// Mirrors Python's picture.py:_try_paddleocr_image().
+	layoutRecognize := getStringOr(setup, "layout_recognize", "")
+	if layoutRecognize != "" {
+		recognizer, _ := normalizeLayoutRecognizer(layoutRecognize)
+		if recognizer == "PaddleOCR" {
+			if txt, err := runPaddleOCRImage(binary, filename); err == nil && txt != "" {
+				ocrText = txt
 			}
-			return result, true, fmt.Errorf("parser: vision enhancement returned no searchable text")
 		}
 	}
-	return result, handled, err
-}
 
-func maybeDispatchImageVLM(
-	ctx context.Context,
-	db *gorm.DB,
-	dataURI string,
-	tenantID string,
-	setup schema.ParserSetup,
-	inputs map[string]any,
-) (parser.ParseResult, bool, error) {
-	// --- Optional VLM description ---
-	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
-	if tenantID == "" {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, "image VLM enhancement skipped: tenant ID is missing")
-		return result, true, nil
+	// Step 1b: Fallback to local ONNX OCR (DeepDoc /predict/ocr).
+	// Mirrors Python's picture.py:ocr(np.array(img)) from deepdoc.vision.
+	if ocrText == "" {
+		if txt, err := runLocalImageOCR(binary); err == nil && txt != "" {
+			ocrText = txt
+		}
 	}
 
-	// Use the configured image VLM or the tenant default.
+	// The image family always emits a structured JSON item carrying the
+	// image attachment (data URI) and doc_type_kwd, mirroring Python
+	// rag/app/picture.py:71-72 (doc["image"]=img, doc["doc_type_kwd"]=
+	// "image"). picture.py has no "text" output mode — it always returns
+	// a structured doc — so output_format is hardcoded to "json" and any
+	// setup override is ignored. The former behavior returned a bare Text
+	// string, which dropped the image attachment, set doc_type to "text",
+	// and on the default json path produced JSON=nil so downstream
+	// Chunkers rejected the payload with errRequiredField{"json"}.
+	imageB64 := base64.StdEncoding.EncodeToString(binary)
+	dataURI := "data:" + imageMIME(filename) + ";base64," + imageB64
+
+	// --- Phase 2: VLM description (when OCR text is short) ---
+	// Mirrors Python's check: if (eng and len(txt.split()) > 32) or len(txt) > 32
+	// then use OCR text only; otherwise call cv_mdl.describe().
+	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	if vlmGateShouldSkip(ocrText, lang) {
+		// OCR returned substantial text — skip VLM.
+		return imageDispatchResult(ocrText, dataURI), true, nil
+	}
+
+	// Short OCR text (or no text): supplement with VLM describe.
 	modelRef := configuredMediaModelID(setup, "image")
 	var driver modelModule.ModelDriver
 	var modelName string
@@ -145,20 +169,20 @@ func maybeDispatchImageVLM(
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
 		if err != nil {
-			common.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+			slog.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}
-	if err == nil && driver == nil {
-		err = fmt.Errorf("no usable vision model")
-	}
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err))
-		return result, true, nil
+		// If VLM is unavailable, but we have OCR text, return it.
+		if ocrText != "" {
+			return imageDispatchResult(ocrText, dataURI), true, nil
+		}
+		return parserDispatchResult{}, true,
+			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
@@ -178,25 +202,38 @@ func maybeDispatchImageVLM(
 	vision := true
 	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement failed: %v", err))
-		return result, true, nil
+		if ocrText != "" {
+			return imageDispatchResult(ocrText, dataURI), true, nil
+		}
+		return parserDispatchResult{}, true,
+			fmt.Errorf("parser: picture describe: %w", err)
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
 		vlmText = strings.TrimSpace(*resp.Answer)
 	}
 
-	return imageDispatchResult(vlmText, dataURI), true, nil
+	// Combine OCR + VLM text.
+	// Mirrors Python: txt += "\n" + ans
+	combined := ocrText
+	if vlmText != "" {
+		if combined != "" {
+			combined += "\n" + vlmText
+		} else {
+			combined = vlmText
+		}
+	}
+	return imageDispatchResult(combined, dataURI), true, nil
 }
 
 // imageDispatchResult builds the structured JSON payload for the image
-// family: a single item carrying the VLM description, the image attachment
+// family: a single item carrying the combined text, the image attachment
 // (data URI), and doc_type_kwd "image". Mirrors Python
 // rag/app/picture.py:71-72.
-func imageDispatchResult(text, dataURI string) parser.ParseResult {
-	return parser.ParseResult{
+func imageDispatchResult(text, dataURI string) parserDispatchResult {
+	return parserDispatchResult{
 		OutputFormat: "json",
+		DocType:      "image",
 		JSON: []map[string]any{{
 			"text":         text,
 			"image":        dataURI,
@@ -219,17 +256,17 @@ func maybeDispatchAudio(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-) (parser.ParseResult, bool, error) {
+) (parserDispatchResult, bool, error) {
 	if fileType != utility.FileTypeAURAL {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 	setup, ok := setups["audio"]
 	if !ok {
-		return parser.ParseResult{}, false, nil
+		return parserDispatchResult{}, false, nil
 	}
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
-		return parser.ParseResult{}, true,
+		return parserDispatchResult{}, true,
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
@@ -241,29 +278,28 @@ func maybeDispatchAudio(
 	if modelRef != "" {
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
 		if err != nil {
-			common.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+			slog.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
+				"modelRef", modelRef, "tenant", tenantID, "err", err)
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 	}
 	if err != nil {
-		return parser.ParseResult{}, true,
+		return parserDispatchResult{}, true,
 			fmt.Errorf("parser: audio speech2text model: %w", err)
 	}
 
 	tmpFile, err := writeTempAudioFile(filename, binary)
 	if err != nil {
-		return parser.ParseResult{}, true,
+		return parserDispatchResult{}, true,
 			fmt.Errorf("parser: audio temp file: %w", err)
 	}
 	defer os.Remove(tmpFile)
 
-	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
-	resp, err := asrModel.Transcribe(ctx, &tmpFile, nil, nil)
+	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpFile, apiConfig, nil, nil)
 	if err != nil {
-		return parser.ParseResult{}, true,
+		return parserDispatchResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)
 	}
 
@@ -272,12 +308,29 @@ func maybeDispatchAudio(
 		transcription = resp.Text
 	}
 
-	return parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{{
-			"text":         transcription,
-			"doc_type_kwd": "text",
-		}},
+	outputFormat, _ := setup["output_format"].(string)
+	if outputFormat == "" {
+		outputFormat = "json"
+	}
+	// Diff 2.11: when output_format is "json" the transcription must be
+	// carried as a JSON item. Returning it only in Text made the Invoke
+	// switch silently drop it (the switch has no "json" branch and the
+	// JSON slice was empty). Mirror the JSON-item shape used by the
+	// other parser branches.
+	if outputFormat == "json" {
+		return parserDispatchResult{
+			OutputFormat: "json",
+			DocType:      "audio",
+			JSON: []map[string]any{{
+				"text":         transcription,
+				"doc_type_kwd": "audio",
+			}},
+		}, true, nil
+	}
+	return parserDispatchResult{
+		OutputFormat: outputFormat,
+		DocType:      "audio",
+		Text:         transcription,
 	}, true, nil
 }
 
@@ -295,6 +348,62 @@ func writeTempAudioFile(filename string, binary []byte) (string, error) {
 		return "", err
 	}
 	return tmp.Name(), nil
+}
+
+// normalizeLayoutRecognizer parses layout_recognize strings like
+// "model@PaddleOCR" → ("PaddleOCR", "model@PaddleOCR").
+// Mirrors Python's common/parser_config_utils.py:normalize_layout_recognizer().
+func normalizeLayoutRecognizer(raw string) (recognizer, modelName string) {
+	lowered := strings.ToLower(raw)
+	if strings.HasSuffix(lowered, "@paddleocr") {
+		return "PaddleOCR", raw
+	}
+	if strings.HasSuffix(lowered, "@mineru") {
+		return "MinerU", raw
+	}
+	if strings.HasSuffix(lowered, "@somark") {
+		return "SoMark", raw
+	}
+	if strings.HasSuffix(lowered, "@opendataloader") {
+		return "OpenDataLoader", raw
+	}
+	if strings.HasSuffix(lowered, "@monkeyocr") {
+		return "MonkeyOCR", raw
+	}
+	return raw, ""
+}
+
+// imageMIME maps common image filename extensions to MIME types
+// for constructing base64 data URIs.
+func imageMIME(filename string) string {
+	dot := strings.LastIndex(filename, ".")
+	if dot == -1 {
+		return "image/png"
+	}
+	switch strings.ToLower(filename[dot+1:]) {
+	case "jpg", "jpeg":
+		return "image/jpeg"
+	case "png":
+		return "image/png"
+	case "gif":
+		return "image/gif"
+	case "bmp":
+		return "image/bmp"
+	case "webp":
+		return "image/webp"
+	case "svg":
+		return "image/svg+xml"
+	case "tiff", "tif":
+		return "image/tiff"
+	case "ico":
+		return "image/x-icon"
+	case "avif":
+		return "image/avif"
+	case "heic":
+		return "image/heic"
+	default:
+		return "image/png"
+	}
 }
 
 // videoMIME maps common video filename extensions to MIME types
@@ -329,4 +438,197 @@ func videoMIME(filename string) string {
 	default:
 		return "video/mp4"
 	}
+}
+
+// --- OCR helpers for picture dispatch ---
+
+// vlmGateShouldSkip determines whether the OCR text is substantial enough
+// to skip the secondary VLM description call.
+// Mirrors Python picture.py:chunk():
+//
+//	txt = txt.strip()
+//	if (eng and len(txt.split()) > 32) or len(txt) > 32 -> skip VLM
+func vlmGateShouldSkip(ocrText, lang string) bool {
+	ocrText = strings.TrimSpace(ocrText)
+	if ocrText == "" {
+		return false
+	}
+	eng := strings.EqualFold(lang, "english")
+	wordCount := len(strings.Fields(ocrText))
+	charCount := utf8.RuneCountInString(ocrText)
+	return (eng && wordCount > 32) || charCount > 32
+}
+
+// runPaddleOCRImage tries PaddleOCR remote API for image text extraction.
+// Mirrors Python's picture.py:_try_paddleocr_image() which creates a
+// PaddleOCRParser and calls parse_image().
+func runPaddleOCRImage(binary []byte, filename string) (string, error) {
+	client := parser.NewPaddleOCRClientFromEnv()
+	if !client.Enabled() {
+		return "", fmt.Errorf("paddleocr: not configured (set PADDLEOCR_ACCESS_TOKEN)")
+	}
+	return client.ParseImage(binary, filename)
+}
+
+// runLocalImageOCR detects and recognizes text in an image using the
+// in-process DeepDoc analyzer (ONNX models served locally via the native
+// backend). Mirrors Python's deepdoc.vision.OCR local ONNX pipeline; the
+// external HTTP service is no longer a backend (see parser.GetDocAnalyzer).
+//
+// Pipeline:
+//  1. Decode image bytes → image.Image
+//  2. OCRDetect → find text region boxes
+//  3. For each box: crop → OCRRecognize → text
+//  4. Sort boxes by Y, then X (reading order)
+//  5. Join all recognized text with newlines
+func runLocalImageOCR(binary []byte) (string, error) {
+	analyzer, err := parser.GetDocAnalyzer()
+	if err != nil {
+		return "", fmt.Errorf("local OCR: %w", err)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(binary))
+	if err != nil {
+		return "", fmt.Errorf("local OCR: decode image: %w", err)
+	}
+
+	// Step 1: Detect text regions.
+	ctx := context.Background()
+	boxes, err := analyzer.OCRDetect(ctx, img)
+	if err != nil {
+		return "", fmt.Errorf("local OCR: detect: %w", err)
+	}
+	if len(boxes) == 0 {
+		return "", nil
+	}
+
+	// Step 2: Sort boxes by Y (top to bottom), then X (left to right)
+	// for reading-order text assembly.
+	sort.Slice(boxes, func(i, j int) bool {
+		yi := (boxes[i].Y0 + boxes[i].Y2) / 2
+		yj := (boxes[j].Y0 + boxes[j].Y2) / 2
+		if yi < yj {
+			return true
+		}
+		if yi > yj {
+			return false
+		}
+		return boxes[i].X0 < boxes[j].X0
+	})
+
+	// Step 3: Recognize text per box.
+	var texts []string
+	bounds := img.Bounds()
+	for _, box := range boxes {
+		// Convert quad box to axis-aligned crop rect.
+		x0 := int(min4(box.X0, box.X1, box.X2, box.X3))
+		y0 := int(min4(box.Y0, box.Y1, box.Y2, box.Y3))
+		x1 := int(max4(box.X0, box.X1, box.X2, box.X3))
+		y1 := int(max4(box.Y0, box.Y1, box.Y2, box.Y3))
+
+		// Clamp to image bounds.
+		if x0 < bounds.Min.X {
+			x0 = bounds.Min.X
+		}
+		if y0 < bounds.Min.Y {
+			y0 = bounds.Min.Y
+		}
+		if x1 > bounds.Max.X {
+			x1 = bounds.Max.X
+		}
+		if y1 > bounds.Max.Y {
+			y1 = bounds.Max.Y
+		}
+		if x1 <= x0 || y1 <= y0 {
+			continue
+		}
+
+		// Crop the region. This requires an image type that supports
+		// cropping; for simplicity we recode through a sub-image.
+		crop := cropImage(img, x0, y0, x1, y1)
+		if crop == nil {
+			continue
+		}
+
+		recTexts, err := analyzer.OCRRecognize(ctx, crop)
+		if err != nil {
+			continue // skip boxes that fail recognition
+		}
+		for _, t := range recTexts {
+			s := strings.TrimSpace(t.Text)
+			if s != "" {
+				texts = append(texts, s)
+			}
+		}
+	}
+
+	if len(texts) == 0 {
+		return "", nil
+	}
+	return strings.Join(texts, "\n"), nil
+}
+
+// cropImage extracts a sub-rectangle from img. Works with any image.Image
+// by converting to RGBA if needed, then cropping.
+func cropImage(img image.Image, x0, y0, x1, y1 int) image.Image {
+	bounds := img.Bounds()
+	cropRect := image.Rect(
+		bounds.Min.X+x0, bounds.Min.Y+y0,
+		bounds.Min.X+x1, bounds.Min.Y+y1,
+	)
+	switch src := img.(type) {
+	case *image.RGBA:
+		return src.SubImage(cropRect)
+	case *image.NRGBA:
+		return src.SubImage(cropRect)
+	case *image.RGBA64:
+		return src.SubImage(cropRect)
+	case *image.NRGBA64:
+		return src.SubImage(cropRect)
+	case *image.Gray:
+		return src.SubImage(cropRect)
+	case *image.Gray16:
+		return src.SubImage(cropRect)
+	case *image.YCbCr:
+		return src.SubImage(cropRect)
+	case *image.Paletted:
+		return src.SubImage(cropRect)
+	default:
+		// Convert to RGBA for cropping.
+		rgba := image.NewRGBA(cropRect)
+		for y := cropRect.Min.Y; y < cropRect.Max.Y; y++ {
+			for x := cropRect.Min.X; x < cropRect.Max.X; x++ {
+				rgba.Set(x, y, img.At(x, y))
+			}
+		}
+		return rgba
+	}
+}
+
+func min4(a, b, c, d float64) float64 {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	if d < m {
+		m = d
+	}
+	return m
+}
+
+func max4(a, b, c, d float64) float64 {
+	m := a
+	if b > m {
+		m = b
+	}
+	if c > m {
+		m = c
+	}
+	if d > m {
+		m = d
+	}
+	return m
 }
