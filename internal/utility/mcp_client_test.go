@@ -43,6 +43,39 @@ func allowLoopbackForTests(t *testing.T) func() {
 	return func() { common.LookupHost = orig }
 }
 
+func TestFetchToolsDoesNotFollowRedirectToUnvalidatedHost(t *testing.T) {
+	var targetRequests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	const hostname = "public.example"
+	original := common.AssertURLSafe
+	common.AssertURLSafe = func(string) (string, string, error) {
+		return hostname, "127.0.0.1", nil
+	}
+	defer func() { common.AssertURLSafe = original }()
+
+	_, err := FetchTools(t.Context(), FetchOptions{
+		URL:        "http://" + hostname + ":" + strings.TrimPrefix(source.URL, "http://127.0.0.1:"),
+		ServerType: TransportStreamableHTTP,
+		Timeout:    time.Second,
+	})
+	if err == nil {
+		t.Fatal("FetchTools unexpectedly followed redirect")
+	}
+	if got := targetRequests.Load(); got != 0 {
+		t.Fatalf("unvalidated target received %d requests, want 0", got)
+	}
+}
+
 func TestStreamableSessionCleanupBudget(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
