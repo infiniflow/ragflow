@@ -207,12 +207,21 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
    > ⚠️ **提示：** `v1.0.0-rc1` 及之后的发布标签使用 Go 实现。详细平台和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
 
+   进入仓库中的 Docker 部署目录。
+
    ```bash
-   # 进入仓库中的 Docker 部署目录
    cd ragflow/docker
-   # 切换到 Go 版 v1.0.0-rc1 发布标签
+   ```
+
+   切换到 Go 版 `v1.0.0-rc1` 发布标签。
+
+   ```bash
    git checkout v1.0.0-rc1
-   # 在后台启动 Go 服务及其依赖服务
+   ```
+
+   在后台启动 Go 服务及其依赖服务。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -227,7 +236,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 4. 服务器启动成功后再次确认服务器状态：
 
-   使用 `docker compose -f docker-compose.yml ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
+   使用 `docker ps` 检查依赖服务状态；依赖服务显示 `healthy` 且 RAGFlow 容器持续运行后，通过 HTTP 接口判断 RAGFlow 是否就绪（RAGFlow 容器本身未定义 Compose healthcheck）：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -238,9 +247,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
    如果服务启动异常，再查看对应容器日志：
 
    ```bash
-   # CPU 部署
-   docker compose -f docker-compose.yml logs --tail 50 ragflow-cpu
-
+   docker logs --tail 50 ragflow-cpu
    ```
 
 5. 在你的浏览器中输入你的服务器对应的 IP 地址并登录 RAGFlow。
@@ -281,7 +288,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使�
    bash build.sh --all
    ```
 
-   下载脚本负责准备 Go 构建所需的原生库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
+   下载脚本负责准备 Go 构建所需的原生库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
 
 3. 启动本地依赖服务，并确认 **conf/service_conf.yaml** 中的主机与端口对应宿主机可访问的地址。Go 源码服务通过 `localhost:6379` 连接 Compose 暴露的 Kvrocks；Go Docker 服务则在容器网络中连接 Kvrocks。如果使用默认 Elasticsearch，还需先将 Docker 主机的 `vm.max_map_count` 设为至少 `262144`。
 

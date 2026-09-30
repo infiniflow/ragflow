@@ -1,11 +1,13 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -438,18 +440,18 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, found := resolveImageURL("data:image/png;base64," + b64)
+	result, raw, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
-	if result != b64 {
+	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, found := resolveImageURL("./local/image.png"); found {
+	if _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -468,13 +470,52 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	result, found := resolveImageURL(ts.URL + "/image.png")
+	encoded, result, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
-	expectedB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-bytes"))
-	if result != expectedB64 {
-		t.Fatalf("got %q, want %q", result, expectedB64)
+	if encoded != "" || string(result) != "fake-png-bytes" {
+		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+}
+
+func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
+	previous := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = previous })
+
+	var fetches atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("abc"))
+	}))
+	defer server.Close()
+
+	markdown := "![first](" + server.URL + "/1)\n\n" +
+		"![second](" + server.URL + "/2)\n\n" +
+		"![third](" + server.URL + "/3)\n"
+	doc := markdownNew().Parse([]byte(markdown))
+	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
+	var items []map[string]any
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, budget); unresolved != 0 {
+		t.Fatalf("unresolved images = %d, want 0", unresolved)
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("remote fetches = %d, want 2 before the item limit", got)
+	}
+	if len(items) != 3 || items[0]["image"] != base64.StdEncoding.EncodeToString([]byte("abc")) {
+		t.Fatalf("first image was not retained: %+v", items)
+	}
+	for _, index := range []int{1, 2} {
+		if items[index]["image"] != nil || items[index]["media_omitted"] != true {
+			t.Fatalf("image %d = %+v, want omitted payload", index, items[index])
+		}
+	}
+	warnings := strings.Join(budget.warnings(), "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte document image budget") ||
+		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item document limit") {
+		t.Fatalf("warnings = %q, want document byte and item limit warnings", warnings)
 	}
 }
 
@@ -517,21 +558,21 @@ func TestFindBlockImage(t *testing.T) {
 	}
 }
 
-func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
-	_, err := fetchImageAsBase64("https://user:pass@example.com/img.png")
+func TestFetchImage_RejectsCredentials(t *testing.T) {
+	_, err := fetchImage(context.Background(), "https://user:pass@example.com/img.png")
 	if err == nil {
 		t.Fatal("expected error for URL with credentials")
 	}
 }
 
-func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+func TestFetchImage_InvalidURL(t *testing.T) {
 	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
-	_, err := fetchImageAsBase64(ts.URL + "/nonexistent.png")
+	_, err := fetchImage(context.Background(), ts.URL+"/nonexistent.png")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}

@@ -24,15 +24,14 @@
 // internal/service. The interface is the minimum surface the audio
 // package needs:
 //
-//   - Synthesize: a single method that the model's audio driver
+//   - AudioSpeechForTenant: a tenant-aware method that the model's audio driver
 //     actually exposes (see internal/entity/models/types.go:32-33
 //     BaseModel.AudioSpeech); everything else (provider lookup,
 //     tenant resolution, fallback model selection) is the model's
 //     own internal responsibility.
 //
 // The audio package does not import internal/service directly; it
-// takes a TTSDispatcher (typically the *service.ModelProviderService
-// instance installed at boot). The function returns a non-nil
+// takes a TTSDispatcher implemented by the model-call service installed at boot. The function returns a non-nil
 // SynthesizeResponse on success and a non-nil error on every
 // failure path; the audio package's caller (modelProviderSynthesizer)
 // maps nil-error-with-empty-audio to ErrSynthesizeEmpty and nil-
@@ -49,24 +48,14 @@ import (
 )
 
 // TTSDispatcher is the minimum interface the audio package needs
-// from the project's model provider service. It mirrors the
-// *service.ModelProviderService.AudioSpeech method shape so the
-// production wiring is a one-line cast. Tests can substitute a
-// stub without spinning up a real model driver.
-//
-// The signature matches the real AudioSpeech exactly (including
-// the common.ErrorCode return) so no adapter wrapper is needed
-// at the call site. A non-CodeSuccess return is treated as an
-// error; the audio package propagates the error to the SSE
-// consumer.
+// from the project's model-call service. Tests can substitute a stub
+// without spinning up a real model driver.
 type TTSDispatcher interface {
-	AudioSpeech(
+	AudioSpeechForTenant(
 		ctx context.Context,
-		providerName, instanceName, modelName, modelID *string,
-		userID string,
+		modelRef, tenantID string,
 		audioContent *string,
-		apiConfig *modelModule.APIConfig,
-		modelConfig *modelModule.TTSConfig,
+		config *modelModule.TTSConfig,
 	) (*modelModule.TTSResponse, common.ErrorCode, error)
 }
 
@@ -96,24 +85,15 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 		return nil
 	}
 	return func(ctx context.Context, req ModelProviderRequest) (*SynthesizeResponse, error) {
-		// ModelName carries the audio engine id ("gtts" / "edge-tts")
-		// when auto_play is the boolean UI toggle — those are built-in
-		// engine selectors, not tenant model names. Leave modelName nil
-		// for them (and for an empty hint) so the dispatcher falls back
-		// to the tenant's default TTS model, mirroring Python's canvas
-		// auto_play. Only an explicit model name is passed through to
-		// the by-name lookup.
-		var modelName *string
+		// Built-in engine selectors are not tenant model references. An
+		// empty modelRef lets the model-call service resolve the tenant's
+		// default TTS model.
+		modelRef := ""
 		switch Engine(req.ModelName) {
 		case EngineEmpty, EngineGTTS, EngineEdge, EngineCustom:
 		default:
-			mn := req.ModelName
-			modelName = &mn
+			modelRef = req.ModelName
 		}
-
-		// We don't have a per-request APIConfig; leave nil so
-		// the model's default credentials / base URL take effect.
-		var apiConfig *modelModule.APIConfig
 
 		// Build a TTSConfig from the request's voice + lang so
 		// the model driver can select a voice variant when the
@@ -132,15 +112,11 @@ func NewTTSDispatchFunc(d TTSDispatcher) ModelProviderFunc {
 		}
 
 		text := req.Text
-		resp, code, err := d.AudioSpeech(
+		resp, code, err := d.AudioSpeechForTenant(
 			ctx,
-			nil, // providerName — let the dispatcher resolve by name
-			nil, // instanceName — same
-			modelName,
-			nil, // modelID — look up by (provider, instance, model)
+			modelRef,
 			req.TenantID,
 			&text,
-			apiConfig,
 			ttsConfig,
 		)
 		if err != nil {

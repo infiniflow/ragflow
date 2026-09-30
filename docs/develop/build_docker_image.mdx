@@ -62,7 +62,7 @@ The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go 
 
 ```bash
 docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs --tail 50 ragflow-cpu
+docker logs --tail 50 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 

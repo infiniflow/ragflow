@@ -43,7 +43,7 @@ func (dao *DocumentDAO) Create(ctx context.Context, db *gorm.DB, document *entit
 // GetByID get document by ID
 func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
-	err := db.WithContext(ctx).First(&document, "id = ?", id).Error
+	err := db.WithContext(ctx).Take(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -503,6 +503,19 @@ func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gor
 func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	return count, err
+}
+
+// CountByKBAndSourceTypes counts documents from the selected sources in one dataset.
+func (dao *DocumentDAO) CountByKBAndSourceTypes(ctx context.Context, db *gorm.DB, kbID string, sourceTypes []string) (int64, error) {
+	if len(sourceTypes) == 0 {
+		return 0, nil
+	}
+
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("kb_id = ? AND source_type IN ?", kbID, sourceTypes).
+		Count(&count).Error
 	return count, err
 }
 

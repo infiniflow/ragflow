@@ -132,7 +132,7 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.FileCommit{}, &entity.FileCommitItem{},
 		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{},
 		&entity.TenantModelGroup{}, &entity.TenantModelGroupMapping{},
-		&entity.TenantLLM{}, &entity.TenantLangfuse{}, &entity.APIToken{}, &entity.InvitationCode{},
+		&entity.TenantLangfuse{}, &entity.APIToken{}, &entity.InvitationCode{},
 	)
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 	return db

@@ -16,7 +16,7 @@ WORKDIR /ragflow
 # layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
 # exclude them from the tar extract and symlink them to layout.onnx instead,
 # saving ~219MB in the image.
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' \
         --exclude='layout.laws.onnx' \
@@ -32,13 +32,13 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.laws.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.laws.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.manual.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.paper.ort
+        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.manual.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.paper.onnx
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.laws.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.manual.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.paper.ort
 
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously
@@ -243,19 +243,18 @@ COPY --chmod=755 docker/entrypoint*.sh ./
 RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-COPY docker/nginx/ragflow.conf.golang \
-     /etc/nginx/conf.d/
+COPY docker/nginx/ragflow.conf /etc/nginx/conf.d/
 
 RUN rm -f /etc/nginx/sites-enabled/default
 
 
 COPY conf conf
-COPY agent/templates agent/templates
+COPY internal/agent/templates agent/templates
 COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).
-COPY api/db/init_data/compilation_templates ./api/db/init_data/compilation_templates
+COPY internal/ingestion/knowledge_compile/templates ./internal/ingestion/knowledge_compile/templates
 
 
 # Copy compiled web pages

@@ -574,12 +574,8 @@ Lists messages currently retained in the task stream. The optional `PENDING` key
 **Syntax**
 
 ```sql
-MQ LIST [PENDING];
+MQ LIST;
 ```
-
-| Parameter | Required | Description |
-| --- | --- | --- |
-| `[PENDING]` | No | Requests the pending-message form of the command. |
 
 **Example**
 

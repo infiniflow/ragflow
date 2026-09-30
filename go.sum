@@ -349,6 +349,8 @@ github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/ad
 github.com/hashicorp/hcl v1.0.0 h1:0Anlzjpi4vEasTeNFn2mLJgTSwt0+6sfsiTG8qcWGx4=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
+github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7 h1:/4UAJqF04Rs8bPfJHEUvOpmv6cxX2hKXHscMktRiskU=
+github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7/go.mod h1:TCjWm+lo7de/zYHb8rHfVSaKxOP4tZNrnRUzkqV4r28=
 github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9 h1:mqPwCOTktwl0V1f3tkfCRFonGQ3XrQ43gvH+TOWec6o=
 github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
 github.com/infiniflow/onnxruntime_go v1.29.0 h1:pI6v4Bcc7BJdKRF+ZZZkaf4HV6Of6Kl6XryaW2aGbGQ=
@@ -602,8 +604,6 @@ github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/
 github.com/wk8/go-ordered-map/v2 v2.1.8/go.mod h1:5nJHM5DyteebpVlHnWMV0rPz6Zp7+xBAnxjb1X5vnTw=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2 h1:00txxvfBM9muc0jiLIEAkAcIMJzfthRT6usrui8uGmg=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2/go.mod h1:2duySbKsL6M18s5GU7VPsoEPHyzalCE06qoARUCeBBE=
-github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7 h1:iX9RUmlLw+Hoe78WV5vlm+JjIZUCzdRn2y6tWNxZTeY=
-github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7/go.mod h1:TCjWm+lo7de/zYHb8rHfVSaKxOP4tZNrnRUzkqV4r28=
 github.com/xuri/efp v0.0.1 h1:fws5Rv3myXyYni8uwj2qKjVaRP30PdjeYe2Y6FDsCL8=
 github.com/xuri/efp v0.0.1/go.mod h1:ybY/Jr0T0GTCnYjKqmdwxyxn2BQf2RcQIIvex5QldPI=
 github.com/xuri/excelize/v2 v2.11.0 h1:HxaEFl6sRN2+8J5a8HaKq+0M4FsjBGMnWWtjOCPSG88=

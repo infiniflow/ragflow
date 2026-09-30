@@ -48,7 +48,7 @@ export interface IDataset {
   token_num: number;
   update_date: string;
   update_time: number;
-  vector_similarity_weight: number;
+  keywords_similarity_weight: number;
   connectors: IConnector[];
 }
 

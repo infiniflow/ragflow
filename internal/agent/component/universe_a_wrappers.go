@@ -228,7 +228,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
-		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
+		return nil, fmt.Errorf("agent: Retrieval: %w", err)
 	}
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
@@ -557,7 +557,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	attachCodeExecArtifacts(ctx, decoded)
 
 	if err != nil {
-		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+		return decoded, fmt.Errorf("agent: CodeExec: %w", err)
 	}
 	return decoded, nil
 }

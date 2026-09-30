@@ -59,14 +59,16 @@ func filterUnsupportedProviders(providers []map[string]interface{}) []map[string
 type ProviderHandler struct {
 	userService          *service.UserService
 	modelProviderService *service.ModelProviderService
+	modelCallService     *service.ModelCallService
 	userTenantDAO        *dao.UserTenantDAO
 }
 
 // NewProviderHandler create provider handler
-func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService) *ProviderHandler {
+func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService, modelCallService *service.ModelCallService) *ProviderHandler {
 	return &ProviderHandler{
 		userService:          userService,
 		modelProviderService: modelProviderService,
+		modelCallService:     modelCallService,
 		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
 }
@@ -1013,15 +1015,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return
 		}
 	}
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
+	}
 
 	if !req.Thinking {
 		req.Effort = nil
 		req.Verbosity = nil
-	}
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
 	}
 
 	chatConfig := models.ChatConfig{
@@ -1040,12 +1043,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	userID := c.GetString("user_id")
 	email := c.GetString("email")
 	modelUsage := common.ModelUsage{
-		UserID:       userID,
-		UserEmail:    email,
-		ProviderName: *req.ProviderName,
-		ModelName:    *req.ModelName,
-		Type:         "chat",
-		StartAt:      time.Now(),
+		UserID:    userID,
+		UserEmail: email,
+		Type:      "chat",
+		StartAt:   time.Now(),
+	}
+	if req.ProviderName != nil {
+		modelUsage.ProviderName = *req.ProviderName
+	}
+	if req.ModelName != nil {
+		modelUsage.ModelName = *req.ModelName
 	}
 	// Check if it's a stream request
 	if req.Stream {
@@ -1089,15 +1096,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (the best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(
+		errorCode, err := h.modelCallService.ChatToModelStreamWithSender(
 			ctx,
-			req.ProviderName,
-			req.InstanceName,
-			req.ModelName,
-			req.ModelID,
+			modelRef,
 			userID,
 			messages,
-			&apiConfig,
 			&chatConfig,
 			&modelUsage,
 			sender,
@@ -1120,15 +1123,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		content := msg["content"]
 		messages[i] = models.Message{Role: role, Content: content}
 	}
-	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(
+	response, errorCode, err = h.modelCallService.ChatToModelWithMessages(
 		ctx,
-		req.ProviderName,
-		req.InstanceName,
-		req.ModelName,
-		req.ModelID,
+		modelRef,
 		userID,
 		messages,
-		&apiConfig,
 		&chatConfig,
 		&modelUsage,
 	)
@@ -1187,10 +1186,11 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	embeddingConfig := models.EmbeddingConfig{
@@ -1202,7 +1202,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.EmbedText(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Texts, &apiConfig, &embeddingConfig)
+	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, userID, req.Texts, &embeddingConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1253,10 +1253,11 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	rerankConfig := models.RerankConfig{
@@ -1268,7 +1269,7 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.RerankDocument(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Query, req.Documents, &apiConfig, &rerankConfig)
+	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, userID, req.Query, req.Documents, &rerankConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1320,10 +1321,11 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	asrConfig := models.ASRConfig{}
@@ -1365,7 +1367,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.TranscribeAudioStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig, sender)
+		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, userID, req.File, &asrConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1377,7 +1379,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.TranscribeAudio(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig)
+	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, userID, req.File, &asrConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1428,10 +1430,11 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	ttsConfig := models.TTSConfig{}
@@ -1473,7 +1476,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.AudioSpeechStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig, sender)
+		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, userID, req.Text, &ttsConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1485,7 +1488,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.AudioSpeech(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig)
+	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, userID, req.Text, &ttsConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1536,9 +1539,11 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	OCRConfig := models.OCRConfig{}
@@ -1548,7 +1553,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.OCRFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &OCRConfig)
+	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, userID, req.Content, req.URL, &OCRConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1599,9 +1604,11 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	parseFileConfig := models.ParseFileConfig{}
@@ -1611,7 +1618,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.ParseFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &parseFileConfig)
+	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, userID, req.Content, req.URL, &parseFileConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return

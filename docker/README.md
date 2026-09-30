@@ -52,7 +52,7 @@ Verify the deployment with:
 
 ```bash
 docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs --tail 100 ragflow-cpu
+docker logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
@@ -154,7 +154,7 @@ The optional `tei-cpu` and `tei-gpu` profiles start a local text-embeddings-infe
 
 ### DeepDoc (in-process)
 
-DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/rag/res/deepdoc`.
+DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/internal/rag/res/deepdoc`.
 
 In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 

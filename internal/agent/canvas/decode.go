@@ -23,11 +23,11 @@ import "fmt"
 // normalized flat shape (`name`/`params`) that NormalizeForCanvas emits.
 func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 	if len(dsl) == 0 {
-		return nil, fmt.Errorf("canvas: empty DSL")
+		return nil, fmt.Errorf("agent: empty DSL")
 	}
 	rawComps, ok := dsl["components"].(map[string]any)
 	if !ok || len(rawComps) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 	c := &Canvas{
 		Components:  make(map[string]CanvasComponent, len(rawComps)),
@@ -68,7 +68,7 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 		}
 		name, params, downstream, upstream := decodeComponentFields(comp)
 		if name == "" {
-			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
+			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
 		c.Components[cpnID] = CanvasComponent{
 			Obj: CanvasComponentObj{
@@ -80,7 +80,7 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 		}
 	}
 	if len(c.Components) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 	return c, nil
 }
