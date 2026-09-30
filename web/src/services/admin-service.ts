@@ -22,7 +22,10 @@ import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
 import { Routes } from '@/routes';
 import api from '@/utils/api';
-import { adminStorage, getAdminAuthorization } from '@/utils/authorization-util';
+import {
+  adminStorage,
+  getAdminAuthorization,
+} from '@/utils/authorization-util';
 import { convertTheKeysOfTheObjectToSnake } from '@/utils/common-util';
 import { ResultCode, RetcodeMessage } from '@/utils/request';
 import {

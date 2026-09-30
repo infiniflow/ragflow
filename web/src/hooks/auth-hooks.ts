@@ -15,9 +15,7 @@
  */
 
 import message from '@/components/ui/message';
-import authorizationUtil, {
-  adminStorage,
-} from '@/utils/authorization-util';
+import authorizationUtil, { adminStorage } from '@/utils/authorization-util';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 

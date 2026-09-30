@@ -24,12 +24,28 @@ export type CurrentUserInfo =
       source: 'localStorage';
     };
 
+const parseLocalStorageUserInfo = (
+  value: Record<string, unknown> | null,
+): LocalStoragePersistedUserInfo | null => {
+  if (!value) {
+    return null;
+  }
+  if (typeof value.name !== 'string' || typeof value.email !== 'string') {
+    return null;
+  }
+  return {
+    avatar: value.avatar,
+    name: value.name,
+    email: value.email,
+  };
+};
+
 const getLocalStorageUserInfo = (): CurrentUserInfo => {
-  const userInfo = adminStorage.getUserInfoObject();
+  const userInfo = parseLocalStorageUserInfo(adminStorage.getUserInfoObject());
 
   return userInfo
     ? {
-        userInfo: userInfo,
+        userInfo,
         source: 'localStorage',
       }
     : {
