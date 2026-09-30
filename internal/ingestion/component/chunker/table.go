@@ -31,24 +31,70 @@ package chunker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	ingestiontable "ragflow/internal/ingestion/table"
 
 	"gorm.io/gorm"
 )
 
 const ComponentNameTableChunker = "TableChunker"
 
-type tableChunkerParam struct{}
+type tableChunkerParam struct {
+	schema.TableChunkerParam
+	updateErr error
+}
 
-func (p *tableChunkerParam) Update(conf map[string]any) {}
+func (p *tableChunkerParam) Update(conf map[string]any) {
+	if conf == nil {
+		return
+	}
+	if v, ok := conf["column_mode"]; ok {
+		mode, err := ingestiontable.ValidateMode(v)
+		if err != nil {
+			p.updateErr = errors.Join(p.updateErr, err)
+		} else {
+			p.ColumnMode = mode
+		}
+	}
+	if v, ok := conf["column_roles"]; ok {
+		roles, err := ingestiontable.ValidateRoles(v)
+		if err != nil {
+			p.updateErr = errors.Join(p.updateErr, err)
+		} else {
+			p.ColumnRoles = roles
+		}
+	}
+}
 
-func (tableChunkerParam) Defaults() tableChunkerParam { return tableChunkerParam{} }
+func (tableChunkerParam) Defaults() tableChunkerParam {
+	return tableChunkerParam{
+		TableChunkerParam: schema.TableChunkerParam{
+			ColumnMode:  ingestiontable.ModeAuto,
+			ColumnRoles: map[string]string{},
+		},
+	}
+}
 
-func (tableChunkerParam) Validate() error { return nil }
+func (p tableChunkerParam) Validate() error {
+	if p.updateErr != nil {
+		return p.updateErr
+	}
+	if p.ColumnMode != ingestiontable.ModeAuto && p.ColumnMode != ingestiontable.ModeManual {
+		return fmt.Errorf("column_mode %q is invalid: only %q and %q are allowed",
+			p.ColumnMode, ingestiontable.ModeAuto, ingestiontable.ModeManual)
+	}
+	for key, role := range p.ColumnRoles {
+		if !ingestiontable.ValidRole(role) {
+			return fmt.Errorf("column_roles[%q] has an invalid role %q", key, role)
+		}
+	}
+	return nil
+}
 
 type TableChunkerComponent struct {
 	name  string

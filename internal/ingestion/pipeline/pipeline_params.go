@@ -57,6 +57,7 @@ var componentParamSchemaKeys = map[string]map[string]struct{}{
 	// (hierarchy-only) are accepted here but ignored by the component — the
 	// operator form omits them for the same reason.
 	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"tablechunker":  extractJSONTags(schema.TableChunkerParam{}),
 	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
 	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
 }

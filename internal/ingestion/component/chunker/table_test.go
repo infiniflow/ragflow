@@ -252,3 +252,65 @@ func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
 		t.Errorf("text = %v", chunks[0]["text"])
 	}
 }
+
+func TestTableChunkerDefaultColumnParams(t *testing.T) {
+	comp, err := NewTableChunker(nil)
+	if err != nil {
+		t.Fatalf("NewTableChunker(nil): %v", err)
+	}
+	p := comp.(*TableChunkerComponent).param
+	if p.ColumnMode != "auto" {
+		t.Errorf("default column_mode = %q, want auto", p.ColumnMode)
+	}
+	if len(p.ColumnRoles) != 0 {
+		t.Errorf("default column_roles = %v, want empty", p.ColumnRoles)
+	}
+}
+
+func TestTableChunkerManualColumnParams(t *testing.T) {
+	comp, err := NewTableChunker(map[string]any{
+		"column_mode":  "manual",
+		"column_roles": map[string]any{"名称": "indexing", "金额": "metadata", "编号": "both"},
+	})
+	if err != nil {
+		t.Fatalf("NewTableChunker: %v", err)
+	}
+	p := comp.(*TableChunkerComponent).param
+	if p.ColumnMode != "manual" {
+		t.Errorf("column_mode = %q, want manual", p.ColumnMode)
+	}
+	want := map[string]string{"名称": "indexing", "金额": "metadata", "编号": "both"}
+	if len(p.ColumnRoles) != len(want) {
+		t.Fatalf("column_roles = %v, want %v", p.ColumnRoles, want)
+	}
+	for k, v := range want {
+		if p.ColumnRoles[k] != v {
+			t.Errorf("column_roles[%q] = %q, want %q", k, p.ColumnRoles[k], v)
+		}
+	}
+}
+
+func TestTableChunkerRejectsInvalidColumnParams(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{"unknown mode", map[string]any{"column_mode": "assist"}},
+		{"empty mode", map[string]any{"column_mode": ""}},
+		{"non-string mode", map[string]any{"column_mode": 100}},
+		{"null mode", map[string]any{"column_mode": nil}},
+		{"unknown role", map[string]any{"column_roles": map[string]any{"名称": "keyword"}}},
+		{"non-string role", map[string]any{"column_roles": map[string]any{"名称": 1}}},
+		{"null role", map[string]any{"column_roles": map[string]any{"名称": nil}}},
+		{"roles not object", map[string]any{"column_roles": "名称"}},
+		{"roles null", map[string]any{"column_roles": nil}},
+		{"empty key", map[string]any{"column_roles": map[string]any{"": "both"}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := NewTableChunker(c.params); err == nil {
+				t.Errorf("NewTableChunker(%v): expected error, got nil", c.params)
+			}
+		})
+	}
+}

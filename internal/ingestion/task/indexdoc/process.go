@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/utility"
 )
 
@@ -255,41 +256,19 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 	return ok && sheet != ""
 }
 
-// AggregateTableDocMetadata collects unique per-column values across all chunks
-// for columns with role "metadata" or "both", merges them into document metadata.
-// Mirrors Python: rag/utils/table_es_metadata.py:aggregate_table_doc_metadata
+// AggregateTableDocMetadata collects unique per-column values across all
+// chunks for manual-mode columns with an explicit "metadata" or "both" role
+// and merges them into document metadata. auto mode puts every column into
+// row body text and chunk_data but never emits document-level column values.
 func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]interface{}) map[string]any {
-	mode, roles, tableColumnNames := resolveTableColumnConfig(parserConfig)
-	if mode == "" {
-		mode = "auto"
-	}
-	if mode != "auto" && mode != "manual" {
+	mode, roles := resolveTableColumnConfig(parserConfig)
+	if mode != ingestiontable.ModeManual {
 		return nil
 	}
-	if roles == nil {
-		roles = map[string]interface{}{}
-	}
 	var metaCols []string
-	if len(tableColumnNames) > 0 {
-		for _, n := range tableColumnNames {
-			col, _ := n.(string)
-			if col == "" {
-				continue
-			}
-			role, _ := roles[col].(string)
-			if role == "" {
-				role = "both"
-			}
-			if role == "metadata" || role == "both" {
-				metaCols = append(metaCols, col)
-			}
-		}
-	} else {
-		for col, v := range roles {
-			role, _ := v.(string)
-			if role == "metadata" || role == "both" {
-				metaCols = append(metaCols, col)
-			}
+	for col, role := range roles {
+		if role == ingestiontable.RoleMetadata || role == ingestiontable.RoleBoth {
+			metaCols = append(metaCols, col)
 		}
 	}
 	if len(metaCols) == 0 {
@@ -332,38 +311,33 @@ func AggregateTableDocMetadata(chunks []map[string]any, parserConfig map[string]
 	return out
 }
 
-// resolveTableColumnConfig reads table column settings from parser_config.
-// Tries root-level flat keys first; falls back to resolving from a Parser
-// component entry's spreadsheet config in a component-ID-keyed parser_config.
-func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string, roles map[string]interface{}, names []interface{}) {
-	mode, _ = parserConfig["table_column_mode"].(string)
-	roles, _ = parserConfig["table_column_roles"].(map[string]interface{})
-	rawNames, _ := parserConfig["table_column_names"].([]interface{})
-	if mode != "" || roles != nil || len(rawNames) > 0 {
-		return mode, roles, rawNames
-	}
+// resolveTableColumnConfig reads the effective column mode and roles from a
+// TableChunker entry of a component-scoped parser_config. When the canvas has
+// several TableChunker nodes the first match applies; per-node row identity
+// arrives with the chunker's column output.
+func resolveTableColumnConfig(parserConfig map[string]interface{}) (string, map[string]string) {
 	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
+		if !strings.HasPrefix(cid, "TableChunker:") {
 			continue
 		}
 		comp, _ := raw.(map[string]interface{})
 		if comp == nil {
 			continue
 		}
-		ss, _ := comp["spreadsheet"].(map[string]interface{})
-		if ss == nil {
-			continue
-		}
-		if v, ok := ss["column_mode"].(string); ok {
+		mode := ingestiontable.ModeAuto
+		if v, ok := comp["column_mode"].(string); ok && v != "" {
 			mode = v
 		}
-		if v, ok := ss["column_roles"].(map[string]interface{}); ok {
-			roles = v
+		var roles map[string]string
+		if rawRoles, ok := comp["column_roles"].(map[string]interface{}); ok {
+			roles = make(map[string]string, len(rawRoles))
+			for k, v := range rawRoles {
+				if s, ok := v.(string); ok {
+					roles[k] = s
+				}
+			}
 		}
-		if v, ok := ss["column_names"].([]interface{}); ok {
-			rawNames = v
-		}
-		return mode, roles, rawNames
+		return mode, roles
 	}
-	return "", nil, nil
+	return ingestiontable.ModeAuto, nil
 }

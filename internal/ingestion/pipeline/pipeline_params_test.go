@@ -1155,7 +1155,6 @@ var componentParamWhitelistExemptions = map[string]string{
 	"QAChunker":      "no operator form; param struct is not in the schema package",
 	"OneChunker":     "no user-editable params",
 	"PageChunker":    "no user-editable params",
-	"TableChunker":   "no user-editable params",
 	"Extractor":      "covered by the cpnID-prefixed dynamic whitelist",
 	"Compiler":       "covered by the cpnID-prefixed dynamic whitelist",
 }

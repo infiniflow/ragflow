@@ -353,6 +353,25 @@ func (p *TokenChunkerParam) Validate() error {
 }
 
 // ---------------------------------------------------------------------------
+// TableChunkerParam
+// ---------------------------------------------------------------------------
+
+// TableChunkerParam carries the column-mode configuration of TableChunker.
+// ColumnMode is "auto" or "manual"; ColumnRoles maps normalized column keys
+// to "indexing", "metadata" or "both". Validation lives in
+// internal/ingestion/table, shared with the column probe.
+
+type TableChunkerParam struct {
+	// ColumnMode selects column routing. auto puts every column in body
+	// text and chunk_data; manual routes each column by its configured
+	// role, defaulting to "both" for columns without an entry.
+	ColumnMode string `json:"column_mode"`
+
+	// ColumnRoles maps normalized column keys to their configured role.
+	ColumnRoles map[string]string `json:"column_roles"`
+}
+
+// ---------------------------------------------------------------------------
 // TitleChunkerParam
 // ---------------------------------------------------------------------------
 //
