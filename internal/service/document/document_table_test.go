@@ -5,8 +5,8 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/service"
 	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/service"
 )
 
 func publishedProfile(t *testing.T, owned ...string) string {
@@ -48,8 +48,8 @@ func TestRevokeTableProfileRemovesItsOwnContributions(t *testing.T) {
 	svc, engine := revokeTestService(t, map[string]map[string]any{
 		"doc-1": {
 			ingestiontable.ProfileMetadataField: publishedProfile(t, "金额"),
-			"金额":                                 []string{"100", "200"},
-			"作者":                                 "张三",
+			"金额":                                []string{"100", "200"},
+			"作者":                                "张三",
 		},
 	})
 
@@ -75,7 +75,7 @@ func TestRevokeTableProfileLeavesTakenOverKey(t *testing.T) {
 	svc, engine := revokeTestService(t, map[string]map[string]any{
 		"doc-1": {
 			ingestiontable.ProfileMetadataField: publishedProfile(t),
-			"金额":                                 "用户写的",
+			"金额":                                "用户写的",
 		},
 	})
 
@@ -109,7 +109,7 @@ func TestRevokeTableProfileClearsUnreadableRecord(t *testing.T) {
 	svc, engine := revokeTestService(t, map[string]map[string]any{
 		"doc-1": {
 			ingestiontable.ProfileMetadataField: "{ not json",
-			"作者":                                 "张三",
+			"作者":                                "张三",
 		},
 	})
 

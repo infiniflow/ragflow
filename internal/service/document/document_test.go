@@ -1152,6 +1152,10 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		PipelineID: &pipelineID,
 		ParserConfig: entity.JSONMap{
 			"existing": "value",
+			"TableChunker:FastFoxesJump": map[string]interface{}{
+				"column_mode":  "auto",
+				"column_roles": map[string]interface{}{},
+			},
 		},
 		DocNum: 1,
 	}
@@ -1173,7 +1177,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	svc := testDocumentService(t)
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
 	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
-		"table_column_mode": "assist",
+		"TableChunker:FastFoxesJump": map[string]interface{}{"column_mode": "manual"},
 	})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
@@ -1195,8 +1199,20 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
 	cfg := doc["parser_config"].(map[string]interface{})
-	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
-		t.Fatalf("parser_config=%v", cfg)
+	if cfg["existing"] != "value" {
+		t.Fatalf("dataset config lost: %v", cfg)
+	}
+	// The upload override is component-scoped: it lands on the node it names and
+	// does not add flat keys the pipeline no longer reads.
+	node, ok := cfg["TableChunker:FastFoxesJump"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("upload override did not reach its node: %v", cfg)
+	}
+	if node["column_mode"] != "manual" {
+		t.Fatalf("node = %v, want the uploaded column_mode", node)
+	}
+	if _, flat := cfg["table_column_mode"]; flat {
+		t.Fatalf("a flat column key was written: %v", cfg)
 	}
 
 	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")

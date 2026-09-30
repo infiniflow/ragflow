@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
@@ -225,6 +226,28 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	return dropped
 }
 
+func validateTableColumnConfig(parserConfig map[string]any) error {
+	for key, value := range parserConfig {
+		switch key {
+		case "table_column_mode", "table_column_roles", "table_column_names":
+			return fmt.Errorf("parser_config key %q must be configured on a TableChunker node", key)
+		}
+		if !ingestiontable.IsNodeKey(key) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("parser_config[%q] must be an object of component parameters", key)
+		}
+		// Only the column fields are checked here; the node's other parameters
+		// belong to their own components and are filtered against the DSL.
+		if _, _, err := ingestiontable.ValidateColumnFields(params); err != nil {
+			return fmt.Errorf("parser_config[%q]: %w", key, err)
+		}
+	}
+	return nil
+}
+
 // ValidateParserConfig validates the shared REST parser_config schema. Flat
 // (non-component-scoped) keys are no longer rejected: they are silently dropped
 // because downstream consumers never read them. The size limit is still
@@ -232,6 +255,9 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 // can log the silent drop; this is the single drop point shared by every entry
 // path, so callers should not call DropUnscopedParserConfigKeys again.
 func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	if err := validateTableColumnConfig(parserConfig); err != nil {
+		return nil, err
+	}
 	dropped := DropUnscopedParserConfigKeys(parserConfig)
 	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
@@ -244,8 +270,7 @@ func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error)
 // (not kept) and the size limit is enforced. It returns the dropped key names
 // for logging, mirroring ValidateParserConfig.
 func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
-	dropped := DropUnscopedParserConfigKeys(parserConfig)
-	return dropped, validateDatasetParserConfigSize(parserConfig)
+	return ValidateParserConfig(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its

@@ -39,6 +39,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/service"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
@@ -80,6 +81,7 @@ type documentServiceIface interface {
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
 	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
@@ -1041,21 +1043,41 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 
-	// Optional parser_config override — only the allow-listed table column keys.
-	// Python ignores malformed or non-object input here instead of failing the
-	// whole upload request.
+	// Optional parser_config override: a component-domain object whose
+	// TableChunker nodes carry the column fields for this upload. Malformed or
+	// non-object input keeps being ignored, as the Python API did, but a request
+	// that names the retired flat keys is refused: those uploads reported
+	// success while the roles silently did nothing.
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			override = map[string]interface{}{}
-			for _, k := range []string{"table_column_mode", "table_column_roles"} {
-				if v, ok := parsed[k]; ok {
-					override[k] = v
-				}
+			if legacy := ingestiontable.CheckLegacyFlatKeys(parsed); len(legacy) > 0 {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+					fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
+						strings.Join(legacy, ", "), ingestiontable.NodePrefix))
+				return
 			}
-			if len(override) == 0 {
-				override = nil
+			cleaned := map[string]interface{}{}
+			for key, value := range parsed {
+				if !ingestiontable.IsNodeKey(key) {
+					continue
+				}
+				params, ok := value.(map[string]interface{})
+				if !ok {
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+						fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
+					return
+				}
+				if _, _, err = ingestiontable.ValidateNodeConfig(params); err != nil {
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+						fmt.Sprintf("parser_config[%q]: %v", key, err))
+					return
+				}
+				cleaned[key] = params
+			}
+			if len(cleaned) > 0 {
+				override = cleaned
 			}
 		}
 	}
@@ -1597,6 +1619,10 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 type StartParseDocumentsRequest struct {
 	DocumentIDs []string `json:"document_ids" binding:"required"`
+	// Reparse discards the documents' previous results before starting a new
+	// run. Saving a configuration change never re-parses by itself, so a client
+	// that changed column roles has to ask for this explicitly.
+	Reparse bool `json:"reparse"`
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
@@ -1629,7 +1655,11 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		return
 	}
 
-	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
+	startParse := h.documentService.IngestDocuments
+	if req.Reparse {
+		startParse = h.documentService.ReparseDocuments
+	}
+	parseResult, err := startParse(ctx, datasetID, userID, req.DocumentIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return

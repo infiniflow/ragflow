@@ -78,32 +78,88 @@ func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID s
 // Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
+	_, err := s.startParseDocuments(ctx, doc, kb, userID, opts)
+	return err
+}
+
+// startParseDocuments is StartParseDocuments with the enqueued task reported,
+// which is what a batch re-parse needs to answer per document.
+func (s *DocumentService) startParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) (*service.ParseDocumentResponse, error) {
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
 	if _, _, err := s.GetDocumentStorageAddress(ctx, doc); err != nil {
-		return err
+		return nil, err
 	}
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
 
 	if opts.RerunWithDelete {
 		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(responses) == 0 {
-		return fmt.Errorf("failed to enqueue document %s: empty ingestion response", doc.ID)
+		return nil, fmt.Errorf("failed to enqueue document %s: empty ingestion response", doc.ID)
 	}
 	if !strings.HasPrefix(responses[0].Result, "task_id:") {
-		return fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
+		return nil, fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
 	}
-	return nil
+	return responses[0], nil
+}
+
+// ReparseDocuments discards each document's previous results and starts a new
+// run, in one request. Every document is checked before any is cleared: a
+// request that names a running parse, or a document the dataset does not own,
+// must not have already wiped the others.
+//
+// This is the only re-parse entry point. Changing a document's configuration
+// never starts a run by itself, so a caller that wants the new settings indexed
+// has to ask for the re-parse explicitly.
+func (s *DocumentService) ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get documents: %w", err)
+	}
+	byID := make(map[string]*entity.Document, len(docs))
+	for _, doc := range docs {
+		if doc != nil {
+			byID[doc.ID] = doc
+		}
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("dataset not found")
+	}
+	pending := make([]*entity.Document, 0, len(docIDs))
+	for _, docID := range docIDs {
+		doc := byID[docID]
+		if doc == nil {
+			return nil, fmt.Errorf("document not found")
+		}
+		if doc.KbID != datasetID {
+			return nil, fmt.Errorf("document %s does not belong to dataset %s", docID, datasetID)
+		}
+		pending = append(pending, doc)
+	}
+	if err = s.AssertIngestionTasksTerminal(ctx, docIDs); err != nil {
+		return nil, err
+	}
+
+	responses := make([]*service.ParseDocumentResponse, 0, len(pending))
+	for _, doc := range pending {
+		response, startErr := s.startParseDocuments(ctx, doc, kb, userID, StartParseOptions{RerunWithDelete: true})
+		if startErr != nil {
+			return responses, fmt.Errorf("reparse document %s: %w", doc.ID, startErr)
+		}
+		responses = append(responses, response)
+	}
+	return responses, nil
 }
 
 // AssertIngestionTasksTerminal verifies none of the documents has an

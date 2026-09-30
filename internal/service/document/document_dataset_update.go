@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
@@ -184,28 +185,44 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
-		if err != nil {
-			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
-				zap.Error(err))
-			if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
+		if ingestiontable.IsColumnOnlyConfig(req.ParserConfig) {
+			// A column-only patch edits the document's own configuration. The
+			// general path rebuilds parser_config from the current DSL, which
+			// would drop every parameter this request never mentioned: changing
+			// a role is not a reason to reset the rest of the canvas.
+			merged, mergeErr := applyColumnOverride(doc.ParserConfig, req.ParserConfig)
+			if mergeErr != nil {
+				return nil, common.CodeArgumentError, mergeErr
+			}
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"parser_config": merged,
+			}); err != nil {
 				return nil, common.CodeDataError, err
 			}
 		} else {
-			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
-			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
-			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
-			if tenantErr == nil && tenant != nil {
-				cleaned = service.ApplyComponentScopedParserConfig(
-					cleaned,
-					tenant.LLMID,
-				)
-			}
-			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"parser_config": cleaned,
-			}); err != nil {
-				return nil, common.CodeDataError, err
+			var dslJSON []byte
+			dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+			if err != nil {
+				common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
+					zap.Error(err))
+				if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
+					return nil, common.CodeDataError, err
+				}
+			} else {
+				cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+				pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
+				tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+				if tenantErr == nil && tenant != nil {
+					cleaned = service.ApplyComponentScopedParserConfig(
+						cleaned,
+						tenant.LLMID,
+					)
+				}
+				if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+					"parser_config": cleaned,
+				}); err != nil {
+					return nil, common.CodeDataError, err
+				}
 			}
 		}
 	}

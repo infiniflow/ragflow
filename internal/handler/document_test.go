@@ -370,6 +370,9 @@ func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID str
 func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
 }
+func (f *fakeDocumentService) ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	return nil, nil
+}
 func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return f.stopIngestionTasks, f.stopIngestionTaskErr
 }

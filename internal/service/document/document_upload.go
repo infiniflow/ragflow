@@ -10,10 +10,76 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"sort"
 	"strings"
 )
+
+// applyColumnOverride writes an upload's column settings onto the component
+// node this document will actually run with.
+//
+// It runs after the parser is resolved rather than merged into the dataset
+// config before it, because the two can disagree: a spreadsheet uploaded to a
+// dataset configured with another template is switched to the table pipeline for
+// its own sake, and that pipeline's TableChunker node carries a different id. An
+// override keyed by the dataset's id would then be dropped as unknown and the
+// upload would report success with the roles ignored — so when the resolved
+// config holds exactly one TableChunker node the override is mapped onto it, and
+// when several nodes exist the request has to name the one it means.
+func applyColumnOverride(config entity.JSONMap, override map[string]interface{}) (entity.JSONMap, error) {
+	if len(override) == 0 {
+		return config, nil
+	}
+
+	targets := make([]string, 0, 2)
+	for key := range config {
+		if ingestiontable.IsNodeKey(key) {
+			targets = append(targets, key)
+		}
+	}
+	sort.Strings(targets)
+
+	out := make(entity.JSONMap, len(config))
+	for key, value := range config {
+		out[key] = value
+	}
+
+	for cpnID, raw := range override {
+		if !ingestiontable.IsNodeKey(cpnID) {
+			return nil, fmt.Errorf("parser_config[%q] must be keyed by a TableChunker node", cpnID)
+		}
+		params, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("parser_config[%q] must be an object of component parameters", cpnID)
+		}
+		if _, _, err := ingestiontable.ValidateNodeConfig(params); err != nil {
+			return nil, fmt.Errorf("parser_config[%q]: %v", cpnID, err)
+		}
+
+		target := cpnID
+		if _, exists := out[cpnID]; !exists {
+			switch {
+			case len(targets) == 1:
+				target = targets[0]
+			case len(targets) == 0:
+				return nil, fmt.Errorf("the parser this document runs has no TableChunker node to apply %q to", cpnID)
+			default:
+				return nil, fmt.Errorf("parser_config[%q] names a node this document does not run; it has several TableChunker nodes (%s), so the setting must name one of them",
+					cpnID, strings.Join(targets, ", "))
+			}
+		}
+
+		base, _ := out[target].(map[string]interface{})
+		merged, err := ingestiontable.MergeNodeParams(base, params)
+		if err != nil {
+			return nil, fmt.Errorf("parser_config[%q]: %v", target, err)
+		}
+		out[target] = merged
+	}
+	return out, nil
+}
 
 // UploadLocalDocuments stores each uploaded file in object storage and inserts a
 // matching Document row into the dataset. It mirrors Python
@@ -40,12 +106,11 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		return nil, []string{err.Error()}
 	}
 
-	// Merge parser_config override (allow-listed keys only) over the dataset config.
+	// The dataset's configuration, without the upload override: the override is
+	// applied after the parser is resolved, because the node it names has to be
+	// the node this document will actually run.
 	merged := entity.JSONMap{}
 	for k, v := range kb.ParserConfig {
-		merged[k] = v
-	}
-	for k, v := range parserConfigOverride {
 		merged[k] = v
 	}
 
@@ -89,6 +154,17 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		}
 
 		parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
+		parserConfig, err = applyColumnOverride(parserConfig, parserConfigOverride)
+		if err != nil {
+			// The blob is already stored; a refused override must not leave it
+			// without a document row, as every later upload of the same name
+			// would then collide with it.
+			if rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location); rmErr != nil {
+				common.Warn(fmt.Sprintf("upload rollback: failed to remove orphaned blob %s/%s: %v", kb.ID, location, rmErr))
+			}
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
 		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), parserID, parserConfig, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
