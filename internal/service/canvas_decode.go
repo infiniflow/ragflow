@@ -60,7 +60,7 @@ import (
 func decodeCanvasFromDSL(dsl map[string]any) (*canvas.Canvas, error) {
 	c, err := canvas.DecodeFromDSL(dsl)
 	if err != nil {
-		return nil, fmt.Errorf("decode canvas: %w: %w", err, ErrAgentStorageError)
+		return nil, fmt.Errorf("decode agent: %w: %w", err, ErrAgentStorageError)
 	}
 	return c, nil
 }

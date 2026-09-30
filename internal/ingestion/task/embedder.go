@@ -96,7 +96,7 @@ func (e *embedder) limiter() tokenizer.Limiter {
 		}
 		if id != "" && !tokenizer.CounterExact(id) {
 			e.limiterErr = fmt.Errorf(
-				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_go_deps.py`): refusing to count with the calibrated estimate",
+				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_deps.py`): refusing to count with the calibrated estimate",
 				id, e.quotaKey())
 		}
 		e.limiterVal = tokenizer.LimiterFor(id, string(e.quotaKey()), tokenizer.DefaultCalibration())

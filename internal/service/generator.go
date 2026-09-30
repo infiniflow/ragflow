@@ -89,7 +89,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract keywords: %w", err)
 	}
@@ -192,7 +192,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return query, fmt.Errorf("failed to translate question: %w", err)
 	}
@@ -348,17 +348,11 @@ func FullQuestion(
 	}
 	system := buf.String()
 
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: "Output: "},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, nil, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, nil, nil)
 	if err != nil {
 		return fallbackToLatestUser(messages), err
 	}

@@ -41,6 +41,7 @@ import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { ParserFormSchemaType } from './form/parser-form';
+import { normalizeParserFormValues } from './form/parser-form/utils';
 import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
 import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
@@ -204,7 +205,12 @@ function transformObjectArrayToPureArray(
 }
 
 export function transformParserParams(params: ParserFormSchemaType) {
-  const setups = params.setups.reduce<
+  // The vision options (enable_vision_enhancement / vlm.llm_id) live at the
+  // params top level alongside the per-family setups — the backend reads them
+  // there, so they pass through as-is. normalizeParserFormValues also lifts
+  // legacy per-setup values of nodes saved before the move.
+  const normalizedParams = normalizeParserFormValues(params);
+  const setups = normalizedParams.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur, index) => {
     if (cur.fileFormat) {
@@ -227,8 +233,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
@@ -245,8 +249,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -284,8 +286,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Doc:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
@@ -293,8 +293,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
@@ -309,13 +307,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.TextMarkdown:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             remove_toc: cur.remove_toc,
           };
           break;
-        case FileType.Video:
         case FileType.Audio:
+          // Audio keeps its own per-setup model: it is an ASR model, not the
+          // shared vision one.
           filteredSetup = {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
