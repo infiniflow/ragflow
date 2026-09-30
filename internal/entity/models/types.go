@@ -492,6 +492,30 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 	}
 }
 
+// ChatWithMessages sends a non-streaming chat request through the model wrapper.
+func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
+	if m == nil || m.ModelDriver == nil {
+		return nil, errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatWithMessages(ctx, modelName, messages, m.APIConfig, config, usage)
+}
+
+// ChatStreamlyWithSender streams chat deltas through sender.
+func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	if m == nil || m.ModelDriver == nil {
+		return errors.New("chat model: driver is nil")
+	}
+	modelName := ""
+	if m.ModelName != nil {
+		modelName = *m.ModelName
+	}
+	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
+}
+
 // BindTools registers tools for the ChatModel to call.
 // Mirrors Python's Base.bind_tools() in rag/llm/chat_model.py.
 func (cm *ChatModel) BindTools(session ToolCallSession, tools interface{}) {

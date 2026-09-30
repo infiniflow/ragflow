@@ -176,7 +176,8 @@ func maybeDispatchImageVLM(
 		},
 	}}
 	vision := true
-	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		result := imageDispatchResult("", dataURI)
 		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement failed: %v", err))

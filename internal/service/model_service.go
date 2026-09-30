@@ -949,7 +949,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			switch mtLower {
 			case "chat", "vision":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
-				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
+				chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+				_, err = chatModel.ChatWithMessages(ctx, msg, nil, nil)
 			case "embedding":
 				// Provider discovery can return models without catalog limits. Apply
 				// the strict validator whenever the model has the metadata required
