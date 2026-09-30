@@ -62,10 +62,13 @@ type Canvas struct {
 // CanvasComponent is the in-memory DSL node. The Obj.ComponentName
 // matches agent/component/<name>.py's class name (case-insensitive,
 // per Python v1 DSL semantics).
+// DisplayName is the editable graph node name used in execution logs. It is
+// runtime metadata rather than part of the executable component topology.
 type CanvasComponent struct {
-	Obj        CanvasComponentObj `json:"obj"`
-	Downstream []string           `json:"downstream"`
-	Upstream   []string           `json:"upstream"`
+	Obj         CanvasComponentObj `json:"obj"`
+	Downstream  []string           `json:"downstream"`
+	Upstream    []string           `json:"upstream"`
+	DisplayName string             `json:"-"`
 }
 
 type CanvasComponentObj struct {
