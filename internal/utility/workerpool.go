@@ -33,7 +33,7 @@ type WorkerPoolFuture[T any, R any] struct {
 	ch <-chan WorkerPoolResult[T, R]
 }
 
-// Wait blocks until the task completes or ctx is cancelled.
+// Wait blocks until the task completes or ctx is canceled.
 func (f WorkerPoolFuture[T, R]) Wait(ctx context.Context) (WorkerPoolResult[T, R], error) {
 	select {
 	case <-ctx.Done():

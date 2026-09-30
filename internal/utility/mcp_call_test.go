@@ -517,7 +517,7 @@ func TestCallTool_MissingURL(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for empty URL")
 	}
-	if !strings.Contains(err.Error(), "Invalid url") {
+	if !strings.Contains(err.Error(), "invalid url") {
 		t.Errorf("got %v, want URL error", err)
 	}
 }

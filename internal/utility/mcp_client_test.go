@@ -37,7 +37,7 @@ func allowLoopbackForTests(t *testing.T) func() {
 	orig := common.LookupHost
 	common.LookupHost = func(host string) ([]string, error) {
 		// Return a public IPv4 so the guard sees the host as global; the
-		// httptest server is on loopback but we connect via raw URL.
+		// httptest server is on loopback, but we connect via raw URL.
 		return []string{"8.8.8.8"}, nil
 	}
 	return func() { common.LookupHost = orig }
@@ -272,14 +272,14 @@ func TestFetchToolsUnsupportedType(t *testing.T) {
 		ServerType: "stdio",
 		Timeout:    time.Second,
 	})
-	if err == nil || !strings.Contains(err.Error(), "Unsupported MCP server type") {
+	if err == nil || !strings.Contains(err.Error(), "unsupported MCP server type") {
 		t.Fatalf("expected unsupported-type error, got %v", err)
 	}
 }
 
 func TestFetchToolsEmptyURL(t *testing.T) {
 	_, err := FetchTools(t.Context(), FetchOptions{URL: "", ServerType: TransportSSE})
-	if err == nil || !strings.Contains(err.Error(), "Invalid url") {
+	if err == nil || !strings.Contains(err.Error(), "invalid url") {
 		t.Fatalf("expected Invalid url error, got %v", err)
 	}
 }
