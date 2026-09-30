@@ -37,11 +37,7 @@ def test_remove_toc_pdf_filter_keeps_items_without_page_number():
     toc_start_page = 1
     content_start_page = 5
 
-    filtered = [
-        item
-        for item in items
-        if item.get("page_number") is None or not (toc_start_page <= item["page_number"] < content_start_page)
-    ]
+    filtered = [item for item in items if item.get("page_number") is None or not (toc_start_page <= item["page_number"] < content_start_page)]
 
     assert filtered == items
 

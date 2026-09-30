@@ -129,10 +129,7 @@ def _run_flow_ocr_pdf_branch(
 
     resolved_model = resolve_llm_name()
     if not resolved_model:
-        raise RuntimeError(
-            f"{provider_name} model not configured. Please add {provider_name} in Model Providers "
-            f"or set the corresponding env vars."
-        )
+        raise RuntimeError(f"{provider_name} model not configured. Please add {provider_name} in Model Providers or set the corresponding env vars.")
 
     tenant_id = process._canvas._tenant_id
     ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, resolved_model)
