@@ -60,9 +60,9 @@ describe('MWS provider configuration', () => {
     expect(
       config.fields.find((field) => field.name === 'api_key'),
     ).toMatchObject({ label: 'mwsToken', required: true });
-    expect(
-      config.fields.some((field) => field.name === 'provider_order'),
-    ).toBe(false);
+    expect(config.fields.some((field) => field.name === 'provider_order')).toBe(
+      false,
+    );
 
     expect(
       config.submitTransform?.({
@@ -96,9 +96,9 @@ describe('Requesty provider configuration', () => {
     expect(
       config.fields.find((field) => field.name === 'base_url'),
     ).toMatchObject({ required: false });
-    expect(
-      config.fields.some((field) => field.name === 'provider_order'),
-    ).toBe(false);
+    expect(config.fields.some((field) => field.name === 'provider_order')).toBe(
+      false,
+    );
 
     expect(
       config.submitTransform?.({
