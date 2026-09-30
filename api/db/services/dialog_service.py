@@ -21,6 +21,7 @@ import time
 import uuid
 from copy import deepcopy
 from rag.advanced_rag.agentic_rag import RAGTools
+from rag.advanced_rag.harness.chunk_utils import strip_kbinfos_vectors
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
@@ -787,6 +788,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             )
             if ck["content_with_weight"]:
                 kbinfos["chunks"].insert(0, ck)
+        strip_kbinfos_vectors(kbinfos)
 
     if include_reference_metadata:
         logging.debug(
