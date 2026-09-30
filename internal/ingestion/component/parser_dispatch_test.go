@@ -813,9 +813,10 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 	if gotAuth != "" {
 		t.Fatalf("Authorization = %q, want empty for provider JSON api_key", gotAuth)
 	}
-	if md, _ := out["markdown"].(string); !strings.Contains(md, "http-client") {
-		t.Fatalf("markdown payload = %#v", out["markdown"])
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
 	}
+	requireJSONText(t, out, "http-client")
 }
 
 func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {

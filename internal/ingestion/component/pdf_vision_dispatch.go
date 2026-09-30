@@ -311,7 +311,7 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 		value = strings.TrimSpace(fmt.Sprint(raw))
 	}
 	if value == "" {
-		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_timeout")
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocrv2_timeout", common.EnvMonkeyOCRv2Timeout)
 	}
 	if value == "" {
 		value = os.Getenv(common.EnvMonkeyOCRv2Timeout)
