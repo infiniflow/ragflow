@@ -19,7 +19,6 @@ import os
 import re
 from collections.abc import Callable
 from functools import reduce
-from html import escape as html_escape
 from io import BytesIO
 from timeit import default_timer as timer
 from typing import Any
@@ -53,6 +52,7 @@ from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parse
 from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
+from rag.app.pdf_naive_vision import enhance_naive_deepdoc_pdf_media, naive_deepdoc_vision_available
 from rag.nlp import (
     DEFAULT_DELIMITER,
     append_context2table_image4pdf,
@@ -169,15 +169,36 @@ def _merge_excel_items(items, chunk_token_num=128):
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
+
     sections, tables = pdf_parser(filename if binary is None else binary, from_page=from_page, to_page=to_page, callback=callback)
 
-    tables = vision_figure_parser_pdf_wrapper(
-        tbls=tables,
-        sections=sections,
-        callback=callback,
-        lang=lang,
-        **kwargs,
-    )
+    tenant_id = kwargs.get("tenant_id")
+    parser_config = kwargs.get("parser_config") or {}
+    use_unified_vlm = bool(tenant_id and naive_deepdoc_vision_available(tenant_id, parser_config))
+    if not use_unified_vlm:
+        tables = vision_figure_parser_pdf_wrapper(
+            tbls=tables,
+            sections=sections,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
+    if use_unified_vlm:
+        blob = binary
+        if blob is None and filename:
+            with open(filename, "rb") as pdf_file:
+                blob = pdf_file.read()
+        sections, tables = enhance_naive_deepdoc_pdf_media(
+            sections,
+            tables,
+            blob,
+            pdf_parser,
+            from_page=from_page,
+            to_page=to_page,
+            callback=callback,
+            lang=lang,
+            **kwargs,
+        )
     return sections, tables, pdf_parser
 
 
@@ -813,7 +834,7 @@ class Docx(DocxParser):
                 title = self.__get_nearest_title(table_idx, filename)
                 html = "<table>"
                 if title:
-                    html += f"<caption>Table Location: {html_escape(title)}</caption>"
+                    html += f"<caption>Table Location: {title}</caption>"
                 for r in tb.rows:
                     html += "<tr>"
                     col_idx = 0
@@ -828,8 +849,7 @@ class Docx(DocxParser):
                                 else:
                                     break
                             col_idx += 1
-                            cell = html_escape(c.text)
-                            html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
+                            html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                     except Exception as e:
                         logging.warning(f"Error parsing table, ignore: {e}")
                     html += "</tr>"

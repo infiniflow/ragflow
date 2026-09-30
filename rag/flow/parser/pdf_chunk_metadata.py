@@ -15,6 +15,7 @@
 import io
 import logging
 import sys
+import threading
 from copy import deepcopy
 from functools import partial
 
@@ -31,6 +32,20 @@ PDF_PREVIEW_CONTEXT = 120
 PDF_PREVIEW_ZOOM = 3
 PDF_POSITIONS_KEY = "_pdf_positions"
 PDF_MULTI_COLUMN_ZOOM = 3
+PDFPLUMBER_SHARED_LOCK_KEY = "global_shared_lock_pdfplumber"
+_pdfplumber_lock_init_guard = threading.Lock()
+
+
+def _pdfplumber_shared_lock():
+    """Return the process-wide pdfplumber lock (same key as deepdoc.parser.pdf_parser)."""
+    lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+    if lock is None:
+        with _pdfplumber_lock_init_guard:
+            lock = sys.modules.get(PDFPLUMBER_SHARED_LOCK_KEY)
+            if lock is None:
+                lock = threading.Lock()
+                sys.modules[PDFPLUMBER_SHARED_LOCK_KEY] = lock
+    return lock
 
 
 def _extract_raw_positions(item):
@@ -108,6 +123,182 @@ def normalize_pdf_items_metadata(items):
     for item in items:
         normalize_pdf_item_metadata(item)
     return items
+
+
+def _embedded_image_region_key(page_number, x0, top, x1, bottom):
+    return (
+        int(page_number),
+        round(float(x0), 1),
+        round(float(top), 1),
+        round(float(x1), 1),
+        round(float(bottom), 1),
+    )
+
+
+def build_document_page_cum_height(blob):
+    """Cumulative page heights for the full PDF (PDF points), matching DeepDOC ``page_cum_height``."""
+    heights = [0.0]
+    try:
+        with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page in pdf.pages:
+                heights.append(float(page.height))
+    except Exception as e:
+        logging.warning("Failed to build document page cumulative heights: %s", e)
+        return None
+    return list(np.cumsum(heights))
+
+
+def _collect_represented_embedded_regions(bboxes):
+    regions = set()
+    for box in bboxes or []:
+        if box.get("image") is None:
+            continue
+        page_number = box.get("page_number")
+        if page_number is not None and all(box.get(key) is not None for key in ("x0", "x1", "top", "bottom")):
+            regions.add(_embedded_image_region_key(page_number, box["x0"], box["top"], box["x1"], box["bottom"]))
+        for pos in box.get("positions") or []:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+                continue
+            regions.add(_embedded_image_region_key(pos[0], pos[1], pos[3], pos[2], pos[4]))
+    return regions
+
+
+def supplement_deepdoc_bboxes_with_embedded_images(
+    blob,
+    bboxes,
+    zoom=PDF_PREVIEW_ZOOM,
+    from_page=0,
+    to_page=10**9,
+):
+    """Recover figure boxes when DeepDOC layout finds no text (image-only PDFs).
+
+    Merges pdfplumber embedded-image boxes with existing DeepDOC bboxes instead of
+    replacing them. Page bounds follow ``parse_into_bboxes`` (0-based ``from_page``,
+    ``to_page`` is an exclusive end index; 1-based PDF page numbers are included when
+    ``from_page + 1 <= page_number <= to_page``).
+    """
+    merged = list(bboxes or [])
+    represented = _collect_represented_embedded_regions(merged)
+    supplemented = []
+    try:
+        with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                if not (from_page + 1 <= page_number <= to_page):
+                    continue
+                try:
+                    if page.images:
+                        for im in page.images:
+                            try:
+                                x0, top, x1, bottom = im["x0"], im["top"], im["x1"], im["bottom"]
+                                if x1 <= x0 or bottom <= top:
+                                    continue
+                                if (x1 - x0) < 11 or (bottom - top) < 11:
+                                    continue
+                                region = _embedded_image_region_key(page_number, x0, top, x1, bottom)
+                                if region in represented:
+                                    continue
+                                represented.add(region)
+                                cropped = page.crop((x0, top, x1, bottom)).to_image(resolution=72 * zoom, antialias=True).original
+                                supplemented.append(
+                                    {
+                                        "page_number": page_number,
+                                        "x0": float(x0),
+                                        "x1": float(x1),
+                                        "top": float(top),
+                                        "bottom": float(bottom),
+                                        "layout_type": "figure",
+                                        "text": "",
+                                        "image": cropped,
+                                        "positions": [[page_number, int(x0), int(x1), int(top), int(bottom)]],
+                                        "_embedded_supplement": True,
+                                    }
+                                )
+                            except Exception as e:
+                                logging.warning(
+                                    "Skip embedded PDF image on page %s: %s",
+                                    page_number,
+                                    e,
+                                )
+                    elif not page.chars:
+                        pdf_width = float(page.width)
+                        pdf_height = float(page.height)
+                        region = _embedded_image_region_key(page_number, 0, 0, pdf_width, pdf_height)
+                        if region in represented:
+                            continue
+                        represented.add(region)
+                        pil = page.to_image(resolution=72 * zoom, antialias=True).original
+                        supplemented.append(
+                            {
+                                "page_number": page_number,
+                                "x0": 0.0,
+                                "x1": pdf_width,
+                                "top": 0.0,
+                                "bottom": pdf_height,
+                                "layout_type": "figure",
+                                "text": "",
+                                "image": pil,
+                                "positions": [[page_number, 0, int(pdf_width), 0, int(pdf_height)]],
+                                "_embedded_supplement": True,
+                            }
+                        )
+                except Exception as e:
+                    logging.warning("Skip embedded-image supplementation on page %s: %s", page_number, e)
+    except Exception as e:
+        logging.warning("Failed to supplement embedded PDF images: %s", e)
+        return merged
+
+    if not supplemented:
+        return merged
+    result = merged + supplemented
+    doc_heights = build_document_page_cum_height(blob)
+    if doc_heights is not None:
+        return apply_document_vertical_coords_to_bboxes(result, doc_heights)
+    return result
+
+
+def apply_document_vertical_coords(box, page_cum_height):
+    """Convert page-local top/bottom from pdfplumber into DeepDOC cumulative coordinates."""
+    if not box.get("_embedded_supplement"):
+        return box
+    pn = box.get("page_number")
+    if pn is None or page_cum_height is None:
+        return box
+    try:
+        idx = int(pn) - 1
+    except (TypeError, ValueError):
+        return box
+    if idx < 0 or idx >= len(page_cum_height) - 1:
+        return box
+    offset = float(page_cum_height[idx])
+    updated = dict(box)
+    for key in ("top", "bottom"):
+        if updated.get(key) is not None:
+            updated[key] = float(updated[key]) + offset
+    positions = []
+    for pos in updated.get("positions") or []:
+        if not isinstance(pos, (list, tuple)) or len(pos) < 5:
+            positions.append(pos)
+            continue
+        try:
+            positions.append(
+                [
+                    pos[0],
+                    pos[1],
+                    pos[2],
+                    int(float(pos[3]) + offset),
+                    int(float(pos[4]) + offset),
+                ]
+            )
+        except (TypeError, ValueError):
+            positions.append(pos)
+    if positions:
+        updated["positions"] = positions
+    updated.pop("_embedded_supplement", None)
+    return updated
+
+
+def apply_document_vertical_coords_to_bboxes(bboxes, page_cum_height):
+    return [apply_document_vertical_coords(box, page_cum_height) for box in (bboxes or [])]
 
 
 def reorder_multi_column_bboxes(pdf_parser, bboxes, zoom=PDF_MULTI_COLUMN_ZOOM):
@@ -198,11 +389,8 @@ def _fetch_source_blob(from_upstream, canvas):
 
 
 def _load_pdf_page_images(blob, zoom=PDF_PREVIEW_ZOOM):
-    from deepdoc.parser.pdf_parser import LOCK_KEY_pdfplumber
-
-    with sys.modules[LOCK_KEY_pdfplumber]:
-        with pdfplumber.open(io.BytesIO(blob)) as pdf:
-            return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
+    with _pdfplumber_shared_lock(), pdfplumber.open(io.BytesIO(blob)) as pdf:
+        return [page.to_image(resolution=72 * zoom, antialias=True).annotated for page in pdf.pages]
 
 
 def _crop_pdf_preview(page_images, positions, zoom=PDF_PREVIEW_ZOOM):
