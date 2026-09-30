@@ -296,6 +296,7 @@ var pdfParseMethodSpellings = map[string]string{
 	"plaintext":      "plain_text",
 	"plain text":     "plain_text",
 	"mineru":         "mineru",
+	"monkeyocr":      "monkeyocr",
 	"monkeyocrv2":    "monkeyocrv2",
 	"docling":        "docling",
 	"opendataloader": "opendataloader",
@@ -317,6 +318,8 @@ func normalizePDFParseMethod(raw string) string {
 	switch {
 	case strings.HasSuffix(method, "@mineru"):
 		return "mineru"
+	case strings.HasSuffix(method, "@monkeyocr"):
+		return "monkeyocr"
 	case strings.HasSuffix(method, "@paddleocr"):
 		return "paddleocr"
 	case strings.HasSuffix(method, "@somark"):
