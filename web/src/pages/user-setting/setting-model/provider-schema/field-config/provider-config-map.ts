@@ -590,7 +590,8 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         monkeyocr_server_url: obj.monkeyocr_server_url ?? '',
         monkeyocr_backend: obj.monkeyocr_backend ?? 'vlm-engine',
         monkeyocr_output_dir: obj.monkeyocr_output_dir ?? '',
-        monkeyocr_delete_output: String(obj.monkeyocr_delete_output ?? '1') !== '0',
+        monkeyocr_delete_output:
+          String(obj.monkeyocr_delete_output ?? '1') !== '0',
       };
     },
   },

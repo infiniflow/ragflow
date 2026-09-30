@@ -1261,10 +1261,12 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       opendataloaderApiserverPlaceholder:
         'http://votre-service-opendataloader:9383',
       monkeyocrApiserver: 'Serveur API MonkeyOCR',
-      monkeyocrApiserverMessage: 'Veuillez saisir l’URL du serveur API MonkeyOCR !',
+      monkeyocrApiserverMessage:
+        'Veuillez saisir l’URL du serveur API MonkeyOCR !',
       monkeyocrApiserverPlaceholder: 'ex. http://host.docker.internal:9000',
       monkeyocrServerUrl: 'URL du serveur vLLM MonkeyOCR',
-      monkeyocrServerUrlMessage: 'Veuillez saisir l’URL du serveur vLLM MonkeyOCR !',
+      monkeyocrServerUrlMessage:
+        'Veuillez saisir l’URL du serveur vLLM MonkeyOCR !',
       monkeyocrServerUrlPlaceholder: 'ex. http://your-vllm-server:8888',
       monkeyocrOutputDir: 'Répertoire de sortie MonkeyOCR',
       monkeyocrOutputDirPlaceholder: '/tmp/monkeyocr',
