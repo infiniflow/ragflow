@@ -22,14 +22,14 @@ from download_go_deps import (
 )
 
 
-def make_ort_zip(path, version):
+def make_ort_zip(path, version, payload=b"!<arch>\nort-payload"):
     """Build a zip shaped like the infiniflow/ragflow-build ORT release: a
     top-level dir named onnxruntime-v{version}-linux-x86_64 holding
     lib/libonnxruntime.a. extract_onnxruntime() must rename it to the
     build.sh-expected onnxruntime-linux-x64-static_lib-{version}-glibc2_28."""
     member = f"{_ort_extracted_dir(version)}/lib/libonnxruntime.a"
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr(member, b"!<arch>\nort-payload")
+        zf.writestr(member, payload)
     return path
 
 
@@ -86,3 +86,17 @@ def test_idempotent_when_matching_version_already_present(tmp_path):
     before = sorted(os.listdir(static_lib))
     assert extract_onnxruntime(str(static_lib), str(archive), version) is True
     assert sorted(os.listdir(static_lib)) == before
+
+
+def test_reextracts_when_release_archive_changes_same_version(tmp_path):
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    version = "1.29.0"
+    archive = make_ort_zip(tmp_path / _ort_asset_name(version), version, b"old-ort")
+
+    assert extract_onnxruntime(str(static_lib), str(archive), version) is True
+
+    archive = make_ort_zip(archive, version, b"new-ort")
+
+    assert extract_onnxruntime(str(static_lib), str(archive), version) is True
+    lib_path = static_lib / _ort_normalized_dir(version) / "lib" / "libonnxruntime.a"
+    assert lib_path.read_bytes() == b"new-ort"
