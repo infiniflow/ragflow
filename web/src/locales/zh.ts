@@ -2344,8 +2344,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
-      flattenMediaToText: '禁用视觉模型',
-      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableVisionEnhancement: '启用视觉增强',
+      enableVisionEnhancementTip:
+        '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
       enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',

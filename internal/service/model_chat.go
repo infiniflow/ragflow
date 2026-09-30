@@ -40,7 +40,8 @@ func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID strin
 	if err != nil {
 		return nil, err
 	}
-	return target.Driver.ChatWithMessages(ctx, target.ModelName, messages, target.APIConfig, config, nil)
+	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	return chatModel.ChatWithMessages(ctx, messages, config, nil)
 }
 
 func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
@@ -59,7 +60,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 	go func() {
 		defer close(ch)
 		defer close(errCh)
-		if err := chatModel.ModelDriver.ChatStreamlyWithSender(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil,
+		if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, nil,
 			func(delta *string, _ *string) error {
 				if delta == nil {
 					return nil
