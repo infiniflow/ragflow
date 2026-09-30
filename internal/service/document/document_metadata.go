@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/dao"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/service"
 	"reflect"
 	"regexp"
@@ -135,7 +136,11 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 	// Return metadata if found
 	if len(searchResult.MetadataRecords) > 0 {
 		metadata := searchResult.MetadataRecords[0]
-		return service.ExtractMetaFields(metadata)
+		fields, err := service.ExtractMetaFields(metadata)
+		if err != nil {
+			return nil, err
+		}
+		return ingestiontable.WithoutProfileField(fields), nil
 	}
 
 	return make(map[string]interface{}), nil
@@ -207,6 +212,9 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 		// Process each metadata field
 		for fieldName, fieldValue := range metaFields {
 			if fieldName == "kb_id" || fieldName == "id" {
+				continue
+			}
+			if fieldName == ingestiontable.ProfileMetadataField {
 				continue
 			}
 
@@ -364,6 +372,9 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 
 		// Now iterate over the extracted metadata fields
 		for k, v := range metaFields {
+			if k == ingestiontable.ProfileMetadataField {
+				continue
+			}
 			// Skip nil values
 			if v == nil {
 				continue

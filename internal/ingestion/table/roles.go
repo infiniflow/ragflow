@@ -110,6 +110,29 @@ func ProfileKey(mode string, roles map[string]string) string {
 	return "p_" + hex.EncodeToString(sum[:])
 }
 
+// Spec is an effective column configuration: the mode and the roles that were
+// explicitly configured with it. Its key is what an indexed row records, so a
+// later recomputation (after rows are removed or switched) can recover the
+// roles that were in force when the row was written, rather than the roles the
+// document happens to ask for now.
+type Spec struct {
+	Mode  string            `json:"mode"`
+	Roles map[string]string `json:"roles"`
+}
+
+// Key returns the profile key of this configuration.
+func (s Spec) Key() string { return ProfileKey(s.Mode, s.Roles) }
+
+// RoleOf returns the effective role of a column key: the configured role, or
+// "both" when the column has no entry. auto is handled by the caller storing an
+// empty Roles, so an unset column resolves to both as well.
+func (s Spec) RoleOf(key string) string {
+	if role, ok := s.Roles[key]; ok {
+		return role
+	}
+	return RoleBoth
+}
+
 func escapeJSONString(s string) string {
 	var b []byte
 	b = append(b, '"')

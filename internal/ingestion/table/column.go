@@ -21,16 +21,16 @@ import (
 // JSON key of chunk_data (and field_map).
 type Column struct {
 	// Index is the 1-based position of the column in the sheet header.
-	Index int
+	Index int `json:"index"`
 	// Key is the normalized column key used by column_roles and document
 	// column metadata.
-	Key string
+	Key string `json:"key"`
 	// DisplayName is the readable name for pages, body text and field
 	// descriptions.
-	DisplayName string
+	DisplayName string `json:"display_name"`
 	// DataKey is the JSON-safe key written to chunk_data: "c_" plus the full
 	// lowercase hex SHA-256 of Key.
-	DataKey string
+	DataKey string `json:"data_key"`
 }
 
 // emptyKeyPrefix is the key prefix for position-derived names of empty

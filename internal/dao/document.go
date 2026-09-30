@@ -440,6 +440,33 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kb
 	return result, nil
 }
 
+// ListEnabledIDsByKBIDs groups the IDs of valid documents by knowledge base.
+// Which documents a structured query may read is decided here, from the
+// document row, so a disabled document stops contributing its indexed fields
+// immediately instead of waiting for its index data to change.
+func (dao *DocumentDAO) ListEnabledIDsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) (map[string][]string, error) {
+	out := make(map[string][]string, len(kbIDs))
+	if len(kbIDs) == 0 {
+		return out, nil
+	}
+	var docs []struct {
+		ID   string `gorm:"column:id"`
+		KbID string `gorm:"column:kb_id"`
+	}
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Select("id, kb_id").
+		Where("kb_id IN ?", kbIDs).
+		Where("status = ?", string(entity.StatusValid)).
+		Find(&docs).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, doc := range docs {
+		out[doc.KbID] = append(out[doc.KbID], doc.ID)
+	}
+	return out, nil
+}
+
 // ListParserConfigsByKBIDs returns each dataset's distinct document
 // parser_config that declares a tag source file, keyed by dataset ID.
 //

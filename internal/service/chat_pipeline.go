@@ -449,10 +449,18 @@ func (s *ChatPipelineService) AsyncChat(
 		// reports it is decorated as if quoting were off, so it carries neither
 		// citation markers nor a document reference (decorateQuote).
 		emptyResponse, _ := promptConfig["empty_response"].(string)
-		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
-		if fmErr != nil {
-			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
-			fieldMap = nil
+		// The structured columns come from what each document actually indexed,
+		// not from a knowledge-base setting: see MetadataService.TableFieldMap.
+		// Engines that address physical fields cannot use a JSON column map, so
+		// the read is skipped rather than handed to the SQL prompt.
+		var fieldMap map[string]interface{}
+		if docEngine := engine.Get(); docEngine != nil && SupportsStructuredTableSQL(docEngine.GetType()) {
+			var fmErr error
+			fieldMap, _, fmErr = s.MetadataSvc.TableFieldMap(ctx, kbIDStrings(kbs))
+			if fmErr != nil {
+				common.Warn("table field map failed; proceeding without field_map", zap.Error(fmErr))
+				fieldMap = nil
+			}
 		}
 		// Try structured SQL retrieval before vector search.
 		// Only runs on the last question
