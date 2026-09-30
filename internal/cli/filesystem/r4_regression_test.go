@@ -60,10 +60,13 @@ func TestListFilesHonorsOffsetWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(client.requests) != 1 || !strings.Contains(client.requests[0], "page=2") {
-		t.Fatalf("offset window should request page 3, requests: %v", client.requests)
+		t.Fatalf("offset window should request only page 2, requests: %v", client.requests)
 	}
-	if res.Nodes[0].Name != "file-125.txt" {
-		t.Fatalf("offset window returned %s, want file-100.txt", res.Nodes[0].Name)
+	if len(res.Nodes) != 50 {
+		t.Fatalf("offset window returned %d nodes, want 50", len(res.Nodes))
+	}
+	if res.Nodes[0].Name != "file-125.txt" || res.Nodes[49].Name != "file-174.txt" {
+		t.Fatalf("offset window returned %s through %s, want file-125.txt through file-174.txt", res.Nodes[0].Name, res.Nodes[49].Name)
 	}
 }
 
