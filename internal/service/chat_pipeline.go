@@ -241,6 +241,14 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
+	// agent_mode routes this turn to the smart-reasoning agent: it runs its own
+	// retrieval through its corpus tools, so the pipeline's search and
+	// generation phases do not apply. Reading a nil kwargs map is safe (the
+	// zero value is "").
+	if mode, _ := kwargs["agent_mode"].(string); mode != "" {
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch)
+	}
+
 	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
