@@ -691,6 +691,7 @@ func ApplyMetaDataFilterWithDiagnostics(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
+			setDiag("not_generated", nil, "and", 0)
 			return baseDocIDs, false
 		}
 		conditions := filters.Conditions
@@ -749,6 +750,7 @@ func ApplyMetaDataFilterWithDiagnostics(
 		filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
+			setDiag("not_generated", nil, "and", 0)
 			return baseDocIDs, false
 		}
 		conditions := filters.Conditions
