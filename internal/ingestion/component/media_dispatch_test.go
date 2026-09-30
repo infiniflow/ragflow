@@ -20,21 +20,26 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
@@ -605,13 +610,10 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 	}
 }
 
-// TestImageDecoders_RegisteredFormats validates that image decoders for WebP, BMP,
-// TIFF, PNG, JPEG, and GIF are registered by media dispatch and can decode
-// their respective binary payloads via image.Decode without importing the decoder
-// packages directly in the test file.
+// TestImageDecoders_RegisteredFormats checks that the component package can
+// decode WebP, BMP, TIFF, PNG, JPEG, and GIF payloads.
 func TestImageDecoders_RegisteredFormats(t *testing.T) {
-	// Fixed binary fixtures for image formats decoded via decoders registered in
-	// media dispatch.
+	// Fixed binary fixtures for supported image formats.
 	const (
 		webpB64 = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAD8D+JaQAA3AA/ua1AAA="
 		bmpB64  = "Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABACAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AP8AAP//AAAAAA=="
@@ -673,9 +675,71 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 }
 
 func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
-	_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, defaultSetups(), false)
-	if err == nil || !strings.Contains(err.Error(), "decode") {
-		t.Fatalf("error = %v, want decode error", err)
+	for _, method := range []string{"ocr", "custom-vlm"} {
+		setups := defaultSetups()
+		setups["image"]["parse_method"] = method
+		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false)
+		if err == nil || !strings.Contains(err.Error(), "decode") {
+			t.Fatalf("method %q: error = %v, want decode error", method, err)
+		}
+	}
+}
+
+func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		panic("OCR analyzer panic")
+	}
+	data := picturePNG(t)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("expected OCR analyzer panic")
+			}
+		}()
+		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false)
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	for range deepdocpdf.DeepDocConcurrency() {
+		release, err := parser.AcquireImageMedia(ctx)
+		if err != nil {
+			t.Fatalf("image admission leaked after panic: %v", err)
+		}
+		defer release()
+	}
+}
+
+func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
+	const magic = "picture-dispatch-raster-test"
+	image.RegisterFormat(magic, magic,
+		func(io.Reader) (image.Image, error) { return nil, errors.New("raster decoding requested") },
+		func(io.Reader) (image.Config, error) { return image.Config{Width: 12, Height: 12}, nil })
+	original := resolveModelConfig
+	t.Cleanup(func() { resolveModelConfig = original })
+	resolveModelConfig = func(context.Context, *gorm.DB, string, entity.ModelType, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+	for _, method := range []string{"custom-vlm", "ocr"} {
+		t.Run(method, func(t *testing.T) {
+			setups := defaultSetups()
+			setups["image"]["parse_method"] = method
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true)
+			if method == "ocr" {
+				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
+					t.Fatalf("error = %v, want raster decode error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "captured" || result.JSON[0]["image"] == "" {
+				t.Fatalf("VLM result = %+v, handled = %v", result, handled)
+			}
+		})
 	}
 }
 

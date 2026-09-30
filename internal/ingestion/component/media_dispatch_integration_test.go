@@ -3,6 +3,7 @@
 package component
 
 import (
+	_ "embed"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,9 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
+
+//go:embed testdata/picture_ocr.png
+var pictureOCRFixture []byte
 
 func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 	modelDir := os.Getenv("MODEL_DIR")
@@ -22,12 +26,8 @@ func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 	if err := nativeanalyzer.Register(modelDir, nativeanalyzer.DefaultDropScore); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile("../../deepdoc/native/testdata/page0.png")
-	if err != nil {
-		t.Fatal(err)
-	}
 	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
-		"page0.png", data, nil, defaultSetups(), false)
+		"picture_ocr.png", pictureOCRFixture, nil, defaultSetups(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +35,8 @@ func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 		t.Fatalf("result = %+v, handled = %v", result, handled)
 	}
 	text, _ := result.JSON[0]["text"].(string)
-	if strings.TrimSpace(text) == "" {
-		t.Fatalf("native OCR returned no text: warnings = %v", result.Warnings)
+	if strings.Join(strings.Fields(strings.ToUpper(text)), "") != "HELLOWORLD" {
+		t.Fatalf("native OCR text = %q, want HELLO WORLD: warnings = %v", text, result.Warnings)
 	}
 	if result.JSON[0]["image"] == "" || result.JSON[0]["doc_type_kwd"] != "image" {
 		t.Fatalf("missing image attachment: %+v", result.JSON[0])
