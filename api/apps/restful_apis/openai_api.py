@@ -312,10 +312,13 @@ async def openai_chat_completions(chat_id):
     toolcall_session = None
     stream_mode = bool(req.get("stream", False))
 
+    with_image = req.get("with_image", extra_body.get("with_image", True))
+    image_protocol = req.get("image_protocol", extra_body.get("image_protocol", "url"))
+    chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference, "with_image": with_image, "image_protocol": image_protocol}
+    if doc_ids_str:
+        chat_kwargs["doc_ids"] = doc_ids_str
+
     if stream_mode:
-        chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
-        if doc_ids_str:
-            chat_kwargs["doc_ids"] = doc_ids_str
         ans_iter = async_chat(dia, msg, True, **chat_kwargs)
         return _build_sse_response(
             _stream_chat_completion_sse(
@@ -330,9 +333,6 @@ async def openai_chat_completions(chat_id):
         )
 
     answer = None
-    chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
-    if doc_ids_str:
-        chat_kwargs["doc_ids"] = doc_ids_str
     async for ans in async_chat(dia, msg, False, **chat_kwargs):
         answer = ans
         break

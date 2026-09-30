@@ -16,13 +16,14 @@ class LazyImage:
         return bool(self._blobs)
 
     def to_pil(self):
-        if self._pil is not None:
+        pil = getattr(self, "_pil", None)
+        if pil is not None:
             try:
-                self._pil.load()
-                return self._pil
+                pil.load()
+                return pil
             except Exception:
                 try:
-                    self._pil.close()
+                    pil.close()
                 except Exception:
                     pass
                 self._pil = None
@@ -59,15 +60,23 @@ class LazyImage:
         return pil
 
     def close(self):
-        if self._pil is not None:
+        pil = getattr(self, "_pil", None)
+        if pil is not None:
             try:
-                self._pil.close()
+                pil.close()
             except Exception:
                 pass
             self._pil = None
         return None
 
+    def __deepcopy__(self, memo):
+        new_obj = LazyImage(self._blobs, source=self.source)
+        memo[id(self)] = new_obj
+        return new_obj
+
     def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
         pil = self.to_pil()
         if pil is None:
             raise AttributeError(name)

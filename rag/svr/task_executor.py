@@ -397,6 +397,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 lang=task_language,
                 callback=progress_callback,
                 kb_id=task["kb_id"],
+                doc_id=task["doc_id"],
                 parser_config=parser_config_for_chunk,
                 tenant_id=task["tenant_id"],
             )
@@ -439,16 +440,50 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
 
-            if d.get("img_id"):
-                docs.append(d)
-                return
+            content_text = d.get("content_with_weight", "")
+            image_map = {}
+            kb_id = str(task.get("kb_id", ""))
+            doc_id = str(task.get("doc_id", ""))
+            for m in re.finditer(r"!\[.*?\]\((?:fig:|img:|/v1/document/image/)?([a-zA-Z0-9_\-\.]+)\)", content_text):
+                tag = m.group(1)
+                tag_clean = tag[4:] if tag.startswith("fig:") else tag
+                if kb_id and tag_clean.startswith(f"{kb_id}-"):
+                    full_id = tag_clean
+                elif doc_id and tag_clean.startswith(f"{doc_id}_"):
+                    full_id = f"{kb_id}-{tag_clean}" if kb_id else tag_clean
+                else:
+                    full_id = f"{kb_id}-{doc_id}_{tag_clean}" if kb_id and doc_id else (f"{doc_id}_{tag_clean}" if doc_id else tag_clean)
+                image_map[tag_clean] = full_id
+            if image_map:
+                d["image_map"] = json.dumps(image_map)
 
-            if not d.get("image"):
-                _ = d.pop("image", None)
-                d["img_id"] = ""
-                docs.append(d)
-                return
-            await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
+            # Multimodal inline image support: upload all images bound to this chunk
+            images_to_upload = {}
+            if isinstance(d.get("images"), dict):
+                images_to_upload.update(d.pop("images"))
+            elif d.get("image") and image_map:
+                first_tag = next(iter(image_map.keys()))
+                images_to_upload[first_tag] = d.pop("image")
+
+            for tag_key, img_val in images_to_upload.items():
+                if img_val:
+                    temp_d = {"image": img_val}
+                    await image2id(temp_d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), tag_key, task["kb_id"])
+                    if not d.get("img_id") and tag_key in image_map:
+                        d["img_id"] = image_map[tag_key]
+
+            d.pop("images", None)
+            if not d.get("img_id"):
+                if not d.get("image"):
+                    _ = d.pop("image", None)
+                    d.setdefault("img_id", "")
+                    docs.append(d)
+                    return
+                await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
+            else:
+                if not isinstance(d.get("image"), bytes) and hasattr(d.get("image"), "close"):
+                    d["image"].close()
+                d.pop("image", None)
             docs.append(d)
         except Exception:
             logging.exception("Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
@@ -751,6 +786,12 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         if not c:
             c = d["content_with_weight"]
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
+
+        def _clean_img_vec(m):
+            cap = m.group(1).strip()
+            return " " if re.match(r"^(?:图|figure|fig|image)?\s*[\d\-_.]+$", cap, re.IGNORECASE) else f" {cap} "
+
+        c = re.sub(r"!\[(.*?)\]\((?:fig:|img:|/v1/document/image/)[^)]+\)", _clean_img_vec, c)
         if not c.strip():
             logging.debug("embedding(): normalized whitespace-only chunk to placeholder 'None' (len=%d)", len(c))
             c = "None"
