@@ -4,6 +4,4 @@ FROM scratch
 
 COPY cl100k_base.tiktoken stagehand-server-v3-linux-x64 stagehand-server-v3-linux-arm64 /
 
-COPY office_oxide-linux-x86_64.tar.gz /
-
 COPY huggingface.co /huggingface.co

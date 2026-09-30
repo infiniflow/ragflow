@@ -214,3 +214,4 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt-get update --fix-missing && \
     apt-get install -y build-essential libpython3-dev libicu-dev libgbm-dev && \
     rm -rf /var/lib/apt/lists/*
+

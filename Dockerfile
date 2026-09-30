@@ -219,15 +219,6 @@ RUN set -eux; \
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
-# Use the office_oxide archive pinned by go.mod instead of the runner image's
-# pre-seeded copy, which may have been built against another module version.
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/office_oxide-linux-x86_64.tar.gz,target=/tmp/office_oxide-linux-x86_64.tar.gz \
-    set -eux; \
-    office_oxide_dir="${HOME}/ragflow-native-libs/office_oxide"; \
-    rm -rf "$office_oxide_dir"; \
-    mkdir -p "$office_oxide_dir"; \
-    tar -xzf /tmp/office_oxide-linux-x86_64.tar.gz -C "$office_oxide_dir"
-
 RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
     GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
