@@ -25,9 +25,7 @@ export function useCanvasBackground() {
   const pendingSave = useRef(Promise.resolve());
   const loaded = Boolean(data?.id);
   const fetched = canvasBackgroundFromGlobals(data?.dsl?.globals);
-  const setting = loaded
-    ? fetched
-    : (readStoredCanvasBackground(id) ?? null);
+  const setting = loaded ? fetched : (readStoredCanvasBackground(id) ?? null);
 
   useEffect(() => {
     if (!loaded || !id) return;
@@ -76,8 +74,8 @@ export function useCanvasBackground() {
           throw error;
         }
       };
-      const task = saveQueue.current.then(run, run);
-      saveQueue.current = task.then(
+      const task = pendingSave.current.then(run, run);
+      pendingSave.current = task.then(
         () => undefined,
         () => undefined,
       );
