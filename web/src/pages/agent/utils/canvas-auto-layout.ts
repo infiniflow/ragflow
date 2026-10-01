@@ -586,8 +586,8 @@ function anchorBoxes(
   return anchored;
 }
 
-// n8n lays a fan-out out with dagre `nodesep`: each output of one node gets
-// its own row, ordered from the top handle downward, centered on the source.
+// n8n tidy-up: Dagre left-to-right, edges inserted in handle order, crossing
+// sweep disabled. nodesep stacks a fan-out; ranksep keeps columns compact.
 function layoutMainFlow(
   ids: string[],
   sizeOfId: (id: string) => Size,
@@ -611,169 +611,10 @@ function layoutMainFlow(
     orderOf,
     byId,
   );
-  spreadFanOut(boxes, edges, byId);
   return boxes;
 }
 
-function shiftReach(boxes: Map<string, Box>, ids: string[], dy: number) {
-  if (Math.abs(dy) < 0.5) return;
-  for (const id of ids) {
-    const box = boxes.get(id);
-    if (!box) continue;
-    boxes.set(id, { ...box, y: box.y + dy });
-  }
-}
-
-function exclusiveDownstream(
-  root: string,
-  blocked: Set<string>,
-  edges: Array<{ source: string; target: string }>,
-  boxes: Map<string, Box>,
-  source: Box,
-): string[] {
-  const seen = new Set<string>([root]);
-  const queue = [root];
-  while (queue.length > 0) {
-    const id = queue.shift();
-    if (!id) continue;
-    for (const edge of edges) {
-      if (edge.source !== id || edge.source === edge.target) continue;
-      const target = boxes.get(edge.target);
-      if (!target || seen.has(edge.target) || blocked.has(edge.target)) {
-        continue;
-      }
-      if (target.x <= source.x + 8) continue;
-      seen.add(edge.target);
-      queue.push(edge.target);
-    }
-  }
-  return [...seen];
-}
-
-function spreadFanOut(
-  boxes: Map<string, Box>,
-  edges: Array<{
-    source: string;
-    target: string;
-    sourceHandle?: string | null;
-  }>,
-  byId: Map<string, CanvasLayoutNode>,
-) {
-  const gap = CanvasAutoLayoutSpacing.nodeGap;
-  const sources = [...boxes.keys()].sort((a, b) => {
-    const boxA = boxes.get(a)!;
-    const boxB = boxes.get(b)!;
-    return boxA.x - boxB.x || boxA.y - boxB.y;
-  });
-
-  for (const sourceId of sources) {
-    const source = boxes.get(sourceId);
-    if (!source) continue;
-    const chosen = new Map<
-      string,
-      { target: string; sourceHandle?: string | null }
-    >();
-    for (const edge of edges) {
-      if (edge.source !== sourceId || edge.target === sourceId) continue;
-      if (isAttachmentEdge(edge) || !boxes.has(edge.target)) continue;
-      const target = boxes.get(edge.target);
-      if (!target || target.x <= source.x + 8) continue;
-      const current = chosen.get(edge.target);
-      if (
-        !current ||
-        handleRank(byId.get(sourceId), edge.sourceHandle) <
-          handleRank(byId.get(sourceId), current.sourceHandle)
-      ) {
-        chosen.set(edge.target, edge);
-      }
-    }
-    const forward = [...chosen.values()]
-      .sort((a, b) => {
-        const handleDelta =
-          handleRank(byId.get(sourceId), a.sourceHandle) -
-          handleRank(byId.get(sourceId), b.sourceHandle);
-        if (handleDelta !== 0) return handleDelta;
-        return (boxes.get(a.target)?.y ?? 0) - (boxes.get(b.target)?.y ?? 0);
-      })
-      .map((edge) => edge.target);
-    if (forward.length < 2) continue;
-
-    const stacked = [...forward].sort(
-      (a, b) => (boxes.get(a)?.y ?? 0) - (boxes.get(b)?.y ?? 0),
-    );
-    let tooTight = false;
-    for (let index = 1; index < stacked.length; index += 1) {
-      const previous = boxes.get(stacked[index - 1]);
-      const next = boxes.get(stacked[index]);
-      if (!previous || !next) continue;
-      if (next.y - (previous.y + previous.height) < gap - 1) tooTight = true;
-    }
-    const orderWrong = forward.some((id, index) => id !== stacked[index]);
-    if (!tooTight && !orderWrong) continue;
-
-    const total =
-      forward.reduce((sum, id) => sum + (boxes.get(id)?.height ?? 0), 0) +
-      gap * (forward.length - 1);
-    let cursor = source.y + source.height / 2 - total / 2;
-    const blocked = new Set<string>([sourceId, ...forward]);
-    const reaches = forward.map((targetId) =>
-      exclusiveDownstream(targetId, blocked, edges, boxes, source),
-    );
-    const shared = new Map<string, number>();
-    for (const reach of reaches) {
-      for (const id of reach) shared.set(id, (shared.get(id) ?? 0) + 1);
-    }
-    forward.forEach((targetId, index) => {
-      const box = boxes.get(targetId);
-      const reach = reaches[index];
-      if (!box || !reach) return;
-      const dy = cursor - box.y;
-      shiftReach(
-        boxes,
-        reach.filter((id) => shared.get(id) === 1),
-        dy,
-      );
-      cursor += box.height + gap;
-    });
-  }
-}
-
-function floorSize(node: CanvasLayoutNode | undefined): Size {
-  const label = node?.data?.label;
-  if (label === 'Agent') return { width: 320, height: 240 };
-  if (label === 'Switch' || label === 'Categorize') {
-    return { width: 280, height: 200 };
-  }
-  if (label === 'Message' || label === 'Retrieval') {
-    return { width: 280, height: 160 };
-  }
-  if (label === 'Code') return { width: 240, height: 120 };
-  return { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
-}
-
-function reservedBox(node: CanvasLayoutNode | undefined, box: Box): Box {
-  const floor = floorSize(node);
-  return {
-    x: box.x,
-    y: box.y,
-    width: Math.max(box.width, floor.width),
-    height: Math.max(box.height, floor.height),
-  };
-}
-
-function horizontalOverlap(a: Box, b: Box): boolean {
-  return a.x < b.x + b.width && b.x < a.x + a.width;
-}
-
-type AttachmentIndex = {
-  rootOf: Map<string, string>;
-  membersOf: Map<string, string[]>;
-};
-
-function attachmentIndex(
-  edges: CanvasLayoutEdge[],
-  boxes: Map<string, Box>,
-): AttachmentIndex {
+function attachmentGroups(edges: CanvasLayoutEdge[], boxes: Map<string, Box>) {
   const parentOf = new Map<string, string>();
   for (const edge of edges) {
     if (!isAttachmentEdge(edge)) continue;
@@ -790,19 +631,13 @@ function attachmentIndex(
     return root;
   };
   const membersOf = new Map<string, string[]>();
-  const involved = new Set<string>([...parentOf.keys(), ...parentOf.values()]);
-  for (const id of involved) {
+  for (const id of new Set([...parentOf.keys(), ...parentOf.values()])) {
     const root = resolve(id);
     const members = membersOf.get(root) ?? [];
     if (!members.includes(id)) members.push(id);
     membersOf.set(root, members);
   }
   return { rootOf, membersOf };
-}
-
-function clusterIds(id: string, index: AttachmentIndex): string[] {
-  const root = index.rootOf.get(id) ?? id;
-  return index.membersOf.get(root) ?? [id];
 }
 
 function shiftMembers(boxes: Map<string, Box>, ids: string[], dy: number) {
@@ -814,149 +649,53 @@ function shiftMembers(boxes: Map<string, Box>, ids: string[], dy: number) {
   }
 }
 
-function clusterReserved(
-  ids: string[],
-  boxes: Map<string, Box>,
-  nodes: Map<string, CanvasLayoutNode>,
-): Box | undefined {
+function groupIds(
+  id: string,
+  groups: ReturnType<typeof attachmentGroups>,
+): string[] {
+  const root = groups.rootOf.get(id) ?? id;
+  return groups.membersOf.get(root) ?? [id];
+}
+
+function groupBox(ids: string[], boxes: Map<string, Box>): Box | undefined {
   return boundsOf(
-    ids
-      .map((id) => {
-        const box = boxes.get(id);
-        if (!box) return undefined;
-        return reservedBox(nodes.get(id), box);
-      })
-      .filter((box): box is Box => !!box),
+    ids.map((id) => boxes.get(id)).filter((box): box is Box => !!box),
   );
 }
 
-function separateOverlaps(
+/**
+ * Dagre already produces n8n's compact columns. Only boxes that actually
+ * intersect are separated, and an agent moves with its tools.
+ */
+export function relaxPlacement(
   boxes: Map<string, Box>,
-  nodes: Map<string, CanvasLayoutNode>,
-  index: AttachmentIndex,
+  _nodes: CanvasLayoutNode[],
+  edges: CanvasLayoutEdge[],
 ) {
-  const gap = CanvasAutoLayoutSpacing.nodeGap;
+  const gap = CanvasAutoLayoutSpacing.grid * 2;
+  const groups = attachmentGroups(edges, boxes);
   const roots = [
-    ...new Set([...boxes.keys()].map((id) => index.rootOf.get(id) ?? id)),
+    ...new Set([...boxes.keys()].map((id) => groups.rootOf.get(id) ?? id)),
   ];
-  for (let pass = 0; pass < 12; pass += 1) {
+  for (let pass = 0; pass < 8; pass += 1) {
     let moved = false;
     for (const upperId of roots) {
       for (const lowerId of roots) {
         if (upperId === lowerId) continue;
-        const upper = clusterReserved(clusterIds(upperId, index), boxes, nodes);
-        const lower = clusterReserved(clusterIds(lowerId, index), boxes, nodes);
-        const lowerTop = boxes.get(lowerId)?.y;
-        if (!upper || !lower || lowerTop === undefined || upper.y > lower.y) {
-          continue;
-        }
-        if (!horizontalOverlap(upper, lower)) continue;
-        const push = upper.y + upper.height + gap - lower.y;
-        if (push <= 0.5) continue;
-        shiftMembers(boxes, clusterIds(lowerId, index), push);
+        const upper = groupBox(groupIds(upperId, groups), boxes);
+        const lower = groupBox(groupIds(lowerId, groups), boxes);
+        if (!upper || !lower || upper.y > lower.y) continue;
+        const overlapsX =
+          upper.x < lower.x + lower.width && lower.x < upper.x + upper.width;
+        if (!overlapsX) continue;
+        const overlap = upper.y + upper.height - lower.y;
+        if (overlap <= 0) continue;
+        shiftMembers(boxes, groupIds(lowerId, groups), overlap + gap);
         moved = true;
       }
     }
     if (!moved) break;
   }
-}
-
-function cubicPoint(
-  p0: { x: number; y: number },
-  p1: { x: number; y: number },
-  p2: { x: number; y: number },
-  p3: { x: number; y: number },
-  t: number,
-) {
-  const u = 1 - t;
-  return {
-    x:
-      u * u * u * p0.x +
-      3 * u * u * t * p1.x +
-      3 * u * t * t * p2.x +
-      t * t * t * p3.x,
-    y:
-      u * u * u * p0.y +
-      3 * u * u * t * p1.y +
-      3 * u * t * t * p2.y +
-      t * t * t * p3.y,
-  };
-}
-
-function liftNodesOffEdges(
-  boxes: Map<string, Box>,
-  nodes: Map<string, CanvasLayoutNode>,
-  edges: CanvasLayoutEdge[],
-  index: AttachmentIndex,
-) {
-  const margin = CanvasAutoLayoutSpacing.grid * 2;
-  for (let pass = 0; pass < 4; pass += 1) {
-    let moved = false;
-    for (const edge of edges) {
-      if (isAttachmentEdge(edge)) continue;
-      const source = boxes.get(edge.source);
-      const target = boxes.get(edge.target);
-      if (!source || !target || edge.source === edge.target) continue;
-      const start = {
-        x: source.x + source.width,
-        y: source.y + source.height / 2,
-      };
-      const end = { x: target.x, y: target.y + target.height / 2 };
-      if (Math.abs(end.x - start.x) < 32) continue;
-      const bend = Math.abs(end.x - start.x) * 0.25;
-      const c1 = { x: start.x + bend, y: start.y };
-      const c2 = { x: end.x - bend, y: end.y };
-      const lifts = new Map<string, number>();
-      for (const [id, box] of boxes) {
-        const root = index.rootOf.get(id) ?? id;
-        if (
-          root === edge.source ||
-          root === edge.target ||
-          id === edge.source ||
-          id === edge.target
-        ) {
-          continue;
-        }
-        const reserved = reservedBox(nodes.get(id), box);
-        let lowest = Infinity;
-        let hit = false;
-        for (let step = 1; step <= 12; step += 1) {
-          const point = cubicPoint(start, c1, c2, end, step / 13);
-          if (
-            point.x < reserved.x ||
-            point.x > reserved.x + reserved.width ||
-            point.y < reserved.y - margin ||
-            point.y > reserved.y + reserved.height + margin
-          ) {
-            continue;
-          }
-          hit = true;
-          lowest = Math.min(lowest, point.y);
-        }
-        if (!hit) continue;
-        const lift = reserved.y + reserved.height + margin - lowest;
-        if (lift <= 0.5) continue;
-        lifts.set(root, Math.max(lifts.get(root) ?? 0, lift));
-      }
-      for (const [root, lift] of lifts) {
-        shiftMembers(boxes, clusterIds(root, index), -lift);
-        moved = true;
-      }
-    }
-    if (!moved) break;
-  }
-}
-
-export function relaxPlacement(
-  boxes: Map<string, Box>,
-  nodes: CanvasLayoutNode[],
-  edges: CanvasLayoutEdge[],
-) {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const index = attachmentIndex(edges, boxes);
-  separateOverlaps(boxes, byId, index);
-  liftNodesOffEdges(boxes, byId, edges, index);
-  separateOverlaps(boxes, byId, index);
 }
 
 function layoutLevel(

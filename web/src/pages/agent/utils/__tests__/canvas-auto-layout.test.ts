@@ -439,62 +439,53 @@ describe('layoutCanvasNodes', () => {
 });
 
 describe('relaxPlacement', () => {
-  it('pushes a node that sits on another node downward', () => {
-    const agent = node('agent', 200, 0, {
-      data: { label: 'Agent' },
-      height: 80,
-      measured: { width: WIDTH, height: 80 },
-    });
-    const message = node('message', 200, 40, {
-      data: { label: 'Message' },
-    });
+  it('separates overlapping cards by a small gap and leaves the row compact', () => {
+    const agent = node('agent', 200, 0, { data: { label: 'Agent' } });
+    const message = node('message', 200, 40, { data: { label: 'Message' } });
+    const neighbor = node('neighbor', 700, 0);
     const boxes = new Map([
       ['agent', { x: 100, y: 0, width: WIDTH, height: 80 }],
       ['message', { x: 100, y: 40, width: WIDTH, height: HEIGHT }],
+      ['neighbor', { x: 700, y: 0, width: WIDTH, height: HEIGHT }],
     ]);
-    relaxPlacement(boxes, [agent, message], []);
-    const top = boxes.get('agent')!;
-    const lower = boxes.get('message')!;
-    expect(lower.y).toBeGreaterThanOrEqual(
-      top.y + 240 + CanvasAutoLayoutSpacing.nodeGap - 1,
-    );
+    relaxPlacement(boxes, [agent, message, neighbor], []);
+    expect(boxes.get('message')!.y).toBeGreaterThanOrEqual(80 + 32 - 1);
+    expect(boxes.get('message')!.y).toBeLessThan(200);
+    expect(boxes.get('neighbor')!.y).toBe(0);
+    expect(boxes.get('agent')!.y).toBe(0);
   });
 
-  it('lifts a node that a connection runs through', () => {
+  it('does not scatter a compact row to dodge a cable', () => {
     const left = node('left', 100, 200);
-    const mid = node('mid', 400, 200, { data: { label: 'Switch' } });
+    const mid = node('mid', 400, 80, { data: { label: 'Switch' } });
     const right = node('right', 800, 200);
     const boxes = new Map([
       ['left', { x: 0, y: 160, width: WIDTH, height: HEIGHT }],
-      ['mid', { x: 360, y: 160, width: WIDTH, height: HEIGHT }],
+      ['mid', { x: 360, y: 40, width: WIDTH, height: HEIGHT }],
       ['right', { x: 760, y: 160, width: WIDTH, height: HEIGHT }],
     ]);
-    const edges: CanvasLayoutEdge[] = [edge('left', 'right')];
-    const before = boxes.get('mid')!.y;
-    relaxPlacement(boxes, [left, mid, right], edges);
-    expect(boxes.get('mid')!.y).toBeLessThan(before);
+    relaxPlacement(boxes, [left, mid, right], [edge('left', 'right')]);
     expect(boxes.get('left')!.y).toBe(160);
+    expect(boxes.get('mid')!.y).toBe(40);
     expect(boxes.get('right')!.y).toBe(160);
   });
 
-  it('lifts an agent and its tool together when a cable crosses the tool', () => {
-    const agent = node('agent', 400, 200, { data: { label: 'Agent' } });
-    const tool = node('tool', 400, 360, { data: { label: 'Tool' } });
-    const left = node('left', 0, 360);
-    const right = node('right', 900, 360);
+  it('moves an agent with its tool when the tool overlaps another card', () => {
+    const agent = node('agent', 400, 0, { data: { label: 'Agent' } });
+    const tool = node('tool', 400, 100, { data: { label: 'Tool' } });
+    const other = node('other', 400, 120);
     const boxes = new Map([
-      ['agent', { x: 300, y: 200, width: WIDTH, height: HEIGHT }],
-      ['tool', { x: 300, y: 360, width: WIDTH, height: HEIGHT }],
-      ['left', { x: 0, y: 360, width: WIDTH, height: HEIGHT }],
-      ['right', { x: 900, y: 360, width: WIDTH, height: HEIGHT }],
+      ['agent', { x: 300, y: 0, width: WIDTH, height: HEIGHT }],
+      ['tool', { x: 300, y: 100, width: WIDTH, height: HEIGHT }],
+      ['other', { x: 320, y: 140, width: WIDTH, height: HEIGHT }],
     ]);
+    const gap = boxes.get('tool')!.y - boxes.get('agent')!.y;
     relaxPlacement(
       boxes,
-      [agent, tool, left, right],
-      [edge('left', 'right'), edge('agent', 'tool', 'tool')],
+      [agent, tool, other],
+      [edge('agent', 'tool', 'tool')],
     );
-    expect(boxes.get('tool')!.y - boxes.get('agent')!.y).toBe(160);
-    expect(boxes.get('tool')!.y).toBeLessThan(360);
-    expect(boxes.get('agent')!.y).toBeLessThan(200);
+    expect(boxes.get('tool')!.y - boxes.get('agent')!.y).toBe(gap);
+    expect(boxes.get('other')!.y).toBeGreaterThan(140);
   });
 });
