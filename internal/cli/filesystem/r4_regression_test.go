@@ -70,6 +70,26 @@ func TestListFilesHonorsOffsetWindow(t *testing.T) {
 	}
 }
 
+func TestListFilesOffsetWindowCrossesPageBoundary(t *testing.T) {
+	client := &fakeHTTPClient{total: 250}
+	p := NewFileProvider(client)
+	res, err := p.listFilesByParentID(stdctx.Background(), "x", "", &ListOptions{Limit: 30, Offset: 90})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) != 2 || !strings.Contains(client.requests[0], "page=1") || !strings.Contains(client.requests[1], "page=2") {
+		t.Fatalf("expected pages 1 and 2, got %v", client.requests)
+	}
+	if len(res.Nodes) != 30 {
+		t.Fatalf("got %d nodes, want 30", len(res.Nodes))
+	}
+	for i, node := range res.Nodes {
+		if want := fmt.Sprintf("file-%d.txt", 90+i); node.Name != want {
+			t.Fatalf("node %d = %s, want %s", i, node.Name, want)
+		}
+	}
+}
+
 type laterPageErrorClient struct{ fakeHTTPClient }
 
 func (f *laterPageErrorClient) Request(method, path, authKind string, headers map[string]string, body map[string]interface{}) (*HTTPResponse, error) {
