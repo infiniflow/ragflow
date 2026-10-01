@@ -65,6 +65,9 @@ func TestListFilesHonorsOffsetWindow(t *testing.T) {
 	if len(res.Nodes) != 50 {
 		t.Fatalf("offset window returned %d nodes, want 50", len(res.Nodes))
 	}
+	if res.Total != 250 {
+		t.Fatalf("offset window reported total %d, want 250", res.Total)
+	}
 	if res.Nodes[0].Name != "file-125.txt" || res.Nodes[49].Name != "file-174.txt" {
 		t.Fatalf("offset window returned %s through %s, want file-125.txt through file-174.txt", res.Nodes[0].Name, res.Nodes[49].Name)
 	}
