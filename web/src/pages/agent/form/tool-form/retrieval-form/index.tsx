@@ -66,7 +66,6 @@ const RetrievalForm = () => {
           <FormContainer>
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>

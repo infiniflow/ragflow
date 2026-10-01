@@ -198,46 +198,53 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-// validateDatasetParserConfig enforces the Go backend's "component-scoped only"
-// contract: every top-level parser_config key must be keyed by a component id
-// (it contains ":"), never a flat (non-component-scoped) key. The Python backend
-// is fully retired (SystemHandler.Language always returns "go"), so the dataset
-// parser_config is always built from a DSL whose params live on component nodes
-// (e.g. chunk size is "chunk_token_size" on the chunker node, not the legacy
-// flat "chunk_token_num"). Any flat key would be silently dropped by
-// CleanComponentParams downstream and is never consumed, so we reject it loudly
-// here instead.
-//
-// ValidateDocumentParserConfig delegates to this same check, so documents and
-// datasets share one contract: no flat keys are ever permitted on either path.
-func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+// DropUnscopedParserConfigKeys removes top-level parser_config keys that are
+// not component-scoped (i.e. do not contain ":"), since the Go backend only
+// consumes keys keyed by a component id (e.g. "Parser:abc123" or
+// "Extractor:AutoExtractDefault"). Flat keys are legacy transport artifacts
+// that downstream consumers (CleanComponentParams) never read, so they are
+// dropped rather than rejected. Only top-level keys are affected; a key nested
+// inside a component node (e.g. "Extractor:AutoExtractDefault.metadata") keeps
+// its existing name. It mutates the provided map in place and returns the names
+// of the dropped keys so callers can log the silent drop. A nil or empty map is
+// returned untouched with a nil result.
+func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	if len(parserConfig) == 0 {
 		return nil
 	}
+	var dropped []string
 	for key := range parserConfig {
 		if !strings.Contains(key, ":") {
-			return fmt.Errorf(
-				"parser_config key %q must be component-scoped (e.g. under an Extractor or GeneralChunker node), not a flat top-level key",
-				key,
-			)
+			dropped = append(dropped, key)
 		}
 	}
-	return nil
+	for _, key := range dropped {
+		delete(parserConfig, key)
+	}
+	return dropped
 }
 
-// ValidateParserConfig validates the shared REST parser_config schema.
-func ValidateParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+// ValidateParserConfig validates the shared REST parser_config schema. Flat
+// (non-component-scoped) keys are no longer rejected: they are silently dropped
+// because downstream consumers never read them. The size limit is still
+// enforced. It returns the names of the dropped (unscoped) keys so the caller
+// can log the silent drop; this is the single drop point shared by every entry
+// path, so callers should not call DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // ValidateDocumentParserConfig validates the parser_config attached to a
 // document. Documents follow the same component-scoped contract as datasets:
 // every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
 // or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
-// nodes come from the same pipeline DSL as the dataset, so there is no flat-key
-// fallback to keep. validateDatasetParserConfig enforces the no-flat-key rule.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
+// (not kept) and the size limit is enforced. It returns the dropped key names
+// for logging, mirroring ValidateParserConfig.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its

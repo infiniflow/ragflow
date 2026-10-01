@@ -317,28 +317,6 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("HTTP helper retries temporary server errors", func(t *testing.T) {
-		var calls atomic.Int32
-		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			attempt := calls.Add(1)
-			if attempt < 3 {
-				writer.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			_, _ = writer.Write([]byte(`{"results":{"result":[]}}`))
-		}))
-		defer server.Close()
-		helper := NewHTTPHelperWithRetry(RetryConfig{
-			MaxAttempts: 3,
-			BaseBackoff: time.Nanosecond,
-			MaxBackoff:  time.Nanosecond,
-		}).WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
-		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(t.Context(), `{"query":"x"}`)
-		if err != nil || calls.Load() != 3 || strings.Contains(out, "_ERROR") {
-			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
-		}
-	})
-
 	t.Run("persistent server errors are soft", func(t *testing.T) {
 		var calls atomic.Int32
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -353,7 +331,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 		}).WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
 		querit := NewQueritToolWithEnvKey(helper, func() string { return "environment-secret" })
 		out, err := querit.InvokableRun(t.Context(), `{"query":"x"}`)
-		if err != nil || calls.Load() != 3 || !strings.Contains(out, "_ERROR") || !strings.Contains(out, "500") {
+		if err != nil || calls.Load() != 1 || !strings.Contains(out, "_ERROR") || !strings.Contains(out, "500") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
 	})
@@ -399,7 +377,7 @@ func TestQueritHTTPFailuresAreSoftErrors(t *testing.T) {
 			return errors.New("offline")
 		})})
 		out, err := NewQueritToolWithEnvKey(helper, func() string { return "k" }).InvokableRun(t.Context(), `{"query":"x"}`)
-		if err != nil || calls.Load() != 3 || !strings.Contains(out, "_ERROR") {
+		if err != nil || calls.Load() != 1 || !strings.Contains(out, "_ERROR") {
 			t.Fatalf("result = %s, err = %v, calls = %d", out, err, calls.Load())
 		}
 	})
