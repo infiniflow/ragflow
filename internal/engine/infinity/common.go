@@ -400,6 +400,13 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 			continue
 		}
 
+		if k == "knowledge_graph_kwd" {
+			if graphTypeCondition := buildGraphTypeFilterCondition(v); graphTypeCondition != "" {
+				conditions = append(conditions, graphTypeCondition)
+			}
+			continue
+		}
+
 		// JSON-list fields use member containment. Legacy tables stored these
 		// columns as ###-joined varchar values, so retain their full-text fallback.
 		if fieldJSONList(k) && tableColumns != nil {

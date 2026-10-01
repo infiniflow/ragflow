@@ -33,7 +33,7 @@ var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "menti
 var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
-	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
 	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
@@ -481,7 +481,10 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 			if !rowHasEnabledSource(row, excludedDocIDs) {
 				continue
 			}
-			kg := firstStringValue(row["knowledge_graph_kwd"])
+			kg := firstStringValue(row["type_kwd"])
+			if kg == "" {
+				kg = firstStringValue(row["knowledge_graph_kwd"])
+			}
 			if kg == "relation" {
 				if edge := projectRelation(row); edge != nil {
 					relations = append(relations, edge)
