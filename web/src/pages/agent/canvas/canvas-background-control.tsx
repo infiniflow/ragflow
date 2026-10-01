@@ -37,12 +37,14 @@ export function CanvasBackgroundControl({
       event.target.value = '';
       if (!file) return;
       setImageError(false);
+      let image: string;
       try {
-        const image = await readCanvasBackgroundImage(file);
-        onChange({ mode: 'image', image, color: setting.color });
+        image = await readCanvasBackgroundImage(file, setting.color);
       } catch {
         setImageError(true);
+        return;
       }
+      await onChange({ mode: 'image', image, color: setting.color });
     },
     [onChange, setting.color],
   );

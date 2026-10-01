@@ -30,7 +30,9 @@ export function useCanvasBackground() {
         ...(dsl.globals ?? {}),
         [CanvasBackgroundGlobalKey]: next,
       };
-      queryClient.setQueryData<IFlow>(AgentKeys.detail(id), (current) => {
+      const detailKey = AgentKeys.detail(id);
+      const previous = queryClient.getQueryData<IFlow>(detailKey);
+      queryClient.setQueryData<IFlow>(detailKey, (current) => {
         if (!current?.dsl) return current;
         return {
           ...current,
@@ -43,7 +45,15 @@ export function useCanvasBackground() {
           },
         };
       });
-      await setAgent({ id, title: data.title, dsl });
+      try {
+        const response = await setAgent({ id, title: data.title, dsl });
+        if (response?.code !== 0) {
+          queryClient.setQueryData(detailKey, previous);
+        }
+      } catch (error) {
+        queryClient.setQueryData(detailKey, previous);
+        throw error;
+      }
     },
     [buildDslData, data?.title, id, queryClient, setAgent],
   );

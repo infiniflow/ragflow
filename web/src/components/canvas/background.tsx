@@ -41,7 +41,11 @@ export function AgentBackground({
     <Background
       id="canvas-background"
       variant={BackgroundVariant.Dots}
-      color={image ? 'transparent' : 'var(--text-primary)'}
+      color={
+        !setting || setting.mode === 'default'
+          ? 'var(--text-primary)'
+          : 'transparent'
+      }
       bgColor={image ? setting?.color || 'rgb(var(--bg-canvas))' : solid}
       style={imageStyle}
       className="rounded-lg"

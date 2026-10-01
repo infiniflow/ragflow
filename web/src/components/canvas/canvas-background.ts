@@ -56,7 +56,23 @@ export function canvasBackgroundFromGlobals(
   );
 }
 
-export async function readCanvasBackgroundImage(file: File): Promise<string> {
+function backdropColor(color?: string): string {
+  const chosen = safeCanvasColor(color);
+  if (chosen) return chosen;
+  if (typeof document === 'undefined') return '#000000';
+  const channels = getComputedStyle(document.documentElement)
+    .getPropertyValue('--bg-canvas')
+    .trim();
+  if (/^\d{1,3}\s+\d{1,3}\s+\d{1,3}$/.test(channels)) {
+    return `rgb(${channels.split(/\s+/).join(', ')})`;
+  }
+  return '#000000';
+}
+
+export async function readCanvasBackgroundImage(
+  file: File,
+  color?: string,
+): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const maxEdge = 1600;
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
@@ -70,6 +86,8 @@ export async function readCanvasBackgroundImage(file: File): Promise<string> {
     bitmap.close();
     throw new Error('canvas');
   }
+  context.fillStyle = backdropColor(color);
+  context.fillRect(0, 0, width, height);
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
   const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
