@@ -765,26 +765,95 @@ function horizontalOverlap(a: Box, b: Box): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width;
 }
 
+type AttachmentIndex = {
+  rootOf: Map<string, string>;
+  membersOf: Map<string, string[]>;
+};
+
+function attachmentIndex(
+  edges: CanvasLayoutEdge[],
+  boxes: Map<string, Box>,
+): AttachmentIndex {
+  const parentOf = new Map<string, string>();
+  for (const edge of edges) {
+    if (!isAttachmentEdge(edge)) continue;
+    if (!boxes.has(edge.source) || !boxes.has(edge.target)) continue;
+    if (!parentOf.has(edge.target)) parentOf.set(edge.target, edge.source);
+  }
+  const rootOf = new Map<string, string>();
+  const resolve = (id: string): string => {
+    const known = rootOf.get(id);
+    if (known) return known;
+    const parent = parentOf.get(id);
+    const root = parent ? resolve(parent) : id;
+    rootOf.set(id, root);
+    return root;
+  };
+  const membersOf = new Map<string, string[]>();
+  const involved = new Set<string>([...parentOf.keys(), ...parentOf.values()]);
+  for (const id of involved) {
+    const root = resolve(id);
+    const members = membersOf.get(root) ?? [];
+    if (!members.includes(id)) members.push(id);
+    membersOf.set(root, members);
+  }
+  return { rootOf, membersOf };
+}
+
+function clusterIds(id: string, index: AttachmentIndex): string[] {
+  const root = index.rootOf.get(id) ?? id;
+  return index.membersOf.get(root) ?? [id];
+}
+
+function shiftMembers(boxes: Map<string, Box>, ids: string[], dy: number) {
+  if (Math.abs(dy) < 0.5) return;
+  for (const id of ids) {
+    const box = boxes.get(id);
+    if (!box) continue;
+    boxes.set(id, { ...box, y: box.y + dy });
+  }
+}
+
+function clusterReserved(
+  ids: string[],
+  boxes: Map<string, Box>,
+  nodes: Map<string, CanvasLayoutNode>,
+): Box | undefined {
+  return boundsOf(
+    ids
+      .map((id) => {
+        const box = boxes.get(id);
+        if (!box) return undefined;
+        return reservedBox(nodes.get(id), box);
+      })
+      .filter((box): box is Box => !!box),
+  );
+}
+
 function separateOverlaps(
   boxes: Map<string, Box>,
   nodes: Map<string, CanvasLayoutNode>,
+  index: AttachmentIndex,
 ) {
   const gap = CanvasAutoLayoutSpacing.nodeGap;
-  const ids = [...boxes.keys()];
+  const roots = [
+    ...new Set([...boxes.keys()].map((id) => index.rootOf.get(id) ?? id)),
+  ];
   for (let pass = 0; pass < 12; pass += 1) {
     let moved = false;
-    for (const upperId of ids) {
-      for (const lowerId of ids) {
+    for (const upperId of roots) {
+      for (const lowerId of roots) {
         if (upperId === lowerId) continue;
-        const upper = boxes.get(upperId);
-        const lower = boxes.get(lowerId);
-        if (!upper || !lower || upper.y > lower.y) continue;
-        const upperBox = reservedBox(nodes.get(upperId), upper);
-        const lowerBox = reservedBox(nodes.get(lowerId), lower);
-        if (!horizontalOverlap(upperBox, lowerBox)) continue;
-        const push = upperBox.y + upperBox.height + gap - lower.y;
+        const upper = clusterReserved(clusterIds(upperId, index), boxes, nodes);
+        const lower = clusterReserved(clusterIds(lowerId, index), boxes, nodes);
+        const lowerTop = boxes.get(lowerId)?.y;
+        if (!upper || !lower || lowerTop === undefined || upper.y > lower.y) {
+          continue;
+        }
+        if (!horizontalOverlap(upper, lower)) continue;
+        const push = upper.y + upper.height + gap - lower.y;
         if (push <= 0.5) continue;
-        boxes.set(lowerId, { ...lower, y: lower.y + push });
+        shiftMembers(boxes, clusterIds(lowerId, index), push);
         moved = true;
       }
     }
@@ -818,6 +887,7 @@ function liftNodesOffEdges(
   boxes: Map<string, Box>,
   nodes: Map<string, CanvasLayoutNode>,
   edges: CanvasLayoutEdge[],
+  index: AttachmentIndex,
 ) {
   const margin = CanvasAutoLayoutSpacing.grid * 2;
   for (let pass = 0; pass < 4; pass += 1) {
@@ -836,8 +906,17 @@ function liftNodesOffEdges(
       const bend = Math.abs(end.x - start.x) * 0.25;
       const c1 = { x: start.x + bend, y: start.y };
       const c2 = { x: end.x - bend, y: end.y };
+      const lifts = new Map<string, number>();
       for (const [id, box] of boxes) {
-        if (id === edge.source || id === edge.target) continue;
+        const root = index.rootOf.get(id) ?? id;
+        if (
+          root === edge.source ||
+          root === edge.target ||
+          id === edge.source ||
+          id === edge.target
+        ) {
+          continue;
+        }
         const reserved = reservedBox(nodes.get(id), box);
         let lowest = Infinity;
         let hit = false;
@@ -857,7 +936,10 @@ function liftNodesOffEdges(
         if (!hit) continue;
         const lift = reserved.y + reserved.height + margin - lowest;
         if (lift <= 0.5) continue;
-        boxes.set(id, { ...box, y: box.y - lift });
+        lifts.set(root, Math.max(lifts.get(root) ?? 0, lift));
+      }
+      for (const [root, lift] of lifts) {
+        shiftMembers(boxes, clusterIds(root, index), -lift);
         moved = true;
       }
     }
@@ -871,9 +953,10 @@ export function relaxPlacement(
   edges: CanvasLayoutEdge[],
 ) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  separateOverlaps(boxes, byId);
-  liftNodesOffEdges(boxes, byId, edges);
-  separateOverlaps(boxes, byId);
+  const index = attachmentIndex(edges, boxes);
+  separateOverlaps(boxes, byId, index);
+  liftNodesOffEdges(boxes, byId, edges, index);
+  separateOverlaps(boxes, byId, index);
 }
 
 function layoutLevel(

@@ -476,4 +476,25 @@ describe('relaxPlacement', () => {
     expect(boxes.get('left')!.y).toBe(160);
     expect(boxes.get('right')!.y).toBe(160);
   });
+
+  it('lifts an agent and its tool together when a cable crosses the tool', () => {
+    const agent = node('agent', 400, 200, { data: { label: 'Agent' } });
+    const tool = node('tool', 400, 360, { data: { label: 'Tool' } });
+    const left = node('left', 0, 360);
+    const right = node('right', 900, 360);
+    const boxes = new Map([
+      ['agent', { x: 300, y: 200, width: WIDTH, height: HEIGHT }],
+      ['tool', { x: 300, y: 360, width: WIDTH, height: HEIGHT }],
+      ['left', { x: 0, y: 360, width: WIDTH, height: HEIGHT }],
+      ['right', { x: 900, y: 360, width: WIDTH, height: HEIGHT }],
+    ]);
+    relaxPlacement(
+      boxes,
+      [agent, tool, left, right],
+      [edge('left', 'right'), edge('agent', 'tool', 'tool')],
+    );
+    expect(boxes.get('tool')!.y - boxes.get('agent')!.y).toBe(160);
+    expect(boxes.get('tool')!.y).toBeLessThan(360);
+    expect(boxes.get('agent')!.y).toBeLessThan(200);
+  });
 });
