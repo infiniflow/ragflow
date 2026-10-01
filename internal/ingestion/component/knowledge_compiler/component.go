@@ -512,7 +512,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 	switch p.Variant {
 	case common.VariantStructure:
-		// knowledge_graph_kwd: "entity" | "relation" | "graph".
+		// type_kwd: "entity" | "relation" | "graph".
 		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
@@ -595,7 +595,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		case "entity", "relation", "graph":
 			// The tree is also projected onto the structure-graph shape (Python
 			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
-			// relation rows carry knowledge_graph_kwd and the compact graph blob
+			// relation rows carry type_kwd and the compact graph blob
 			// (kind "graph") is the /structure/graph discovery row. This is the
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
@@ -604,9 +604,9 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// Claim rows are searchable on their own (global KNN) but are NOT
 			// part of the structure graph: they carry no relation, and a
 			// relation-less row would be rendered as a root in the artifacts
-			// tree. So they deliberately skip knowledge_graph_kwd, which keeps
+			// tree. So they deliberately skip type_kwd, which keeps
 			// them out of the artifacts query (it filters
-			// knowledge_graph_kwd=["entity","relation"]) without a frontend
+			// type_kwd=["entity","relation"]) without a frontend
 			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
 			if v := metaString(p.Meta, "name"); v != "" {
 				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
@@ -651,7 +651,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
 		// dataset-level merge exactly like graph/timeline: each node is an entity,
 		// each parent→child edge is a relation. Reuse the shared structure-graph
-		// column contract (knowledge_graph_kwd + from/to_entity_kwd + name_kwd +
+		// column contract (type_kwd + from/to_entity_kwd + name_kwd +
 		// entity_type_kwd + mention_count_int). The relation type lives in the
 		// content_with_weight payload ({"from","to","type"}), matching Python —
 		// NOT a dedicated relation_type_kwd column.
@@ -663,7 +663,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 // applyStructureGraphColumns emits the structure-graph row columns shared by the
 // structure and tree variants (Python _struct_to_doc_storage_doc contract):
-//   - knowledge_graph_kwd: "entity" | "relation" | "graph"
+//   - type_kwd: "entity" | "relation" | "graph"
 //   - relations: from_entity_kwd / to_entity_kwd
 //   - entities: name_kwd (lowercased) / entity_type_kwd
 //   - mention_count_int
@@ -672,7 +672,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 // diverging (review Major).
 func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind string) error {
 	if kind != "" {
-		if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+		if err := doc.SetExtraValue("type_kwd", kind); err != nil {
 			return err
 		}
 	}
