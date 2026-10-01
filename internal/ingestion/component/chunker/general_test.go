@@ -628,6 +628,41 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 4,
+		"delimiters":       []string{"`问：`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "问：first question", "doc_type_kwd": "text"},
+			{"text": "名　　称：item one", "doc_type_kwd": "text"},
+			{"text": "答：first answer", "doc_type_kwd": "text"},
+			{"text": "问：second question", "doc_type_kwd": "text"},
+			{"text": "答：second answer", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	if len(texts) != 2 {
+		t.Fatalf("texts = %q, want two record chunks", texts)
+	}
+	if !strings.Contains(texts[0], "问：first question") || !strings.Contains(texts[0], "名　　称：item one") {
+		t.Fatalf("first record = %q", texts[0])
+	}
+	if !strings.Contains(texts[1], "问：second question") || !strings.Contains(texts[1], "答：second answer") {
+		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
 func TestGeneralChunkerDOCXCustomDelimiterDisablesTextMerge(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size": 10,

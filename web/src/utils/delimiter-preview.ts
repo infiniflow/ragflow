@@ -134,3 +134,40 @@ export function parseDelimiterListForDisplay(
   // Stable sort longest-first (matches the backend list compiler).
   return result.sort((a, b) => b.raw.length - a.raw.length);
 }
+
+/**
+ * Parse the legacy single-string delimiter field into the chunker delimiter
+ * list. Mirrors `internal/parser/chunk.ParseDelimiterField`.
+ */
+export function parseDelimiterField(value: string): string[] {
+  if (!value) return [];
+
+  const normalized = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  const delimiters: string[] = [];
+  let wrapped = '';
+  let inWrapped = false;
+
+  for (const ch of normalized) {
+    if (ch === '`') {
+      if (inWrapped) {
+        wrapped += ch;
+        delimiters.push(wrapped);
+        wrapped = '';
+        inWrapped = false;
+      } else {
+        inWrapped = true;
+        wrapped += ch;
+      }
+      continue;
+    }
+    if (inWrapped) {
+      wrapped += ch;
+      continue;
+    }
+    delimiters.push(ch);
+  }
+  if (wrapped) {
+    delimiters.push(wrapped);
+  }
+  return delimiters;
+}
