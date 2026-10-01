@@ -14,13 +14,36 @@
  *  limitations under the License.
  */
 
-import { Background } from '@xyflow/react';
+import { Background, BackgroundVariant } from '@xyflow/react';
+import { CSSProperties } from 'react';
+import { CanvasBackgroundSetting } from './canvas-background';
 
-export function AgentBackground() {
+export function AgentBackground({
+  setting,
+}: {
+  setting?: CanvasBackgroundSetting | null;
+}) {
+  const solid =
+    setting?.mode === 'color' && setting.color
+      ? setting.color
+      : 'rgb(var(--bg-canvas))';
+  const image = setting?.mode === 'image' ? setting.image : undefined;
+  const imageStyle: CSSProperties | undefined = image
+    ? {
+        backgroundImage: `url("${image}")`,
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: 'cover',
+      }
+    : undefined;
+
   return (
     <Background
-      color="var(--text-primary)"
-      bgColor="rgb(var(--bg-canvas))"
+      id="canvas-background"
+      variant={BackgroundVariant.Dots}
+      color={image ? 'transparent' : 'var(--text-primary)'}
+      bgColor={image ? setting?.color || 'rgb(var(--bg-canvas))' : solid}
+      style={imageStyle}
       className="rounded-lg"
     />
   );

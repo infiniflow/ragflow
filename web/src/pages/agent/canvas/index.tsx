@@ -32,6 +32,7 @@ import { useIsPipeline } from '../hooks/use-is-pipeline';
 import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
+import { useCanvasBackground } from '../hooks/use-canvas-background';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
@@ -41,6 +42,7 @@ import useGraphStore from '../store';
 import { useMoveNote } from '../hooks/use-move-note';
 import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
 import { useDropdownManager } from './context';
+import { CanvasBackgroundControl } from './canvas-background-control';
 
 import { AgentBackground } from '@/components/canvas/background';
 import Spotlight from '@/components/spotlight';
@@ -183,6 +185,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { handleBeforeDelete } = useBeforeDelete();
 
   const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
+  const canvasBackground = useCanvasBackground();
 
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
 
@@ -379,13 +382,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onBeforeDelete={handleBeforeDelete}
           panActivationKeyCode={null}
         >
-          <AgentBackground></AgentBackground>
-          <Spotlight className="z-0" opcity={0.7} coverage={70} />
+          <AgentBackground setting={canvasBackground.setting}></AgentBackground>
+          {canvasBackground.setting.mode === 'default' ? (
+            <Spotlight className="z-0" opcity={0.7} coverage={70} />
+          ) : null}
           <Controls
             position={'bottom-center'}
             orientation="horizontal"
-            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+            className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
           >
+            <CanvasBackgroundControl
+              setting={canvasBackground.setting}
+              onChange={canvasBackground.update}
+            />
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>
