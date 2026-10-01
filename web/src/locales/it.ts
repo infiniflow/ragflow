@@ -2385,6 +2385,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       endDate: 'Data fine',
       keyword: 'Parola chiave',
       note: 'Nota',
+      autoArrange: 'Disponi automaticamente',
       noteDescription: 'Nota',
       notePlaceholder: 'Inserisci una nota',
       invoke: 'Richiesta HTTP',

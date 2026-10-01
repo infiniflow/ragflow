@@ -2326,6 +2326,7 @@ export default {
       endDate: '終了日',
       keyword: 'キーワード',
       note: 'メモ',
+      autoArrange: '自動整列',
       noteDescription: 'メモ',
       notePlaceholder: 'メモを入力してください',
       invoke: '呼び出し',

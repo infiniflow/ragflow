@@ -1116,6 +1116,7 @@ export default {
       endDate: 'Data de término',
       keyword: 'Palavra-chave',
       note: 'Nota',
+      autoArrange: 'Organizar automaticamente',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor, insira uma nota',
 

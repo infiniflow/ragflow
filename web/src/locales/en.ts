@@ -3269,6 +3269,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       endDate: 'End date',
       keyword: 'Keyword',
       note: 'Note',
+      autoArrange: 'Auto arrange',
       noteDescription: 'Note',
       notePlaceholder: 'Please enter a note',
       invoke: 'HTTP request',

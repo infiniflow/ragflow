@@ -2387,6 +2387,7 @@ export default {
       endDate: '종료일',
       keyword: '키워드',
       note: '메모',
+      autoArrange: '자동 정렬',
       noteDescription: '메모',
       notePlaceholder: '메모를 입력해 주세요',
       invoke: 'HTTP 요청',

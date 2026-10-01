@@ -1848,6 +1848,7 @@ export default {
       endDate: 'تاريخ الانتهاء',
       keyword: 'الكلمة الرئيسية',
       note: 'ملحوظة',
+      autoArrange: 'ترتيب تلقائي',
       noteDescription: 'ملحوظة',
       notePlaceholder: 'الرجاء إدخال ملاحظة',
       invoke: 'طلب HTTP',

@@ -1134,6 +1134,7 @@ export default {
       endDate: 'Tanggal akhir',
       keyword: 'Kata kunci',
       note: 'Catatan',
+      autoArrange: 'Atur otomatis',
       noteDescription: 'Catatan',
       notePlaceholder: 'Silakan masukkan catatan',
       runningHintText: 'sedang berjalan...🕞',

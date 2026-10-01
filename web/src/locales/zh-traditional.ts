@@ -1295,6 +1295,7 @@ export default {
       endDate: '結束日期',
       keyword: '關鍵字',
       note: '註解',
+      autoArrange: '自動整理',
       noteDescription: '註解',
       notePlaceholder: '請輸入註釋',
       invoke: 'Invoke',

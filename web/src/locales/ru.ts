@@ -2039,6 +2039,7 @@ export default {
       endDate: 'Дата окончания',
       keyword: 'Ключевое слово',
       note: 'Примечание',
+      autoArrange: 'Упорядочить',
       noteDescription: 'Примечание',
       notePlaceholder: 'Пожалуйста, введите примечание',
       invoke: 'HTTP Запрос',

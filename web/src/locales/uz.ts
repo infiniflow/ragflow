@@ -3217,6 +3217,7 @@ export default {
       endDate: 'Tugash sanasi',
       keyword: 'Kalit so‘z',
       note: 'Eslatma',
+      autoArrange: 'Avtomatik joylashtirish',
       noteDescription: 'Eslatma',
       notePlaceholder: 'Iltimos, eslatma kiriting',
       invoke: 'HTTP so‘rov',

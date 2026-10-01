@@ -2851,6 +2851,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       endDate: '结束日期',
       keyword: '关键字',
       note: '注释',
+      autoArrange: '自动整理',
       noteDescription: '注释',
       notePlaceholder: '请输入注释',
       invoke: 'HTTP 请求',

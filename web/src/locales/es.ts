@@ -924,6 +924,7 @@ export default {
       endDate: 'Fecha de fin',
       keyword: 'Palabra clave',
       note: 'Nota',
+      autoArrange: 'Ordenar automáticamente',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor ingresa una nota',
       runningHintText: 'está corriendo...🕞',

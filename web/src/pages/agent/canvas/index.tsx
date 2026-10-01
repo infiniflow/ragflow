@@ -16,7 +16,7 @@ import {
   ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { NotebookPen } from 'lucide-react';
+import { AlignHorizontalSpaceAround, NotebookPen } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
@@ -32,6 +32,7 @@ import { useIsPipeline } from '../hooks/use-is-pipeline';
 import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
+import { useCanvasAutoLayout } from '../hooks/use-canvas-auto-layout';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
@@ -183,6 +184,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { handleBeforeDelete } = useBeforeDelete();
 
   const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
+  const arrangeNodes = useCanvasAutoLayout();
 
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
 
@@ -384,8 +386,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           <Controls
             position={'bottom-center'}
             orientation="horizontal"
-            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+            className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
           >
+            <ControlButton
+              onClick={arrangeNodes}
+              aria-label={t('flow.autoArrange')}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlignHorizontalSpaceAround className="!fill-none" />
+                </TooltipTrigger>
+                <TooltipContent>{t('flow.autoArrange')}</TooltipContent>
+              </Tooltip>
+            </ControlButton>
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>

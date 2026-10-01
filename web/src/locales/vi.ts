@@ -1182,6 +1182,7 @@ export default {
       endDate: 'Ngày kết thúc',
       keyword: 'Từ khóa',
       note: 'Ghi chú',
+      autoArrange: 'Tự động sắp xếp',
       noteDescription: 'Ghi chú',
       notePlaceholder: 'Vui lòng nhập ghi chú',
       invoke: 'Gọi',

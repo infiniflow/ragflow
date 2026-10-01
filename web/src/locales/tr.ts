@@ -3235,6 +3235,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       endDate: 'Bitiş tarihi',
       keyword: 'Anahtar kelime',
       note: 'Not',
+      autoArrange: 'Otomatik yerleştir',
       noteDescription: 'Not',
       notePlaceholder: 'Lütfen not girin',
       invoke: 'HTTP isteği',
