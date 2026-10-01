@@ -39,20 +39,18 @@ func TestWorkerPoolShrinksThenRunsQueuedWork(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		<-entered
 	}
-	p.Resize(1)
-	close(release)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	for _, f := range futures {
-		if _, err := f.Wait(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for i := 4; i < 12; i++ {
 		f, err := p.Submit(ctx, i)
 		if err != nil {
 			t.Fatal(err)
 		}
+		futures = append(futures, f)
+	}
+	p.Resize(1)
+	close(release)
+	for _, f := range futures {
 		if _, err := f.Wait(ctx); err != nil {
 			t.Fatal(err)
 		}
