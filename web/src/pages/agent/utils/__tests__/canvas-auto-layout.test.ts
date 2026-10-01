@@ -152,6 +152,46 @@ describe('layoutCanvasNodes', () => {
     expect(tops[2]).toBeLessThan(tops[3]);
   });
 
+  it('splits two outputs of one node onto separate rows', () => {
+    const nodes = [
+      node('src', 0, 200),
+      node('upper', 500, 200),
+      node('lower', 520, 200),
+    ];
+    const edges = [
+      edge('src', 'upper', 'Case 1'),
+      edge('src', 'lower', 'Case 2'),
+    ];
+    const next = placed(
+      nodes,
+      layoutCanvasNodes({
+        nodes: nodes.map((item) =>
+          item.id === 'src'
+            ? {
+                ...item,
+                data: { label: 'Switch', form: { conditions: [{}, {}] } },
+              }
+            : item,
+        ),
+        edges,
+      }),
+    );
+    const upper = next.find((item) => item.id === 'upper')!;
+    const lower = next.find((item) => item.id === 'lower')!;
+    const source = next.find((item) => item.id === 'src')!;
+
+    expect(upper.position.y).toBeLessThan(lower.position.y);
+    expect(
+      lower.position.y - (upper.position.y + HEIGHT),
+    ).toBeGreaterThanOrEqual(
+      CanvasAutoLayoutSpacing.nodeGap - CanvasAutoLayoutSpacing.grid,
+    );
+    const mid = (centerY(upper) + centerY(lower)) / 2;
+    expect(Math.abs(mid - centerY(source))).toBeLessThanOrEqual(
+      CanvasAutoLayoutSpacing.grid * 2,
+    );
+  });
+
   it('keeps each switch branch in its own band so later nodes do not cross', () => {
     const nodes = [
       node('src', 0, 200, {

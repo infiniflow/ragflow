@@ -480,7 +480,7 @@ function layoutConnected(
           : edge.target,
         sourceHandle: edge.sourceHandle,
       }));
-    const boxes = layoutFlowByPorts(
+    const boxes = layoutMainFlow(
       ids,
       (id) => {
         const cluster = clusterByRoot.get(id);
@@ -586,46 +586,9 @@ function anchorBoxes(
   return anchored;
 }
 
-function assignForwardRanks(
-  ids: string[],
-  edges: Array<{ source: string; target: string }>,
-): Map<string, number> {
-  const idSet = new Set(ids);
-  const incoming = new Map<string, string[]>();
-  for (const id of ids) incoming.set(id, []);
-  for (const edge of edges) {
-    if (!idSet.has(edge.source) || !idSet.has(edge.target)) continue;
-    if (edge.source === edge.target) continue;
-    incoming.get(edge.target)?.push(edge.source);
-  }
-
-  const rank = new Map<string, number>();
-  const visiting = new Set<string>();
-  const visit = (id: string): number => {
-    if (visiting.has(id)) return rank.get(id) ?? 0;
-    const known = rank.get(id);
-    if (known !== undefined) return known;
-    visiting.add(id);
-    let best = 0;
-    for (const source of incoming.get(id) ?? []) {
-      best = Math.max(best, visit(source) + 1);
-    }
-    visiting.delete(id);
-    rank.set(id, best);
-    return best;
-  };
-  for (const id of ids) visit(id);
-  return rank;
-}
-
-/**
- * Left-to-right layout that keeps each node's outputs in handle order.
- * n8n does this by inserting edges in port order and disabling dagre's
- * crossing sweep. A sweep still inverts branches once the graph is tangled,
- * so each output owns a vertical band and its downstream stays inside it.
- * A node with several inputs sits in its nearest upstream band.
- */
-function layoutFlowByPorts(
+// n8n lays a fan-out out with dagre `nodesep`: each output of one node gets
+// its own row, ordered from the top handle downward, centered on the source.
+function layoutMainFlow(
   ids: string[],
   sizeOfId: (id: string) => Size,
   edges: Array<{
@@ -636,148 +599,131 @@ function layoutFlowByPorts(
   orderOf: (id: string) => { x: number; y: number },
   byId: Map<string, CanvasLayoutNode>,
 ): Map<string, Box> {
-  const placed = new Map<string, Box>();
-  if (ids.length === 0) return placed;
-
-  const idSet = new Set(ids);
-  const flowEdges = edges.filter(
-    (edge) =>
-      idSet.has(edge.source) &&
-      idSet.has(edge.target) &&
-      edge.source !== edge.target,
+  const boxes = layoutBoxes(
+    ids,
+    sizeOfId,
+    edges,
+    'LR',
+    {
+      nodesep: CanvasAutoLayoutSpacing.nodeGap,
+      ranksep: CanvasAutoLayoutSpacing.rankGap,
+    },
+    orderOf,
+    byId,
   );
-  const ranks = assignForwardRanks(ids, flowEdges);
-  const primaryParent = new Map<string, string>();
+  spreadFanOut(boxes, edges, byId);
+  return boxes;
+}
+
+function shiftReach(boxes: Map<string, Box>, ids: string[], dy: number) {
+  if (Math.abs(dy) < 0.5) return;
   for (const id of ids) {
-    const candidates = flowEdges
-      .filter(
-        (edge) =>
-          edge.target === id &&
-          (ranks.get(edge.source) ?? 0) < (ranks.get(id) ?? 0),
-      )
-      .sort((a, b) => {
-        const rankDelta =
-          (ranks.get(b.source) ?? 0) - (ranks.get(a.source) ?? 0);
-        if (rankDelta !== 0) return rankDelta;
-        const positionDelta = comparePosition(
-          orderOf(a.source),
-          orderOf(b.source),
-        );
-        if (positionDelta !== 0) return positionDelta;
-        return (
-          handleRank(byId.get(a.source), a.sourceHandle) -
-          handleRank(byId.get(b.source), b.sourceHandle)
-        );
-      });
-    const parent = candidates[0]?.source;
-    if (parent) primaryParent.set(id, parent);
+    const box = boxes.get(id);
+    if (!box) continue;
+    boxes.set(id, { ...box, y: box.y + dy });
   }
+}
 
-  const children = new Map<string, string[]>();
-  const roots: string[] = [];
-  for (const id of ids) {
-    const parent = primaryParent.get(id);
-    if (!parent || !idSet.has(parent)) {
-      roots.push(id);
-      continue;
+function exclusiveDownstream(
+  root: string,
+  blocked: Set<string>,
+  edges: Array<{ source: string; target: string }>,
+  boxes: Map<string, Box>,
+): string[] {
+  const seen = new Set<string>([root]);
+  const queue = [root];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (!id) continue;
+    for (const edge of edges) {
+      if (edge.source !== id || edge.source === edge.target) continue;
+      if (!boxes.has(edge.target) || seen.has(edge.target)) continue;
+      if (blocked.has(edge.target)) continue;
+      seen.add(edge.target);
+      queue.push(edge.target);
     }
-    const list = children.get(parent) ?? [];
-    list.push(id);
-    children.set(parent, list);
   }
-  for (const [parent, list] of children) {
-    const parentNode = byId.get(parent);
-    list.sort((a, b) => {
-      const handleA = flowEdges.find(
-        (edge) => edge.source === parent && edge.target === a,
-      )?.sourceHandle;
-      const handleB = flowEdges.find(
-        (edge) => edge.source === parent && edge.target === b,
-      )?.sourceHandle;
-      const handleDelta =
-        handleRank(parentNode, handleA) - handleRank(parentNode, handleB);
-      if (handleDelta !== 0) return handleDelta;
-      return comparePosition(orderOf(a), orderOf(b));
-    });
-  }
-  roots.sort((a, b) => comparePosition(orderOf(a), orderOf(b)));
+  return [...seen];
+}
 
-  const yOf = new Map<string, number>();
-  const layoutTree = (
-    id: string,
-  ): { positions: Map<string, number>; height: number } => {
-    const size = sizeOfId(id);
-    const kids = children.get(id) ?? [];
-    if (kids.length === 0) {
-      return { positions: new Map([[id, 0]]), height: size.height };
-    }
-
-    const positions = new Map<string, number>();
-    const centers: number[] = [];
-    let cursor = 0;
-    kids.forEach((child, index) => {
-      if (index > 0) cursor += CanvasAutoLayoutSpacing.nodeGap;
-      const subtree = layoutTree(child);
-      for (const [childId, childY] of subtree.positions) {
-        positions.set(childId, childY + cursor);
-      }
-      const childTop = positions.get(child) ?? cursor;
-      centers.push(childTop + sizeOfId(child).height / 2);
-      cursor += subtree.height;
-    });
-
-    const mid = (centers[0] + centers[centers.length - 1]) / 2;
-    positions.set(id, mid - size.height / 2);
-
-    let minY = Infinity;
-    let maxY = -Infinity;
-    for (const [nodeId, top] of positions) {
-      const nodeSize = sizeOfId(nodeId);
-      minY = Math.min(minY, top);
-      maxY = Math.max(maxY, top + nodeSize.height);
-    }
-    if (minY !== 0) {
-      for (const [nodeId, top] of positions) positions.set(nodeId, top - minY);
-    }
-    return { positions, height: maxY - minY };
-  };
-
-  let bandTop = 0;
-  roots.forEach((root, index) => {
-    if (index > 0) bandTop += CanvasAutoLayoutSpacing.nodeGap;
-    const tree = layoutTree(root);
-    for (const [id, top] of tree.positions) yOf.set(id, top + bandTop);
-    bandTop += tree.height;
+function spreadFanOut(
+  boxes: Map<string, Box>,
+  edges: Array<{
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+  }>,
+  byId: Map<string, CanvasLayoutNode>,
+) {
+  const gap = CanvasAutoLayoutSpacing.nodeGap;
+  const sources = [...boxes.keys()].sort((a, b) => {
+    const boxA = boxes.get(a)!;
+    const boxB = boxes.get(b)!;
+    return boxA.x - boxB.x || boxA.y - boxB.y;
   });
 
-  const maxRank = Math.max(0, ...[...ranks.values()]);
-  const columnWidth: number[] = [];
-  for (let rank = 0; rank <= maxRank; rank += 1) columnWidth[rank] = 0;
-  for (const id of ids) {
-    const rank = ranks.get(id) ?? 0;
-    columnWidth[rank] = Math.max(columnWidth[rank], sizeOfId(id).width);
-  }
-  const columnX: number[] = [];
-  let cursorX = 0;
-  for (let rank = 0; rank <= maxRank; rank += 1) {
-    columnX[rank] = cursorX;
-    if (columnWidth[rank] > 0) {
-      cursorX += columnWidth[rank] + CanvasAutoLayoutSpacing.rankGap;
+  for (const sourceId of sources) {
+    const source = boxes.get(sourceId);
+    if (!source) continue;
+    const chosen = new Map<
+      string,
+      { target: string; sourceHandle?: string | null }
+    >();
+    for (const edge of edges) {
+      if (edge.source !== sourceId || edge.target === sourceId) continue;
+      if (isAttachmentEdge(edge) || !boxes.has(edge.target)) continue;
+      const target = boxes.get(edge.target);
+      if (!target || target.x <= source.x + 8) continue;
+      const current = chosen.get(edge.target);
+      if (
+        !current ||
+        handleRank(byId.get(sourceId), edge.sourceHandle) <
+          handleRank(byId.get(sourceId), current.sourceHandle)
+      ) {
+        chosen.set(edge.target, edge);
+      }
+    }
+    const forward = [...chosen.values()]
+      .sort((a, b) => {
+        const handleDelta =
+          handleRank(byId.get(sourceId), a.sourceHandle) -
+          handleRank(byId.get(sourceId), b.sourceHandle);
+        if (handleDelta !== 0) return handleDelta;
+        return (boxes.get(a.target)?.y ?? 0) - (boxes.get(b.target)?.y ?? 0);
+      })
+      .map((edge) => edge.target);
+    if (forward.length < 2) continue;
+
+    const stacked = [...forward].sort(
+      (a, b) => (boxes.get(a)?.y ?? 0) - (boxes.get(b)?.y ?? 0),
+    );
+    let tooTight = false;
+    for (let index = 1; index < stacked.length; index += 1) {
+      const previous = boxes.get(stacked[index - 1]);
+      const next = boxes.get(stacked[index]);
+      if (!previous || !next) continue;
+      if (next.y - (previous.y + previous.height) < gap - 1) tooTight = true;
+    }
+    const orderWrong = forward.some((id, index) => id !== stacked[index]);
+    if (!tooTight && !orderWrong) continue;
+
+    const total =
+      forward.reduce((sum, id) => sum + (boxes.get(id)?.height ?? 0), 0) +
+      gap * (forward.length - 1);
+    let cursor = source.y + source.height / 2 - total / 2;
+    const blocked = new Set(forward);
+    for (const targetId of forward) {
+      const box = boxes.get(targetId);
+      if (!box) continue;
+      const dy = cursor - box.y;
+      shiftReach(
+        boxes,
+        exclusiveDownstream(targetId, blocked, edges, boxes),
+        dy,
+      );
+      cursor += box.height + gap;
     }
   }
-
-  for (const id of ids) {
-    const size = sizeOfId(id);
-    const rank = ranks.get(id) ?? 0;
-    const column = columnWidth[rank] || size.width;
-    placed.set(id, {
-      x: columnX[rank] + (column - size.width) / 2,
-      y: yOf.get(id) ?? 0,
-      width: size.width,
-      height: size.height,
-    });
-  }
-  return placed;
 }
 
 function layoutLevel(
