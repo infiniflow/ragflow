@@ -382,8 +382,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onBeforeDelete={handleBeforeDelete}
           panActivationKeyCode={null}
         >
-          <AgentBackground setting={canvasBackground.setting}></AgentBackground>
-          {canvasBackground.setting.mode === 'default' ? (
+          {canvasBackground.setting ? (
+            <AgentBackground setting={canvasBackground.setting}></AgentBackground>
+          ) : null}
+          {canvasBackground.setting?.mode === 'default' ? (
             <Spotlight className="z-0" opcity={0.7} coverage={70} />
           ) : null}
           <Controls
@@ -392,7 +394,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
           >
             <CanvasBackgroundControl
-              setting={canvasBackground.setting}
+              setting={canvasBackground.setting ?? { mode: 'default' }}
               onChange={canvasBackground.update}
             />
             <ControlButton>

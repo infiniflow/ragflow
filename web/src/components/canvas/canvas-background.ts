@@ -56,6 +56,38 @@ export function canvasBackgroundFromGlobals(
   );
 }
 
+function canvasBackgroundStorageKey(agentId: string): string {
+  return `${CanvasBackgroundGlobalKey}:${agentId}`;
+}
+
+export function readStoredCanvasBackground(
+  agentId?: string,
+): CanvasBackgroundSetting | undefined {
+  if (!agentId || typeof sessionStorage === 'undefined') return undefined;
+  try {
+    const raw = sessionStorage.getItem(canvasBackgroundStorageKey(agentId));
+    if (!raw) return undefined;
+    return parseCanvasBackground(JSON.parse(raw) as unknown);
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeStoredCanvasBackground(
+  agentId: string,
+  setting: CanvasBackgroundSetting,
+): void {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(
+      canvasBackgroundStorageKey(agentId),
+      JSON.stringify(setting),
+    );
+  } catch {
+    // A large image can exceed the tab storage quota. The server copy remains.
+  }
+}
+
 function backdropColor(color?: string): string {
   const chosen = safeCanvasColor(color);
   if (chosen) return chosen;

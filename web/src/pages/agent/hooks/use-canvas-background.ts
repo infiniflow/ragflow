@@ -2,6 +2,8 @@ import {
   CanvasBackgroundGlobalKey,
   CanvasBackgroundSetting,
   canvasBackgroundFromGlobals,
+  readStoredCanvasBackground,
+  writeStoredCanvasBackground,
 } from '@/components/canvas/canvas-background';
 import {
   AgentKeys,
@@ -10,7 +12,7 @@ import {
 } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useParams } from 'react-router';
 import { useBuildDslData } from './use-build-dsl';
 
@@ -20,7 +22,16 @@ export function useCanvasBackground() {
   const { buildDslData } = useBuildDslData();
   const { setAgent } = useSetAgent(false, true);
   const queryClient = useQueryClient();
-  const setting = canvasBackgroundFromGlobals(data?.dsl?.globals);
+  const loaded = Boolean(data?.id);
+  const fetched = canvasBackgroundFromGlobals(data?.dsl?.globals);
+  const setting = loaded
+    ? fetched
+    : (readStoredCanvasBackground(id) ?? null);
+
+  useEffect(() => {
+    if (!loaded || !id) return;
+    writeStoredCanvasBackground(id, fetched);
+  }, [fetched.color, fetched.image, fetched.mode, id, loaded]);
 
   const update = useCallback(
     async (next: CanvasBackgroundSetting) => {
@@ -30,6 +41,7 @@ export function useCanvasBackground() {
         ...(dsl.globals ?? {}),
         [CanvasBackgroundGlobalKey]: next,
       };
+      writeStoredCanvasBackground(id, next);
       const detailKey = AgentKeys.detail(id);
       const previous = queryClient.getQueryData<IFlow>(detailKey);
       queryClient.setQueryData<IFlow>(detailKey, (current) => {
@@ -49,9 +61,21 @@ export function useCanvasBackground() {
         const response = await setAgent({ id, title: data.title, dsl });
         if (response?.code !== 0) {
           queryClient.setQueryData(detailKey, previous);
+          if (previous?.dsl) {
+            writeStoredCanvasBackground(
+              id,
+              canvasBackgroundFromGlobals(previous.dsl.globals),
+            );
+          }
         }
       } catch (error) {
         queryClient.setQueryData(detailKey, previous);
+        if (previous?.dsl) {
+          writeStoredCanvasBackground(
+            id,
+            canvasBackgroundFromGlobals(previous.dsl.globals),
+          );
+        }
         throw error;
       }
     },
