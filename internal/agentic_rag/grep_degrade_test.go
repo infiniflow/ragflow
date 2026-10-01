@@ -156,8 +156,8 @@ func TestGrepChunksSplitsExplodingAlternation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("split must recover, got error: %v", err)
 	}
-	if strings.Contains(out, toolErrorMarker) {
-		t.Errorf("an exact split needs no caveat, got %.200q", out)
+	if !strings.Contains(out, toolErrorMarker) || !strings.Contains(out, "ES regexp query was rejected") {
+		t.Errorf("an exact split must explain the ES rejection, got %.200q", out)
 	}
 	if !strings.Contains(out, `chunk_id="c1"`) {
 		t.Errorf("branch hits must ship, got %.200q", out)
@@ -186,12 +186,12 @@ func TestGrepChunksSanitizesLuceneUnsafePattern(t *testing.T) {
 	// The pattern must still have at least two runes after sanitizing: `\b`-only
 	// text would leave nothing to search.
 	out, err := NewGrepChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
-		`{"query":"\bBoston\b"}`)
+		`{"query":"\\bBoston\\b"}`)
 	if err != nil {
 		t.Fatalf("sanitized retry must recover, got error: %v", err)
 	}
-	if strings.Contains(out, toolErrorMarker) {
-		t.Errorf("a superset prefilter needs no caveat, got %.200q", out)
+	if !strings.Contains(out, toolErrorMarker) || !strings.Contains(out, "ES regexp query was rejected") {
+		t.Errorf("a sanitized fallback must explain the ES rejection, got %.200q", out)
 	}
 	if got := svc.calls[len(svc.calls)-1]; strings.Contains(got, `\b`) {
 		t.Errorf("retry pattern must be sanitized, got %q", got)
@@ -224,7 +224,8 @@ func TestGrepChunksDegradesToLexicalPrefilter(t *testing.T) {
 		t.Fatalf("lexical prefilter must recover, got error: %v", err)
 	}
 	if !strings.Contains(out, `<tool_error tool="grep_chunks" severity="warn">`) ||
-		!strings.Contains(out, "APPROXIMATE") {
+		!strings.Contains(out, "APPROXIMATE") ||
+		!strings.Contains(out, "ES regexp query was rejected") {
 		t.Errorf("expected a warn notice about approximate coverage, got %.300q", out)
 	}
 	if !strings.Contains(out, `chunk_id="c1"`) {

@@ -66,17 +66,11 @@ type SearchResult struct {
 // match expressions) because regex matching is a distinct retrieval mode with
 // no vector or text relevance scoring.
 type RegexpSearchRequest struct {
-	// TenantID is the single tenant whose chunks are searched. It is
-	// engine-agnostic: callers name the tenant, and each engine maps it to its
-	// own physical index/table (ES: ragflow_<tenant>; Infinity: one table per
-	// tenant). Callers never name storage targets directly.
+	// TenantID is the single tenant whose chunks are searched. Multi-tenant
+	// regexp requests are unsupported.
 	TenantID string
 	// KbIDs are the knowledge base IDs to filter the search to.
 	KbIDs []string // Knowledge base IDs filter
-
-	// Pagination
-	Offset int // Offset for pagination (0-based)
-	Limit  int // Limit for pagination
 
 	// Pattern is the regex to match against chunk content. ES engines use
 	// Lucene regexp syntax; other engines may reject or fall back.
@@ -87,8 +81,7 @@ type RegexpSearchRequest struct {
 
 	// Sort, when set, orders the results by the given fields (e.g. a document's
 	// reading order: chunk_order_int, page_num_int, top_int) instead of the
-	// default _score. ES engines push the sort down so offset/limit pagination
-	// happens over the deterministically-ordered result set.
+	// default _score.
 	Sort *OrderByExpr
 
 	// SelectFields limits the _source fields ES returns for each hit. When empty

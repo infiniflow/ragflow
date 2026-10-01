@@ -376,19 +376,22 @@ func Run(ctx context.Context, in Input) (string, error) {
 		return "", err
 	}
 
-	// The explorer is driven as a MANAGED SESSION: each turn hands over
-	// nothing but its new messages and the Runner replays everything older from
-	// the session's event log (see run_session.go). The caller above therefore
-	// never reassembles a transcript — no history concatenation, no tail
-	// trimming, no tool-result reordering.
+	// The explorer is driven as a MANAGED SESSION. Seed the request-scoped
+	// session with the compacted conversation history, then hand over the new
+	// user turn; subsequent turns in the same session can rely on the event log
+	// replay (see run_session.go).
 	sess := newRunSession()
 
 	// EnableStreaming lives on RunnerConfig, not ChatModelAgentConfig.
 	explorerHead := sess.explorer.head(ctx)
-	// The run's input is the caller's last user message, verbatim: the prompt
-	// answers the question it is given, and multi-turn reference resolution is
-	// the conversation history's job (the session replays it).
-	runMessages := []adk.Message{schema.UserMessage(lastUserQuestion(in.Messages))}
+	question := lastUserQuestion(in.Messages)
+	seed := in.Messages
+	if len(seed) > 0 {
+		// The final user message is the new turn and must be appended exactly
+		// once by turnMessages.
+		seed = seed[:len(seed)-1]
+	}
+	runMessages := sess.explorer.turnMessages(seed, "", question)
 	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
 	if runErr != nil {

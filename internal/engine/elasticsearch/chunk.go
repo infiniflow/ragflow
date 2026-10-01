@@ -1504,18 +1504,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}, nil
 }
 
-// esIndexNamesForTenant maps an engine-agnostic tenant id to this engine's
-// physical index names. ES stores one index per tenant (ragflow_<tenant>), and
-// a tenant id may carry comma-separated tenants (one index each). This is the
-// doc-engine-specific storage mapping — callers never compute index names.
-func esIndexNamesForTenant(tenantID string) []string {
-	var names []string
-	for part := range strings.SplitSeq(tenantID, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			names = append(names, "ragflow_"+part)
-		}
+// esIndexNameForTenant maps one tenant id to its physical ES index. Regexp
+// search deliberately has no multi-tenant mode.
+func esIndexNameForTenant(tenantID string) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return "", fmt.Errorf("tenant id cannot be empty")
 	}
-	return names
+	if strings.Contains(tenantID, ",") {
+		return "", fmt.Errorf("regexp search supports exactly one tenant")
+	}
+	return "ragflow_" + tenantID, nil
 }
 
 // SearchByRegexp executes a regex-match-only search over chunk content. It
@@ -1527,22 +1526,20 @@ func esIndexNamesForTenant(tenantID string) []string {
 // patterns using unsupported constructs should be detected and handled by the
 // caller (fallback to broad recall + in-memory filtering).
 func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
-	// Map the engine-agnostic tenant to this engine's physical index(es). ES
-	// stores one index per tenant (ragflow_<tenant>); the tenant id may carry
-	// comma-separated tenants, which map to one index each.
-	indexNames := esIndexNamesForTenant(req.TenantID)
-	if len(indexNames) == 0 {
-		return nil, fmt.Errorf("tenant id cannot be empty")
+	if req == nil {
+		return nil, fmt.Errorf("regexp search request cannot be nil")
+	}
+	// Map the engine-agnostic tenant to this engine's physical index. ES
+	// stores one index per tenant (ragflow_<tenant>).
+	indexName, err := esIndexNameForTenant(req.TenantID)
+	if err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(req.Pattern) == "" {
 		return nil, fmt.Errorf("regexp pattern cannot be empty")
 	}
 
-	offset := max(req.Offset, 0)
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 30
-	}
+	const maxRegexpResults = 30
 
 	// Build the scope filter (kb_id terms + available_int + explicit filters).
 	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
@@ -1553,15 +1550,14 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
 	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
 	//     whose content is exactly "何进" (yielding 0 hits).
-	//  2. case_insensitive is intentionally NOT set: on a keyword field ES's
-	//     case-insensitive regexp cannot match CJK text (empirically 0 for
-	//     patterns like "马元义"). CJK keywords have no case; English
-	//     case-sensitivity is acceptable.
+	//  2. Set case_insensitive explicitly so the public grep contract remains
+	//     case-insensitive for Latin text; it has no effect on CJK characters.
 	regexpPattern := ".*(" + req.Pattern + ").*"
 	regexpClause := map[string]interface{}{
 		"regexp": map[string]interface{}{
 			"content_with_weight": map[string]interface{}{
-				"value": regexpPattern,
+				"value":            regexpPattern,
+				"case_insensitive": true,
 			},
 		},
 	}
@@ -1583,20 +1579,16 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		}
 	}
 
-	// Offset/Limit are applied to each search target (IndexNames entry)
-	// independently — the request is engine-agnostic and makes no assumption
-	// about how many underlying indexes a target spans. The ES engine queries
-	// each index with the same from/size and merges the hits.
+	// Regexp search is intentionally a first-page operation. Callers that need
+	// deep reading use chunk anchors rather than offset pagination.
 	queryBody := map[string]interface{}{
 		"query": boolQuery,
-		"size":  limit,
-		"from":  offset,
+		"size":  maxRegexpResults,
+		"from":  0,
 	}
 
 	// When an explicit sort is requested (e.g. a document's reading order), push
-	// it down so ES applies offset/limit over the deterministically-ordered
-	// result set. This is what lets list_chunks page through a document in
-	// reading order without over-fetching.
+	// it down so the capped first page is deterministic.
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
 		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
 			queryBody["sort"] = sortClause
@@ -1617,73 +1609,42 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 
 	payload := append([]byte(nil), buf.Bytes()...)
 
-	var (
-		totalHits  int64
-		allResults []map[string]interface{}
-		firstErr   error
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithBody(bytes.NewReader(payload)),
+		e.client.Search.WithTrackTotalHits(true),
 	)
-	for _, indexName := range indexNames {
-		res, err := e.client.Search(
-			e.client.Search.WithContext(ctx),
-			e.client.Search.WithIndex(indexName),
-			e.client.Search.WithBody(bytes.NewReader(payload)),
-			e.client.Search.WithTrackTotalHits(true),
-		)
-		if err != nil {
-			common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
+	if err != nil {
+		common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
+		return nil, err
+	}
 
-		if res.IsError() {
-			bodyBytes, _ := io.ReadAll(res.Body)
-			res.Body.Close()
-			common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
-			// A 4xx here is typically a Lucene-incompatible pattern (e.g. \b,
-			// lookahead) being rejected. Surface it so the caller's RE2 in-memory
-			// fallback can take over instead of silently returning empty.
-			if firstErr == nil {
-				firstErr = fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
-			}
-			continue
-		}
-
-		var esResp SearchResponse
-		decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
 		res.Body.Close()
-		if decodeErr != nil {
-			common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
-			if firstErr == nil {
-				firstErr = fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
-			}
-			continue
-		}
-
-		searchChunks := convertESResponse(&esResp, "")
-		totalHits += esResp.Hits.Total.Value
-		allResults = append(allResults, searchChunks...)
+		common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
 	}
 
-	// If every requested index failed (no results at all), propagate the error
-	// so the caller can fall back (e.g. GrepAdapter's in-memory RE2 filter).
-	// Partial success (some indexes returned results) is returned as-is.
-	if len(allResults) == 0 && firstErr != nil {
-		return nil, firstErr
+	var esResp SearchResponse
+	decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+	res.Body.Close()
+	if decodeErr != nil {
+		common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
+		return nil, fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
 	}
 
-	// Single index: ES already applied from/size exactly, so the collected rows
-	// are the requested page — only cap to limit (defensive). Multi index: every
-	// index fetched up to offset+limit from 0, so sort the merged set (per the
-	// requested fields, or by score) and apply the offset once, globally.
+	allResults := convertESResponse(&esResp, "")
+	totalHits := esResp.Hits.Total.Value
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
 		allResults = sortByFields(allResults, req.Sort)
 	} else {
-		allResults = sortByScore(allResults, limit)
+		// Regexp matches have no meaningful relevance score. Preserve ES's
+		// returned order when no explicit deterministic sort was requested.
 	}
-	if len(allResults) > limit {
-		allResults = allResults[:limit]
+	if len(allResults) > maxRegexpResults {
+		allResults = allResults[:maxRegexpResults]
 	}
 
 	return &types.SearchResult{
@@ -1693,9 +1654,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 }
 
 // sortByFields orders chunks by the given OrderByExpr fields ascending. It is
-// used after merging multi-index regexp results so the offset/limit window is
-// applied to a globally-sorted set (ES only sorts within each index). Numeric
-// fields sort numerically, string fields lexicographically.
+// used for deterministic ordering of regexp results. Numeric fields sort
+// numerically, string fields lexicographically.
 func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
 	if expr == nil || len(expr.Fields) == 0 {
 		return chunks

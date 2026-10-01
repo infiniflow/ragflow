@@ -65,8 +65,10 @@ type grepChunksArgs struct {
 	DocScope   []string `json:"doc_scope,omitempty"`
 }
 
-// grepChunksDefaultLimit caps the number of matching chunks returned.
-const grepChunksDefaultLimit = 30
+// grepChunksMaxResults caps the number of matching chunks returned by the
+// regex engine. Regex matches have no meaningful relevance score, so the tool
+// returns the first deterministic page and reports when that cap is reached.
+const grepChunksMaxResults = 30
 
 // GrepChunksTool regex-matches chunk content via GrepService. It is stateless:
 // no per-session seen-chunk tracking (memory is intentionally not ported). The
@@ -160,7 +162,6 @@ func (g *GrepChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 		Pattern:      query,
 		DatasetIDs:   datasetIDs,
 		DocScope:     args.DocScope,
-		Limit:        grepChunksDefaultLimit,
 		Sort:         grepChunksSortFields, // order by doc_id, page_num_int, chunk_order_int
 		SelectFields: grepChunksSelectFields,
 		TenantID:     tenantID,
@@ -196,11 +197,16 @@ func (g *GrepChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	sort.SliceStable(scored, func(i, j int) bool {
 		return readingOrderLess(scored[i].chunk, scored[j].chunk)
 	})
-	if len(scored) > grepChunksDefaultLimit {
-		scored = scored[:grepChunksDefaultLimit]
+	truncated := len(scored) > grepChunksMaxResults
+	if truncated {
+		scored = scored[:grepChunksMaxResults]
 	}
 
 	out := formatGrepResults(ctx, query, scored, re)
+	if truncated || len(scored) == grepChunksMaxResults {
+		out = toolErrorXML(grepChunksToolName, "warn",
+			fmt.Sprintf("results are capped at %d matches; the returned set may be truncated. Narrow the regex or scope the search to inspect all matches.", grepChunksMaxResults)) + "\n" + out
+	}
 	if degradedNotice != "" {
 		// Canonical graceful-degradation shape: the model must know the hits it
 		// sees are complete-by-prefilter, not complete-by-corpus.

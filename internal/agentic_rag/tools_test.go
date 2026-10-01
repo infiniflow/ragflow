@@ -436,18 +436,8 @@ func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.Rege
 		})
 		chunks = ordered
 	}
-	offset := max(req.Offset, 0)
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 30
-	}
-	if offset < len(chunks) {
-		chunks = chunks[offset:]
-	} else {
-		chunks = nil
-	}
-	if len(chunks) > limit {
-		chunks = chunks[:limit]
+	if len(chunks) > 30 {
+		chunks = chunks[:30]
 	}
 	return &enginetypes.SearchResult{Chunks: chunks}, nil
 }

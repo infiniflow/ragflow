@@ -67,12 +67,6 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 	if len(docIDs) == 0 {
 		return nil, nil
 	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = grepChunksDefaultLimit
-	}
-	offset := max(req.Offset, 0)
-
 	// Use a derived engine context with no per-query timeout, same rationale
 	// as Grep.
 	ectx, ecancel := engineCallContext(ctx)
@@ -84,13 +78,11 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 	}
 	// Match-all on the (now keyword) content_with_weight, scoped to the docs,
 	// restricted to ordinary text chunks (available_int=1, no compile_kwd). When
-	// the caller requests a sort (e.g. reading order), push it down so ES applies
-	// offset/limit over the deterministically-ordered set — no over-fetching.
+	// the caller requests a sort (e.g. reading order), push it down so ES returns
+	// the deterministic first page.
 	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
 		TenantID:     req.TenantID,
 		KbIDs:        req.DatasetIDs,
-		Offset:       offset,
-		Limit:        limit,
 		Pattern:      ".*",
 		Sort:         sortExprFromFields(req.Sort), // reading order: doc_id, page_num_int, chunk_order_int
 		SelectFields: req.SelectFields,
@@ -104,7 +96,7 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 		return nil, fmt.Errorf("list_chunks: deep-read recall: %w", err)
 	}
 
-	out := make([]runtime.RetrievalChunk, 0, limit)
+	out := make([]runtime.RetrievalChunk, 0, len(res.Chunks))
 	for _, raw := range res.Chunks {
 		content := contentWithWeightFromRaw(raw)
 		if content == "" || isGraphChunkContent(content) {
@@ -119,9 +111,6 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 			ChunkIndex:   runtime.IntFromMap(raw, "chunk_order_int"),
 			PageNum:      runtime.IntFromMap(raw, "page_num_int"),
 		})
-		if len(out) >= limit {
-			break
-		}
 	}
 	return out, nil
 }
@@ -187,10 +176,6 @@ func (g *GrepAdapter) FetchChunksByID(ctx context.Context, req runtime.GrepReque
 	return g.fetchScoped(ctx, req, grepChunksSelectFields, true)
 }
 
-// scopedFetchWindow caps a single match-all scoped recall so pathological
-// documents cannot stream unbounded rows; ordinary texts stay far below this.
-const scopedFetchWindow = 2000
-
 // fetchScoped issues one regexp-pushdown match-all query over the scoped docs,
 // narrowed by req.ChunkScope term filter when non-empty. selectFields controls
 // the ES _source payload; withFullContent=false leaves RetrievalChunk.Content
@@ -228,8 +213,6 @@ func (g *GrepAdapter) fetchScoped(
 	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
 		TenantID:     req.TenantID,
 		KbIDs:        req.DatasetIDs,
-		Offset:       0,
-		Limit:        scopedFetchWindow, // index/full reads must see the whole scoped set
 		Pattern:      ".*",
 		Sort:         sortExprFromFields(grepChunksSortFields),
 		SelectFields: selectFields,
@@ -275,11 +258,6 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 		return nil, fmt.Errorf("grep: invalid regex: %w", err)
 	}
 
-	limit := req.Limit
-	if limit <= 0 {
-		limit = grepChunksDefaultLimit
-	}
-
 	// Only search ordinary document text chunks: available_int=1 and no
 	// compile_kwd (which marks knowledge-compiled products like wiki_page,
 	// hypergraph, mindmap, list, timeline). Knowledge products are derived
@@ -309,7 +287,6 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
 			TenantID:     req.TenantID,
 			KbIDs:        req.DatasetIDs,
-			Limit:        limit,
 			Pattern:      req.Pattern,
 			Sort:         sortExprFromFields(req.Sort), // same reading order as list_chunks
 			SelectFields: req.SelectFields,
@@ -376,16 +353,14 @@ func degradeGrep(
 		retry := req
 		retry.Pattern = safe
 		if chunks, retryErr := svc.Grep(ctx, retry); retryErr == nil {
-			// Full coverage: the sanitized pattern matches a SUPERSET, so an
-			// empty result is a genuine "no matches" and needs no caveat.
 			common.InfoCtx(ctx, "agentic_rag: grep pushdown recovered by sanitizing the pattern",
 				zap.String("pattern", req.Pattern), zap.String("sanitized", safe), zap.Int("chunks", len(chunks)))
-			return chunks, "", nil
+			return chunks, pushdownWarning(pushErr, "the engine accepted a sanitized form of the regexp; local Go regexp filtering restored the original match semantics"), nil
 		}
 	}
 
 	if chunks, notice, ok := grepBySplitAlternation(ctx, svc, req); ok {
-		return chunks, notice, nil
+		return chunks, pushdownWarning(pushErr, notice), nil
 	}
 
 	if queries := regexpLiteralTerms(req.Pattern, grepDegradeMaxQueries); len(queries) > 0 {
@@ -408,11 +383,28 @@ func degradeGrep(
 					"APPROXIMATE: an empty or thin result does NOT prove the corpus lacks the phrase. Simplify the pattern "+
 					"(literal terms joined by `.*`, at most 2-3 alternation branches, no bounded repetition) to search it fully.",
 					strings.Join(queries, " | "))
-				return chunks, notice, nil
+				return chunks, pushdownWarning(pushErr, notice), nil
 			}
 		}
 	}
 	return nil, "", pushErr
+}
+
+// pushdownWarning keeps the original ES rejection visible whenever a fallback
+// produces results. The model must distinguish a real regexp result from a
+// result obtained after the engine rejected the requested pattern.
+func pushdownWarning(pushErr error, detail string) string {
+	if detail == "" {
+		detail = "the pattern was split into smaller regexp branches and the returned matches were verified with the original Go regexp"
+	}
+	if pushErr == nil {
+		return detail
+	}
+	summary := pushErr.Error()
+	if r := []rune(summary); len(r) > 400 {
+		summary = string(r[:400]) + "…"
+	}
+	return fmt.Sprintf("ES regexp query was rejected: %s. %s", summary, detail)
 }
 
 // grepBySplitAlternation pushes each top-level alternation branch as its own
