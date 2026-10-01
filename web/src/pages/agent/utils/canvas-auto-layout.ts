@@ -629,6 +629,7 @@ function exclusiveDownstream(
   blocked: Set<string>,
   edges: Array<{ source: string; target: string }>,
   boxes: Map<string, Box>,
+  source: Box,
 ): string[] {
   const seen = new Set<string>([root]);
   const queue = [root];
@@ -637,8 +638,11 @@ function exclusiveDownstream(
     if (!id) continue;
     for (const edge of edges) {
       if (edge.source !== id || edge.source === edge.target) continue;
-      if (!boxes.has(edge.target) || seen.has(edge.target)) continue;
-      if (blocked.has(edge.target)) continue;
+      const target = boxes.get(edge.target);
+      if (!target || seen.has(edge.target) || blocked.has(edge.target)) {
+        continue;
+      }
+      if (target.x <= source.x + 8) continue;
       seen.add(edge.target);
       queue.push(edge.target);
     }
@@ -711,18 +715,26 @@ function spreadFanOut(
       forward.reduce((sum, id) => sum + (boxes.get(id)?.height ?? 0), 0) +
       gap * (forward.length - 1);
     let cursor = source.y + source.height / 2 - total / 2;
-    const blocked = new Set(forward);
-    for (const targetId of forward) {
+    const blocked = new Set<string>([sourceId, ...forward]);
+    const reaches = forward.map((targetId) =>
+      exclusiveDownstream(targetId, blocked, edges, boxes, source),
+    );
+    const shared = new Map<string, number>();
+    for (const reach of reaches) {
+      for (const id of reach) shared.set(id, (shared.get(id) ?? 0) + 1);
+    }
+    forward.forEach((targetId, index) => {
       const box = boxes.get(targetId);
-      if (!box) continue;
+      const reach = reaches[index];
+      if (!box || !reach) return;
       const dy = cursor - box.y;
       shiftReach(
         boxes,
-        exclusiveDownstream(targetId, blocked, edges, boxes),
+        reach.filter((id) => shared.get(id) === 1),
         dy,
       );
       cursor += box.height + gap;
-    }
+    });
   }
 }
 

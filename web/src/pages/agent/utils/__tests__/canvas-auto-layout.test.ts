@@ -192,6 +192,51 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
+  it('does not shift a shared merge twice when outputs are separated', () => {
+    const nodes = [
+      node('src', 0, 80, {
+        data: { label: 'Switch', form: { conditions: [{}, {}] } },
+      }),
+      node('high', 400, 80, {
+        height: 40,
+        measured: { width: WIDTH, height: 40 },
+      }),
+      node('low', 400, 80, {
+        height: 160,
+        measured: { width: WIDTH, height: 160 },
+      }),
+      node('merge', 900, 80),
+    ];
+    const edges = [
+      edge('src', 'high', 'Case 1'),
+      edge('src', 'low', 'Case 2'),
+      edge('high', 'merge'),
+      edge('low', 'merge'),
+    ];
+    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
+    const source = next.find((item) => item.id === 'src')!;
+    const high = next.find((item) => item.id === 'high')!;
+    const low = next.find((item) => item.id === 'low')!;
+    const merge = next.find((item) => item.id === 'merge')!;
+
+    expect(high.position.y).toBeLessThan(low.position.y);
+    const mid = (centerY(high) + centerY(low)) / 2;
+    expect(Math.abs(mid - centerY(source))).toBeLessThanOrEqual(
+      CanvasAutoLayoutSpacing.grid * 2,
+    );
+    const top = Math.min(high.position.y, low.position.y);
+    const bottom = Math.max(
+      high.position.y + (high.measured?.height ?? HEIGHT),
+      low.position.y + (low.measured?.height ?? HEIGHT),
+    );
+    expect(merge.position.y).toBeGreaterThanOrEqual(
+      top - CanvasAutoLayoutSpacing.nodeGap,
+    );
+    expect(merge.position.y + HEIGHT).toBeLessThanOrEqual(
+      bottom + CanvasAutoLayoutSpacing.nodeGap,
+    );
+  });
+
   it('keeps each switch branch in its own band so later nodes do not cross', () => {
     const nodes = [
       node('src', 0, 200, {
@@ -378,6 +423,47 @@ describe('layoutCanvasNodes', () => {
     );
     expect(nextGroup.height).toBeGreaterThanOrEqual(
       nextStep.position.y + HEIGHT + CanvasAutoLayoutSpacing.groupPadding,
+    );
+  });
+
+  it('does not shift a shared merge twice or pull the source', () => {
+    const nodes = [
+      node('src', 80, 240, {
+        data: { label: 'Switch', form: { conditions: [{}, {}] } },
+      }),
+      node('top', 480, 420),
+      node('bottom', 500, 440),
+      node('merge', 900, 200),
+    ];
+    const edges = [
+      edge('src', 'top', 'Case 1'),
+      edge('src', 'bottom', 'Case 2'),
+      edge('top', 'merge'),
+      edge('bottom', 'merge'),
+      edge('merge', 'src'),
+    ];
+    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
+    const src = next.find((item) => item.id === 'src')!;
+    const top = next.find((item) => item.id === 'top')!;
+    const bottom = next.find((item) => item.id === 'bottom')!;
+    const merge = next.find((item) => item.id === 'merge')!;
+
+    expect(top.position.y).toBeLessThan(bottom.position.y);
+    expect(
+      bottom.position.y - (top.position.y + HEIGHT),
+    ).toBeGreaterThanOrEqual(
+      CanvasAutoLayoutSpacing.nodeGap - CanvasAutoLayoutSpacing.grid,
+    );
+    expect(src.position.x).toBeLessThan(top.position.x);
+    expect(
+      Math.abs(centerY(src) - (centerY(top) + centerY(bottom)) / 2),
+    ).toBeLessThanOrEqual(HEIGHT);
+    expect(merge.position.x).toBeGreaterThan(top.position.x);
+    expect(merge.position.y).toBeGreaterThanOrEqual(
+      top.position.y - CanvasAutoLayoutSpacing.grid,
+    );
+    expect(merge.position.y + HEIGHT).toBeLessThanOrEqual(
+      bottom.position.y + HEIGHT + CanvasAutoLayoutSpacing.grid,
     );
   });
 
