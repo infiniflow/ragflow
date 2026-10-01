@@ -42,8 +42,7 @@ RAGFlow supports multiple sandbox providers. Configure the active provider in Ad
 
 Configure it in **Admin > Sandbox Settings**:
 
-- `api_key` (required): Tenki API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**.
-- `project_id` (required): the Tenki project that sandboxes are created under.
+- `api_key` (required): Tenki workspace API key. Create one at [app.tenki.cloud](https://app.tenki.cloud) under **API Keys**. The key determines the workspace where sandboxes are created.
 - `base_url` (optional): override the Tenki API endpoint.
 - `image` (optional): sandbox base image. Leave empty to use the Tenki default image, which includes `python3` and `node`.
 - `allow_outbound` (optional, security-relevant): whether the sandbox may make outbound network connections. Defaults to `false` so sandboxed code has no network access; set it to `true` when code needs the network (for example, to install packages).
