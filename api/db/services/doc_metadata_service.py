@@ -35,6 +35,10 @@ from common.metadata_utils import dedupe_list
 METADATA_ID_BATCH_SIZE = 10000
 
 
+class MetadataPaginationError(RuntimeError):
+    """A metadata scan could not prove that it retrieved every document."""
+
+
 def _es_response_total(response: Any) -> int | None:
     """Extract the exact total hit count from an ES search response.
 
@@ -804,8 +808,14 @@ class DocMetadataService:
             # Paginate to support datasets with more than 10,000 documents.
             page_size = 1000
             offset = 0
+            cursor = None
+            # ES can advance a sorted cursor without replaying earlier pages.
+            # Other stores retain their existing offset interface.
+            use_es_cursor = settings.DOC_ENGINE.lower() == "elasticsearch"
             all_results = []
+            total_docs = None
             while True:
+                search_kwargs = {"search_after": cursor} if use_es_cursor and cursor is not None else {}
                 batch = settings.docStoreConn.search(
                     select_fields=["*"],
                     highlight_fields=[],
@@ -816,10 +826,26 @@ class DocMetadataService:
                     limit=page_size,
                     index_names=index_name,
                     knowledgebase_ids=kb_ids,
+                    **search_kwargs,
                 )
                 batch_docs = list(cls._iter_search_results(batch))
+                if use_es_cursor and total_docs is None:
+                    total_docs = _es_response_total(batch)
+                    if total_docs is None:
+                        raise MetadataPaginationError("Elasticsearch metadata total is unavailable")
                 if not batch_docs:
+                    if use_es_cursor and (total_docs is None or len(all_results) < total_docs):
+                        raise MetadataPaginationError(
+                            f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents"
+                        )
                     break
+                if use_es_cursor:
+                    hits = batch.get("hits", {}).get("hits", [])
+                    next_cursor = hits[-1].get("sort") if hits else None
+                    if cursor is not None and next_cursor == cursor:
+                        raise MetadataPaginationError("Elasticsearch metadata cursor did not advance")
+                    if len(batch_docs) == page_size and not next_cursor:
+                        raise MetadataPaginationError("Elasticsearch metadata cursor has no sort value")
                 all_results.extend(batch_docs)
                 logging.debug(
                     "[get_flatted_meta_by_kbs] offset=%d batch=%d total=%d kb_ids=%s",
@@ -829,8 +855,15 @@ class DocMetadataService:
                     kb_ids,
                 )
                 if len(batch_docs) < page_size:
+                    if use_es_cursor and (total_docs is None or len(all_results) < total_docs):
+                        raise MetadataPaginationError(
+                            f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents"
+                        )
                     break
-                offset += page_size
+                if use_es_cursor:
+                    cursor = next_cursor
+                else:
+                    offset = len(all_results)
 
             # Aggregate metadata over all retrieved results
             meta = {}
@@ -861,6 +894,9 @@ class DocMetadataService:
             logging.debug("[get_flatted_meta_by_kbs] KBs: %s, Retrieved %d documents, metadata: %s", kb_ids, doc_count, meta)
             return meta
 
+        except MetadataPaginationError:
+            logging.exception("Incomplete metadata scan for KBs %s", kb_ids)
+            raise
         except Exception as e:
             logging.error("Error getting flattened metadata for KBs %s: %s", kb_ids, e)
             return {}
