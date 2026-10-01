@@ -184,9 +184,17 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   const { handleBeforeDelete } = useBeforeDelete();
 
   const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
-  const arrangeNodes = useCanvasAutoLayout();
 
   const { ref, showImage, hideImage, imgVisible, mouse } = useMoveNote();
+  const arrangeNodes = useCanvasAutoLayout(
+    !drawerVisible &&
+      !formDrawerVisible &&
+      !singleDebugDrawerVisible &&
+      !chatVisible &&
+      !runVisible &&
+      !logSheetVisible &&
+      !imgVisible,
+  );
 
   const { theme } = useTheme();
 

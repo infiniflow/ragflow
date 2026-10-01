@@ -1,3 +1,4 @@
+import { useStore } from '@xyflow/react';
 import { useCallback, useEffect } from 'react';
 import useGraphStore from '../store';
 import { layoutCanvasNodes } from '../utils/canvas-auto-layout';
@@ -13,8 +14,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-export function useCanvasAutoLayout(): () => void {
+export function useCanvasAutoLayout(enabled = true): () => void {
+  const nodesDraggable = useStore((state) => state.nodesDraggable);
+  const interactive = enabled && nodesDraggable;
+
   const arrange = useCallback(() => {
+    if (!interactive) return;
     const state = useGraphStore.getState();
     const updates = layoutCanvasNodes({
       nodes: state.nodes,
@@ -46,19 +51,26 @@ export function useCanvasAutoLayout(): () => void {
         };
       }),
     );
-  }, []);
+  }, [interactive]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || !event.shiftKey || !event.altKey) return;
-      if (event.code !== 'KeyT') return;
+      if (!interactive) return;
+      if (event.repeat || event.ctrlKey || event.metaKey) return;
+      if (!event.shiftKey || !event.altKey || event.code !== 'KeyT') return;
       if (isTypingTarget(event.target)) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return;
+      }
       event.preventDefault();
       arrange();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [arrange]);
+  }, [arrange, interactive]);
 
   return arrange;
 }
