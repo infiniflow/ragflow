@@ -738,6 +738,144 @@ function spreadFanOut(
   }
 }
 
+function floorSize(node: CanvasLayoutNode | undefined): Size {
+  const label = node?.data?.label;
+  if (label === 'Agent') return { width: 320, height: 240 };
+  if (label === 'Switch' || label === 'Categorize') {
+    return { width: 280, height: 200 };
+  }
+  if (label === 'Message' || label === 'Retrieval') {
+    return { width: 280, height: 160 };
+  }
+  if (label === 'Code') return { width: 240, height: 120 };
+  return { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
+}
+
+function reservedBox(node: CanvasLayoutNode | undefined, box: Box): Box {
+  const floor = floorSize(node);
+  return {
+    x: box.x,
+    y: box.y,
+    width: Math.max(box.width, floor.width),
+    height: Math.max(box.height, floor.height),
+  };
+}
+
+function horizontalOverlap(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width;
+}
+
+function separateOverlaps(
+  boxes: Map<string, Box>,
+  nodes: Map<string, CanvasLayoutNode>,
+) {
+  const gap = CanvasAutoLayoutSpacing.nodeGap;
+  const ids = [...boxes.keys()];
+  for (let pass = 0; pass < 12; pass += 1) {
+    let moved = false;
+    for (const upperId of ids) {
+      for (const lowerId of ids) {
+        if (upperId === lowerId) continue;
+        const upper = boxes.get(upperId);
+        const lower = boxes.get(lowerId);
+        if (!upper || !lower || upper.y > lower.y) continue;
+        const upperBox = reservedBox(nodes.get(upperId), upper);
+        const lowerBox = reservedBox(nodes.get(lowerId), lower);
+        if (!horizontalOverlap(upperBox, lowerBox)) continue;
+        const push = upperBox.y + upperBox.height + gap - lower.y;
+        if (push <= 0.5) continue;
+        boxes.set(lowerId, { ...lower, y: lower.y + push });
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+function cubicPoint(
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  t: number,
+) {
+  const u = 1 - t;
+  return {
+    x:
+      u * u * u * p0.x +
+      3 * u * u * t * p1.x +
+      3 * u * t * t * p2.x +
+      t * t * t * p3.x,
+    y:
+      u * u * u * p0.y +
+      3 * u * u * t * p1.y +
+      3 * u * t * t * p2.y +
+      t * t * t * p3.y,
+  };
+}
+
+function liftNodesOffEdges(
+  boxes: Map<string, Box>,
+  nodes: Map<string, CanvasLayoutNode>,
+  edges: CanvasLayoutEdge[],
+) {
+  const margin = CanvasAutoLayoutSpacing.grid * 2;
+  for (let pass = 0; pass < 4; pass += 1) {
+    let moved = false;
+    for (const edge of edges) {
+      if (isAttachmentEdge(edge)) continue;
+      const source = boxes.get(edge.source);
+      const target = boxes.get(edge.target);
+      if (!source || !target || edge.source === edge.target) continue;
+      const start = {
+        x: source.x + source.width,
+        y: source.y + source.height / 2,
+      };
+      const end = { x: target.x, y: target.y + target.height / 2 };
+      if (Math.abs(end.x - start.x) < 32) continue;
+      const bend = Math.abs(end.x - start.x) * 0.25;
+      const c1 = { x: start.x + bend, y: start.y };
+      const c2 = { x: end.x - bend, y: end.y };
+      for (const [id, box] of boxes) {
+        if (id === edge.source || id === edge.target) continue;
+        const reserved = reservedBox(nodes.get(id), box);
+        let lowest = Infinity;
+        let hit = false;
+        for (let step = 1; step <= 12; step += 1) {
+          const point = cubicPoint(start, c1, c2, end, step / 13);
+          if (
+            point.x < reserved.x ||
+            point.x > reserved.x + reserved.width ||
+            point.y < reserved.y - margin ||
+            point.y > reserved.y + reserved.height + margin
+          ) {
+            continue;
+          }
+          hit = true;
+          lowest = Math.min(lowest, point.y);
+        }
+        if (!hit) continue;
+        const lift = reserved.y + reserved.height + margin - lowest;
+        if (lift <= 0.5) continue;
+        boxes.set(id, { ...box, y: box.y - lift });
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+export function relaxPlacement(
+  boxes: Map<string, Box>,
+  nodes: CanvasLayoutNode[],
+  edges: CanvasLayoutEdge[],
+) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  separateOverlaps(boxes, byId);
+  liftNodesOffEdges(boxes, byId, edges);
+  separateOverlaps(boxes, byId);
+}
+
 function layoutLevel(
   nodes: CanvasLayoutNode[],
   edges: CanvasLayoutEdge[],
@@ -749,6 +887,7 @@ function layoutLevel(
   );
   const components = layoutConnected(nodes, edges, sizeOfNode);
   const stacked = stackComponents(components);
+  relaxPlacement(stacked, nodes, edges);
   return anchorBoxes(stacked, originals, mode);
 }
 

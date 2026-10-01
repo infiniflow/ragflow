@@ -3,6 +3,7 @@ import {
   CanvasLayoutEdge,
   CanvasLayoutNode,
   layoutCanvasNodes,
+  relaxPlacement,
 } from '../canvas-auto-layout';
 
 const WIDTH = 200;
@@ -434,5 +435,45 @@ describe('layoutCanvasNodes', () => {
     const once = placed(nodes, first);
     const second = layoutCanvasNodes({ nodes: once, edges });
     expect(second.size).toBe(0);
+  });
+});
+
+describe('relaxPlacement', () => {
+  it('pushes a node that sits on another node downward', () => {
+    const agent = node('agent', 200, 0, {
+      data: { label: 'Agent' },
+      height: 80,
+      measured: { width: WIDTH, height: 80 },
+    });
+    const message = node('message', 200, 40, {
+      data: { label: 'Message' },
+    });
+    const boxes = new Map([
+      ['agent', { x: 100, y: 0, width: WIDTH, height: 80 }],
+      ['message', { x: 100, y: 40, width: WIDTH, height: HEIGHT }],
+    ]);
+    relaxPlacement(boxes, [agent, message], []);
+    const top = boxes.get('agent')!;
+    const lower = boxes.get('message')!;
+    expect(lower.y).toBeGreaterThanOrEqual(
+      top.y + 240 + CanvasAutoLayoutSpacing.nodeGap - 1,
+    );
+  });
+
+  it('lifts a node that a connection runs through', () => {
+    const left = node('left', 100, 200);
+    const mid = node('mid', 400, 200, { data: { label: 'Switch' } });
+    const right = node('right', 800, 200);
+    const boxes = new Map([
+      ['left', { x: 0, y: 160, width: WIDTH, height: HEIGHT }],
+      ['mid', { x: 360, y: 160, width: WIDTH, height: HEIGHT }],
+      ['right', { x: 760, y: 160, width: WIDTH, height: HEIGHT }],
+    ]);
+    const edges: CanvasLayoutEdge[] = [edge('left', 'right')];
+    const before = boxes.get('mid')!.y;
+    relaxPlacement(boxes, [left, mid, right], edges);
+    expect(boxes.get('mid')!.y).toBeLessThan(before);
+    expect(boxes.get('left')!.y).toBe(160);
+    expect(boxes.get('right')!.y).toBe(160);
   });
 });
