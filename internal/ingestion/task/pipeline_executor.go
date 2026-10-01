@@ -1091,6 +1091,13 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
+	// Legacy parser_config rows saved by the Python-era frontend nest the
+	// Parser's setups under a "setups" key. Lift them BEFORE the runtime
+	// merges this map over the DSL-baked params (override-wins on top-level
+	// key): a nested entry merged as-is would lose to the DSL's flat families
+	// when NewParserComponent applies its own flattening, and the debug page
+	// cap below reads the flat shape too.
+	parserConfig = pipelinepkg.NormalizeParserConfigSetups(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;

@@ -34,7 +34,7 @@ import (
 
 const assetDirChildEnv = "RAGFLOW_TOKENIZER_ASSET_DIR_CHILD"
 
-// realSPMAsset is the asset shipped by ragflow_deps/download_go_deps.py, relative to the
+// realSPMAsset is the asset shipped by ragflow_deps/download_deps.py, relative to the
 // repository root.
 var realSPMAsset = filepath.Join("ragflow_deps", "huggingface.co", "BAAI", "bge-m3", "sentencepiece.bpe.model")
 
@@ -44,7 +44,7 @@ func TestModelAssetsDirIsHonoured(t *testing.T) {
 	}
 	source := filepath.Join("..", "..", realSPMAsset)
 	if _, err := os.Stat(source); err != nil {
-		t.Skipf("the SPM asset is not present here (%v); run ragflow_deps/download_go_deps.py", err)
+		t.Skipf("the SPM asset is not present here (%v); run ragflow_deps/download_deps.py", err)
 	}
 
 	dir := t.TempDir()

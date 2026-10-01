@@ -114,30 +114,6 @@ func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.F
 	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
 }
 
-// LLMFactoryConfig represents a single LLM factory configuration
-type LLMFactoryConfig struct {
-	Name   string      `json:"name"`
-	Logo   string      `json:"logo"`
-	Tags   string      `json:"tags"`
-	Status string      `json:"status"`
-	Rank   string      `json:"rank"`
-	LLM    []LLMConfig `json:"llm"`
-}
-
-// LLMConfig represents a single LLM model configuration
-type LLMConfig struct {
-	LLMName   string `json:"llm_name"`
-	Tags      string `json:"tags"`
-	MaxTokens int64  `json:"max_tokens"`
-	ModelType string `json:"model_type"`
-	IsTools   bool   `json:"is_tools"`
-}
-
-// LLMFactoriesFile represents the structure of llm_factories.json
-type LLMFactoriesFile struct {
-	FactoryLLMInfos []LLMFactoryConfig `json:"factory_llm_infos"`
-}
-
 // InitDB initialize database connection
 func InitDB(ctx context.Context, migrateDB bool) error {
 	globalConfig := server.GetConfig()

@@ -36,6 +36,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -53,6 +54,8 @@ type loopExpansion struct {
 	ShouldQuit workflowx.LoopCondition[map[string]any]
 	MaxIters   int
 	Members    map[string]bool // cpn_ids consumed by the sub-graph; caller skips these in the main pass.
+	snapshot   func(context.Context) ([]byte, error)
+	restore    func(context.Context, []byte) error
 }
 
 // buildLoopExpansion constructs the sub-workflow + termination condition
@@ -72,13 +75,13 @@ type loopExpansion struct {
 // sub-graph, not the outer graph).
 func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExpansion, error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if loopID == "" {
-		return nil, fmt.Errorf("canvas: buildLoopExpansion: empty loopID")
+		return nil, fmt.Errorf("agent: buildLoopExpansion: empty loopID")
 	}
 	if _, ok := c.Components[loopID]; !ok {
-		return nil, fmt.Errorf("canvas: buildLoopExpansion: unknown cpn %q", loopID)
+		return nil, fmt.Errorf("agent: buildLoopExpansion: unknown cpn %q", loopID)
 	}
 
 	loopComp := c.Components[loopID]
@@ -87,19 +90,19 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 
 	initValues, err := resolveInitialVariables(loopComp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	shouldQuit, err := translateLoopCondition(loopID, loopComp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	maxIters := readMaxLoopCount(loopComp.Obj.Params)
 
 	sub, err := buildSubWorkflow(ctx, c, members, loopID, initValues)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	return &loopExpansion{
@@ -107,6 +110,12 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 		ShouldQuit: shouldQuit,
 		MaxIters:   maxIters,
 		Members:    members,
+		snapshot: func(ctx context.Context) ([]byte, error) {
+			return snapshotLoopVariables(ctx, loopID)
+		},
+		restore: func(ctx context.Context, data []byte) error {
+			return restoreLoopVariables(ctx, loopID, data)
+		},
 	}, nil
 }
 
@@ -213,7 +222,7 @@ func buildSubWorkflow(
 					ref, _ := spec.Value.(string)
 					resolved, err := state.GetVar(ref)
 					if err != nil {
-						return nil, fmt.Errorf("canvas: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
+						return nil, fmt.Errorf("agent: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
 					}
 					v = resolved
 				}
@@ -239,14 +248,14 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
-			return nil, fmt.Errorf("canvas: loop %q member %q has empty component_name", loopID, cpnID)
+			return nil, fmt.Errorf("agent: loop %q member %q has empty component_name", loopID, cpnID)
 		}
 		deferToMessage := directMessageDownstream(c, cpnID)
 		nodeOpts := runtime.ComponentExecutionOptions{
 			DeferAgentToMessage:        deferToMessage,
 			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
 		}
-		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -337,6 +346,29 @@ func buildSubWorkflow(
 	initNode.AddInput(compose.START)
 
 	return sub, nil
+}
+
+func snapshotLoopVariables(ctx context.Context, loopID string) ([]byte, error) {
+	state, err := GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return json.Marshal(state.Snapshot()[loopID])
+}
+
+func restoreLoopVariables(ctx context.Context, loopID string, data []byte) error {
+	state, err := GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return err
+	}
+	var values map[string]any
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	for name, value := range values {
+		state.SetVar(loopID, name, value)
+	}
+	return nil
 }
 
 func subCanvasForMembers(c *Canvas, members map[string]bool) *Canvas {

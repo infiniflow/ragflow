@@ -1,7 +1,11 @@
-# README
+# Go Docker deployment
+
+This guide documents the Go implementation of RAGFlow. Use `docker/.env`, `docker/docker-compose.yml`, `Dockerfile`, and `docker/entrypoint.sh` for a Go deployment.
+
+The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bin/ragflow_server` binary. DeepDoc inference runs in-process. Select an official Go image tag documented in the corresponding release notes, or build the image locally as described below.
 
 <details open>
-<summary></b>📗 Table of Contents</b></summary>
+<summary><b>📗 Table of Contents</b></summary>
 
 - 🐳 [Docker Compose](#-docker-compose)
 - 🐬 [Docker environment variables](#-docker-environment-variables)
@@ -13,27 +17,59 @@
 ## 🐳 Docker Compose
 
 - **docker-compose.yml**
-  Sets up environment for RAGFlow and its dependencies.
+  Starts the Go RAGFlow container together with the selected dependencies.
 - **docker-compose-base.yml**
-  Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
+  Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> [!CAUTION]
-> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. On Linux and macOS, use `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image through Docker Desktop emulation.
+
+### Quick start
+
+Run the Go release deployment from the repository checkout:
+
+```bash
+# Enter the Docker deployment directory.
+cd ragflow/docker
+# Check out the Go v1.0.0-rc1 release tag.
+git checkout v1.0.0-rc1
+# Start the Go services and their dependencies in the background.
+docker compose -f docker-compose.yml up -d
+```
+
+If you use the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least `262144` on the Docker host:
+
+```bash
+sudo sysctl -w vm.max_map_count=262144
+```
+
+This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the setting inside its Linux virtual machine as described in the [Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
+
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+
+For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
+
+Verify the deployment with:
+
+```bash
+docker compose -f docker-compose.yml ps
+docker logs --tail 100 ragflow-cpu
+curl -f http://localhost/api/v1/system/healthz
+```
+
+If `SVR_WEB_HTTP_PORT` is not `80`, append the configured port to the URL. In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference.
 
 ## 🐬 Docker environment variables
 
-The [.env](./.env) file contains important environment variables for Docker.
+The [.env](./.env) file is the user-facing environment file for the Go deployment. Compose also loads shared defaults from [.env](./.env) for included dependency definitions. When a dependency setting exists in both files, keep the credentials and published ports consistent.
 
 ### Metadata database
 
 - `DB_TYPE`
-  The business metadata database type. Defaults to `mysql`. Supported values include `mysql`, `postgres`, `gaussdb`, and `oceanbase`.
+  The business metadata database type. Defaults to `mysql`. Set it to `oceanbase` when connecting to OceanBase through its MySQL-compatible protocol.
 - `COMPOSE_PROFILES`
-  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},ragflow-go,clickhouse`.
 - `METADATA_DB_PROFILE`
-  Defaults to `mysql`, preserving the in-cluster MySQL service. Set it to `gaussdb` together with `DB_TYPE=gaussdb` to use an external GaussDB metadata database without starting MySQL.
-- `GAUSSDB_METADATA_HOST`, `GAUSSDB_METADATA_PORT`, `GAUSSDB_METADATA_USER`, `GAUSSDB_METADATA_PASSWORD`, `GAUSSDB_METADATA_DBNAME`, `GAUSSDB_METADATA_SCHEMA`
-  External GaussDB metadata database connection settings, used when `DB_TYPE=gaussdb`. Set `METADATA_DB_PROFILE=gaussdb` to keep the in-cluster MySQL service disabled.
+  Defaults to `mysql`, preserving the in-cluster MySQL service.
 
 ### Elasticsearch
 
@@ -47,12 +83,12 @@ The [.env](./.env) file contains important environment variables for Docker.
 ### Kibana
 
 - `KIBANA_PORT`
-  The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
+  The port used to expose the optional Kibana service to the host machine. Defaults to `6601`. Follow the enablement notes in `.env` before adding the `kibana` profile.
 
 ### Resource management
 
 - `MEM_LIMIT`
-  The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
+  The maximum memory available to each Compose service that applies this limit. It is a per-container upper limit, not the minimum host memory, the total memory reserved by RAGFlow, or a guarantee that every container consumes this amount. The default is `8073741824` bytes, approximately `7.52 GiB` (`8.07 GB`).
 
 ### MySQL
 
@@ -61,7 +97,9 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MYSQL_PORT`
   The port to connect to MySQL from RAGFlow container. Defaults to `3306`. Change this if you use an external MySQL.
 - `EXPOSE_MYSQL_PORT`
-  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `5455`.
+  The port used to expose the MySQL service to the host machine, allowing **external** access to the MySQL database running inside the Docker container. Defaults to `3306`.
+- `MYSQL_MAX_PACKET`
+  The maximum MySQL communication packet size in bytes. Defaults to `1073741824` bytes (`1 GiB`). Keep the MySQL server's `max_allowed_packet` setting compatible when using an external database.
 
 ### MinIO
 
@@ -74,37 +112,51 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `MINIO_PASSWORD`
   The password for MinIO.
 
-### Redis
+### Kvrocks
 
-- `REDIS_PORT`
-  The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
+The Go services use Kvrocks as their Redis-compatible cache. NATS JetStream provides the message queue.
+
+- `KVROCKS_HOST`
+  The hostname used by the Go services. Keep the default `kvrocks` for the Compose deployment.
+- `KVROCKS_PORT`
+  The host-published Kvrocks port. Defaults to `6379`.
 - `REDIS_PASSWORD`
-  The password for Redis.
+  The password shared with the Kvrocks service.
+
+### NATS
+
+The Go services use NATS JetStream for ingestion, synchronization, memory, and knowledge-compilation messages.
+
+- `NATS_HOST`
+  The NATS hostname used inside the Compose network. Defaults to `nats`.
+- `NATS_PORT`
+  The internal NATS client port. Defaults to `4222`.
+- `EXPOSE_NATS_PORT`
+  The port published on the Docker host. Change this value to avoid a host-side port conflict; Go containers continue to use `NATS_PORT` internally.
 
 ### RAGFlow
 
 - `SVR_HTTP_PORT`
-  The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
+  The target Go API port published by Compose. Defaults to `9380`; Nginx proxies normal web API requests to this service.
+- `ADMIN_SVR_HTTP_PORT`
+  The target Go Admin port published by Compose. Defaults to `9381`.
+- `SVR_WEB_HTTP_PORT`, `SVR_WEB_HTTPS_PORT`
+  The public Nginx ports. Defaults to `80` and `443`.
+- `RAGFLOW_DEV_MODE`
+  Set to `true` only for development checkouts that intentionally use a development migration marker. Keep it `false` in production.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2`. The RAGFlow Docker image does not include embedding models.
+  The Go Docker image used by `docker-compose.yml`. Use an official Go image tag documented in its release notes, or use the locally built `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding models.
 
+### Local embedding service
 
-> [!TIP]
-> If you cannot download the RAGFlow Docker image, try the following mirrors.
->
-> - For the `nightly` edition:
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
+The optional `tei-cpu` and `tei-gpu` profiles start a local text-embeddings-inference service. Its memory requirement depends on the model, runtime backend, precision, batch-token limit, and concurrency. The `tei-cpu` profile uses system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes system RAM. Verify model loading and peak request usage on the target hardware, and leave additional host memory for RAGFlow, the document engine, databases, and operating system.
+
 
 ### DeepDoc (in-process)
 
-DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table
-structure recognition (TSR) run **in-process** inside the RAGFlow server using
-ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is
-statically linked into the server binary (resolved at runtime via dlopen(NULL);
-no `libonnxruntime.so` is required) and the models are loaded at runtime;
-`DEEPDOC_MODEL_DIR` overrides the default model directory, which falls back to
-the `ragflow_deps/download_deps.py` snapshot.
+DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/internal/rag/res/deepdoc`.
+
+In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 ### Timezone
 
@@ -116,81 +168,31 @@ the `ragflow_deps/download_deps.py` snapshot.
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
-### MacOS
-
-- `MACOS`
-  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
-
-### Maximum file size
-
-- `MAX_CONTENT_LENGTH`
-  The maximum file size for each uploaded file, in bytes. You can uncomment this line if you wish to change the 128M file size limit. After making the change, ensure you update `client_max_body_size` in nginx/nginx.conf correspondingly.
-
-### Doc bulk size
-
-- `DOC_BULK_SIZE`
-  The number of document chunks processed in a single batch during document parsing. Defaults to `4`.
-
 ### Embedding batch size
 
-- `EMBEDDING_BATCH_SIZE`
-  The number of text chunks processed in a single batch during embedding vectorization. Defaults to `16`.
-
-### OceanBase prerequisites
-
-Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file descriptor and core dump limits OceanBase expects.
-
-1. Set host limits:
-
-   ```bash
-   sudo tee /etc/security/limits.d/99-oceanbase.conf >/dev/null <<'EOF'
-   root soft nofile 655350
-   root hard nofile 655350
-   * soft nofile 655350
-   * hard nofile 655350
-   * soft core unlimited
-   * hard core unlimited
-   EOF
-   ```
-
-2. Make sure PAM limits are enabled:
-
-   ```bash
-   grep -E 'pam_limits\.so' /etc/pam.d/common-session /etc/pam.d/common-session-noninteractive
-   ```
-
-   If missing, add them:
-
-   ```bash
-   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session
-   echo 'session required pam_limits.so' | sudo tee -a /etc/pam.d/common-session-noninteractive
-   ```
-
-3. Log out and log back in, or reboot.
-
-4. Verify the effective limit:
-
-   ```bash
-   ulimit -n
-   ```
-
-   Expected: `655350`, or at least `20000`.
+- `TOKENIZER_EMBEDDING_BATCH_SIZE`
+  An optional positive integer that overrides the number of text chunks sent in each embedding request. When it is not set, RAGFlow uses the embedding model's batch size, or `16` if the model does not provide one. Larger values can increase memory usage and may exceed the model provider's request limit; increase it gradually and verify parsing on representative documents.
 
 ## 🐋 Service configuration
 
-[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
+[service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
 
 - `ragflow`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
+
+- `admin`
+  - `host`: The Admin server's IP address inside the Docker container. Defaults to `0.0.0.0`.
+  - `http_port`: The Admin server's serving port inside the Docker container. Defaults to `9381`.
 
 - `mysql`
   - `name`: The MySQL database name. Defaults to `rag_flow`.
   - `user`: The username for MySQL.
   - `password`: The password for MySQL.
   - `port`: The MySQL serving port inside the Docker container. Defaults to `3306`.
-  - `max_connections`: The maximum number of concurrent connections to the MySQL database. Defaults to `100`.
-  - `stale_timeout`: Timeout in seconds.
+  - `max_connections`: The maximum number of concurrent connections in the MySQL connection pool. Defaults to `900`.
+  - `stale_timeout`: The connection stale timeout in seconds. Defaults to `300`.
+  - `max_allowed_packet`: The maximum communication packet size. Defaults to `1073741824` bytes (`1 GiB`).
 
 - `minio`
   - `user`: The username for MinIO.
@@ -205,15 +207,6 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `password`: The password for OceanBase.
     - `host`: The hostname of the OceanBase service.
     - `port`: The port of OceanBase.
-
-- `gaussdb`
-  - `host`: The hostname or IP address of the GaussDB instance.
-  - `port`: The GaussDB port.
-  - `database`: The GaussDB database name. Defaults to `postgres`.
-  - `user`: The username for GaussDB.
-  - `password`: The password for GaussDB.
-  - `schema`: Optional schema used by the DocEngine. Defaults to `public`.
-  - RAGFlow does not start or manage GaussDB; set `DOC_ENGINE=gaussdb` only after preparing a GaussDB instance.
 
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.
@@ -248,21 +241,6 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
     - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
-- `user_default_llm`
-  The default LLM to use for a new RAGFlow user. It is disabled by default. To enable this feature, uncomment the corresponding lines in **service_conf.yaml.template**.
-  - `factory`: The LLM supplier. Available options:
-    - `"OpenAI"`
-    - `"DeepSeek"`
-    - `"Moonshot"`
-    - `"Tongyi-Qianwen"`
-    - `"VolcEngine"`
-    - `"ZHIPU-AI"`
-  - `api_key`: The API key for the specified LLM. You will need to apply for your model API key online.
-
-> [!TIP]
-> If you do not set the default LLM here, configure the default LLM on the **Settings** page in the RAGFlow UI.
-
-
 ## 📋 Setup Examples
 
 ### 🔒 HTTPS Setup
@@ -295,10 +273,10 @@ If you want your instance to be available under `https`, follow these steps:
    - Private key: `/etc/letsencrypt/live/your-ragflow-domain.com/privkey.pem`
 
 3. **Update docker-compose.yml**
-   Add the certificate volumes to the `ragflow` service in your `docker-compose.yml`:
+   Add the certificate volumes to the `ragflow-cpu` service in `docker-compose.yml`:
    ```yaml
    services:
-     ragflow:
+     ragflow-cpu:
        # ...existing configuration...
        volumes:
          # SSL certificates
@@ -315,17 +293,16 @@ If you want your instance to be available under `https`, follow these steps:
 
 5. **Restart the services**
    ```bash
-   docker-compose down
-   docker-compose up -d
+   docker compose -f docker-compose.yml down
+   docker compose -f docker-compose.yml up -d
    ```
 
 
-> [!IMPORTANT]
-> - Ensure your domain's DNS A record points to your server's IP address
-> - Stop any services running on ports 80/443 before obtaining certificates with `--standalone`
+> ⚠️ **Important：**
+> - Ensure your domain's DNS A record points to your server's IP address.
+> - Stop any services running on ports 80/443 before obtaining certificates with `--standalone`.
 
-> [!TIP]
-> For development or testing, you can use self-signed certificates, but browsers will show security warnings.
+> 💡 **Tip：** For development or testing, you can use self-signed certificates, but browsers will show security warnings.
 
 #### Alternative: Using existing certificates
 

@@ -44,6 +44,7 @@ const (
 	CodeLicenseNotFound         ErrorCode = 325
 	CodeLicenseUnexpectedError  ErrorCode = 326
 	CodeLicenseNotValidYet      ErrorCode = 327
+	CodeErrorServerStatus       ErrorCode = 330
 	CodeBadRequest              ErrorCode = 400
 	CodeUnauthorized            ErrorCode = 401
 	CodeForbidden               ErrorCode = 403

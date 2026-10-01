@@ -468,9 +468,6 @@ func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, docume
 	}
 
 	merged := common.DeepMergeMaps(doc.ParserConfig, config)
-	if _, ok := config["raptor"]; !ok {
-		delete(merged, "raptor")
-	}
 	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
 
 	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{

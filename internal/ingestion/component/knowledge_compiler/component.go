@@ -392,12 +392,9 @@ var variantCompileKWD = map[common.Variant]string{
 }
 
 // productsToChunkDocs converts the internal compiled Product rows into
-// schema.ChunkDoc values aligned to conf/infinity_mapping.json (lines 1–77).
-// The compile_kwd discriminator marks them as compiled knowledge units
-// (distinct from plain chunks); variant-specific columns are populated from
-// Product.Meta using stable keys (see each variant's build site for the
-// contract). The original kind/level/name/size meta is also carried under
-// "kc_"-prefixed Extra keys so no information is lost.
+// schema.ChunkDoc values aligned to conf/infinity_mapping.json. Product.Meta is
+// not persisted: only engine columns are written, because Infinity rejects an
+// insert naming an unknown column.
 func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
@@ -434,11 +431,6 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		}
 		if p.DocID != "" {
 			if err := doc.SetExtraValue("doc_id", p.DocID); err != nil {
-				return nil, err
-			}
-		}
-		if p.TenantID != "" {
-			if err := doc.SetExtraValue("tenant_id", p.TenantID); err != nil {
 				return nil, err
 			}
 		}
@@ -503,15 +495,9 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				return nil, err
 			}
 		}
-		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–77).
+		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–97).
 		if err := applyVariantColumns(&doc, p); err != nil {
 			return nil, err
-		}
-		// Preserve the raw Product.Meta under kc_* for round-trip fidelity.
-		for k, v := range p.Meta {
-			if err := doc.SetExtraValue("kc_"+k, v); err != nil {
-				return nil, err
-			}
 		}
 		docs = append(docs, doc)
 	}
@@ -526,7 +512,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 	switch p.Variant {
 	case common.VariantStructure:
-		// knowledge_graph_kwd: "entity" | "relation" | "graph".
+		// type_kwd: "entity" | "relation" | "graph".
 		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
@@ -546,9 +532,6 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 					fullSlug = pageType + "/" + slug
 				}
 				if err := doc.SetExtraValue("slug_kwd", fullSlug); err != nil {
-					return err
-				}
-				if err := doc.SetExtraValue("artifact_slug_kwd", fullSlug); err != nil {
 					return err
 				}
 			}
@@ -574,18 +557,17 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 				return err
 			}
 		}
-		// Section rows also carry level/index so a retriever can scope to a
-		// sub-section of a wiki page.
-		if v, ok := metaInt(p.Meta, "section_level"); ok {
-			if err := doc.SetExtraValue("section_level_int", v); err != nil {
-				return err
-			}
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
+		// md_with_weight is the page-body column Python writes with the same
+		// value as content_with_weight (wiki_incremental.py:2190-2191), i.e. the
+		// rendered body; section rows have no page body of their own.
+		if metaString(p.Meta, "kind") == "page" && p.Content != "" {
+			if err := doc.SetExtraValue("md_with_weight", p.Content); err != nil {
 				return err
 			}
 		}
-		if v, ok := metaInt(p.Meta, "section_index"); ok {
-			if err := doc.SetExtraValue("section_index_int", v); err != nil {
+		// Section depth goes to depth_int; there is no section_level_int column.
+		if v, ok := metaInt(p.Meta, "section_level"); ok {
+			if err := doc.SetExtraValue("depth_int", v); err != nil {
 				return err
 			}
 		}
@@ -613,7 +595,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		case "entity", "relation", "graph":
 			// The tree is also projected onto the structure-graph shape (Python
 			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
-			// relation rows carry knowledge_graph_kwd and the compact graph blob
+			// relation rows carry type_kwd and the compact graph blob
 			// (kind "graph") is the /structure/graph discovery row. This is the
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
@@ -622,9 +604,9 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			// Claim rows are searchable on their own (global KNN) but are NOT
 			// part of the structure graph: they carry no relation, and a
 			// relation-less row would be rendered as a root in the artifacts
-			// tree. So they deliberately skip knowledge_graph_kwd, which keeps
+			// tree. So they deliberately skip type_kwd, which keeps
 			// them out of the artifacts query (it filters
-			// knowledge_graph_kwd=["entity","relation"]) without a frontend
+			// type_kwd=["entity","relation"]) without a frontend
 			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
 			if v := metaString(p.Meta, "name"); v != "" {
 				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
@@ -669,7 +651,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
 		// dataset-level merge exactly like graph/timeline: each node is an entity,
 		// each parent→child edge is a relation. Reuse the shared structure-graph
-		// column contract (knowledge_graph_kwd + from/to_entity_kwd + name_kwd +
+		// column contract (type_kwd + from/to_entity_kwd + name_kwd +
 		// entity_type_kwd + mention_count_int). The relation type lives in the
 		// content_with_weight payload ({"from","to","type"}), matching Python —
 		// NOT a dedicated relation_type_kwd column.
@@ -681,7 +663,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 // applyStructureGraphColumns emits the structure-graph row columns shared by the
 // structure and tree variants (Python _struct_to_doc_storage_doc contract):
-//   - knowledge_graph_kwd: "entity" | "relation" | "graph"
+//   - type_kwd: "entity" | "relation" | "graph"
 //   - relations: from_entity_kwd / to_entity_kwd
 //   - entities: name_kwd (lowercased) / entity_type_kwd
 //   - mention_count_int
@@ -690,7 +672,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 // diverging (review Major).
 func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind string) error {
 	if kind != "" {
-		if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+		if err := doc.SetExtraValue("type_kwd", kind); err != nil {
 			return err
 		}
 	}
@@ -732,20 +714,15 @@ func metaString(m map[string]any, key string) string {
 	return v
 }
 
-// setTitleTokens populates the ChunkDoc title_tks / title_sm_tks fields from a
-// title string, mirroring how the chunker/tokenizer components tokenize titles
-// (coarse → TitleTks, fine-grained → TitleSmTks). Errors are ignored: when the
-// tokenizer pool is uninitialised (no-CGo test path) the fields stay empty,
-// matching the chunker's graceful-degrade behaviour.
+// setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
+// title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
+// `docnm`, so the twin would make docnm map-order dependent.
 func setTitleTokens(doc *schema.ChunkDoc, title string) {
 	if title == "" {
 		return
 	}
 	if tks, err := tokenizer.Tokenize(title); err == nil && tks != "" {
 		doc.TitleTks = tks
-		if sm, err := tokenizer.FineGrainedTokenize(tks); err == nil && sm != "" {
-			doc.TitleSmTks = sm
-		}
 	}
 }
 

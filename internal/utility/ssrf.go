@@ -18,16 +18,24 @@ package utility
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
-// PinnedHTTPClient returns an HTTP client whose Transport rewrites every
-// outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
-// window between AssertURLSafe and the actual TCP connection. Pins are
-// scoped to this client only.
+// PinnedHTTPClient returns an HTTP client whose Transport dials resolvedIP
+// for hostname and rejects other hosts (including redirect targets), closing
+// the TOCTOU window between AssertURLSafe and the TCP connection.
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+	asciiHostname := hostname
+	var idnaErr error
+	if net.ParseIP(hostname) == nil {
+		asciiHostname, idnaErr = idna.Lookup.ToASCII(hostname)
+	}
 	dialer := &net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,
@@ -39,10 +47,10 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, splitErr := net.SplitHostPort(addr)
-			if splitErr == nil && host == hostname && resolvedIP != "" {
-				return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+			if splitErr != nil || idnaErr != nil || !strings.EqualFold(host, asciiHostname) || resolvedIP == "" {
+				return nil, fmt.Errorf("unvalidated HTTP destination %q", addr)
 			}
-			return dialer.DialContext(ctx, network, addr)
+			return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
 		},
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
