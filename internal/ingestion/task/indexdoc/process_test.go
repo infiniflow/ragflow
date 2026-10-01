@@ -470,22 +470,31 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 // ("Column ck_type not found in table", InfinityException 3013). ES only
 // swallowed them because its mapping is dynamic.
 func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
-	ck := map[string]any{
-		"text": "hello",
-		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
+	// Every bookkeeping key the chunkers/parsers can leave on a chunk.
+	bookkeeping := map[string]any{
 		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
 		"headers": []string{"h"}, "cells": []string{"c"},
 		"row_start": 0, "row_end": 1, "col_start": 0, "col_end": 1,
+		"slide_number": 1, "media_order": 1, "media_omitted": true, "cell": "C3",
+		"source_table_id": "docx-table-1", "parent_table_id": "docx-table-1",
+		"row_index": 1, "column_index": 2,
+		"from": "a@example.com", "to": "b@example.com", "cc": "c@example.com",
+		"bcc": "d@example.com", "date": "Mon, 07 Jul 2025 10:00:00 +0000",
+		"subject": "s", "text_html": "<p>body</p>",
+	}
+	ck := map[string]any{"text": "hello"}
+	for key, value := range bookkeeping {
+		ck[key] = value
 	}
 
 	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "Doc", time.Now()); err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
 
-	for _, key := range pipelineOnlyFields {
+	for key := range bookkeeping {
 		if _, exists := ck[key]; exists {
 			t.Errorf("%q must be stripped before persist (no chunk column; a strict engine rejects the insert)", key)
 		}
