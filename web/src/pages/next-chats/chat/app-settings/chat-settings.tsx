@@ -89,7 +89,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       top_n: 8,
       rerank_candidates_count: 64,
       similarity_threshold: 0.2,
-      vector_similarity_weight: 0.2,
+      keywords_similarity_weight: 0.8,
       meta_data_filter: {
         method: DatasetMetadata.Disabled,
         manual: [],
@@ -152,8 +152,9 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ? { ...referenceMetadata, fields: undefined }
         : referenceMetadata;
 
+    const keywordsSimilarityWeight = data.keywords_similarity_weight ?? 0.7;
     const nextData = {
-      ...omit(data, 'top_k'),
+      ...omit(data, ['top_k']),
       prompt_config: {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field
@@ -161,6 +162,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
+      keywords_similarity_weight: keywordsSimilarityWeight,
     };
 
     if (!isEmpty(data)) {

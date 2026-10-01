@@ -27,6 +27,7 @@ import {
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  normalizeTokenChunkerFormValues,
   transformCompilationParams,
   transformExtractorParams,
   transformGeneralChunkerParams,
@@ -34,7 +35,6 @@ import {
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
@@ -67,14 +67,24 @@ export function transformParserConfigSetups(
   // a Python canvas) nest the per-family setups under a "setups" key; the Go
   // shape lists file families at the top level. Lift the nested group —
   // top-level families win — and drop the non-family protocol keys so they
-  // never render as a bogus file format.
+  // never render as a bogus file format. The vision options
+  // (enable_vision_enhancement / vlm) are global params-level keys, not
+  // families, so they are dropped here too (the caller lifts them back onto
+  // the form's top level).
   let source = setups;
   const nested = source.setups;
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     source = { ...nested, ...omit(source, ['setups']) };
   }
 
-  return Object.entries(omit(source, ['outputs', 'allowed_output_format']))
+  return Object.entries(
+    omit(source, [
+      'outputs',
+      'allowed_output_format',
+      'enable_vision_enhancement',
+      'vlm',
+    ]),
+  )
     .map(([fileFormat, config]) => {
       const { pages, ...rest } = (config ?? {}) as Record<string, any>;
       const normalizedPages = Array.isArray(pages)
@@ -111,8 +121,8 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-// Python form: flatten the DSL prompts array into the form's single field;
-// the Python extractor form consumes the legacy flat fields as-is.
+// Base normalization: flatten the DSL prompts array into the form's single
+// field. The Go transform below builds on top of this.
 function transformExtractorConfigToFormPython(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
@@ -207,10 +217,7 @@ function transformExtractorConfigToFormGo(
 export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorConfigToFormGo,
-    python: transformExtractorConfigToFormPython,
-  })(config);
+  return transformExtractorConfigToFormGo(config);
 }
 
 /**
@@ -220,18 +227,17 @@ export function transformExtractorConfigToForm(
  */
 function transformTokenChunkerConfigToForm(
   config: Record<string, any> | undefined,
+  { seedLegacyDelimiter = true } = {},
 ): Record<string, any> {
   if (!config) return {};
 
   const result = { ...config };
 
-  // Convert string array delimiters to object array; seed the default '\n'
-  // row when the saved list is empty (legacy token_size nodes saved []).
+  // Convert string array delimiters to object arrays. The legacy re-seed and
+  // mode normalization happen in normalizeTokenChunkerFormValues below, which
+  // still sees the raw delimiter_mode.
   if (Array.isArray(config.delimiters)) {
     result.delimiters = config.delimiters.map((d: string) => ({ value: d }));
-    if (result.delimiters.length === 0) {
-      result.delimiters = [{ value: '\n' }];
-    }
   }
   if (Array.isArray(config.children_delimiters)) {
     result.children_delimiters = config.children_delimiters.map(
@@ -249,28 +255,25 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Normalize delimiter_mode: the 'token_size' tab was removed from the form,
-  // so legacy configs (explicit 'token_size' or absent) load as 'delimiter'.
-  result.delimiter_mode = config.delimiter_mode === 'one' ? 'one' : 'delimiter';
-
-  // Derive enable_children from presence of children_delimiters
-  if (config.enable_children === undefined) {
-    result.enable_children =
-      Array.isArray(config.children_delimiters) &&
-      config.children_delimiters.length > 0;
-  }
+  const normalized = normalizeTokenChunkerFormValues(result, {
+    seedLegacyDelimiter,
+  });
 
   // Clean up DSL-only fields not in form schema
-  delete result.table_context_size;
-  delete result.image_context_size;
+  delete normalized.table_context_size;
+  delete normalized.image_context_size;
 
-  return result;
+  return normalized;
 }
 
 function transformGeneralChunkerConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  const result = transformTokenChunkerConfigToForm(config);
+  // The general chunker never had the legacy 'token_size' tab, so an empty
+  // saved list is always a deliberate choice — skip the legacy re-seed.
+  const result = transformTokenChunkerConfigToForm(config, {
+    seedLegacyDelimiter: false,
+  });
   result.table_context_size = Number(config?.table_context_size ?? 0);
   result.image_context_size = Number(config?.image_context_size ?? 0);
   delete result.image_table_context_window;
@@ -340,7 +343,16 @@ export function transformApiConfigToForm(
 ): Record<string, any> {
   switch (operatorType) {
     case Operator.Parser:
-      return { setups: transformParserConfigSetups(config) };
+      // Lift the global vision options back onto the form's top level; omit
+      // them when absent so an explicit undefined cannot clobber template or
+      // default baselines downstream (Object.assign/spread copies undefined).
+      return {
+        setups: transformParserConfigSetups(config),
+        ...(config?.enable_vision_enhancement !== undefined
+          ? { enable_vision_enhancement: config.enable_vision_enhancement }
+          : {}),
+        ...(config?.vlm !== undefined ? { vlm: config.vlm } : {}),
+      };
     case Operator.Extractor:
       return transformExtractorConfigToForm(config);
     case Operator.Tokenizer:

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -36,51 +35,6 @@ func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.Emb
 func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.APIConfig) error {
 	d.checkCalls++
 	return d.checkErr
-}
-
-func TestValidateBedrockAPIKeyAuth(t *testing.T) {
-	tests := []struct {
-		name    string
-		apiKey  string
-		wantErr string
-	}{
-		{
-			name:    "rejects non-string API key",
-			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":[],"bedrock_region":"us-east-1"}`,
-			wantErr: "invalid Bedrock API-key configuration",
-		},
-		{
-			name:    "rejects invalid region",
-			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us east 1"}`,
-			wantErr: "invalid region",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			authenticated, _, err := validateBedrockAPIKeyAuth("Bedrock", test.apiKey)
-			if !authenticated || err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("validateBedrockAPIKeyAuth() = (%v, %v), want API-key mode error containing %q", authenticated, err, test.wantErr)
-			}
-		})
-	}
-
-	nonAPIKey := `{"auth_mode":"access_key_secret","bedrock_region":"us-east-1"}`
-	authenticated, normalized, err := validateBedrockAPIKeyAuth("Bedrock", nonAPIKey)
-	if authenticated || err != nil || normalized != nonAPIKey {
-		t.Fatalf("non-API-key mode = (%v, %q, %v), want unchanged", authenticated, normalized, err)
-	}
-
-	authenticated, normalized, err = validateBedrockAPIKeyAuth("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":" test-key ","bedrock_region":" us-east-1 ","custom":"value"}`)
-	if !authenticated || err != nil {
-		t.Fatalf("valid API-key mode = (%v, %v), want success", authenticated, err)
-	}
-	var config map[string]string
-	if err = json.Unmarshal([]byte(normalized), &config); err != nil {
-		t.Fatalf("decode normalized API key: %v", err)
-	}
-	if config["bedrock_api_key"] != "test-key" || config["bedrock_region"] != "us-east-1" || config["custom"] != "value" {
-		t.Fatalf("normalized API key = %#v", config)
-	}
 }
 
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
@@ -420,40 +374,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 		t.Fatalf("CheckConnection calls after alter = %d, want 0", probe.checkCalls)
 	}
 
-	code, err = NewModelProviderService().CreateProviderInstance(
-		t.Context(),
-		"Bedrock",
-		"empty-api-key-instance",
-		apiKey,
-		"",
-		"default",
-		"user-1",
-		nil,
-	)
-	if code != common.CodeBadRequest || err == nil {
-		t.Fatalf("empty model list returned (%v, %v), want bad request", code, err)
-	}
-
-	code, err = NewModelProviderService().CreateProviderInstance(
-		t.Context(),
-		"Bedrock",
-		"empty-model-name-instance",
-		apiKey,
-		"",
-		"default",
-		"user-1",
-		[]CreateInstanceModelInfo{{}},
-	)
-	if code != common.CodeBadRequest || err == nil {
-		t.Fatalf("empty model name returned (%v, %v), want bad request", code, err)
-	}
-	var instanceCount int64
-	if err = db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "empty-model-name-instance").Count(&instanceCount).Error; err != nil {
-		t.Fatalf("count instances: %v", err)
-	}
-	if instanceCount != 0 {
-		t.Fatalf("empty model name created %d instances, want 0", instanceCount)
-	}
 }
 
 func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testing.T) {
@@ -691,144 +611,6 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 	if code != common.CodeNotFound {
 		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
 	}
-}
-
-func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", APIKey: "nvapi-test", Status: "active", Extra: "{}"}
-	rows := []interface{}{
-		provider,
-		instance,
-		&entity.TenantModel{
-			ID:         "keep-id",
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			ModelName:  "nvidia/keep",
-			ModelType:  int(entity.ModelTypeChat),
-			Status:     "inactive",
-			Extra:      `{"max_tokens":4096,"verify":"success","custom":"preserved"}`,
-		},
-		&entity.TenantModel{
-			ID:         "stale-id",
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			ModelName:  "nvidia/stale",
-			ModelType:  int(entity.ModelTypeChat),
-			Status:     "active",
-			Extra:      `{}`,
-		},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	maxTokens := 131072
-	maxDimension := 2048
-	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/keep", MaxOutput: &maxTokens, ModelTypes: []string{"chat", "vision"}},
-		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
-	}
-
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
-	if err != nil {
-		t.Fatalf("reconcileNvidiaInstanceModels() error = %v", err)
-	}
-
-	var got []*entity.TenantModel
-	if err = db.Order("model_name").Find(&got).Error; err != nil {
-		t.Fatalf("list models: %v", err)
-	}
-	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {
-		t.Fatalf("models = %#v, want keep and new", got)
-	}
-	if got[0].ID != "keep-id" || got[0].Status != "inactive" {
-		t.Fatalf("retained model identity/status = %q/%q", got[0].ID, got[0].Status)
-	}
-	if got[0].ModelType != int(entity.ModelTypeChat|entity.ModelTypeImage2Text) {
-		t.Fatalf("retained model type = %d", got[0].ModelType)
-	}
-	var keepExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[0].Extra), &keepExtra); err != nil {
-		t.Fatalf("decode retained extra: %v", err)
-	}
-	if keepExtra["custom"] != "preserved" || keepExtra["verify"] != "success" || int(keepExtra["max_tokens"].(float64)) != maxTokens {
-		t.Fatalf("retained extra = %#v", keepExtra)
-	}
-	var newExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[1].Extra), &newExtra); err != nil {
-		t.Fatalf("decode new extra: %v", err)
-	}
-	if newExtra["verify"] != entity.ModelVerifyUnknown || int(newExtra["max_dimension"].(float64)) != maxDimension {
-		t.Fatalf("new extra = %#v", newExtra)
-	}
-}
-
-func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
-	existing := &entity.TenantModel{ID: "keep-id", ProviderID: provider.ID, InstanceID: instance.ID, ModelName: "nvidia/keep", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"}
-	for _, row := range []interface{}{provider, instance, existing} {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, nil)
-	if err == nil {
-		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
-	}
-	var count int64
-	if err := db.Model(&entity.TenantModel{}).Where("id = ?", existing.ID).Count(&count).Error; err != nil {
-		t.Fatalf("count retained model: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("retained model count = %d, want 1", count)
-	}
-}
-
-func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
-	existing := &entity.TenantModel{
-		ID:         "keep-id",
-		ProviderID: provider.ID,
-		InstanceID: instance.ID,
-		ModelName:  "nvidia/keep",
-		ModelType:  int(entity.ModelTypeChat),
-		Status:     "active",
-		Extra:      "{invalid-json",
-	}
-	for _, row := range []interface{}{provider, instance, existing} {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/new", ModelTypes: []string{"chat"}},
-		{Name: "nvidia/keep", ModelTypes: []string{"chat"}},
-	}
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
-	if err == nil {
-		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want metadata error")
-	}
-
-	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
-		t.Fatalf("list models: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != existing.ID {
-		t.Fatalf("models after rollback = %#v, want only original model", got)
-	}
-}
-
-func ptrService[T any](value T) *T {
-	return &value
 }
 
 func TestParseModelName(t *testing.T) {

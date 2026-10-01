@@ -194,6 +194,7 @@ const (
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
+	EnvMineruServerURL                   = "MINERU_SERVER_URL"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
@@ -249,7 +250,7 @@ const (
 
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// the RAGFlow default model dir (rag/res/deepdoc).
+	// the RAGFlow default model dir (internal/rag/res/deepdoc).
 	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
 	// EnvDeepDocDropScore overrides the confidence threshold below which the
 	// in-process (Go) DeepDoc backend blanks recognized text while preserving
@@ -257,10 +258,27 @@ const (
 	// recognizer drop_score, so recognized text is blanked consistently.
 	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
 	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
-	// Runs may be in flight at once (each uses one core). It overrides the
-	// deepdoc.inference_concurrency config key and is itself overridden by the
+	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
+	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
+	// total cores inference may occupy is at most N. It overrides the
+	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// ingestor runs in parallel (the NATS consumer worker count). It overrides
+	// the ingestor.max_concurrent_workers config key and is itself overridden
+	// by the --ingestor-max-concurrent-workers CLI flag.
+	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// EnvIngestorPageConcurrency bounds how many pages of a single document are
+	// parsed concurrently inside one ingestor worker. It overrides the
+	// ingestor.page_concurrency config key and is itself overridden by the
+	// --ingestor-page-concurrency CLI flag.
+	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
+	// in-process inference (0 = all cores). It overrides the
+	// ingestor.inference_cpu_cores config key and is itself overridden by the
+	// --deepdoc-inference-cpu-cores CLI flag.
+	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
@@ -274,11 +292,9 @@ const (
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//   - ragflow_deps/download_deps.py re-lists them as DEEPDOC_MODEL_FILES
 //     (it fetches the files one by one, so it MUST be edited by hand when this
 //     slice changes);
-//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
-//     (so .ort lands in the model dir automatically — no FILES edit needed).
 var DeepDocModelFiles = []string{
 	"det.ort",
 	"layout.ort",
@@ -302,24 +318,23 @@ func HasModelFiles(dir string) bool {
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
 // DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
-// FOUR raw version declarations that must stay equal (the other three are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py,
-// and ARG ORT_VERSION in Dockerfile_go) — NOT a single source of truth. The
+// THREE raw version declarations that must stay equal (the other two are
+// ORT_VERSION in ragflow_deps/download_deps.py and ARG ORT_VERSION in
+// Dockerfile) — NOT a single source of truth. The
 // download URL and extracted dir name are built from those ORT_VERSION
 // constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
 // and the pip onnxruntime== pin must
 // track this MINOR version: the binding uses its own release numbering
-// (v1.23.0 <-> ORT 1.23.x) but is ABI-compatible with this native release on
+// (v1.29.0 <-> ORT 1.29.x) and is ABI-compatible with this native release on
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, the four Go-side native pins above must change together
+// To bump ORT, the three Go-side native pins above must change together
 // (drift breaks the static link or the runtime OrtGetApiBase lookup):
 //   - DeepDocORTVersion (here, Go)
-//   - ORT_VERSION in ragflow_deps/download_go_deps.py
 //   - ORT_VERSION in ragflow_deps/download_deps.py
-//   - ARG ORT_VERSION in Dockerfile_go
+//   - ARG ORT_VERSION in Dockerfile
 //
 // Separately, keep these on the same ORT minor line but version them
 // independently of the Go native lib (see pyproject.toml / development.md):

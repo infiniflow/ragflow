@@ -176,7 +176,10 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 			kbID := fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", m["kb_id"]), "'", "''"))
 			idList[i] = fmt.Sprintf("(id = %s AND kb_id = %s)", docID, kbID)
 		}
-		filter := strings.Join(idList, " OR ")
+		// Balanced, not a flat chain: a bulk delete of many metadata rows would
+		// otherwise nest N levels deep and trip Infinity's Thrift expression depth
+		// limit (see joinBalanced).
+		filter := joinBalanced(idList, " OR ")
 		common.Debug(fmt.Sprintf("Deleting existing metadata with filter: %s", filter))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {

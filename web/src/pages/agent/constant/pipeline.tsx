@@ -2,7 +2,6 @@ import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
 import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
 
 export enum PdfOutputFormat {
@@ -65,11 +64,10 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-// The video parser defaults to the tenant's VLM model and the audio parser to
-// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
-// type without a configured tenant default keeps its empty model id.
+// The audio parser defaults to the tenant's ASR model, keyed by the
+// useFetchDefaultModelDictionary fields. (The vision model is a single global
+// parser option, not per file type, so video no longer appears here.)
 export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
-  [FileType.Video]: ModelTypeToField.vision,
   [FileType.Audio]: ModelTypeToField.asr,
 };
 
@@ -169,13 +167,16 @@ export const initialParserValues = {
     html: { type: 'string', value: '' },
     json: { type: 'Array<object>', value: [] },
   },
+  // Global vision enhancement, off by default; the model id is prefilled from
+  // the tenant's image2text default when a node is created.
+  vlm: { llm_id: '' },
+  enable_vision_enhancement: false,
   setups: [
     {
       fileFormat: FileType.PDF,
       output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
       pages: [{ from: 1, to: 100000 }],
     },
@@ -184,7 +185,6 @@ export const initialParserValues = {
       output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
@@ -203,7 +203,6 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Code,
@@ -220,14 +219,12 @@ export const initialParserValues = {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
@@ -239,7 +236,6 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Video,
       output_format: VideoOutputFormat.Text,
-      vlm: { llm_id: '' },
     },
     {
       fileFormat: FileType.Audio,
@@ -415,12 +411,7 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return pickByBackend<
-    typeof initialGoExtractorValues | typeof initialExtractorValues
-  >({
-    go: initialGoExtractorValues,
-    python: initialExtractorValues,
-  });
+  return initialGoExtractorValues;
 }
 
 export const initialCompilationValues = {

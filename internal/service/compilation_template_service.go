@@ -127,10 +127,8 @@ func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID 
 }
 
 // LoadWikiPresets loads the wiki page-structure presets from the
-// init_data/compilation_templates/wiki/*.yaml files, filesystem-fresh per call.
 func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
-	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates", "wiki")
+	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates", "wiki")
 	entries, err := os.ReadDir(wikiDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -288,8 +286,7 @@ func (s *CompilationTemplateService) sortBuiltins(templates []*BuiltinTemplate) 
 }
 
 func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
-	dir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates")
+	dir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

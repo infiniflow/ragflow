@@ -215,13 +215,13 @@ var (
 )
 
 // loadOCRAlphabet reads the recogniser's character dictionary once
-// (rag/res/deepdoc/ocr.res, provisioned next to the OCR model). On any error it
+// (internal/rag/res/deepdoc/ocr.res, provisioned next to the OCR model). On any error it
 // returns an empty set, which OcrCanRepresent treats as "unknown alphabet" and
 // so allows the existing fallback behaviour.
 func loadOCRAlphabet() map[rune]struct{} {
 	ocrAlphabetOnce.Do(func() {
 		ocrAlphabet = map[rune]struct{}{}
-		data, err := os.ReadFile(filepath.Join(utility.GetProjectRoot(), "rag", "res", "deepdoc", "ocr.res"))
+		data, err := os.ReadFile(filepath.Join(utility.GetProjectRoot(), "internal", "rag", "res", "deepdoc", "ocr.res"))
 		if err != nil {
 			return
 		}

@@ -2,7 +2,6 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchDocumentsByIds } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
@@ -28,7 +27,6 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const { id: routeId } = useParams();
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const datasetId = knowledgeId || routeId;
-  const isGoBackend = useIsGoBackend();
 
   const isTerminal = (doc?: IDocumentInfo) => {
     const status = doc && getDocumentRunningStatus(doc);
@@ -67,7 +65,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   // reads to the intended run.
   const { data: documentLog } = useQuery<IFileLogList>({
     queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
-    enabled: visible && isGoBackend && !!datasetId && !!sourceDoc?.id,
+    enabled: visible && !!datasetId && !!sourceDoc?.id,
     refetchInterval: isTerminal(sourceDoc) ? false : PollIntervalMs,
     queryFn: async () => {
       const { data: res = {} } = await listDataPipelineLogDocument(
@@ -128,8 +126,6 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         processBeginAt: formatDate(source.process_begin_at),
         chunkNumber: source.chunk_count,
         duration: formatSecondsToHumanReadable(source.process_duration || 0),
-        // Go derives status from ingestion_status (queued included);
-        // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
         details,
         events: messages?.items.length ? messages.items : undefined,

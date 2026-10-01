@@ -25,6 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
+	"strings"
 )
 
 type MinerULocalModel struct {
@@ -125,10 +126,28 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("failed to write file content: %w", err)
 	}
 
-	if modelName != nil && *modelName != "" {
-		_ = writer.WriteField("backend", *modelName)
-	} else {
-		_ = writer.WriteField("backend", "pipeline")
+	apiKeyRaw := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	setupBackend := ""
+	if modelName != nil && strings.TrimSpace(*modelName) != "" {
+		setupBackend = strings.TrimSpace(*modelName)
+	} else if parseFileConfig != nil {
+		setupBackend = strings.TrimSpace(parseFileConfig.Backend)
+	}
+	setupServerURL := ""
+	if parseFileConfig != nil {
+		setupServerURL = parseFileConfig.ServerURL
+	}
+	backend := ResolveMinerUBackend(setupBackend, apiKeyRaw)
+	serverURL := ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
+	if err := ValidateMinerUConfig(backend, serverURL); err != nil {
+		return nil, err
+	}
+	_ = writer.WriteField("backend", backend)
+	if serverURL != "" {
+		_ = writer.WriteField("server_url", serverURL)
 	}
 
 	if err = writer.Close(); err != nil {
@@ -145,8 +164,10 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
@@ -213,8 +234,10 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)

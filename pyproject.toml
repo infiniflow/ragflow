@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.27.2"
+version = "1.0.0-rc1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -8,52 +8,14 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "beartype>=0.20.0,<1.0.0",
-    "captcha>=0.7.1",
-    "discord-py==2.3.2",
-    "duckduckgo-search>=7.2.0,<8.0.0",
     "elasticsearch-dsl==8.12.0",
     "json-repair==0.60.1",
-    "mammoth>=1.11.0",
     "mysql-connector-python>=9.0.0,<10.0.0",
     "werkzeug>=3.1.7,<4",
     "regex>=2025.11.3",
     "reportlab>=4.4.1",
-    "ruamel-base==1.0.0",
-    "ruamel-yaml>=0.18.6,<0.19.0",
     "scholarly==1.7.11",
-    "agentrun-sdk>=0.0.51,<1.0.0",
     "peewee>=3.17.1,<4.0.0",
-    #    following modules aren't necessary
-    #    "nltk==3.9.1",
-    #    "numpy>=1.26.0,<2.0.0",
-    #    "openai>=1.45.0",
-    #    "openpyxl>=3.1.0,<4.0.0",
-    #    "pandas>=2.2.0,<3.0.0",
-    #    "pillow>=12.3.0,<13.0.0",
-    #    "protobuf==5.27.2",
-    #    "pymysql>=1.1.1,<2.0.0",
-    #    "python-dotenv==1.0.1",
-    #    "python-dateutil==2.8.2",
-    #    "Quart==0.20.0",
-    #    "requests>=2.32.3,<3.0.0",
-    #    "scikit-learn==1.5.0",
-    #    "selenium==4.22.0",
-    #    "shapely==2.0.5",
-    #    "six==1.16.0",
-    #    "tabulate==0.9.0",
-    #    "tiktoken==0.7.0",
-    #    "umap_learn==0.5.6",
-    #    "werkzeug==3.0.6",
-    #    "xxhash>=3.5.0,<4.0.0",
-    #    "trio>=0.17.0,<0.29.0",
-    #    "click>=8.1.8",
-    # litellm < 1.84.0 vulnerable to multiple CVE's. Previously pinned to 1.82.5 due to broken
-    # imports in 1.82.6–1.82.8 (caching) and 1.88.0 (custom_logger); both
-    # issues are resolved in 1.84.0. Exact pin retained due to litellm's
-    # history of introducing regressions on minor bumps.
-    "python-gitlab>=7.0.0",
-    "quart-schema==0.23.0",
-    "python-telegram-bot>=21.0",
     "aiohttp>=3.14.3",
 ]
 

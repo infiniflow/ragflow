@@ -147,7 +147,7 @@ func TestRunAgentInitializationFailureReleasesActiveSession(t *testing.T) {
 		t.Fatalf("migrate agent tables: %v", err)
 	}
 	if err := testDB.Create(&entity.UserCanvas{ID: "agent-1", UserID: "user-a"}).Error; err != nil {
-		t.Fatalf("create canvas: %v", err)
+		t.Fatalf("create agent: %v", err)
 	}
 	tracker, mr := newAgentCancelTracker(t)
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)

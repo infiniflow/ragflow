@@ -137,7 +137,7 @@ func (dao *MemoryDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*ent
 // GetByIDWithContext retrieves a memory record by ID from database with context.
 func (dao *MemoryDAO) GetByIDWithContext(ctx context.Context, db *gorm.DB, id string) (*entity.Memory, error) {
 	var memory entity.Memory
-	err := db.WithContext(ctx).Where("id = ?", id).First(&memory).Error
+	err := db.WithContext(ctx).Take(&memory, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

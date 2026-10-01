@@ -251,7 +251,7 @@ func TestMigrateConversationHistoryHonoursRecordedVersion(t *testing.T) {
 		{"earlier dev build", "v1.0.0-rc1.dev0", true},
 		{"the split version itself", conversationHistoryTargetVersion, false},
 		{"release the dev build leads to", "v1.0.0-rc1", false},
-		{"later dev build", "v1.0.0-rc1.dev2", false},
+		{"dev build before the split", "v1.0.0-rc1.dev2", true},
 		{"later release candidate", "v1.0.0-rc2", false},
 		{"final release", "v1.0.0", false},
 	} {

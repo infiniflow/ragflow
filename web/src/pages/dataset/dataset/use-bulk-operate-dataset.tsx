@@ -1,5 +1,4 @@
 import { Modal } from '@/components/ui/modal/modal';
-import { useSetModalState } from '@/hooks/common-hooks';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -10,7 +9,6 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -23,7 +21,6 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DocumentType } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
@@ -46,21 +43,7 @@ export function useBulkOperateDataset({
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
-  const { visible, showModal, hideModal } = useSetModalState();
   const { findDocumentParseGaps } = useParserGapValidation();
-  const { knowledgeBase } = useKnowledgeBaseContext();
-  const isGo = useIsGoBackend();
-
-  const chunkNum = useMemo(() => {
-    if (!documents.length) {
-      return 0;
-    }
-    return documents
-      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
-      ?.reduce((acc, cur) => {
-        return acc + cur.chunk_count;
-      }, 0);
-  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -134,16 +117,8 @@ export function useBulkOperateDataset({
         run,
         option,
       });
-      hideModal();
     },
-    [
-      documents,
-      runDocumentByIds,
-      selectedRowKeys,
-      hideModal,
-      t,
-      findDocumentParseGaps,
-    ],
+    [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
   const handleRunClick = useCallback(
@@ -152,21 +127,6 @@ export function useBulkOperateDataset({
     },
     [runDocument],
   );
-
-  // The confirmation only offers real choices when the selection has existing
-  // chunks to drop or auto-metadata to re-apply; otherwise run straight away.
-  // Go re-ingests in place server-side, so the dialog is Python-only.
-  const needsRunConfirm =
-    !isGo &&
-    (chunkNum > 0 || Boolean(knowledgeBase?.parser_config?.enable_metadata));
-
-  const handleRunMenuClick = useCallback(() => {
-    if (needsRunConfirm) {
-      showModal();
-      return;
-    }
-    handleRunClick();
-  }, [needsRunConfirm, showModal, handleRunClick]);
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -210,7 +170,7 @@ export function useBulkOperateDataset({
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <LucidePlayCircle />,
-      onClick: handleRunMenuClick,
+      onClick: handleRunClick,
     },
     {
       id: 'cancel',
@@ -249,5 +209,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { chunkNum, list, visible, hideModal, showModal, handleRunClick };
+  return { list, handleRunClick };
 }

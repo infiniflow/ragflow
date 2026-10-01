@@ -65,10 +65,11 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/signintech/gopdf v0.36.1
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
+	github.com/spf13/cast v1.6.0
 	github.com/spf13/viper v1.18.2
 	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
 	github.com/xuri/excelize/v2 v2.11.0
-	github.com/yfedoseev/office_oxide/go v0.1.9
+	github.com/yfedoseev/office_oxide/go v0.1.12
 	github.com/yfedoseev/pdf_oxide/go v0.3.73
 	github.com/yuin/goldmark v1.7.1
 	github.com/zeebo/xxh3 v1.0.2
@@ -216,7 +217,6 @@ require (
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
@@ -268,10 +268,14 @@ require (
 
 replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
 
-replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7
+// gomsg is mirrored to github.com/infiniflow/gomsg (org-owned fork of
+// github.com/AkmalOt/gomsg) so the build no longer depends on a personal
+// GitHub account fork.
+replace github.com/AkmalOt/gomsg => github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7
 
 // onnxruntime_go is mirrored to github.com/infiniflow/onnxruntime_go (org-owned
-// fork of yalue/onnxruntime_go at v1.23.0) so the in-process DeepDoc backend no
+// fork of yalue/onnxruntime_go at v1.29.0, matching the ORT native release in
+// DeepDocORTVersion) so the in-process DeepDoc backend no
 // longer depends on a personal fork or the upstream repo directly. ONNX Runtime is
 // linked statically (no --whole-archive, so unreferenced kernels are
 // dropped; only OrtGetApiBase is exported, via --dynamic-list), and OrtGetApiBase

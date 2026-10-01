@@ -41,16 +41,24 @@ type parallelExpansion struct {
 	OutputRefs     map[string]string
 }
 
+type parallelItemState struct {
+	Canvas *runtime.CanvasState
+}
+
+func init() {
+	_ = compose.RegisterSerializableType[parallelItemState]("canvas.parallelItemState")
+}
+
 func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (*parallelExpansion, error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if parallelID == "" {
-		return nil, fmt.Errorf("canvas: buildParallelExpansion: empty parallelID")
+		return nil, fmt.Errorf("agent: buildParallelExpansion: empty parallelID")
 	}
 	comp, ok := c.Components[parallelID]
 	if !ok {
-		return nil, fmt.Errorf("canvas: buildParallelExpansion: unknown cpn %q", parallelID)
+		return nil, fmt.Errorf("agent: buildParallelExpansion: unknown cpn %q", parallelID)
 	}
 
 	members := collectGroupedMembers(c, parallelID)
@@ -60,17 +68,17 @@ func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (
 
 	itemsRef, maxConcurrency, outputRefs, err := readParallelParams(comp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	sub, err := buildParallelItemWorkflow(ctx, c, parallelID, members)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	graph, err := buildParallelOuterWorkflow(ctx, parallelID, itemsRef, maxConcurrency, outputRefs, sub)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: parallel %q: %w", parallelID, err)
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
 	}
 
 	return &parallelExpansion{
@@ -139,7 +147,14 @@ func buildParallelItemWorkflow(
 		return nil, err
 	}
 
-	wrapper := compose.NewWorkflow[map[string]any, map[string]any]()
+	// Persist the item-local context state alongside Eino's per-item graph
+	// checkpoint; completed body nodes are skipped on resume.
+	wrapper := compose.NewWorkflow[map[string]any, map[string]any](
+		compose.WithGenLocalState(func(ctx context.Context) *parallelItemState {
+			state, _ := GetStateFromContext(ctx)
+			return &parallelItemState{Canvas: state}
+		}),
+	)
 
 	inNode := wrapper.AddLambdaNode(
 		parallelItemInputNodeKey,
@@ -161,7 +176,7 @@ func buildParallelItemWorkflow(
 		compose.InvokableLambda(func(ctx context.Context, in map[string]any) (map[string]any, error) {
 			localState, err := GetStateFromContext(ctx)
 			if err != nil || localState == nil {
-				return nil, fmt.Errorf("canvas: parallel %q item collector: no canvas state in context", parallelID)
+				return nil, fmt.Errorf("agent: parallel %q item collector: no canvas state in context", parallelID)
 			}
 			out := map[string]any{
 				"item":  localState.Globals["__item__"],
@@ -203,11 +218,11 @@ func buildParallelOuterWorkflow(
 		compose.InvokableLambda(func(ctx context.Context, _ map[string]any) ([]map[string]any, error) {
 			state, err := GetStateFromContext(ctx)
 			if err != nil || state == nil {
-				return nil, fmt.Errorf("canvas: parallel %q: no canvas state in context", key)
+				return nil, fmt.Errorf("agent: parallel %q: no canvas state in context", key)
 			}
 			raw, err := state.GetVar(itemsRef)
 			if err != nil {
-				return nil, fmt.Errorf("canvas: parallel %q items_ref %q: %w", key, itemsRef, err)
+				return nil, fmt.Errorf("agent: parallel %q items_ref %q: %w", key, itemsRef, err)
 			}
 			return toParallelItems(raw)
 		}),
@@ -220,28 +235,42 @@ func buildParallelOuterWorkflow(
 	if maxConcurrency > 0 {
 		parOpts = append(parOpts, workflowx.WithParallelMaxConcurrency(maxConcurrency))
 	}
+	parOpts = append(parOpts, workflowx.WithParallelRunOptions(compose.WithStateModifier(
+		func(ctx context.Context, _ compose.NodePath, state any) error {
+			saved, ok := state.(*parallelItemState)
+			if !ok || saved == nil || saved.Canvas == nil {
+				return fmt.Errorf("agent: parallel %q: invalid item checkpoint state %T", key, state)
+			}
+			current, err := GetStateFromContext(ctx)
+			if err != nil || current == nil {
+				return fmt.Errorf("agent: parallel %q: no item state in context", key)
+			}
+			data, err := json.Marshal(saved.Canvas)
+			if err != nil {
+				return fmt.Errorf("agent: parallel %q: marshal item state: %w", key, err)
+			}
+			if err := json.Unmarshal(data, current); err != nil {
+				return fmt.Errorf("agent: parallel %q: restore item state: %w", key, err)
+			}
+			saved.Canvas = current
+			return nil
+		},
+	)))
 	parOpts = append(parOpts, workflowx.WithParallelContextBuilder(func(
 		ctx context.Context, item any, index int,
-	) context.Context {
+	) (context.Context, error) {
 		parentState, err := runtime.GetStateFromContext(ctx)
 		if err != nil || parentState == nil {
-			return ctx
+			return ctx, nil
 		}
 		itemMap, _ := item.(map[string]any)
-		// cloneCanvasState can fail (e.g. unsupported value in a Sys/Env
-		// field that the JSON round-trip rejects). When it does, fall
-		// back to a fresh per-item state so concurrent workers never
-		// share the same CanvasState — sharing would corrupt Globals
-		// and Outputs across items.
 		localState, cloneErr := cloneCanvasState(parentState)
-		if cloneErr != nil || localState == nil {
-			localState = runtime.NewCanvasState(parentState.RunID, parentState.SessionID)
-			localState.Sys = shallowCopyAnyMap(parentState.Sys)
-			localState.Globals = shallowCopyAnyMap(parentState.Globals)
+		if cloneErr != nil {
+			return nil, fmt.Errorf("agent: parallel %q item %d: clone state: %w", key, index, cloneErr)
 		}
 		localState.Globals["__item__"] = itemMap["item"]
 		localState.Globals["__index__"] = index
-		return runtime.WithState(ctx, localState)
+		return runtime.WithState(ctx, localState), nil
 	}))
 
 	parNode, err := workflowx.AddParallelNode[map[string]any, map[string]any](
@@ -314,20 +343,6 @@ func cloneCanvasState(src *CanvasState) (*CanvasState, error) {
 		return nil, err
 	}
 	return dst, nil
-}
-
-// shallowCopyAnyMap returns a new map with the same keys/values as src.
-// A nil src yields an empty (non-nil) map so callers can assign into the
-// result without nil checks. Values are shared, not deep-copied.
-func shallowCopyAnyMap(src map[string]any) map[string]any {
-	if src == nil {
-		return map[string]any{}
-	}
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
 
 func resolveParallelItemRef(itemOut map[string]any, ref string) any {
