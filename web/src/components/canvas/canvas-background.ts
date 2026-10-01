@@ -63,7 +63,7 @@ function canvasBackgroundStorageKey(agentId: string): string {
 export function readStoredCanvasBackground(
   agentId?: string,
 ): CanvasBackgroundSetting | undefined {
-  if (!agentId || typeof sessionStorage === 'undefined') return undefined;
+  if (!agentId) return undefined;
   try {
     const raw = sessionStorage.getItem(canvasBackgroundStorageKey(agentId));
     if (!raw) return undefined;
@@ -77,14 +77,13 @@ export function writeStoredCanvasBackground(
   agentId: string,
   setting: CanvasBackgroundSetting,
 ): void {
-  if (typeof sessionStorage === 'undefined') return;
   try {
     sessionStorage.setItem(
       canvasBackgroundStorageKey(agentId),
       JSON.stringify(setting),
     );
   } catch {
-    // A large image can exceed the tab storage quota. The server copy remains.
+    // Storage can be blocked or full. The server copy remains.
   }
 }
 
