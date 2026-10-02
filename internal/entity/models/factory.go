@@ -93,7 +93,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewDaoxeModel(baseURL, urlSuffix), nil
 	case "fish audio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
-	case "mistral":
+	case "mistral", "mistral ocr":
+		// "Mistral OCR" is the OCR-only provider; it shares the Mistral
+		// driver's /v1/ocr client but stays a separate provider so its
+		// layout selectors never collide with Mistral vision models.
 		return NewMistralModel(baseURL, urlSuffix), nil
 	case "upstage":
 		return NewUpstageModel(baseURL, urlSuffix), nil

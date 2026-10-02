@@ -1,0 +1,19 @@
+{
+  "name": "Mistral OCR",
+  "url": {
+    "default": "https://api.mistral.ai"
+  },
+  "url_suffix": {
+    "ocr": "v1/ocr",
+    "files": "v1/files"
+  },
+  "class": "mistral",
+  "models": [
+    {
+      "name": "mistral-ocr-latest",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}
