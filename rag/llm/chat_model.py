@@ -613,8 +613,16 @@ class Base(ABC):
             return {}
         return {"tools": tools, "tool_choice": "auto"}
 
+    def _tool_request_messages(self, history: list) -> list:
+        return history
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
+        if not self.tools:
+            return await self.async_chat(system, history, gen_conf)
+
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -622,8 +630,6 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
-        gen_conf.pop("tools", None)
-        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -647,7 +653,13 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        **self._tool_request_kwargs(),
+                        **gen_conf,
+                        **extra_request_kwargs,
+                    )
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -730,6 +742,13 @@ class Base(ABC):
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
+        if not self.tools:
+            async for chunk in self.async_chat_streamly(system, history, gen_conf):
+                yield chunk
+            return
+
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -769,7 +788,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        stream=True,
+                        **self._tool_request_kwargs(tools),
+                        **gen_conf,
+                        **extra_request_kwargs,
                     )
 
                     final_tool_calls = {}
@@ -892,7 +916,7 @@ class Base(ABC):
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
-                    messages=history,
+                    messages=self._tool_request_messages(history),
                     stream=True,
                     **self._tool_request_kwargs(tools),
                     **gen_conf,
@@ -1316,14 +1340,73 @@ class MWSChat(Base):
         return cleaned
 
     def _request_body(self, history, gen_conf, *, stream):
-        """Build a strict MWS chat request from RAGFlow messages and options."""
+        """Build an MWS request and flatten unsupported tool-history messages."""
         messages = []
         for message in history:
-            role = message.get("role") if isinstance(message, dict) else None
-            content = message.get("content") if isinstance(message, dict) else None
-            if role not in self._ROLES or not isinstance(content, str):
-                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
-            messages.append({"role": role, "content": content})
+            if not isinstance(message, dict):
+                raise ValueError("MWS chat message must be a dictionary")
+
+            role = message.get("role")
+            if role not in self._ROLES and role != "tool":
+                raise ValueError(f"Unsupported MWS chat role: {role}")
+
+            content = message.get("content")
+            if role in {"system", "user"}:
+                if not isinstance(content, str):
+                    raise ValueError(f"MWS {role} message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            if role == "assistant":
+                tool_calls = message.get("tool_calls")
+                if tool_calls is not None and not isinstance(tool_calls, list):
+                    raise ValueError("MWS assistant message tool_calls must be a list")
+                if tool_calls:
+                    if content is not None and not isinstance(content, str):
+                        raise ValueError("MWS assistant message content must be a string")
+                    for tool_call in tool_calls:
+                        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+                        arguments = function.get("arguments") if isinstance(function, dict) else None
+                        if not isinstance(arguments, str):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
+                        try:
+                            parsed_arguments = json.loads(arguments)
+                        except json.JSONDecodeError as exc:
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string") from exc
+                        if not isinstance(parsed_arguments, dict):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
+                    serialized_calls = json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
+                    serialized_content = f"<tool_calls>{serialized_calls}</tool_calls>"
+                    if isinstance(content, str) and content:
+                        serialized_content = f"{content}\n{serialized_content}"
+                    messages.append(
+                        {
+                            "role": role,
+                            "content": serialized_content,
+                        }
+                    )
+                    continue
+                if not isinstance(content, str):
+                    raise ValueError("MWS assistant message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            tool_call_id = message.get("tool_call_id")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                raise ValueError("MWS tool message requires tool_call_id")
+            if not isinstance(content, str):
+                raise ValueError("MWS tool message content must be a string")
+            serialized_result = json.dumps(
+                {"tool_call_id": tool_call_id, "content": content},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"<tool_result>{serialized_result}</tool_result>",
+                }
+            )
         if not messages:
             raise ValueError("MWS chat messages are required")
 
@@ -1333,6 +1416,9 @@ class MWSChat(Base):
             body["stream"] = True
             body["stream_options"] = {"include_usage": True}
         return body
+
+    def _tool_request_messages(self, history: list) -> list:
+        return self._request_body(history, {}, stream=False)["messages"]
 
     async def _post_json(self, body):
         """Send a non-streaming MWS chat request and decode its JSON response."""
