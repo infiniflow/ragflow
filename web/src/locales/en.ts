@@ -1167,6 +1167,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
+      failoverModels: 'Failover models',
+      failoverModelsTip:
+        'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
+      failoverModelsPrimary: 'Primary model: {{model}}',
+      failoverModelsEmpty:
+        'No fallback model. Add at least one so a provider failure can be survived.',
+      failoverModelsAdd: 'Add a fallback model',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',

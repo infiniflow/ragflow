@@ -2,6 +2,7 @@
 
 import { AvatarNameDescription } from '@/components/avatar-name-description';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { FailoverModelsField } from '@/components/llm-setting-items/failover-models-field';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import {
   FormControl,
@@ -11,6 +12,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
+import { useFetchChat } from '@/hooks/use-chat-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useTranslate } from '@/hooks/common-hooks';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -40,6 +43,19 @@ export default function ChatBasicSetting({
 
   const llmSettingPrefix = prefixName(prefix, 'llm_setting');
 
+  // The failover list excludes the dialog's own model, so the editor needs to
+  // show which model heads the chain and which tenant owns the model list.
+  const { data: chatData } = useFetchChat();
+  const findLlmByUuid = useFindLlmByUuid();
+  const llmIdValue = useWatch({
+    control: form.control,
+    name: prefixName(prefix, 'llm_id'),
+  });
+  const ownerTenantId = chatData?.tenant_id;
+  const primaryModelName = llmIdValue
+    ? findLlmByUuid(llmIdValue)?.name || llmIdValue
+    : undefined;
+
   return (
     <div className="space-y-8">
       {hideName || (
@@ -56,6 +72,13 @@ export default function ChatBasicSetting({
         collapseOpen={collapseOpen}
         onCollapseOpenChange={onCollapseOpenChange}
       ></LlmSettingFieldItems>
+
+      <FailoverModelsField
+        name={prefixName(prefix, 'llm_setting.failover_llm_ids')}
+        ownerTenantId={ownerTenantId}
+        primaryLlmId={llmIdValue}
+        primaryModelName={primaryModelName}
+      />
 
       <FormField
         control={form.control}
