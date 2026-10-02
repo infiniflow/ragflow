@@ -252,9 +252,20 @@ func (s *ChatPipelineService) AsyncChat(
 	// the agentic mode therefore keeps that mode when the request omits the
 	// level, and the check stays ahead of the solo-chat short-circuit below so
 	// a level-selected turn is never diverted to a plain LLM answer.
-	if mode, _ := kwargs["agent_mode"].(string); mode != "" ||
-		resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic {
-		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch)
+	//
+	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
+	// resolves a citation with an explicit kb_id scope, and an empty scope
+	// drops that term from the ES query (buildBoolQueryFromCondition), which
+	// would let a cited chunk resolve out of any KB in the tenant. Falling
+	// through keeps an empty scope unreachable instead of trusting every
+	// citation path to defend itself; grep_chunks already refuses an empty
+	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
+	_, agenticSelected := kwargs["agent_mode"].(string)
+	if !agenticSelected {
+		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
+	}
+	if agenticSelected && hasKBs {
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch, quoteEnabled(kwargs, chat.PromptConfig))
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -425,15 +436,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		// Either the chat setting or the request can disable citations. Resolve
-		// this once before any retrieval path can return early.
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
+		// Either the chat setting or the request can disable citations. Resolved
+		// once before any retrieval path can return early. The agentic dispatch
+		// above resolves the same value through quoteEnabled.
+		quote := quoteEnabled(kwargs, promptConfig)
 		// The dialog's configured no-answer line ("空回复"). An answer that only
 		// reports it is decorated as if quoting were off, so it carries neither
 		// citation markers nor a document reference (decorateQuote).
@@ -5339,6 +5345,24 @@ func asInt64(v interface{}) (int64, bool) {
 		return 0, true
 	}
 	return 0, false
+}
+
+// quoteEnabled resolves the effective citation-visibility setting: either the
+// chat setting or the request can disable citations, and both must agree. An
+// absent setting on either side leaves citations on.
+//
+// It is a function because two dispatch points need it — the agentic branch
+// and Phase 6 — and the agentic branch returns before Phase 6 runs. Resolving
+// it twice is how the agentic path ended up ignoring a request's quote:false.
+func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interface{}) bool {
+	quote := true
+	if v, ok := kwargs["quote"].(bool); ok {
+		quote = v
+	}
+	if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+		quote = quote && promptConfigQuote
+	}
+	return quote
 }
 
 // reasoningLevelAgentic is the reasoning level that hands the turn to the

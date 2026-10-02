@@ -63,6 +63,7 @@ func (s *ChatPipelineService) agenticRag(
 	stream bool,
 	kwargs map[string]interface{},
 	useWebSearch bool,
+	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
 	// agent_mode selects the template id for this run (validated non-empty by
@@ -74,6 +75,9 @@ func (s *ChatPipelineService) agenticRag(
 	// lands on the one agent this build ships. An explicit agent_mode still
 	// wins and is still validated strictly, so a bad id from a direct API
 	// caller fails loudly rather than silently running a different agent.
+	//
+	// AsyncChat only dispatches here with a non-empty KB scope, so the
+	// citation lookup below is always kb_id-bounded.
 	mode, _ := kwargs["agent_mode"].(string)
 	if mode == "" {
 		mode = defaultAgenticTemplateID
@@ -109,10 +113,25 @@ func (s *ChatPipelineService) agenticRag(
 			pinned.Temperature = temp
 			chatCfg = &pinned
 		}
-		// Keep both agent and synthesis on the one model selected above. The
-		// single-model wrapper has no implicit tenant-wide failover behavior.
-		model := modelModule.NewEinoChatModel(chain[0], chatCfg)
-		synth := modelModule.NewEinoChatModel(chain[0], chatCfg)
+		// Keep agent and synthesis on the ONE resolved model set, so a failover
+		// that moved the chain's cursor mid-turn cannot leave the researcher
+		// and the summariser on different providers.
+		//
+		// A single-member chain is wrapped by the same failover constructor: it
+		// is the identity case (one entry, nothing to fail over to) and keeps
+		// one construction path instead of branching on len(chain).
+		model, chainErr := modelModule.NewFailoverEinoChatModel(chain, chatCfg)
+		if chainErr != nil {
+			common.ErrorCtx(runCtx, "agentic_rag: build chat model", chainErr)
+			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
+			return
+		}
+		synth, synthErr := modelModule.NewFailoverEinoChatModel(chain, chatCfg)
+		if synthErr != nil {
+			common.ErrorCtx(runCtx, "agentic_rag: build synthesis model", synthErr)
+			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", synthErr.Error()), Final: true})
+			return
+		}
 
 		if useWebSearch {
 			if web := s.agenticWebSearch(chat.PromptConfig); web != nil {
@@ -183,18 +202,59 @@ func (s *ChatPipelineService) agenticRag(
 			zap.Any("tool_errors", toolErrors),
 			zap.Int("final_bytes", len(final)))
 
-		reference, marked := s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
-		emitResult(AsyncChatResult{Answer: marked, Reference: reference, Final: true})
+		// Citations off means neither the [ID:N] markers nor the reference
+		// payload, matching what the regular pipeline ships when quote is
+		// false. The answer text is still whatever the agent wrote.
+		answer := final
+		reference := map[string]interface{}{}
+		if quote {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
+		} else if len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
+		}
+		emitResult(AsyncChatResult{Answer: answer, Reference: reference, Final: true})
 	}()
 
 	return out, nil
 }
 
 // agenticModelChain resolves only the model explicitly selected by the dialog
-// (or the tenant default when no model is selected). Agentic RAG must not
-// silently broaden the dialog's model choice to every chat model owned by the
-// tenant; any failover grouping is an explicit model configuration concern.
+// (or the tenant default when no model is selected), plus any failover members
+// the dialog configures. Agentic RAG must not silently broaden the dialog's
+// model choice to every chat model owned by the tenant: a failover chain is
+// exactly the list the dialog's author chose, and nothing else.
 func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
+	primary, err := s.agenticPrimaryModel(ctx, chat)
+	if err != nil {
+		return nil, err
+	}
+
+	chain := []*modelModule.ChatModel{primary}
+	// Failover members are best-effort per entry: a member that no longer
+	// resolves (deleted, deactivated, or re-typed) must not take the whole turn
+	// down when a working primary exists. Skipping it keeps the surviving
+	// members usable instead of collapsing to a hard error.
+	for _, llmID := range agenticFailoverModelIDs(chat) {
+		if llmID == "" || llmID == chat.LLMID {
+			continue
+		}
+		target, resolveErr := s.ModelProviderSvc.modelSolver().
+			ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, llmID)
+		if resolveErr != nil || target == nil {
+			common.WarnCtx(ctx, "agentic_rag: skipping unresolvable failover model",
+				zap.String("llm_id", llmID), zap.Error(resolveErr))
+			continue
+		}
+		chain = append(chain, modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig))
+	}
+	common.InfoCtx(ctx, "agentic model chain resolved",
+		zap.Int("chain", len(chain)), zap.String("primary", chat.LLMID))
+	return chain, nil
+}
+
+// agenticPrimaryModel resolves the dialog's own model, or the tenant default
+// when it selected none.
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
 		target *ModelTarget
 		err    error
@@ -210,9 +270,35 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 		}
 		return nil, fmt.Errorf("resolve chat model: %w", err)
 	}
+	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig), nil
+}
 
-	chain := []*modelModule.ChatModel{modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)}
-	return chain, nil
+// agenticFailoverModelIDs reads the dialog's ordered failover list from
+// llm_setting. Order is the author's priority: EinoChatModel walks the chain in
+// order and the sticky cursor keeps a healthy member in front, so a member that
+// failed once is not re-probed on every call of a long turn.
+//
+// The list is per conversation and lives in llm_setting rather than a tenant
+// group table, so it needs no cross-entity join and cannot outlive its dialog.
+func agenticFailoverModelIDs(chat *entity.Chat) []string {
+	if chat == nil || chat.LLMSetting == nil {
+		return nil
+	}
+	raw, ok := chat.LLMSetting["failover_llm_ids"]
+	if !ok {
+		return nil
+	}
+	items, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if id, ok := item.(string); ok && id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // agenticWebSearch adapts the pipeline's configured provider to the agent's

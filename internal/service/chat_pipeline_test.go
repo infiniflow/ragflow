@@ -2672,6 +2672,75 @@ func TestAgenticLevelIsNotAHarnessMode(t *testing.T) {
 	}
 }
 
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
+	}{
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
+			}
+		})
+	}
+}
+
 // TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
 // carrying the flag on the resolution instead of memoizing it: a model edited
 // after the first request is seen by the next resolution, with no TTL to wait out.
