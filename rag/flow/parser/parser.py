@@ -1267,7 +1267,7 @@ class Parser(ProcessBase):
             return payload.decode("utf-8", errors="ignore")
 
         _, ext = os.path.splitext(name)
-        if ext == ".eml":
+        if ext.lower() == ".eml":
             # handle eml file
             from email import policy
             from email.parser import BytesParser
