@@ -78,7 +78,8 @@ function FailoverModels({
     emit([...distinct, id]);
   };
 
-  const removeAt = (index: number) => emit(distinct.filter((_, i) => i !== index));
+  const removeAt = (index: number) =>
+    emit(distinct.filter((_, i) => i !== index));
 
   const move = (index: number, delta: number) => {
     const target = index + delta;
@@ -119,7 +120,10 @@ function FailoverModels({
           </div>
 
           {distinct.length === 0 ? (
-            <p className="text-text-disabled text-xs" data-testid="chat-failover-empty">
+            <p
+              className="text-text-disabled text-xs"
+              data-testid="chat-failover-empty"
+            >
               {t('chat.failoverModelsEmpty')}
             </p>
           ) : (
