@@ -1,34 +1,101 @@
 import { create } from 'zustand';
 
 export type CanvasEdgeRouting = 'bezier' | 'orthogonal';
+export type CanvasLayoutAlgorithm = 'elk' | 'dagre';
+export type CanvasLayoutDirection = 'LR' | 'RL' | 'TB' | 'BT';
 
-const storageKey = 'ragflow-canvas-edge-route';
+export type CanvasLayoutSettings = {
+  algorithm: CanvasLayoutAlgorithm;
+  direction: CanvasLayoutDirection;
+  nodeSpacing: number;
+  rankSpacing: number;
+  route: CanvasEdgeRouting;
+};
 
-function readRoute(): CanvasEdgeRouting {
-  if (typeof window === 'undefined') return 'bezier';
+export const defaultCanvasLayout: CanvasLayoutSettings = {
+  algorithm: 'elk',
+  direction: 'LR',
+  nodeSpacing: 96,
+  rankSpacing: 128,
+  route: 'bezier',
+};
+
+const storageKey = 'ragflow-canvas-layout';
+
+function clampSpacing(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(400, Math.max(16, Math.round(parsed)));
+}
+
+function readSettings(): CanvasLayoutSettings {
+  if (typeof window === 'undefined') return defaultCanvasLayout;
   try {
-    return window.localStorage.getItem(storageKey) === 'orthogonal'
-      ? 'orthogonal'
-      : 'bezier';
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      const legacy = window.localStorage.getItem('ragflow-canvas-edge-route');
+      return {
+        ...defaultCanvasLayout,
+        route: legacy === 'orthogonal' ? 'orthogonal' : 'bezier',
+      };
+    }
+    const parsed = JSON.parse(raw) as Partial<CanvasLayoutSettings>;
+    const direction = ['LR', 'RL', 'TB', 'BT'].includes(parsed.direction ?? '')
+      ? (parsed.direction as CanvasLayoutDirection)
+      : defaultCanvasLayout.direction;
+    return {
+      algorithm: parsed.algorithm === 'dagre' ? 'dagre' : 'elk',
+      direction,
+      nodeSpacing: clampSpacing(
+        parsed.nodeSpacing,
+        defaultCanvasLayout.nodeSpacing,
+      ),
+      rankSpacing: clampSpacing(
+        parsed.rankSpacing,
+        defaultCanvasLayout.rankSpacing,
+      ),
+      route: parsed.route === 'orthogonal' ? 'orthogonal' : 'bezier',
+    };
   } catch {
-    return 'bezier';
+    return defaultCanvasLayout;
+  }
+}
+
+function writeSettings(settings: CanvasLayoutSettings) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(settings));
+  } catch {
+    // The panel still applies for this session when storage is blocked.
   }
 }
 
 type EdgeRouteState = {
   route: CanvasEdgeRouting;
+  settings: CanvasLayoutSettings;
   setRoute: (route: CanvasEdgeRouting) => void;
+  setSettings: (patch: Partial<CanvasLayoutSettings>) => void;
 };
 
-export const useCanvasEdgeRoute = create<EdgeRouteState>((set) => ({
-  route: readRoute(),
+export const useCanvasEdgeRoute = create<EdgeRouteState>((set, get) => ({
+  settings: readSettings(),
+  route: readSettings().route,
   setRoute: (route) => {
-    try {
-      window.localStorage.setItem(storageKey, route);
-    } catch {
-      // The canvas still switches for this session when storage is blocked.
-    }
-    set({ route });
+    const settings = { ...get().settings, route };
+    writeSettings(settings);
+    set({ route, settings });
+  },
+  setSettings: (patch) => {
+    const settings = { ...get().settings, ...patch };
+    settings.nodeSpacing = clampSpacing(
+      settings.nodeSpacing,
+      defaultCanvasLayout.nodeSpacing,
+    );
+    settings.rankSpacing = clampSpacing(
+      settings.rankSpacing,
+      defaultCanvasLayout.rankSpacing,
+    );
+    writeSettings(settings);
+    set({ settings, route: settings.route });
   },
 }));
 

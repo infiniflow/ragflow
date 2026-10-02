@@ -1,6 +1,10 @@
 import dagre from '@dagrejs/dagre';
 import { layoutNodesWithElk, type ElkEdgeRouting } from './canvas-elk-layout';
 import {
+  type CanvasLayoutSettings,
+  defaultCanvasLayout,
+} from './canvas-edge-route';
+import {
   analyzeFlow,
   separateSwitchLanes,
   straightenChains,
@@ -188,7 +192,7 @@ function comparePosition(
 }
 
 function createGraph(options: {
-  rankdir: 'LR' | 'TB';
+  rankdir: 'LR' | 'RL' | 'TB' | 'BT';
   nodesep: number;
   ranksep: number;
   align?: 'UL';
@@ -271,7 +275,7 @@ function layoutBoxes(
     target: string;
     sourceHandle?: string | null;
   }>,
-  direction: 'LR' | 'TB',
+  direction: 'LR' | 'RL' | 'TB' | 'BT',
   spacing: { nodesep: number; ranksep: number },
   orderOf: (id: string) => { x: number; y: number },
   byId: Map<string, CanvasLayoutNode>,
@@ -429,7 +433,7 @@ function layoutConnected(
   nodes: CanvasLayoutNode[],
   edges: CanvasLayoutEdge[],
   sizeOfNode: (node: CanvasLayoutNode) => Size,
-  edgeRouting: ElkEdgeRouting = 'bezier',
+  layout: CanvasLayoutSettings = defaultCanvasLayout,
 ): Promise<Map<string, Box>[]> {
   if (nodes.length === 0) return [];
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -502,7 +506,7 @@ function layoutConnected(
         flowEdges,
         (id) => byId.get(id)!.position,
         byId,
-        edgeRouting,
+        layout,
       );
       return expandClusters(
         boxes,
@@ -614,20 +618,37 @@ async function layoutMainFlow(
   }>,
   _orderOf: (id: string) => { x: number; y: number },
   byId: Map<string, CanvasLayoutNode>,
-  edgeRouting: ElkEdgeRouting = 'bezier',
+  layout: CanvasLayoutSettings = defaultCanvasLayout,
 ): Promise<Map<string, Box>> {
   const nodes = ids
     .map((id) => byId.get(id))
     .filter((node): node is CanvasLayoutNode => !!node);
   const flowEdges = edges.filter((edge) => !isAttachmentEdge(edge));
-  const boxes = await layoutNodesWithElk({
-    nodes,
-    edges: flowEdges,
-    sizeOf: sizeOfId,
-    edgeRouting,
-  });
-  straightenChains(boxes, nodes, flowEdges);
-  separateSwitchLanes(boxes, nodes, flowEdges, CanvasAutoLayoutSpacing.nodeGap);
+  const horizontal = layout.direction === 'LR' || layout.direction === 'RL';
+  const boxes =
+    layout.algorithm === 'dagre'
+      ? layoutBoxes(
+          nodes.map((node) => node.id),
+          sizeOfId,
+          flowEdges,
+          layout.direction,
+          { nodesep: layout.nodeSpacing, ranksep: layout.rankSpacing },
+          (id) => byId.get(id)?.position ?? { x: 0, y: 0 },
+          byId,
+        )
+      : await layoutNodesWithElk({
+          nodes,
+          edges: flowEdges,
+          sizeOf: sizeOfId,
+          edgeRouting: layout.route,
+          direction: layout.direction,
+          nodeSpacing: layout.nodeSpacing,
+          rankSpacing: layout.rankSpacing,
+        });
+  if (horizontal) {
+    straightenChains(boxes, nodes, flowEdges);
+    separateSwitchLanes(boxes, nodes, flowEdges, layout.nodeSpacing);
+  }
   return boxes;
 }
 
@@ -728,17 +749,12 @@ async function layoutLevel(
   edges: CanvasLayoutEdge[],
   mode: 'anchor' | 'padding',
   sizeOfNode: (node: CanvasLayoutNode) => Size = nodeSize,
-  edgeRouting: ElkEdgeRouting = 'bezier',
+  layout: CanvasLayoutSettings = defaultCanvasLayout,
 ): Promise<Map<string, Box>> {
   const originals = new Map(
     nodes.map((node) => [node.id, boxFromPosition(node, nodeSize(node))]),
   );
-  const components = await layoutConnected(
-    nodes,
-    edges,
-    sizeOfNode,
-    edgeRouting,
-  );
+  const components = await layoutConnected(nodes, edges, sizeOfNode, layout);
   const stacked = stackComponents(components);
   relaxPlacement(stacked, nodes, edges);
   return anchorBoxes(stacked, originals, mode);
@@ -878,9 +894,15 @@ export async function layoutCanvasNodes(input: {
   edges: CanvasLayoutEdge[];
   selectedNodeIds?: string[];
   edgeRouting?: ElkEdgeRouting;
+  layout?: Partial<CanvasLayoutSettings>;
 }): Promise<Map<string, CanvasLayoutUpdate>> {
   const { nodes, edges } = input;
-  const edgeRouting = input.edgeRouting ?? 'bezier';
+  const layout: CanvasLayoutSettings = {
+    ...defaultCanvasLayout,
+    ...input.layout,
+    route:
+      input.layout?.route ?? input.edgeRouting ?? defaultCanvasLayout.route,
+  };
   const scope = resolveScope(nodes, edges);
   const updates = new Map<string, CanvasLayoutUpdate>();
   if (scope.size === 0) return updates;
@@ -913,7 +935,7 @@ export async function layoutCanvasNodes(input: {
       edges,
       allScoped ? 'padding' : 'anchor',
       sizeWithFrame,
-      edgeRouting,
+      layout,
     );
     for (const [id, box] of boxes) {
       const node = byId.get(id);
@@ -957,7 +979,7 @@ export async function layoutCanvasNodes(input: {
     edges,
     'anchor',
     sizeForRoot,
-    edgeRouting,
+    layout,
   );
   for (const [id, box] of rootBoxes) {
     const node = byId.get(id);

@@ -1,5 +1,6 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { analyzeFlow, modelOrder } from './canvas-layout-analysis';
+import type { CanvasLayoutDirection } from './canvas-edge-route';
 
 /**
  * React Flow's ELK multiple-handle layout, adapted to this canvas:
@@ -52,14 +53,42 @@ const layoutOptions: Record<string, string> = {
   'elk.layered.spacing.edgeNodeBetweenLayers': '40',
 };
 
+const elkDirection: Record<CanvasLayoutDirection, string> = {
+  LR: 'RIGHT',
+  RL: 'LEFT',
+  TB: 'DOWN',
+  BT: 'UP',
+};
+
+const portSide: Record<
+  CanvasLayoutDirection,
+  { target: string; source: string }
+> = {
+  LR: { target: 'WEST', source: 'EAST' },
+  RL: { target: 'EAST', source: 'WEST' },
+  TB: { target: 'NORTH', source: 'SOUTH' },
+  BT: { target: 'SOUTH', source: 'NORTH' },
+};
+
 export function buildElkLayoutOptions(
   edgeRouting: ElkEdgeRouting = 'bezier',
+  layout?: {
+    direction?: CanvasLayoutDirection;
+    nodeSpacing?: number;
+    rankSpacing?: number;
+  },
 ): Record<string, string> {
-  if (edgeRouting !== 'orthogonal') return layoutOptions;
-  return {
+  const direction = elkDirection[layout?.direction ?? 'LR'];
+  const options: Record<string, string> = {
     ...layoutOptions,
-    'elk.edgeRouting': 'ORTHOGONAL',
+    'elk.direction': direction,
+    'elk.spacing.nodeNode': String(layout?.nodeSpacing ?? NODE_GAP),
+    'elk.layered.spacing.nodeNodeBetweenLayers': String(
+      layout?.rankSpacing ?? RANK_GAP,
+    ),
   };
+  if (edgeRouting === 'orthogonal') options['elk.edgeRouting'] = 'ORTHOGONAL';
+  return options;
 }
 
 function handleRank(
@@ -130,6 +159,9 @@ export async function layoutNodesWithElk(input: {
   edges: ElkLayoutEdge[];
   sizeOf: (id: string) => Size;
   edgeRouting?: ElkEdgeRouting;
+  direction?: CanvasLayoutDirection;
+  nodeSpacing?: number;
+  rankSpacing?: number;
 }): Promise<Map<string, Box>> {
   const placed = new Map<string, Box>();
   if (input.nodes.length === 0) return placed;
@@ -148,6 +180,7 @@ export async function layoutNodesWithElk(input: {
   const orderedNodes = [...input.nodes].sort(
     (a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
   );
+  const sides = portSide[input.direction ?? 'LR'];
   const children = orderedNodes.map((node) => {
     const size = input.sizeOf(node.id);
     const targets = orderedHandleIds(node, edges, 'target');
@@ -156,14 +189,14 @@ export async function layoutNodesWithElk(input: {
       ...targets.map((id, index) => ({
         id: portKey(node.id, id),
         layoutOptions: {
-          'elk.port.side': 'WEST',
+          'elk.port.side': sides.target,
           'elk.port.index': String(index),
         },
       })),
       ...sources.map((id, index) => ({
         id: portKey(node.id, id),
         layoutOptions: {
-          'elk.port.side': 'EAST',
+          'elk.port.side': sides.source,
           'elk.port.index': String(index),
         },
       })),
@@ -171,7 +204,10 @@ export async function layoutNodesWithElk(input: {
     if (ports.length === 0) {
       ports.push({
         id: node.id,
-        layoutOptions: { 'elk.port.side': 'WEST', 'elk.port.index': '0' },
+        layoutOptions: {
+          'elk.port.side': sides.target,
+          'elk.port.index': '0',
+        },
       });
     }
     return {
@@ -187,7 +223,11 @@ export async function layoutNodesWithElk(input: {
 
   const graph = {
     id: 'root',
-    layoutOptions: buildElkLayoutOptions(input.edgeRouting),
+    layoutOptions: buildElkLayoutOptions(input.edgeRouting, {
+      direction: input.direction,
+      nodeSpacing: input.nodeSpacing,
+      rankSpacing: input.rankSpacing,
+    }),
     children,
     edges: [...edges]
       .sort((a, b) => {

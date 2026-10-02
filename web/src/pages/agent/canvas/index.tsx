@@ -1,12 +1,5 @@
 import { useTheme } from '@/components/theme-provider';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -23,7 +16,7 @@ import {
   ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { AlignHorizontalSpaceAround, NotebookPen } from 'lucide-react';
+import { NotebookPen } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
@@ -40,7 +33,6 @@ import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useCanvasAutoLayout } from '../hooks/use-canvas-auto-layout';
-import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
 import { useCanvasBackground } from '../hooks/use-canvas-background';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
@@ -50,6 +42,7 @@ import { useDropdownPosition } from '../hooks/use-dropdown-position';
 import useGraphStore from '../store';
 import { useMoveNote } from '../hooks/use-move-note';
 import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
+import { CanvasLayoutPanel } from './canvas-layout-panel';
 import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
@@ -205,8 +198,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       !logSheetVisible &&
       !imgVisible,
   );
-  const edgeRoute = useCanvasEdgeRoute((state) => state.route);
-  const setEdgeRoute = useCanvasEdgeRoute((state) => state.setRoute);
   const canvasBackground = useCanvasBackground();
 
   const { theme } = useTheme();
@@ -413,6 +404,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           canvasBackground.setting.mode === 'default' ? (
             <Spotlight className="z-0" opcity={0.7} coverage={70} />
           ) : null}
+          <CanvasLayoutPanel onArrange={arrangeNodes} />
           <Controls
             position={'bottom-center'}
             orientation="horizontal"
@@ -422,42 +414,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
               setting={canvasBackground.setting ?? { mode: 'default' }}
               onChange={canvasBackground.update}
             />
-            <ControlButton
-              onClick={arrangeNodes}
-              aria-label={t('flow.autoArrange')}
-            >
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <AlignHorizontalSpaceAround className="!fill-none" />
-                </TooltipTrigger>
-                <TooltipContent>{t('flow.autoArrange')}</TooltipContent>
-              </Tooltip>
-            </ControlButton>
-            <div className="nodrag nopan flex items-center border-r border-solid border-border-button bg-transparent px-1">
-              <Select
-                value={edgeRoute}
-                onValueChange={(value) => {
-                  if (value === 'bezier' || value === 'orthogonal') {
-                    setEdgeRoute(value);
-                  }
-                }}
-              >
-                <SelectTrigger
-                  aria-label={t('flow.edgeRoute')}
-                  className="h-7 w-[7.25rem] border-0 bg-transparent px-2 text-xs text-text-primary shadow-none hover:bg-bg-base-hover focus-visible:ring-0"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bezier">
-                    {t('flow.edgeRouteBezier')}
-                  </SelectItem>
-                  <SelectItem value="orthogonal">
-                    {t('flow.edgeRouteOrthogonal')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>

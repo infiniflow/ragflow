@@ -80,6 +80,14 @@ describe('layoutCanvasNodes', () => {
     expect(buildElkLayoutOptions('orthogonal')['elk.edgeRouting']).toBe(
       'ORTHOGONAL',
     );
+    expect(
+      buildElkLayoutOptions('bezier', { direction: 'TB' })['elk.direction'],
+    ).toBe('DOWN');
+    expect(
+      buildElkLayoutOptions('bezier', { nodeSpacing: 80, rankSpacing: 140 })[
+        'elk.spacing.nodeNode'
+      ],
+    ).toBe('80');
   });
 
   it('staggers orthogonal elbows so parallel edges do not share one vertical line', () => {

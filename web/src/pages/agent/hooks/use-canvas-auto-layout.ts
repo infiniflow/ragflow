@@ -43,7 +43,7 @@ export function useCanvasAutoLayout(enabled = true): () => void {
       }),
       edges: state.edges,
       selectedNodeIds: state.selectedNodeIds,
-      edgeRouting: useCanvasEdgeRoute.getState().route,
+      layout: useCanvasEdgeRoute.getState().settings,
     });
     if (updates.size === 0) return;
 
