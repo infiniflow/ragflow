@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { LLMLabel, MissingModelLabel } from '@/components/llm-select/llm-label';
 import { ModelTreeSelect } from '@/components/model-tree-select';
 import {
   FormControl,
@@ -22,6 +23,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -30,7 +32,6 @@ export type FailoverModelsFieldProps = {
   ownerTenantId?: string;
   /** The dialog's own model, rendered read-only as the chain's head. */
   primaryLlmId?: string;
-  primaryModelName?: string;
 };
 
 type FailoverModelsProps = Omit<FailoverModelsFieldProps, 'name'> & {
@@ -54,11 +55,14 @@ type FailoverModelsProps = Omit<FailoverModelsFieldProps, 'name'> & {
 function FailoverModels({
   ownerTenantId,
   primaryLlmId,
-  primaryModelName,
   value = [],
   onChange,
 }: FailoverModelsProps) {
   const { t } = useTranslation();
+  const { data: allModels, isFetched: modelsFetched } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
   const members = Array.isArray(value) ? value : [];
 
   // A member that equals the primary would be attempted twice in a row; drop it
@@ -84,6 +88,14 @@ function FailoverModels({
     emit(next);
   };
 
+  /**
+   * A member the backend can no longer resolve is still shown, marked stale
+   * rather than dropped: the backend skips it with a warning, so removing the
+   * row here would hide a real (if degraded) configuration from the author.
+   */
+  const isStale = (id: string) =>
+    modelsFetched && !allModels?.some((m) => m.model_id === id);
+
   return (
     <FormItem>
       <FormLabel tooltip={t('chat.failoverModelsTip')}>
@@ -91,9 +103,20 @@ function FailoverModels({
       </FormLabel>
       <FormControl>
         <div className="space-y-2" data-testid="chat-failover-models">
-          <p className="text-text-secondary text-xs">
-            {t('chat.failoverModelsPrimary', { model: primaryModelName || '-' })}
-          </p>
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-text-secondary shrink-0">
+              {t('chat.failoverModelsPrimaryLabel')}
+            </span>
+            {primaryLlmId ? (
+              <div className="min-w-0 flex-1">
+                <LLMLabel value={primaryLlmId} ownerTenantId={ownerTenantId} />
+              </div>
+            ) : (
+              <span className="text-text-disabled truncate">
+                {t('chat.failoverModelsNoPrimary')}
+              </span>
+            )}
+          </div>
 
           {distinct.length === 0 ? (
             <p className="text-text-disabled text-xs" data-testid="chat-failover-empty">
@@ -110,7 +133,16 @@ function FailoverModels({
                   <span className="text-text-secondary w-4 shrink-0 text-xs">
                     {index + 1}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{id}</span>
+                  <div className="min-w-0 flex-1 text-sm">
+                    {isStale(id) ? (
+                      <MissingModelLabel
+                        value={id}
+                        ownerTenantId={ownerTenantId}
+                      />
+                    ) : (
+                      <LLMLabel value={id} ownerTenantId={ownerTenantId} />
+                    )}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"

@@ -1170,7 +1170,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       failoverModels: 'Failover models',
       failoverModelsTip:
         'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
-      failoverModelsPrimary: 'Primary model: {{model}}',
+      failoverModelsPrimaryLabel: 'Primary model',
+      failoverModelsNoPrimary: 'Tenant default',
       failoverModelsEmpty:
         'No fallback model. Add at least one so a provider failure can be survived.',
       failoverModelsAdd: 'Add a fallback model',

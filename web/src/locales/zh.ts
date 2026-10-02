@@ -1065,7 +1065,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       failoverModels: '备用模型',
       failoverModelsTip:
         '当主模型遇到服务商故障时，Agentic智能体按此列表顺序切换到下一个模型。',
-      failoverModelsPrimary: '主模型：{{model}}',
+      failoverModelsPrimaryLabel: '主模型',
+      failoverModelsNoPrimary: '租户默认',
       failoverModelsEmpty: '暂无备用模型。至少添加一个，才能在服务商故障时继续服务。',
       failoverModelsAdd: '添加备用模型',
       thinkingTip:
