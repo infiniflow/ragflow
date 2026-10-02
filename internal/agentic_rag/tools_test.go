@@ -175,7 +175,7 @@ func TestTodoWriteTool_EmptySteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-	if !strings.Contains(out, "grep_chunks") || !strings.Contains(out, "search_chunks") {
+	if !strings.Contains(out, "grep_chunks") || !strings.Contains(out, "search_semantic_chunks") {
 		t.Errorf("suggested workflow missing: %q", out)
 	}
 }

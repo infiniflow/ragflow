@@ -88,6 +88,9 @@ type RegexpSearchRequest struct {
 	// the full document is returned. Callers that only need doc_id, page_num_int
 	// and chunk_order_int (plus content) can narrow the payload this way.
 	SelectFields []string
+	// ReturnAll disables the default grep cap for scoped deep reads. It is an
+	// internal read mode; ordinary regexp searches remain capped at 30.
+	ReturnAll bool
 }
 
 // SearchMetadataResult unified search result for metadata indices

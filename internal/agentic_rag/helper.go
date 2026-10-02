@@ -240,6 +240,12 @@ func snippetForMatches(content string, firstByte, lastByte int) (string, bool) {
 	if firstByte < 0 {
 		firstByte = 0
 	}
+	if firstByte > len(content) {
+		firstByte = len(content)
+	}
+	if lastByte < 0 {
+		lastByte = 0
+	}
 	if lastByte > len(content) {
 		lastByte = len(content)
 	}
@@ -445,26 +451,19 @@ func regexMatchSpan(re *regexp.Regexp, content string) (int, int, bool) {
 // case-insensitive occurrence of every term it takes the earliest start and the
 // latest end, so multi-keyword queries centre the window on the whole hit set.
 func termMatchSpan(terms []string, content string) (int, int, bool) {
-	lower := strings.ToLower(content)
 	first, last := -1, -1
 	for _, t := range terms {
 		if t == "" {
 			continue
 		}
-		from := 0
-		for {
-			i := strings.Index(lower[from:], t)
-			if i < 0 {
-				break
+		re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(t))
+		for _, loc := range re.FindAllStringIndex(content, -1) {
+			if first < 0 || loc[0] < first {
+				first = loc[0]
 			}
-			lo, hi := from+i, from+i+len(t)
-			if first < 0 || lo < first {
-				first = lo
+			if loc[1] > last {
+				last = loc[1]
 			}
-			if hi > last {
-				last = hi
-			}
-			from = hi
 		}
 	}
 	if first < 0 {

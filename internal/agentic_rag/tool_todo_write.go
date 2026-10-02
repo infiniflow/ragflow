@@ -139,7 +139,7 @@ func generatePlanOutput(task string, steps []planStep) string {
 		b.WriteString("Note: No specific steps provided. It is recommended to create 3-7 retrieval tasks for systematic research.\n\n")
 		b.WriteString("Suggested retrieval workflow (retrieval only, excluding summarization):\n")
 		b.WriteString("1. Use grep_chunks to search keywords and locate relevant documents\n")
-		b.WriteString("2. Use search_chunks for semantic search to retrieve relevant content\n")
+		b.WriteString("2. Use search_semantic_chunks for semantic search to retrieve relevant content\n")
 		b.WriteString("\nNote: Summarization and synthesis are handled by the think tool. Do not add summarization tasks here.\n")
 		return b.String()
 	}

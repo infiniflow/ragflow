@@ -1540,6 +1540,10 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	}
 
 	const maxRegexpResults = 30
+	maxResults := maxRegexpResults
+	if req.ReturnAll {
+		maxResults = 10000
+	}
 
 	// Build the scope filter (kb_id terms + available_int + explicit filters).
 	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
@@ -1557,6 +1561,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		"regexp": map[string]interface{}{
 			"content_with_weight": map[string]interface{}{
 				"value":            regexpPattern,
+				"flags":            "NONE",
 				"case_insensitive": true,
 			},
 		},
@@ -1583,7 +1588,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	// deep reading use chunk anchors rather than offset pagination.
 	queryBody := map[string]interface{}{
 		"query": boolQuery,
-		"size":  maxRegexpResults,
+		"size":  maxResults,
 		"from":  0,
 	}
 
@@ -1643,8 +1648,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		// Regexp matches have no meaningful relevance score. Preserve ES's
 		// returned order when no explicit deterministic sort was requested.
 	}
-	if len(allResults) > maxRegexpResults {
-		allResults = allResults[:maxRegexpResults]
+	if len(allResults) > maxResults {
+		allResults = allResults[:maxResults]
 	}
 
 	return &types.SearchResult{

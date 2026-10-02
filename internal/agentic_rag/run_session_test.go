@@ -132,7 +132,7 @@ func TestConversationRestartWhenNothingCommitted(t *testing.T) {
 	if _, err := runTurn(t, conv, agent, schema.UserMessage("first")); err == nil {
 		t.Fatal("turn 1 was scripted to fail")
 	}
-	if conv.id == "auditor" {
+	if conv.id == "test" {
 		t.Errorf("conversation id = %q, want a fresh one after an unrecoverable failure", conv.id)
 	}
 	if !conv.needsSeed() {

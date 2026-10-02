@@ -68,11 +68,19 @@ func (s *ChatPipelineService) agenticRag(
 
 		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
 		defer cancel()
+		emitResult := func(result AsyncChatResult) bool {
+			select {
+			case out <- result:
+				return true
+			case <-runCtx.Done():
+				return false
+			}
+		}
 
-		chain, labels, chainErr := s.agenticModelChain(runCtx, chat)
+		chain, chainErr := s.agenticModelChain(runCtx, chat)
 		if chainErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: resolve chat model", chainErr)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true}
+			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
 		}
 
@@ -85,23 +93,10 @@ func (s *ChatPipelineService) agenticRag(
 			pinned.Temperature = temp
 			chatCfg = &pinned
 		}
-		model, modelErr := modelModule.NewFailoverEinoChatModelWithLabels(chain, labels, chatCfg)
-		if modelErr != nil {
-			common.ErrorCtx(runCtx, "agentic_rag: build model", modelErr)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", modelErr.Error()), Final: true}
-			return
-		}
-		// The last-resort synthesis runs on its OWN instance over the same
-		// chain: a failover instance caches the error of its last full-chain
-		// failure and short-circuits every later call with it for 30s, so
-		// sharing the agent's instance hands the synthesis a stale error from
-		// whatever malformed call tripped the cooldown.
-		synth, synthErr := modelModule.NewFailoverEinoChatModelWithLabels(chain, labels, chatCfg)
-		if synthErr != nil {
-			common.ErrorCtx(runCtx, "agentic_rag: build synthesis model", synthErr)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", synthErr.Error()), Final: true}
-			return
-		}
+		// Keep both agent and synthesis on the one model selected above. The
+		// single-model wrapper has no implicit tenant-wide failover behavior.
+		model := modelModule.NewEinoChatModel(chain[0], chatCfg)
+		synth := modelModule.NewEinoChatModel(chain[0], chatCfg)
 
 		if useWebSearch {
 			if web := s.agenticWebSearch(chat.PromptConfig); web != nil {
@@ -124,6 +119,7 @@ func (s *ChatPipelineService) agenticRag(
 			Messages:       convertMessagesToEino(messages),
 			TemplateID:     mode,
 			TenantID:       chat.TenantID,
+			DatasetIDs:     chatDatasetIDs(chat),
 			Stream:         stream,
 			ToolCallCounts: toolCounts,
 			ToolCallErrors: toolErrors,
@@ -143,26 +139,26 @@ func (s *ChatPipelineService) agenticRag(
 				// marker riding on a content chunk would strand that text on
 				// the wrong side of the think section.
 				if startToThink {
-					out <- AsyncChatResult{Final: false, StartToThink: true}
+					emitResult(AsyncChatResult{Final: false, StartToThink: true})
 				}
 				if contentDelta != "" || thinkingDelta != "" {
-					out <- AsyncChatResult{
+					emitResult(AsyncChatResult{
 						Answer:    contentDelta,
 						Reasoning: thinkingDelta,
 						Final:     false,
-					}
+					})
 				}
 				if endToThink {
-					out <- AsyncChatResult{Final: false, EndToThink: true}
+					emitResult(AsyncChatResult{Final: false, EndToThink: true})
 				}
 			},
 		})
 		if thinking {
-			out <- AsyncChatResult{Final: false, EndToThink: true}
+			emitResult(AsyncChatResult{Final: false, EndToThink: true})
 		}
 		if runErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: run", runErr)
-			out <- AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", runErr.Error()), Final: true}
+			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", runErr.Error()), Final: true})
 			return
 		}
 		common.InfoCtx(ctx, "agentic turn done",
@@ -171,17 +167,18 @@ func (s *ChatPipelineService) agenticRag(
 			zap.Any("tool_errors", toolErrors),
 			zap.Int("final_bytes", len(final)))
 
-		reference, marked := s.buildAgenticReference(ctx, chat.TenantID, final)
-		out <- AsyncChatResult{Answer: marked, Reference: reference, Final: true}
+		reference, marked := s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
+		emitResult(AsyncChatResult{Answer: marked, Reference: reference, Final: true})
 	}()
 
 	return out, nil
 }
 
-// agenticModelChain resolves the dialog's chat model as the primary and every
-// OTHER chat-capable model the tenant owns as a fallback: when the primary
-// dies (quota wall, outage, rate limit) the run fails over instead of burning.
-func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, []string, error) {
+// agenticModelChain resolves only the model explicitly selected by the dialog
+// (or the tenant default when no model is selected). Agentic RAG must not
+// silently broaden the dialog's model choice to every chat model owned by the
+// tenant; any failover grouping is an explicit model configuration concern.
+func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
 	var (
 		target *ModelTarget
 		err    error
@@ -195,29 +192,11 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 		if err == nil {
 			err = fmt.Errorf("no chat model resolved for tenant %s", chat.TenantID)
 		}
-		return nil, nil, fmt.Errorf("resolve chat model: %w", err)
+		return nil, fmt.Errorf("resolve chat model: %w", err)
 	}
 
 	chain := []*modelModule.ChatModel{modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)}
-	labels := []string{fmt.Sprintf("%s @ %s", target.ModelName, target.InstanceName)}
-	refs, refErr := s.ModelProviderSvc.ListTenantChatModelRefs(ctx, chat.TenantID)
-	if refErr != nil {
-		// A resolvable primary with no roster is enough to run.
-		return chain, labels, nil
-	}
-	for _, ref := range refs {
-		if ref.Ref == chat.LLMID {
-			labels[0] = fmt.Sprintf("%s @ %s [primary]", ref.ModelName, ref.InstanceName)
-			continue
-		}
-		fallback, fbErr := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, ref.Ref)
-		if fbErr != nil || fallback == nil {
-			continue // a single broken fallback is non-fatal
-		}
-		chain = append(chain, modelModule.NewChatModel(fallback.Driver, &fallback.ModelName, fallback.APIConfig))
-		labels = append(labels, fmt.Sprintf("%s @ %s", ref.ModelName, ref.InstanceName))
-	}
-	return chain, labels, nil
+	return chain, nil
 }
 
 // agenticWebSearch adapts the pipeline's configured provider to the agent's
@@ -272,12 +251,25 @@ func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message 
 // [ID:N] markers. With no resolvable citations both come back unchanged: an
 // empty reference keeps the SSE shape the UI expects, and unmarked chunk_id
 // text is the honest state of an answer whose sources could not be loaded.
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID, final string) (map[string]interface{}, string) {
+func chatDatasetIDs(chat *entity.Chat) []string {
+	if chat == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(chat.KBIDs))
+	for _, raw := range chat.KBIDs {
+		if id, ok := raw.(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string) (map[string]interface{}, string) {
 	cited := agentic_rag.ExtractCitedChunkIDs(final)
 	if len(cited) == 0 {
 		return map[string]interface{}{}, final
 	}
-	rows := fetchChunksByIDs(ctx, tenantID, cited)
+	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
 	if len(rows) == 0 {
 		return map[string]interface{}{}, final
 	}
@@ -318,13 +310,14 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 // kb_id / img_id / positions) so chunksFormat can normalize it. The index is
 // the chat's OWNING tenant's - the same scoping the agent's retrieval tools
 // use.
-func fetchChunksByIDs(ctx context.Context, tenantID string, ids []string) []map[string]interface{} {
+func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
 	de := engine.Get()
 	if de == nil || len(ids) == 0 {
 		return nil
 	}
 	req := &enginetypes.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		KbIDs:        datasetIDs,
 		Filter:       map[string]interface{}{"id": ids},
 		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "positions"},
 		Limit:        len(ids),

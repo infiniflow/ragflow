@@ -86,6 +86,7 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 		Pattern:      ".*",
 		Sort:         sortExprFromFields(req.Sort), // reading order: doc_id, page_num_int, chunk_order_int
 		SelectFields: req.SelectFields,
+		ReturnAll:    true,
 		Filter: map[string]interface{}{
 			"available_int": 1,
 			"doc_id":        docIDs,
@@ -216,6 +217,7 @@ func (g *GrepAdapter) fetchScoped(
 		Pattern:      ".*",
 		Sort:         sortExprFromFields(grepChunksSortFields),
 		SelectFields: selectFields,
+		ReturnAll:    true,
 		Filter:       filter,
 	})
 	if err != nil {
@@ -317,6 +319,13 @@ const (
 	grepDegradeTopNFactor = 4
 )
 
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // degradeGrep recovers from a pushdown the engine refused, in three steps,
 // cheapest and most faithful first.
 //
@@ -369,7 +378,7 @@ func degradeGrep(
 				Queries:    queries,
 				DatasetIDs: req.DatasetIDs,
 				DocScope:   req.DocScope,
-				TopN:       req.Limit * grepDegradeTopNFactor,
+				TopN:       maxInt(req.Limit, grepChunksMaxResults) * grepDegradeTopNFactor,
 				TenantID:   req.TenantID,
 			})
 			if bmErr == nil && len(chunks) > 0 {

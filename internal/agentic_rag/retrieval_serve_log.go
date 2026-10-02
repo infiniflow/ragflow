@@ -67,7 +67,6 @@ func servedChunkFields(ctx context.Context, tool, query string, hit snippetHit) 
 		zap.Int("snippet_runes", utf8.RuneCountInString(hit.snippet)),
 		zap.Int("query_terms", matched),
 		zap.String("snippet", snippet),
-		zap.String("content", hit.chunk.Content),
 	}
 	if hit.truncated {
 		fields = append(fields, zap.Bool("truncated", true))
@@ -81,7 +80,7 @@ func servedChunkFields(ctx context.Context, tool, query string, hit snippetHit) 
 // logServedChunks writes one debug line per served chunk (a no-op unless the
 // logger runs at debug level).
 func logServedChunks(ctx context.Context, tool, query string, hits []snippetHit) {
-	if len(hits) == 0 {
+	if len(hits) == 0 || common.Logger == nil || common.Logger.Check(zap.DebugLevel, "agentic_rag: retrieval served chunk") == nil {
 		return
 	}
 	for _, hit := range hits {

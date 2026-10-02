@@ -394,15 +394,6 @@ func Run(ctx context.Context, in Input) (string, error) {
 	runMessages := sess.explorer.turnMessages(seed, "", question)
 	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
-	if runErr != nil {
-		// The aborted turn's events must not reach the next one: a tool call
-		// whose result never arrived is a provider error on replay. This also
-		// drops the caller's history from the session, so the first repair
-		// turn has to carry it again (conversation.turnMessages).
-		sess.explorer.discardFailedTurn(ctx, explorerHead)
-	} else {
-		sess.explorer.markSeeded()
-	}
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
 	// narration tail or on a bare tool call still holds the model's own answer
@@ -417,6 +408,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 			final = carried
 			runErr = nil
 		}
+	}
+	if runErr != nil {
+		// Read the recovery candidate before rollback removes the failed turn.
+		sess.explorer.discardFailedTurn(ctx, explorerHead)
+	} else {
+		sess.explorer.markSeeded()
 	}
 
 	// Terminating action: the turn must never end on narration or a blank.
@@ -601,7 +598,21 @@ func consumeAgentEvents(
 				chunks = append(chunks, chunk)
 			}
 			mo.MessageStream.Close()
-			final = mergeStreamedAssistant(chunks).Content
+			merged := mergeStreamedAssistant(chunks)
+			// Streaming providers put tool-call deltas on the chunks rather
+			// than on mo.Message. Count the assembled calls once, after the
+			// deltas have been merged by index.
+			for i := range merged.ToolCalls {
+				tc := &merged.ToolCalls[i]
+				name := tc.Function.Name
+				if tc.ID != "" {
+					toolNames[tc.ID] = name
+				}
+				if toolCallCounts != nil && name != "" {
+					toolCallCounts[name]++
+				}
+			}
+			final = merged.Content
 			continue
 		}
 		if mo.Message != nil {
