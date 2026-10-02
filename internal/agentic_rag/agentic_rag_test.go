@@ -1,0 +1,57 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package agentic_rag
+
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+// TestRun_NilModel: Run must reject a nil model up front.
+func TestRun_NilModel(t *testing.T) {
+	_, err := Run(context.Background(), Input{Model: nil})
+	if err == nil {
+		t.Fatal("expected error for nil model")
+	}
+}
+
+// TestPrompt: the fallback prompt must declare the toolset the template ships
+// and carry the mechanical provenance contract, with no removed tool
+// references (get_document_info / query_knowledge_graph), no leftover
+// placeholders and no trace of the removed intermediate deliverable.
+func TestPrompt(t *testing.T) {
+	p := Prompt()
+	for _, want := range []string{
+		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks", "list_chunks",
+		"todo_write", "think", "run_javascript", "chunk_id:", "Evidence-First",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt must mention %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"get_document_info", "query_knowledge_graph", "web_fetch",
+		"Candidate Matrix", "Reasoning Chain", "Sub-question",
+		"question decomposition", "auditor", "Final Answer", "Guessed Answer",
+		"{{", "}}",
+	} {
+		if strings.Contains(p, banned) {
+			t.Errorf("prompt must not contain %q", banned)
+		}
+	}
+}
