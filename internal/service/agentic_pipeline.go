@@ -37,12 +37,19 @@ import (
 // every call just slowly enough can otherwise hold a request open indefinitely.
 const agenticRunTimeout = 15 * time.Minute
 
+// defaultAgenticTemplateID is the agent a reasoning-level-selected turn runs.
+// It must name a template in conf/agentic_rag.yaml; resolveTemplateFor fails
+// the turn loudly if it does not, which is the intended behaviour for an
+// operator who removed or renamed the template.
+const defaultAgenticTemplateID = "smart-reasoning"
+
 // agenticRag drives ONE conversation turn through the smart-reasoning agent
 // (internal/agentic_rag): an eino-ADK ReAct explorer whose toolset is the
 // corpus itself (grep / lexical / semantic locate, list_chunks deep read).
-// Dispatched from AsyncChat on kwargs["agent_mode"] before the retrieval
-// phases - the agent runs its own retrieval, so the pipeline's search and
-// generation phases do not apply.
+// Dispatched from AsyncChat before the retrieval phases when the request names
+// kwargs["agent_mode"] or asks for reasoning level reasoningLevelAgentic - the
+// agent runs its own retrieval, so the pipeline's search and generation phases
+// do not apply.
 //
 // The streamed shape matches the naive pipeline's: thinking deltas framed by
 // StartToThink/EndToThink, and exactly one Final result carrying the answer
@@ -61,7 +68,16 @@ func (s *ChatPipelineService) agenticRag(
 	// agent_mode selects the template id for this run (validated non-empty by
 	// AsyncChat before dispatch). Resolved per-run so conf/agentic_rag.yaml
 	// edits take effect without restart.
+	//
+	// A turn selected by reasoning level reasoningLevelAgentic names no
+	// template — the level is a retrieval strategy, not a config id — so it
+	// lands on the one agent this build ships. An explicit agent_mode still
+	// wins and is still validated strictly, so a bad id from a direct API
+	// caller fails loudly rather than silently running a different agent.
 	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		mode = defaultAgenticTemplateID
+	}
 
 	go func() {
 		defer close(out)

@@ -241,11 +241,19 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
-	// agent_mode routes this turn to the smart-reasoning agent: it runs its own
-	// retrieval through its corpus tools, so the pipeline's search and
-	// generation phases do not apply. Reading a nil kwargs map is safe (the
-	// zero value is "").
-	if mode, _ := kwargs["agent_mode"].(string); mode != "" {
+	// The smart-reasoning agent runs its own retrieval through its corpus
+	// tools, so the pipeline's search and generation phases do not apply. Two
+	// things select it: an explicit agent_mode kwarg, and reasoning level
+	// reasoningLevelAgentic. Reading a nil kwargs map is safe (the zero value
+	// is "").
+	//
+	// The level is resolved from the request first and the dialog's
+	// prompt_config second, exactly as Phase 9 resolves it; a dialog pinned to
+	// the agentic mode therefore keeps that mode when the request omits the
+	// level, and the check stays ahead of the solo-chat short-circuit below so
+	// a level-selected turn is never diverted to a plain LLM answer.
+	if mode, _ := kwargs["agent_mode"].(string); mode != "" ||
+		resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic {
 		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch)
 	}
 
@@ -669,9 +677,11 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
-		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
-		// agentic). It comes from the request kwargs first, then prompt_config.
+		// reasoning is an integer level: 0 = off (regular RAG via async_chat),
+		// 1..4 = low/medium/high/ultra (harness agentic). It comes from the
+		// request kwargs first, then prompt_config. reasoningLevelAgentic never
+		// reaches here: the AsyncChat dispatch already routed it to the
+		// smart-reasoning agent, which returns before this goroutine starts.
 		//
 		// Python rag_agent also refuses the agentic loop when the model cannot
 		// call tools, and routes those requests to async_chat.
@@ -5331,11 +5341,21 @@ func asInt64(v interface{}) (int64, bool) {
 	return 0, false
 }
 
+// reasoningLevelAgentic is the reasoning level that hands the turn to the
+// smart-reasoning agent (internal/agentic_rag) instead of running the pipeline's
+// own retrieval phases.
+//
+// It is deliberately NOT one of harnessModeForLevel's levels. 1..4 pick a depth
+// within the harness graph; this level picks a different engine outright, so
+// harnessModeForLevel must never see it — its `level >= 4` case would silently
+// answer "ultra" for a level that is no longer part of that domain.
+const reasoningLevelAgentic = 5
+
 // resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
 // level is taken from the request kwargs first, falling back to the chat
-// prompt_config, and is an integer in 0..4 (0 = off, 1..4 = low/medium/high/
-// ultra). Frontend sends Number(getThinkingLevel()), so the raw value is
-// numeric, not a bool.
+// prompt_config, and is an integer 0..4 (0 = off, 1..4 = low/medium/high/
+// ultra), or reasoningLevelAgentic for the smart-reasoning agent. Frontend
+// sends Number(getThinkingLevel()), so the raw value is numeric, not a bool.
 func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
 	if kwargs != nil {
 		if v, ok := kwargs["reasoning"]; ok {
@@ -5357,6 +5377,10 @@ func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[strin
 // harnessModeForLevel maps a Python-style reasoning level to the harness
 // thinking mode. Python uses THINKING_MODES = [low, medium, high, ultra] and
 // falls back to "medium" when n is out of range.
+//
+// Its domain is levels 1..4 only. reasoningLevelAgentic never arrives here — the
+// AsyncChat dispatch hands that turn to the smart-reasoning agent before Phase 9
+// runs — so the `level >= 4` case below does not need to exclude it.
 func harnessModeForLevel(level int) string {
 	switch {
 	case level >= 4:
