@@ -131,7 +131,6 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.KnowledgeCompileDataset{}, &entity.WikiDocumentDirty{}, &entity.PipelineOperationLog{},
 		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.FileCommit{}, &entity.FileCommitItem{},
 		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{},
-		&entity.TenantModelGroup{}, &entity.TenantModelGroupMapping{},
 		&entity.TenantLangfuse{}, &entity.APIToken{}, &entity.InvitationCode{},
 	)
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
@@ -186,8 +185,6 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO tenant_model_provider (id, provider_name, tenant_id) VALUES (?, ?, ?)", "provider", "custom", "user-1")
 	insert("INSERT INTO tenant_model_instance (id, instance_name, provider_id, api_key) VALUES (?, ?, ?, ?)", "instance", "custom", "provider", "secret")
 	insert("INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type) VALUES (?, ?, ?, ?, ?)", "model", "model", "provider", "instance", 1)
-	insert("INSERT INTO tenant_model_group (id, group_type, strategy) VALUES (?, ?, ?)", "group", "chat", "weighted")
-	insert("INSERT INTO tenant_model_group_mapping (group_id, provider_id, instance_id, model_id) VALUES (?, ?, ?, ?)", "group", "provider", "instance", "model")
 	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "own-commit", "own-kb", "Own page edit", "user-2", 1)
 	insert("INSERT INTO file_commit_item (id, commit_id, file_id, operation) VALUES (?, ?, ?, ?)", "own-commit-item", "own-commit", "own-page", "add")
 	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "other-commit", "team-kb", "Other page edit", "user-2", 1)
@@ -215,7 +212,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 		{"conversation", "own-conversation"}, {"conversation", "joined-conversation"}, {"api_4_conversation", "own-api-conversation"}, {"api_4_conversation", "agent-conversation"},
 		{"user_canvas", "agent"}, {"user_canvas_version", "agent-version"}, {"chat_channel", "channel"},
 		{"memory", "memory"}, {"tenant_model_provider", "provider"}, {"tenant_model_instance", "instance"},
-		{"tenant_model", "model"}, {"tenant_model_group", "group"}, {"file_commit", "own-commit"},
+		{"tenant_model", "model"}, {"file_commit", "own-commit"},
 		{"file_commit_item", "own-commit-item"},
 	} {
 		var count int64
@@ -226,7 +223,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 			t.Fatalf("%s retained deleted resource %s", item[0], item[1])
 		}
 	}
-	for _, table := range []string{"conversation_message", "conversation_reference", "api_4_conversation_message", "api_4_conversation_reference", "file2document", "tenant_model_group_mapping"} {
+	for _, table := range []string{"conversation_message", "conversation_reference", "api_4_conversation_message", "api_4_conversation_reference", "file2document"} {
 		var count int64
 		want := int64(0)
 		if table == "file2document" {
