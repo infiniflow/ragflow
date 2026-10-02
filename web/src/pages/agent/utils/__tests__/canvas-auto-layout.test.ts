@@ -4,7 +4,7 @@ import {
   CanvasLayoutNode,
   layoutCanvasNodes,
   relaxPlacement,
-} from '../canvas-auto-layout';
+} from "../canvas-auto-layout";
 
 const WIDTH = 200;
 const HEIGHT = 80;
@@ -17,7 +17,7 @@ function node(
 ): CanvasLayoutNode {
   return {
     id,
-    type: 'ragNode',
+    type: "ragNode",
     position: { x, y },
     width: WIDTH,
     height: HEIGHT,
@@ -30,17 +30,18 @@ function node(
 function edge(
   source: string,
   target: string,
-  sourceHandle = 'start',
+  sourceHandle = "start",
 ): CanvasLayoutEdge {
   return { source, target, sourceHandle };
 }
 
-function placed(
+async function placed(
   nodes: CanvasLayoutNode[],
-  updates = layoutCanvasNodes({ nodes, edges: [] }),
+  updates?: Map<string, { x: number; y: number; width?: number; height?: number }>,
 ) {
+  const resolved = updates ?? (await layoutCanvasNodes({ nodes, edges: [] }));
   return nodes.map((item) => {
-    const update = updates.get(item.id);
+    const update = resolved.get(item.id);
     if (!update) return item;
     return {
       ...item,
@@ -67,14 +68,14 @@ function centerY(item: CanvasLayoutNode): number {
   return item.position.y + (item.measured?.height ?? HEIGHT) / 2;
 }
 
-describe('layoutCanvasNodes', () => {
-  it('places a chain left to right on one row with an even gap', () => {
-    const nodes = [node('a', 40, 900), node('b', 800, 40), node('c', 20, 500)];
-    const edges = [edge('a', 'b'), edge('b', 'c')];
-    const updates = layoutCanvasNodes({ nodes, edges });
-    const next = placed(nodes, updates);
-    const [a, b, c] = ['a', 'b', 'c'].map((id) =>
-      next.find((item) => item.id === id)!,
+describe("layoutCanvasNodes", () => {
+  it("places a chain left to right on one row with an even gap", async () => {
+    const nodes = [node("a", 40, 900), node("b", 800, 40), node("c", 20, 500)];
+    const edges = [edge("a", "b"), edge("b", "c")];
+    const updates = await layoutCanvasNodes({ nodes, edges });
+    const next = await placed(nodes, updates);
+    const [a, b, c] = ["a", "b", "c"].map(
+      (id) => next.find((item) => item.id === id)!,
     );
 
     expect(a.position.x).toBeLessThan(b.position.x);
@@ -96,17 +97,17 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('stacks branches and centers them on the parent', () => {
+  it("stacks branches and centers them on the parent", async () => {
     const nodes = [
-      node('a', 100, 100),
-      node('b', 400, 40),
-      node('c', 420, 400),
+      node("a", 100, 100),
+      node("b", 400, 40),
+      node("c", 420, 400),
     ];
-    const edges = [edge('a', 'b'), edge('a', 'c')];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
-    const a = next.find((item) => item.id === 'a')!;
-    const b = next.find((item) => item.id === 'b')!;
-    const c = next.find((item) => item.id === 'c')!;
+    const edges = [edge("a", "b"), edge("a", "c")];
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const a = next.find((item) => item.id === "a")!;
+    const b = next.find((item) => item.id === "b")!;
+    const c = next.find((item) => item.id === "c")!;
     const upper = b.position.y < c.position.y ? b : c;
     const lower = upper === b ? c : b;
 
@@ -125,27 +126,27 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('keeps fan-out in top-to-bottom handle order so edges do not cross', () => {
+  it("keeps fan-out in top-to-bottom handle order so edges do not cross", async () => {
     const nodes = [
-      node('src', 0, 400, {
+      node("src", 0, 400, {
         data: {
-          label: 'Switch',
+          label: "Switch",
           form: { conditions: [{}, {}, {}] },
         },
       }),
-      node('top', 500, 900),
-      node('upper', 500, 600),
-      node('lower', 500, 200),
-      node('bottom', 500, 0),
+      node("top", 500, 900),
+      node("upper", 500, 600),
+      node("lower", 500, 200),
+      node("bottom", 500, 0),
     ];
     const edges = [
-      edge('src', 'top', 'Case 1'),
-      edge('src', 'upper', 'Case 2'),
-      edge('src', 'lower', 'Case 3'),
-      edge('src', 'bottom', 'end_cpn_ids'),
+      edge("src", "top", "Case 1"),
+      edge("src", "upper", "Case 2"),
+      edge("src", "lower", "Case 3"),
+      edge("src", "bottom", "end_cpn_ids"),
     ];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
-    const tops = ['top', 'upper', 'lower', 'bottom'].map(
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const tops = ["top", "upper", "lower", "bottom"].map(
       (id) => next.find((item) => item.id === id)!.position.y,
     );
     expect(tops[0]).toBeLessThan(tops[1]);
@@ -153,33 +154,33 @@ describe('layoutCanvasNodes', () => {
     expect(tops[2]).toBeLessThan(tops[3]);
   });
 
-  it('splits two outputs of one node onto separate rows', () => {
+  it("splits two outputs of one node onto separate rows", async () => {
     const nodes = [
-      node('src', 0, 200),
-      node('upper', 500, 200),
-      node('lower', 520, 200),
+      node("src", 0, 200),
+      node("upper", 500, 200),
+      node("lower", 520, 200),
     ];
     const edges = [
-      edge('src', 'upper', 'Case 1'),
-      edge('src', 'lower', 'Case 2'),
+      edge("src", "upper", "Case 1"),
+      edge("src", "lower", "Case 2"),
     ];
-    const next = placed(
+    const next = await placed(
       nodes,
-      layoutCanvasNodes({
+      await layoutCanvasNodes({
         nodes: nodes.map((item) =>
-          item.id === 'src'
+          item.id === "src"
             ? {
                 ...item,
-                data: { label: 'Switch', form: { conditions: [{}, {}] } },
+                data: { label: "Switch", form: { conditions: [{}, {}] } },
               }
             : item,
         ),
         edges,
       }),
     );
-    const upper = next.find((item) => item.id === 'upper')!;
-    const lower = next.find((item) => item.id === 'lower')!;
-    const source = next.find((item) => item.id === 'src')!;
+    const upper = next.find((item) => item.id === "upper")!;
+    const lower = next.find((item) => item.id === "lower")!;
+    const source = next.find((item) => item.id === "src")!;
 
     expect(upper.position.y).toBeLessThan(lower.position.y);
     expect(
@@ -193,32 +194,32 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('does not shift a shared merge twice when outputs are separated', () => {
+  it("does not shift a shared merge twice when outputs are separated", async () => {
     const nodes = [
-      node('src', 0, 80, {
-        data: { label: 'Switch', form: { conditions: [{}, {}] } },
+      node("src", 0, 80, {
+        data: { label: "Switch", form: { conditions: [{}, {}] } },
       }),
-      node('high', 400, 80, {
+      node("high", 400, 80, {
         height: 40,
         measured: { width: WIDTH, height: 40 },
       }),
-      node('low', 400, 80, {
+      node("low", 400, 80, {
         height: 160,
         measured: { width: WIDTH, height: 160 },
       }),
-      node('merge', 900, 80),
+      node("merge", 900, 80),
     ];
     const edges = [
-      edge('src', 'high', 'Case 1'),
-      edge('src', 'low', 'Case 2'),
-      edge('high', 'merge'),
-      edge('low', 'merge'),
+      edge("src", "high", "Case 1"),
+      edge("src", "low", "Case 2"),
+      edge("high", "merge"),
+      edge("low", "merge"),
     ];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
-    const source = next.find((item) => item.id === 'src')!;
-    const high = next.find((item) => item.id === 'high')!;
-    const low = next.find((item) => item.id === 'low')!;
-    const merge = next.find((item) => item.id === 'merge')!;
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const source = next.find((item) => item.id === "src")!;
+    const high = next.find((item) => item.id === "high")!;
+    const low = next.find((item) => item.id === "low")!;
+    const merge = next.find((item) => item.id === "merge")!;
 
     expect(high.position.y).toBeLessThan(low.position.y);
     const mid = (centerY(high) + centerY(low)) / 2;
@@ -238,61 +239,61 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('keeps each switch branch in its own band so later nodes do not cross', () => {
+  it("keeps each switch branch in its own band so later nodes do not cross", async () => {
     const nodes = [
-      node('src', 0, 200, {
-        data: { label: 'Switch', form: { conditions: [{}, {}] } },
+      node("src", 0, 200, {
+        data: { label: "Switch", form: { conditions: [{}, {}] } },
       }),
-      node('a', 400, 800),
-      node('a2', 700, 900),
-      node('b', 420, 100),
-      node('b2', 680, 0),
-      node('c', 410, 400),
-      node('c2', 690, 500),
+      node("a", 400, 800),
+      node("a2", 700, 900),
+      node("b", 420, 100),
+      node("b2", 680, 0),
+      node("c", 410, 400),
+      node("c2", 690, 500),
     ];
     const edges = [
-      edge('src', 'a', 'Case 1'),
-      edge('a', 'a2'),
-      edge('src', 'b', 'Case 2'),
-      edge('b', 'b2'),
-      edge('src', 'c', 'end_cpn_ids'),
-      edge('c', 'c2'),
+      edge("src", "a", "Case 1"),
+      edge("a", "a2"),
+      edge("src", "b", "Case 2"),
+      edge("b", "b2"),
+      edge("src", "c", "end_cpn_ids"),
+      edge("c", "c2"),
     ];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
     const y = (id: string) => next.find((item) => item.id === id)!.position.y;
 
-    expect(y('a')).toBeLessThan(y('b'));
-    expect(y('b')).toBeLessThan(y('c'));
-    expect(y('a2')).toBeLessThan(y('b2'));
-    expect(y('b2')).toBeLessThan(y('c2'));
-    expect(y('a2')).toBeLessThan(y('b'));
-    expect(y('b2')).toBeLessThan(y('c'));
+    expect(y("a")).toBeLessThan(y("b"));
+    expect(y("b")).toBeLessThan(y("c"));
+    expect(y("a2")).toBeLessThan(y("b2"));
+    expect(y("b2")).toBeLessThan(y("c2"));
+    expect(y("a2")).toBeLessThan(y("b"));
+    expect(y("b2")).toBeLessThan(y("c"));
   });
 
-  it('puts a merge node after both branches', () => {
-    const nodes = [node('a', 0, 0), node('b', 10, 200), node('c', 500, 80)];
-    const edges = [edge('a', 'c'), edge('b', 'c')];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges }));
-    const a = next.find((item) => item.id === 'a')!;
-    const b = next.find((item) => item.id === 'b')!;
-    const c = next.find((item) => item.id === 'c')!;
+  it("puts a merge node after both branches", async () => {
+    const nodes = [node("a", 0, 0), node("b", 10, 200), node("c", 500, 80)];
+    const edges = [edge("a", "c"), edge("b", "c")];
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const a = next.find((item) => item.id === "a")!;
+    const b = next.find((item) => item.id === "b")!;
+    const c = next.find((item) => item.id === "c")!;
 
     expect(c.position.x).toBeGreaterThan(a.position.x);
     expect(c.position.x).toBeGreaterThan(b.position.x);
     expect(Math.abs(a.position.x - b.position.x)).toBeLessThanOrEqual(1);
   });
 
-  it('keeps tools under the agent and the next step to the right', () => {
+  it("keeps tools under the agent and the next step to the right", async () => {
     const nodes = [
-      node('agent', 300, 200),
-      node('tool', 900, 20, { data: { label: 'Tool' } }),
-      node('next', 100, 800),
+      node("agent", 300, 200),
+      node("tool", 900, 20, { data: { label: "Tool" } }),
+      node("next", 100, 800),
     ];
-    const edges = [edge('agent', 'tool', 'tool'), edge('agent', 'next')];
-    const nextNodes = placed(nodes, layoutCanvasNodes({ nodes, edges }));
-    const agent = nextNodes.find((item) => item.id === 'agent')!;
-    const tool = nextNodes.find((item) => item.id === 'tool')!;
-    const step = nextNodes.find((item) => item.id === 'next')!;
+    const edges = [edge("agent", "tool", "tool"), edge("agent", "next")];
+    const nextNodes = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const agent = nextNodes.find((item) => item.id === "agent")!;
+    const tool = nextNodes.find((item) => item.id === "tool")!;
+    const step = nextNodes.find((item) => item.id === "next")!;
 
     expect(tool.position.y).toBeGreaterThanOrEqual(agent.position.y + HEIGHT);
     expect(Math.abs(tool.position.x - agent.position.x)).toBeLessThanOrEqual(
@@ -304,11 +305,11 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('stacks disconnected flows without overlapping them', () => {
-    const nodes = [node('a', 1000, 100), node('b', 1400, 100)];
-    const next = placed(nodes, layoutCanvasNodes({ nodes, edges: [] }));
-    const a = next.find((item) => item.id === 'a')!;
-    const b = next.find((item) => item.id === 'b')!;
+  it("stacks disconnected flows without overlapping them", async () => {
+    const nodes = [node("a", 1000, 100), node("b", 1400, 100)];
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges: [] }));
+    const a = next.find((item) => item.id === "a")!;
+    const b = next.find((item) => item.id === "b")!;
     const upper = a.position.y <= b.position.y ? a : b;
     const lower = upper === a ? b : a;
 
@@ -318,31 +319,31 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('leaves notes that cover nothing and reseats a note that covers a node', () => {
-    const flow = node('a', 500, 200);
-    const covering = node('note', 500, 150, {
-      type: 'noteNode',
-      data: { label: 'Note' },
+  it("leaves notes that cover nothing and reseats a note that covers a node", async () => {
+    const flow = node("a", 500, 200);
+    const covering = node("note", 500, 150, {
+      type: "noteNode",
+      data: { label: "Note" },
       width: 400,
       height: 300,
       measured: { width: 400, height: 300 },
     });
-    const loose = node('loose', 2000, 2000, {
-      type: 'noteNode',
-      data: { label: 'Note' },
+    const loose = node("loose", 2000, 2000, {
+      type: "noteNode",
+      data: { label: "Note" },
       width: 220,
       height: 140,
       measured: { width: 220, height: 140 },
     });
-    const updates = layoutCanvasNodes({
+    const updates = await layoutCanvasNodes({
       nodes: [flow, covering, loose],
       edges: [],
     });
 
-    expect(updates.has('loose')).toBe(false);
-    expect(updates.has('note')).toBe(true);
-    const noteTop = updates.get('note')!.y;
-    const flowTop = updates.get('a')?.y ?? flow.position.y;
+    expect(updates.has("loose")).toBe(false);
+    expect(updates.has("note")).toBe(true);
+    const noteTop = updates.get("note")!.y;
+    const flowTop = updates.get("a")?.y ?? flow.position.y;
     const flowBottom = flowTop + HEIGHT;
     const noteBottom = noteTop + 300;
     expect(noteBottom).toBeGreaterThan(flowBottom);
@@ -352,69 +353,69 @@ describe('layoutCanvasNodes', () => {
       ),
     ).toBeLessThanOrEqual(CanvasAutoLayoutSpacing.grid);
     expect(
-      Math.abs((updates.get('note')!.x ?? 0) - flow.position.x),
+      Math.abs((updates.get("note")!.x ?? 0) - flow.position.x),
     ).toBeLessThanOrEqual(CanvasAutoLayoutSpacing.grid);
   });
 
-  it('does not move placeholder nodes', () => {
+  it("does not move placeholder nodes", async () => {
     const nodes = [
-      node('a', 10, 10),
-      node('b', 400, 300),
-      node('ph', 50, 50, {
-        type: 'placeholderNode',
-        data: { label: 'Placeholder' },
+      node("a", 10, 10),
+      node("b", 400, 300),
+      node("ph", 50, 50, {
+        type: "placeholderNode",
+        data: { label: "Placeholder" },
       }),
     ];
-    const updates = layoutCanvasNodes({
+    const updates = await layoutCanvasNodes({
       nodes,
-      edges: [edge('a', 'b')],
+      edges: [edge("a", "b")],
     });
-    expect(updates.has('ph')).toBe(false);
+    expect(updates.has("ph")).toBe(false);
   });
 
-  it('arranges only the selection when two or more flow nodes are selected', () => {
-    const nodes = [node('a', 10, 10), node('b', 600, 400), node('c', 50, 700)];
-    const updates = layoutCanvasNodes({
+  it("arranges only the selection when two or more flow nodes are selected", async () => {
+    const nodes = [node("a", 10, 10), node("b", 600, 400), node("c", 50, 700)];
+    const updates = await layoutCanvasNodes({
       nodes,
-      edges: [edge('a', 'b'), edge('b', 'c')],
-      selectedNodeIds: ['a', 'b'],
+      edges: [edge("a", "b"), edge("b", "c")],
+      selectedNodeIds: ["a", "b"],
     });
-    expect(updates.has('c')).toBe(false);
-    expect(updates.has('a') || updates.has('b')).toBe(true);
-    const next = placed(nodes, updates);
-    const a = next.find((item) => item.id === 'a')!;
-    const b = next.find((item) => item.id === 'b')!;
+    expect(updates.has("c")).toBe(false);
+    expect(updates.has("a") || updates.has("b")).toBe(true);
+    const next = await placed(nodes, updates);
+    const a = next.find((item) => item.id === "a")!;
+    const b = next.find((item) => item.id === "b")!;
     expect(a.position.x).toBeLessThan(b.position.x);
-    expect(next.find((item) => item.id === 'c')!.position).toEqual({
+    expect(next.find((item) => item.id === "c")!.position).toEqual({
       x: 50,
       y: 700,
     });
   });
 
-  it('lays child nodes out inside a group and resizes the frame', () => {
-    const group = node('group', 400, 120, {
-      type: 'iterationNode',
-      data: { label: 'Iteration' },
+  it("lays child nodes out inside a group and resizes the frame", async () => {
+    const group = node("group", 400, 120, {
+      type: "iterationNode",
+      data: { label: "Iteration" },
       width: 500,
       height: 250,
       measured: { width: 500, height: 250 },
     });
-    const start = node('start', 80, 200, {
-      parentId: 'group',
+    const start = node("start", 80, 200, {
+      parentId: "group",
       width: 80,
       height: 40,
       measured: { width: 80, height: 40 },
     });
-    const step = node('step', 40, 40, { parentId: 'group' });
-    const outside = node('out', 900, 500);
-    const updates = layoutCanvasNodes({
+    const step = node("step", 40, 40, { parentId: "group" });
+    const outside = node("out", 900, 500);
+    const updates = await layoutCanvasNodes({
       nodes: [group, start, step, outside],
-      edges: [edge('start', 'step'), edge('group', 'out')],
+      edges: [edge("start", "step"), edge("group", "out")],
     });
-    const next = placed([group, start, step, outside], updates);
-    const nextStart = next.find((item) => item.id === 'start')!;
-    const nextStep = next.find((item) => item.id === 'step')!;
-    const nextGroup = next.find((item) => item.id === 'group')!;
+    const next = await placed([group, start, step, outside], updates);
+    const nextStart = next.find((item) => item.id === "start")!;
+    const nextStep = next.find((item) => item.id === "step")!;
+    const nextGroup = next.find((item) => item.id === "group")!;
 
     expect(nextStart.position.x).toBeLessThan(nextStep.position.x);
     expect(leftOf(nextStart)).toBeGreaterThanOrEqual(0);
@@ -427,65 +428,65 @@ describe('layoutCanvasNodes', () => {
     );
   });
 
-  it('survives a cycle and stays stable on a second pass', () => {
-    const nodes = [node('a', 0, 0), node('b', 300, 180)];
-    const edges = [edge('a', 'b'), edge('b', 'a')];
-    const first = layoutCanvasNodes({ nodes, edges });
+  it("survives a cycle and stays stable on a second pass", async () => {
+    const nodes = [node("a", 0, 0), node("b", 300, 180)];
+    const edges = [edge("a", "b"), edge("b", "a")];
+    const first = await layoutCanvasNodes({ nodes, edges });
     expect(first.size).toBeGreaterThan(0);
-    const once = placed(nodes, first);
-    const second = layoutCanvasNodes({ nodes: once, edges });
+    const once = await placed(nodes, first);
+    const second = await layoutCanvasNodes({ nodes: once, edges });
     expect(second.size).toBe(0);
   });
 });
 
-describe('relaxPlacement', () => {
-  it('separates overlapping cards by a small gap and leaves the row compact', () => {
-    const agent = node('agent', 200, 0, { data: { label: 'Agent' } });
-    const message = node('message', 200, 40, { data: { label: 'Message' } });
-    const neighbor = node('neighbor', 700, 0);
+describe("relaxPlacement", () => {
+  it("separates overlapping cards by a small gap and leaves the row compact", async () => {
+    const agent = node("agent", 200, 0, { data: { label: "Agent" } });
+    const message = node("message", 200, 40, { data: { label: "Message" } });
+    const neighbor = node("neighbor", 700, 0);
     const boxes = new Map([
-      ['agent', { x: 100, y: 0, width: WIDTH, height: 80 }],
-      ['message', { x: 100, y: 40, width: WIDTH, height: HEIGHT }],
-      ['neighbor', { x: 700, y: 0, width: WIDTH, height: HEIGHT }],
+      ["agent", { x: 100, y: 0, width: WIDTH, height: 80 }],
+      ["message", { x: 100, y: 40, width: WIDTH, height: HEIGHT }],
+      ["neighbor", { x: 700, y: 0, width: WIDTH, height: HEIGHT }],
     ]);
     relaxPlacement(boxes, [agent, message, neighbor], []);
-    expect(boxes.get('message')!.y).toBeGreaterThanOrEqual(80 + 32 - 1);
-    expect(boxes.get('message')!.y).toBeLessThan(200);
-    expect(boxes.get('neighbor')!.y).toBe(0);
-    expect(boxes.get('agent')!.y).toBe(0);
+    expect(boxes.get("message")!.y).toBeGreaterThanOrEqual(80 + 32 - 1);
+    expect(boxes.get("message")!.y).toBeLessThan(200);
+    expect(boxes.get("neighbor")!.y).toBe(0);
+    expect(boxes.get("agent")!.y).toBe(0);
   });
 
-  it('does not scatter a compact row to dodge a cable', () => {
-    const left = node('left', 100, 200);
-    const mid = node('mid', 400, 80, { data: { label: 'Switch' } });
-    const right = node('right', 800, 200);
+  it("does not scatter a compact row to dodge a cable", async () => {
+    const left = node("left", 100, 200);
+    const mid = node("mid", 400, 80, { data: { label: "Switch" } });
+    const right = node("right", 800, 200);
     const boxes = new Map([
-      ['left', { x: 0, y: 160, width: WIDTH, height: HEIGHT }],
-      ['mid', { x: 360, y: 40, width: WIDTH, height: HEIGHT }],
-      ['right', { x: 760, y: 160, width: WIDTH, height: HEIGHT }],
+      ["left", { x: 0, y: 160, width: WIDTH, height: HEIGHT }],
+      ["mid", { x: 360, y: 40, width: WIDTH, height: HEIGHT }],
+      ["right", { x: 760, y: 160, width: WIDTH, height: HEIGHT }],
     ]);
-    relaxPlacement(boxes, [left, mid, right], [edge('left', 'right')]);
-    expect(boxes.get('left')!.y).toBe(160);
-    expect(boxes.get('mid')!.y).toBe(40);
-    expect(boxes.get('right')!.y).toBe(160);
+    relaxPlacement(boxes, [left, mid, right], [edge("left", "right")]);
+    expect(boxes.get("left")!.y).toBe(160);
+    expect(boxes.get("mid")!.y).toBe(40);
+    expect(boxes.get("right")!.y).toBe(160);
   });
 
-  it('moves an agent with its tool when the tool overlaps another card', () => {
-    const agent = node('agent', 400, 0, { data: { label: 'Agent' } });
-    const tool = node('tool', 400, 100, { data: { label: 'Tool' } });
-    const other = node('other', 400, 120);
+  it("moves an agent with its tool when the tool overlaps another card", async () => {
+    const agent = node("agent", 400, 0, { data: { label: "Agent" } });
+    const tool = node("tool", 400, 100, { data: { label: "Tool" } });
+    const other = node("other", 400, 120);
     const boxes = new Map([
-      ['agent', { x: 300, y: 0, width: WIDTH, height: HEIGHT }],
-      ['tool', { x: 300, y: 100, width: WIDTH, height: HEIGHT }],
-      ['other', { x: 320, y: 140, width: WIDTH, height: HEIGHT }],
+      ["agent", { x: 300, y: 0, width: WIDTH, height: HEIGHT }],
+      ["tool", { x: 300, y: 100, width: WIDTH, height: HEIGHT }],
+      ["other", { x: 320, y: 140, width: WIDTH, height: HEIGHT }],
     ]);
-    const gap = boxes.get('tool')!.y - boxes.get('agent')!.y;
+    const gap = boxes.get("tool")!.y - boxes.get("agent")!.y;
     relaxPlacement(
       boxes,
       [agent, tool, other],
-      [edge('agent', 'tool', 'tool')],
+      [edge("agent", "tool", "tool")],
     );
-    expect(boxes.get('tool')!.y - boxes.get('agent')!.y).toBe(gap);
-    expect(boxes.get('other')!.y).toBeGreaterThan(140);
+    expect(boxes.get("tool")!.y - boxes.get("agent")!.y).toBe(gap);
+    expect(boxes.get("other")!.y).toBeGreaterThan(140);
   });
 });

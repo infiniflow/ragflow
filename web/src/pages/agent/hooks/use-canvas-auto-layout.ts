@@ -1,4 +1,4 @@
-import { useStore } from '@xyflow/react';
+import { useStore, useStoreApi } from '@xyflow/react';
 import { useCallback, useEffect } from 'react';
 import useGraphStore from '../store';
 import { layoutCanvasNodes } from '../utils/canvas-auto-layout';
@@ -17,12 +17,29 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function useCanvasAutoLayout(enabled = true): () => void {
   const nodesDraggable = useStore((state) => state.nodesDraggable);
   const interactive = enabled && nodesDraggable;
+  const flowStore = useStoreApi();
 
-  const arrange = useCallback(() => {
+  const arrange = useCallback(async () => {
     if (!interactive) return;
     const state = useGraphStore.getState();
-    const updates = layoutCanvasNodes({
-      nodes: state.nodes,
+    const lookup = flowStore.getState().nodeLookup;
+    const updates = await layoutCanvasNodes({
+      nodes: state.nodes.map((node) => {
+        const bounds = lookup.get(node.id)?.internals?.handleBounds;
+        const handles = [
+          ...(bounds?.target ?? []).map((handle) => ({
+            id: handle.id ?? 'end',
+            type: 'target' as const,
+            y: handle.y,
+          })),
+          ...(bounds?.source ?? []).map((handle) => ({
+            id: handle.id ?? 'start',
+            type: 'source' as const,
+            y: handle.y,
+          })),
+        ];
+        return handles.length > 0 ? { ...node, handles } : node;
+      }),
       edges: state.edges,
       selectedNodeIds: state.selectedNodeIds,
     });
@@ -51,7 +68,7 @@ export function useCanvasAutoLayout(enabled = true): () => void {
         };
       }),
     );
-  }, [interactive]);
+  }, [flowStore, interactive]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
