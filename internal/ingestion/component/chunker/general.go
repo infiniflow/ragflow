@@ -390,7 +390,7 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	units = splitGeneralUnits(units, primaryPattern)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
-	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "\n")
+	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), chunk.FirstCustomDelimiterPrefix(c.param.Delimiters), "\n")
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "\n")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
@@ -403,15 +403,26 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 // previous text merge target across intervening table/image units. This means
 // a later paragraph can extend an earlier text chunk while the media item
 // remains in its original output position.
-func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, joinSep string) []schema.ChunkDoc {
+//
+// When a backtick-wrapped custom-delimiter prefix is provided (e.g. "`问：`"),
+// the function uses a prefix-greedy merge: a paragraph whose stripped text
+// starts with the prefix begins a new chunk, and other paragraphs extend
+// the current chunk up to chunk_token_size. Without a prefix the historical
+// "custom delimiter means no merge" behaviour is preserved (#20496).
+func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, customPrefix string, joinSep string) []schema.ChunkDoc {
 	merged := make([]schema.ChunkDoc, 0, len(units))
 	previousText := -1
+	// startNew is true when the current text unit begins a new logical group
+	// under prefix-greedy merge. When false, the unit extends the previous
+	// text chunk (subject to the chunk_token_size cap).
+	startNew := true
 	for _, unit := range units {
 		if itemDocType(unit) != "text" {
 			media := cloneChunkDoc(unit)
 			media.DocType = itemDocType(media)
 			media.CKType = media.DocType
 			merged = append(merged, media)
+			previousText = -1 // media items break the merge target.
 			continue
 		}
 
@@ -419,7 +430,33 @@ func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool, j
 		text.DocType = "text"
 		text.CKType = "text"
 		text.TKNums = intPtr(generalUnitTokens(text))
-		if previousText < 0 || customDelimiter || intValue(merged[previousText].TKNums) >= target {
+
+		// Decide whether this unit starts a new chunk. Three reasons can force
+		// a new chunk: (a) no previous text target exists, (b) the previous
+		// text target is already at or above chunk_token_size, (c) we are in
+		// legacy "custom delimiter, no prefix" mode and a new paragraph must
+		// never extend another, or (d) the unit starts with the
+		// backtick-wrapped custom-delimiter prefix.
+		prefixMatch := customPrefix != "" && strings.HasPrefix(strings.TrimLeft(unit.Text, " \t"), customPrefix)
+		switch {
+		case previousText < 0:
+			startNew = true
+		case intValue(merged[previousText].TKNums) >= target:
+			startNew = true
+		case customDelimiter && customPrefix == "":
+			// Legacy behaviour: any backtick-wrapped custom delimiter without a
+			// usable prefix means every paragraph becomes its own chunk.
+			startNew = true
+		case prefixMatch:
+			// Prefix-greedy: a paragraph that starts with the record marker
+			// begins a new logical group even if the previous one is below
+			// chunk_token_size.
+			startNew = true
+		default:
+			startNew = false
+		}
+
+		if startNew {
 			merged = append(merged, text)
 			previousText = len(merged) - 1
 			continue

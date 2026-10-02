@@ -178,3 +178,20 @@ func HasCustomDelimiterList(delims []string) bool {
 	}
 	return false
 }
+
+// FirstCustomDelimiterPrefix returns the inner content of the first
+// backtick-wrapped entry in a TokenChunker-style delimiter list, or "" if
+// no such entry is present. The returned string is the literal "record start"
+// marker the chunker can use to decide whether a paragraph begins a new
+// logical group (e.g. a Q&A record whose header is `问：`) or continues the
+// current group. When multiple backtick-wrapped entries are present only the
+// first is used; mixing multiple record-start markers in one pass is not a
+// supported configuration.
+func FirstCustomDelimiterPrefix(delims []string) string {
+	for _, d := range delims {
+		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
+			return d[1 : len(d)-1]
+		}
+	}
+	return ""
+}
