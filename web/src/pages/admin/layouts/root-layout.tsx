@@ -2,7 +2,7 @@ import { createContext, Dispatch, SetStateAction, useState } from 'react';
 import { Outlet } from 'react-router';
 
 import type { IUserInfo } from '@/interfaces/database/user-setting';
-import authorizationUtil from '@/utils/authorization-util';
+import { adminStorage } from '@/utils/authorization-util';
 
 type LocalStoragePersistedUserInfo = {
   avatar: unknown;
@@ -24,12 +24,28 @@ export type CurrentUserInfo =
       source: 'localStorage';
     };
 
+const parseLocalStorageUserInfo = (
+  value: Record<string, unknown> | null,
+): LocalStoragePersistedUserInfo | null => {
+  if (!value) {
+    return null;
+  }
+  if (typeof value.name !== 'string' || typeof value.email !== 'string') {
+    return null;
+  }
+  return {
+    avatar: value.avatar,
+    name: value.name,
+    email: value.email,
+  };
+};
+
 const getLocalStorageUserInfo = (): CurrentUserInfo => {
-  const userInfo = authorizationUtil.getUserInfoObject();
+  const userInfo = parseLocalStorageUserInfo(adminStorage.getUserInfoObject());
 
   return userInfo
     ? {
-        userInfo: userInfo,
+        userInfo,
         source: 'localStorage',
       }
     : {

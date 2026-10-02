@@ -33,7 +33,7 @@ export function ChatList({
   }, [data, setListLength, loading, setLoading]);
   return (
     <>
-      {data.chats.slice(0, 10).map((x) => (
+      {(data?.chats ?? []).slice(0, 10).map((x) => (
         <HomeCard
           key={x.id}
           data={{
