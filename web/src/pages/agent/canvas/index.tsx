@@ -41,6 +41,7 @@ import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useCanvasAutoLayout } from '../hooks/use-canvas-auto-layout';
 import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
+import { useCanvasBackground } from '../hooks/use-canvas-background';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
@@ -52,6 +53,7 @@ import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
 import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
+import { CanvasBackgroundControl } from './canvas-background-control';
 import Spotlight from '@/components/spotlight';
 import { useNodeFocusRequest } from '../hooks/use-node-focus-request';
 import { useNodeLoading } from '../hooks/use-node-loading';
@@ -205,6 +207,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   );
   const edgeRoute = useCanvasEdgeRoute((state) => state.route);
   const setEdgeRoute = useCanvasEdgeRoute((state) => state.setRoute);
+  const canvasBackground = useCanvasBackground();
 
   const { theme } = useTheme();
 
@@ -399,13 +402,26 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onBeforeDelete={handleBeforeDelete}
           panActivationKeyCode={null}
         >
-          <AgentBackground></AgentBackground>
-          <Spotlight className="z-0" opcity={0.7} coverage={70} />
+          {canvasBackground.setting ? (
+            <AgentBackground
+              setting={canvasBackground.setting}
+            ></AgentBackground>
+          ) : (
+            <AgentBackground></AgentBackground>
+          )}
+          {!canvasBackground.setting ||
+          canvasBackground.setting.mode === 'default' ? (
+            <Spotlight className="z-0" opcity={0.7} coverage={70} />
+          ) : null}
           <Controls
             position={'bottom-center'}
             orientation="horizontal"
             className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
           >
+            <CanvasBackgroundControl
+              setting={canvasBackground.setting ?? { mode: 'default' }}
+              onChange={canvasBackground.update}
+            />
             <ControlButton
               onClick={arrangeNodes}
               aria-label={t('flow.autoArrange')}

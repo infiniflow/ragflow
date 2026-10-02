@@ -4,7 +4,7 @@ import {
   EdgeLabelRenderer,
   EdgeProps,
   getBezierPath,
-  getSmoothStepPath,
+  useStore,
 } from '@xyflow/react';
 import { memo, useMemo } from 'react';
 import useGraphStore from '../../store';
@@ -14,7 +14,60 @@ import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { PointerEvent as ReactPointerEvent } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
-import { useCanvasEdgeRoute } from '../../utils/canvas-edge-route';
+import {
+  describeOrthogonalEdge,
+  orthogonalLanes,
+  useCanvasEdgeRoute,
+} from '../../utils/canvas-edge-route';
+
+type HandleBox = {
+  id?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  position?: string;
+};
+
+function handleCenter(
+  node: {
+    width?: number | null;
+    height?: number | null;
+    measured?: { width?: number; height?: number };
+    internals: {
+      positionAbsolute: { x: number; y: number };
+      handleBounds?: {
+        source?: HandleBox[] | null;
+        target?: HandleBox[] | null;
+      } | null;
+    };
+  },
+  handleId: string | null | undefined,
+  role: 'source' | 'target',
+) {
+  const bounds = node.internals.handleBounds?.[role] ?? [];
+  const handle =
+    (handleId ? bounds.find((item) => item.id === handleId) : undefined) ??
+    bounds[0];
+  const origin = node.internals.positionAbsolute;
+  if (!handle) {
+    const width = node.measured?.width ?? node.width ?? 0;
+    const height = node.measured?.height ?? node.height ?? 0;
+    return {
+      x: origin.x + (role === 'source' ? width / 2 : -width / 2),
+      y: origin.y + height / 2,
+    };
+  }
+  const position = handle.position ?? (role === 'source' ? 'right' : 'left');
+  const x = handle.x + origin.x;
+  const y = handle.y + origin.y;
+  if (position === 'right') {
+    return { x: x + handle.width, y: y + handle.height / 2 };
+  }
+  if (position === 'left') return { x, y: y + handle.height / 2 };
+  if (position === 'top') return { x: x + handle.width / 2, y };
+  return { x: x + handle.width / 2, y: y + handle.height };
+}
 
 function InnerButtonEdge({
   id,
@@ -37,18 +90,68 @@ function InnerButtonEdge({
   );
 
   const route = useCanvasEdgeRoute((state) => state.route);
-  const pathArgs = {
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  };
-  const [edgePath, labelX, labelY] =
+  const lane = useStore(
+    (state) => {
+      const samples = state.edges.flatMap((edge) => {
+        const sourceNode = state.nodeLookup.get(edge.source);
+        const targetNode = state.nodeLookup.get(edge.target);
+        if (!sourceNode || !targetNode) return [];
+        const sourcePoint = handleCenter(
+          sourceNode,
+          edge.sourceHandle,
+          'source',
+        );
+        const targetPoint = handleCenter(
+          targetNode,
+          edge.targetHandle,
+          'target',
+        );
+        return [
+          {
+            id: edge.id,
+            sourceX: sourcePoint.x,
+            sourceY: sourcePoint.y,
+            targetX: targetPoint.x,
+            targetY: targetPoint.y,
+          },
+        ];
+      });
+      return (
+        orthogonalLanes(samples).get(id) ?? {
+          step: 0.62,
+          lane: 0,
+          laneCount: 1,
+        }
+      );
+    },
+    (left, right) =>
+      left.step === right.step &&
+      left.lane === right.lane &&
+      left.laneCount === right.laneCount,
+  );
+  const curved =
     route === 'orthogonal'
-      ? getSmoothStepPath({ ...pathArgs, borderRadius: 0 })
-      : getBezierPath(pathArgs);
+      ? describeOrthogonalEdge(
+          { x: sourceX, y: sourceY },
+          { x: targetX, y: targetY },
+          lane.step,
+          lane.lane,
+          lane.laneCount,
+        )
+      : null;
+  const plain = curved
+    ? null
+    : getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+      });
+  const edgePath = curved?.path ?? plain?.[0] ?? '';
+  const labelX = curved?.labelX ?? plain?.[1] ?? 0;
+  const labelY = curved?.labelY ?? plain?.[2] ?? 0;
   const selectedStyle = useMemo(() => {
     return selected
       ? { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' }

@@ -1120,6 +1120,12 @@ export default {
       edgeRoute: 'Forma da ligação',
       edgeRouteBezier: 'Curva',
       edgeRouteOrthogonal: 'Ortogonal',
+      canvasBackground: 'Fundo do canvas',
+      canvasBackgroundColor: 'Cor sólida',
+      canvasBackgroundImage: 'Imagem',
+      canvasBackgroundDefault: 'Padrão',
+      canvasBackgroundClear: 'Limpar',
+      canvasBackgroundImageError: 'A imagem é grande demais',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor, insira uma nota',
 

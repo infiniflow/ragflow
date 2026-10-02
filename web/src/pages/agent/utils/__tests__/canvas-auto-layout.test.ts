@@ -6,6 +6,7 @@ import {
   relaxPlacement,
 } from '../canvas-auto-layout';
 import { buildElkLayoutOptions } from '../canvas-elk-layout';
+import { describeOrthogonalEdge, orthogonalLanes } from '../canvas-edge-route';
 import { measureLayoutQuality } from '../canvas-layout-analysis';
 
 const WIDTH = 200;
@@ -79,6 +80,32 @@ describe('layoutCanvasNodes', () => {
     expect(buildElkLayoutOptions('orthogonal')['elk.edgeRouting']).toBe(
       'ORTHOGONAL',
     );
+  });
+
+  it('staggers orthogonal elbows so parallel edges do not share one vertical line', () => {
+    const edges = [
+      { id: 'a', sourceX: 220, sourceY: 40, targetX: 760, targetY: 80 },
+      { id: 'b', sourceX: 220, sourceY: 180, targetX: 760, targetY: 220 },
+      { id: 'c', sourceX: 220, sourceY: 320, targetX: 760, targetY: 360 },
+    ];
+    const lanes = orthogonalLanes(edges);
+    const bends = edges.map((edge) => {
+      const lane = lanes.get(edge.id)!;
+      return describeOrthogonalEdge(
+        { x: edge.sourceX, y: edge.sourceY },
+        { x: edge.targetX, y: edge.targetY },
+        lane.step,
+        lane.lane,
+        lane.laneCount,
+      ).path;
+    });
+    const elbowX = bends.map((path) => {
+      const match = /Q([\d.]+),/.exec(path);
+      return match ? Number(match[1]) : 0;
+    });
+    expect(new Set(elbowX).size).toBe(3);
+    expect(elbowX[0]).toBeLessThan(elbowX[1]);
+    expect(elbowX[1]).toBeLessThan(elbowX[2]);
   });
 
   it('places a chain left to right on one row with an even gap', async () => {
