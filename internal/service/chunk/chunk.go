@@ -1208,6 +1208,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["position_int"] = req.Positions
 	}
 
+	if req.TagKwd != nil {
+		d["tag_kwd"] = req.TagKwd
+	}
+
 	// Tag features
 	if req.TagFeas != nil {
 		tagFeas, err := validateTagFeatures(req.TagFeas)
