@@ -1,5 +1,12 @@
 import { useTheme } from '@/components/theme-provider';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -33,6 +40,7 @@ import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useCanvasAutoLayout } from '../hooks/use-canvas-auto-layout';
+import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
@@ -195,6 +203,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       !logSheetVisible &&
       !imgVisible,
   );
+  const edgeRoute = useCanvasEdgeRoute((state) => state.route);
+  const setEdgeRoute = useCanvasEdgeRoute((state) => state.setRoute);
 
   const { theme } = useTheme();
 
@@ -407,6 +417,31 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
                 <TooltipContent>{t('flow.autoArrange')}</TooltipContent>
               </Tooltip>
             </ControlButton>
+            <div className="nodrag nopan flex items-center border-r border-solid border-border-button bg-transparent px-1">
+              <Select
+                value={edgeRoute}
+                onValueChange={(value) => {
+                  if (value === 'bezier' || value === 'orthogonal') {
+                    setEdgeRoute(value);
+                  }
+                }}
+              >
+                <SelectTrigger
+                  aria-label={t('flow.edgeRoute')}
+                  className="h-7 w-[7.25rem] border-0 bg-transparent px-2 text-xs text-text-primary shadow-none hover:bg-bg-base-hover focus-visible:ring-0"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bezier">
+                    {t('flow.edgeRouteBezier')}
+                  </SelectItem>
+                  <SelectItem value="orthogonal">
+                    {t('flow.edgeRouteOrthogonal')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>

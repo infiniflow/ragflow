@@ -4,6 +4,7 @@ import {
   EdgeLabelRenderer,
   EdgeProps,
   getBezierPath,
+  getSmoothStepPath,
 } from '@xyflow/react';
 import { memo, useMemo } from 'react';
 import useGraphStore from '../../store';
@@ -13,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { PointerEvent as ReactPointerEvent } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
+import { useCanvasEdgeRoute } from '../../utils/canvas-edge-route';
 
 function InnerButtonEdge({
   id,
@@ -34,14 +36,19 @@ function InnerButtonEdge({
     (state) => state,
   );
 
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const route = useCanvasEdgeRoute((state) => state.route);
+  const pathArgs = {
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-  });
+  };
+  const [edgePath, labelX, labelY] =
+    route === 'orthogonal'
+      ? getSmoothStepPath({ ...pathArgs, borderRadius: 0 })
+      : getBezierPath(pathArgs);
   const selectedStyle = useMemo(() => {
     return selected
       ? { strokeWidth: 1, stroke: 'rgb(var(--accent-primary))' }

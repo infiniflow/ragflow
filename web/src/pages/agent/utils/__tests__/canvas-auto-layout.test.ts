@@ -5,6 +5,7 @@ import {
   layoutCanvasNodes,
   relaxPlacement,
 } from '../canvas-auto-layout';
+import { buildElkLayoutOptions } from '../canvas-elk-layout';
 import { measureLayoutQuality } from '../canvas-layout-analysis';
 
 const WIDTH = 200;
@@ -73,6 +74,13 @@ function centerY(item: CanvasLayoutNode): number {
 }
 
 describe('layoutCanvasNodes', () => {
+  it('uses orthogonal ELK routing only when that style is selected', () => {
+    expect(buildElkLayoutOptions('bezier')['elk.edgeRouting']).toBeUndefined();
+    expect(buildElkLayoutOptions('orthogonal')['elk.edgeRouting']).toBe(
+      'ORTHOGONAL',
+    );
+  });
+
   it('places a chain left to right on one row with an even gap', async () => {
     const nodes = [node('a', 40, 900), node('b', 800, 40), node('c', 20, 500)];
     const edges = [edge('a', 'b'), edge('b', 'c')];

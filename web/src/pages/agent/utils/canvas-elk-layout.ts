@@ -38,6 +38,8 @@ export type ElkLayoutEdge = {
 type Size = { width: number; height: number };
 type Box = { x: number; y: number; width: number; height: number };
 
+export type ElkEdgeRouting = 'bezier' | 'orthogonal';
+
 const layoutOptions: Record<string, string> = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
@@ -49,6 +51,16 @@ const layoutOptions: Record<string, string> = {
   'elk.layered.spacing.nodeNodeBetweenLayers': String(RANK_GAP),
   'elk.layered.spacing.edgeNodeBetweenLayers': '40',
 };
+
+export function buildElkLayoutOptions(
+  edgeRouting: ElkEdgeRouting = 'bezier',
+): Record<string, string> {
+  if (edgeRouting !== 'orthogonal') return layoutOptions;
+  return {
+    ...layoutOptions,
+    'elk.edgeRouting': 'ORTHOGONAL',
+  };
+}
 
 function handleRank(
   node: ElkLayoutNode | undefined,
@@ -117,6 +129,7 @@ export async function layoutNodesWithElk(input: {
   nodes: ElkLayoutNode[];
   edges: ElkLayoutEdge[];
   sizeOf: (id: string) => Size;
+  edgeRouting?: ElkEdgeRouting;
 }): Promise<Map<string, Box>> {
   const placed = new Map<string, Box>();
   if (input.nodes.length === 0) return placed;
@@ -174,7 +187,7 @@ export async function layoutNodesWithElk(input: {
 
   const graph = {
     id: 'root',
-    layoutOptions,
+    layoutOptions: buildElkLayoutOptions(input.edgeRouting),
     children,
     edges: [...edges]
       .sort((a, b) => {

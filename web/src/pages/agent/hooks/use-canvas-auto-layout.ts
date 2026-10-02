@@ -2,6 +2,7 @@ import { useStore, useStoreApi } from '@xyflow/react';
 import { useCallback, useEffect } from 'react';
 import useGraphStore from '../store';
 import { layoutCanvasNodes } from '../utils/canvas-auto-layout';
+import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -42,6 +43,7 @@ export function useCanvasAutoLayout(enabled = true): () => void {
       }),
       edges: state.edges,
       selectedNodeIds: state.selectedNodeIds,
+      edgeRouting: useCanvasEdgeRoute.getState().route,
     });
     if (updates.size === 0) return;
 

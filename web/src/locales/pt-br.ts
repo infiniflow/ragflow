@@ -1117,6 +1117,9 @@ export default {
       keyword: 'Palavra-chave',
       note: 'Nota',
       autoArrange: 'Organizar automaticamente',
+      edgeRoute: 'Forma da ligação',
+      edgeRouteBezier: 'Curva',
+      edgeRouteOrthogonal: 'Ortogonal',
       noteDescription: 'Nota',
       notePlaceholder: 'Por favor, insira uma nota',
 
