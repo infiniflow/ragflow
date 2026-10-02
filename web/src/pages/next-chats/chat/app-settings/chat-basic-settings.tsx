@@ -60,12 +60,6 @@ export default function ChatBasicSetting({
           descriptionField={prefixName(prefix, 'description')}
         />
       )}
-      <FailoverModelsField
-        name={prefixName(prefix, 'llm_setting.failover_llm_ids')}
-        ownerTenantId={ownerTenantId}
-        primaryLlmId={llmIdValue}
-      />
-
       <LlmSettingFieldItems
         prefix={llmSettingPrefix}
         llmId={prefixName(prefix, 'llm_id')}
@@ -73,6 +67,12 @@ export default function ChatBasicSetting({
         collapseOpen={collapseOpen}
         onCollapseOpenChange={onCollapseOpenChange}
       ></LlmSettingFieldItems>
+
+      <FailoverModelsField
+        name={prefixName(prefix, 'llm_setting.failover_llm_ids')}
+        ownerTenantId={ownerTenantId}
+        primaryLlmId={llmIdValue}
+      />
 
       <FormField
         control={form.control}
