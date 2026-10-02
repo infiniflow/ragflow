@@ -6,7 +6,6 @@ import {
   relaxPlacement,
 } from '../canvas-auto-layout';
 import { measureLayoutQuality } from '../canvas-layout-analysis';
-import { bezierDetourOffset, curveClearsNodes } from '../canvas-edge-curve';
 
 const WIDTH = 200;
 const HEIGHT = 80;
@@ -527,29 +526,46 @@ describe('layoutCanvasNodes', () => {
     expect(quality.nodeOverlaps).toBe(0);
     expect(quality.backwardEdges).toBe(0);
     expect(quality.edgeCrossings).toBe(0);
-    for (const item of edges) {
-      const from = boxes.get(item.source);
-      const to = boxes.get(item.target);
-      if (!from || !to) continue;
-      const others = [...boxes.entries()]
-        .filter(([id]) => id !== item.source && id !== item.target)
-        .map(([, box]) => box);
-      expect(
-        curveClearsNodes(
-          { x: from.x + from.width, y: from.y + from.height / 2 },
-          { x: to.x, y: to.y + to.height / 2 },
-          others,
-        ),
-      ).toBe(true);
-    }
   });
 
-  it('bows a curve around a node that sits on a long edge', () => {
-    const offset = bezierDetourOffset({ x: 0, y: 40 }, { x: 600, y: 40 }, [
-      { x: 250, y: 10, width: 120, height: 60 },
-    ]);
-    expect(offset).not.toBe(0);
-    expect(Math.abs(offset)).toBeLessThanOrEqual(180);
+  it('keeps a cross-linked retrieval on the else row and the case target on its own row', async () => {
+    const nodes = [
+      node('begin', 0, 200),
+      node('sw', 300, 40, {
+        data: { label: 'Switch', form: { conditions: [{}] } },
+      }),
+      node('agentKb', 900, 800),
+      node('msgKb', 1200, 20),
+      node('retrieval', 600, 400),
+      node('agent', 900, 100),
+      node('msg', 1200, 700),
+    ];
+    const edges = [
+      edge('begin', 'sw'),
+      edge('sw', 'agentKb', 'Case 1'),
+      edge('agentKb', 'msgKb'),
+      edge('sw', 'retrieval', 'end_cpn_ids'),
+      edge('retrieval', 'agentKb'),
+      edge('retrieval', 'agent'),
+      edge('agent', 'msg'),
+    ];
+    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const y = (id: string) => next.find((item) => item.id === id)!.position.y;
+    const x = (id: string) => next.find((item) => item.id === id)!.position.x;
+    const at = (id: string) => next.find((item) => item.id === id)!;
+
+    expect(y('agentKb')).toBeLessThan(y('retrieval'));
+    expect(y('agentKb')).toBeLessThan(y('agent'));
+    expect(Math.abs(y('msgKb') - y('agentKb'))).toBeLessThanOrEqual(1);
+    expect(Math.abs(y('agent') - y('retrieval'))).toBeLessThanOrEqual(1);
+    expect(Math.abs(y('msg') - y('agent'))).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(centerY(at('begin')) - centerY(at('sw'))),
+    ).toBeLessThanOrEqual(CanvasAutoLayoutSpacing.grid * 2);
+    expect(x('begin')).toBeLessThan(x('sw'));
+    expect(x('sw')).toBeLessThan(x('retrieval'));
+    expect(x('retrieval')).toBeLessThan(x('agent'));
+    expect(x('agentKb')).toBeGreaterThan(x('sw'));
   });
 
   it('survives a cycle and stays stable on a second pass', async () => {

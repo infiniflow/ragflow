@@ -32,7 +32,7 @@ export type FlowAnalysis = {
   depth: Map<string, number>;
   branchOf: Map<string, { switchId: string; index: number }>;
   merges: Set<string>;
-  /** Deepest switch first, so an inner branch is claimed before an outer one. */
+  /** Shallowest switch first, so an outer branch is claimed before an inner one. */
   switches: string[];
 };
 
@@ -99,7 +99,7 @@ export function analyzeFlow(
     .filter((node) => (outgoing.get(node.id) ?? []).length >= 2)
     .sort(
       (a, b) =>
-        (depth.get(b.id) ?? 0) - (depth.get(a.id) ?? 0) ||
+        (depth.get(a.id) ?? 0) - (depth.get(b.id) ?? 0) ||
         a.position.y - b.position.y ||
         a.id.localeCompare(b.id),
     )
@@ -121,31 +121,30 @@ export function analyzeFlow(
       );
     });
     outs.forEach((edge, index) => {
+      if (edge.target === switchId || branchOf.has(edge.target)) return;
+      branchOf.set(edge.target, { switchId, index });
       const queue = [edge.target];
       const seen = new Set<string>();
       while (queue.length > 0) {
         const id = queue.shift();
-        if (!id || seen.has(id) || id === switchId) continue;
+        if (!id || seen.has(id)) continue;
         seen.add(id);
-        const preds = incoming.get(id) ?? [];
-        const owned = preds.filter((pred) => {
-          if (pred.source === switchId) return true;
-          const branch = branchOf.get(pred.source);
-          return branch?.switchId === switchId && branch.index === index;
-        });
-        const claimed = branchOf.get(id);
-        const crossed =
-          (preds.length > 1 && owned.length !== preds.length) ||
-          (claimed !== undefined &&
-            (claimed.switchId !== switchId || claimed.index !== index));
-        if (crossed && id !== edge.target) {
-          merges.add(id);
-          continue;
+        const nextEdges = outgoing.get(id) ?? [];
+        if (nextEdges.length >= 2) continue;
+        for (const next of nextEdges) {
+          if (branchOf.has(next.target)) continue;
+          const preds = incoming.get(next.target) ?? [];
+          const inBranch = preds.every((pred) => {
+            const branch = branchOf.get(pred.source);
+            return branch?.switchId === switchId && branch.index === index;
+          });
+          if (!inBranch) {
+            merges.add(next.target);
+            continue;
+          }
+          branchOf.set(next.target, { switchId, index });
+          queue.push(next.target);
         }
-        if (crossed) merges.add(id);
-        if (claimed && claimed.switchId !== switchId) continue;
-        branchOf.set(id, { switchId, index });
-        for (const next of outgoing.get(id) ?? []) queue.push(next.target);
       }
     });
   }
@@ -214,37 +213,33 @@ export function separateSwitchLanes(
 
   for (const switchId of analysis.switches) {
     const lanes = bySwitch.get(switchId);
-    if (!lanes || lanes.size < 2) continue;
+    const switchBox = boxes.get(switchId);
+    if (!lanes || lanes.size === 0 || !switchBox) continue;
     const indexes = [...lanes.keys()].sort((a, b) => a - b);
-    let cursor = Math.min(
-      ...indexes.flatMap((index) =>
-        (lanes.get(index) ?? []).map((id) => boxes.get(id)?.y ?? 0),
+    const heights = indexes.map((index) =>
+      Math.max(
+        ...(lanes.get(index) ?? []).map((id) => boxes.get(id)?.height ?? 0),
+        1,
       ),
     );
-    for (const index of indexes) {
+    const total =
+      heights.reduce((sum, height) => sum + height, 0) +
+      gap * Math.max(indexes.length - 1, 0);
+    let cursor = switchBox.y + switchBox.height / 2 - total / 2;
+    indexes.forEach((index, laneIndex) => {
       const ids = lanes.get(index) ?? [];
-      const height = Math.max(
-        ...ids.map((id) => boxes.get(id)?.height ?? 0),
-        1,
-      );
+      const height = heights[laneIndex] ?? 1;
+      const center = cursor + height / 2;
       for (const id of ids) {
         const box = boxes.get(id);
         if (!box) continue;
-        const y = cursor + (height - box.height) / 2;
+        const y = center - box.height / 2;
         const dy = y - box.y;
         boxes.set(id, { ...box, y });
         shiftBranchTree(id, dy, boxes, analysis, new Set([id]));
       }
       cursor += height + gap;
-    }
-    const switchBox = boxes.get(switchId);
-    const first = boxes.get((lanes.get(indexes[0]) ?? [])[0] ?? '');
-    const last = boxes.get(
-      (lanes.get(indexes[indexes.length - 1]) ?? [])[0] ?? '',
-    );
-    if (!switchBox || !first || !last) continue;
-    const mid = (first.y + first.height / 2 + last.y + last.height / 2) / 2;
-    boxes.set(switchId, { ...switchBox, y: mid - switchBox.height / 2 });
+    });
   }
 
   placeMerges(boxes, edges, analysis);
@@ -256,6 +251,7 @@ function placeMerges(
   analysis: FlowAnalysis,
 ) {
   for (const id of analysis.merges) {
+    if (analysis.branchOf.has(id)) continue;
     const box = boxes.get(id);
     if (!box) continue;
     const preds = edges.filter(
