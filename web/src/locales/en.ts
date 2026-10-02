@@ -3274,6 +3274,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       edgeRouteBezier: 'Curve',
       edgeRouteOrthogonal: 'Orthogonal',
       layoutAlgorithm: 'Algorithm',
+      layoutPanel: 'Layout',
       layoutDirection: 'Direction',
       layoutNodeSpacing: 'Node spacing',
       layoutRankSpacing: 'Rank spacing',

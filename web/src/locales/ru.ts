@@ -2044,6 +2044,7 @@ export default {
       edgeRouteBezier: 'Кривая',
       edgeRouteOrthogonal: 'Ортогонально',
       layoutAlgorithm: 'Алгоритм',
+      layoutPanel: 'Раскладка',
       layoutDirection: 'Направление',
       layoutNodeSpacing: 'Интервал узлов',
       layoutRankSpacing: 'Интервал слоёв',

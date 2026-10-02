@@ -2392,6 +2392,7 @@ export default {
       edgeRouteBezier: '곡선',
       edgeRouteOrthogonal: '직교',
       layoutAlgorithm: '알고리즘',
+      layoutPanel: '배치',
       layoutDirection: '방향',
       layoutNodeSpacing: '노드 간격',
       layoutRankSpacing: '랭크 간격',

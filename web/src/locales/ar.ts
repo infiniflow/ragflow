@@ -1853,6 +1853,7 @@ export default {
       edgeRouteBezier: 'منحنى',
       edgeRouteOrthogonal: 'متعامد',
       layoutAlgorithm: 'الخوارزمية',
+      layoutPanel: 'التخطيط',
       layoutDirection: 'الاتجاه',
       layoutNodeSpacing: 'تباعد العقد',
       layoutRankSpacing: 'تباعد الطبقات',

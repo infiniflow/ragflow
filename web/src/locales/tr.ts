@@ -3240,6 +3240,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       edgeRouteBezier: 'Eğri',
       edgeRouteOrthogonal: 'Dik',
       layoutAlgorithm: 'Algoritma',
+      layoutPanel: 'Yerleşim',
       layoutDirection: 'Yön',
       layoutNodeSpacing: 'Düğüm aralığı',
       layoutRankSpacing: 'Katman aralığı',

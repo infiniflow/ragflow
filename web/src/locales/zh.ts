@@ -2856,6 +2856,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       edgeRouteBezier: '曲线',
       edgeRouteOrthogonal: '正交',
       layoutAlgorithm: '算法',
+      layoutPanel: '布局',
       layoutDirection: '方向',
       layoutNodeSpacing: '节点间距',
       layoutRankSpacing: '层间距',

@@ -1121,6 +1121,7 @@ export default {
       edgeRouteBezier: 'Curva',
       edgeRouteOrthogonal: 'Ortogonal',
       layoutAlgorithm: 'Algoritmo',
+      layoutPanel: 'Layout',
       layoutDirection: 'Direção',
       layoutNodeSpacing: 'Espaço entre nós',
       layoutRankSpacing: 'Espaço entre camadas',

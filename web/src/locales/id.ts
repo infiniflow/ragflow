@@ -1139,6 +1139,7 @@ export default {
       edgeRouteBezier: 'Lengkung',
       edgeRouteOrthogonal: 'Ortogonal',
       layoutAlgorithm: 'Algoritma',
+      layoutPanel: 'Tata letak',
       layoutDirection: 'Arah',
       layoutNodeSpacing: 'Jarak node',
       layoutRankSpacing: 'Jarak rank',

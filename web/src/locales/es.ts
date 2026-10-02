@@ -929,6 +929,7 @@ export default {
       edgeRouteBezier: 'Curva',
       edgeRouteOrthogonal: 'Ortogonal',
       layoutAlgorithm: 'Algoritmo',
+      layoutPanel: 'Disposición',
       layoutDirection: 'Dirección',
       layoutNodeSpacing: 'Espacio entre nodos',
       layoutRankSpacing: 'Espacio entre capas',

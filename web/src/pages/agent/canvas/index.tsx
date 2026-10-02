@@ -1,11 +1,11 @@
-import { useTheme } from '@/components/theme-provider';
+import { useTheme } from "@/components/theme-provider";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { useSetModalState } from '@/hooks/common-hooks';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/tooltip";
+import { useSetModalState } from "@/hooks/common-hooks";
+import { cn } from "@/lib/utils";
 import {
   ConnectionMode,
   ControlButton,
@@ -14,77 +14,77 @@ import {
   Position,
   ReactFlow,
   ReactFlowInstance,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ChatSheet } from '../chat/chat-sheet';
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { NotebookPen, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { ChatSheet } from "../chat/chat-sheet";
 import {
   AgentChatContext,
   AgentChatLogContext,
   AgentInstanceContext,
   HandleContext,
-} from '../context';
+} from "../context";
 
-import FormSheet from '../form-sheet/next';
-import { useIsPipeline } from '../hooks/use-is-pipeline';
-import { hasPipelineNextOperators } from '../utils/pipeline-connection';
-import { useSelectCanvasData, useValidateConnection } from '../hooks';
-import { useAddNode } from '../hooks/use-add-node';
-import { useCanvasAutoLayout } from '../hooks/use-canvas-auto-layout';
-import { useCanvasBackground } from '../hooks/use-canvas-background';
-import { useBeforeDelete } from '../hooks/use-before-delete';
-import { useCacheChatLog } from '../hooks/use-cache-chat-log';
-import { useConnectionDrag } from '../hooks/use-connection-drag';
-import { Operator } from '../constant';
-import { useDropdownPosition } from '../hooks/use-dropdown-position';
-import useGraphStore from '../store';
-import { useMoveNote } from '../hooks/use-move-note';
-import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
-import { CanvasLayoutPanel } from './canvas-layout-panel';
-import { useDropdownManager } from './context';
+import FormSheet from "../form-sheet/next";
+import { useIsPipeline } from "../hooks/use-is-pipeline";
+import { hasPipelineNextOperators } from "../utils/pipeline-connection";
+import { useSelectCanvasData, useValidateConnection } from "../hooks";
+import { useAddNode } from "../hooks/use-add-node";
+import { useCanvasAutoLayout } from "../hooks/use-canvas-auto-layout";
+import { useCanvasBackground } from "../hooks/use-canvas-background";
+import { useBeforeDelete } from "../hooks/use-before-delete";
+import { useCacheChatLog } from "../hooks/use-cache-chat-log";
+import { useConnectionDrag } from "../hooks/use-connection-drag";
+import { Operator } from "../constant";
+import { useDropdownPosition } from "../hooks/use-dropdown-position";
+import useGraphStore from "../store";
+import { useMoveNote } from "../hooks/use-move-note";
+import { usePlaceholderManager } from "../hooks/use-placeholder-manager";
+import { CanvasLayoutPanel } from "./canvas-layout-panel";
+import { useDropdownManager } from "./context";
 
-import { AgentBackground } from '@/components/canvas/background';
-import { CanvasBackgroundControl } from './canvas-background-control';
-import Spotlight from '@/components/spotlight';
-import { useNodeFocusRequest } from '../hooks/use-node-focus-request';
-import { useNodeLoading } from '../hooks/use-node-loading';
+import { AgentBackground } from "@/components/canvas/background";
+import { CanvasBackgroundControl } from "./canvas-background-control";
+import Spotlight from "@/components/spotlight";
+import { useNodeFocusRequest } from "../hooks/use-node-focus-request";
+import { useNodeLoading } from "../hooks/use-node-loading";
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-} from '../hooks/use-show-drawer';
-import { useStopMessageUnmount } from '../hooks/use-stop-message';
-import { LogSheet } from '../log-sheet';
-import RunSheet from '../run-sheet';
-import { ButtonEdge } from './edge';
-import styles from './index.module.less';
-import { RagNode } from './node';
-import { AgentNode } from './node/agent-node';
-import { BeginNode } from './node/begin-node';
-import { CategorizeNode } from './node/categorize-node';
-import { ChunkerNode } from './node/chunker-node';
-import { CompilationNode } from './node/compilation-node';
-import { DataOperationsNode } from './node/data-operations-node';
-import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
-import { ExitLoopNode } from './node/exit-loop-node';
-import { ExtractorNode } from './node/extractor-node';
-import { FileNode } from './node/file-node';
-import { IterationNode, IterationStartNode } from './node/iteration-node';
-import { KeywordNode } from './node/keyword-node';
-import { ListOperationsNode } from './node/list-operations-node';
-import { LoopNode, LoopStartNode } from './node/loop-node';
-import { MessageNode } from './node/message-node';
-import NoteNode from './node/note-node';
-import ParserNode from './node/parser-node';
-import { PlaceholderNode } from './node/placeholder-node';
-import { RetrievalNode } from './node/retrieval-node';
-import { RewriteNode } from './node/rewrite-node';
-import { SwitchNode } from './node/switch-node';
-import TokenizerNode from './node/tokenizer-node';
-import { ToolNode } from './node/tool-node';
-import { VariableAggregatorNode } from './node/variable-aggregator-node';
-import { VariableAssignerNode } from './node/variable-assigner-node';
+} from "../hooks/use-show-drawer";
+import { useStopMessageUnmount } from "../hooks/use-stop-message";
+import { LogSheet } from "../log-sheet";
+import RunSheet from "../run-sheet";
+import { ButtonEdge } from "./edge";
+import styles from "./index.module.less";
+import { RagNode } from "./node";
+import { AgentNode } from "./node/agent-node";
+import { BeginNode } from "./node/begin-node";
+import { CategorizeNode } from "./node/categorize-node";
+import { ChunkerNode } from "./node/chunker-node";
+import { CompilationNode } from "./node/compilation-node";
+import { DataOperationsNode } from "./node/data-operations-node";
+import { NextStepDropdown } from "./node/dropdown/next-step-dropdown";
+import { ExitLoopNode } from "./node/exit-loop-node";
+import { ExtractorNode } from "./node/extractor-node";
+import { FileNode } from "./node/file-node";
+import { IterationNode, IterationStartNode } from "./node/iteration-node";
+import { KeywordNode } from "./node/keyword-node";
+import { ListOperationsNode } from "./node/list-operations-node";
+import { LoopNode, LoopStartNode } from "./node/loop-node";
+import { MessageNode } from "./node/message-node";
+import NoteNode from "./node/note-node";
+import ParserNode from "./node/parser-node";
+import { PlaceholderNode } from "./node/placeholder-node";
+import { RetrievalNode } from "./node/retrieval-node";
+import { RewriteNode } from "./node/rewrite-node";
+import { SwitchNode } from "./node/switch-node";
+import TokenizerNode from "./node/tokenizer-node";
+import { ToolNode } from "./node/tool-node";
+import { VariableAggregatorNode } from "./node/variable-aggregator-node";
+import { VariableAssignerNode } from "./node/variable-assigner-node";
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -199,6 +199,28 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       !imgVisible,
   );
   const canvasBackground = useCanvasBackground();
+  const [layoutOpen, setLayoutOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem("ragflow-canvas-layout-open") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleLayoutPanel = () => {
+    setLayoutOpen((open) => {
+      const next = !open;
+      try {
+        window.localStorage.setItem(
+          "ragflow-canvas-layout-open",
+          next ? "1" : "0",
+        );
+      } catch {
+        // The button still toggles for this session.
+      }
+      return next;
+    });
+  };
 
   const { theme } = useTheme();
 
@@ -318,10 +340,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       currentEventListWithoutMessageById,
     });
   return (
-    <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
+    <div className={cn(styles.canvasWrapper, "px-5 pb-5")}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        style={{ position: 'absolute', top: 10, left: 0 }}
+        style={{ position: "absolute", top: 10, left: 0 }}
       >
         <defs>
           <marker
@@ -385,11 +407,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           className="h-full"
           colorMode={theme}
           defaultEdgeOptions={{
-            type: 'buttonEdge',
-            markerEnd: 'logo',
+            type: "buttonEdge",
+            markerEnd: "logo",
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
-          deleteKeyCode={['Delete', 'Backspace']}
+          deleteKeyCode={["Delete", "Backspace"]}
           onBeforeDelete={handleBeforeDelete}
           panActivationKeyCode={null}
         >
@@ -401,25 +423,38 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
             <AgentBackground></AgentBackground>
           )}
           {!canvasBackground.setting ||
-          canvasBackground.setting.mode === 'default' ? (
+          canvasBackground.setting.mode === "default" ? (
             <Spotlight className="z-0" opcity={0.7} coverage={70} />
           ) : null}
-          <CanvasLayoutPanel onArrange={arrangeNodes} />
+          {layoutOpen ? <CanvasLayoutPanel onArrange={arrangeNodes} /> : null}
           <Controls
-            position={'bottom-center'}
+            position={"bottom-center"}
             orientation="horizontal"
             className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
           >
             <CanvasBackgroundControl
-              setting={canvasBackground.setting ?? { mode: 'default' }}
+              setting={canvasBackground.setting ?? { mode: "default" }}
               onChange={canvasBackground.update}
             />
+            <ControlButton
+              onClick={toggleLayoutPanel}
+              aria-label={t("flow.layoutPanel")}
+              aria-pressed={layoutOpen}
+              className={layoutOpen ? "!bg-bg-base-active" : undefined}
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SlidersHorizontal className="!fill-none" />
+                </TooltipTrigger>
+                <TooltipContent>{t("flow.layoutPanel")}</TooltipContent>
+              </Tooltip>
+            </ControlButton>
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <NotebookPen className="!fill-none" onClick={showImage} />
                 </TooltipTrigger>
-                <TooltipContent>{t('flow.note')}</TooltipContent>
+                <TooltipContent>{t("flow.note")}</TooltipContent>
               </Tooltip>
             </ControlButton>
           </Controls>
@@ -428,9 +463,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           <HandleContext.Provider
             value={
               getConnectionStartContext() || {
-                nodeId: '',
-                id: '',
-                type: 'source',
+                nodeId: "",
+                id: "",
+                type: "source",
                 position: Position.Right,
                 isFromConnectionDrag: true,
               }
@@ -452,7 +487,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         )}
       </AgentInstanceContext.Provider>
       <NotebookPen
-        className={cn('hidden absolute size-6', { block: imgVisible })}
+        className={cn("hidden absolute size-6", { block: imgVisible })}
         ref={ref}
       ></NotebookPen>
       {formDrawerVisible && (

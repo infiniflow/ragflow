@@ -1187,6 +1187,7 @@ export default {
       edgeRouteBezier: 'Cong',
       edgeRouteOrthogonal: 'Vuông góc',
       layoutAlgorithm: 'Thuật toán',
+      layoutPanel: 'Bố cục',
       layoutDirection: 'Hướng',
       layoutNodeSpacing: 'Khoảng cách nút',
       layoutRankSpacing: 'Khoảng cách tầng',

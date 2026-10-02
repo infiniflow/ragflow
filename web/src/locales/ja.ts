@@ -2331,6 +2331,7 @@ export default {
       edgeRouteBezier: '曲線',
       edgeRouteOrthogonal: '直交',
       layoutAlgorithm: 'アルゴリズム',
+      layoutPanel: 'レイアウト',
       layoutDirection: '方向',
       layoutNodeSpacing: 'ノード間隔',
       layoutRankSpacing: 'ランク間隔',

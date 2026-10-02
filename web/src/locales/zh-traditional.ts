@@ -1300,6 +1300,7 @@ export default {
       edgeRouteBezier: '曲線',
       edgeRouteOrthogonal: '正交',
       layoutAlgorithm: '演算法',
+      layoutPanel: '佈局',
       layoutDirection: '方向',
       layoutNodeSpacing: '節點間距',
       layoutRankSpacing: '層間距',
