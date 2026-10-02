@@ -37,7 +37,10 @@ function edge(
 
 async function placed(
   nodes: CanvasLayoutNode[],
-  updates?: Map<string, { x: number; y: number; width?: number; height?: number }>,
+  updates?: Map<
+    string,
+    { x: number; y: number; width?: number; height?: number }
+  >,
 ) {
   const resolved = updates ?? (await layoutCanvasNodes({ nodes, edges: [] }));
   return nodes.map((item) => {
@@ -290,7 +293,10 @@ describe("layoutCanvasNodes", () => {
       node("next", 100, 800),
     ];
     const edges = [edge("agent", "tool", "tool"), edge("agent", "next")];
-    const nextNodes = await placed(nodes, await layoutCanvasNodes({ nodes, edges }));
+    const nextNodes = await placed(
+      nodes,
+      await layoutCanvasNodes({ nodes, edges }),
+    );
     const agent = nextNodes.find((item) => item.id === "agent")!;
     const tool = nextNodes.find((item) => item.id === "tool")!;
     const step = nextNodes.find((item) => item.id === "next")!;
@@ -307,7 +313,10 @@ describe("layoutCanvasNodes", () => {
 
   it("stacks disconnected flows without overlapping them", async () => {
     const nodes = [node("a", 1000, 100), node("b", 1400, 100)];
-    const next = await placed(nodes, await layoutCanvasNodes({ nodes, edges: [] }));
+    const next = await placed(
+      nodes,
+      await layoutCanvasNodes({ nodes, edges: [] }),
+    );
     const a = next.find((item) => item.id === "a")!;
     const b = next.find((item) => item.id === "b")!;
     const upper = a.position.y <= b.position.y ? a : b;
@@ -373,23 +382,43 @@ describe("layoutCanvasNodes", () => {
     expect(updates.has("ph")).toBe(false);
   });
 
-  it("arranges only the selection when two or more flow nodes are selected", async () => {
+  it("arranges the whole canvas even when some nodes are selected", async () => {
     const nodes = [node("a", 10, 10), node("b", 600, 400), node("c", 50, 700)];
     const updates = await layoutCanvasNodes({
       nodes,
       edges: [edge("a", "b"), edge("b", "c")],
       selectedNodeIds: ["a", "b"],
     });
-    expect(updates.has("c")).toBe(false);
-    expect(updates.has("a") || updates.has("b")).toBe(true);
+    expect(updates.has("a") || updates.has("b") || updates.has("c")).toBe(true);
     const next = await placed(nodes, updates);
     const a = next.find((item) => item.id === "a")!;
     const b = next.find((item) => item.id === "b")!;
+    const c = next.find((item) => item.id === "c")!;
     expect(a.position.x).toBeLessThan(b.position.x);
-    expect(next.find((item) => item.id === "c")!.position).toEqual({
-      x: 50,
-      y: 700,
-    });
+    expect(b.position.x).toBeLessThan(c.position.x);
+  });
+
+  it("arranges the full graph when a node lists only some of its handles", async () => {
+    const nodes = Array.from({ length: 12 }, (_, index) =>
+      node(`n${index}`, index * 30, 0, {
+        handles:
+          index === 3
+            ? [{ id: "start", type: "source", y: 10 }]
+            : undefined,
+      }),
+    );
+    const edges = [
+      ...Array.from({ length: 11 }, (_, index) =>
+        edge(`n${index}`, `n${index + 1}`),
+      ),
+      edge("n3", "n8", "Case 1"),
+    ];
+    const updates = await layoutCanvasNodes({ nodes, edges });
+    expect(updates.size).toBeGreaterThan(0);
+    const next = await placed(nodes, updates);
+    expect(next.find((item) => item.id === "n0")!.position.x).toBeLessThan(
+      next.find((item) => item.id === "n11")!.position.x,
+    );
   });
 
   it("lays child nodes out inside a group and resizes the frame", async () => {

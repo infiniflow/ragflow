@@ -1,5 +1,5 @@
-import dagre from '@dagrejs/dagre';
-import { layoutNodesWithElk } from './canvas-elk-layout';
+import dagre from "@dagrejs/dagre";
+import { layoutNodesWithElk } from "./canvas-elk-layout";
 
 /**
  * Left-to-right tidy layout for the agent canvas, matching n8n's tidy-up:
@@ -39,7 +39,7 @@ export type CanvasLayoutNode = {
   width?: number | null;
   height?: number | null;
   measured?: { width?: number | null; height?: number | null } | null;
-  handles?: Array<{ id: string; type: 'source' | 'target'; y: number }>;
+  handles?: Array<{ id: string; type: "source" | "target"; y: number }>;
   data?: {
     label?: string;
     form?: {
@@ -720,17 +720,12 @@ async function layoutLevel(
 function resolveScope(
   nodes: CanvasLayoutNode[],
   edges: CanvasLayoutEdge[],
-  selectedNodeIds: string[] | undefined,
 ): Set<string> {
-  const flowNodes = nodes.filter(
-    (node) => !isAutoLayoutNote(node) && !isPlaceholder(node),
+  const scope = new Set(
+    nodes
+      .filter((node) => !isAutoLayoutNote(node) && !isPlaceholder(node))
+      .map((node) => node.id),
   );
-  const selected = new Set(selectedNodeIds ?? []);
-  const selectedFlow = flowNodes.filter((node) => selected.has(node.id));
-  const scope =
-    selectedFlow.length >= 2
-      ? new Set(selectedFlow.map((node) => node.id))
-      : new Set(flowNodes.map((node) => node.id));
 
   const expandAttachments = () => {
     let changed = true;
@@ -857,7 +852,7 @@ export async function layoutCanvasNodes(input: {
   selectedNodeIds?: string[];
 }): Promise<Map<string, CanvasLayoutUpdate>> {
   const { nodes, edges } = input;
-  const scope = resolveScope(nodes, edges, input.selectedNodeIds);
+  const scope = resolveScope(nodes, edges);
   const updates = new Map<string, CanvasLayoutUpdate>();
   if (scope.size === 0) return updates;
 
@@ -939,19 +934,12 @@ export async function layoutCanvasNodes(input: {
     if (changed(node, update)) updates.set(id, update);
   }
 
-  const arrangingAll =
-    (input.selectedNodeIds ?? []).filter((id) => {
-      const node = byId.get(id);
-      return node && !isAutoLayoutNote(node) && !isPlaceholder(node);
-    }).length < 2;
-  if (arrangingAll) {
-    const notes = nodes.filter(
-      (node) => isAutoLayoutNote(node) && !node.parentId,
-    );
-    for (const [id, update] of repositionNotes(notes, beforeRoot, rootBoxes)) {
-      const node = byId.get(id);
-      if (node && changed(node, update)) updates.set(id, update);
-    }
+  const notes = nodes.filter(
+    (node) => isAutoLayoutNote(node) && !node.parentId,
+  );
+  for (const [id, update] of repositionNotes(notes, beforeRoot, rootBoxes)) {
+    const node = byId.get(id);
+    if (node && changed(node, update)) updates.set(id, update);
   }
 
   return updates;

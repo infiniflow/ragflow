@@ -1,4 +1,4 @@
-import ELK from 'elkjs/lib/elk.bundled.js';
+import ELK from "elkjs/lib/elk.bundled.js";
 
 /**
  * React Flow's ELK multiple-handle layout, adapted to this canvas:
@@ -23,7 +23,7 @@ export type ElkLayoutNode = {
       conditions?: unknown[];
     };
   };
-  handles?: Array<{ id: string; type: 'source' | 'target'; y: number }>;
+  handles?: Array<{ id: string; type: "source" | "target"; y: number }>;
 };
 
 export type ElkLayoutEdge = {
@@ -38,13 +38,13 @@ type Size = { width: number; height: number };
 type Box = { x: number; y: number; width: number; height: number };
 
 const layoutOptions: Record<string, string> = {
-  'elk.algorithm': 'layered',
-  'elk.direction': 'RIGHT',
-  'elk.spacing.nodeNode': String(NODE_GAP),
-  'elk.layered.spacing.nodeNodeBetweenLayers': String(RANK_GAP),
-  'elk.layered.spacing.edgeNodeBetweenLayers': '40',
-  'elk.layered.nodePlacement.strategy': 'SIMPLE',
-  'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+  "elk.algorithm": "layered",
+  "elk.direction": "RIGHT",
+  "elk.spacing.nodeNode": String(NODE_GAP),
+  "elk.layered.spacing.nodeNodeBetweenLayers": String(RANK_GAP),
+  "elk.layered.spacing.edgeNodeBetweenLayers": "40",
+  "elk.layered.nodePlacement.strategy": "SIMPLE",
+  "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 };
 
 function handleRank(
@@ -61,13 +61,13 @@ function handleRank(
   }
   const conditions = node?.data?.form?.conditions;
   if (Array.isArray(conditions)) {
-    if (sourceHandle === 'end_cpn_ids') return conditions.length;
+    if (sourceHandle === "end_cpn_ids") return conditions.length;
     const match = /^Case (\d+)$/.exec(sourceHandle);
     if (match) return Number(match[1]) - 1;
   }
-  if (sourceHandle === 'start') return 0;
-  if (sourceHandle === 'agentException') return 1;
-  if (sourceHandle === 'tool' || sourceHandle === 'agentBottom') return 1000;
+  if (sourceHandle === "start") return 0;
+  if (sourceHandle === "agentException") return 1;
+  if (sourceHandle === "tool" || sourceHandle === "agentBottom") return 1000;
   return 0;
 }
 
@@ -78,28 +78,31 @@ function portKey(nodeId: string, handleId: string): string {
 function orderedHandleIds(
   node: ElkLayoutNode,
   edges: ElkLayoutEdge[],
-  role: 'source' | 'target',
+  role: "source" | "target",
 ): string[] {
   const measured = (node.handles ?? [])
     .filter((handle) => handle.type === role)
-    .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id))
-    .map((handle) => handle.id)
-    .filter((id) => id !== 'tool' && id !== 'agentBottom');
-  if (measured.length > 0) return [...new Set(measured)];
-
-  const ids = new Set<string>();
+    .filter((handle) => handle.id !== "tool" && handle.id !== "agentBottom")
+    .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+  const yOf = new Map(measured.map((handle) => [handle.id, handle.y]));
+  const ids = new Set(measured.map((handle) => handle.id));
   for (const edge of edges) {
-    if (role === 'source' && edge.source === node.id && edge.sourceHandle) {
-      if (edge.sourceHandle !== 'tool' && edge.sourceHandle !== 'agentBottom') {
+    if (role === "source" && edge.source === node.id && edge.sourceHandle) {
+      if (edge.sourceHandle !== "tool" && edge.sourceHandle !== "agentBottom") {
         ids.add(edge.sourceHandle);
       }
     }
-    if (role === 'target' && edge.target === node.id) {
-      ids.add(edge.targetHandle || 'end');
+    if (role === "target" && edge.target === node.id) {
+      ids.add(edge.targetHandle || "end");
     }
   }
   return [...ids].sort((a, b) => {
-    if (role === 'source') {
+    const ay = yOf.get(a);
+    const by = yOf.get(b);
+    if (ay !== undefined && by !== undefined && ay !== by) return ay - by;
+    if (ay !== undefined && by === undefined) return -1;
+    if (ay === undefined && by !== undefined) return 1;
+    if (role === "source") {
       const rank = handleRank(node, a) - handleRank(node, b);
       if (rank !== 0) return rank;
     }
@@ -124,28 +127,28 @@ export async function layoutNodesWithElk(input: {
   );
   const children = input.nodes.map((node) => {
     const size = input.sizeOf(node.id);
-    const targets = orderedHandleIds(node, edges, 'target');
-    const sources = orderedHandleIds(node, edges, 'source');
+    const targets = orderedHandleIds(node, edges, "target");
+    const sources = orderedHandleIds(node, edges, "source");
     const ports = [
       ...targets.map((id, index) => ({
         id: portKey(node.id, id),
         layoutOptions: {
-          'elk.port.side': 'WEST',
-          'elk.port.index': String(index),
+          "elk.port.side": "WEST",
+          "elk.port.index": String(index),
         },
       })),
       ...sources.map((id, index) => ({
         id: portKey(node.id, id),
         layoutOptions: {
-          'elk.port.side': 'EAST',
-          'elk.port.index': String(index),
+          "elk.port.side": "EAST",
+          "elk.port.index": String(index),
         },
       })),
     ];
     if (ports.length === 0) {
       ports.push({
         id: node.id,
-        layoutOptions: { 'elk.port.side': 'WEST', 'elk.port.index': '0' },
+        layoutOptions: { "elk.port.side": "WEST", "elk.port.index": "0" },
       });
     }
     return {
@@ -153,14 +156,14 @@ export async function layoutNodesWithElk(input: {
       width: size.width,
       height: size.height,
       layoutOptions: {
-        'org.eclipse.elk.portConstraints': 'FIXED_ORDER',
+        "org.eclipse.elk.portConstraints": "FIXED_ORDER",
       },
       ports,
     };
   });
 
   const graph = {
-    id: 'root',
+    id: "root",
     layoutOptions,
     children,
     edges: edges.map((edge, index) => ({
@@ -168,12 +171,14 @@ export async function layoutNodesWithElk(input: {
         edge.id ??
         `${edge.source}-${edge.target}-${edge.sourceHandle ?? index}`,
       sources: [
-        edge.sourceHandle ? portKey(edge.source, edge.sourceHandle) : edge.source,
+        edge.sourceHandle
+          ? portKey(edge.source, edge.sourceHandle)
+          : edge.source,
       ],
       targets: [
         edge.targetHandle
           ? portKey(edge.target, edge.targetHandle)
-          : portKey(edge.target, 'end'),
+          : portKey(edge.target, "end"),
       ],
     })),
   };
@@ -191,4 +196,3 @@ export async function layoutNodesWithElk(input: {
   }
   return placed;
 }
-
