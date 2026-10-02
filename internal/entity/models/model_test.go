@@ -711,6 +711,59 @@ func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
 	t.Logf("catalog tokenizer tags: %v", tags)
 }
 
+func TestChatModelWithDefaults(t *testing.T) {
+	thinkingDefault := true
+	model := &ChatModel{info: &ModelInfo{
+		ModelClass: "chat",
+		Thinking:   &ModelThinking{DefaultValue: thinkingDefault},
+	}}
+	config := model.withDefaults(nil)
+	if config.ModelClass == nil || *config.ModelClass != "chat" {
+		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
+	}
+	if config.Thinking == nil || !*config.Thinking {
+		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	}
+
+	modelClass := "custom"
+	thinking := false
+	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
+	if config.ModelClass != &modelClass || config.Thinking != &thinking {
+		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+}
+
+func TestChatModelValidateMaxOutput(t *testing.T) {
+	maxOutput := 128
+	maxTokens := func(n int) *int { return &n }
+	model := &ChatModel{info: &ModelInfo{MaxOutput: maxOutput}}
+
+	tests := []struct {
+		name    string
+		config  *ChatConfig
+		wantErr bool
+	}{
+		{name: "below limit", config: &ChatConfig{MaxTokens: maxTokens(127)}},
+		{name: "at limit", config: &ChatConfig{MaxTokens: maxTokens(128)}},
+		{name: "above limit", config: &ChatConfig{MaxTokens: maxTokens(129)}, wantErr: true},
+		{name: "unset max tokens", config: &ChatConfig{}},
+		{name: "nil config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := model.validateMaxOutput(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateMaxOutput() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	unknownLimitModel := &ChatModel{info: &ModelInfo{}}
+	if err := unknownLimitModel.validateMaxOutput(&ChatConfig{MaxTokens: maxTokens(1000)}); err != nil {
+		t.Fatalf("unknown model output limit should not reject config: %v", err)
+	}
+}
+
 // sortedKeys returns the keys of a set, sorted, for a deterministic message.
 func sortedKeys(set map[string]bool) []string {
 	out := make([]string, 0, len(set))
