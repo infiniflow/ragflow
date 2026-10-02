@@ -73,6 +73,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate general chunker parser configs: %w", err)
 	}
 
+	if err := migrateConnectorCredentials(ctx, db); err != nil {
+		return fmt.Errorf("failed to encrypt connector credentials: %w", err)
+	}
+
 	// Backfill the tenant model tables from the legacy tenant_llm table.
 	if err := migrateModelData(ctx, db); err != nil {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
