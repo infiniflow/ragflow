@@ -1,11 +1,16 @@
-import dagre from "@dagrejs/dagre";
-import { layoutNodesWithElk } from "./canvas-elk-layout";
+import dagre from '@dagrejs/dagre';
+import { layoutNodesWithElk } from './canvas-elk-layout';
+import {
+  analyzeFlow,
+  separateSwitchLanes,
+  straightenChains,
+} from './canvas-layout-analysis';
 
 /**
- * Left-to-right tidy layout for the agent canvas, matching n8n's tidy-up:
- * each output keeps a vertical band so its downstream does not cross the
- * other outputs, disconnected parts stack vertically, and nodes attached
- * under an agent stay in a column beneath it.
+ * Left-to-right tidy layout for the agent canvas.
+ * ELK layered places nodes from a branch-aware order. Each switch output
+ * then keeps its own horizontal lane. Tool links stay under the agent.
+ * React Flow draws cubic curves; ELK is not asked to route edges.
  * Positions stay anchored to the current top-left so the graph does not jump.
  *
  * React Flow node origin on this canvas is [0.5, 0]: position.x is the
@@ -29,7 +34,7 @@ const DEFAULT_NODE_HEIGHT = 72;
 const MIN_GROUP_WIDTH = 16 * 20;
 const MIN_GROUP_HEIGHT = 16 * 12;
 
-const ATTACHMENT_SOURCE_HANDLES = new Set(["tool", "agentBottom"]);
+const ATTACHMENT_SOURCE_HANDLES = new Set(['tool', 'agentBottom']);
 
 export type CanvasLayoutNode = {
   id: string;
@@ -39,7 +44,7 @@ export type CanvasLayoutNode = {
   width?: number | null;
   height?: number | null;
   measured?: { width?: number | null; height?: number | null } | null;
-  handles?: Array<{ id: string; type: "source" | "target"; y: number }>;
+  handles?: Array<{ id: string; type: 'source' | 'target'; y: number }>;
   data?: {
     label?: string;
     form?: {
@@ -82,7 +87,7 @@ type DagreNodeConfig = {
 type DagreGraph = dagre.graphlib.Graph;
 
 function positive(value: number | null | undefined, fallback: number): number {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
     return value;
   }
   return fallback;
@@ -99,11 +104,11 @@ function ceilToGrid(value: number): number {
 }
 
 function isAutoLayoutNote(node: CanvasLayoutNode): boolean {
-  return node.type === "noteNode" || node.data?.label === "Note";
+  return node.type === 'noteNode' || node.data?.label === 'Note';
 }
 
 function isPlaceholder(node: CanvasLayoutNode): boolean {
-  return node.type === "placeholderNode" || node.data?.label === "Placeholder";
+  return node.type === 'placeholderNode' || node.data?.label === 'Placeholder';
 }
 
 function isAttachmentEdge(edge: CanvasLayoutEdge): boolean {
@@ -183,10 +188,10 @@ function comparePosition(
 }
 
 function createGraph(options: {
-  rankdir: "LR" | "TB";
+  rankdir: 'LR' | 'TB';
   nodesep: number;
   ranksep: number;
-  align?: "UL";
+  align?: 'UL';
 }): DagreGraph {
   const graph = new dagre.graphlib.Graph();
   graph.setGraph({
@@ -218,7 +223,7 @@ function boxFromDagreNode(node: DagreNodeConfig): Box {
 }
 
 export function handleRank(
-  node: { data?: CanvasLayoutNode["data"] } | undefined,
+  node: { data?: CanvasLayoutNode['data'] } | undefined,
   sourceHandle?: string | null,
 ): number {
   if (!sourceHandle) return 0;
@@ -231,12 +236,12 @@ export function handleRank(
   }
   const conditions = node?.data?.form?.conditions;
   if (Array.isArray(conditions)) {
-    if (sourceHandle === "end_cpn_ids") return conditions.length;
+    if (sourceHandle === 'end_cpn_ids') return conditions.length;
     const match = /^Case (\d+)$/.exec(sourceHandle);
     if (match) return Number(match[1]) - 1;
   }
-  if (sourceHandle === "start") return 0;
-  if (sourceHandle === "agentException") return 1;
+  if (sourceHandle === 'start') return 0;
+  if (sourceHandle === 'agentException') return 1;
   return 0;
 }
 
@@ -266,7 +271,7 @@ function layoutBoxes(
     target: string;
     sourceHandle?: string | null;
   }>,
-  direction: "LR" | "TB",
+  direction: 'LR' | 'TB',
   spacing: { nodesep: number; ranksep: number },
   orderOf: (id: string) => { x: number; y: number },
   byId: Map<string, CanvasLayoutNode>,
@@ -345,7 +350,7 @@ function buildClusters(
       memberIds,
       (id) => sizeOfNode(byId.get(id)!),
       memberEdges,
-      "TB",
+      'TB',
       {
         nodesep: CanvasAutoLayoutSpacing.attachmentGapX,
         ranksep: CanvasAutoLayoutSpacing.attachmentGapY,
@@ -454,7 +459,7 @@ function layoutConnected(
 
   const components = dagre.graphlib.alg
     .components(componentGraph)
-    .map((ids) => ids.filter((id): id is string => typeof id === "string"))
+    .map((ids) => ids.filter((id): id is string => typeof id === 'string'))
     .filter((ids) => ids.length > 0)
     .sort((a, b) => {
       const boxA = boundsOf(
@@ -517,8 +522,8 @@ function stackComponents(components: Map<string, Box>[]): Map<string, Box> {
   if (components.length === 1) return components[0];
 
   const graph = createGraph({
-    rankdir: "TB",
-    align: "UL",
+    rankdir: 'TB',
+    align: 'UL',
     nodesep: CanvasAutoLayoutSpacing.subgraphGap,
     ranksep: CanvasAutoLayoutSpacing.subgraphGap,
   });
@@ -555,14 +560,14 @@ function stackComponents(components: Map<string, Box>[]): Map<string, Box> {
 function anchorBoxes(
   placed: Map<string, Box>,
   originals: Map<string, Box>,
-  mode: "anchor" | "padding",
+  mode: 'anchor' | 'padding',
 ): Map<string, Box> {
   const after = boundsOf(placed.values());
   if (!after) return new Map();
 
   let dx = 0;
   let dy = 0;
-  if (mode === "padding") {
+  if (mode === 'padding') {
     dx = CanvasAutoLayoutSpacing.groupPadding - after.x;
     dy = CanvasAutoLayoutSpacing.groupPadding - after.y;
   } else {
@@ -593,8 +598,8 @@ function anchorBoxes(
   return anchored;
 }
 
-// n8n tidy-up: Dagre left-to-right, edges inserted in handle order, crossing
-// sweep disabled. nodesep stacks a fan-out; ranksep keeps columns compact.
+// ELK layered, left to right. Node order comes from branch depth; each switch
+// output is then pulled onto its own lane. React Flow draws the curves.
 async function layoutMainFlow(
   ids: string[],
   sizeOfId: (id: string) => Size,
@@ -611,37 +616,15 @@ async function layoutMainFlow(
   const nodes = ids
     .map((id) => byId.get(id))
     .filter((node): node is CanvasLayoutNode => !!node);
-  return layoutNodesWithElk({
+  const flowEdges = edges.filter((edge) => !isAttachmentEdge(edge));
+  const boxes = await layoutNodesWithElk({
     nodes,
-    edges: edges.filter((edge) => !isAttachmentEdge(edge)),
+    edges: flowEdges,
     sizeOf: sizeOfId,
   });
-}
-
-function attachmentGroups(edges: CanvasLayoutEdge[], boxes: Map<string, Box>) {
-  const parentOf = new Map<string, string>();
-  for (const edge of edges) {
-    if (!isAttachmentEdge(edge)) continue;
-    if (!boxes.has(edge.source) || !boxes.has(edge.target)) continue;
-    if (!parentOf.has(edge.target)) parentOf.set(edge.target, edge.source);
-  }
-  const rootOf = new Map<string, string>();
-  const resolve = (id: string): string => {
-    const known = rootOf.get(id);
-    if (known) return known;
-    const parent = parentOf.get(id);
-    const root = parent ? resolve(parent) : id;
-    rootOf.set(id, root);
-    return root;
-  };
-  const membersOf = new Map<string, string[]>();
-  for (const id of new Set([...parentOf.keys(), ...parentOf.values()])) {
-    const root = resolve(id);
-    const members = membersOf.get(root) ?? [];
-    if (!members.includes(id)) members.push(id);
-    membersOf.set(root, members);
-  }
-  return { rootOf, membersOf };
+  straightenChains(boxes, nodes, flowEdges);
+  separateSwitchLanes(boxes, nodes, flowEdges, CanvasAutoLayoutSpacing.nodeGap);
+  return boxes;
 }
 
 function shiftMembers(boxes: Map<string, Box>, ids: string[], dy: number) {
@@ -653,14 +636,6 @@ function shiftMembers(boxes: Map<string, Box>, ids: string[], dy: number) {
   }
 }
 
-function groupIds(
-  id: string,
-  groups: ReturnType<typeof attachmentGroups>,
-): string[] {
-  const root = groups.rootOf.get(id) ?? id;
-  return groups.membersOf.get(root) ?? [id];
-}
-
 function groupBox(ids: string[], boxes: Map<string, Box>): Box | undefined {
   return boundsOf(
     ids.map((id) => boxes.get(id)).filter((box): box is Box => !!box),
@@ -668,33 +643,31 @@ function groupBox(ids: string[], boxes: Map<string, Box>): Box | undefined {
 }
 
 /**
- * Dagre already produces n8n's compact columns. Only boxes that actually
- * intersect are separated, and an agent moves with its tools.
+ * Only boxes that actually intersect are separated. An agent moves with its
+ * tools, and a switch branch moves as one row.
  */
 export function relaxPlacement(
   boxes: Map<string, Box>,
-  _nodes: CanvasLayoutNode[],
+  nodes: CanvasLayoutNode[],
   edges: CanvasLayoutEdge[],
 ) {
   const gap = CanvasAutoLayoutSpacing.grid * 2;
-  const groups = attachmentGroups(edges, boxes);
-  const roots = [
-    ...new Set([...boxes.keys()].map((id) => groups.rootOf.get(id) ?? id)),
-  ];
+  const members = movingGroups(boxes, nodes, edges);
+  const roots = [...members.keys()];
   for (let pass = 0; pass < 8; pass += 1) {
     let moved = false;
     for (const upperId of roots) {
       for (const lowerId of roots) {
         if (upperId === lowerId) continue;
-        const upper = groupBox(groupIds(upperId, groups), boxes);
-        const lower = groupBox(groupIds(lowerId, groups), boxes);
+        const upper = groupBox(members.get(upperId) ?? [], boxes);
+        const lower = groupBox(members.get(lowerId) ?? [], boxes);
         if (!upper || !lower || upper.y > lower.y) continue;
         const overlapsX =
           upper.x < lower.x + lower.width && lower.x < upper.x + upper.width;
         if (!overlapsX) continue;
         const overlap = upper.y + upper.height - lower.y;
         if (overlap <= 0) continue;
-        shiftMembers(boxes, groupIds(lowerId, groups), overlap + gap);
+        shiftMembers(boxes, members.get(lowerId) ?? [], overlap + gap);
         moved = true;
       }
     }
@@ -702,10 +675,54 @@ export function relaxPlacement(
   }
 }
 
+function movingGroups(
+  boxes: Map<string, Box>,
+  nodes: CanvasLayoutNode[],
+  edges: CanvasLayoutEdge[],
+): Map<string, string[]> {
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    const current = parent.get(id) ?? id;
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(rb, ra);
+  };
+  for (const id of boxes.keys()) parent.set(id, id);
+  for (const edge of edges) {
+    if (!isAttachmentEdge(edge)) continue;
+    if (boxes.has(edge.source) && boxes.has(edge.target)) {
+      union(edge.source, edge.target);
+    }
+  }
+  const analysis = analyzeFlow(nodes, edges);
+  const lanes = new Map<string, string>();
+  for (const [id, branch] of analysis.branchOf) {
+    if (!boxes.has(id)) continue;
+    const key = `${branch.switchId}:${branch.index}`;
+    const first = lanes.get(key);
+    if (first) union(first, id);
+    else lanes.set(key, id);
+  }
+  const members = new Map<string, string[]>();
+  for (const id of boxes.keys()) {
+    const root = find(id);
+    const list = members.get(root) ?? [];
+    list.push(id);
+    members.set(root, list);
+  }
+  return members;
+}
+
 async function layoutLevel(
   nodes: CanvasLayoutNode[],
   edges: CanvasLayoutEdge[],
-  mode: "anchor" | "padding",
+  mode: 'anchor' | 'padding',
   sizeOfNode: (node: CanvasLayoutNode) => Size = nodeSize,
 ): Promise<Map<string, Box>> {
   const originals = new Map(
@@ -882,7 +899,7 @@ export async function layoutCanvasNodes(input: {
     const boxes = await layoutLevel(
       scopedChildren,
       edges,
-      allScoped ? "padding" : "anchor",
+      allScoped ? 'padding' : 'anchor',
       sizeWithFrame,
     );
     for (const [id, box] of boxes) {
@@ -922,7 +939,7 @@ export async function layoutCanvasNodes(input: {
   const beforeRoot = new Map(
     rootNodes.map((node) => [node.id, boxFromPosition(node, nodeSize(node))]),
   );
-  const rootBoxes = await layoutLevel(rootNodes, edges, "anchor", sizeForRoot);
+  const rootBoxes = await layoutLevel(rootNodes, edges, 'anchor', sizeForRoot);
   for (const [id, box] of rootBoxes) {
     const node = byId.get(id);
     if (!node) continue;
