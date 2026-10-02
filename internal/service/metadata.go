@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -265,6 +267,38 @@ func (s *MetadataService) GetMetaValueSpaceByKBs(ctx context.Context, kbIDs []st
 		return nil, err
 	}
 	return common.MetaValueSpace(space), nil
+}
+
+// metaFacetProvider is implemented by doc engines that can count the file
+// list's metadata facet with aggregations instead of reading every document's
+// metadata. Like metaValueSpaceProvider, only the Elasticsearch backend has it.
+type metaFacetProvider interface {
+	MetaFacets(ctx context.Context, tenantID, kbID string, docIDs []string) (map[string]map[string]int64, int64, error)
+}
+
+// GetMetadataFacets counts, among docIDs, how many documents hold each metadata
+// value -- {key: {value: count}} -- and how many hold any metadata at all.
+//
+// ok=false means the doc store cannot give an exact answer: the backend has no
+// aggregation path, or the aggregation would have been partial or would have
+// missed values (types.ErrMetaValueSpaceIncomplete). A facet count is read as
+// exact, so the caller then counts the documents itself.
+func (s *MetadataService) GetMetadataFacets(ctx context.Context, kbID string, docIDs []string) (map[string]map[string]int64, int64, bool) {
+	provider, ok := s.docEngine.(metaFacetProvider)
+	if !ok {
+		return nil, 0, false
+	}
+	tenantID, err := s.GetTenantIDByKBID(ctx, kbID)
+	if err != nil {
+		common.Warn("metadata facets: tenant lookup failed; counting the documents instead", zap.String("kb_id", kbID), zap.Error(err))
+		return nil, 0, false
+	}
+	counts, carrying, err := provider.MetaFacets(ctx, tenantID, kbID, docIDs)
+	if err != nil {
+		common.Warn("metadata facets cannot be aggregated exactly; counting the documents instead", zap.String("kb_id", kbID), zap.Error(err))
+		return nil, 0, false
+	}
+	return counts, carrying, true
 }
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
