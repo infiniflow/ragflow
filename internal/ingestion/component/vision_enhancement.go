@@ -178,19 +178,16 @@ func maybeDispatchVisionEnhancement(
 	setup := setups[family]
 	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
-	// Collect visual resources, including Markdown images whose type is text
-	// because flatten_media_to_text is enabled.
+	// Collect visual resources: any item with an inlined image or usable PDF
+	// positions (on-demand crop), regardless of doc_type_kwd.
 	var items []int
 	for i, item := range dispatched.JSON {
 		if img, _ := item["image"].(string); img != "" {
 			items = append(items, i)
 			continue
 		}
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd == "image" || kd == "table" {
-			if _, ok := parser.ExtractPDFPositions(item); ok {
-				items = append(items, i)
-			}
+		if _, ok := parser.ExtractPDFPositions(item); ok {
+			items = append(items, i)
 		}
 	}
 	if len(items) == 0 {
