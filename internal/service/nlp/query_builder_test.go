@@ -16,6 +16,7 @@ package nlp
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -271,6 +272,42 @@ func TestQueryBuilder_Question(t *testing.T) {
 			},
 			checkKeywords: func(keywords []string) bool {
 				// Should return extracted keywords
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Hyphenated bug ID",
+			txt:      "BUG-1234",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && expr.MatchingText != "" && strings.Contains(expr.MatchingText, "1234")
+			},
+			checkKeywords: func(keywords []string) bool {
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Bug key with single char digit",
+			txt:      "KEY-1",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && expr.MatchingText != "" && strings.Contains(expr.MatchingText, "key")
+			},
+			checkKeywords: func(keywords []string) bool {
+				return len(keywords) > 0
+			},
+		},
+		{
+			name:     "Alphanumeric project code",
+			txt:      "PROJ_9821",
+			tbl:      "test",
+			minMatch: 0.5,
+			checkExpr: func(expr *types.MatchTextExpr) bool {
+				return expr != nil && expr.MatchingText != ""
+			},
+			checkKeywords: func(keywords []string) bool {
 				return len(keywords) > 0
 			},
 		},

@@ -62,9 +62,8 @@ var (
 	reSimpleToken    = regexp.MustCompile(`^[0-9a-z\.\+#_\*-]+$`)
 	rePunct          = regexp.MustCompile(`[ :|\r\n\t,，.。?？/\` + "`" + `!！&^%()\[\]{}<>*~'"\\]+`)
 	reCleanQuote     = regexp.MustCompile(`[ \"'^]+`)
-	reSingleChar     = regexp.MustCompile(`^[a-z0-9]$`)
 	reLeadSign       = regexp.MustCompile(`^[\+\-]+`)
-	reQuerySpecial   = regexp.MustCompile(`[.^+\(\)-]`)
+	reQuerySpecial   = regexp.MustCompile(`^[.^+\(\)-]`)
 	reSpecialChar    = regexp.MustCompile(`[,\.\/;'\[\]\\\` + "`" + `~!@#$%\^&\*\(\)=\+_<>\?:"\{\}\|，。；'‘’【】、！￥……（）——《》？："""-]+`)
 	reCleanTerm      = regexp.MustCompile(`[ \"']+`)
 )
@@ -298,8 +297,6 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 
 			// Clean token: remove special chars
 			tk = reCleanQuote.ReplaceAllString(tk, "")
-			// Remove single alphanumeric chars
-			tk = reSingleChar.ReplaceAllString(tk, "")
 			// Remove leading +/-
 			tk = reLeadSign.ReplaceAllString(tk, "")
 			tk = strings.TrimSpace(tk)
@@ -352,7 +349,11 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				continue
 			}
 			// Format: (token^weight synonym)
-			q = append(q, fmt.Sprintf("(%s^%.4f %s)", tk, w, syns[i]))
+			if syns[i] != "" {
+				q = append(q, fmt.Sprintf("(%s^%.4f %s)", tk, w, syns[i]))
+			} else {
+				q = append(q, fmt.Sprintf("(%s^%.4f)", tk, w))
+			}
 		}
 
 		// Add phrase queries for adjacent tokens
