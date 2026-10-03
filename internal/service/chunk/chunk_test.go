@@ -1674,6 +1674,7 @@ func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
 	}
 }
 
+// insertChunkTestKB creates a shared dataset for authorized member operations.
 func insertChunkTestKB(t *testing.T, id, tenantID string) {
 	t.Helper()
 
@@ -2096,6 +2097,7 @@ func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.D
 	return nil
 }
 
+// TestSwitchChunksUpdatesDocEngineWithAvailableInt pins availability updates to the requested document.
 func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

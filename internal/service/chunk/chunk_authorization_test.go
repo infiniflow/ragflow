@@ -119,21 +119,25 @@ type chunkAuthorizationTestEngine struct {
 	calls int
 }
 
+// Search records reads beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
 	e.calls++
 	return &types.SearchResult{}, nil
 }
 
+// GetChunk records detail reads and returns the authorized fixture.
 func (e *chunkAuthorizationTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
 	e.calls++
 	return map[string]interface{}{"id": "chunk-1", "doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "sample"}, nil
 }
 
+// UpdateChunks records mutation calls beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
 	e.calls++
 	return nil
 }
 
+// DeleteChunks records deletions beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
 	e.calls++
 	return 1, nil
