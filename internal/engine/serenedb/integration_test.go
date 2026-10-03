@@ -158,6 +158,25 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		}
 	})
 
+	// The builder tests assert the SQL TEXT; they say nothing about whether Search
+	// actually applies the post-filter it moved the threshold into. Without a
+	// threshold on the request, deleting the filterByScore call leaves every test
+	// green. This one asks for a cutoff only 'a' can clear.
+	t.Run("vector_threshold", func(t *testing.T) {
+		res := waitForFulltext(t, e, req([]interface{}{
+			&types.MatchDenseExpr{
+				VectorColumnName: "q_4_vec",
+				EmbeddingData:    []float64{1, 0, 0, 0},
+				TopN:             10,
+				ExtraOptions:     map[string]interface{}{"similarity": 0.999},
+			},
+		}, nil))
+		ids := chunkIDs(res)
+		if len(ids) != 1 || ids[0] != "a" {
+			t.Fatalf("similarity 0.999 should leave only 'a', got %v", ids)
+		}
+	})
+
 	t.Run("fusion", func(t *testing.T) {
 		res := waitForFulltext(t, e, req([]interface{}{
 			&types.MatchTextExpr{MatchingText: "alpha", TopN: 10},
@@ -167,6 +186,36 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		ids := chunkIDs(res)
 		if len(ids) == 0 || ids[0] != "a" {
 			t.Fatalf("fusion(alpha, [1,0,0,0]) should rank 'a' first, got %v", ids)
+		}
+	})
+
+	// Same gap on the hybrid path, and it is the one that actually regressed: the
+	// FULL OUTER JOIN can return a vector-only candidate with no term match, so a
+	// sub-threshold row reaches the fusion unless the vec branch filters its own
+	// limited candidates.
+	//
+	// The term is "beta", which ONLY 'a' carries - not "alpha", which 'c' also has.
+	// With "alpha" the lex branch returns 'c' legitimately and the assertion below
+	// fails against correct behaviour; that is a property of the fixture, not of
+	// the threshold. 'c' is [0.9,0.1,0,0], similarity 0.9939 against the query, so
+	// 0.999 excludes it from the vec branch and nothing else can bring it in.
+	t.Run("fusion_threshold", func(t *testing.T) {
+		res := waitForFulltext(t, e, req([]interface{}{
+			&types.MatchTextExpr{MatchingText: "beta", TopN: 10},
+			&types.MatchDenseExpr{
+				VectorColumnName: "q_4_vec",
+				EmbeddingData:    []float64{1, 0, 0, 0},
+				TopN:             10,
+				ExtraOptions:     map[string]interface{}{"similarity": 0.999},
+			},
+			&types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": "0.3,0.7"}},
+		}, nil))
+		// Exactly one, not "nothing unexpected": a range over an empty result makes
+		// no assertion at all, so the weaker form passes when the hybrid search
+		// returns nothing - including when a regression drops the qualifying row.
+		ids := chunkIDs(res)
+		if len(ids) != 1 || ids[0] != "a" {
+			t.Fatalf("fusion at similarity 0.999 should leave only 'a', got %v", ids)
 		}
 	})
 
