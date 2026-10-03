@@ -2608,8 +2608,8 @@ func cleanTTSText(text string) string {
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
-	if len(text) > 500 {
-		text = text[:500]
+	if r := []rune(text); len(r) > 500 {
+		text = string(r[:500])
 	}
 	return text
 }

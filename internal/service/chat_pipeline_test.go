@@ -2770,3 +2770,29 @@ func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 		t.Error("a flipped is_tools flag was not seen by the next resolution")
 	}
 }
+
+// ttsSpyDriver records the text a TTS driver is asked to synthesize.
+type ttsSpyDriver struct {
+	modelModule.ModelDriver
+	input string
+}
+
+func (d *ttsSpyDriver) AudioSpeech(_ context.Context, _ *string, audioContent *string, _ *modelModule.APIConfig, _ *modelModule.TTSConfig, _ *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	d.input = *audioContent
+	return &modelModule.TTSResponse{Audio: []byte("audio")}, nil
+}
+
+// TestSynthesizeTTS_CutsAtFiveHundredCharacters pins the cap to 500 characters,
+// so a CJK answer keeps its length and never ends in half a rune.
+func TestSynthesizeTTS_CutsAtFiveHundredCharacters(t *testing.T) {
+	spy := &ttsSpyDriver{}
+	name := "tts"
+	ttsModel := modelModule.NewChatModel(spy, &name, nil)
+	s := &ChatPipelineService{}
+	if audio := s.synthesizeTTS(t.Context(), ttsModel, strings.Repeat("知", 600)); audio == nil {
+		t.Fatal("expected audio")
+	}
+	if want := strings.Repeat("知", 500); spy.input != want {
+		t.Errorf("TTS input is %d bytes / %d runes, want 500 whole characters", len(spy.input), len([]rune(spy.input)))
+	}
+}
