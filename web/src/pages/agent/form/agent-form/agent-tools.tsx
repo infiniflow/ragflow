@@ -117,7 +117,7 @@ export function AgentTools() {
   const tools = useGetNodeTools();
   const { deleteNodeTool } = useDeleteAgentNodeTools();
   const { mcpIds } = useGetAgentMCPIds();
-  const { findMcpById } = useFindMcpById();
+  const { findMcpById } = useFindMcpById(mcpIds);
   const { deleteNodeMCP } = useDeleteAgentNodeMCP();
   const { showFormDrawer } = useContext(AgentInstanceContext);
   const { clickedNodeId, findAgentToolNodeById, selectNodeIds } = useGraphStore(
@@ -160,7 +160,7 @@ export function AgentTools() {
 
         {mcpIds.map((id, idx) => (
           <ToolCard key={id || `mcp-${idx}`} isNodeTool={false}>
-            {findMcpById(id)?.name}
+            {findMcpById(id)?.name ?? 'MCP'}
             <ActionButton
               record={id}
               deleteRecord={deleteNodeMCP(id)}
