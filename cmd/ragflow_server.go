@@ -1159,7 +1159,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
 	})
 	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
 	common.Info("agent: retrieval service adapter installed")
 
 	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
