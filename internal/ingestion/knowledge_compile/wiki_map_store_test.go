@@ -36,6 +36,7 @@ type wikiMapStoreEngine struct {
 	chunkStoreChecks  int
 	createdStores     int
 	createdVectorSize int
+	createdLanguage   string
 }
 
 func (e *wikiMapStoreEngine) GetType() string {
@@ -50,9 +51,10 @@ func (e *wikiMapStoreEngine) ChunkStoreExists(context.Context, string, string) (
 	return e.chunkStoreExists, nil
 }
 
-func (e *wikiMapStoreEngine) CreateChunkStore(_ context.Context, _, _ string, vectorSize int, _ string) error {
+func (e *wikiMapStoreEngine) CreateChunkStore(_ context.Context, _, _ string, vectorSize int, _, language string) error {
 	e.createdStores++
 	e.createdVectorSize = vectorSize
+	e.createdLanguage = language
 	e.chunkStoreExists = true
 	return nil
 }
@@ -101,7 +103,7 @@ func rowMatchesFilter(row map[string]interface{}, filter map[string]interface{})
 	return true
 }
 
-func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName, datasetID, _ string) ([]string, error) {
 	e.insertBase = baseName
 	e.insertDataset = datasetID
 	for _, chunk := range chunks {
@@ -213,6 +215,14 @@ func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
 	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, func(context.Context) (int, error) {
 		return 768, nil
 	})
+	// The table is the dataset's chunk table, so it is created with the
+	// dataset language, which fixes Infinity's fulltext analyzer.
+	store.(*wikiMapVersionStore).resolveLanguage = func(_ context.Context, datasetID string) (string, error) {
+		if datasetID != "kb-1" {
+			t.Fatalf("language resolved for dataset %q", datasetID)
+		}
+		return "slovak", nil
+	}
 	version := kccommon.WikiMapVersion{
 		Key: "version-a", TenantID: "tenant-1", DatasetID: "kb-1",
 		DocumentID: "doc-1", ChunkID: "chunk-1", Payload: []byte(`{}`),
@@ -221,8 +231,8 @@ func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
 	if err := store.PutWikiMapVersions(t.Context(), []kccommon.WikiMapVersion{version}); err != nil {
 		t.Fatalf("PutWikiMapVersions() error = %v", err)
 	}
-	if engine.createdStores != 1 || engine.createdVectorSize != 768 {
-		t.Fatalf("created store: count=%d vector_size=%d", engine.createdStores, engine.createdVectorSize)
+	if engine.createdStores != 1 || engine.createdVectorSize != 768 || engine.createdLanguage != "slovak" {
+		t.Fatalf("created store: count=%d vector_size=%d language=%q", engine.createdStores, engine.createdVectorSize, engine.createdLanguage)
 	}
 }
 

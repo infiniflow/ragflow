@@ -1455,7 +1455,7 @@ func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 		Content: "Section body", ParentID: "page-id",
 		Meta: map[string]any{"kind": "section", "slug": "overview", "page_slug": "entity/alpha", "section_level": 1, "source_chunk_ids": []string{"c1"}},
 	}
-	docs, err := productsToChunkDocs([]common.Product{page, section})
+	docs, err := productsToChunkDocs([]common.Product{page, section}, "")
 	if err != nil {
 		t.Fatalf("productsToChunkDocs: %v", err)
 	}

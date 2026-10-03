@@ -100,8 +100,8 @@ type ChunkService struct {
 	storeChunkImageFunc     func(string, string, []byte, string) error
 	removeChunkImageFunc    func(string, string) error
 	markWikiDirtyFunc       func(tenantID, datasetID, documentID string, chunkIDs []string)
-	tokenizeFunc            func(string) (string, error)
-	fineGrainedTokenizeFunc func(string) (string, error)
+	tokenizeFunc            func(text, language string) (string, error)
+	fineGrainedTokenizeFunc func(text, language string) (string, error)
 	numTokensFunc           func(string) int
 }
 
@@ -433,6 +433,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
 	// Call RetrievalService to perform retrieval
@@ -853,7 +854,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		if queryBuilder == nil {
 			queryBuilder = nlp.NewQueryBuilder()
 		}
-		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+		if matchText, _ := queryBuilder.Question(keywords, "", 0.3, datasetLanguageOf(kb)); matchText != nil {
 			matchExprs = append(matchExprs, matchText)
 		}
 	}
@@ -1113,11 +1114,12 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 
 	// Find the tenant that owns this dataset
-	var targetTenantID string
+	var targetTenantID, language string
 	for _, tenant := range tenants {
 		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
+			language = datasetLanguageOf(kb)
 			break
 		}
 	}
@@ -1169,8 +1171,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Tokenize content
 	contentStr := d["content_with_weight"].(string)
-	d["content_ltks"], _ = tokenizer.Tokenize(contentStr)
-	d["content_sm_ltks"], _ = tokenizer.FineGrainedTokenize(d["content_ltks"].(string))
+	d["content_ltks"], _ = s.tokenize(contentStr, language)
+	d["content_sm_ltks"], _ = s.fineGrainedTokenize(d["content_ltks"].(string), language)
 
 	// Important keywords - convert []string to []interface{} for transformChunkFields
 	if req.ImportantKwd != nil {
@@ -1392,20 +1394,21 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	chunkID := common.ChunkID(req.DocumentID, req.Content)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	contentLtks, err := s.tokenize(req.Content)
+	language := datasetLanguageOf(kb)
+	contentLtks, err := s.tokenize(req.Content, language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
 	}
-	contentSmLtks, err := s.fineGrainedTokenize(contentLtks)
+	contentSmLtks, err := s.fineGrainedTokenize(contentLtks, language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content fine-grained: %v", err)}
 	}
-	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "))
+	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "), language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
 	}
 	questionKwd := filterTrimmedStrings(req.Questions)
-	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"))
+	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"), language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize questions: %v", err)}
 	}
@@ -1481,7 +1484,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb)); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
@@ -1658,18 +1661,20 @@ func filterTrimmedStrings(values []string) []string {
 	return filtered
 }
 
-func (s *ChunkService) tokenize(text string) (string, error) {
+// tokenize tokenizes a manually written chunk field with the dataset language,
+// so it is indexed the way the dataset's parsed chunks are and its queries fold.
+func (s *ChunkService) tokenize(text, language string) (string, error) {
 	if s.tokenizeFunc != nil {
-		return s.tokenizeFunc(text)
+		return s.tokenizeFunc(text, language)
 	}
-	return tokenizer.Tokenize(text)
+	return tokenizer.New(language).Tokenize(text)
 }
 
-func (s *ChunkService) fineGrainedTokenize(text string) (string, error) {
+func (s *ChunkService) fineGrainedTokenize(text, language string) (string, error) {
 	if s.fineGrainedTokenizeFunc != nil {
-		return s.fineGrainedTokenizeFunc(text)
+		return s.fineGrainedTokenizeFunc(text, language)
 	}
-	return tokenizer.FineGrainedTokenize(text)
+	return tokenizer.New(language).FineGrainedTokenize(text)
 }
 
 func (s *ChunkService) numTokens(text string) int {
@@ -1870,4 +1875,15 @@ func releaseChunkImageLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageLocks.locks, key)
 	}
+}
+
+// datasetLanguageOf is the dataset's language, or "" when unset. A query is
+// folded the way its dataset was indexed, and on engines whose fulltext
+// analyzer is fixed when the chunk store is created a write that may create it
+// has to carry the language too.
+func datasetLanguageOf(kb *entity.Knowledgebase) string {
+	if kb == nil || kb.Language == nil {
+		return ""
+	}
+	return *kb.Language
 }

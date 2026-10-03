@@ -29,7 +29,7 @@ type memNavEngine struct {
 
 func newMemNavEngine() *memNavEngine { return &memNavEngine{} }
 
-func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string) ([]string, error) {
+func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string, _ string) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		// A caller-provided row id is kept, exactly as the real engines do it
@@ -134,7 +134,7 @@ func (m *memNavEngine) Close() error               { return nil }
 func (m *memNavEngine) Ping(context.Context) error { return nil }
 func (m *memNavEngine) GetType() string            { return "mem" }
 func (m *memNavEngine) SupportsPageRank() bool     { return false }
-func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 func (m *memNavEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
@@ -451,7 +451,7 @@ func TestNavService_ListClusters_SearchReturnsPrunedForest(t *testing.T) {
 			"content_with_weight": `{"type":"nav_doc","description":"孤儿概要"}`,
 		},
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -755,7 +755,7 @@ func TestNavService_Search_DocScope(t *testing.T) {
 		row(nav.TypeNavCluster, "kb1", "covering d1+d2", []string{"d1", "d2"}, 0.4),
 		row(nav.TypeNavCluster, "kb1", "covering d2 only", []string{"d2"}, 1),
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	q := make([]float32, dim)
@@ -853,7 +853,7 @@ func TestNavService_Search_DocScopeBeyondAnyPoolSize(t *testing.T) {
 			"q_4_vec":     vec(0.4),
 		},
 	)
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	q := make([]float32, dim)
@@ -1051,7 +1051,7 @@ func TestNavService_UpsertDoc_PlacementBySimilarity(t *testing.T) {
 			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
 			"q_1024_vec": vec,
 		}
-		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1202,7 +1202,7 @@ func TestNavService_FindBestCluster_DeepestMatchWins(t *testing.T) {
 			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
 			"q_1024_vec": vec,
 		}
-		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1338,7 +1338,7 @@ func TestNavService_SummariesByDocIDs_DescriptionLabel(t *testing.T) {
 				"doc_id": "d9", "title_kwd": "出师表全文内容与赏析",
 				"content_with_weight": `{"type":"nav_doc"}`,
 			},
-		}, "", "kb1"); err != nil {
+		}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{"d9"})
@@ -1357,7 +1357,7 @@ func TestNavService_SummariesByDocIDs_DescriptionLabel(t *testing.T) {
 				"doc_id": rawID, "title_kwd": rawID,
 				"content_with_weight": `{"type":"nav_doc"}`,
 			},
-		}, "", "kb1"); err != nil {
+		}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{rawID})
@@ -1453,7 +1453,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 			"doc_count_int": 1,
 		})
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {

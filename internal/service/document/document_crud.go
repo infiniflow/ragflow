@@ -145,7 +145,7 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	if err != nil {
 		return common.CodeServerError, err
 	}
-	if err = s.updateDocumentNameOnly(ctx, document, kb.TenantID, *req.Name); err != nil {
+	if err = s.updateDocumentNameOnly(ctx, document, kb, *req.Name); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil

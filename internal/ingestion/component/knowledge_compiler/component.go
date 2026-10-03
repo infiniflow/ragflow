@@ -218,7 +218,11 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// conf/infinity_mapping.json) and merge them into the upstream input
 	// chunks. The component stays DB-independent and no longer routes through a
 	// separate writer seam: its output is plain chunks.
-	compiled, err := productsToChunkDocs(out.Products)
+	// Compiled rows share the dataset's chunk table with the parsed chunks and
+	// are retrieved by the same queries, so they tokenize with the dataset
+	// language the Tokenizer component uses.
+	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
+	compiled, err := productsToChunkDocs(out.Products, language)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +399,8 @@ var variantCompileKWD = map[common.Variant]string{
 // schema.ChunkDoc values aligned to conf/infinity_mapping.json. Product.Meta is
 // not persisted: only engine columns are written, because Infinity rejects an
 // insert naming an unknown column.
-func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
+func productsToChunkDocs(products []common.Product, language string) ([]schema.ChunkDoc, error) {
+	tok := tokenizer.New(language)
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
 		doc := schema.ChunkDoc{
@@ -419,9 +424,9 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				indexText = d
 			}
 		}
-		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
+		if ltks, err := tok.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
-			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
+			if sm, err := tok.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm
 			}
 		}
@@ -496,7 +501,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 			}
 		}
 		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–97).
-		if err := applyVariantColumns(&doc, p); err != nil {
+		if err := applyVariantColumns(&doc, p, tok); err != nil {
 			return nil, err
 		}
 		docs = append(docs, doc)
@@ -507,7 +512,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 // applyVariantColumns emits the compile-specific columns defined in
 // conf/infinity_mapping.json lines 45–77, driven by Product.Meta keys that
 // each variant's build site populates. Unknown/absent keys are skipped.
-func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
+func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.Tokenizer) error {
 	kind := metaString(p.Meta, "kind")
 
 	switch p.Variant {
@@ -540,7 +545,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			if err := doc.SetExtraValue("title_kwd", v); err != nil {
 				return err
 			}
-			setTitleTokens(doc, v)
+			setTitleTokens(doc, v, tok)
 		}
 		if v := metaString(p.Meta, "page_type"); v != "" {
 			if err := doc.SetExtraValue("page_type_kwd", v); err != nil {
@@ -717,11 +722,11 @@ func metaString(m map[string]any, key string) string {
 // setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
 // title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
 // `docnm`, so the twin would make docnm map-order dependent.
-func setTitleTokens(doc *schema.ChunkDoc, title string) {
+func setTitleTokens(doc *schema.ChunkDoc, title string, tok tokenizer.Tokenizer) {
 	if title == "" {
 		return
 	}
-	if tks, err := tokenizer.Tokenize(title); err == nil && tks != "" {
+	if tks, err := tok.Tokenize(title); err == nil && tks != "" {
 		doc.TitleTks = tks
 	}
 }
