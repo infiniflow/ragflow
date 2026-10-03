@@ -87,6 +87,7 @@ var browserFactoryDefaultBaseURL = map[string]string{
 	"openrouter":     "https://openrouter.ai/api/v1",
 	"perfxcloud":     "https://cloud.perfxlab.cn/v1",
 	"ppio":           "https://api.ppinfra.com/v3/openai",
+	"requesty":       "https://router.requesty.ai/v1",
 	"siliconflow":    "https://api.siliconflow.cn/v1",
 	"stepfun":        "https://api.stepfun.com/v1",
 	"tongyi-qianwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",

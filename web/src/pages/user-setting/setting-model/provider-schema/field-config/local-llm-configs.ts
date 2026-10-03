@@ -169,6 +169,22 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     ],
     'https://openrouter.ai/docs',
   ),
+  [LLMFactory.Requesty]: buildLocalConfig(
+    LLMFactory.Requesty,
+    'Requesty',
+    false,
+    [
+      {
+        name: 'base_url',
+        label: 'addLlmBaseUrl',
+        type: 'inputSelect',
+        required: false,
+        placeholder: 'baseUrlNameMessage',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+    ],
+    'https://docs.requesty.ai',
+  ),
   [LLMFactory.HuggingFace]: buildLocalConfig(
     LLMFactory.HuggingFace,
     'HuggingFace',

@@ -1,0 +1,76 @@
+{
+  "name": "Requesty",
+  "rank": 885,
+  "url": {
+    "default": "https://router.requesty.ai/v1",
+    "eu": "https://router.eu.requesty.ai/v1",
+    "us": "https://router.us.requesty.ai/v1",
+    "ap": "https://router.ap.requesty.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "requesty",
+  "models": [
+    {
+      "name": "openai/gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-4-5",
+      "context_length": 1000000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-2.5-flash",
+      "context_length": 1048576,
+      "max_output": 65535,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-chat",
+      "context_length": 1000000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}
