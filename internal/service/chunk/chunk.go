@@ -1404,11 +1404,13 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
 	}
+	importantTks = strings.ToLower(importantTks)
 	questionKwd := filterTrimmedStrings(req.Questions)
 	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"))
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize questions: %v", err)}
 	}
+	questionTks = strings.ToLower(questionTks)
 
 	now := time.Now()
 	docName := ""

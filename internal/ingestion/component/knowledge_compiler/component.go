@@ -722,7 +722,8 @@ func setTitleTokens(doc *schema.ChunkDoc, title string) {
 		return
 	}
 	if tks, err := tokenizer.Tokenize(title); err == nil && tks != "" {
-		doc.TitleTks = tks
+		// Fold title_tks to lowercase (same rationale as content_ltks).
+		doc.TitleTks = strings.ToLower(tks)
 	}
 }
 
