@@ -91,6 +91,14 @@ seekdb:
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
     port: ${SEEKDB_PORT:-2881}
+vastbase:
+  host: '${VB_HOST:-vastbase}'
+  port: ${VB_PORT:-5432}
+  user: '${VB_USERNAME:-ragflow}'
+  password: '${VB_PASSWORD:-Infini_Rag@123}'
+  db_name: '${VB_VEC_DBNAME:-ragflow}'
+  dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
+  ssl_mode: '${VB_SSL_MODE:-disable}'
 kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'
