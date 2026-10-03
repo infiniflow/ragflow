@@ -516,15 +516,30 @@ func keywordPath(fieldPath string) string {
 	return fieldPath + ".keyword"
 }
 
-// termOrMatch creates exact-match clause
+// termOrMatch creates exact-match clause. Strings match the `.keyword`
+// sub-field case-insensitively. ES dynamic date detection maps a field whose
+// first value is YYYY-MM-DD as `date`, which has no `.keyword` sub-field, so
+// an ISO-date value also matches the field itself.
 func termOrMatch(fieldPath string, value interface{}) map[string]interface{} {
 	if s, ok := value.(string); ok {
-		return map[string]interface{}{
+		keywordTerm := map[string]interface{}{
 			"term": map[string]interface{}{
 				keywordPath(fieldPath): map[string]interface{}{
 					"value":            s,
 					"case_insensitive": true,
 				},
+			},
+		}
+		if !dateRegex.MatchString(s) {
+			return keywordTerm
+		}
+		return map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{fieldPath: s}},
+					keywordTerm,
+				},
+				"minimum_should_match": 1,
 			},
 		}
 	}
