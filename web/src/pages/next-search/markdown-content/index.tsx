@@ -113,15 +113,14 @@ const MarkdownContent = ({
   }, [reference, setDocumentIds]);
 
   const handleDocumentButtonClick = useCallback(
-    (
-      documentId: string,
-      chunk: IReferenceChunk,
-      isPdf: boolean = false,
-      documentUrl?: string,
-    ) => {
-      void isPdf;
-      void documentUrl;
+    (documentId: string, chunk: IReferenceChunk, documentUrl?: string) => {
       return () => {
+        // Web page documents carry their own url; the preview modal can't
+        // render them, so open the link directly.
+        if (documentUrl && /^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
         clickDocumentButton?.(documentId, chunk);
       };
     },
@@ -174,6 +173,7 @@ const MarkdownContent = ({
   const getPopoverContent = useCallback(
     (chunkIndex: number) => {
       const {
+        documentUrl,
         fileThumbnail,
         fileExtension,
         imageId,
@@ -232,8 +232,7 @@ const MarkdownContent = ({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    // fileExtension === 'pdf',
-                    // documentUrl,
+                    documentUrl,
                   )}
                 >
                   {document?.doc_name}
