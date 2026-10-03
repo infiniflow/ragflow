@@ -87,6 +87,8 @@ type PDFParser struct {
 	PaddleOCRAlgorithm                string
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
+	DoclingDoOCR                      *bool
+	DoclingPDFBackend                 string
 	OpenDataLoaderAPIServer           string
 	OpenDataLoaderAPIKey              string
 	OpenDataLoaderTimeout             int
@@ -194,6 +196,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["docling_api_key"].(string); ok {
 		p.DoclingAPIKey = v
+	}
+	if v, ok := setup["docling_do_ocr"].(bool); ok {
+		p.DoclingDoOCR = &v
+	}
+	if v, ok := setup["docling_pdf_backend"].(string); ok && v != "" {
+		p.DoclingPDFBackend = v
 	}
 	if v, ok := setup["opendataloader_apiserver"].(string); ok && v != "" {
 		p.OpenDataLoaderAPIServer = v
