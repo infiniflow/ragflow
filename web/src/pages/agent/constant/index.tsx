@@ -778,7 +778,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
