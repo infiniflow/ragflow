@@ -555,3 +555,69 @@ func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
 		}
 	}
 }
+
+// TestParseOrderByExprEmitsIDSort verifies that sorting on the `id` field
+// produces a real ES sort entry. RAGFlow's index mappings declare `id` as
+// `keyword` (see conf/mapping.json's dynamic `kwd` template and the explicit
+// `conf/doc_meta_es_mapping.json`), so the legacy "skip id" guard silently
+// dropped the only sort key the knowledge_compile Reader uses for
+// search_after pagination — and paged scans past index.max_result_window
+// silently returned empty results (#19649).
+func TestParseOrderByExprEmitsIDSort(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Asc("id"))
+	if len(sort) != 1 {
+		t.Fatalf("Asc(\"id\") produced %d sort entries, want 1: %#v", len(sort), sort)
+	}
+	entry, ok := sort[0]["id"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Asc(\"id\") entry missing `id` key: %#v", sort[0])
+	}
+	if entry["order"] != "asc" {
+		t.Errorf("Asc(\"id\") entry order = %v, want \"asc\"", entry["order"])
+	}
+	if entry["unmapped_type"] != "keyword" {
+		t.Errorf("Asc(\"id\") entry unmapped_type = %v, want \"keyword\" (id is keyword per conf/mapping.json)", entry["unmapped_type"])
+	}
+}
+
+// TestParseOrderByExprDescID confirms Desc("id") round-trips with the
+// right direction and is no longer dropped.
+func TestParseOrderByExprDescID(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Desc("id"))
+	if len(sort) != 1 {
+		t.Fatalf("Desc(\"id\") produced %d sort entries, want 1: %#v", len(sort), sort)
+	}
+	entry := sort[0]["id"].(map[string]interface{})
+	if entry["order"] != "desc" {
+		t.Errorf("Desc(\"id\") entry order = %v, want \"desc\"", entry["order"])
+	}
+}
+
+// TestParseOrderByExprMixedIDAndKeyword makes sure the guard removal doesn't
+// change how other keyword fields are emitted when `id` is part of the chain.
+func TestParseOrderByExprMixedIDAndKeyword(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Asc("slug_kwd").Asc("id").Asc("doc_id"))
+	if len(sort) != 3 {
+		t.Fatalf("3-field order produced %d entries, want 3: %#v", len(sort), sort)
+	}
+	if _, ok := sort[0]["slug_kwd"]; !ok {
+		t.Errorf("first entry missing slug_kwd: %#v", sort[0])
+	}
+	if _, ok := sort[1]["id"]; !ok {
+		t.Errorf("second entry missing id: %#v", sort[1])
+	}
+	if _, ok := sort[2]["doc_id"]; !ok {
+		t.Errorf("third entry missing doc_id: %#v", sort[2])
+	}
+}
+
+// TestParseOrderByExprNilAndEmpty guards the trivial "no order" paths so
+// removing the id guard cannot regress them.
+func TestParseOrderByExprNilAndEmpty(t *testing.T) {
+	if got := parseOrderByExpr(nil); got != nil {
+		t.Errorf("nil OrderByExpr produced %#v, want nil", got)
+	}
+	if got := parseOrderByExpr(&types.OrderByExpr{}); got != nil {
+		t.Errorf("empty OrderByExpr produced %#v, want nil", got)
+	}
+}

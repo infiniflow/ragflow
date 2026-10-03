@@ -3435,10 +3435,14 @@ func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
 			direction = "desc"
 		}
 
-		// Skip id field (cannot order by text field)
-		if field.Field == "id" {
-			continue
-		}
+		// The historical guard "skip id field" assumed `id` was a text-typed
+		// column, which made ES reject sorting on it. RAGFlow's index mappings
+		// (conf/mapping.json dynamic template `kwd`, and the explicit
+		// `conf/doc_meta_es_mapping.json` entry) declare `id` as `keyword` —
+		// so this guard silently dropped the only sort key callers like the
+		// knowledge_compile Reader use for search_after pagination, and
+		// paged scans past index.max_result_window returned empty pages
+		// (#19649). Emit a sort entry for `id` like any other keyword field.
 
 		// Special handling for page_num_int and top_int
 		if field.Field == "page_num_int" || field.Field == "top_int" {
