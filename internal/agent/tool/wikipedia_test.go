@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/tokenizer"
 )
@@ -278,4 +279,88 @@ func TestWikipedia_BuildByNameIgnoresCanvasParams(t *testing.T) {
 	if wikipedia.topN != 3 || wikipedia.lang != "en" {
 		t.Fatalf("node defaults = %d/%q", wikipedia.topN, wikipedia.lang)
 	}
+}
+
+// wikipediaExtractServer serves one generator=search page whose extract is the
+// given string, pointed at by rewriteHostTransport.
+func wikipediaExtractServer(t *testing.T, extract string) *WikipediaTool {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":{"pages":{"1":{"index":1,"title":"胃癌","extract":"` +
+			extract + `","fullurl":"https://zh.wikipedia.org/wiki/胃癌"}}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteHostTransport(srv.URL)})
+	return NewWikipediaToolWithParams(helper, 10, "zh")
+}
+
+func wikipediaSingleResult(t *testing.T, tool *WikipediaTool) wikipediaEnvelope {
+	t.Helper()
+	out, err := tool.InvokableRun(t.Context(), `{"query":"胃癌"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var env wikipediaEnvelope
+	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v", jerr)
+	}
+	if len(env.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(env.Results))
+	}
+	return env
+}
+
+func TestWikipedia_CapsExtractOnRuneBoundary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("under the limit the extract survives whole", func(t *testing.T) {
+		t.Parallel()
+		// 4000 three-byte runes. A 10000 byte cut would land inside a rune,
+		// while a 10000 rune cap leaves the extract untouched.
+		extract := strings.Repeat("中", 4000)
+		env := wikipediaSingleResult(t, wikipediaExtractServer(t, extract))
+		content := env.Results[0].Content
+
+		if content != extract {
+			t.Errorf("Content was altered below the cap. runes=%d bytes=%d, want the %d rune extract unchanged",
+				utf8.RuneCountInString(content), len(content), utf8.RuneCountInString(extract))
+		}
+		if strings.Contains(content, "\uFFFD") {
+			t.Errorf("Content carries U+FFFD. The cap cut a rune in half, leaving runes=%d bytes=%d.",
+				utf8.RuneCountInString(content), len(content))
+		}
+		if !strings.Contains(env.FormalizedContent, extract) {
+			t.Error("FormalizedContent does not carry the whole extract")
+		}
+	})
+
+	t.Run("over the limit the extract is a bounded valid prefix", func(t *testing.T) {
+		t.Parallel()
+		// 12000 three-byte runes, well past the 10000 rune cap.
+		extract := strings.Repeat("中", 12000)
+		env := wikipediaSingleResult(t, wikipediaExtractServer(t, extract))
+		content := env.Results[0].Content
+
+		if content == "" {
+			t.Fatal("Content is empty, want the capped extract")
+		}
+		if !strings.HasPrefix(extract, content) {
+			t.Errorf("Content is not a prefix of the source extract. runes=%d bytes=%d",
+				utf8.RuneCountInString(content), len(content))
+		}
+		if !utf8.ValidString(content) {
+			t.Error("Content is not valid UTF-8")
+		}
+		if strings.Contains(content, "\uFFFD") {
+			t.Errorf("Content carries U+FFFD. The cap cut a rune in half, leaving runes=%d bytes=%d.",
+				utf8.RuneCountInString(content), len(content))
+		}
+		if got := utf8.RuneCountInString(content); got > 10000 {
+			t.Errorf("Content rune count = %d, want at most 10000", got)
+		}
+		if strings.Contains(env.FormalizedContent, "\uFFFD") {
+			t.Error("FormalizedContent carries U+FFFD")
+		}
+	})
 }
