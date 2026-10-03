@@ -45,3 +45,48 @@ func TestRegistryOpenUsesTaskFactory(t *testing.T) {
 		t.Fatalf("connector type = %T, want *RSSConnector", connector)
 	}
 }
+
+func TestRegistryS3SourceHonorsBucketType(t *testing.T) {
+	registry := NewRegistry()
+	RegisterBuiltIns(registry)
+	credentials := map[string]any{
+		"endpoint_url":          "https://objects.example.com",
+		"aws_access_key_id":     "key",
+		"aws_secret_access_key": "secret",
+		"addressing_style":      "path",
+	}
+	open := func(t *testing.T, config map[string]any) []Connector {
+		t.Helper()
+		fromConfig, err := registry.OpenFromConfig("s3", config)
+		if err != nil {
+			t.Fatalf("OpenFromConfig failed: %v", err)
+		}
+		fromTask, err := registry.Open(context.Background(), dao.SyncTaskContext{
+			Connector: entity.Connector{Source: "s3", Config: entity.JSONMap(config)},
+		})
+		if err != nil {
+			t.Fatalf("Open failed: %v", err)
+		}
+		return []Connector{fromConfig, fromTask}
+	}
+
+	for _, c := range open(t, map[string]any{"bucket_name": "docs", "bucket_type": "s3_compatible", "credentials": credentials}) {
+		compatible, ok := c.(*S3CompatibleConnector)
+		if !ok {
+			t.Fatalf("s3_compatible connector type = %T, want *S3CompatibleConnector", c)
+		}
+		if compatible.endpointURL != "https://objects.example.com" || compatible.addressingStyle != "path" {
+			t.Fatalf("endpoint_url = %q, addressing_style = %q", compatible.endpointURL, compatible.addressingStyle)
+		}
+	}
+	for _, config := range []map[string]any{
+		{"bucket_name": "docs", "bucket_type": "s3", "credentials": credentials},
+		{"bucket_name": "docs", "credentials": credentials},
+	} {
+		for _, c := range open(t, config) {
+			if _, ok := c.(*S3Connector); !ok {
+				t.Fatalf("bucket_type %v connector type = %T, want *S3Connector", config["bucket_type"], c)
+			}
+		}
+	}
+}
