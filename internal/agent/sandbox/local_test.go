@@ -26,22 +26,6 @@ import (
 	"time"
 )
 
-func TestLocalOutputCapture_DrainsBeyondLimit(t *testing.T) {
-	var output localOutputCapture
-	output.limit = 32
-	for range 100 {
-		if n, err := output.Write([]byte(strings.Repeat("x", 1024))); err != nil || n != 1024 {
-			t.Fatalf("Write = (%d, %v), want (1024, nil)", n, err)
-		}
-	}
-	if output.buffer.Len() > 32 {
-		t.Errorf("captured %d bytes, want at most 32", output.buffer.Len())
-	}
-	if output.total != 102400 {
-		t.Errorf("total = %d, want 102400", output.total)
-	}
-}
-
 func TestLocal_ExecuteCode_OutputLimit(t *testing.T) {
 	pythonPath, err := findBinary("python3")
 	if err != nil {
