@@ -1382,3 +1382,22 @@ func TestRestAPISyncSessionResumeRejectsMissingAnchor(t *testing.T) {
 		t.Fatalf("requested pages=%v want [1]", got)
 	}
 }
+
+// TestRestAPIItemToDocumentTruncatesSemanticIDByCharacter verifies a long
+// non-ASCII content field is cut to 100 characters without splitting a
+// multi-byte character.
+func TestRestAPIItemToDocumentTruncatesSemanticIDByCharacter(t *testing.T) {
+	withRestAPITestHooks(t)
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":            "https://example.com",
+		"id_field":       "id",
+		"content_fields": "title",
+	})
+	doc, err := c.itemToDocument(map[string]any{"id": "abc", "title": strings.Repeat("数", 150)})
+	if err != nil {
+		t.Fatalf("itemToDocument: %v", err)
+	}
+	if want := strings.Repeat("数", 100); doc.SemanticIdentifier != want {
+		t.Fatalf("sem=%q want %q", doc.SemanticIdentifier, want)
+	}
+}

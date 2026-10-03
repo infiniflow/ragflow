@@ -849,3 +849,16 @@ func TestPostgreSQLConnectorOpenSyncIncrementalResumeRejectsSingleOrder(t *testi
 		t.Fatalf("OpenSync returned a session on invalid resume")
 	}
 }
+
+// TestPostgreSQLConnectorSemanticIDTruncatesByCharacter verifies a long
+// non-ASCII title is cut to 100 characters without splitting a multi-byte
+// character.
+func TestPostgreSQLConnectorSemanticIDTruncatesByCharacter(t *testing.T) {
+	doc, ok := (&PostgreSQLConnector{}).rowToSourceDocument(map[string]any{"title": strings.Repeat("数", 150)}, []string{"title"})
+	if !ok {
+		t.Fatal("rowToSourceDocument returned ok=false")
+	}
+	if want := strings.Repeat("数", 100); doc.SemanticIdentifier != want {
+		t.Fatalf("semantic identifier = %q, want %q", doc.SemanticIdentifier, want)
+	}
+}
