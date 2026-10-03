@@ -386,6 +386,17 @@ func nlpRequestFromRetrieval(
 			"must_not":      map[string]interface{}{"exists": "compile_kwd"},
 		}
 	}
+	// Restrict to ordinary document text chunks with the SAME filter grep_chunks
+	// applies: available_int=1 (must_not available_int<1 semantics so chunks
+	// whose available_int is absent still pass) and must_not exists compile_kwd
+	// to exclude knowledge-compiled products. Setting available_int explicitly
+	// here matches grep exactly (both go through buildBoolQueryFromCondition).
+	if req.OnlyOriginalText {
+		nlpReq.Filter = map[string]interface{}{
+			"available_int": 1,
+			"must_not":      map[string]interface{}{"exists": "compile_kwd"},
+		}
+	}
 	return nlpReq
 }
 

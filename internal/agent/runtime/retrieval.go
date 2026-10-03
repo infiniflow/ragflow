@@ -195,6 +195,11 @@ var ErrGrepServiceMissing = errors.New(
 	"grep service not registered — call runtime.SetGrepService(...) at boot",
 )
 
+// ErrBm25ServiceMissing is returned when no Bm25Service has been registered.
+var ErrBm25ServiceMissing = errors.New(
+	"bm25 service not registered — call runtime.SetBm25Service(...) at boot",
+)
+
 // ErrRegexpNotSupported is returned when the underlying doc engine does not
 // implement regex matching on chunk content (e.g. Infinity).
 var ErrRegexpNotSupported = errors.New(
@@ -208,11 +213,6 @@ var ErrRegexpNotSupported = errors.New(
 // apart from a transport or scope failure and degrade deliberately instead of
 // surfacing an opaque backend error.
 var ErrRegexpPushdown = errors.New("grep_chunks: regexp pushdown failed")
-
-// ErrBm25ServiceMissing is returned when no Bm25Service has been registered.
-var ErrBm25ServiceMissing = errors.New(
-	"bm25 service not registered — call runtime.SetBm25Service(...) at boot",
-)
 
 var (
 	retrievalServiceMu   sync.RWMutex
