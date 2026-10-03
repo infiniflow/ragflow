@@ -71,8 +71,8 @@ func NewChatPipelineService() *ChatPipelineService {
 
 // ---------------------------------------------------------------------------
 // AsyncChatResult mirrors the dicts yielded by Python's async_chat /
-// async_chat_solo. The handler translates these into OpenAIStreamEvent or
-// builds a non-streaming OpenAICompletionResponse.
+// async_chat_solo. OpenAIChatService translates these into OpenAIStreamEvent
+// values or builds a non-streaming OpenAICompletionResponse.
 // ---------------------------------------------------------------------------
 
 // AsyncChatResult is a single yield from the chat pipeline.
