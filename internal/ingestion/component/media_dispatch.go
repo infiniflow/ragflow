@@ -75,7 +75,8 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: OCR followed by optional IMAGE2TEXT enhancement.
+// Image dispatch: OCR, or the document text of an SVG, followed by optional
+// IMAGE2TEXT enhancement.
 
 func maybeDispatchImage(
 	ctx context.Context,
@@ -101,13 +102,27 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	img, err := decodeDispatchImage(binary, useOCR)
-	if err != nil {
-		return parser.ParseResult{}, true, err
+	if len(binary) == 0 || len(binary) > parser.MaxImagePayloadBytes {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
+	// SVG carries its text in the document, so it is read rather than
+	// rasterized for OCR, whatever the parse method.
+	isSVG := isSVGFilename(filename)
 	var text string
-	if useOCR {
-		text, err = extractImageText(ctx, img)
+	var ocrErr error
+	if isSVG {
+		text, err = extractSVGText(ctx, binary)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+	} else {
+		img, err := decodeDispatchImage(binary, useOCR)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		if useOCR {
+			text, ocrErr = extractImageText(ctx, img)
+		}
 	}
 	release()
 	parsed := dispatchParse(ctx, fileType, filename, binary, setups)
@@ -120,15 +135,20 @@ func maybeDispatchImage(
 	parsed.OutputFormat = "json"
 	imageData, _ := parsed.JSON[0]["image"].(string)
 	parsed.JSON[0]["text"] = text
-	if err != nil {
-		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", err))
+	if ocrErr != nil {
+		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", ocrErr))
+	} else if isSVG && text == "" {
+		parsed.Warnings = append(parsed.Warnings, "image SVG contains no text")
 	} else if useOCR && strings.TrimSpace(text) == "" {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement {
+	if enableVisionEnhancement && isSVG {
+		// Vision providers take raster images; raw SVG is not sent to them.
+		parsed.Warnings = append(parsed.Warnings, "image VLM enhancement skipped: SVG is not rasterized for vision models")
+	} else if enableVisionEnhancement {
 		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
@@ -139,9 +159,6 @@ func maybeDispatchImage(
 }
 
 func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
-	if len(data) == 0 || len(data) > parser.MaxImagePayloadBytes {
-		return nil, fmt.Errorf("parser: image payload exceeds size limits")
-	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("parser: decode image: %w", err)
