@@ -326,6 +326,22 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		out["metadata"] = meta
 	}
 
+	// 6. Legacy pipeline-compat shim: a single Auto Metadata extractor
+	// configured with the old `field_name: "metadata"` (+ optional
+	// `sys_prompt`) pair — dropped by the modular-schema refactor — is
+	// translated into the new `metadata.enabled = true` form before the
+	// whitelist filter strips the unknown keys. Without this, the Extractor
+	// component no-ops and `meta_fields` are never populated (issue #20335).
+	if fieldName, _ := out["field_name"].(string); fieldName == "metadata" {
+		if _, has := out["metadata"]; !has {
+			meta := map[string]any{"enabled": true}
+			if sp, ok := out["sys_prompt"].(string); ok && strings.TrimSpace(sp) != "" {
+				meta["system_prompt"] = sp
+			}
+			out["metadata"] = meta
+		}
+	}
+
 	return out
 }
 

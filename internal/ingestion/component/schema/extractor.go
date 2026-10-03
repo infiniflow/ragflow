@@ -101,10 +101,17 @@ type SummaryExtractConfig struct {
 // MetadataExtractConfig configures structured metadata extraction.
 // BuiltInMetadata is carried for persistence/replay; it is NOT LLM-extracted.
 // Deterministic file_name/update_time is applied via PipelineResult -> doc_state.applyBuiltInMetadata.
+//
+// SystemPrompt overrides the hard-coded autoMetadataPrompt template. When the
+// operator-declared Metadata field set is empty and SystemPrompt is non-empty,
+// the pipeline-compat shim (see NormalizeExtractorParams) treats the run as a
+// legacy single-pass extraction: the LLM is asked to return a JSON object under
+// the operator's prompt verbatim, and every key it returns is kept.
 type MetadataExtractConfig struct {
 	Enabled         bool                      `json:"enabled"`
 	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`
 	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
+	SystemPrompt    string                    `json:"system_prompt,omitempty"`
 }
 
 // ExtractorParam is the static configuration for the Extractor component.
