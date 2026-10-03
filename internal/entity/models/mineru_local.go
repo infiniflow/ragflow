@@ -24,6 +24,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 )
@@ -83,8 +84,14 @@ func (m *MinerULocalModel) AudioSpeechWithSender(ctx context.Context, modelName 
 	return fmt.Errorf("%s no such method", m.Name())
 }
 
+// OCRFile is exercised during model verification (verifyOCRModel). Local MinerU
+// is a document-parsing API and has no image-OCR endpoint, so delegate to
+// CheckConnection — same pattern as the hosted mineru.net driver (mineru.go).
 func (m *MinerULocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return &OCRFileResponse{}, nil
 }
 
 func (m *MinerULocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -96,7 +103,38 @@ func (m *MinerULocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (m
 }
 
 func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	u, err := url.Parse(resolvedBaseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	// MinerU's API service exposes GET /health; keep scheme/host and replace
+	// only the path so a base URL with extra path segments or query stays sane.
+	u.Path = "/health"
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	defer resp.Body.Close()
+	// Any HTTP answer (even 404 on a service without /health) proves the
+	// endpoint is reachable — same "non-auth error means alive" semantics as
+	// the hosted mineru.net driver's CheckConnection.
+	return nil
 }
 
 func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
