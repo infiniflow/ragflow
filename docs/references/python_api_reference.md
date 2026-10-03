@@ -602,7 +602,10 @@ DataSet.list_documents(
     orderby: str = "create_time",
     desc: bool = True,
     create_time_from: int = 0,
-    create_time_to: int = 0
+    create_time_to: int = 0,
+    *,
+    run: list[str] | None = None,
+    suffix: list[str] | None = None,
 )
 ```
 
@@ -650,6 +653,19 @@ Unix timestamp for filtering documents created after this time. 0 means no filte
 
 ##### create_time_to: `int`
 Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to 0.
+
+##### run: `list[str] | None`
+
+Optional keyword-only processing-status filter. Multiple values match any listed status. `None` or an empty list leaves status unrestricted. Values are sent unchanged and validated by the connected server:
+
+- Python server: `"UNSTART"`, `"RUNNING"`, `"CANCEL"`, `"DONE"`, `"FAIL"`, `"SCHEDULE"`, or their numeric strings `"0"` through `"5"` respectively.
+- Go server: `"UNSTART"`, `"CREATED"`, `"SCHEDULED"`, `"RUNNING"`, `"STOPPING"`, `"STOPPED"`, `"COMPLETED"`, `"FAILED"`.
+
+##### suffix: `list[str] | None`
+
+Optional keyword-only file-suffix filter, such as `["pdf", "docx"]`, without a leading dot. Multiple values match any listed suffix. `None` or an empty list leaves suffix unrestricted. The SDK sends values unchanged; use the suffixes stored by your server.
+
+Status and suffix filters are combined on the server before pagination; they do not filter only the page returned to the SDK. The SDK sends lists as repeated query parameters, not comma-separated strings.
 
 #### Returns
 
@@ -730,6 +746,10 @@ for doc in dataset.list_documents(
     page_size=12,
 ):
     print(doc)
+
+# Failed PDFs on a Python server; use run=["FAILED"] on a Go server.
+for doc in dataset.list_documents(run=["FAIL"], suffix=["pdf"]):
+    print(doc.id, doc.name, doc.progress_msg)
 ```
 
 ---
