@@ -534,6 +534,10 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
+	if !s.accessible(ctx, req.DatasetID, userID) {
+		return nil, fmt.Errorf("user does not have access to this dataset")
+	}
+
 	// Get user's tenants
 	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -817,6 +821,10 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("document not found")
 	}
 
+	if !s.accessible(ctx, doc.KbID, userID) {
+		return nil, fmt.Errorf("user does not have access to this document")
+	}
+
 	// Get knowledge base to find tenant
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
@@ -1032,6 +1040,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}, nil
 }
 
+// SwitchChunks checks dataset access before changing chunk availability in a document.
 func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
@@ -1043,6 +1052,10 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 
 	if chunkIDs == nil || len(chunkIDs) == 0 {
 		return fmt.Errorf("req is null")
+	}
+
+	if !s.accessible(ctx, datasetID, userID) {
+		return fmt.Errorf("user does not have access to this dataset")
 	}
 
 	// Get user's tenants
@@ -1094,6 +1107,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	return nil
 }
 
+// UpdateChunk validates dataset access and chunk ownership before updating fields or images.
 func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
@@ -1101,6 +1115,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	if req.ChunkID == "" {
 		return fmt.Errorf("chunk_id is required")
+	}
+
+	if !s.accessible(ctx, req.DatasetID, userID) {
+		return fmt.Errorf("user does not have access to this dataset")
 	}
 
 	// Get user's tenants
@@ -1281,6 +1299,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	return nil
 }
+
+// RemoveChunks checks the document's dataset permissions before deleting selected or all chunks.
 func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
@@ -1304,6 +1324,10 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
+	}
+
+	if !s.accessible(ctx, doc.KbID, userID) {
+		return 0, fmt.Errorf("user does not have access to this document")
 	}
 
 	// Find the tenant that owns this document

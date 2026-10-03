@@ -1674,6 +1674,7 @@ func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
 	}
 }
 
+// insertChunkTestKB creates a shared dataset for authorized member operations.
 func insertChunkTestKB(t *testing.T, id, tenantID string) {
 	t.Helper()
 
@@ -1683,7 +1684,7 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 		TenantID:     tenantID,
 		Name:         id,
 		EmbdID:       "embedding-model",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    tenantID,
 		ParserConfig: entity.JSONMap{},
 		Status:       &status,
@@ -2096,6 +2097,7 @@ func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.D
 	return nil
 }
 
+// TestSwitchChunksUpdatesDocEngineWithAvailableInt pins availability updates to the requested document.
 func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -2123,7 +2125,7 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		TenantID:     "tenant-1",
 		Name:         "dataset",
 		EmbdID:       "embed",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    "user-1",
 		ParserID:     string(entity.ParserTypeNaive),
 		ParserConfig: entity.JSONMap{},
