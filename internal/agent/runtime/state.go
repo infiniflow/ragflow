@@ -745,14 +745,19 @@ func (s *CanvasState) GetRetrievalReference() map[string]any {
 
 	chunks := copyRetrievalList(s.Retrieval["chunks"])
 	docAggs := copyRetrievalDocAggs(s.Retrieval["doc_aggs"])
-	if len(chunks) == 0 && len(docAggs) == 0 {
+	metadataFilters := copyRetrievalList(s.Retrieval["metadata_filters"])
+	if len(chunks) == 0 && len(docAggs) == 0 && len(metadataFilters) == 0 {
 		return nil
 	}
-	return map[string]any{
+	ref := map[string]any{
 		"chunks":   chunks,
 		"doc_aggs": docAggs,
 		"total":    len(chunks),
 	}
+	if len(metadataFilters) > 0 {
+		ref["metadata_filters"] = metadataFilters
+	}
+	return ref
 }
 
 func copyRetrievalList(value any) []any {
@@ -883,6 +888,23 @@ func retrievalReferenceID(chunk map[string]any) (string, bool) {
 	}
 	id := fmt.Sprint(value)
 	return id, id != ""
+}
+
+// AppendMetadataFilterDiagnostic appends one metadata-filter diagnostic to
+// the run-level reference. Multiple retrieval tools in the same run each
+// contribute a separate entry, matching the Python canvas.add_reference
+// behavior for metadata_filters.
+func (s *CanvasState) AppendMetadataFilterDiagnostic(diagnostic map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Retrieval == nil {
+		s.Retrieval = make(map[string]any)
+	}
+	filters, _ := s.Retrieval["metadata_filters"].([]any)
+	s.Retrieval["metadata_filters"] = append(filters, diagnostic)
 }
 
 // GetRetrievalDocAggs returns a shallow snapshot keyed by document name.

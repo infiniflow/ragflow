@@ -961,6 +961,40 @@ func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string
 	}
 }
 
+func TestNormalizeAgentSessionPreservesMetadataFilters(t *testing.T) {
+	session := &entity.API4Conversation{
+		Message: json.RawMessage(`[
+			{"role":"user","content":"question"},
+			{"role":"assistant","content":"answer"}
+		]`),
+		Reference: json.RawMessage(`[
+			{
+				"chunks":[{"chunk_id":"chunk-1","content_with_weight":"content"}],
+				"doc_aggs":[{"doc_id":"doc-1"}],
+				"metadata_filters":[{"method":"auto","status":"applied"}]
+			}
+		]`),
+	}
+
+	normalized := normalizeAgentSession(session, false)
+	messages := normalized["message"].([]map[string]interface{})
+	reference, ok := messages[1]["reference"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("reference = %T, want map", messages[1]["reference"])
+	}
+	chunks, ok := reference["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 || chunks[0]["id"] != "chunk-1" {
+		t.Fatalf("chunks = %#v, want normalized chunk", reference["chunks"])
+	}
+	filters, ok := reference["metadata_filters"].([]interface{})
+	if !ok || len(filters) != 1 {
+		t.Fatalf("metadata_filters = %#v, want preserved diagnostic", reference["metadata_filters"])
+	}
+	if _, ok := reference["doc_aggs"].([]interface{}); !ok {
+		t.Fatalf("doc_aggs = %T, want preserved slice", reference["doc_aggs"])
+	}
+}
+
 func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
