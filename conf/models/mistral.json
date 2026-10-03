@@ -9,7 +9,8 @@
     "embedding": "v1/embeddings",
     "asr": "v1/audio/transcriptions",
     "tts": "v1/audio/speech",
-    "ocr": "v1/ocr"
+    "ocr": "v1/ocr",
+    "files": "v1/files"
   },
   "class": "mistral",
   "models": [

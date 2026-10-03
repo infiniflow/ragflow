@@ -34,6 +34,7 @@ export enum LLMFactory {
   Jina = 'Jina',
   MiniMax = 'MiniMax',
   Mistral = 'Mistral',
+  MistralOCR = 'Mistral OCR',
   AzureOpenAI = 'Azure-OpenAI',
   Bedrock = 'Bedrock',
   Gemini = 'Gemini',
@@ -128,6 +129,7 @@ export const IconMap = {
   [LLMFactory.Jina]: 'jina',
   [LLMFactory.MiniMax]: 'MiniMax',
   [LLMFactory.Mistral]: 'mistral',
+  [LLMFactory.MistralOCR]: 'mistral',
   [LLMFactory.AzureOpenAI]: 'azure',
   [LLMFactory.Bedrock]: 'bedrock',
   [LLMFactory.Gemini]: 'gemini',
@@ -243,6 +245,7 @@ export const APIMapUrl = {
   [LLMFactory.XAI]: 'https://x.ai/api/',
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
+  [LLMFactory.MistralOCR]: 'https://console.mistral.ai/api-keys/',
   [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
   [LLMFactory.BaiduYiYan]:
     'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
