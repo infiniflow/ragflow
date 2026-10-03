@@ -90,6 +90,39 @@ type ManualValueResolver func(map[string]interface{}) map[string]interface{}
 // NoMatchDocIDSentinel forces retrieval to return no documents when filters match nothing.
 const NoMatchDocIDSentinel = "-999"
 
+// MetaFilterOutcome describes the result of ApplyMetaDataFilter so callers can
+// distinguish "the model produced no filter" (LLM reply was empty or
+// unparseable) from "the conditions evaluated and matched no document".
+//
+// The previous 2-state return (`[]string, bool` where bool meant
+// "filter ran AND returned empty") collapsed three different situations into
+// one signal, which caused the agent Retrieval tool to return the
+// NoMatchDocIDSentinel for a question that did not mention any metadata —
+// see issue #20533. With the 3-state return, callers can pick the right
+// behaviour per surface:
+//
+//   - MetaFilterOutcomeMatched       — at least one document matched; use the
+//     returned slice as the result.
+//   - MetaFilterOutcomeNoConditions  — the LLM emitted no usable conditions;
+//     caller should treat this as "no
+//     metadata restriction" (keep the
+//     unfiltered document list).
+//   - MetaFilterOutcomeMatchedNothing — conditions were evaluated and matched
+//     nothing; caller may keep unfiltered
+//     (current chat /api behaviour) or
+//     restrict to the NoMatchDocIDSentinel
+//     (current manual / agent behaviour).
+//     The unified cross-surface behaviour
+//     is a maintainer design decision and is
+//     intentionally left untouched here.
+type MetaFilterOutcome int
+
+const (
+	MetaFilterOutcomeMatched MetaFilterOutcome = iota
+	MetaFilterOutcomeNoConditions
+	MetaFilterOutcomeMatchedNothing
+)
+
 // metaFilterTemplateCache caches the template content
 var metaFilterTemplateCache string
 
@@ -609,6 +642,11 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 // When kbIDs is supplied, metadata filters are pushed down to the doc metadata
 // index (ES/Infinity) via FilterDocIdsByMetaPushdown instead of being evaluated
 // in-memory. The in-memory meta_filter path remains the fallback.
+//
+// The second return value is a MetaFilterOutcome that distinguishes "no filter
+// was produced" (LLM reply was empty / unparseable, or no metadata_filter
+// config was sent at all) from "the conditions evaluated and matched nothing".
+// See #20533 for the bug this distinction closes in the agent Retrieval tool.
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
@@ -618,9 +656,9 @@ func ApplyMetaDataFilter(
 	baseDocIDs []string,
 	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
-) ([]string, bool) {
+) ([]string, MetaFilterOutcome) {
 	if metaDataFilter == nil {
-		return baseDocIDs, false
+		return baseDocIDs, MetaFilterOutcomeMatched
 	}
 
 	method, _ := metaDataFilter["method"].(string)
@@ -665,14 +703,21 @@ func ApplyMetaDataFilter(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return baseDocIDs, false
+			return nil, MetaFilterOutcomeNoConditions
+		}
+		if len(filters.Conditions) == 0 {
+			// LLM emitted an empty condition list — no metadata restriction
+			// should be applied. Caller decides whether to keep the
+			// unfiltered document list (chat / /api/v1/retrieval path) or
+			// restrict further (agent Retrieval tool).
+			return nil, MetaFilterOutcomeNoConditions
 		}
 		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
-			return nil, true // Return nil to indicate auto filter returned empty
+			return nil, MetaFilterOutcomeMatchedNothing
 		}
-		return docIDs, false
+		return docIDs, MetaFilterOutcomeMatched
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -707,14 +752,17 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return baseDocIDs, false
+					return nil, MetaFilterOutcomeNoConditions
+				}
+				if len(filters.Conditions) == 0 {
+					return nil, MetaFilterOutcomeNoConditions
 				}
 				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
-					return nil, true
+					return nil, MetaFilterOutcomeMatchedNothing
 				}
-				return docIDs, false
+				return docIDs, MetaFilterOutcomeMatched
 			}
 		}
 
@@ -725,7 +773,7 @@ func ApplyMetaDataFilter(
 			logic = logicVal
 		}
 		if len(manualFilters) == 0 {
-			return baseDocIDs, false
+			return baseDocIDs, MetaFilterOutcomeMatched
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -760,12 +808,12 @@ func ApplyMetaDataFilter(
 		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{NoMatchDocIDSentinel}, false
+			return []string{NoMatchDocIDSentinel}, MetaFilterOutcomeMatched
 		}
-		return docIDs, false
+		return docIDs, MetaFilterOutcomeMatched
 	}
 
-	return baseDocIDs, false
+	return baseDocIDs, MetaFilterOutcomeMatched
 }
 
 func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {

@@ -66,17 +66,19 @@ func TestSelectMetadataFilteredDocIDs(t *testing.T) {
 		current              []string
 		filtered             []string
 		hasMetadataCondition bool
-		filterReturnedEmpty  bool
+		outcome              service.MetaFilterOutcome
 		want                 []string
 	}{
-		{name: "metadata filter narrows explicit document ids", current: []string{"doc-1"}, filtered: []string{"doc-1"}, want: []string{"doc-1"}},
-		{name: "metadata filter cannot widen explicit document ids", current: []string{"doc-1"}, filtered: []string{}, want: []string{}},
-		{name: "empty generated filter keeps explicit document ids", current: []string{"doc-1"}, filtered: nil, filterReturnedEmpty: true, want: []string{"doc-1"}},
-		{name: "metadata condition uses definitive empty result", current: []string{"doc-1"}, filtered: nil, hasMetadataCondition: true, filterReturnedEmpty: true, want: nil},
+		{name: "matched filter narrows explicit document ids", current: []string{"doc-1"}, filtered: []string{"doc-1"}, outcome: service.MetaFilterOutcomeMatched, want: []string{"doc-1"}},
+		{name: "matched filter cannot widen explicit document ids", current: []string{"doc-1"}, filtered: []string{}, outcome: service.MetaFilterOutcomeMatched, want: []string{}},
+		{name: "no conditions from LLM keeps explicit document ids", current: []string{"doc-1"}, filtered: nil, outcome: service.MetaFilterOutcomeNoConditions, want: []string{"doc-1"}},
+		{name: "matched nothing without metadata condition keeps explicit document ids", current: []string{"doc-1"}, filtered: nil, outcome: service.MetaFilterOutcomeMatchedNothing, want: []string{"doc-1"}},
+		{name: "matched nothing with metadata condition uses definitive empty result", current: []string{"doc-1"}, filtered: nil, hasMetadataCondition: true, outcome: service.MetaFilterOutcomeMatchedNothing, want: nil},
+		{name: "no conditions with metadata condition keeps explicit document ids", current: []string{"doc-1"}, filtered: nil, hasMetadataCondition: true, outcome: service.MetaFilterOutcomeNoConditions, want: []string{"doc-1"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := selectMetadataFilteredDocIDs(tt.current, tt.filtered, tt.hasMetadataCondition, tt.filterReturnedEmpty)
+			got := selectMetadataFilteredDocIDs(tt.current, tt.filtered, tt.hasMetadataCondition, tt.outcome)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
