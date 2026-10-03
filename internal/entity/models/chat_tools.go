@@ -56,6 +56,11 @@ func recordUsage(ctx context.Context, model string, usage *TokenUsage) {
 const (
 	defaultMaxRetries = 3
 	defaultMaxRounds  = 5
+
+	toolRoundLimitPrompt = ("Tool execution limit reached for this answer. Do not call any more tools. " +
+		"Using only the tool results already present in the conversation, provide a final answer now. " +
+		"If the evidence is insufficient, say so explicitly and suggest one concrete clarification. " +
+		"Do not describe this as a conversation or session limit.")
 )
 
 // ChatWithTools runs the non-streaming tool-calling loop.
@@ -181,12 +186,16 @@ func runToolLoop(ctx context.Context, cm *ChatModel, history []Message, toolsLis
 		// history now carries this round's tool results; continue to the next round.
 	}
 
-	// Exceeded max rounds
+	// Exceeded max rounds: ask the model for a final answer without offering
+	// any tools, so it uses the results already in the conversation instead of
+	// emitting another tool call.
 	history = append(history, Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
+		Content: toolRoundLimitPrompt,
 	})
 	cfg := *chatCfg
+	cfg.Tools = nil
+	cfg.ToolChoice = nil
 	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil)
 	if err != nil {
 		return "", totalTokens, fmt.Errorf("final call: %w", err)
@@ -362,7 +371,9 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 			return totalTokens, nil
 		}
 		if len(toolCalls) == 0 {
-			return totalTokens, fmt.Errorf("round %d: no content and no tool_calls", round)
+			// The provider streamed only incomplete/nameless tool-call deltas;
+			// drop them and let the model try again rather than aborting the run.
+			continue
 		}
 
 		// A terminal tool's successful result is already the final answer:
@@ -385,22 +396,54 @@ func runStreamToolLoop(ctx context.Context, cm *ChatModel, history []Message, to
 		// history now carries this round's tool results; continue to the next round.
 	}
 
-	// Exceeded max rounds
+	// Exceeded max rounds: ask the model for a final answer without offering
+	// any tools, so it uses the results already in the conversation instead of
+	// emitting another tool call.
 	history = append(history, Message{
 		Role:    "user",
-		Content: fmt.Sprintf("Exceed max rounds: %d", maxRounds),
+		Content: toolRoundLimitPrompt,
 	})
 	cfg := *chatCfg
+	cfg.Tools = nil
+	cfg.ToolChoice = nil
 	cfg.Stream = boolPtr(true)
 	var exceedUsage TokenUsage
 	cfg.UsageResult = &exceedUsage
 	var exceedTokens int
+	reasoningStarted := false
+	pendingThinkClose := false
 	err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, history, cm.APIConfig, &cfg, nil, func(delta *string, reason *string) error {
-		if delta != nil && *delta != "" && *delta != "[DONE]" {
-			exceedTokens += tokenizer.NumTokensFromString(*delta)
+		if reason != nil && *reason != "" {
+			if !reasoningStarted {
+				reasoningStarted = true
+				thinkOpen := "<think>"
+				if err := sender(&thinkOpen, nil); err != nil {
+					return err
+				}
+			}
+			pendingThinkClose = true
+			exceedTokens += tokenizer.NumTokensFromString(*reason)
+			return sender(reason, nil)
 		}
-		return nil
+		if pendingThinkClose {
+			pendingThinkClose = false
+			thinkClose := "</think>"
+			if err := sender(&thinkClose, nil); err != nil {
+				return err
+			}
+		}
+		if delta == nil || *delta == "" || *delta == "[DONE]" {
+			return nil
+		}
+		exceedTokens += tokenizer.NumTokensFromString(*delta)
+		return sender(delta, nil)
 	})
+	if pendingThinkClose {
+		thinkClose := "</think>"
+		if closeErr := sender(&thinkClose, nil); err == nil {
+			err = closeErr
+		}
+	}
 	commitRound(&cfg, exceedTokens)
 	return totalTokens, err
 }
@@ -480,7 +523,9 @@ func appendToolResults(history []Message, toolCalls []map[string]interface{}, se
 			res, err := session.ToolCall(name, args)
 			if err != nil {
 				result.err = err
-				result.content = fmt.Sprintf("Error: %s", err.Error())
+				// Surface only the exception type to the model; the full message is
+				// logged by the tool/session implementation to avoid leaking internals.
+				result.content = fmt.Sprintf("Error: tool call failed: %T", err)
 			} else {
 				result.content = res
 			}
