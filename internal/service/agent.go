@@ -1104,6 +1104,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		return err
 	}
 	ownerUserID := canvasInstance.UserID
+	if ownerUserID != userID {
+		return ErrAgentNotOwner
+	}
 
 	if v, ok := patch["permission"]; ok && ownerUserID != userID {
 		requested := strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
@@ -1238,6 +1241,9 @@ func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) 
 	row, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
+	}
+	if row.UserID != userID {
+		return nil, ErrAgentNotOwner
 	}
 	reset := dslpkg.ResetForCanvas(row.DSL)
 	// Re-normalize through the same entry point UpdateAgent uses so

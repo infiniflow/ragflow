@@ -663,6 +663,14 @@ func (s *AgentService) UpdateAgentTags(ctx context.Context, userID, canvasID str
 		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
+	if err != nil {
+		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
+	}
+	if canvas.UserID != userID {
+		return false, common.CodeOperatingError, errors.New("Only the owner of the agent is authorized for this operation.")
+	}
+
 	normalized, nErr := normalizeAgentTags(tags)
 	if nErr != nil {
 		return false, common.CodeBadRequest, nErr
