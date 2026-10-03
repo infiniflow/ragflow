@@ -512,6 +512,15 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
+	// ContextLength is the model's context window in tokens -- the budget
+	// prompt fitting is measured against. It is
+	// the context window, NOT the generation cap: the max_tokens that model
+	// resolution returns alongside the driver is max_output and must not be used
+	// here. Take it from the resolved ModelTarget.ContextLength.
+	//
+	// 0 means "not resolved"; tokenizer.Fit normalizes that to its 8192 default
+	// rather than treating it as "no budget".
+	ContextLength int
 }
 
 // NewChatModel creates a new ChatModel
