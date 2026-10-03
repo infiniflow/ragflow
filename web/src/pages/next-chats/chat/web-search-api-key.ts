@@ -19,6 +19,10 @@ export type WebSearchKeyConfig = {
 const WEB_SEARCH_PROVIDERS: WebSearchProvider[] =
   Object.values(WebSearchProvider);
 
+/**
+ * Resolves the active web search provider from the dialog's prompt configuration,
+ * including backward-compatibility fallback to Tavily for legacy dialogs.
+ */
 export function getWebSearchProvider(promptConfig?: WebSearchKeyConfig) {
   const provider = promptConfig?.web_search_provider;
 
@@ -59,20 +63,22 @@ const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
   [WebSearchProvider.Linkup]: 'linkup_api_key',
   [WebSearchProvider.Parallel]: 'parallel_api_key',
   [WebSearchProvider.Querit]: 'querit_api_key',
+  [WebSearchProvider.SerpApi]: 'serpapi_api_key',
   [WebSearchProvider.Serply]: 'serply_api_key',
   [WebSearchProvider.Tavily]: 'tavily_api_key',
   [WebSearchProvider.YouCom]: 'youcom_api_key',
 };
 
-// A cleared SelectWithSearch emits '' rather than undefined (the schema accepts
-// both), so normalise it here: the field lookup and the required marker have to
-// agree on what "no provider selected" means.
+/**
+ * Normalizes a provider value, converting cleared select values ('') to undefined.
+ */
 function normalizeProvider(provider?: WebSearchProvider | '') {
   return provider === '' ? undefined : provider;
 }
 
-// Reads a prompt_config field the app names at runtime (the per-provider key
-// slots), which no static type can enumerate.
+/**
+ * Reads a dynamic prompt_config field at runtime by property name.
+ */
 function fieldValue(
   promptConfig: WebSearchKeyConfig | undefined,
   field: string,
@@ -82,13 +88,17 @@ function fieldValue(
   ];
 }
 
+/**
+ * Returns the prompt_config field name corresponding to the specified provider's API key.
+ */
 export function getWebSearchApiKeyField(provider?: WebSearchProvider | '') {
   const normalized = normalizeProvider(provider);
   return normalized ? webSearchApiKeyFields[normalized] : undefined;
 }
 
-// Whether the selected provider must have a key before it can be used. A
-// keyless provider answers on its own endpoint/tier and stays usable blank.
+/**
+ * Determines whether the specified provider requires an API key for operation.
+ */
 export function isWebSearchApiKeyRequired(provider?: WebSearchProvider | '') {
   const normalized = normalizeProvider(provider);
   return (
@@ -97,6 +107,9 @@ export function isWebSearchApiKeyRequired(provider?: WebSearchProvider | '') {
   );
 }
 
+/**
+ * Retrieves the configured and trimmed API key for the selected web search provider.
+ */
 export function getWebSearchApiKey(promptConfig?: WebSearchKeyConfig) {
   const keyField = getWebSearchApiKeyField(getWebSearchProvider(promptConfig));
   if (!keyField) {

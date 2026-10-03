@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,6 +42,7 @@ const (
 	webSearchProviderLinkup    = "linkup"
 	webSearchProviderParallel  = "parallel"
 	webSearchProviderQuerit    = "querit"
+	webSearchProviderSerpApi   = "serpapi"
 	webSearchProviderSerply    = "serply"
 	webSearchProviderTavily    = "tavily"
 	webSearchProviderYouCom    = "youcom"
@@ -52,6 +54,7 @@ const (
 	linkupWebSearchEndpoint    = "https://api.linkup.so/v1/search"
 	parallelWebSearchEndpoint  = "https://api.parallel.ai/v1/search"
 	queritWebSearchEndpoint    = "https://api.querit.ai/v1/search"
+	serpApiWebSearchEndpoint   = "https://serpapi.com/search"
 	serplyWebSearchEndpoint    = "https://api.serply.io/v1/search/"
 	// You.com serves the same response shape from two endpoints. The keyless
 	// one is rate-limited but needs no credentials; the keyed one lifts those
@@ -82,6 +85,7 @@ var (
 	linkupWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	parallelWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
+	serpApiWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
 	serplyWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	youComWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	// Tavily is reached from two call sites (the chat pipeline and the deep
@@ -97,6 +101,8 @@ type webSearchProviderConfig struct {
 	APIKey   string
 }
 
+// resolveWebSearchProvider extracts and validates the web search provider configuration
+// from promptConfig, resolving the appropriate API key and determining whether keys are optional.
 func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchProviderConfig {
 	if promptConfig == nil {
 		return nil
@@ -133,6 +139,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "parallel_api_key"
 	case webSearchProviderQuerit:
 		apiKeyField = "querit_api_key"
+	case webSearchProviderSerpApi:
+		apiKeyField = "serpapi_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
 	case webSearchProviderTavily:
@@ -238,6 +246,14 @@ func retrieveWebSearchWithTavily(
 			provider.APIKey,
 			question,
 		)
+	case webSearchProviderSerpApi:
+		return retrieveSerpApiWebSearch(
+			ctx,
+			serpApiWebSearchHTTPClient,
+			serpApiWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
 	case webSearchProviderSerply:
 		return retrieveSerplyWebSearch(
 			ctx,
@@ -322,11 +338,8 @@ func webSearchPayload(idPrefix string, hits []webSearchHit) map[string]interface
 	}
 }
 
-// webSearchRequest performs one provider call and returns the response body.
-// Providers differ only in method, headers and body — the status check and the
-// read are identical everywhere, and a request that never reached the provider
-// must be reported the same way regardless of which one was called. Callers
-// wrap the error with their own provider name.
+// webSearchRequest performs one provider call with the given headers and body,
+// sanitizing transport errors and returning the raw response body.
 func webSearchRequest(
 	ctx context.Context,
 	client *http.Client,
@@ -337,14 +350,14 @@ func webSearchRequest(
 ) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
-		return nil, fmt.Errorf("new request: %w", err)
+		return nil, fmt.Errorf("new request: %w", sanitizeURLError(err))
 	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("do request: %w", err)
+		return nil, fmt.Errorf("do request: %w", sanitizeURLError(err))
 	}
 	defer response.Body.Close()
 
@@ -364,6 +377,47 @@ func webSearchRequest(
 		return nil, fmt.Errorf("response body exceeds %d bytes", webSearchMaxResponseBytes)
 	}
 	return responseBody, nil
+}
+
+// sanitizeURLError redacts sensitive query parameters (such as api_key) from
+// *url.Error values returned by the HTTP transport, preventing credentials from
+// leaking in error messages and logs while preserving the underlying *url.Error
+// structure and timeout/cancellation classification.
+func sanitizeURLError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return &url.Error{
+			Op:  urlErr.Op,
+			URL: redactURLQuery(urlErr.URL),
+			Err: urlErr.Err,
+		}
+	}
+	return err
+}
+
+// redactURLQuery parses rawURL and replaces known sensitive query parameters
+// (such as api_key or token) with "REDACTED", returning the sanitized URL string.
+func redactURLQuery(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	query := parsed.Query()
+	modified := false
+	for _, key := range []string{"api_key", "apiKey", "key", "token", "secret"} {
+		if query.Has(key) {
+			query.Set(key, "REDACTED")
+			modified = true
+		}
+	}
+	if modified {
+		parsed.RawQuery = query.Encode()
+		return parsed.String()
+	}
+	return rawURL
 }
 
 // --- Brave Search -----------------------------------------------------------
@@ -818,6 +872,85 @@ func decodeQueritWebSearchResults(responseBody []byte) ([]queritWebSearchResult,
 	var results []queritWebSearchResult
 	if err := json.Unmarshal(resultValue, &results); err != nil {
 		return nil, fmt.Errorf("querit: response field results.result must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type serpApiWebSearchResult struct {
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+	Snippet string `json:"snippet"`
+}
+
+// retrieveSerpApiWebSearch sends a Google search request to SerpApi, decodes the
+// organic search results, and returns normalized web search hits.
+func retrieveSerpApiWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	parameters := url.Values{}
+	parameters.Set("engine", "google")
+	parameters.Set("q", query)
+	parameters.Set("api_key", apiKey)
+	parameters.Set("num", strconv.Itoa(webSearchResultCount))
+	parameters.Set("output", "json")
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodGet,
+		endpoint+"?"+parameters.Encode(), map[string]string{
+			"Accept":     "application/json",
+			"User-Agent": "ragflow-web-search",
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("serpapi: %w", err)
+	}
+	results, err := decodeSerpApiWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.Link,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("serpapi", hits), nil
+}
+
+// decodeSerpApiWebSearchResults unmarshals the JSON response from SerpApi,
+// handling potential API error strings and extracting the list of organic results.
+func decodeSerpApiWebSearchResults(responseBody []byte) ([]serpApiWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("serpapi: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("serpapi: response must be an object")
+	}
+
+	if errVal, exists := envelope["error"]; exists {
+		var errStr string
+		if err := json.Unmarshal(errVal, &errStr); err == nil && errStr != "" {
+			return nil, fmt.Errorf("serpapi: %s", errStr)
+		}
+	}
+
+	resultsValue, exists := envelope["organic_results"]
+	if !exists {
+		return []serpApiWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("serpapi: response field organic_results must be an array")
+	}
+
+	var results []serpApiWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("serpapi: response field organic_results must be an array: %w", err)
 	}
 	return results, nil
 }
