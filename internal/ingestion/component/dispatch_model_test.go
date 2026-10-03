@@ -18,6 +18,8 @@ package component
 import (
 	"testing"
 
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -78,5 +80,74 @@ func TestConfiguredMediaModelID(t *testing.T) {
 				t.Fatalf("configuredMediaModelID() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveModelConfig_MaxTokensOverrideIsContextWindowOnly(t *testing.T) {
+	db := openExtractorContextTestDB(t)
+	seedExtractorContextModel(t, db, "")
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-openai",
+		InstanceName: "default",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Model(&entity.TenantModel{}).
+		Where("id = ?", "0123456789abcdef0123456789abcdef").
+		Update("extra", `{"max_tokens": 2000}`).Error; err != nil {
+		t.Fatalf("set model extra: %v", err)
+	}
+
+	providerModel, err := dao.GetModelProviderManager().GetModelByName("OpenAI", "gpt-4o")
+	if err != nil {
+		t.Fatalf("resolve provider model: %v", err)
+	}
+	if providerModel.MaxOutput == nil {
+		t.Fatal("provider model has no max_output")
+	}
+	wantMaxOutput := *providerModel.MaxOutput
+
+	cases := []struct {
+		name    string
+		resolve func() (int, error)
+	}{
+		{
+			name: "tenant model id",
+			resolve: func() (int, error) {
+				_, _, _, maxOutput, err := resolveModelConfigByID(
+					t.Context(), db, "tenant-1", entity.ModelTypeChat,
+					"0123456789abcdef0123456789abcdef",
+				)
+				return maxOutput, err
+			},
+		},
+		{
+			name: "composite reference",
+			resolve: func() (int, error) {
+				_, _, _, maxOutput, err := resolveModelConfigFromProviderInstance(
+					t.Context(), db, "tenant-1", entity.ModelTypeChat, "gpt-4o@default@OpenAI",
+				)
+				return maxOutput, err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.resolve()
+			if err != nil {
+				t.Fatalf("resolve model config: %v", err)
+			}
+			if got != wantMaxOutput {
+				t.Fatalf("max output = %d, want catalog max_output %d", got, wantMaxOutput)
+			}
+		})
+	}
+
+	if got := dao.ResolveModelContentLength(
+		t.Context(), db, "tenant-1", "0123456789abcdef0123456789abcdef", "", "",
+	); got != 2000 {
+		t.Fatalf("context length = %d, want tenant max_tokens override 2000", got)
 	}
 }

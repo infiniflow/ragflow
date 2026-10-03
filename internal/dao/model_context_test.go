@@ -124,6 +124,92 @@ func TestResolveModelContentLength_ExtraOverrideComposite(t *testing.T) {
 	}
 }
 
+// TestResolveModelContentLength_CompositeDefaultUsesSoleActiveInstance verifies
+// that a legacy two-part reference still resolves a tenant override when the
+// provider's only active instance has a non-default name.
+func TestResolveModelContentLength_CompositeDefaultUsesSoleActiveInstance(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-prod",
+		ProviderID:   "provider-openai",
+		InstanceName: "prod",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-openai",
+		InstanceID: "instance-prod",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 32000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("ResolveModelContentLength(composite+sole active instance) = %d, want 32000", got)
+	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@default@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(explicit default instance) = %d, want catalog 128000", got)
+	}
+}
+
+// TestResolveModelContentLength_InactiveDefaultUsesSoleActiveInstance verifies
+// that a legacy two-part reference still resolves the sole active non-default
+// instance when the implicit default row exists but is inactive.
+func TestResolveModelContentLength_InactiveDefaultUsesSoleActiveInstance(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	for _, instance := range []*entity.TenantModelInstance{
+		{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", Status: "inactive"},
+		{ID: "instance-prod", ProviderID: "provider-openai", InstanceName: "prod", Status: "active"},
+	} {
+		if err := db.Create(instance).Error; err != nil {
+			t.Fatalf("create instance %s: %v", instance.InstanceName, err)
+		}
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-openai",
+		InstanceID: "instance-prod",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 32000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("ResolveModelContentLength(inactive default + sole active) = %d, want 32000", got)
+	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@default@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(explicit inactive default) = %d, want catalog 128000", got)
+	}
+}
+
 // TestResolveModelContentLength_CustomModelExtraComposite is the core
 // custom-model scenario: a model name that is NOT in the provider catalog but
 // carries a tenant-configured "max_tokens" override must resolve to that
