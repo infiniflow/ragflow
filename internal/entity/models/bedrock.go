@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -38,6 +39,7 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"go.uber.org/zap"
 )
 
 // Default Bedrock URL suffixes used when conf/models/bedrock.json
@@ -51,6 +53,11 @@ const (
 	defaultBedrockListModelsSuffix = "foundation-models"
 	defaultBedrockEmbeddingSuffix  = "invoke"
 	bedrockStreamSuffixSuffix      = "-stream"
+
+	// ListInferenceProfiles is not configurable in conf/models/bedrock.json;
+	// 1000 is the largest page it serves.
+	bedrockInferenceProfilesOp       = "inference-profiles"
+	bedrockInferenceProfilesPageSize = "1000"
 )
 
 // Bedrock signing services and endpoint hostnames.
@@ -880,43 +887,74 @@ func extractBedrockDeltaText(payload []byte) (string, error) {
 	return env.Delta.Text, nil
 }
 
-// bedrockListModelsResponse mirrors the control-plane fields needed to keep
+// bedrockModelSummary mirrors the control-plane fields needed to keep
 // unsupported or unavailable models out of the RAGFlow catalog.
-type bedrockListModelsResponse struct {
-	ModelSummaries []struct {
-		ModelID                 string   `json:"modelId"`
-		InputModalities         []string `json:"inputModalities"`
-		OutputModalities        []string `json:"outputModalities"`
-		InferenceTypesSupported []string `json:"inferenceTypesSupported"`
-		ModelLifecycle          struct {
-			Status string `json:"status"`
-		} `json:"modelLifecycle"`
-	} `json:"modelSummaries"`
+type bedrockModelSummary struct {
+	ModelID                 string   `json:"modelId"`
+	InputModalities         []string `json:"inputModalities"`
+	OutputModalities        []string `json:"outputModalities"`
+	InferenceTypesSupported []string `json:"inferenceTypesSupported"`
+	ModelLifecycle          struct {
+		Status string `json:"status"`
+	} `json:"modelLifecycle"`
 }
 
-// ListModels returns Bedrock foundation model IDs visible to the
-// configured credentials. The control plane lives at
-// bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
-// the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
-	}
+type bedrockListModelsResponse struct {
+	ModelSummaries []bedrockModelSummary `json:"modelSummaries"`
+}
 
-	key, err := parseBedrockKey(*apiConfig.ApiKey)
-	if err != nil {
-		return nil, err
-	}
-	region, err := resolveBedrockRegion(apiConfig, key)
-	if err != nil {
-		return nil, err
-	}
+// bedrockInferenceProfilesResponse is one page of ListInferenceProfiles.
+// A system-defined profile routes one foundation model across several
+// regions, so every entry of Models names that same model.
+type bedrockInferenceProfilesResponse struct {
+	InferenceProfileSummaries []struct {
+		InferenceProfileID string `json:"inferenceProfileId"`
+		Status             string `json:"status"`
+		Models             []struct {
+			ModelArn string `json:"modelArn"`
+		} `json:"models"`
+	} `json:"inferenceProfileSummaries"`
+	NextToken string `json:"nextToken"`
+}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
+// modelTypes classifies a catalog entry, or returns nil when RAGFlow
+// cannot use it.
+func (m bedrockModelSummary) modelTypes() []string {
+	if m.ModelID == "" || !slices.Contains(m.InputModalities, "TEXT") || strings.Contains(strings.ToLower(m.ModelID), "rerank") {
+		return nil
+	}
+	if m.ModelLifecycle.Status != "" && m.ModelLifecycle.Status != "ACTIVE" {
+		return nil
+	}
+	if slices.Contains(m.OutputModalities, "EMBEDDING") && (strings.HasPrefix(m.ModelID, "amazon.titan-embed-text") || strings.HasPrefix(m.ModelID, "cohere.embed-")) {
+		return []string{"embedding"}
+	}
+	if slices.Contains(m.OutputModalities, "TEXT") {
+		return []string{"chat"}
+	}
+	return nil
+}
 
-	url := b.bedrockControlURL(region, b.modelsSuffix())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (m bedrockModelSummary) onDemand() bool {
+	return len(m.InferenceTypesSupported) == 0 || slices.Contains(m.InferenceTypesSupported, "ON_DEMAND")
+}
+
+// servedByInferenceProfile reports whether a chat model can only be
+// invoked through an inference profile. Embedding models are left out:
+// Embed picks the request body from the bare "amazon." / "cohere."
+// model prefix, which a profile id does not carry.
+func (m bedrockModelSummary) servedByInferenceProfile() bool {
+	return !m.onDemand() && slices.Equal(m.modelTypes(), []string{"chat"})
+}
+
+// getBedrockControl sends a GET to a control-plane operation and
+// returns the body of a 200 response.
+func (b *BedrockModel) getBedrockControl(ctx context.Context, key *bedrockKey, region, op string, query url.Values) ([]byte, error) {
+	endpoint := b.bedrockControlURL(region, op)
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: build request: %w", err)
 	}
@@ -939,37 +977,108 @@ func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, fmt.Errorf("bedrock: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bedrock: ListModels failed in region %q with status %d: %s", region, resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("bedrock: GET %s failed in region %q with status %d: %s", op, region, resp.StatusCode, string(respBody))
+	}
+	return respBody, nil
+}
+
+// listInferenceProfiles maps each foundation model ID to the ids of the
+// active system-defined inference profiles that serve it in region.
+func (b *BedrockModel) listInferenceProfiles(ctx context.Context, key *bedrockKey, region string) (map[string][]string, error) {
+	profiles := make(map[string][]string)
+	query := url.Values{
+		"typeEquals": {"SYSTEM_DEFINED"},
+		"maxResults": {bedrockInferenceProfilesPageSize},
+	}
+	for {
+		respBody, err := b.getBedrockControl(ctx, key, region, bedrockInferenceProfilesOp, query)
+		if err != nil {
+			return nil, err
+		}
+		var page bedrockInferenceProfilesResponse
+		if err = json.Unmarshal(respBody, &page); err != nil {
+			return nil, fmt.Errorf("bedrock: parse ListInferenceProfiles response: %w", err)
+		}
+		for _, p := range page.InferenceProfileSummaries {
+			if p.InferenceProfileID == "" || (p.Status != "" && p.Status != "ACTIVE") {
+				continue
+			}
+			for _, pm := range p.Models {
+				_, modelID, ok := strings.Cut(pm.ModelArn, ":foundation-model/")
+				if ok && !slices.Contains(profiles[modelID], p.InferenceProfileID) {
+					profiles[modelID] = append(profiles[modelID], p.InferenceProfileID)
+				}
+			}
+		}
+		if page.NextToken == "" || page.NextToken == query.Get("nextToken") {
+			return profiles, nil
+		}
+		query.Set("nextToken", page.NextToken)
+	}
+}
+
+// ListModels returns Bedrock foundation model IDs visible to the
+// configured credentials. The control plane lives at
+// bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
+// the "bedrock" service, and is GET-only. Chat models that Bedrock
+// serves only through cross-region inference profiles are listed under
+// their profile ids (e.g. "us.anthropic.claude-..."), because Bedrock
+// rejects the bare model id for on-demand invocation.
+func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
+	key, err := parseBedrockKey(*apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	region, err := resolveBedrockRegion(apiConfig, key)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	respBody, err := b.getBedrockControl(ctx, key, region, b.modelsSuffix(), nil)
+	if err != nil {
+		return nil, err
+	}
 	var parsed bedrockListModelsResponse
 	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("bedrock: parse ListModels response: %w", err)
 	}
+
+	// Listing profiles needs bedrock:ListInferenceProfiles, which a
+	// credential may lack; the on-demand catalog is returned regardless.
+	var profiles map[string][]string
+	if slices.ContainsFunc(parsed.ModelSummaries, bedrockModelSummary.servedByInferenceProfile) {
+		profiles, err = b.listInferenceProfiles(ctx, key, region)
+		if err != nil {
+			common.WarnCtx(ctx, "bedrock: cannot list inference profiles, omitting profile-only models",
+				zap.String("region", region), zap.Error(err))
+		}
+	}
+
 	models := make([]ListModelResponse, 0, len(parsed.ModelSummaries))
 	for _, m := range parsed.ModelSummaries {
-		if m.ModelID == "" || !slices.Contains(m.InputModalities, "TEXT") || strings.Contains(strings.ToLower(m.ModelID), "rerank") {
+		modelTypes := m.modelTypes()
+		names := []string{m.ModelID}
+		switch {
+		case modelTypes == nil:
+			continue
+		case m.servedByInferenceProfile():
+			names = profiles[m.ModelID]
+		case !m.onDemand():
 			continue
 		}
-		if len(m.InferenceTypesSupported) > 0 && !slices.Contains(m.InferenceTypesSupported, "ON_DEMAND") {
-			continue
+		for _, name := range names {
+			models = append(models, ListModelResponse{
+				Name:       name,
+				ModelTypes: modelTypes,
+			})
 		}
-		if m.ModelLifecycle.Status != "" && m.ModelLifecycle.Status != "ACTIVE" {
-			continue
-		}
-
-		var modelTypes []string
-		if slices.Contains(m.OutputModalities, "EMBEDDING") && (strings.HasPrefix(m.ModelID, "amazon.titan-embed-text") || strings.HasPrefix(m.ModelID, "cohere.embed-")) {
-			modelTypes = []string{"embedding"}
-		} else if slices.Contains(m.OutputModalities, "TEXT") {
-			modelTypes = []string{"chat"}
-		} else {
-			continue
-		}
-		models = append(models, ListModelResponse{
-			Name:       m.ModelID,
-			ModelTypes: modelTypes,
-		})
 	}
 	return models, nil
 }
