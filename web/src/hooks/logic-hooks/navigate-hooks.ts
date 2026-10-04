@@ -15,6 +15,7 @@
  */
 
 import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { KnowledgeSearchParams } from '@/constants/knowledge';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
@@ -24,6 +25,25 @@ export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
   id = 'id',
 }
+
+/**
+ * Path of the chunk browser for a document. ``chunkId`` makes the page open on
+ * that specific chunk instead of page 1.
+ */
+export const buildChunkParsedResultPath = (
+  documentId: string,
+  knowledgeId?: string,
+  chunkId?: string,
+) => {
+  const params = new URLSearchParams({
+    [KnowledgeSearchParams.KnowledgeId]: knowledgeId ?? '',
+    [KnowledgeSearchParams.DocumentId]: documentId,
+  });
+  if (chunkId) {
+    params.set(KnowledgeSearchParams.ChunkId, chunkId);
+  }
+  return `${Routes.ParsedResult}/chunks?${params.toString()}`;
+};
 
 export const useNavigatePage = () => {
   const navigate = useNavigate();
@@ -161,11 +181,8 @@ export const useNavigatePage = () => {
   );
 
   const navigateToChunkParsedResult = useCallback(
-    (id: string, knowledgeId?: string) => () => {
-      navigate(
-        `${Routes.ParsedResult}/chunks?id=${knowledgeId}&doc_id=${id}`,
-        // `${Routes.DataflowResult}?id=${knowledgeId}&doc_id=${id}&type=chunk`,
-      );
+    (id: string, knowledgeId?: string, chunkId?: string) => () => {
+      navigate(buildChunkParsedResultPath(id, knowledgeId, chunkId));
     },
     [navigate],
   );
