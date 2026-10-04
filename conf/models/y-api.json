@@ -1,0 +1,12 @@
+{
+  "name": "Y-API",
+  "url": {
+    "default": "https://api.y-api.bestvirtualgoods.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "y-api",
+  "models": []
+}

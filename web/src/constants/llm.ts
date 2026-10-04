@@ -110,6 +110,7 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  YAPI = 'Y-API',
 }
 
 // Please lowercase the file name
@@ -203,6 +204,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.YAPI]: 'y-api',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -318,4 +320,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.YAPI]: 'https://y-api.bestvirtualgoods.com',
 };
