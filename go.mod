@@ -11,7 +11,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.8.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
-	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.7.0
+	github.com/LuxorLabs/tenki-sdk-go/sandbox v1.4.0
 	github.com/PuerkitoBio/goquery v1.9.2
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1

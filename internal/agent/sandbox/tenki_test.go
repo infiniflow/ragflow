@@ -273,6 +273,39 @@ func TestTenkiProvider_BuildTenkiExecutionResult(t *testing.T) {
 	}
 }
 
+func TestTenkiProvider_BuildTenkiExecutionResult_Status(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		status   tenkisdk.CommandStatus
+		exitCode int32
+		wantCode int
+	}{
+		{"success", tenkisdk.CommandStatusSucceeded, 0, 0},
+		{"failure", tenkisdk.CommandStatusFailed, 7, 7},
+		{"timeout with zero exit", tenkisdk.CommandStatusTimedOut, 0, 124},
+		{"timeout with nonzero exit", tenkisdk.CommandStatusTimedOut, 137, 124},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &tenkisdk.Result{
+				Stdout: []byte("partial output\n"), Stderr: []byte("partial error\n"),
+				ExitCode: tc.exitCode, Status: tc.status,
+			}
+			result := buildTenkiExecutionResult(r, "python", time.Now())
+			if result.ExitCode != tc.wantCode {
+				t.Errorf("ExitCode = %d, want %d", result.ExitCode, tc.wantCode)
+			}
+			if result.Stdout != string(r.Stdout) || result.Stderr != string(r.Stderr) {
+				t.Errorf("partial output changed: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+			}
+			if result.Metadata["tenki_status"] != string(tc.status) {
+				t.Errorf("tenki_status = %v, want %s", result.Metadata["tenki_status"], tc.status)
+			}
+		})
+	}
+}
+
 // TestTenkiProvider_ProviderType_StaysDistinct ensures the tenki
 // provider does not collide on the wire with the other providers.
 func TestTenkiProvider_ProviderType_StaysDistinct(t *testing.T) {
