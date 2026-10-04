@@ -262,3 +262,29 @@ func TestHasCustomDelimiterList(t *testing.T) {
 		t.Fatal("wrapped list entry should be true")
 	}
 }
+
+func TestFirstCustomDelimiterPrefix(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{"empty", nil, ""},
+		{"all-bare", []string{"\n", "!", "?", "。"}, ""},
+		{"single-wrapped-ascii", []string{"`##`"}, "##"},
+		{"single-wrapped-cjk", []string{"`问：`"}, "问："},
+		{"wrapped-among-bare", []string{"\n", "`问：`", "!"}, "问："},
+		{"first-wrapped-wins", []string{"`a`", "`b`"}, "a"},
+		{"open-only-backtick-ignored", []string{"`broken"}, ""},
+		{"close-only-backtick-ignored", []string{"broken`"}, ""},
+		{"single-backtick-ignored", []string{"`"}, ""},
+		{"empty-wrapped-ignored", []string{"``"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FirstCustomDelimiterPrefix(tc.in); got != tc.want {
+				t.Fatalf("FirstCustomDelimiterPrefix(%#v) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
