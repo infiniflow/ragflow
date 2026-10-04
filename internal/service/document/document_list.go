@@ -144,7 +144,35 @@ func (s *DocumentService) GetDocumentFiltersByDatasetID(ctx context.Context, opt
 	return filters, total, nil
 }
 
+// metadataFacets is the doc store's aggregated facet for docIDs; a package
+// var so tests can drive both paths without a configured doc engine.
+var metadataFacets = func(ctx context.Context, metadataSvc *service.MetadataService, kbID string, docIDs []string) (map[string]map[string]int64, int64, bool) {
+	if metadataSvc == nil {
+		return nil, 0, false
+	}
+	return metadataSvc.GetMetadataFacets(ctx, kbID, docIDs)
+}
+
+// getDocumentMetadataFilter counts the file list's metadata facet over docIDs.
+//
+// The doc store aggregates it when it can: the counts are exactly what an
+// aggregation returns, and reading every document's metadata to tally them is
+// what made this the slowest request the file list makes. The aggregation is
+// scoped to docIDs, so the answer covers the same documents as the scan. When
+// the store cannot give an exact answer, the documents are counted here.
 func (s *DocumentService) getDocumentMetadataFilter(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
+	if counts, carrying, ok := metadataFacets(ctx, s.metadataSvc, kbID, docIDs); ok {
+		metadataCounter := make(map[string]interface{}, len(counts)+1)
+		for key, values := range counts {
+			if len(values) > 0 {
+				metadataCounter[key] = values
+			}
+		}
+		// The rest of the documents in scope hold no metadata value at all.
+		metadataCounter["empty_metadata"] = map[string]int64{"true": max(0, int64(len(docIDs))-carrying)}
+		return metadataCounter, nil
+	}
+
 	metadataByKey, err := s.GetMetadataByKBs(ctx, []string{kbID})
 	if err != nil {
 		return nil, err
