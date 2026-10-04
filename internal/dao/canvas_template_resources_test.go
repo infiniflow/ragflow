@@ -18,6 +18,8 @@ import (
 var seedDatabaseFunction sync.Once
 var seedDatabaseFunctionError error
 
+// canvasSeedResourceDB isolates seeding in SQLite and supplies the database
+// metadata expected by the startup migration check.
 func canvasSeedResourceDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	seedDatabaseFunction.Do(func() {
@@ -52,6 +54,8 @@ func canvasSeedResourceDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+// writeCanvasResource creates fixtures in the relative directory layout used
+// by startup resource discovery.
 func writeCanvasResource(t *testing.T, root, dir, name, body string) {
 	t.Helper()
 	target := filepath.Join(root, dir)

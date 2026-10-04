@@ -27,6 +27,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows verifies that reseeding
+// updates retained entries and removes rows absent from a complete catalog.
 func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

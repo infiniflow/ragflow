@@ -110,9 +110,9 @@ func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTe
 	return templates, ids, errors.Join(loadErrors...)
 }
 
+// findTemplateDirs retains missing sources so incomplete deployments cannot
+// authorize removal of catalog rows from an unavailable source.
 func findTemplateDirs() []string {
-	// Retain missing sources so startup can distinguish an incomplete deployment
-	// from a catalog that intentionally removed an old template.
 	return []string{findAgentTemplatesDir(), findIngestionTemplatesDir()}
 }
 
