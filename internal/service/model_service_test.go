@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -21,6 +23,22 @@ type remoteModelProbeDriver struct {
 	embedCalls   int
 	checkCalls   int
 	checkErr     error
+}
+
+func TestVerifyLocalMinerUOCRModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/health" {
+			http.Error(w, "unexpected verification request", http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	driver := modelModule.NewMinerLocalUModel(map[string]string{"default": server.URL}, modelModule.URLSuffix{DocumentParse: "file_parse"})
+	if err := verifyOCRModel(t.Context(), driver, "MinerU-model", &modelModule.APIConfig{}); err != nil {
+		t.Fatalf("verifyOCRModel() = %v, want success for a healthy local MinerU server", err)
+	}
 }
 
 func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
