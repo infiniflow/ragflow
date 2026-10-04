@@ -55,7 +55,11 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read templates: %v", err)
 		}
-		if _, err = seedCanvasTemplates(ctx, db, dir, entries); err != nil {
+		templates, ids, loadErr := loadTemplatesFromDir(dir, entries)
+		if loadErr != nil {
+			t.Fatalf("load templates: %v", loadErr)
+		}
+		if _, err = seedCanvasTemplates(ctx, db, templates, ids, true); err != nil {
 			t.Fatalf("seed templates: %v", err)
 		}
 	}
