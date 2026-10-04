@@ -1396,10 +1396,15 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
 	}
+	// Fold content_ltks / content_sm_ltks to lowercase so the ES whitespace
+	// analyzer matches the lowercased query text emitted by
+	// internal/service/nlp.QueryBuilder.Question (line 240).
+	contentLtks = strings.ToLower(contentLtks)
 	contentSmLtks, err := s.fineGrainedTokenize(contentLtks)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content fine-grained: %v", err)}
 	}
+	contentSmLtks = strings.ToLower(contentSmLtks)
 	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "))
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}

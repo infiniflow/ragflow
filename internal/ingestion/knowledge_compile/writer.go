@@ -1398,7 +1398,11 @@ func tokenizeWikiGraphContent(slug, description string) (string, string) {
 	if err != nil || contentSMLTKS == "" {
 		contentSMLTKS = contentLTKS
 	}
-	return contentLTKS, contentSMLTKS
+	// Fold to lowercase so the ES whitespace analyzer matches the
+	// lowercased query text emitted by internal/service/nlp.QueryBuilder
+	// (line 240). Mirrors the content_ltks fix in
+	// internal/ingestion/component/tokenizer.go.
+	return strings.ToLower(contentLTKS), strings.ToLower(contentSMLTKS)
 }
 
 // wikiPageProjection is the subset of a merged wiki_page row that the graph

@@ -728,10 +728,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if err != nil || contentLtks == "" {
 		contentLtks = in.Summary
 	}
+	// Fold to lowercase so the ES whitespace analyzer matches the
+	// lowercased query text emitted by QueryBuilder.Question (line 240).
+	contentLtks = strings.ToLower(contentLtks)
 	contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
 	if err != nil || contentSmLtks == "" {
 		contentSmLtks = contentLtks
 	}
+	contentSmLtks = strings.ToLower(contentSmLtks)
 
 	// storeGet: skip if a nav_doc for this doc already exists with same summary.
 	existing, _, err := s.navSearch(ctx, in.TenantID, in.KbID,
@@ -875,10 +879,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	if err != nil || clusterContentLtks == "" {
 		clusterContentLtks = summary
 	}
+	// Fold to lowercase so the ES whitespace analyzer matches the
+	// lowercased query text emitted by QueryBuilder.Question (line 240).
+	clusterContentLtks = strings.ToLower(clusterContentLtks)
 	clusterContentSmLtks, err := tokenizer.FineGrainedTokenize(clusterContentLtks)
 	if err != nil || clusterContentSmLtks == "" {
 		clusterContentSmLtks = clusterContentLtks
 	}
+	clusterContentSmLtks = strings.ToLower(clusterContentSmLtks)
 	clusterRow := map[string]interface{}{
 		"id":                  navClusterID(in.TenantID, in.KbID, name),
 		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
@@ -1263,10 +1271,14 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if err != nil || contentLtks == "" {
 			contentLtks = description
 		}
+		// Fold to lowercase so the ES whitespace analyzer matches the
+		// lowercased query text emitted by QueryBuilder.Question (line 240).
+		contentLtks = strings.ToLower(contentLtks)
 		contentSmLtks, err := tokenizer.FineGrainedTokenize(contentLtks)
 		if err != nil || contentSmLtks == "" {
 			contentSmLtks = contentLtks
 		}
+		contentSmLtks = strings.ToLower(contentSmLtks)
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
 			"compile_kwd":         navCompileKwd,
@@ -1394,9 +1406,11 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 	// The description is part of the cluster's keyword index, so its tokens are
 	// refreshed alongside it.
 	if ltks, err := tokenizer.Tokenize(merged); err == nil && ltks != "" {
-		updates["content_ltks"] = ltks
+		// Fold to lowercase so the ES whitespace analyzer matches the
+		// lowercased query text emitted by QueryBuilder.Question (line 240).
+		updates["content_ltks"] = strings.ToLower(ltks)
 		if smLtks, err := tokenizer.FineGrainedTokenize(ltks); err == nil && smLtks != "" {
-			updates["content_sm_ltks"] = smLtks
+			updates["content_sm_ltks"] = strings.ToLower(smLtks)
 		}
 	}
 	if s.embed != nil {
