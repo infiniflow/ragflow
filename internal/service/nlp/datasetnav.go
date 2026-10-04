@@ -699,9 +699,8 @@ func (s *NavService) SummariesByDocIDs(ctx context.Context, tenantID, kbID strin
 	return out
 }
 
-// UpsertDoc places one document summary into the nav tree. Minimal closed loop:
-// deterministic placement (KNN find best cluster -> merge if sim>=0.80, else a
-// new root-level cluster). No LLM, no split/rebalance, no cascade cleanup.
+// UpsertDoc places a document summary in the nav tree, merging into a matching
+// cluster or creating a topic cluster and retaining the parent chosen by a split.
 func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error {
 	if strings.TrimSpace(in.Summary) == "" {
 		return nil
@@ -803,7 +802,6 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	idx := s.navIndexName(in.TenantID)
 
 	if bestName != "" && sim >= navMergeThreshold {
-		parent := bestName
 		// Fuse this document's summary into the cluster description and re-embed
 		// the cluster with the merged text (Python upsert_dataset_nav_doc's merge
 		// branch), so the cluster keeps describing every document it holds and the
@@ -812,8 +810,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		if err := s.mergeClusterDescription(ctx, de, in.TenantID, in.KbID, bestName, in.Summary); err != nil {
 			return err
 		}
-		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
-			fmt.Sprintf("q_%d_vec", len(vec))); err != nil {
+		parent, err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
+			fmt.Sprintf("q_%d_vec", len(vec)))
+		if err != nil {
 			return err
 		}
 		// Explicit stable id (A5): the nav_doc row is addressable by a
@@ -1103,11 +1102,12 @@ func rowScore(row map[string]interface{}) float64 {
 // (> _MAX_DOCS_PER_CLUSTER=50). The minimal loop uses a deterministic 2-way
 // partition by child index parity (a stand-in for k-means) to keep behavior
 // reproducible without an embedder; the LLM-enhanced implementation would pick
-// the two best seed vectors instead.
-func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clusterName, vecCol string) error {
+// the two best seed vectors instead. A non-nil result maps replacement-cluster
+// members to their new owners; nil means no split was necessary.
+func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clusterName, vecCol string) (map[string]string, error) {
 	de, err := s.docEngine()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Count direct children (nav_cluster + nav_doc) of this cluster. vecCol (the
 	// engine column q_<dim>_vec, e.g. from the doc being appended) is selected so
@@ -1121,10 +1121,10 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		navFilter(map[string]interface{}{"parent_kwd": []string{clusterName}}),
 		selectFields, 0, 200, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(children) < 2 {
-		return nil
+		return nil, nil
 	}
 	// Split signal comes purely from the direct children (mirroring Python
 	// dataset_nav._maybe_split_cluster): too many total children (fanout) or too
@@ -1141,7 +1141,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		fanout++
 	}
 	if fanout <= navMaxFanout && navDocKids <= navMaxDocsPerCluster {
-		return nil
+		return nil, nil
 	}
 	// The split needs the original cluster's row id, parent, depth and directly
 	// held docs; select id + doc_ids_kwd so the split can delete by the
@@ -1150,7 +1150,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"id", "doc_count_int", "doc_ids_kwd", "parent_kwd", "depth_int"}, 0, 1, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Split into two sibling clusters "A"/"B", reparenting children by parity of
@@ -1183,7 +1183,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	// half-moving the subtree.
 	for _, child := range children {
 		if navChildRehomeCondition(child, kbID) == nil {
-			return fmt.Errorf("datasetnav: refusing to split cluster %q: child %q carries no row id, document id or type",
+			return nil, fmt.Errorf("datasetnav: refusing to split cluster %q: child %q carries no row id, document id or type",
 				clusterName, navRowLabel(child))
 		}
 	}
@@ -1209,12 +1209,12 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if childCond == nil {
 			// Unreachable after the pre-pass above; kept so a future caller
 			// cannot fall through to a condition that matches the whole dataset.
-			return fmt.Errorf("datasetnav: refusing to rehome %s child %q", typ, navRowLabel(child))
+			return nil, fmt.Errorf("datasetnav: refusing to rehome %s child %q", typ, navRowLabel(child))
 		}
 		if err := de.UpdateChunks(ctx, childCond,
 			map[string]interface{}{"parent_kwd": accTarget(i, splitA, splitB)},
 			s.navIndexName(tenantID), kbID); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// The original cluster may be tracked by a row id the engine assigned (not
@@ -1233,6 +1233,26 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 	if len(clusterChunks) > 0 {
 		origIDs = firstStringSlice(clusterChunks[0]["doc_ids_kwd"])
 	}
+	// The membership list includes documents already represented by children.
+	// Only unrepresented members (including the pending new leaf) need placement.
+	seenDocs := make(map[string]bool, len(accA.ids)+len(accB.ids))
+	for _, ids := range [][]string{accA.ids, accB.ids} {
+		for _, id := range ids {
+			seenDocs[id] = true
+		}
+	}
+	for i, id := range origIDs {
+		if id == "" || seenDocs[id] {
+			continue
+		}
+		seenDocs[id] = true
+		acc := &accA
+		if i%2 == 1 {
+			acc = &accB
+		}
+		acc.ids = append(acc.ids, id)
+		acc.count++
+	}
 	// Delete the original cluster and insert the two split clusters carrying the
 	// aggregated doc count, doc ids, and a representative vector so the split
 	// clusters remain KNN-searchable.
@@ -1240,24 +1260,14 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		map[string]interface{}{"id": []string{origRowID}, "kb_id": kbID},
 		s.navIndexName(tenantID), kbID)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	docParents := make(map[string]string, len(seenDocs))
 	for _, spl := range []struct {
 		name  string
 		count int
 		ids   []string
 	}{{splitA, accA.count, accA.ids}, {splitB, accB.count, accB.ids}} {
-		// Distribute the original cluster's directly-held docs into each split by
-		// parity so no tracked document is lost (review Major).
-		for i, d := range origIDs {
-			if i%2 == 0 && spl.name == splitA {
-				spl.ids = appendUnique(spl.ids, []string{d})
-				spl.count++
-			} else if i%2 == 1 && spl.name == splitB {
-				spl.ids = appendUnique(spl.ids, []string{d})
-				spl.count++
-			}
-		}
 		description := "split of " + clusterName
 		contentLtks, err := tokenizer.Tokenize(description)
 		if err != nil || contentLtks == "" {
@@ -1269,6 +1279,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		}
 		row := map[string]interface{}{
 			"id":                  navClusterID(tenantID, kbID, spl.name),
+			"doc_id":              kbID,
 			"compile_kwd":         navCompileKwd,
 			"available_int":       0,
 			"type_kwd":            "nav_cluster",
@@ -1288,11 +1299,14 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 			row["q_"+fmt.Sprintf("%d", len(vec))+"_vec"] = f32ToF64Slice(vec)
 		}
 		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID); err != nil {
-			return err
+			return nil, err
+		}
+		for _, id := range spl.ids {
+			docParents[id] = spl.name
 		}
 	}
 	_ = total
-	return nil
+	return docParents, nil
 }
 
 // accTarget returns the split target name for a child index by parity.
@@ -1503,29 +1517,26 @@ func (s *NavService) llmCreateSummary(ctx context.Context, tenantID, text string
 	return readableClusterName(fallbackTitle(text), text), text
 }
 
-// appendDocToCluster appends a doc id to a cluster's doc_ids_kwd and bumps its
-// doc_count_int. Implemented as a read-modify-write. vecCol names the engine
+// appendDocToCluster adds a unique member and increments its count only once.
+// Implemented as a read-modify-write. vecCol names the engine
 // vector column (q_<dim>_vec) so an overfull-cluster split can inherit a
-// representative vector; pass "" when the caller has no known dimension.
-func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docID, vecCol string) error {
+// representative vector; pass "" when the caller has no known dimension. The
+// returned parent reflects any split, so a pending leaf never references the
+// replaced cluster.
+func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine, tenantID, kbID, clusterName, docID, vecCol string) (string, error) {
 	chunks, _, err := s.navSearch(ctx, tenantID, kbID,
 		navClusterCondition(tenantID, kbID, clusterName),
 		[]string{"doc_ids_kwd", "doc_count_int"}, 0, 1, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(chunks) == 0 {
-		return nil
+		return clusterName, nil
 	}
 	// Use firstStringSlice (not a []interface{} assertion): the engine may return
 	// doc_ids_kwd as either []string or []interface{}, and a bare type assertion
 	// would silently clear the field on a []string (review Critical).
-	ids := make([]string, 0, 8)
-	for _, d := range firstStringSlice(chunks[0]["doc_ids_kwd"]) {
-		if d != docID {
-			ids = append(ids, d)
-		}
-	}
+	ids := appendUnique(nil, firstStringSlice(chunks[0]["doc_ids_kwd"]))
 	found := false
 	for _, id := range ids {
 		if id == docID {
@@ -1550,7 +1561,7 @@ func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine
 		navClusterCondition(tenantID, kbID, clusterName),
 		map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count},
 		s.navIndexName(tenantID), kbID); err != nil {
-		return err
+		return "", err
 	}
 	// Rebalance only when the cluster is plausibly overfull: the cluster's own
 	// doc count already exceeds the per-cluster cap, so a split is possible.
@@ -1559,9 +1570,20 @@ func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine
 	// re-checks both thresholds, so fanout-only splits via the direct call path
 	// (tests, rebuild) are unaffected. A split failure aborts the batch.
 	if count <= navMaxDocsPerCluster {
-		return nil
+		return clusterName, nil
 	}
-	return s.maybeSplitCluster(ctx, tenantID, kbID, clusterName, vecCol)
+	parents, err := s.maybeSplitCluster(ctx, tenantID, kbID, clusterName, vecCol)
+	if err != nil {
+		return "", err
+	}
+	if parents == nil {
+		return clusterName, nil
+	}
+	parent, ok := parents[docID]
+	if !ok {
+		return "", fmt.Errorf("datasetnav: split of %q lost document %q", clusterName, docID)
+	}
+	return parent, nil
 }
 
 // deleteNavDoc deletes a nav_doc row by doc_id, returning the doc's parent
