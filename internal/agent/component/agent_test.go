@@ -1376,3 +1376,25 @@ func TestAgentDisabledMaxTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
+	p := mergeAgentParam(AgentParam{}, map[string]any{
+		"temperature": 0.2, "temperatureEnabled": false,
+		"top_p": 0.75, "topPEnabled": false,
+	})
+	if p.Temperature != nil {
+		t.Fatalf("disabled temperature still applied: %v", *p.Temperature)
+	}
+	if p.TopP != nil {
+		t.Fatalf("disabled top_p still applied: %v", *p.TopP)
+	}
+	for _, inputs := range []map[string]any{
+		{"temperature": 0.2, "top_p": 0.75},
+		{"temperature": 0.2, "temperatureEnabled": true, "top_p": 0.75, "topPEnabled": true},
+	} {
+		p = mergeAgentParam(AgentParam{}, inputs)
+		if p.Temperature == nil || *p.Temperature != 0.2 || p.TopP == nil || *p.TopP != 0.75 {
+			t.Fatal("enabled or unflagged temperature/top_p lost")
+		}
+	}
+}

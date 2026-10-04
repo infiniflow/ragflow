@@ -1481,13 +1481,22 @@ func init() {
 			f := v
 			p.Temperature = &f
 		}
+		if enabled, ok := boolFrom(params, "temperatureEnabled"); ok && !enabled {
+			p.Temperature = nil
+		}
 		if v, ok := floatFrom(params, "top_p"); ok {
 			f := v
 			p.TopP = &f
 		}
+		if enabled, ok := boolFrom(params, "topPEnabled"); ok && !enabled {
+			p.TopP = nil
+		}
 		if v, ok := intFrom(params, "max_tokens"); ok {
 			i := v
 			p.MaxTokens = &i
+		}
+		if enabled, ok := boolFrom(params, "maxTokensEnabled"); ok && !enabled {
+			p.MaxTokens = nil
 		}
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
@@ -1499,9 +1508,15 @@ func init() {
 			f := v
 			p.PresencePenalty = &f
 		}
+		if enabled, ok := boolFrom(params, "presencePenaltyEnabled"); ok && !enabled {
+			p.PresencePenalty = nil
+		}
 		if v, ok := floatFrom(params, "frequency_penalty"); ok {
 			f := v
 			p.FrequencyPenalty = &f
+		}
+		if enabled, ok := boolFrom(params, "frequencyPenaltyEnabled"); ok && !enabled {
+			p.FrequencyPenalty = nil
 		}
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.
