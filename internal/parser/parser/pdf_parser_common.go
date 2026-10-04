@@ -70,7 +70,8 @@ type PDFParser struct {
 	ParseMethod        string
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
-	// the filetype setup map and forwarded to the deepdoc ParserConfig.
+	// the filetype setup map. DeepDOC reads it through its ParserConfig, and
+	// plain_text skips the pages outside it.
 	Pages [][]int
 	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
 	// caller observes per-page parse progress (done/total). Only the deepdoc
@@ -354,7 +355,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 		if len(data) == 0 {
 			return emptyPDFResult(filename)
 		}
-		items, pageCount, err := deepdocpdf.PlainText(data)
+		items, pageCount, err := deepdocpdf.PlainText(data, p.Pages)
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: plain_text: %w", err)}
 		}
