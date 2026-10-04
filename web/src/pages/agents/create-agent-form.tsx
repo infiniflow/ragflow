@@ -6,6 +6,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { MemoriesFormField } from '@/components/memories-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -22,7 +23,10 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { FlowType, FlowTypeConfig } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
-import { RetrievalBindingCount } from './template-retrieval-binding';
+import {
+  ModelBindingCount,
+  RetrievalBindings,
+} from './template-retrieval-binding';
 
 export type CreateAgentFormProps = IModalProps<any> & {
   loading?: boolean;
@@ -30,7 +34,8 @@ export type CreateAgentFormProps = IModalProps<any> & {
   // Templates may ship retrieval steps without any dataset/memory bound. When
   // set, the form asks the user to bind them before creating the agent, so
   // the canvas never ends up with a retrieval that fails at runtime.
-  retrievalBindings?: RetrievalBindingCount;
+  retrievalBindings?: RetrievalBindings;
+  modelBindings?: ModelBindingCount;
 };
 
 type FlowTypeCardProps = {
@@ -89,7 +94,9 @@ export const FormSchema = z.object({
   description: z.string().trim().optional(),
   type: z.nativeEnum(FlowType).optional(),
   dataset_ids: z.array(z.string()).optional(),
+  dataset_bindings: z.array(z.array(z.string())).optional(),
   memory_ids: z.array(z.string()).optional(),
+  llm_id: z.string().optional(),
 });
 
 export type FormSchemaType = z.infer<typeof FormSchema>;
@@ -100,6 +107,7 @@ export function CreateAgentForm({
   loading,
   showTypeCards = false,
   retrievalBindings,
+  modelBindings,
 }: CreateAgentFormProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -113,21 +121,39 @@ export function CreateAgentForm({
   // Compilation operators are configured on the edit-next page, so the dialog
   // skips the name field and turns the submit button into a navigation step.
   const isCompiler = showTypeCards && selectedType === FlowType.Compiler;
+  const modelRequired = (modelBindings?.modelCount ?? 0) > 0;
 
   const handleNext = useCallback(() => {
     navigate(`${Routes.CompilationTemplatesEditNext}?source=agents`);
   }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
-    if (
-      (retrievalBindings?.datasetCount ?? 0) > 0 &&
-      isEmpty(data.dataset_ids)
-    ) {
+    if (modelRequired && !data.llm_id) {
+      form.setError('llm_id', {
+        type: 'manual',
+        message: t('common.pleaseSelect'),
+      });
+      return;
+    }
+    const datasetBlocks = retrievalBindings?.datasetBlocks ?? [];
+    if (datasetBlocks.length === 1 && isEmpty(data.dataset_ids)) {
       form.setError('dataset_ids', {
         type: 'manual',
         message: t('flow.retrievalDatasetRequired'),
       });
       return;
+    }
+    if (datasetBlocks.length > 1) {
+      const missingIndex = datasetBlocks.findIndex((_, index) =>
+        isEmpty(data.dataset_bindings?.[index]),
+      );
+      if (missingIndex >= 0) {
+        form.setError(`dataset_bindings.${missingIndex}`, {
+          type: 'manual',
+          message: t('flow.retrievalDatasetRequired'),
+        });
+        return;
+      }
     }
     if ((retrievalBindings?.memoryCount ?? 0) > 0 && isEmpty(data.memory_ids)) {
       form.setError('memory_ids', {
@@ -142,11 +168,13 @@ export function CreateAgentForm({
     }
   }
 
-  const datasetHint = retrievalBindings?.datasetCount
-    ? t('flow.retrievalTemplateDatasetHint', {
-        num: retrievalBindings.datasetCount,
-      })
-    : undefined;
+  const datasetBlocks = retrievalBindings?.datasetBlocks ?? [];
+  const datasetHint =
+    datasetBlocks.length === 1
+      ? t('flow.retrievalTemplateDatasetHint', {
+          num: 1,
+        })
+      : undefined;
   const memoryHint = retrievalBindings?.memoryCount
     ? t('flow.retrievalTemplateMemoryHint', {
         num: retrievalBindings.memoryCount,
@@ -170,10 +198,31 @@ export function CreateAgentForm({
           </RAGFlowFormItem>
         )}
         {!isCompiler && <NameFormField></NameFormField>}
-        {!isCompiler && datasetHint && (
+        {!isCompiler && modelRequired && (
+          <ModelTreeSelectFormField
+            name="llm_id"
+            label={t('chat.model')}
+            modelTypes={modelBindings?.modelTypes}
+            required
+          />
+        )}
+        {!isCompiler && datasetBlocks.length === 1 && (
           <section className="space-y-4">
             <p className="text-sm text-text-secondary">{datasetHint}</p>
             <KnowledgeBaseFormField required showVariable={false} />
+          </section>
+        )}
+        {!isCompiler && datasetBlocks.length > 1 && (
+          <section className="space-y-4">
+            {datasetBlocks.map((block, index) => (
+              <KnowledgeBaseFormField
+                key={block.blockId}
+                required
+                showVariable={false}
+                name={`dataset_bindings.${index}`}
+                label={block.displayName}
+              />
+            ))}
           </section>
         )}
         {!isCompiler && memoryHint && (

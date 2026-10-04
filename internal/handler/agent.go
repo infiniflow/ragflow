@@ -469,6 +469,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
 		sessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
 	if err != nil {
@@ -1222,7 +1223,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// DataFlow canvas: run a synchronous, side-effect-free debug (dry-run)
+	// DataFlow agent: run a synchronous, side-effect-free debug (dry-run)
 	// and return the parsed chunks inline — reusing this existing
 	// chat/completions endpoint instead of a dedicated dataflow/debug route.
 	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is
@@ -1271,6 +1272,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
 		req.SessionID = utility.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	// req.Files is already normalized to the 1D file list by the
@@ -1303,6 +1305,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		emitted := false
 		doneSent := false
 		for ev := range events {
+			if ev.Type == "error" {
+				ev = convertAgentRunErrorToMessage(ev)
+			}
 			emitted = true
 			if ev.Type == "done" {
 				doneSent = true
@@ -1365,8 +1370,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	for ev := range events {
 		hasEvents = true
 		if ev.Type == "error" {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, agentRunEventMessage(ev, "Agent run failed."))
-			return
+			ev = convertAgentRunErrorToMessage(ev)
+			copy := ev
+			finalAns = &copy
 		}
 		var evData map[string]any
 		if err := json.Unmarshal([]byte(ev.Data), &evData); err == nil {

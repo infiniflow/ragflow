@@ -359,7 +359,7 @@ func (e *Engine) fullTextFields(kind string, text *types.MatchTextExpr) ([]strin
 		if e.flags.searchOriginalContent {
 			specifications = []string{"docnm_kwd^10", "content_with_weight", "important_tks^20", "question_tks^20"}
 		} else {
-			specifications = []string{"title_tks^10", "title_sm_tks^5", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
+			specifications = []string{"title_tks^2", "title_sm_tks^2", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
 		}
 	}
 	fields := make([]string, 0, len(specifications))
@@ -794,7 +794,7 @@ func tokenizedDBMSFields(kind string) []string {
 	case "skill":
 		return []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks"}
 	default:
-		return []string{"title_tks^10", "title_sm_tks^5", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
+		return []string{"title_tks^2", "title_sm_tks^2", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
 	}
 }
 

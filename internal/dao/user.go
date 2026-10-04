@@ -39,7 +39,7 @@ func (dao *UserDAO) Create(ctx context.Context, db *gorm.DB, user *entity.User) 
 // GetByID get user by ID
 func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id uint) (*entity.User, error) {
 	var user entity.User
-	err := db.WithContext(ctx).First(&user, id).Error
+	err := db.WithContext(ctx).Take(&user, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

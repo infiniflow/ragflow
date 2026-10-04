@@ -38,6 +38,26 @@
       "permanent": false,
       "tracking": "Go TokenChunker hard-cap merge (方案 B). Python token_chunker still uses OVER_CAP; adopt the hard-cap contract on the Python side to resolve these rules.",
       "reason": "Go TokenChunker now enforces a hard cap (UNDER_CAP merge + oversized-unit re-split), so chunk boundaries shift relative to Python's OVER_CAP merge-then-close on default-delimiter inputs: Go closes a chunk when the projected join would exceed the target, while Python merges the overflowing unit then closes. Same chunk count, different boundaries."
+    },
+    {
+      "id": "token-lossless-delimiter-retention",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__json_children_delim"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker retains the children (bare) delimiter on the chunk it ends (splitByDelim keep mode); Python's _split_text_by_pattern drops it. The user-selected lossless contract (PR #20276 follow-up) keeps bare (non-backtick) delimiters, so this diverges intentionally; resolve by dropping the children delimiter on the Python side.",
+      "reason": "Go TokenChunker retains the children delimiter '。' on each child chunk text; Python's _split_text_by_pattern discards it. Bare (non-backtick) delimiters are preserved losslessly by design, so the divergence is intentional. NOTE: the backtick-wrapped (custom) primary delimiters html/json/markdown/text_backtick were previously enrolled here but now DROP like Python and have been removed."
+    },
+    {
+      "id": "token-json-interitem-join",
+      "tag": "go_intentional",
+      "kind": "chunk_text",
+      "applies_to": ["token__json_two_item"],
+      "owner_fix_side": "python",
+      "permanent": false,
+      "tracking": "Go TokenChunker merges JSON items with a '' join (each item already carries its own retained delimiter, so '' reproduces the source); Python's _merge_text_chunks_by_token_size inserts '\\n' between items. Align the Go join on the Python side to resolve.",
+      "reason": "Go TokenChunker concatenates the two JSON items with no inter-item separator ('alpha ... omegaanother long item ...'), while Python inserts a '\\n' ('alpha ... omega\\nanother long item ...'). The source JSON items carry no separator, so '' is the faithful lossless join; the divergence is intentional pending a Python-side join alignment. (Enrolled under the old delimiter-retention rule by mistake; split out here.)"
     }
   ]
 }

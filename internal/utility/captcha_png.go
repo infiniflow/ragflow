@@ -14,14 +14,15 @@
 //  limitations under the License.
 //
 
+// Package utility
 // Stdlib-only PNG captcha renderer.
 //
 // PR #15290 review (Hz-186): the previous SVG renderer embedded the
 // captcha text in <text> nodes, so a scripted client could base64-
 // decode the response and read the answer with a regex — defeating
 // the captcha entirely. The reviewer asked for either a raster
-// captcha or something that doesn't put the answer in machine-
-// readable response content. We have no image-captcha library
+// captcha or something that doesn't put the answer in machine-readable
+// response content. We have no image-captcha library
 // vendored in go.mod and no network access during build, so this
 // renders a real PNG using only stdlib `image`, `image/color`,
 // `image/draw`, and `image/png`, with a hand-rolled 5x7 bitmap font
@@ -128,9 +129,9 @@ func RenderCaptchaPNG(text string) []byte {
 	height := captchaTopPadding*2 + glyphH + 8 // a bit of headroom for jitter
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	// Background — light, slightly cool grey.
+	// Background — light, slightly cool gray.
 	bg := color.RGBA{R: 0xf5, G: 0xf5, B: 0xf7, A: 0xff}
-	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
+	draw.Draw(img, img.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
 
 	// Distractor lines drawn under the glyphs.
 	for i := 0; i < captchaNoiseLines; i++ {
@@ -142,7 +143,7 @@ func RenderCaptchaPNG(text string) []byte {
 		)
 	}
 
-	// Glyphs, each with x/y jitter and a per-glyph foreground colour.
+	// Glyphs, each with x/y jitter and a per-glyph foreground color.
 	x := captchaSidePadding
 	for i := 0; i < len(upper); i++ {
 		ch := upper[i]
@@ -175,7 +176,7 @@ func RenderCaptchaPNGDataURL(text string) string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
 }
 
-// drawGlyph blits a 5x7 bitmap at (x, y) using captchaPNGScale x
+// drawGlyph paints a 5x7 bitmap at (x, y) using captchaPNGScale x
 // captchaPNGScale pixel blocks. Each '#' in the bitmap becomes a
 // scale*scale block of `fg`.
 func drawGlyph(img *image.RGBA, x, y int, bitmap [7]string, fg color.RGBA) {

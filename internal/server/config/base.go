@@ -32,7 +32,6 @@ type Config struct {
 	apiServer APIServerConfig
 	syncer    SyncerConfig
 	ingestor  IngestorConfig
-	deepdoc   DeepDocConfig
 
 	log  LogConfig
 	smtp common.SMTPConfig

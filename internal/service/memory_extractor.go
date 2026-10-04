@@ -46,7 +46,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
+	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -504,7 +504,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 
 	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature
-	resp, err := chatModel.ModelDriver.ChatWithMessages(ctx, target.ModelName, messages, target.APIConfig, &models.ChatConfig{Temperature: &temperature}, nil)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &models.ChatConfig{Temperature: &temperature}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: chat model: %w", errMemoryChatCall, err)
 	}

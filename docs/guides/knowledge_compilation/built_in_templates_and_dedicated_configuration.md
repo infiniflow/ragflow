@@ -292,16 +292,16 @@ Relationship configuration parameters:
 
 The system provides the following default relationship types:
 
-| Relationship Name | Description |
-| --- | --- |
-| has_branch | Indicates that the core topic contains major branches and is used to connect CentralTopic and Branch. |
-| has_sub_branch | Indicates that a branch contains more specific sub-branches and is used to connect Branch and Sub-branch. |
-| supports | Indicates that keywords, cases, or details provide supplementary explanation for an upper-level concept. |
-| related_to | Indicates an association between two concepts that does not belong to a clear parent-child structure. |
+| Relationship Name | Description                                                                                               |
+|-------------------|-----------------------------------------------------------------------------------------------------------|
+| has_branch        | Indicates that the core topic contains major branches and is used to connect CentralTopic and Branch.     |
+| has_sub_branch    | Indicates that a branch contains more specific sub-branches and is used to connect Branch and Sub-branch. |
+| supports          | Indicates that keywords, cases, or details provide supplementary explanation for an upper-level concept.  |
+| related_to        | Indicates an association between two concepts that does not belong to a clear parent-child structure.     |
 
 Users can adjust relationship definitions based on document content characteristics:
 
-- For content with a clear hierarchy, use inclusion relationships such as topic -> branch -> sub-branch.
+- For content with a clear hierarchy, use inclusion relationships such as topic → branch → sub-branch.
 - For content with associations but no parent-child relationship, use association relationships.
 - Relationship names should be concise and clear, and should reflect the connection meaning between nodes.
 - Avoid configuring too many meaningless relationships to prevent generating a complex or hard-to-understand mind map structure.
@@ -521,7 +521,7 @@ The system provides the following blueprints:
 - **General**: A general blueprint suitable for documents without specific content structure requirements.
 - **Market**: Suitable for market, industry analysis, and related content.
 - **Product**: Suitable for product introductions, product planning, and product-related documents.
-- **Userinterview**: Suitable for user interviews, research records, and similar content.
+- **Interview**: Suitable for user interviews, research records, and similar content.
 - **Custom**: A custom blueprint that can configure Wiki page generation rules based on actual requirements.
 
 | Configuration Item | Description |

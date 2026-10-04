@@ -71,6 +71,8 @@ export enum LanguageAbbreviation {
   Tr = 'tr',
   Ko = 'ko',
   Nl = 'nl',
+  Az = 'az',
+  Uz = 'uz',
 }
 
 export const LanguageAbbreviationMap = {
@@ -91,6 +93,8 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Tr]: 'Türkçe',
   [LanguageAbbreviation.Ko]: '한국어',
   [LanguageAbbreviation.Nl]: 'Nederlands',
+  [LanguageAbbreviation.Az]: 'Azərbaycanca',
+  [LanguageAbbreviation.Uz]: 'O‘zbekcha',
 };
 
 export const LanguageTranslationMap = {

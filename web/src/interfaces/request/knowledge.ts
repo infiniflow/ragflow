@@ -3,7 +3,7 @@ export interface ITestRetrievalRequestBody {
   page_size: number;
   rerank_candidates_count: number;
   similarity_threshold: number;
-  vector_similarity_weight: number;
+  keywords_similarity_weight: number;
   rerank_id?: string;
   use_kg?: boolean;
   highlight?: boolean;

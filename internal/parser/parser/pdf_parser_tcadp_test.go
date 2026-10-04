@@ -92,7 +92,7 @@ func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
 // : per-slide page numbers present in the raw TCADP response
 // must be attached to each chunk item as "positions" (a 1-indexed 5-tuple
 // [page, 0, 0, 0, 0]). The shared ingestion pipeline
-// (processChunkPositions -> AddPositions, a passthrough) derives
+// (processChunkPositions -> addPDFPositions, a passthrough) derives
 // top_int=[0], position_int=[[page,0,0,0,0]] and page_num_int=[page] from
 // this field. Elements without a page number (e.g. spreadsheet TCADP)
 // must NOT receive a positions field.

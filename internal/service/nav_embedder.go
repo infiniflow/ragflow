@@ -68,11 +68,11 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 		}
 		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	} else {
-		var err error
-		model, err = e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
+		target, err := e.modelSvc.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, name)
 		if err != nil {
 			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 		}
+		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 	nonEmpty := make([]string, 0, len(texts))
 	for _, t := range texts {
@@ -83,23 +83,8 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	// Documents go through EmbedWithinLimit: the provider does not truncate, it
-	// answers 400/20015, and a nav summary is not a short string - without a tree
-	// product it is every entity line of the page-index graph joined into one. The
-	// model makes the cut (and retries with a smaller budget when a calibrated count
-	// undershoots), which is what Python gets from BaseEmbedding.encode.
-	//
-	// Queries stay on the driver. A query is short, so there is nothing to cut, and
-	// EmbedWithinLimit refuses to run when the model declares a tokenizer whose asset
-	// is missing - a refusal that belongs to the ingest path, not to a search, which
-	// has to keep answering on a deployment that never provisioned the asset.
-	var embeds []modelModule.EmbeddingData
-	var err error
-	if query {
-		embeds, err = model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: true}, model.APIConfig, nil, nil)
-	} else {
-		embeds, err = model.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: nonEmpty}, nil, nil)
-	}
+	request := modelModule.EmbedRequest{Texts: nonEmpty, Query: query}
+	embeds, err := model.Embed(ctx, request, nil, nil)
 	if err != nil {
 		return nil, err
 	}

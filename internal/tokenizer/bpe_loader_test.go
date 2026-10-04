@@ -117,8 +117,8 @@ func TestLocalBpeLoader_ReadsSha1FileFromWorkingDirectory(t *testing.T) {
 	}
 }
 
-// A developer checkout that has run download_deps.py but never started the
-// Python side only has the file under its download name.
+// A developer checkout provisioned with build.sh can have the file under
+// its download name.
 func TestLocalBpeLoader_ReadsBundledVocabFromAncestor(t *testing.T) {
 	dir := isolate(t)
 	writeBpeTable(t, filepath.Join(dir, "ragflow_deps", "cl100k_base.tiktoken"), 10)

@@ -25,7 +25,6 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -106,15 +105,13 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const isGoBackend = useIsGoBackend();
-  // Resolves the i18n key for the canvas "Run" tooltip describing the Go-side
+  // Resolves the i18n key for the canvas "Run" tooltip describing the
   // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
-  // canvas on the golang backend — an agent canvas runs the agent, not an
-  // ingestion debug preview, so it must never show this tooltip.
-  const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
-  // The golang backend's ingestion (dataflow) canvas hides the Run/test-run
-  // entry entirely; the agent canvas keeps its Run button on both backends.
-  const showRunButton = !(isGoBackend && isPipeline);
+  // canvas — an agent canvas runs the agent, not an ingestion debug preview.
+  const runTooltipKey = debugRunLimitsTooltipKey(isPipeline);
+  // The ingestion (dataflow) canvas hides the Run/test-run entry entirely;
+  // the agent canvas keeps its Run button.
+  const showRunButton = !isPipeline;
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();

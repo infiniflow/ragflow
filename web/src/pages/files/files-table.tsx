@@ -52,7 +52,6 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
-import { useIsGoBackend } from '../../utils/backend-variant';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -102,22 +101,15 @@ export function FilesTable({
     fileRenameLoading,
   } = useRenameCurrentFile();
 
-  // Skills are only served by the Go backend
-  const isSkillsEnabled = useIsGoBackend();
-
-  // Sort files with the Go skills folder first, then by time
+  // Sort files with the skills folder first, then by time
   const sortedFiles = useMemo(() => {
     if (!files) return [];
 
     return [...files].sort((a, b) => {
       const aIsSkills =
-        isSkillsEnabled &&
-        isFolderType(a.type) &&
-        a.name.toLowerCase() === 'skills';
+        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
       const bIsSkills =
-        isSkillsEnabled &&
-        isFolderType(b.type) &&
-        b.name.toLowerCase() === 'skills';
+        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
 
       // Skills folder always comes first
       if (aIsSkills && !bIsSkills) return -1;
@@ -126,7 +118,7 @@ export function FilesTable({
       // Then sort by create_time desc (newest first)
       return (b.create_time || 0) - (a.create_time || 0);
     });
-  }, [files, isSkillsEnabled]);
+  }, [files]);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -176,8 +168,7 @@ export function FilesTable({
         const type = row.original.type;
         const id = row.original.id;
         const isFolder = isFolderType(type);
-        const isSkillsFolder =
-          isSkillsEnabled && isFolder && name.toLowerCase() === 'skills';
+        const isSkillsFolder = isFolder && name.toLowerCase() === 'skills';
 
         const handleNameClick = () => {
           if (isSkillsFolder) {
@@ -306,9 +297,7 @@ export function FilesTable({
       const name = row.original.name;
       const type = row.original.type;
       const isSkillsFolder =
-        isSkillsEnabled &&
-        isFolderType(type) &&
-        name.toLowerCase() === 'skills';
+        isFolderType(type) && name.toLowerCase() === 'skills';
       // The Go skills folder is not selectable because it's a special entry.
       return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },

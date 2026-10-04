@@ -56,7 +56,7 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            originalDSL,
 	}); err != nil {
-		t.Fatalf("failed to create canvas: %v", err)
+		t.Fatalf("failed to create agent: %v", err)
 	}
 
 	newDSL := entity.JSONMap{
@@ -76,7 +76,7 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 
 	canvas, err := dao.GetByID(ctx, db, "canvas-1")
 	if err != nil {
-		t.Fatalf("failed to get canvas: %v", err)
+		t.Fatalf("failed to get agent: %v", err)
 	}
 	graph, ok := canvas.DSL["graph"].(map[string]interface{})
 	if !ok {
@@ -111,7 +111,7 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            originalDSL,
 	}); err != nil {
-		t.Fatalf("failed to create canvas: %v", err)
+		t.Fatalf("failed to create agent: %v", err)
 	}
 
 	rows, err := dao.UpdateDSL(ctx, db, "missing-canvas", entity.JSONMap{"path": []interface{}{"new"}})
@@ -124,7 +124,7 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 
 	canvas, err := dao.GetByID(ctx, db, "canvas-1")
 	if err != nil {
-		t.Fatalf("failed to get canvas: %v", err)
+		t.Fatalf("failed to get agent: %v", err)
 	}
 	path, ok := canvas.DSL["path"].([]interface{})
 	if !ok {
@@ -220,7 +220,7 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	}
 	for i := range canvases {
 		if err := db.WithContext(ctx).Create(&canvases[i]).Error; err != nil {
-			t.Fatalf("failed to create canvas: %v", err)
+			t.Fatalf("failed to create agent: %v", err)
 		}
 	}
 
@@ -256,7 +256,7 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	for _, c := range categories {
 		catByID[c.ID] = c.Count
 	}
-	// agent_canvas: c1 (own) + c3 (team); c4 hidden. dataflow_canvas: c2.
+	// agent_agent: c1 (own) + c3 (team); c4 hidden. dataflow_agent: c2.
 	if catByID["agent_canvas"] != 2 {
 		t.Fatalf("agent_canvas count = %d, want 2", catByID["agent_canvas"])
 	}
@@ -286,7 +286,7 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 	}
 	for i := range canvases {
 		if err := db.Create(&canvases[i]).Error; err != nil {
-			t.Fatalf("create canvas: %v", err)
+			t.Fatalf("create agent: %v", err)
 		}
 	}
 
@@ -323,7 +323,7 @@ func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
 	}
 	for i := range canvases {
 		if err := db.Create(&canvases[i]).Error; err != nil {
-			t.Fatalf("create canvas: %v", err)
+			t.Fatalf("create agent: %v", err)
 		}
 	}
 
@@ -365,7 +365,7 @@ func TestUserCanvasDAOOrderByTags(t *testing.T) {
 	}
 	for i := range canvases {
 		if err := db.Create(&canvases[i]).Error; err != nil {
-			t.Fatalf("create canvas: %v", err)
+			t.Fatalf("create agent: %v", err)
 		}
 	}
 

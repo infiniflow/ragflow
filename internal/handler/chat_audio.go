@@ -82,6 +82,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	driver := target.Driver
 	modelName := target.ModelName
 	apiConfig := target.APIConfig
+	ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
 
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
@@ -108,7 +109,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
+		resp, err := ttsModel.Speech(ctx, &seg, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
 			if firstSynthErr == nil {
 				firstSynthErr = err
@@ -276,6 +277,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	driver := target.Driver
 	modelName := target.ModelName
 	apiConfig := target.APIConfig
+	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {
@@ -306,7 +308,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err = driver.TranscribeAudioWithSender(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
+		if err = asrModel.TranscribeWithSender(ctx, &tmpPath, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -324,7 +326,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, &modelModule.ASRConfig{}, nil)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

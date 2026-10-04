@@ -175,7 +175,7 @@ func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),
 			fmt.Errorf("email: parse arguments: %w", err)
 	}
-	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, _ := runtime.GetStateFromContext(ctx)
 	p.ToEmail = runtime.ResolveTemplateForDisplay(p.ToEmail, state)
 	p.CCEmail = runtime.ResolveTemplateForDisplay(p.CCEmail, state)
 	p.Subject = stripEmailHeaderLineBreaks(runtime.ResolveTemplateForDisplay(p.Subject, state))

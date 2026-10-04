@@ -9,7 +9,6 @@ import { Form } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { isEmpty } from 'lodash';
 import { Info, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
@@ -27,6 +26,7 @@ import {
   getChunkerChildrenDelimiterPreview,
   getChunkerDelimiterPreview,
   getChunkerDelimiterTipKey,
+  normalizeTokenChunkerFormValues,
 } from '../../utils';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
@@ -73,17 +73,11 @@ const TokenChunkerForm = ({
   const defaultValues = useFormValues(initialValues, node);
   const { t } = useTranslation();
 
-  // Normalize legacy values: 'token_size' (removed tab) and empty fall back
-  // to 'delimiter'; nodes saved in the removed tab may carry empty delimiters,
-  // so seed the default '\n' row.
-  const formDefaultValues = {
-    ...defaultValues,
-    delimiter_mode:
-      defaultValues.delimiter_mode === 'one' ? 'one' : 'delimiter',
-    delimiters: isEmpty(defaultValues.delimiters)
-      ? [{ value: '\n' }]
-      : defaultValues.delimiters,
-  };
+  // The general chunker never had the legacy 'token_size' tab, so it never
+  // re-seeds an empty delimiter list.
+  const formDefaultValues = normalizeTokenChunkerFormValues(defaultValues, {
+    seedLegacyDelimiter: !isGeneralChunker,
+  });
 
   const form = useForm<TokenChunkerFormSchemaType>({
     defaultValues: formDefaultValues,

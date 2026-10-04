@@ -198,7 +198,7 @@ func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 	r.GET("/api/v1/folders/:folder_id/changes", h.GetUncommittedChanges)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/tree", h.GetCommitTree)
 	r.GET("/api/v1/folders/:folder_id/commits/:commit_id/files/:file_id/content", h.GetCommitFileContent)
-	r.GET("/api/v1/files/:id/versions", h.GetFileVersionHistory)
+	r.GET("/api/v1/workspace-files/:file_id/versions", h.GetFileVersionHistory)
 	// Mirrors the CommitFolderResolver middleware used on the production
 	// /datasets/{dataset_id}/commits route: dataset_id resolves to folder_id.
 	r.GET("/api/v1/datasets/:dataset_id/commits", func(c *gin.Context) {
@@ -641,7 +641,7 @@ func TestFileCommit_GetFileVersionHistory_Success(t *testing.T) {
 	r, _ := setupFileCommitTest("user-1")
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/v1/files/f1/versions", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/workspace-files/f1/versions", nil)
 	r.ServeHTTP(w, req)
 
 	var resp map[string]interface{}
@@ -681,7 +681,7 @@ func TestFileCommit_ForeignFolderRejected(t *testing.T) {
 		{"GET", "/api/v1/folders/folder-1/commits/commit-1/files/f1/content", ""},
 		{"GET", "/api/v1/folders/folder-1/commits/diff?from=c1&to=c2", ""},
 		{"POST", "/api/v1/folders/folder-1/commits", `{"message": "x", "files": [{"file_id": "f1", "file_name": "t", "operation": "add", "content": "c"}]}`},
-		{"GET", "/api/v1/files/f1/versions", ""},
+		{"GET", "/api/v1/workspace-files/f1/versions", ""},
 	}
 
 	for _, e := range endpoints {
@@ -722,7 +722,7 @@ func TestFileCommit_OwnFolderStillWorks(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	req, _ = http.NewRequest("GET", "/api/v1/files/f1/versions", nil)
+	req, _ = http.NewRequest("GET", "/api/v1/workspace-files/f1/versions", nil)
 	r.ServeHTTP(w, req)
 	if code := decodeCode(t, w); code != float64(common.CodeSuccess) {
 		t.Errorf("expected code %d for owner version history, got %v: %s", common.CodeSuccess, code, w.Body.String())

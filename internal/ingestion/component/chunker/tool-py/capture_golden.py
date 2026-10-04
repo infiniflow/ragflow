@@ -136,7 +136,7 @@ def _assert_tokenizer_alive() -> None:
     from rag.nlp import num_tokens_from_string
 
     probe = "RAGFlow chunker parity tokenizer liveness probe."
-    hint = "Fix the encoding first: uv run python3 ragflow_deps/download_deps.py (provides ragflow_deps/cl100k_base.tiktoken)."
+    hint = "Fix the encoding first: bash build.sh --go provisions ragflow_deps/cl100k_base.tiktoken."
     # Two shapes to catch. common/token_utils.py builds the encoder on first use and
     # lets that failure propagate, so an unavailable BPE table raises here; a failure
     # to encode an otherwise valid string is still reported as 0.

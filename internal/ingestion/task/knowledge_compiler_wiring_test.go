@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 )
 
 // TestKnowledgeCompilerRegisteredByWiring locks the composition-root contract:
@@ -39,5 +40,40 @@ func TestKnowledgeCompilerRegisteredByWiring(t *testing.T) {
 	}
 	if factory == nil {
 		t.Fatal("component \"Compiler\" registered with a nil factory")
+	}
+}
+
+// TestDatasetEmbeddingIDBindsTheDatasetModel mirrors Python's compile-task
+// binding: the tenant-level model wins over the dataset's own, a blank tenant id
+// falls back to the dataset model, and an empty id defers to the tenant default.
+func TestDatasetEmbeddingIDBindsTheDatasetModel(t *testing.T) {
+	tenantModel := "tenant-model-1"
+	blank := "  "
+
+	tests := []struct {
+		name string
+		kb   *entity.Knowledgebase
+		want string
+	}{
+		{name: "nil knowledgebase", kb: nil, want: ""},
+		{name: "dataset model", kb: &entity.Knowledgebase{EmbdID: "bge-large"}, want: "bge-large"},
+		{
+			name: "tenant model wins",
+			kb:   &entity.Knowledgebase{EmbdID: "bge-large", TenantEmbdID: &tenantModel},
+			want: "tenant-model-1",
+		},
+		{
+			name: "blank tenant model falls back",
+			kb:   &entity.Knowledgebase{EmbdID: "bge-large", TenantEmbdID: &blank},
+			want: "bge-large",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := datasetEmbeddingID(tc.kb); got != tc.want {
+				t.Fatalf("datasetEmbeddingID() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

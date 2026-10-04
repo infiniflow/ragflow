@@ -66,8 +66,8 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 }
 
 // TestXLSXQAFirstRowIsData protects the QA spreadsheet contract: workbooks
-// contain question/answer rows without a header, so the parser's structural
-// table_header item is still the first QA pair.
+// contain question/answer rows without a header, so the leading header row
+// of the segment (the first <tr>) is still the first QA pair.
 func TestXLSXQAFirstRowIsData(t *testing.T) {
 	chunks := qaChunksFromXLSX(t, xlsxWorkbook(t, [][]string{
 		{"q1", "a1"},

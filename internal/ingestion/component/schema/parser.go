@@ -21,6 +21,53 @@ package schema
 // so a free-form map best mirrors the Python dict literal.
 type ParserSetup map[string]any
 
+// FlattenLegacyParserSetups normalizes a Parser param map saved by the
+// Python-era frontend. That shape nests the per-family setups under a
+// "setups" key ({outputs, setups: {pdf: {...}}}), while the Go backend —
+// the component runtime and the parser_config storage alike — uses the flat
+// shape with file families as top-level keys. The nested families are
+// lifted to the top level; when both shapes carry the same family the
+// entries are field-merged with the top-level (Go-native) fields winning,
+// mirroring the shallow per-field overlay NewParserComponent applies over
+// its defaults. Maps without a nested "setups" object are returned
+// unchanged.
+func FlattenLegacyParserSetups(params map[string]any) map[string]any {
+	nested, ok := params["setups"].(map[string]any)
+	if !ok {
+		return params
+	}
+	flat := make(map[string]any, len(params)+len(nested))
+	for family, cfg := range nested {
+		flat[family] = cfg
+	}
+	for k, v := range params {
+		if k == "setups" {
+			continue
+		}
+		flat[k] = mergeSetupEntry(flat[k], v)
+	}
+	return flat
+}
+
+// mergeSetupEntry field-merges two same-family setup maps, with the
+// top-level entry winning on conflicting keys. Non-map values (or a
+// non-map on either side) replace outright.
+func mergeSetupEntry(nested, top any) any {
+	nestedMap, ok1 := nested.(map[string]any)
+	topMap, ok2 := top.(map[string]any)
+	if !ok1 || !ok2 {
+		return top
+	}
+	merged := make(map[string]any, len(nestedMap)+len(topMap))
+	for k, v := range nestedMap {
+		merged[k] = v
+	}
+	for k, v := range topMap {
+		merged[k] = v
+	}
+	return merged
+}
+
 // ParserOutputs is the result of invoking the Parser component. The
 // wire format is "json", with structured JSON items as the only payload.
 type ParserOutputs struct {

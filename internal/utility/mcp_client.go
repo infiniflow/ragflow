@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package mcpclient is a minimal Model Context Protocol (MCP) client used by
+// Package utility mcp client is a minimal Model Context Protocol (MCP) client used by
 // the Go MCP-management endpoints to list a remote server's tools during
 // import and the "test" endpoint. It implements just enough of the spec to
 // negotiate a session and call tools/list:
@@ -87,7 +87,7 @@ type FetchOptions struct {
 // has via pin_dns_global + assert_url_is_safe.
 func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	if opts.URL == "" {
-		return nil, errors.New("Invalid url.")
+		return nil, errors.New("invalid url")
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Second
@@ -117,7 +117,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	case TransportSSE:
 		return fetchToolsSSE(connectCtx, opts.URL, headers, opts.HTTPClient)
 	default:
-		return nil, fmt.Errorf("Unsupported MCP server type.")
+		return nil, fmt.Errorf("unsupported MCP server type: %s", opts.ServerType)
 	}
 }
 

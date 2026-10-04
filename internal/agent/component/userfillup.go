@@ -122,7 +122,7 @@ func (u *UserFillUpComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	// tips substitution uses simple {{key}} placeholders resolved
 	// against the form input map. We still extract state so a
 	// nil-state error surfaces early.
-	if _, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err != nil {
+	if _, err := runtime.GetStateFromContext(ctx); err != nil {
 		return nil, fmt.Errorf("UserFillUp: %w", err)
 	}
 

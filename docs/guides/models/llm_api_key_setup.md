@@ -29,8 +29,7 @@ Go to **User settings** **>** **Model providers**. In **Available models**, sele
 
 ### Create a Model Provider Instance and Configure Connection Information
 
-An instance stores a set of connection settings under a provider. You can create separate instances for test environments, production environments, local models, or proxy gateways to avoid mixing configurations for different purposes.
-When you configure a provider for the first time, the right pane prompts you to create an instance first. After the instance is saved, you can continue to fill in **API Key** and **Base URL** and add models.
+An instance stores a set of connection settings under a provider. You can create separate instances for test environments, production environments, local models, or proxy gateways to avoid mixing configurations for different purposes. When you configure a provider for the first time, the right pane prompts you to create an instance first. After the instance is saved, you can continue to fill in **API Key** and **Base URL** and add models.
 
 **API Key** is used for authentication. **Base URL** specifies the model service endpoint.
 

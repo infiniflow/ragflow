@@ -1,7 +1,8 @@
 {
   "name": "Xiaomi",
   "url": {
-    "default": "https://api.xiaomimimo.com/v1"
+    "default": "https://api.xiaomimimo.com/v1",
+    "plan": "https://token-plan-cn.xiaomimimo.com/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",

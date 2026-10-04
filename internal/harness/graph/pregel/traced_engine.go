@@ -225,10 +225,8 @@ func (te *TracedEngine) traceEvent(ctx context.Context, event any, rootSpan trac
 		intSpan.SetStatus(codes.Ok, "")
 		intSpan.End()
 	case EventTypeError:
-		if rootSpan != nil {
-			rootSpan.SetStatus(codes.Error, fmt.Sprintf("%v", se.Error))
-			rootSpan.RecordError(se.Error)
-		}
+		rootSpan.SetStatus(codes.Error, fmt.Sprintf("%v", se.Error))
+		rootSpan.RecordError(se.Error)
 	case EventTypeTaskStart:
 		_, taskSpan := te.tracer.Start(ctx, SpanNodeExecute,
 			trace.WithSpanKind(trace.SpanKindInternal),

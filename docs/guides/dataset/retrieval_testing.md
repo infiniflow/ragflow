@@ -63,4 +63,4 @@ If the target chunk can be recalled but many irrelevant results also appear, rai
 
 If you need to see more or fewer candidate results, adjust **Top**. For cross-language datasets, also check whether **Cross-language search** includes the target languages to retrieve. It is recommended to use multiple representative queries for repeated testing and determine final parameters based on the overall recall result instead of adjusting configuration based only on a single test.
 
-Debugging suggestion: when retrieval results are unsatisfactory, troubleshoot in the order of document parsing -> chunk -> metadata -> retrieval parameters. First confirm that the knowledge content itself has correctly entered the dataset, then adjust retrieval parameters. This helps locate the problem faster.
+Debugging suggestion: when retrieval results are unsatisfactory, troubleshoot in the order of document parsing → chunk → metadata → retrieval parameters. First confirm that the knowledge content itself has correctly entered the dataset, then adjust retrieval parameters. This helps locate the problem faster.

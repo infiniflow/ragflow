@@ -78,7 +78,38 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
+	// Drop the unused tenant-level model group tables. Failover is configured
+	// per conversation instead, so nothing reads or writes these any more.
+	if err := dropModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
+	return nil
+}
+
+// dropModelGroupTables removes tenant_model_group and
+// tenant_model_group_mapping.
+//
+// The tables were created by AutoMigrate for a tenant-scoped failover-group
+// feature that was never shipped: no service read them, and the per-conversation
+// failover path replaced the concept entirely. Their Go definitions are gone, so
+// without this they would linger in every existing database with no way to remove
+// them. AutoMigrate cannot express a drop, hence the explicit migration.
+//
+// Guarded by HasTable so a database that never had them is a no-op, and
+// mapping-first because it references the group table.
+func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
+		if !migrator.HasTable(table) {
+			continue
+		}
+		if err := migrator.DropTable(table); err != nil {
+			return fmt.Errorf("drop %s: %w", table, err)
+		}
+		common.Info("Dropped unused table", zap.String("table", table))
+	}
 	return nil
 }
 
@@ -253,18 +284,11 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when
 // the column is missing.
 //
-// It cannot be left to AutoMigrate. The model declares document_id's unique key
-// as a named unique index (uniqueIndex:idx_ingestion_task_document_id), while
-// the column is UNIQUE at the database level. GORM's MigrateColumnUnique reads
-// that pairing as a stray unique constraint: it issues
-// `ALTER TABLE ingestion_task DROP FOREIGN KEY uni_ingestion_task_document_id`
-// for the default constraint name, which does not exist, so MySQL fails with
-// 1091. AutoMigrate aborts on the first error, and because autoMigrateSafely
-// treats 1091 as a benign "already dropped" case, the failure is swallowed and
-// the migration reports success -- before ever reaching the missing column.
-// A column added to this table would therefore never be created, and every
-// ingestion_task query (the DAO selects all columns) would fail with
-// Error 1054.
+// It runs after AutoMigrate rather than being left to it. AutoMigrate reaches a
+// new column only once every earlier column has converged, so any failure on
+// the way (a duplicate key, a rejected ALTER) silently skips it, and every
+// ingestion_task query selects all columns: a missing column then fails the
+// whole API with Error 1054.
 func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	// Use the model, not the bare table name: HasColumn resolves the field
 	// against the statement schema and dereferences it, which a plain string

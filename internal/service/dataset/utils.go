@@ -19,21 +19,23 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 	// avatar/language/description keys are always present (null when unset),
 	// matching Python's full-row dict response.
 	item := map[string]interface{}{
-		"id":              kb.ID,
-		"name":            kb.Name,
-		"avatar":          stringPointerValue(kb.Avatar),
-		"language":        stringPointerValue(kb.Language),
-		"description":     stringPointerValue(kb.Description),
-		"tenant_id":       kb.TenantID,
-		"permission":      kb.Permission,
-		"document_count":  kb.DocNum,
-		"token_num":       kb.TokenNum,
-		"chunk_count":     kb.ChunkNum,
-		"parser_id":       datasetParserIDForResponse(kb.ParserID),
-		"parser_config":   jsonMapValue(kb.ParserConfig),
-		"pagerank":        kb.Pagerank,
-		"embedding_model": kb.EmbdID,
-		"nickname":        kb.Nickname,
+		"id":                         kb.ID,
+		"name":                       kb.Name,
+		"avatar":                     stringPointerValue(kb.Avatar),
+		"language":                   stringPointerValue(kb.Language),
+		"description":                stringPointerValue(kb.Description),
+		"tenant_id":                  kb.TenantID,
+		"permission":                 kb.Permission,
+		"document_count":             kb.DocNum,
+		"token_num":                  kb.TokenNum,
+		"chunk_count":                kb.ChunkNum,
+		"similarity_threshold":       kb.SimilarityThreshold,
+		"keywords_similarity_weight": 1 - kb.VectorSimilarityWeight,
+		"parser_id":                  datasetParserIDForResponse(kb.ParserID),
+		"parser_config":              jsonMapValue(kb.ParserConfig),
+		"pagerank":                   kb.Pagerank,
+		"embedding_model":            kb.EmbdID,
+		"nickname":                   kb.Nickname,
 	}
 	if kb.TenantAvatar != nil {
 		item["tenant_avatar"] = *kb.TenantAvatar
@@ -46,21 +48,21 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 
 func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
-		"id":                       kb.ID,
-		"tenant_id":                kb.TenantID,
-		"name":                     kb.Name,
-		"embedding_model":          kb.EmbdID,
-		"permission":               kb.Permission,
-		"created_by":               kb.CreatedBy,
-		"document_count":           kb.DocNum,
-		"token_num":                kb.TokenNum,
-		"chunk_count":              kb.ChunkNum,
-		"similarity_threshold":     kb.SimilarityThreshold,
-		"vector_similarity_weight": kb.VectorSimilarityWeight,
-		"parser_id":                datasetParserIDForResponse(kb.ParserID),
-		"parser_config":            kb.ParserConfig,
-		"pagerank":                 kb.Pagerank,
-		"create_time":              kb.CreateTime,
+		"id":                         kb.ID,
+		"tenant_id":                  kb.TenantID,
+		"name":                       kb.Name,
+		"embedding_model":            kb.EmbdID,
+		"permission":                 kb.Permission,
+		"created_by":                 kb.CreatedBy,
+		"document_count":             kb.DocNum,
+		"token_num":                  kb.TokenNum,
+		"chunk_count":                kb.ChunkNum,
+		"similarity_threshold":       kb.SimilarityThreshold,
+		"keywords_similarity_weight": 1 - kb.VectorSimilarityWeight,
+		"parser_id":                  datasetParserIDForResponse(kb.ParserID),
+		"parser_config":              kb.ParserConfig,
+		"pagerank":                   kb.Pagerank,
+		"create_time":                kb.CreateTime,
 	}
 	if kb.Avatar != nil {
 		item["avatar"] = *kb.Avatar
@@ -259,7 +261,7 @@ func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.Emb
 	// Embed inside the model's window: this path takes whatever text the API handed
 	// it, and the provider rejects an over-window input with 400/20015 instead of
 	// truncating it.
-	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: cleaned}, embeddingConfig, nil)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: cleaned}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

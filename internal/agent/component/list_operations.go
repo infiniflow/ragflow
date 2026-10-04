@@ -284,7 +284,7 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 		panic(r)
 	}()
 
-	state, _, serr := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, serr := runtime.GetStateFromContext(ctx)
 	if serr != nil {
 		return nil, fmt.Errorf("ListOperations: %w", serr)
 	}

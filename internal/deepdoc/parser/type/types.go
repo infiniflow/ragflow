@@ -101,6 +101,13 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
+	// HasPageNumber distinguishes a box whose PageNumber is a real page index
+	// (including page 0, the first page, which is 0-based) from a box that was
+	// built without page metadata. Without it, code that wants to skip the
+	// page check when metadata is absent cannot tell "page 0" apart from
+	// "no page", so the legitimate first page would be treated as missing and
+	// matched against every other page's positions.
+	HasPageNumber bool
 	// Pages carries the full set of page numbers a box spans, when it is a
 	// single logical region split across consecutive pages (e.g. a table
 	// merged across pages by MergeTablesAcrossPages). When non-empty it

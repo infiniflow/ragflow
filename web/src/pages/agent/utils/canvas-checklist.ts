@@ -133,6 +133,7 @@ function extractReferencesFromText(text: string): string[] {
 
 type ReferenceValidationContext = {
   nodeMap: Map<string, RAGFlowNodeType>;
+  childIdsByParent: Map<string, string[]>;
   edges: Edge[];
   beginInputKeys: Set<string>;
   variables?: Record<string, any>;
@@ -141,20 +142,40 @@ type ReferenceValidationContext = {
 
 function buildReachableNodeIds(
   node: RAGFlowNodeType,
-  nodeMap: Map<string, RAGFlowNodeType>,
-  edges: Edge[],
+  ctx: ReferenceValidationContext,
 ) {
   // Mirrors the variable picker (useBuildVariableOptions): a node may reference
   // its own upstream, its parent's upstream, and — for Loop parents only — the
   // parent's own outputs.
-  const reachable = new Set(filterAllUpstreamNodeIds(edges, [node.id]));
+  const reachable = new Set(filterAllUpstreamNodeIds(ctx.edges, [node.id]));
   const parentId = node.parentId;
   if (parentId) {
-    for (const id of filterAllUpstreamNodeIds(edges, [parentId])) {
+    for (const id of filterAllUpstreamNodeIds(ctx.edges, [parentId])) {
       reachable.add(id);
     }
-    if (nodeMap.get(parentId)?.data?.label === Operator.Loop) {
+    if (ctx.nodeMap.get(parentId)?.data?.label === Operator.Loop) {
       reachable.add(parentId);
+    }
+  }
+
+  // A container's own form also reads from inside (loop-termination-condition
+  // and iteration dynamic-output pickers): Loop picks from its own loop
+  // variables plus child outputs, Iteration's output map picks child outputs —
+  // except IterationStart, whose per-item outputs the picker never offers.
+  const label = node.data?.label;
+  if (label === Operator.Loop || label === Operator.Iteration) {
+    for (const childId of ctx.childIdsByParent.get(node.id) ?? []) {
+      const childLabel = ctx.nodeMap.get(childId)?.data?.label;
+      if (
+        label === Operator.Iteration &&
+        childLabel === Operator.IterationStart
+      ) {
+        continue;
+      }
+      reachable.add(childId);
+    }
+    if (label === Operator.Loop) {
+      reachable.add(node.id);
     }
   }
   return reachable;
@@ -194,11 +215,7 @@ function isReferenceValid(
   if (!relaxedUpstream) {
     let reachable = ctx.reachableCache.get(referencingNode.id);
     if (!reachable) {
-      reachable = buildReachableNodeIds(
-        referencingNode,
-        ctx.nodeMap,
-        ctx.edges,
-      );
+      reachable = buildReachableNodeIds(referencingNode, ctx);
       ctx.reachableCache.set(referencingNode.id, reachable);
     }
     if (!reachable.has(nodeId)) {
@@ -364,8 +381,12 @@ export function collectCanvasIssues({
 }: CanvasChecklistInputs): CanvasIssue[] {
   const nodeMap = new Map(nodes.map((x) => [x.id, x]));
   // References always use `begin@key` even when the Begin node's id is a
-  // legacy one (`begin:0`), so look the node up by label.
-  const beginNode = nodes.find((x) => x.data?.label === Operator.Begin);
+  // legacy one (`begin:0`), so look the node up by label. The pipeline
+  // (dataflow) canvas names its entry node `File` instead of `Begin` — same
+  // structural anchor, different label.
+  const beginNode = nodes.find(
+    (x) => x.data?.label === Operator.Begin || x.data?.label === Operator.File,
+  );
   const beginInputKeys = new Set(
     Object.keys(beginNode?.data?.form?.inputs ?? {}),
   );
@@ -381,7 +402,9 @@ export function collectCanvasIssues({
   // only linked to their container by `parentId` — outer edges terminate at the
   // container — so containment counts as connectivity too. The graph is walked
   // undirected: any component detached from Begin, single node or a group, is
-  // orphan regardless of edge direction.
+  // orphan regardless of edge direction. The anchor itself is always part of
+  // its own component, so it keeps the edges-only rule: an entry node with no
+  // edges at all (an empty pipeline) is still flagged.
   const neighbors = new Map<string, string[]>();
   const link = (a?: string, b?: string) => {
     if (!a || !b || a === b) {
@@ -419,11 +442,19 @@ export function collectCanvasIssues({
 
   const ctx: ReferenceValidationContext = {
     nodeMap,
+    childIdsByParent: new Map(),
     edges,
     beginInputKeys,
     variables,
     reachableCache: new Map(),
   };
+  for (const node of nodes) {
+    if (node.parentId) {
+      const childIds = ctx.childIdsByParent.get(node.parentId) ?? [];
+      childIds.push(node.id);
+      ctx.childIdsByParent.set(node.parentId, childIds);
+    }
+  }
 
   const issues: CanvasIssue[] = [];
 
@@ -436,12 +467,11 @@ export function collectCanvasIssues({
       operatorLabel: label ?? '',
     };
 
-    if (
-      label &&
-      !OrphanExemptOperators.includes(label) &&
-      (beginComponentIds ? !beginComponentIds.has(node.id)
-        : !connectedNodeIds.has(node.id))
-    ) {
+    const orphan =
+      beginComponentIds && node.id !== beginNode?.id
+        ? !beginComponentIds.has(node.id)
+        : !connectedNodeIds.has(node.id);
+    if (label && !OrphanExemptOperators.includes(label) && orphan) {
       issues.push({
         ...target,
         type: CanvasIssueType.Orphan,
@@ -501,6 +531,19 @@ export function collectCanvasIssues({
             }),
           );
         }
+      }
+    }
+
+    if (label === Operator.Extractor) {
+      // Same always-on policy as the Agent model check: a template-created
+      // pipeline ships an empty llm_id and must flag on load, not only after
+      // edits.
+      if (!form?.llm_id) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorModelMissing',
+        });
       }
     }
 

@@ -61,15 +61,17 @@ func ApplyComponentScopedParserConfig(
 		}
 	}
 
-	// Strip legacy top-level flat metadata fields; keep the modular object
-	// under "metadata" when present, otherwise drop the key entirely.
+	// Documents and datasets are uniformly component-scoped (every dataset and
+	// document DSL defines an Extractor node), so the flat "metadata" transport
+	// key is never a first-class config: it is scoped onto an Extractor node
+	// above and then dropped here. A flat metadata object with no Extractor node
+	// to receive it is invalid input and is silently dropped (no node is
+	// auto-created), keeping the function free of compatibility shims.
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "metadata_config")
 	delete(parserConfig, "built_in_metadata")
 	delete(parserConfig, "fields")
-	if datasetMeta == nil {
-		delete(parserConfig, "metadata")
-	}
+	delete(parserConfig, "metadata")
 
 	return parserConfig
 }

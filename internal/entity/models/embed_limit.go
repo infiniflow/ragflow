@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// EmbedWithinLimit embeds req after cutting every text to what this model accepts,
+// Embed embeds req after cutting every text to what this model accepts,
 // and retries with a smaller budget if the provider still rejects an input as over
 // its window. It is the embedding counterpart of RerankModel.Rerank, which cuts its
 // documents the same way for the same reason.
@@ -48,7 +48,7 @@ import (
 // that declares a tokenizer whose asset is not on disk is refused before the first
 // attempt, because counting it with the calibrated cl100k estimate is exactly what
 // lets an oversized request through.
-func (m *EmbeddingModel) EmbedWithinLimit(ctx context.Context, req EmbedRequest, embeddingConfig *EmbeddingConfig, usage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingConfig *EmbeddingConfig, usage *common.ModelUsage) ([]EmbeddingData, error) {
 	if m == nil || m.ModelDriver == nil {
 		return nil, fmt.Errorf("embedding model: driver is nil")
 	}

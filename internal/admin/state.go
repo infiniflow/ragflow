@@ -36,29 +36,21 @@ var GlobalServerStore = &ServerStore{
 }
 
 // UpdateServerInfo updates or adds a server status
-func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMessage) {
+func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMessage) error {
 
-	//switch serviceType {
-	//case "meta_data":
-	//	return s.getMySQLStatus(name)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	switch status.ServerType {
 	case common.ServerTypeAPI:
-		s.mu.Lock()
-		defer s.mu.Unlock()
 		s.servers[serverName] = status
-		return
 	case common.ServerTypeIngestion:
-		s.mu.Lock()
-		defer s.mu.Unlock()
 		s.servers[serverName] = status
-		return
 	case common.ServerTypeFileSyncer:
-		s.mu.Lock()
-		defer s.mu.Unlock()
 		s.servers[serverName] = status
-		return
 	}
+
+	return CheckClientStatus(serverName, status)
 }
 
 // GetServerInfo gets a single server status

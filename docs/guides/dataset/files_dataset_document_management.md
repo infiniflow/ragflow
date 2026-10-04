@@ -54,9 +54,7 @@ Operation steps:
 
 Add documents from File Management
 
-Files that have already been uploaded to **File** can be added to a knowledge base by connecting them to the target knowledge base.
-Once connected, the files will be processed according to the configuration of the target knowledge base.
-For detailed instructions, see [**File > Connect to a knowledge base**](../file/link_dataset.md)
+Files that have already been uploaded to **File** can be added to a knowledge base by connecting them to the target knowledge base. Once connected, the files will be processed according to the configuration of the target knowledge base. For detailed instructions, see [**File > Connect to a knowledge base**](../file/link_dataset.md).
 
 ## Parse Documents
 

@@ -74,6 +74,7 @@ var chunkColumns = []columnDefinition{
 	{"page_num_int", "ARRAY(INTEGER) NULL"},
 	{"top_int", "ARRAY(INTEGER) NULL"},
 	{"knowledge_graph_kwd", "VARCHAR(256) NULL"},
+	{"type_kwd", "VARCHAR(256) NULL"},
 	{"source_id", "ARRAY(VARCHAR(256)) NULL"},
 	{"entity_kwd", "VARCHAR(256) NULL"},
 	{"entity_type_kwd", "VARCHAR(256) NULL"},
@@ -148,7 +149,7 @@ var skillColumns = []columnDefinition{
 }
 
 var chunkIndexColumns = []string{
-	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "entity_type_kwd", "removed_kwd",
+	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "type_kwd", "entity_type_kwd", "removed_kwd",
 }
 
 var memoryIndexColumns = []string{"message_id", "memory_id", "status_int"}

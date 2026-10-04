@@ -46,6 +46,7 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 		for _, sub := range subLines {
 			box := LineToTextBox(sub)
 			box.PageNumber = pageNum
+			box.HasPageNumber = true
 			boxes = append(boxes, box)
 		}
 	}

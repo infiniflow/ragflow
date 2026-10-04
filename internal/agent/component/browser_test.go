@@ -171,7 +171,7 @@ func TestBrowser_ResolvesSysQueryTemplate(t *testing.T) {
 // need to test template resolution without going through Invoke.
 func mustState(t *testing.T, ctx context.Context) *runtime.CanvasState {
 	t.Helper()
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		t.Fatalf("get state from context: %v", err)
 	}

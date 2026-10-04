@@ -1563,6 +1563,7 @@ func structureEntityNavLine(payloadJSON string) string {
 // dataset_structure_merger._merge_bucket but is a self-contained from-scratch
 // path (B3: the legacy unified merge never aggregated structure by name).
 func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
+	products = kccommon.FilterOrphanRelations(products)
 	common.Info("knowledge_compile: mergeStructureDataset entry",
 		zap.String("kb_id", kb),
 		zap.Int("products", len(products)))

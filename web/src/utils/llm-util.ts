@@ -61,6 +61,16 @@ export function buildModelValue(model: {
 }
 
 /**
+ * Identity of a provider model name. The bundled catalog and a live upstream
+ * listing can spell the same model with different case or padding, so every
+ * merge, lookup and duplicate check compares this normalized form instead of
+ * the raw name. Mirrors the backend's `providerModelKey`.
+ */
+export function modelNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
  * Collects every id under which an added model can be referenced — both the
  * model_id form and the legacy "modelName@instanceName@providerName" form —
  * so a persisted form value can be checked against the models that still

@@ -660,9 +660,9 @@ func (s *ConnectorService) PollGoogleWebOAuthResult(ctx context.Context, userID,
 
 func defaultGoogleWebOAuthRedirectURI(source string) string {
 	if source == "gmail" {
-		return getEnvDefault(common.EnvGmailWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/gmail/oauth/web/callback")
+		return getEnvDefault(common.EnvGmailWebOAuthRedirectURI, "http://localhost:9380/api/v1/connectors/gmail/oauth/web/callback")
 	}
-	return getEnvDefault(common.EnvGoogleDriveWebOAuthRedirectURI, "http://localhost:9384/api/v1/connectors/google-drive/oauth/web/callback")
+	return getEnvDefault(common.EnvGoogleDriveWebOAuthRedirectURI, "http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback")
 }
 
 func getEnvDefault(key, fallback string) string {
@@ -1455,7 +1455,7 @@ func (s *ConnectorService) PollBoxWebOAuthResult(ctx context.Context, userID str
 func defaultBoxWebOAuthRedirectURI() string {
 	return getEnvDefault(
 		common.EnvBoxWebOAuthRedirectURI,
-		"http://localhost:9384/api/v1/connectors/box/oauth/web/callback",
+		"http://localhost:9380/api/v1/connectors/box/oauth/web/callback",
 	)
 }
 

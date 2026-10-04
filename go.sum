@@ -209,7 +209,11 @@ github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/r
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
 github.com/dlclark/regexp2 v1.10.0 h1:+/GIL799phkJqYW+3YbOd8LCcbHzT0Pbo8zl70MHsq0=
 github.com/dlclark/regexp2 v1.10.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
+github.com/dlclark/regexp2/v2 v2.5.2 h1:HAsucWRhsqcDzl6Ua9aR8JwYOTzrZyPrF0/FNxJVAI0=
+github.com/dlclark/regexp2/v2 v2.5.2/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
 github.com/dnaeon/go-vcr v1.2.0/go.mod h1:R4UdLID7HZT3taECzJs4YgbbH6PIGXB6W/sc5OLb6RQ=
+github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5 h1:vtyXXUeZQM4iNxud6zzTtdxT95nBJrelu77+DS0Vyi0=
+github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5/go.mod h1:LiIEzozrcvNXorsG/3+ypGqdTUAqZryhzSsqi0oU/Qg=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/qyY=
@@ -280,6 +284,8 @@ github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJn
 github.com/go-playground/universal-translator v0.18.1/go.mod h1:xekY+UJKNuX9WP91TpwSH2VMlDf28Uj24BCp08ZFTUY=
 github.com/go-playground/validator/v10 v10.30.2 h1:JiFIMtSSHb2/XBUbWM4i/MpeQm9ZK2xqPNk8vgvu5JQ=
 github.com/go-playground/validator/v10 v10.30.2/go.mod h1:mAf2pIOVXjTEBrwUMGKkCWKKPs9NheYGabeB04txQSc=
+github.com/go-sourcemap/sourcemap v2.1.3+incompatible h1:W1iEw64niKVGogNgBN3ePyLFfuisuzeidWPMPWmECqU=
+github.com/go-sourcemap/sourcemap v2.1.3+incompatible/go.mod h1:F8jJfvm2KbVjc5NqelyYJmf/v5J0dwNLS2mL4sNA1Jg=
 github.com/go-sql-driver/mysql v1.7.0 h1:ueSltNNllEqE3qcWBTD0iQd3IpL/6U+mJxLkazJ7YPc=
 github.com/go-sql-driver/mysql v1.7.0/go.mod h1:OXbVy3sEdcQ2Doequ6Z5BW6fXNQTmx+9S1MCJN5yJMI=
 github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=
@@ -349,6 +355,8 @@ github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/ad
 github.com/hashicorp/hcl v1.0.0 h1:0Anlzjpi4vEasTeNFn2mLJgTSwt0+6sfsiTG8qcWGx4=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
+github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7 h1:/4UAJqF04Rs8bPfJHEUvOpmv6cxX2hKXHscMktRiskU=
+github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7/go.mod h1:TCjWm+lo7de/zYHb8rHfVSaKxOP4tZNrnRUzkqV4r28=
 github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9 h1:mqPwCOTktwl0V1f3tkfCRFonGQ3XrQ43gvH+TOWec6o=
 github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
 github.com/infiniflow/onnxruntime_go v1.29.0 h1:pI6v4Bcc7BJdKRF+ZZZkaf4HV6Of6Kl6XryaW2aGbGQ=
@@ -602,8 +610,6 @@ github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/
 github.com/wk8/go-ordered-map/v2 v2.1.8/go.mod h1:5nJHM5DyteebpVlHnWMV0rPz6Zp7+xBAnxjb1X5vnTw=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2 h1:00txxvfBM9muc0jiLIEAkAcIMJzfthRT6usrui8uGmg=
 github.com/x-cray/logrus-prefixed-formatter v0.5.2/go.mod h1:2duySbKsL6M18s5GU7VPsoEPHyzalCE06qoARUCeBBE=
-github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7 h1:iX9RUmlLw+Hoe78WV5vlm+JjIZUCzdRn2y6tWNxZTeY=
-github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7/go.mod h1:TCjWm+lo7de/zYHb8rHfVSaKxOP4tZNrnRUzkqV4r28=
 github.com/xuri/efp v0.0.1 h1:fws5Rv3myXyYni8uwj2qKjVaRP30PdjeYe2Y6FDsCL8=
 github.com/xuri/efp v0.0.1/go.mod h1:ybY/Jr0T0GTCnYjKqmdwxyxn2BQf2RcQIIvex5QldPI=
 github.com/xuri/excelize/v2 v2.11.0 h1:HxaEFl6sRN2+8J5a8HaKq+0M4FsjBGMnWWtjOCPSG88=
@@ -612,8 +618,8 @@ github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 h1:+C0TIdyyYmzadGaL/HBL
 github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9/go.mod h1:WwHg+CVyzlv/TX9xqBFXEZAuxOPxn2k1GNHwG41IIUQ=
 github.com/yargevad/filepathx v1.0.0 h1:SYcT+N3tYGi+NvazubCNlvgIPbzAk7i7y2dwg3I5FYc=
 github.com/yargevad/filepathx v1.0.0/go.mod h1:BprfX/gpYNJHJfc35GjRRpVcwWXS89gGulUIU5tK3tA=
-github.com/yfedoseev/office_oxide/go v0.1.9 h1:gvTMCvJDYEZNF4dKd1cdfvU+9SRDSpnbNhCpZJbZOaE=
-github.com/yfedoseev/office_oxide/go v0.1.9/go.mod h1:YLtMlKUkRCp/Q96wsy7D6yoBKDeJnP66UH+c9Bb+E+M=
+github.com/yfedoseev/office_oxide/go v0.1.12 h1:QLsiB8Aj7LB42D9Vwu1rslRuZg/vSXc4IkVXCDKQv6o=
+github.com/yfedoseev/office_oxide/go v0.1.12/go.mod h1:YLtMlKUkRCp/Q96wsy7D6yoBKDeJnP66UH+c9Bb+E+M=
 github.com/yfedoseev/pdf_oxide/go v0.3.73 h1:hRad+X4W0ILW3bCQeCvdUKcoy8yMj2TFS6/XtoMk55I=
 github.com/yfedoseev/pdf_oxide/go v0.3.73/go.mod h1:QbJ/nLbez0al2EnqEdEPIlGflFprWmiuUM4mo9rNNOI=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=

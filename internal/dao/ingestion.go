@@ -212,7 +212,7 @@ func (dao *IngestionTaskDAO) ListByStatus(ctx context.Context, db *gorm.DB, stat
 
 func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
 	var task *entity.IngestionTask
-	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Take(&task, "id = ?", id).Error
 	return task, err
 }
 

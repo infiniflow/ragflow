@@ -422,6 +422,7 @@ export default {
       redoAll: '清除现有分块',
       applyAutoMetadataSettings: '应用全局自动元数据设置',
       parseFileTip: '您确定要解析吗？',
+      clearChunksReparseTip: '您确定要清空分块重新解析吗？',
       parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
@@ -503,9 +504,6 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
-      vectorSimilarityWeight: '向量相似度权重',
-      vectorSimilarityWeightTip:
-        '此项用于设置混合相似度分数中的向量相似度权重，该权重可用于向量余弦相似度或重排序分数。两个权重的总和必须等于 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
         '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
@@ -1062,6 +1060,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelHighDescription: '深度推理',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: '尽力思考',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: '自主探索语料库',
+      failoverModels: '备用模型',
+      failoverModelsTip:
+        '当主模型遇到服务商故障时，Agentic智能体按此列表顺序切换到下一个模型。',
+      failoverModelsPrimaryLabel: '主模型',
+      failoverModelsNoPrimary: '租户默认',
+      failoverModelsEmpty:
+        '暂无备用模型。至少添加一个，才能在服务商故障时继续服务。',
+      failoverModelsAdd: '添加备用模型',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -2280,7 +2288,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       navDeleteAllDescription: '确定要删除整个 PageIndex 吗？此操作无法撤销。',
       navDeleteNodeTitle: '删除 PageIndex',
       navDeleteNodeDescription: '确定要删除该节点及其子节点吗？',
-      representationEmpty: '暂无 Artifact 模板。',
+      representationEmpty: 'Pipeline 编译器未配置或未提取到 Artifact。',
       representationUnsupported: '暂不支持该表征类型。',
       claimsPanelTitle: '证据链 · {{name}}',
       claimsTotal: '共 {{count}} 条',
@@ -2474,16 +2482,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       delimiters: '分隔符',
       delimitersTip:
         '每行一个分隔符，多字符分隔符可直接填写（如 ##）。加反引号（如 `##`）：强制切分，每个分隔符处独立成块，不再按 token 大小合并；不加反引号：只作为切分点，切出的段落仍会按 chunk_token_size 合并，因此短文本可能看不出效果。',
-      delimitersTipPython:
-        '每行一个分隔符。只有用反引号包裹的条目（如 `##`）生效：每个分隔符处独立成块，不再按 token 大小合并；不加反引号的条目会被忽略。',
       childrenDelimitersTip:
         '子块切分：每个父块会再按这些分隔符切成子块（子块用于检索），不受 chunk_token_size 影响。',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
-      flattenMediaToText: '禁用视觉模型',
-      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableVisionEnhancement: '启用视觉增强',
+      enableVisionEnhancementTip:
+        '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
       enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',
@@ -2683,6 +2690,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       addPageNumbers: '添加页码',
       addTimestamp: '添加时间戳',
       watermarkText: '水印文本',
+      headerText: '页眉文本',
+      footerText: '页脚文本',
+      includeDownloadInfoInContent: '在内容末尾附加下载信息',
+      contentPlaceholder: '输入 Markdown 内容...',
+      filenamePlaceholder: 'document.ext（留空则自动生成）',
+      contentRequired: '内容不能为空',
+      fontSizeMin: '字号不能小于 12',
       channel: '频道',
       channelTip: '针对该组件的输入进行文本搜索或新闻搜索',
       text: '文本',
@@ -3187,6 +3201,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
       agentModelMissing: '未选择模型，请先选择',
+      extractorModelMissing: '未选择模型，请先选择',
       retrievalDatasetMissing: '未选择知识库，请先选择',
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',
@@ -3204,12 +3219,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
+      generalChunkerDescription:
+        '通用文本分块方式，适用于大多数文档类型，可灵活控制块大小、重叠和上下文范围。',
       tokenChunker: '按 Token 分块',
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
       titleChunker: '按标题分块',
+      manualChunkerDescription:
+        '手册类文档分块方式，适用于产品手册、用户指南等，可根据文档结构进行分块并保留必要的上下文。',
       oneChunkerDescription: '此 Chunker 无需额外配置。',
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',

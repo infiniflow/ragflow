@@ -47,20 +47,17 @@ type BotService struct {
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConversationDAO *dao.API4ConversationDAO
 	agentService        *AgentService
-	llmService          *LLMService
 	pipeline            *ChatPipelineService
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
-// AgentbotCompletion; llmSvc is required for ChatbotCompletion (in
-// step 6). Both are nullable in unit tests.
-func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
+// AgentbotCompletion and is nullable in unit tests.
+func NewBotService(agentSvc *AgentService) *BotService {
 	return &BotService{
 		chatDAO:             dao.NewChatSessionDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
 		agentService:        agentSvc,
-		llmService:          llmSvc,
 		pipeline:            NewChatPipelineService(),
 	}
 }

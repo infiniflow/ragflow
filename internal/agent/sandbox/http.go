@@ -20,9 +20,8 @@
 // tool package — the tool package depends on the sandbox package
 // (for ManagerClient) and not the other way around.
 //
-// The retry semantics mirror the tool/http_helper defaults (3
-// attempts, 200ms base backoff, 3s cap, 5xx + network errors only).
-// 4xx is the caller's error and is not retried.
+// Idempotent requests retry up to 3 attempts by default with a 200ms
+// base backoff and 3s cap. Non-idempotent requests are attempted once.
 
 package sandbox
 
@@ -94,10 +93,11 @@ func NewHTTPClient(cfg HTTPConfig) *HTTPClient {
 // application/octet-stream.
 //
 // Retry policy:
-//   - 5xx: retried
-//   - network errors: retried
+//   - 5xx: retried for idempotent methods
+//   - network errors: retried for idempotent methods
 //   - 4xx: NOT retried
 //   - 2xx/3xx: returned as-is
+//   - non-idempotent methods: attempted once and returned as-is
 //
 // The context is honored on every attempt; cancellation aborts the
 // loop.
@@ -113,6 +113,7 @@ func (h *HTTPClient) Do(
 		contentType = "application/octet-stream"
 	}
 
+	retry := isIdempotent(method)
 	var lastErr error
 	for attempt := 1; attempt <= h.maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -132,6 +133,9 @@ func (h *HTTPClient) Do(
 
 		resp, err := h.client.Do(req)
 		if err != nil {
+			if !retry {
+				return nil, err
+			}
 			lastErr = err
 			if !isRetryableNetError(err) {
 				return nil, err
@@ -145,6 +149,9 @@ func (h *HTTPClient) Do(
 
 		// 5xx is retryable, 4xx is not.
 		if resp.StatusCode >= 500 {
+			if !retry {
+				return resp, nil
+			}
 			lastErr = fmt.Errorf("sandbox http: %s %s returned %d", method, url, resp.StatusCode)
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
@@ -162,6 +169,15 @@ func (h *HTTPClient) Do(
 		return nil, lastErr
 	}
 	return nil, errors.New("sandbox http: exhausted retries with no recorded error")
+}
+
+func isIdempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 // backoff returns an exponentially increasing duration with full jitter,

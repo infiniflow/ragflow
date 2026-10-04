@@ -736,6 +736,23 @@ func (c *tagSourceFileRowCache) store(key string, f *entity.File, now time.Time)
 
 var tagSourceFileRows = &tagSourceFileRowCache{items: make(map[string]tagSourceFileRow, 64)}
 
+// errTagSourceNotFound marks a failure to resolve one tag source file id
+// against its owning tenant. It deliberately covers only the resolution step —
+// no row, a row without a storage location — and NOT the storage step: a
+// missing backend or a failed object read says nothing about this particular
+// id and must stay a hard failure.
+var errTagSourceNotFound = errors.New("tag source file not found")
+
+// IsTagSourceNotFound reports whether err means this specific tag source file
+// id cannot be resolved, as opposed to a transient database failure or the
+// storage layer being unavailable. Callers that treat a source as optional —
+// one inherited from a document, where a stale reference is expected once the
+// file has been deleted — may skip it; a source the dataset configured
+// explicitly, and any database or storage failure, must still fail loudly.
+func IsTagSourceNotFound(err error) bool {
+	return errors.Is(err, errTagSourceNotFound)
+}
+
 // resolveTagSourceFile looks up a tag source file inside ownerTenantID and
 // validates that it is a readable stored object. Resolved rows are reused for
 // tagSourceFileRowTTL so repeated lookups of the same file do not each cost a
@@ -748,15 +765,19 @@ func resolveTagSourceFile(ctx context.Context, tagFileID, ownerTenantID string) 
 	}
 	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, tagFileID, ownerTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("tag source file %q not found: %w", tagFileID, err)
+		// The DAO returns database errors unchanged, and only a genuine miss
+		// means this id is dead: wrapping a transient failure as well would
+		// let a caller skip it and report an incomplete vocabulary as success.
+		if dao.IsNotFoundErr(err) {
+			return nil, fmt.Errorf("tag source file %q not found: %w: %w", tagFileID, errTagSourceNotFound, err)
+		}
+		return nil, fmt.Errorf("resolve tag source file %q: %w", tagFileID, err)
 	}
-	// The DAO can return (nil, nil) for a missing row, so the "%w" form is only
-	// used when there is an error to wrap.
 	if f == nil {
-		return nil, fmt.Errorf("tag source file %q not found in tenant %q", tagFileID, ownerTenantID)
+		return nil, fmt.Errorf("tag source file %q not found in tenant %q: %w", tagFileID, ownerTenantID, errTagSourceNotFound)
 	}
 	if f.Location == nil || *f.Location == "" {
-		return nil, fmt.Errorf("tag source file %q has no storage location", tagFileID)
+		return nil, fmt.Errorf("tag source file %q has no storage location: %w", tagFileID, errTagSourceNotFound)
 	}
 	common.Info(fmt.Sprintf("tag source: file_id=%q name=%q parent_id=%q location=%q",
 		tagFileID, f.Name, f.ParentID, *f.Location))

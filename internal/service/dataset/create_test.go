@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -61,6 +62,12 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	if result["parser_id"] != string(entity.ParserTypeGeneral) {
 		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
 	}
+	if got, ok := result["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > 1e-9 {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", result["keywords_similarity_weight"])
+	}
+	if _, exists := result["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
 }
 
 func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
@@ -80,13 +87,30 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
 	}
-	parentChild, ok := config["parent_child"].(map[string]interface{})
+	chunker := findChunkerNodeInTest(t, map[string]interface{}(config))
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("parent_child = %#v, want default map", config["parent_child"])
+		t.Fatalf("chunker parent_child = %#v, want default map", chunker["parent_child"])
 	}
 	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
 		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
 	}
+}
+
+// findChunkerNodeInTest returns the first chunker component params from a
+// parser_config (the component-scoped home of the parent_child setting).
+func findChunkerNodeInTest(t *testing.T, config map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	for cpnID, raw := range config {
+		lower := strings.ToLower(cpnID)
+		if strings.HasPrefix(lower, "generalchunker:") || strings.HasPrefix(lower, "tokenchunker:") {
+			if params, ok := raw.(map[string]interface{}); ok {
+				return params
+			}
+		}
+	}
+	t.Fatalf("no chunker node found in parser_config: %#v", config)
+	return nil
 }
 
 func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
@@ -152,9 +176,11 @@ func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 		ParserID:  &parserID,
 		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
 	}, "tenant-1")

@@ -38,6 +38,12 @@ func (FileCommit) TableName() string {
 }
 
 // FileCommitItem represents a single file change within a commit.
+//
+// Python declares the same pair unique and Peewee names it
+// file_commit_item_commit_id_file_id. Both runtimes match an existing index by
+// column set rather than by name, so the two names are equivalent and one of
+// them appearing in the database is not a bug. See the "Shared database schema"
+// section of AGENTS.md before renaming either.
 type FileCommitItem struct {
 	ID                   string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Seq                  uint    `gorm:"column:seq;index" json:"seq,omitempty"`

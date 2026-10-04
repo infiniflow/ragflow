@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"math"
 	"testing"
 
 	"ragflow/internal/common"
@@ -40,6 +41,12 @@ func TestDatasetServiceListDatasetsFiltersByIDs(t *testing.T) {
 	}
 	if data[0]["id"] != "kb-1" {
 		t.Fatalf("expected kb-1, got %#v", data[0]["id"])
+	}
+	if got, ok := data[0]["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > 1e-9 {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", data[0]["keywords_similarity_weight"])
+	}
+	if _, exists := data[0]["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
 	}
 }
 

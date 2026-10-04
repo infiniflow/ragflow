@@ -77,7 +77,7 @@ func InitServerTestConfig() *ServerTestConfig {
 
 	hostAddress := os.Getenv("HOST_ADDRESS")
 	if hostAddress == "" {
-		hostAddress = "http://127.0.0.1:9384"
+		hostAddress = "http://127.0.0.1:9380"
 	}
 
 	zhipuAPIKey := os.Getenv("ZHIPU_AI_API_KEY")

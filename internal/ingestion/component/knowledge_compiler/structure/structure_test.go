@@ -388,6 +388,20 @@ func TestFillKnownNodes(t *testing.T) {
 	}
 }
 
+func TestExtractHypergraphSkipsEdgesWithoutEntities(t *testing.T) {
+	chat := &graphChat{}
+	nodes, edges, err := extractHypergraph(context.Background(), common.Deps{Chat: chat}, CompileConfig{LLMID: "llm", ParserConfig: map[string]any{"entity": map[string]any{"id": "name"}}}, "node", "## Known Entities: {known_nodes}", "unrelated text")
+	if err != nil {
+		t.Fatalf("extractHypergraph: %v", err)
+	}
+	if len(nodes) != 0 || len(edges) != 0 {
+		t.Fatalf("empty entity batch returned nodes=%v edges=%v", nodes, edges)
+	}
+	if chat.nodeCalls != 1 || chat.edgeCalls != 0 {
+		t.Fatalf("LLM calls = node:%d edge:%d, want node:1 edge:0", chat.nodeCalls, chat.edgeCalls)
+	}
+}
+
 // ---- payload helpers ----
 
 func TestPayloadChunkIDs(t *testing.T) {

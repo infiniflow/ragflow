@@ -139,7 +139,12 @@ const FloatingChatWidgetMarkdown = ({
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
-      const chunkItem = reference?.chunks?.[chunkIndex];
+      let chunkItem = reference?.chunks?.[chunkIndex];
+      if (!chunkItem) {
+        chunkItem = reference?.chunks?.find(
+          (x: any) => x?.chunk_id === chunkIndex,
+        ) as IReferenceChunk;
+      }
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs

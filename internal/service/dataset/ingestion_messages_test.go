@@ -113,7 +113,7 @@ func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
 	assertLatestEventMap(t, log, 1, "Knowledge compilation completed")
 }
 
-func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
+func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
@@ -121,15 +121,95 @@ func TestListIngestionLogsExcludesUnnumberedRuns(t *testing.T) {
 	}
 	insertCompilationOwnerKB(t, "kb-1", "user-1")
 	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
-	insertMessageRun(t, "old-run", "kb-1", "doc-2", entity.TaskStatusDone, 0)
+	insertMessageRun(t, "zero-run", "kb-1", "doc-3", entity.TaskStatusDone, 0)
+	progressMessage := "Python parse completed"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID: "python-run", DocumentID: "doc-2", TenantID: "user-1", KbID: "kb-1",
+		ParserID: "naive", DocumentName: "doc.txt", DocumentSuffix: ".txt", DocumentType: "text",
+		SourceFrom: "local", TaskType: string(entity.PipelineTaskTypeParse), OperationStatus: "3",
+		ProgressMsg: &progressMessage,
+	}).Error; err != nil {
+		t.Fatalf("insert Python run: %v", err)
+	}
 
-	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "file", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
 	logs, ok := result["logs"].([]map[string]interface{})
-	if !ok || len(logs) != 1 || logs[0]["id"] != "run-1" {
-		t.Fatalf("logs = %#v, want only numbered run", result["logs"])
+	if !ok || len(logs) != 2 || result["total"] != int64(2) {
+		t.Fatalf("logs = %#v total=%#v, want numbered and Python runs only", result["logs"], result["total"])
+	}
+	byID := make(map[string]map[string]interface{}, len(logs))
+	for _, log := range logs {
+		byID[log["id"].(string)] = log
+	}
+	if byID["python-run"]["operation_status"] != "3" {
+		t.Fatalf("Python operation_status = %#v, want stored status 3", byID["python-run"]["operation_status"])
+	}
+	if byID["python-run"]["progress_msg"] != progressMessage {
+		t.Fatalf("Python progress_msg = %#v, want %q", byID["python-run"]["progress_msg"], progressMessage)
+	}
+	if _, ok := byID["python-run"]["parser_id"]; !ok {
+		t.Fatalf("Python file log = %#v, want file-log fields", byID["python-run"])
+	}
+
+	detail, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "python-run")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", detail, code, err)
+	}
+	if detail["progress_msg"] != progressMessage {
+		t.Fatalf("Python detail progress_msg = %#v, want %q", detail["progress_msg"], progressMessage)
+	}
+	if _, ok := detail["parser_id"]; !ok {
+		t.Fatalf("Python detail = %#v, want file-log fields", detail)
+	}
+
+	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "python-run", 200, nil, nil)
+	if err != nil || code != common.CodeSuccess || !messages.Terminal || len(messages.Items) != 0 {
+		t.Fatalf("Python ListIngestionMessages = (%+v, %v, %v), want empty terminal success", messages, code, err)
+	}
+}
+
+func TestPythonDatasetLogIsReadableAndKeepsProgressMessage(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	progressMessage := "Knowledge compilation completed"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID: "python-dataset-run", DocumentID: entity.DatasetLogDocumentID, TenantID: "user-1", KbID: "kb-1",
+		ParserID: "knowledge_compile", DocumentName: "Wiki", DocumentType: "dataset", SourceFrom: "knowledgebase",
+		TaskType: "Wiki", OperationStatus: "3", ProgressMsg: &progressMessage,
+	}).Error; err != nil {
+		t.Fatalf("insert Python dataset run: %v", err)
+	}
+
+	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "dataset", "", "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	logs, ok := result["logs"].([]map[string]interface{})
+	if !ok || len(logs) != 1 || logs[0]["id"] != "python-dataset-run" {
+		t.Fatalf("dataset logs = %#v, want the Python log", result["logs"])
+	}
+	if logs[0]["operation_status"] != "3" || logs[0]["progress_msg"] != progressMessage {
+		t.Fatalf("Python dataset log fields = %#v, want stored status and progress_msg", logs[0])
+	}
+
+	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "python-dataset-run")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
+	}
+	if log["progress_msg"] != progressMessage {
+		t.Fatalf("detail progress_msg = %#v, want %q", log["progress_msg"], progressMessage)
+	}
+
+	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "python-dataset-run", 200, nil, nil)
+	if err != nil || code != common.CodeSuccess || !messages.Terminal || len(messages.Items) != 0 {
+		t.Fatalf("legacy ListIngestionMessages = (%+v, %v, %v), want empty terminal success", messages, code, err)
 	}
 }
 

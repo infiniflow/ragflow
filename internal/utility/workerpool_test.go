@@ -2,6 +2,7 @@ package utility
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -134,7 +135,7 @@ func TestStopWaitConcurrentSubmitDoesNotPanic(t *testing.T) {
 					default:
 					}
 					if _, err := pool.Submit(t.Context(), seed+i); err != nil {
-						if err != ErrWorkerPoolStopped {
+						if !errors.Is(err, ErrWorkerPoolStopped) {
 							t.Errorf("unexpected submit error: %v", err)
 						}
 						return
@@ -211,7 +212,7 @@ func TestSubmitAfterStopWaitReturnsStopped(t *testing.T) {
 		return in, nil
 	})
 	pool.StopWait()
-	if _, err := pool.Submit(t.Context(), 1); err != ErrWorkerPoolStopped {
+	if _, err := pool.Submit(t.Context(), 1); !errors.Is(err, ErrWorkerPoolStopped) {
 		t.Fatalf("Submit after StopWait = %v, want ErrWorkerPoolStopped", err)
 	}
 }

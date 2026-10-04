@@ -34,7 +34,7 @@ import (
 // pipeline (canvas.WithState). Returns nil when no state is present (e.g.
 // headless unit tests that don't attach a CanvasState).
 func canvasStateFromContext(ctx context.Context) *runtime.CanvasState {
-	st, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	st, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil
 	}

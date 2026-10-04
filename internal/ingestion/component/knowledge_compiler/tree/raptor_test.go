@@ -177,11 +177,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 
 // TestDefaultRaptorPromptMatchesTreeYAML locks the default summary prompt to the
 // production tree.yaml template. It must equal the Python tree compilation
-// template prompt (api/db/init_data/compilation_templates/tree.yaml), NOT the
-// compiler.py:128 fallback. Critically, the YAML literal block carries a base
-// indent of 6 spaces before {cluster_content}; those 6 spaces are part of the
-// prompt and must be preserved (Python does self._prompt.format(...), splicing
-// the cluster text after the 6-space indent).
+// template prompt.
 func TestDefaultRaptorPromptMatchesTreeYAML(t *testing.T) {
 	want := "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 	if defaultRaptorPrompt != want {

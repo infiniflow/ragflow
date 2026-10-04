@@ -10,15 +10,9 @@ import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 type Doc = {
   id: string;
   name: string;
-  run: string;
-  progress_msg: string;
   ingestion_status?: string;
   [key: string]: unknown;
 };
-
-// The hook branches on the backend variant; drive it from a mutable flag so a
-// single suite can exercise both the Python and the Go path.
-let mockIsGo = false;
 
 jest.mock('react-router', () => ({
   useParams: jest.fn(() => ({ id: 'kb-1' })),
@@ -26,12 +20,6 @@ jest.mock('react-router', () => ({
 
 jest.mock('@/hooks/route-hook', () => ({
   useGetKnowledgeSearchParams: jest.fn(() => ({ knowledgeId: 'kb-1' })),
-}));
-
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: () => mockIsGo,
-  pickByBackend: (variants: { go: unknown; python: unknown }) =>
-    mockIsGo ? variants.go : variants.python,
 }));
 
 jest.mock('@/hooks/use-document-request', () => ({
@@ -53,13 +41,7 @@ const mockList = jest.mocked(listDataPipelineLogDocument);
 const mockMessages = jest.mocked(listIngestionMessages);
 
 function makeDoc(overrides: Partial<Doc> = {}): Doc {
-  return {
-    id: 'doc-1',
-    name: 'a.pdf',
-    run: RunningStatus.UNSTART,
-    progress_msg: '',
-    ...overrides,
-  };
+  return { id: 'doc-1', name: 'a.pdf', ...overrides };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,49 +60,10 @@ function renderLogs(documents: Doc[]): any {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockIsGo = false;
 });
 
-describe('useShowLog — Python backend is unaffected by the early-log fallback', () => {
-  it('never queries pipeline logs and passes document.progress_msg through', () => {
-    mockIsGo = false;
-    const doc = makeDoc({
-      run: RunningStatus.RUNNING,
-      progress_msg: 'Parsing chunks',
-    });
-
-    const { result } = renderLogs([doc]);
-    act(() => result.current.showLog(doc));
-
-    expect(result.current.logInfo.details).toBe('Parsing chunks');
-    expect(result.current.logInfo.status).toBe(RunningStatus.RUNNING);
-    expect(mockList).not.toHaveBeenCalled();
-  });
-
-  it('uses a placeholder for an empty progress message', () => {
-    mockIsGo = false;
-    const doc = makeDoc({ run: RunningStatus.UNSTART, progress_msg: '' });
-
-    const { result } = renderLogs([doc]);
-    act(() => result.current.showLog(doc));
-
-    expect(result.current.logInfo.details).toBe('-');
-    expect(mockList).not.toHaveBeenCalled();
-  });
-
-  it('keeps the legacy "-" placeholder when there is no source document', () => {
-    mockIsGo = false;
-
-    const { result } = renderLogs([]);
-
-    expect(result.current.logInfo.details).toBe('-');
-    expect(mockList).not.toHaveBeenCalled();
-  });
-});
-
-describe('useShowLog — Go backend early-log fallback', () => {
+describe('useShowLog early-log fallback', () => {
   it('performs one finishing poll after terminal before stopping', async () => {
-    mockIsGo = true;
     jest.useFakeTimers();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
@@ -162,7 +105,6 @@ describe('useShowLog — Go backend early-log fallback', () => {
   });
 
   it('exposes a previous-page loader for historical event scrolling', async () => {
-    mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: {
@@ -209,7 +151,6 @@ describe('useShowLog — Go backend early-log fallback', () => {
   });
 
   it('loads messages by the exact pipeline log identity', async () => {
-    mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: {
@@ -254,7 +195,7 @@ describe('useShowLog — Go backend early-log fallback', () => {
       expect.objectContaining({
         document_id: 'doc-1',
         log_type: 'file',
-        orderby: 'run_count',
+        orderby: 'create_time',
         desc: true,
         page_size: 1,
       }),
@@ -264,33 +205,100 @@ describe('useShowLog — Go backend early-log fallback', () => {
     });
   });
 
-  it('does not read the old pipeline log progress field on Go', async () => {
-    mockIsGo = true;
+  it('uses the current run progress field', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: {
         data: {
-          logs: [{ document_id: 'doc-1', progress_msg: 'Task is queued...' }],
+          logs: [
+            {
+              id: 'run-1',
+              document_id: 'doc-1',
+              progress_msg: 'Parse completed',
+            },
+          ],
           total: 1,
         },
       },
     } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
 
-    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.CREATED });
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
-    await waitFor(() => expect(mockList).toHaveBeenCalled());
-    expect(result.current.logInfo.details).toBe('-');
-    expect(result.current.logInfo.status).toBe(RunningStatus.QUEUED);
+    await waitFor(() =>
+      expect(mockMessages).toHaveBeenCalledWith('kb-1', 'run-1', {
+        limit: 200,
+      }),
+    );
+    expect(result.current.logInfo.details).toBe('Parse completed');
+    expect(result.current.logInfo.events).toBeUndefined();
+    expect(result.current.logInfo.status).toBe(RunningStatus.DONE);
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
       expect.objectContaining({ log_type: 'file' }),
     );
   });
 
+  it('prefers the selected log event over its stored progress message', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: {
+          logs: [
+            {
+              id: 'run-1',
+              document_id: 'doc-1',
+              progress_msg: 'old snapshot',
+              latest_ingestion_event: {
+                id: 7,
+                ts: '2026-01-01T00:00:00Z',
+                event_type: 3,
+                component: '',
+                phase: 0,
+                message: 'latest run event',
+              },
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
+    const { result } = renderLogs([doc]);
+    act(() => result.current.showLog(doc));
+
+    await waitFor(() =>
+      expect(result.current.logInfo.details).toBe('latest run event'),
+    );
+  });
+
   it('scopes the query to the document instead of a fuzzy name search', async () => {
-    mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: { data: { logs: [], total: 0 } },
@@ -316,11 +324,8 @@ describe('useShowLog — Go backend early-log fallback', () => {
   });
 
   it('uses the current log identity even when the document is running', async () => {
-    mockIsGo = true;
     const doc = makeDoc({
       ingestion_status: IngestionTaskStatus.RUNNING,
-      run: RunningStatus.RUNNING,
-      progress_msg: 'Indexing done',
     });
 
     const { result } = renderLogs([doc]);

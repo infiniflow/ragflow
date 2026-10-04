@@ -445,12 +445,6 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
 					return
 				}
-				if raptor, ok := config["raptor"].(map[string]interface{}); ok {
-					if _, ok := raptor["ext"]; ok {
-						common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.raptor.ext is not supported; send RAPTOR configuration fields directly")
-						return
-					}
-				}
 			}
 		}
 	}
@@ -775,7 +769,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		KbIDs:        []string{datasetID},
 		Offset:       0,
 		Limit:        1,
-		SelectFields: []string{"content_with_weight", "knowledge_graph_kwd"},
+		SelectFields: []string{"content_with_weight", "type_kwd", "knowledge_graph_kwd"},
 		Filter: map[string]interface{}{
 			"kb_id":               []string{datasetID},
 			"knowledge_graph_kwd": []string{"graph"},
@@ -791,7 +785,10 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	chunk := searchResult.Chunks[0]
-	graphType := firstStringValue(chunk["knowledge_graph_kwd"])
+	graphType := firstStringValue(chunk["type_kwd"])
+	if graphType == "" {
+		graphType = firstStringValue(chunk["knowledge_graph_kwd"])
+	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
 		common.SuccessWithData(c, result, "success")
@@ -1205,10 +1202,20 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 

@@ -85,3 +85,32 @@ func TestDecodeFromDSLSkipsMalformedHistoryEntries(t *testing.T) {
 		t.Fatalf("decoded history = %#v, want one assistant entry", decoded.History)
 	}
 }
+
+func TestDecodeFromDSLComponentDisplayName(t *testing.T) {
+	dsl := map[string]any{
+		"components": map[string]any{
+			"CodeExec:SweetMooseTalk": map[string]any{
+				"obj": map[string]any{
+					"component_name": "CodeExec",
+					"params":         map[string]any{},
+				},
+			},
+		},
+		"graph": map[string]any{
+			"nodes": []any{
+				map[string]any{
+					"id":   "CodeExec:SweetMooseTalk",
+					"data": map[string]any{"name": "Analyze sales"},
+				},
+			},
+		},
+	}
+
+	decoded, err := DecodeFromDSL(dsl)
+	if err != nil {
+		t.Fatalf("DecodeFromDSL: %v", err)
+	}
+	if got := decoded.Components["CodeExec:SweetMooseTalk"].DisplayName; got != "Analyze sales" {
+		t.Fatalf("display name = %q, want Analyze sales", got)
+	}
+}

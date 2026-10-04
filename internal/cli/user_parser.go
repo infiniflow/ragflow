@@ -990,6 +990,7 @@ func (p *Parser) parseAPICreateDataset() (*Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.nextToken()
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
@@ -2922,7 +2923,7 @@ func (p *Parser) parseAPIChat() (*Command, error) {
 	}
 
 	var err error
-	var modelNameOrID string = ""
+	var modelNameOrID = ""
 	var messages []string
 	var images []string
 	var videos []string

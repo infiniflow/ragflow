@@ -20,6 +20,7 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { RAGFlowFormItem } from '../ragflow-form';
+import { AgentMetadataFilterConditions } from './agent-metadata-filter-conditions';
 import { MetadataFilterConditions } from './metadata-filter-conditions';
 import { MetadataSemiAutoFields } from './metadata-semi-auto-fields';
 
@@ -91,6 +92,10 @@ export function MetadataFilter({
     };
   });
 
+  const Conditions = canReference
+    ? AgentMetadataFilterConditions
+    : MetadataFilterConditions;
+
   return (
     <>
       {hasKnowledge && (
@@ -106,11 +111,7 @@ export function MetadataFilter({
         </RAGFlowFormItem>
       )}
       {hasKnowledge && metadata === DatasetMetadata.Manual && (
-        <MetadataFilterConditions
-          kbIds={kbIds}
-          prefix={prefix}
-          canReference={canReference}
-        ></MetadataFilterConditions>
+        <Conditions kbIds={kbIds} prefix={prefix}></Conditions>
       )}
       {hasKnowledge && metadata === DatasetMetadata.SemiAutomatic && (
         <MetadataSemiAutoFields

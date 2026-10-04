@@ -187,7 +187,6 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <section className="space-y-5">
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>

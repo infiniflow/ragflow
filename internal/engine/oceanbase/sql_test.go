@@ -17,6 +17,7 @@
 package oceanbase
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -126,6 +127,20 @@ func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
 	}
 	if len(args) != 1 || args[0] != "source-1" {
 		t.Fatalf("memory source_id args = %#v", args)
+	}
+}
+
+func TestKnowledgeGraphFilterSupportsCurrentAndLegacyRows(t *testing.T) {
+	where, args, err := buildFilter(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}, "chunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "(`type_kwd` IN (?, ?) OR `knowledge_graph_kwd` IN (?, ?))"
+	if where != want {
+		t.Fatalf("graph filter = %q, want %q", where, want)
+	}
+	if !reflect.DeepEqual(args, []interface{}{"entity", "relation", "entity", "relation"}) {
+		t.Fatalf("graph filter args = %#v", args)
 	}
 }
 

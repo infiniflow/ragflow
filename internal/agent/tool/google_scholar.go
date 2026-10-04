@@ -177,8 +177,10 @@ func buildGoogleScholarURL(query string, maxResults int, sortBy string, yearLow,
 	if yearHigh > 0 {
 		q.Set("as_yhi", strconv.Itoa(yearHigh))
 	}
+	// as_sdt is Scholar's patents switch (as_vis toggles citations), matching
+	// scholarly's _construct_url: as_sdt={1-patents},33.
 	if patents != nil && !*patents {
-		q.Set("as_vis", "1")
+		q.Set("as_sdt", "1,33")
 	}
 
 	return googleScholarEndpoint + "?" + q.Encode()

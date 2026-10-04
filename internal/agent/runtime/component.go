@@ -32,6 +32,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"gorm.io/gorm"
@@ -97,6 +98,26 @@ func (e *DeferredStreamError) FailureText() string {
 		return e.Err.Error()
 	}
 	return e.Text
+}
+
+// einoNodePathSeparator is the decoration eino's internalError.Error()
+// inserts between the wrapped cause and its node-path diagnostic:
+//
+//	[NodeRunError] <cause>
+//	------------------------
+//	node path: [...]
+//
+// A dash-only line directly under a paragraph is valid Markdown setext
+// heading syntax, so chat clients render the whole error block as an <h2>.
+// Swap it for a blank line: the node path stays visible as an ordinary
+// paragraph while the error renders in the normal body font.
+const einoNodePathSeparator = "\n------------------------\n"
+
+// MarkdownSafeErrorText returns err's text with eino's node-path separator
+// neutralized, so error text surfaced into Markdown-rendered chat messages
+// keeps body formatting instead of turning into a heading.
+func MarkdownSafeErrorText(err error) string {
+	return strings.ReplaceAll(err.Error(), einoNodePathSeparator, "\n\n")
 }
 
 // ParamError wraps a parameter validation failure with the field name

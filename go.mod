@@ -65,10 +65,11 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/signintech/gopdf v0.36.1
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
+	github.com/spf13/cast v1.6.0
 	github.com/spf13/viper v1.18.2
 	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
 	github.com/xuri/excelize/v2 v2.11.0
-	github.com/yfedoseev/office_oxide/go v0.1.9
+	github.com/yfedoseev/office_oxide/go v0.1.12
 	github.com/yfedoseev/pdf_oxide/go v0.3.73
 	github.com/yuin/goldmark v1.7.1
 	github.com/zeebo/xxh3 v1.0.2
@@ -136,6 +137,8 @@ require (
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
+	github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
@@ -156,6 +159,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.2 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -216,7 +220,6 @@ require (
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
@@ -268,10 +271,14 @@ require (
 
 replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
 
-replace github.com/AkmalOt/gomsg => github.com/xugangqiang/gomsg v0.0.0-20260407083308-985c3a1a76b7
+// gomsg is mirrored to github.com/infiniflow/gomsg (org-owned fork of
+// github.com/AkmalOt/gomsg) so the build no longer depends on a personal
+// GitHub account fork.
+replace github.com/AkmalOt/gomsg => github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7
 
 // onnxruntime_go is mirrored to github.com/infiniflow/onnxruntime_go (org-owned
-// fork of yalue/onnxruntime_go at v1.23.0) so the in-process DeepDoc backend no
+// fork of yalue/onnxruntime_go at v1.29.0, matching the ORT native release in
+// DeepDocORTVersion) so the in-process DeepDoc backend no
 // longer depends on a personal fork or the upstream repo directly. ONNX Runtime is
 // linked statically (no --whole-archive, so unreferenced kernels are
 // dropped; only OrtGetApiBase is exported, via --dynamic-list), and OrtGetApiBase

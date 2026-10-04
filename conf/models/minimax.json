@@ -26,7 +26,7 @@
       }
     },
     {
-      "name": "minimax-m2.7",
+      "name": "MiniMax-M2.7",
       "context_length": 204800,
       "max_output": 128000,
       "model_types": [
@@ -38,7 +38,7 @@
       }
     },
     {
-      "name": "minimax-m2.7-highspeed",
+      "name": "MiniMax-M2.7-highspeed",
       "context_length": 204800,
       "max_output": 131072,
       "model_types": [
@@ -50,7 +50,7 @@
       }
     },
     {
-      "name": "minimax-m2.5",
+      "name": "MiniMax-M2.5",
       "context_length": 204800,
       "max_output": 128000,
       "model_types": [
@@ -62,7 +62,7 @@
       }
     },
     {
-      "name": "minimax-m2.5-highspeed",
+      "name": "MiniMax-M2.5-highspeed",
       "context_length": 204800,
       "max_output": 131072,
       "model_types": [
@@ -74,7 +74,7 @@
       }
     },
     {
-      "name": "minimax-m2.1",
+      "name": "MiniMax-M2.1",
       "context_length": 204800,
       "max_output": 128000,
       "model_types": [
@@ -86,7 +86,7 @@
       }
     },
     {
-      "name": "minimax-m2.1-highspeed",
+      "name": "MiniMax-M2.1-highspeed",
       "context_length": 204800,
       "max_output": 131072,
       "model_types": [
@@ -98,7 +98,7 @@
       }
     },
     {
-      "name": "minimax-m2",
+      "name": "MiniMax-M2",
       "context_length": 204800,
       "max_output": 128000,
       "model_types": [
@@ -110,7 +110,7 @@
       }
     },
     {
-      "name": "minimax-m2-her",
+      "name": "M2-her",
       "context_length": 65536,
       "max_output": 16384,
       "model_types": [

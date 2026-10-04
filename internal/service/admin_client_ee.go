@@ -18,3 +18,5 @@ package service
 func (h *AdminClient) InitHTTPClientEE() error {
 	return nil
 }
+
+func (h *AdminClient) UpdateClient(clientInfo interface{}) error { return nil }

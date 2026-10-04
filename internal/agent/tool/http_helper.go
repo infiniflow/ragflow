@@ -147,10 +147,10 @@ func (h *HTTPHelper) WithClient(c *http.Client) *HTTPHelper {
 // that sniff the body still behave sensibly.
 //
 // Retry policy:
-//   - 5xx responses: retried
-//   - network errors (connection refused, DNS, etc.): retried
+//   - idempotent methods: 5xx responses and network errors are retried
+//   - non-idempotent methods: never retried (the server may have acted already)
 //   - 4xx responses: NOT retried (caller error, won't help to retry)
-//   - 2xx / 3xx: returned as-is
+//   - other responses: returned as-is
 //
 // The context is honored on every attempt; cancellation aborts the loop.
 func (h *HTTPHelper) Do(
@@ -216,8 +216,8 @@ func (h *HTTPHelper) DoPinned(
 
 // pinnedClient builds a one-shot *http.Client whose transport dials
 // pinnedIP:port instead of originalHost:port. The transport is cloned
-// from baseTransport so the rest of the connection behaviour (TLS
-// config, idle pool) is identical to a non-pinned call.
+// from baseTransport so the TLS config stays identical to a non-pinned
+// call; keep-alives are disabled because the per-call pool cannot be reused.
 //
 // The proxy setting is explicitly disabled. Two reasons:
 //
@@ -248,6 +248,7 @@ func (h *HTTPHelper) DoPinned(
 func (h *HTTPHelper) pinnedClient(pinnedIP net.IP) *http.Client {
 	base := h.baseTransport.Clone()
 	base.Proxy = nil
+	base.DisableKeepAlives = true
 	base.DialContext = (&pinnedDialer{
 		pinnedIP: pinnedIP,
 		base: &net.Dialer{
@@ -295,6 +296,12 @@ func (h *HTTPHelper) doRawWithClient(
 	if body != "" && contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	retryableMethod := false
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace,
+		http.MethodPut, http.MethodDelete:
+		retryableMethod = true
+	}
 
 	var lastErr error
 	for attempt := 1; attempt <= h.retry.MaxAttempts; attempt++ {
@@ -316,7 +323,7 @@ func (h *HTTPHelper) doRawWithClient(
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
-			if !isRetryableNetError(err) {
+			if !retryableMethod || !isRetryableNetError(err) {
 				return nil, err
 			}
 			if attempt == h.retry.MaxAttempts {
@@ -326,8 +333,8 @@ func (h *HTTPHelper) doRawWithClient(
 			continue
 		}
 
-		// 5xx is retryable, 4xx is not.
-		if resp.StatusCode >= 500 {
+		// Retry 5xx only when repeating the request cannot duplicate an action.
+		if resp.StatusCode >= 500 && retryableMethod {
 			lastErr = fmt.Errorf("http_helper: %s %s returned %d", method, SanitizeURL(url), resp.StatusCode)
 			// drain body so the connection can be reused
 			_, _ = io.Copy(io.Discard, resp.Body)

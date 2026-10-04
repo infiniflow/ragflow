@@ -65,7 +65,7 @@ func main() {
 	flag.Parse()
 
 	if *goldenFlag != "" && *writeGolden {
-		fmt.Fprintln(os.Stderr, "migrate-canvas: -golden and -write-golden are mutually exclusive")
+		fmt.Fprintln(os.Stderr, "migrate-agent: -golden and -write-golden are mutually exclusive")
 		os.Exit(2)
 	}
 
@@ -77,7 +77,7 @@ func main() {
 
 	args := flag.Args()
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "migrate-canvas: expected <file.json> (or -walk <dir>)")
+		fmt.Fprintln(os.Stderr, "migrate-agent: expected <file.json> (or -walk <dir>)")
 		flag.CommandLine.Usage()
 		os.Exit(2)
 	}
@@ -144,7 +144,7 @@ func runOne(path, goldenPath string, writeGolden bool) error {
 func runWalk(dir, goldenDir string, writeGolden bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "migrate-canvas: walk: %v\n", err)
+		fmt.Fprintf(os.Stderr, "migrate-agent: walk: %v\n", err)
 		os.Exit(1)
 	}
 	var files []string

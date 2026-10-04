@@ -254,7 +254,7 @@ type categorizeHistoryMessage struct {
 func categorizeHistory(ctx context.Context, window int, query string) []categorizeHistoryMessage {
 	msgs := []categorizeHistoryMessage{}
 	if window > 0 {
-		if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 			start := 0
 			if len(state.History) > window {
 				start = len(state.History) - window
@@ -301,7 +301,7 @@ func resolveCategorizeQuery(ctx context.Context, p CategorizeParam, inputs map[s
 	if v, ok := stringValueFromAny(inputs[queryRef]); ok && strings.TrimSpace(v) != "" {
 		return v
 	}
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if v, err := state.GetVar(queryRef); err == nil {
 			if s, ok := stringValueFromAny(v); ok {
 				return s

@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"strconv"
 )
 
-// PingServer pings the server to check if it's alive
-// Returns benchmark result map if iterations > 1, otherwise prints status
+// PingAdmin pings the server to check if it's alive
 func (c *CLI) PingAdmin(commandCount int, cmd *Command) (ResponseIf, error) {
 	// Single mode
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ping", "web", nil, nil)
@@ -206,7 +206,7 @@ func (c *CLI) AdminDropRoleCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", utils.APIPath("/admin/roles", roleName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop role: %w", err)
 	}
@@ -233,7 +233,7 @@ func (c *CLI) AdminAlterRole(commandCount int, cmd *Command) (ResponseIf, error)
 		payload["description"] = description
 	}
 
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", utils.APIPath("/admin/roles", roleName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter role: %w", err)
 	}
@@ -311,7 +311,7 @@ func (c *CLI) AdminGrantRolePermissionCommand(commandCount int, cmd *Command) (R
 		"resource": resource,
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -347,7 +347,7 @@ func (c *CLI) AdminRevokeRolePermissionCommand(commandCount int, cmd *Command) (
 		"resource": resource,
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -368,7 +368,7 @@ func (c *CLI) AdminShowRolePermissionCommand(commandCount int, cmd *Command) (Re
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -569,7 +569,7 @@ func (c *CLI) AdminStartServiceCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "POST", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -590,7 +590,7 @@ func (c *CLI) AdminRestartServiceCommand(commandCount int, cmd *Command) (Respon
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "PUT", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -611,7 +611,7 @@ func (c *CLI) AdminShutdownServiceCommand(commandCount int, cmd *Command) (Respo
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -632,7 +632,7 @@ func (c *CLI) AdminShowService(commandCount int, cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -907,7 +907,7 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(commandCount int, cmd *Command) (
 		}
 	}
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "PATCH", endPoint, "admin", nil, payload)
 	if err != nil {
@@ -960,7 +960,7 @@ func (c *CLI) AdminResetRoleDefaultModelsCommand(commandCount int, cmd *Command)
 		"model_type": modelType,
 	}
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, payload)
 	if err != nil {
@@ -1398,7 +1398,7 @@ func (c *CLI) AdminShowRoleCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	roleName := cmd.Params["role_name"].(string)
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName) + "/"
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -1416,7 +1416,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(commandCount int, cmd *Command) 
 
 	roleName := cmd.Params["role_name"].(string)
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -2480,7 +2480,7 @@ func (c *CLI) AdminListUserProviderInstancesCommand(commandCount int, cmd *Comma
 	}
 
 	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances", encodedUserName, providerName)
+	apiURL := fmt.Sprintf("/admin/users/%s/%s", encodedUserName, utils.APIPath("providers", providerName, "instances"))
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2510,7 +2510,7 @@ func (c *CLI) AdminListUserProviderInstanceModelsCommand(commandCount int, cmd *
 	}
 
 	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances/%s/models", encodedUserName, providerName, instanceName)
+	apiURL := fmt.Sprintf("/admin/users/%s/%s", encodedUserName, utils.APIPath("providers", providerName, "instances", instanceName, "models"))
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {

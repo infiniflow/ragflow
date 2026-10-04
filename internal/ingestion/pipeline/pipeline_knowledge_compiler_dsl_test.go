@@ -65,7 +65,7 @@ func installStubResolvers(t *testing.T, groupToTemplates map[string][]string, te
 // singular compilation_template_group_id (see the frontend
 // accordion-operators.tsx restriction and the pipeline.tsx default).
 func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "compiler.json"))
+	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "internal", "agent", "templates", "compiler.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
 // rather than compiling with no template config.
 func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 	ctx := t.Context()
-	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "compiler.json"))
+	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "internal", "agent", "templates", "compiler.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}

@@ -157,7 +157,7 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 
 	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile multi-terminal canvas: %v", err)
+		t.Fatalf("Compile multi-terminal agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled multi-terminal workflow")
@@ -225,7 +225,7 @@ func TestBuildWorkflow_ParallelGroupWithOuterFollowerSucceeds(t *testing.T) {
 
 	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile parallel canvas: %v", err)
+		t.Fatalf("Compile parallel agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled parallel workflow")

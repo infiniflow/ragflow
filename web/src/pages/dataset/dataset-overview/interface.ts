@@ -22,11 +22,21 @@ export interface FileLogsTableProps {
 }
 
 export interface IOverviewTotal {
-  cancelled: number;
-  failed: number;
-  finished: number;
-  processing: number;
-  downloaded: number;
+  doc_num: number;
+  chunk_num: number;
+  token_num: number;
+  status: {
+    unstart_count: number;
+    running_count: number;
+    cancel_count: number;
+    done_count: number;
+    fail_count: number;
+  };
+  download_status?: {
+    running_count: number;
+    done_count: number;
+    fail_count: number;
+  };
 }
 
 export interface IFileLogItem {

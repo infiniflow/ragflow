@@ -94,7 +94,7 @@ func gatewayWorkdir() string {
 	if !ok {
 		return "."
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../api/channels/whatsapp/gateway-node"))
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "whatsapp-gateway"))
 }
 
 // start launches the gateway process if it is not already running.

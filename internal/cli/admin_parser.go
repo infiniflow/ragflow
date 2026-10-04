@@ -2690,11 +2690,9 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 
 		cmd = NewCommand("user_list_message_queue_command")
 		if p.curToken.Type == TokenPending {
-			cmd.Params["pending"] = true
 			p.nextToken() // consume PENDING
-		} else {
-			cmd.Params["pending"] = false
 		}
+
 	case TokenPublish:
 		p.nextToken() // consume PUBLISH
 

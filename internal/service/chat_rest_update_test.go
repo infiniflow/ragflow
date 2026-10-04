@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -283,6 +285,71 @@ func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
 	}
 	if chat.MetaDataFilter == nil || (*chat.MetaDataFilter)["method"] != "disabled" {
 		t.Fatalf("expected meta_data_filter to be persisted, got %+v", chat.MetaDataFilter)
+	}
+}
+
+func TestChatServiceUpdateChatNormalizesKeywordsSimilarityWeight(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	resp, err := svc.UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID(t.Context(), dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if math.Abs(chat.VectorSimilarityWeight-0.3) > similarityWeightTolerance {
+		t.Fatalf("vector_similarity_weight = %v, want 0.3", chat.VectorSimilarityWeight)
+	}
+	if got, ok := resp["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", resp["keywords_similarity_weight"])
+	}
+	if _, exists := resp["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatWithKBNamesMarshalJSONOmitsVectorSimilarityWeight(t *testing.T) {
+	payload, err := json.Marshal(&ChatWithKBNames{
+		Chat:       &entity.Chat{VectorSimilarityWeight: 0.3},
+		KBNames:    []string{"Dataset"},
+		DatasetIDs: []string{"dataset-1"},
+		Nickname:   "Owner",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	response := map[string]interface{}{}
+	if err = json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatServiceUpdateChatRejectsMismatchedSimilarityWeights(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	_, err := NewChatService().UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+		"vector_similarity_weight":   0.4,
+	})
+	if err == nil || !strings.Contains(err.Error(), "must sum to 1") {
+		t.Fatalf("expected weight sum error, got %v", err)
 	}
 }
 

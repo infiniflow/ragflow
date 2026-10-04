@@ -3,7 +3,10 @@ import { Operator } from './constant';
 import {
   generateNodeNamesWithIncreasingIndex,
   isEmptyMessageContent,
+  normalizeTokenChunkerFormValues,
   receiveMessageError,
+  shouldSeedDefaultDelimiter,
+  transformGeneralChunkerParams,
   transformTokenChunkerParams,
 } from './utils';
 
@@ -42,6 +45,153 @@ describe('transformTokenChunkerParams', () => {
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
+  });
+
+  it('emits an explicit empty delimiters list when the user removed all rows', () => {
+    // The backend falls back to its own default (["\n"]) when the key is
+    // absent, so the save path must emit [] to keep pure token-size chunking.
+    const result = transformTokenChunkerParams({
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      overlapped_percent: 0,
+      image_table_context_window: 0,
+      delimiters: [],
+      children_delimiters: [],
+      enable_children: false,
+    } as any);
+
+    expect(result.delimiters).toEqual([]);
+  });
+
+  it('migrates a legacy node on save even when the form was never opened', () => {
+    // Nodes saved under the removed 'token_size' tab persisted an empty list;
+    // the save path applies the same migration the form would.
+    const result = transformTokenChunkerParams({
+      delimiter_mode: 'token_size',
+      chunk_token_size: 512,
+      overlapped_percent: 0,
+      image_table_context_window: 0,
+      delimiters: [],
+      children_delimiters: [],
+    } as any);
+
+    expect(result.delimiter_mode).toBe('delimiter');
+    expect(result.delimiters).toEqual(['\n']);
+  });
+
+  it('keeps legacy children delimiters instead of wiping them', () => {
+    // Nodes saved before the enable_children toggle existed carry children
+    // delimiters without the flag; derive it instead of dropping the values.
+    const result = transformTokenChunkerParams({
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      overlapped_percent: 0,
+      image_table_context_window: 0,
+      delimiters: [{ value: '\n' }],
+      children_delimiters: [{ value: '|' }],
+    } as any);
+
+    expect(result.enable_children).toBe(true);
+    expect(result.children_delimiters).toEqual(['|']);
+  });
+});
+
+describe('transformGeneralChunkerParams', () => {
+  it('never re-seeds the general chunker delimiter list on save', () => {
+    const result = transformGeneralChunkerParams({
+      chunk_token_size: 512,
+      overlapped_percent: 0,
+      delimiters: [],
+      children_delimiters: [],
+      enable_children: false,
+      table_context_size: 0,
+      image_context_size: 0,
+    } as any);
+
+    expect(result.delimiters).toEqual([]);
+    expect(result).not.toHaveProperty('delimiter_mode');
+  });
+});
+
+describe('normalizeTokenChunkerFormValues', () => {
+  it('normalizes a legacy token_size node and re-seeds the delimiter row', () => {
+    const result = normalizeTokenChunkerFormValues({
+      delimiter_mode: 'token_size',
+      delimiters: [],
+      children_delimiters: [],
+    });
+
+    expect(result.delimiter_mode).toBe('delimiter');
+    expect(result.delimiters).toEqual([{ value: '\n' }]);
+  });
+
+  it('keeps a deliberate empty list saved by the current form', () => {
+    const result = normalizeTokenChunkerFormValues({
+      delimiter_mode: 'one',
+      delimiters: [],
+    });
+
+    expect(result.delimiter_mode).toBe('one');
+    expect(result.delimiters).toEqual([]);
+  });
+
+  it('derives enable_children from a non-empty children list', () => {
+    const result = normalizeTokenChunkerFormValues({
+      children_delimiters: [{ value: '\n\n' }],
+    });
+
+    expect(result.enable_children).toBe(true);
+  });
+
+  it('respects an explicit enable_children flag over derivation', () => {
+    const result = normalizeTokenChunkerFormValues({
+      enable_children: false,
+      children_delimiters: [{ value: '\n\n' }],
+    });
+
+    expect(result.enable_children).toBe(false);
+  });
+
+  it('is idempotent', () => {
+    const once = normalizeTokenChunkerFormValues({
+      delimiters: [],
+      children_delimiters: [{ value: '|' }],
+    });
+
+    expect(normalizeTokenChunkerFormValues(once)).toEqual(once);
+  });
+
+  it('skips the legacy re-seed when seedLegacyDelimiter is false', () => {
+    const result = normalizeTokenChunkerFormValues(
+      { delimiters: [] },
+      { seedLegacyDelimiter: false },
+    );
+
+    expect(result.delimiters).toEqual([]);
+  });
+});
+
+describe('shouldSeedDefaultDelimiter', () => {
+  it('seeds only for legacy nodes with an empty list', () => {
+    // Legacy 'token_size' tab nodes always persisted an empty list.
+    expect(shouldSeedDefaultDelimiter('token_size', [])).toBe(true);
+    // Older DSLs may not carry a mode at all.
+    expect(shouldSeedDefaultDelimiter(undefined, [])).toBe(true);
+    expect(shouldSeedDefaultDelimiter(undefined, undefined)).toBe(true);
+  });
+
+  it('never seeds when the current form saved the node', () => {
+    // An explicit mode means the empty list is a deliberate user choice
+    // (pure token-size chunking) and must survive a reload.
+    expect(shouldSeedDefaultDelimiter('delimiter', [])).toBe(false);
+    expect(shouldSeedDefaultDelimiter('one', [])).toBe(false);
+  });
+
+  it('never seeds a non-empty list', () => {
+    expect(shouldSeedDefaultDelimiter('token_size', ['\n'])).toBe(false);
+    expect(shouldSeedDefaultDelimiter(undefined, [{ value: '\n' }])).toBe(
+      false,
+    );
   });
 });
 

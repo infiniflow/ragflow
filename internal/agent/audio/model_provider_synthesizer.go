@@ -97,7 +97,7 @@ func (m *modelProviderSynthesizer) Synthesize(ctx context.Context, req Synthesiz
 
 	// Resolve tenant from canvas state when not on the request.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if uid, ok := state.Sys["user_id"].(string); ok {
 			tenantID = uid
 		}

@@ -667,13 +667,7 @@ func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	return out
 }
 
-// defaultRaptorPrompt is the summary task template. It mirrors the production
-// prompt from api/db/init_data/compilation_templates/tree.yaml (the tree
-// compilation template), NOT the Python fallback in compiler.py:128. The
-// {cluster_content} placeholder is filled with the joined cluster text. The
-// YAML literal block carries a base indent of 6 spaces before {cluster_content};
-// those 6 spaces are part of the prompt and MUST be preserved. A caller may
-// override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
+// defaultRaptorPrompt is the summary task template.
 const defaultRaptorPrompt = "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 
 // raptorSystemHelper mirrors the leading "You're a helpful assistant.\n\nHelp me

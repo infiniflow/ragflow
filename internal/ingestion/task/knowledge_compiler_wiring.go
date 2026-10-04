@@ -404,7 +404,12 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 	if len(states) == 0 {
 		return nil
 	}
-	store, ok := knowledge_compile.NewWikiMapVersionStore(docEngine).(kc.WikiMapActiveStateStore)
+	// Every state comes from one document's compile, so they share a tenant and
+	// dataset: the resolver only runs when the Infinity chunk table is missing.
+	store, ok := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(
+		docEngine,
+		wikiMapVectorSizeResolver(states[0].TenantID, states[0].DatasetID),
+	).(kc.WikiMapActiveStateStore)
 	if !ok {
 		return fmt.Errorf("Wiki dirty compile: active MAP store is unavailable")
 	}
@@ -414,6 +419,52 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 		}
 	}
 	return nil
+}
+
+// wikiMapVectorSizeResolver resolves, lazily, the vector size a missing Infinity
+// chunk table needs. The document-level compile path holds no embedder, so it
+// binds the dataset's — kb.tenant_embd_id, else kb.embd_id — like a compile task.
+func wikiMapVectorSizeResolver(tenantID, datasetID string) func(context.Context) (int, error) {
+	svc := service.NewModelProviderService()
+	modelSolver := service.NewModelSolver()
+	return func(ctx context.Context) (int, error) {
+		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+		if err != nil {
+			return 0, fmt.Errorf("Wiki MAP chunk store: load dataset %s: %w", datasetID, err)
+		}
+		embedder := &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: datasetEmbeddingID(kb)}
+		return embedderVectorSize(ctx, embedder)
+	}
+}
+
+// datasetEmbeddingID mirrors Python's embedding binding for a compile task:
+// kb.tenant_embd_id wins, else kb.embd_id, and an empty id leaves the embedder to
+// its tenant-default fallback (rag/svr/task_executor.py:1454-1487).
+func datasetEmbeddingID(kb *entity.Knowledgebase) string {
+	if kb == nil {
+		return ""
+	}
+	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
+		return *kb.TenantEmbdID
+	}
+	return kb.EmbdID
+}
+
+// embedderVectorSize reports the vector size a missing Infinity chunk table must
+// be created with: an unset dimension is measured with a one-input probe (the
+// signal Python sizes the table with in create_idx, task_executor.py:737-740).
+func embedderVectorSize(ctx context.Context, embed kc.Embedder) (int, error) {
+	if dimension := embed.Dimensions(); dimension > 0 {
+		return dimension, nil
+	}
+	vectors, err := embed.Encode(ctx, []string{"ok"})
+	if err != nil {
+		return 0, err
+	}
+	if len(vectors) == 0 || len(vectors[0]) == 0 {
+		return 0, fmt.Errorf("embedding returned an empty vector")
+	}
+	return len(vectors[0]), nil
 }
 
 func copyStringAnyMap(source map[string]any) map[string]any {
@@ -539,11 +590,16 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			llmMaxOutput = modelTarget.MaxTokens
 		}
 
+		embedder := &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: embeddingModel}
+		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(engine.Get(), func(ctx context.Context) (int, error) {
+			return embedderVectorSize(ctx, embedder)
+		})
+
 		return kc.Deps{
 			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
-			Embed:           &kcEmbedder{svc: svc, solver: modelSolver, tenantID: tenantID, embdID: embeddingModel},
+			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
-			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
+			WikiMapVersions: mapStore,
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
@@ -658,9 +714,8 @@ const kcChatAttemptTimeout = 20 * time.Minute
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
 
-// kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
-// knowledge_compiler Embedder seam. Vectors are returned as []float32 to match
-// the component's product schema.
+// kcEmbedder adapts model resolution to the knowledge_compiler Embedder seam.
+// Vectors are returned as []float32 to match the component's product schema.
 type kcEmbedder struct {
 	svc      *service.ModelProviderService
 	solver   *service.ModelSolver
@@ -703,7 +758,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			// Embed inside the model's window: compile products include the summaries
 			// and entity descriptions that feed the nav index, and an over-window input
 			// is a hard 400/20015 that fails the whole batch instead of being trimmed.
-			embeds, jobErr := mdl.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: batchTexts}, config, nil)
+			embeds, jobErr := mdl.Embed(ctx, models.EmbedRequest{Texts: batchTexts}, config, nil)
 			if jobErr != nil {
 				return fmt.Errorf("knowledge_compiler: embed: %w", jobErr)
 			}
@@ -744,14 +799,14 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
+		target, err := e.solver.ResolveModelConfig(ctx, e.tenantID, entity.ModelTypeEmbedding, embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
-		if mdl == nil || mdl.ModelDriver == nil {
+		if target == nil || target.Driver == nil || target.ModelName == "" {
 			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
 		}
-		return mdl, nil
+		return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 	}
 	target, err := e.solver.ResolveDefaultModelConfig(ctx, e.tenantID, entity.ModelTypeEmbedding)
 	if err != nil {
@@ -760,7 +815,7 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 	if target == nil || target.Driver == nil || target.ModelName == "" {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
 	}
-	return &models.EmbeddingModel{ModelDriver: target.Driver, ModelName: &target.ModelName, APIConfig: target.APIConfig}, nil
+	return models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens), nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }
@@ -791,7 +846,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
 		// pages (sections carry compile_kwd="wiki_section"); there is no
 		// "kc_kind" column in the chunk schema, so filtering on it would return
@@ -827,7 +882,7 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
 			"compile_kwd": "wiki_page",
 			"slug_kwd":    slug,
@@ -849,7 +904,7 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
 			"compile_kwd":      "wiki_page",
 			"source_chunk_ids": chunkIDs,
@@ -872,21 +927,34 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 
 func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 	return kc.WikiPageCandidate{
-		ID:             strings.TrimSpace(anyString(row["id"])),
-		Slug:           strings.TrimSpace(anyString(row["slug_kwd"])),
-		Title:          strings.TrimSpace(anyString(row["title_kwd"])),
-		PageType:       strings.TrimSpace(anyString(row["page_type_kwd"])),
-		Topic:          strings.TrimSpace(anyString(row["topic_kwd"])),
-		PlanGroup:      strings.TrimSpace(anyString(row["plan_group_kwd"])),
-		Summary:        strings.TrimSpace(anyString(row["summary_with_weight"])),
-		ContentMD:      strings.TrimSpace(anyString(row["content_with_weight"])),
-		ContentMDRaw:   strings.TrimSpace(anyString(row["kc_content_md_raw"])),
+		ID:        strings.TrimSpace(anyString(row["id"])),
+		Slug:      strings.TrimSpace(anyString(row["slug_kwd"])),
+		Title:     strings.TrimSpace(anyString(row["title_kwd"])),
+		PageType:  strings.TrimSpace(anyString(row["page_type_kwd"])),
+		Topic:     strings.TrimSpace(anyString(row["topic_kwd"])),
+		PlanGroup: strings.TrimSpace(anyString(row["plan_group_kwd"])),
+		Summary:   strings.TrimSpace(anyString(row["summary_with_weight"])),
+		ContentMD: strings.TrimSpace(anyString(row["content_with_weight"])),
+		// md_with_weight is the page-body column Python writes and reads
+		// (wiki_incremental.py:2190/:2251); page rows fall back to
+		// content_with_weight when it was not stamped.
+		ContentMDRaw:   firstNonEmptyString(row["md_with_weight"], row["content_with_weight"]),
 		EntityNames:    anyStrings(row["entity_names_kwd"]),
 		RelatedKBPages: anyStrings(row["related_kb_pages_kwd"]),
 		Outlinks:       anyStrings(row["outlinks_kwd"]),
 		SourceChunkIDs: anyStrings(row["source_chunk_ids"]),
 		Score:          anyFloat(row["_score"]),
 	}
+}
+
+// firstNonEmptyString returns the first candidate that renders non-empty.
+func firstNonEmptyString(values ...interface{}) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(anyString(v)); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func anyString(v interface{}) string {

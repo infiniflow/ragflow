@@ -56,7 +56,7 @@ func init() {
 // (223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7 for
 // cl100k_base); that value identifies the path, while the value below verifies
 // the bytes we actually load. Compute it from the table shipped by
-// ragflow_deps/download_go_deps.py: `sha1sum cl100k_base.tiktoken`.
+// ragflow_deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
 var expectedBpeHashes = map[string]string{
 	"https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken": "6494e42d5aad2bbb441ea9793af9e7db335c8d9c",
 }

@@ -1,6 +1,8 @@
 package dataset
 
 import (
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -205,40 +207,155 @@ func TestValidateDatasetParserConfigSize_OverLimit(t *testing.T) {
 	}
 }
 
-func TestValidateDatasetParserConfig_AllowsNullableOptionalFields(t *testing.T) {
-	for _, config := range []map[string]interface{}{
-		{"task_page_size": nil},
-		{"pages": nil},
+// --- DropUnscopedParserConfigKeys ---
+
+func TestDropUnscopedParserConfigKeys_NilAndEmpty(t *testing.T) {
+	if got := DropUnscopedParserConfigKeys(nil); got != nil {
+		t.Fatalf("expected nil for nil map, got %#v", got)
+	}
+	if got := DropUnscopedParserConfigKeys(map[string]any{}); got != nil {
+		t.Fatalf("expected nil for empty map, got %#v", got)
+	}
+}
+
+func TestDropUnscopedParserConfigKeys_DropsFlatKeys(t *testing.T) {
+	cfg := map[string]any{
+		"File":                         map[string]any{},
+		"chunk_token_num":              float64(128),
+		"delimiter":                    "\n",
+		"metadata":                     map[string]any{},
+		"parent_child":                 map[string]any{},
+		"Parser:abc":                   map[string]any{"chunk_size": float64(512)},
+		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
+	}
+	dropped := DropUnscopedParserConfigKeys(cfg)
+	sort.Strings(dropped)
+	want := []string{"File", "chunk_token_num", "delimiter", "metadata", "parent_child"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %#v, want %#v", dropped, want)
+	}
+	// Component-scoped keys survive.
+	if _, ok := cfg["Parser:abc"]; !ok {
+		t.Error("component-scoped Parser:abc was dropped")
+	}
+	if _, ok := cfg["Extractor:AutoExtractDefault"]; !ok {
+		t.Error("component-scoped Extractor:AutoExtractDefault was dropped")
+	}
+	// A flat-looking key nested inside a component node is NOT a top-level flat
+	// key and must be preserved.
+	if inner, ok := cfg["Extractor:AutoExtractDefault"].(map[string]any); !ok || inner["metadata"] == nil {
+		t.Error("nested metadata inside a component node was dropped")
+	}
+	if len(cfg) != 2 {
+		t.Fatalf("expected 2 surviving keys, got %d: %#v", len(cfg), cfg)
+	}
+}
+
+func TestValidateParserConfig_DropsFlatKeys(t *testing.T) {
+	flat := map[string]any{"chunk_token_num": float64(128), "delimiter": "\n"}
+	dropped, err := ValidateParserConfig(flat)
+	if err != nil {
+		t.Fatalf("expected nil after dropping flat keys, got %v", err)
+	}
+	if len(dropped) != 2 {
+		t.Fatalf("expected 2 dropped keys, got %#v", dropped)
+	}
+	if len(flat) != 0 {
+		t.Fatalf("expected flat keys to be dropped, got %#v", flat)
+	}
+	// Component-scoped keys pass and are preserved.
+	scoped := map[string]any{
+		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": float64(512)},
+		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
+	}
+	dropped, err = ValidateParserConfig(scoped)
+	if err != nil {
+		t.Fatalf("expected nil for component-scoped keys, got %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("expected no dropped keys for component-scoped config, got %#v", dropped)
+	}
+	if len(scoped) != 2 {
+		t.Fatalf("expected component-scoped keys preserved, got %#v", scoped)
+	}
+}
+
+func TestValidateDocumentParserConfig_DropsFlatKeys(t *testing.T) {
+	for _, flat := range []map[string]any{
+		{"parser_specific": "value"},
+		{"delimiter": float64(1)},
+		{"children_delimiter": "|"},
+		{"metadata": map[string]any{}},
+		{"parent_child": map[string]any{}},
+		{"File": map[string]any{}},
 	} {
-		if err := validateDatasetParserConfig(config); err != nil {
-			t.Fatalf("validateDatasetParserConfig(%#v): %v", config, err)
+		cfg := make(map[string]any, len(flat))
+		for k, v := range flat {
+			cfg[k] = v
+		}
+		dropped, err := ValidateDocumentParserConfig(cfg)
+		if err != nil {
+			t.Fatalf("expected nil after dropping flat key %#v, got %v", flat, err)
+		}
+		if len(dropped) != 1 {
+			t.Fatalf("expected exactly 1 dropped key for %#v, got %#v", flat, dropped)
+		}
+		if len(cfg) != 0 {
+			t.Fatalf("expected flat key dropped, got %#v", cfg)
 		}
 	}
 }
 
-func TestValidateDatasetParserConfig_DelimiterType(t *testing.T) {
-	err := validateDatasetParserConfig(map[string]interface{}{"delimiter": float64(1)})
-	if err == nil || err.Error() != "Input should be a valid string" {
-		t.Fatalf("err=%v", err)
+// TestValidateParserConfig_ReturnsDroppedKeys asserts that ValidateParserConfig
+// returns the names of the flat (unscoped) keys it dropped so the caller can log
+// the silent drop. This is the single drop point shared by every entry path.
+func TestValidateParserConfig_ReturnsDroppedKeys(t *testing.T) {
+	cfg := map[string]any{
+		"chunk_token_num": float64(128),
+		"delimiter":       "\n",
+		"Parser:abc":      map[string]any{"chunk_size": float64(512)},
+	}
+	dropped, err := ValidateParserConfig(cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	sort.Strings(dropped)
+	want := []string{"chunk_token_num", "delimiter"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %#v, want %#v", dropped, want)
+	}
+	if _, ok := cfg["Parser:abc"]; !ok {
+		t.Error("component-scoped Parser:abc was dropped")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
 	}
 }
 
-func TestValidateDocumentParserConfig_AllowsUnknownFields(t *testing.T) {
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"parser_specific": "value"}); err != nil {
-		t.Fatalf("err=%v", err)
+// TestValidateDocumentParserConfig_ReturnsDroppedKeys mirrors the dataset
+// variant for the document path: the function drops the flat keys and reports
+// them, preserving component-scoped nodes.
+func TestValidateDocumentParserConfig_ReturnsDroppedKeys(t *testing.T) {
+	cfg := map[string]any{
+		"metadata":                     map[string]any{},
+		"parent_child":                 map[string]any{},
+		"File":                         map[string]any{},
+		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
 	}
-	if err := ValidateDocumentParserConfig(map[string]interface{}{"delimiter": float64(1)}); err == nil {
-		t.Fatal("expected known-field validation error")
+	dropped, err := ValidateDocumentParserConfig(cfg)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
-}
-
-func TestValidateParserConfigAcceptsFlatParentChildDelimiter(t *testing.T) {
-	config := map[string]interface{}{"children_delimiter": "|"}
-	if err := validateDatasetParserConfig(config); err != nil {
-		t.Fatalf("flat children_delimiter should remain accepted for compatibility: %v", err)
+	sort.Strings(dropped)
+	want := []string{"File", "metadata", "parent_child"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped = %#v, want %#v", dropped, want)
 	}
-	if err := ValidateDocumentParserConfig(config); err != nil {
-		t.Fatalf("document parser config should accept children_delimiter: %v", err)
+	if _, ok := cfg["Extractor:AutoExtractDefault"]; !ok {
+		t.Error("component-scoped Extractor was dropped")
+	}
+	if len(cfg) != 1 {
+		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
 	}
 }
 
@@ -368,10 +485,12 @@ func TestNormalizeMetadataConfigFields_TrimsKey(t *testing.T) {
 
 func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "existing_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	cases := map[string]interface{}{
@@ -380,7 +499,11 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 	}
 	for name, incomingMetadata := range cases {
 		t.Run(name, func(t *testing.T) {
-			incoming := map[string]interface{}{"metadata": incomingMetadata}
+			incoming := map[string]interface{}{
+				"Extractor:AutoExtractDefault": map[string]any{
+					"metadata": incomingMetadata,
+				},
+			}
 			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
 			meta, ok := got["metadata"].(map[string]any)
 			if !ok {
@@ -396,17 +519,21 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 
 func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 	existing := entity.JSONMap{
-		"metadata": map[string]any{
-			"enabled":           false,
-			"metadata":          []any{},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	incoming := map[string]interface{}{
-		"metadata": map[string]any{
-			"enabled":           true,
-			"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
-			"built_in_metadata": []any{},
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "incoming_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
 		},
 	}
 	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)

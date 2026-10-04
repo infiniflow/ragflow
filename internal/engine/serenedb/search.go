@@ -107,7 +107,7 @@ func (e *serenedbEngine) Search(ctx context.Context, req *types.SearchRequest) (
 	if scored && len(result.Chunks) > 1 {
 		sortByScore(result.Chunks)
 	}
-	if limit > 0 && len(result.Chunks) > limit {
+	if len(result.Chunks) > limit {
 		result.Chunks = result.Chunks[:limit]
 	}
 	if result.Total == 0 {

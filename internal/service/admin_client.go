@@ -157,6 +157,13 @@ func (h *AdminClient) SendHeartbeat() error {
 	}
 	licenseStatusCode = responseCode
 
+	responseData := responseBody["data"]
+	err = h.UpdateClient(responseData)
+	if err != nil {
+		common.Error("fail to update client info", err)
+		return err
+	}
+
 	common.Debug("Heartbeat sent successfully",
 		zap.String("server_id", h.serverName),
 		zap.String("server_type", string(h.serverType)),

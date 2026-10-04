@@ -274,7 +274,7 @@ func TestWireMultiBranches_RegistersTwoChildren(t *testing.T) {
 func TestWireMultiBranches_NilSafety(t *testing.T) {
 	// nil canvas
 	if got := wireMultiBranches(nil, nil, nil); got != nil {
-		t.Errorf("nil canvas: got %v, want nil", got)
+		t.Errorf("nil agent: got %v, want nil", got)
 	}
 	wf := compose.NewWorkflow[map[string]any, map[string]any]()
 	if got := wireMultiBranches(wf, nil, nil); got != nil {

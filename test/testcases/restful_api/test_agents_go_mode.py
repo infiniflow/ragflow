@@ -1,10 +1,11 @@
 import os
 import uuid
+
 import pytest
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("API_PROXY_SCHEME", "python") != "go",
-    reason="Go mode only (set API_PROXY_SCHEME=go + bin/ragflow_server on 9384)",
+    reason="Go mode only (set API_PROXY_SCHEME=go + bin/ragflow_server on 9380)",
 )
 
 V2_DSL = {

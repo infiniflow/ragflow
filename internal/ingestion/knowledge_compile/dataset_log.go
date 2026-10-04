@@ -106,6 +106,11 @@ func taskTypesForEntry(entry BacklogEntry) []string {
 	if taskTypes := taskTypesForVariants(entry.Variants); len(taskTypes) > 0 {
 		return taskTypes
 	}
+	if EventType(entry.EventType) == EventTypeDeleted || EventType(entry.EventType) == EventTypeDisabled {
+		// Retraction events must be scoped to the artifact types that existed on
+		// the document. Empty metadata means there is no safe type to log.
+		return nil
+	}
 	// An event with no routing metadata must remain visible in every possible
 	// dataset log. Returning the fallback per entry prevents an unknown entry
 	// from disappearing when other entries in the same batch are typed.
@@ -139,11 +144,13 @@ func taskTypesForEntries(entries []BacklogEntry) []string {
 		}
 	}
 	if len(seen) == 0 {
-		// Legacy events did not carry routing metadata. A deletion can affect any
-		// dataset artifact, so expose one log per supported category rather than
-		// incorrectly labeling the event as Wiki.
-		for _, taskType := range allDatasetTaskTypes {
-			seen[taskType] = struct{}{}
+		for _, entry := range entries {
+			if EventType(entry.EventType) != EventTypeDeleted && EventType(entry.EventType) != EventTypeDisabled {
+				for _, taskType := range allDatasetTaskTypes {
+					seen[taskType] = struct{}{}
+				}
+				break
+			}
 		}
 	}
 	return sortedTaskTypes(seen)
@@ -171,8 +178,13 @@ func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken
 		}
 	}
 	if len(groups) == 0 {
-		for _, taskType := range allDatasetTaskTypes {
-			groups[taskType] = entries
+		for _, entry := range entries {
+			if EventType(entry.EventType) != EventTypeDeleted && EventType(entry.EventType) != EventTypeDisabled {
+				for _, taskType := range allDatasetTaskTypes {
+					groups[taskType] = entries
+				}
+				break
+			}
 		}
 	}
 	return kcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

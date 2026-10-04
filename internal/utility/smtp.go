@@ -132,9 +132,9 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 		if err != nil {
 			return fmt.Errorf("SMTP tls dial: %w", err)
 		}
+		defer conn.Close()
 		client, err := smtp.NewClient(conn, cfg.MailServer)
 		if err != nil {
-			conn.Close()
 			return fmt.Errorf("SMTP client init: %w", err)
 		}
 		defer client.Quit()

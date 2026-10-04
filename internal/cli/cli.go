@@ -287,7 +287,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			defaultApiServerConfig.IP = "127.0.0.1"
 		}
 		if defaultApiServerConfig.Port == 0 {
-			defaultApiServerConfig.Port = 9384
+			defaultApiServerConfig.Port = 9380
 		}
 
 		commandLineConfig.APIClientConfig.APIServerMap = config.APIServerMap
@@ -302,7 +302,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
 			AdminHost: "127.0.0.1",
-			AdminPort: 9383,
+			AdminPort: 9381,
 			//AdminName:     "admin@ragflow.io",
 			//AdminPassword: "admin",
 		}

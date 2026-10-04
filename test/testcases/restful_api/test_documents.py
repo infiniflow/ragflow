@@ -14,16 +14,19 @@
 #  limitations under the License.
 #
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import string
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from pathlib import Path
-import uuid
 
-from openpyxl import Workbook
 import pytest
 import requests
+from openpyxl import Workbook
 from requests_toolbelt import MultipartEncoder
+from utils import wait_for
+from utils.file_utils import create_txt_file
+
 from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, VERSION
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
@@ -39,8 +42,6 @@ from test.testcases.utils.file_utils import (
     create_pdf_file,
     create_ppt_file,
 )
-from utils import wait_for
-from utils.file_utils import create_txt_file
 
 
 @pytest.mark.p1
@@ -1044,7 +1045,12 @@ def test_document_metadata_config_contract(rest_client, create_document):
     update_body = update_res.json()
     assert update_body["code"] == 0, update_body
     parser_config = update_body["data"]["parser_config"]
-    assert parser_config["metadata"] == update_payload["metadata"], update_body
+    if IS_GO_PROXY:
+        # Go scopes metadata onto the Extractor node rather than a flat key.
+        scoped = parser_config.get("Extractor:AutoExtractDefault", {})
+        assert scoped.get("metadata") == update_payload["metadata"], update_body
+    else:
+        assert parser_config["metadata"] == update_payload["metadata"], update_body
 
 
 @pytest.mark.p2

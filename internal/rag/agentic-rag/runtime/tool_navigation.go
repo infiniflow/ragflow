@@ -95,7 +95,7 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 		return nil, nil
 	}
 	idx := indexName
-	selectFields := []string{"content_with_weight", "compile_kwd", "compilation_template_kind_kwd", "knowledge_graph_kwd"}
+	selectFields := []string{"content_with_weight", "compile_kwd", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"}
 	if vecField != "" {
 		selectFields = append(selectFields, vecField)
 	}
@@ -111,7 +111,10 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 	}
 	rows := make([]StructureRow, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
-		kg, _ := row["knowledge_graph_kwd"].(string)
+		kg, _ := row["type_kwd"].(string)
+		if kg == "" {
+			kg, _ = row["knowledge_graph_kwd"].(string)
+		}
 		sr := StructureRow{
 			CompileKwd:        fmt.Sprint(row["compile_kwd"]),
 			TemplateKind:      fmt.Sprint(row["compilation_template_kind_kwd"]),

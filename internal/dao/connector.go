@@ -203,7 +203,7 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 // GetByID get connector by ID
 func (dao *ConnectorDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Connector, error) {
 	var connector entity.Connector
-	err := db.WithContext(ctx).Where("id = ?", id).First(&connector).Error
+	err := db.WithContext(ctx).Take(&connector, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

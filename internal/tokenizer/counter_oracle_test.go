@@ -118,7 +118,7 @@ func checkCounterAgainstOracle(t *testing.T, fx oracleFixture) {
 		// asset it needs is not on disk.
 		for _, status := range CounterStatuses() {
 			if status.ID == fx.Counter {
-				t.Fatalf("fixture %q needs counter %q, which is declared but unavailable: its asset is missing from ragflow_deps/huggingface.co (run `uv run ragflow_deps/download_go_deps.py`)", fx.Model, fx.Counter)
+				t.Fatalf("fixture %q needs counter %q, which is declared but unavailable: its asset is missing from ragflow_deps/huggingface.co (run `uv run ragflow_deps/download_deps.py`)", fx.Model, fx.Counter)
 			}
 		}
 		t.Fatalf("fixture %q names counter %q, which this build does not implement", fx.Model, fx.Counter)

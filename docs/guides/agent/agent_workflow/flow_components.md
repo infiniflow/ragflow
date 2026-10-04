@@ -14,8 +14,7 @@ sidebar_custom_props: {
 Switch executes rule-based judgment and routes workflows to different downstream paths according to results.
 
 ### Configuration Method
-At least one Case must be defined. Each Case can contain multiple conditions combined by AND / OR.
-Supported operators: Equals, Not equal, Greater than, Greater equal, Less than, Less equal, Contains, Not contains, Starts with, Ends with, Is empty, Not empty.
+At least one Case must be defined. Each Case can contain multiple conditions combined by AND / OR. Supported operators are Equals, Not equal, Greater than, Greater equal, Less than, Less equal, Contains, Not contains, Starts with, Ends with, Is empty, and Not empty.
 
 :::tip NOTE
 Switch is rule-based judgment for structured data and clear conditions. Categorize uses LLM-based classification for natural language intent recognition.
@@ -68,7 +67,6 @@ Categorize uses LLM to judge user intent or input category and branch the workfl
 6. Connect downstream components for each classification result on the canvas.
 
 ### Classification Recommendations
-Use easy-to-understand category names, e.g. Product Consultation, Installation Reservation, After-sales Fault, Other Questions.
-Examples improve classification stability; provide 2~3 typical samples for each category.
+Use easy-to-understand category names, such as Product Consultation, Installation Reservation, After-sales Fault, and Other Questions. Examples improve classification stability; provide two or three typical samples for each category.
 
 ![Question Classification Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/question_classification_component.jpg)

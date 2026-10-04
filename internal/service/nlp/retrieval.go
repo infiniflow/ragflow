@@ -698,7 +698,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	// Build Source field list
 	src := []string{
 		"docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-		"doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
+		"doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "type_kwd", "knowledge_graph_kwd",
 		// Fields the projection below reads off each chunk. This list IS the ES
 		// _source filter, so omitting one returns it empty even though the
 		// document carries it: content_with_weight is the text the caller
@@ -979,7 +979,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
 	// / NVIDIA query). Embedding it as a document would put the query vector in
 	// the wrong space for those providers.
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embModel.Embed(ctx, models.EmbedRequest{Texts: []string{txt}, Query: true}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

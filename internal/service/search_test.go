@@ -17,6 +17,7 @@
 package service
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -103,7 +104,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	// The owner can update name + merge config.
 	req = &UpdateSearchRequest{
 		Name:         "Updated Name",
-		SearchConfig: map[string]interface{}{"summary": true},
+		SearchConfig: map[string]interface{}{"summary": true, "keywords_similarity_weight": 0.7},
 	}
 	updated, err := NewSearchService().UpdateSearch(ctx, "tenant-1", created.SearchID, req)
 	if err != nil {
@@ -115,6 +116,11 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	if updated.SearchConfig["summary"] != true {
 		t.Fatalf("expected merged search_config, got %#v", updated.SearchConfig)
 	}
+	keywordsWeight, keywordsOK := updated.SearchConfig["keywords_similarity_weight"].(float64)
+	vectorWeight, vectorOK := updated.SearchConfig["vector_similarity_weight"].(float64)
+	if !keywordsOK || !vectorOK || math.Abs(keywordsWeight-0.7) > similarityWeightTolerance || math.Abs(vectorWeight-0.3) > similarityWeightTolerance {
+		t.Fatalf("similarity weights were not normalized: %#v", updated.SearchConfig)
+	}
 
 	persisted, err := dao.NewSearchDAO().GetByID(ctx, dao.DB, created.SearchID)
 	if err != nil {
@@ -122,6 +128,24 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 	if persisted.Name != "Updated Name" {
 		t.Fatalf("expected persisted name, got %q", persisted.Name)
+	}
+}
+
+func TestBuildSearchConfigResponseOmitsVectorSimilarityWeight(t *testing.T) {
+	searchConfig := map[string]interface{}{
+		"similarity_threshold":     0.2,
+		"vector_similarity_weight": 0.3,
+	}
+
+	response := BuildSearchConfigResponse(searchConfig)
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+	if _, exists := searchConfig["keywords_similarity_weight"]; exists {
+		t.Fatal("BuildSearchConfigResponse must not mutate the stored search config")
 	}
 }
 

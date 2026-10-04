@@ -113,7 +113,7 @@ func IsTransientError(err error) bool {
 		if code >= 500 || code == 429 {
 			return true
 		}
-		if code >= 400 && code < 500 {
+		if code >= 400 {
 			return false
 		}
 	}

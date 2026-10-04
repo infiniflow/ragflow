@@ -146,12 +146,12 @@ func (dao *API4ConversationDAO) GetMetadataBySessionID(ctx context.Context, db *
 // agent. It is used when the session itself is the authorization resource.
 func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.API4Conversation, error) {
 	var result entity.API4Conversation
-	tx := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ?", id).Find(&result)
+	tx := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Take(&result, "id = ?", id)
 	if tx.Error != nil {
+		if errors.Is(tx.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, tx.Error
-	}
-	if tx.RowsAffected == 0 {
-		return nil, nil
 	}
 	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{&result}); err != nil {
 		return nil, err

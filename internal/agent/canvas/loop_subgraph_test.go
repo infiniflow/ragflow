@@ -801,7 +801,7 @@ func TestBuildWorkflow_LoopSharesOuterCanvasState(t *testing.T) {
 	state := NewCanvasState("run-1", "task-1")
 	ctx := WithState(t.Context(), state)
 
-	got, _, err := GetStateFromContext[*CanvasState](ctx)
+	got, err := GetStateFromContext(ctx)
 	if err != nil {
 		t.Fatalf("GetStateFromContext: %v", err)
 	}

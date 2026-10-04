@@ -161,6 +161,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+const componentNameRetrieval = "Retrieval"
+
 var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
 
 func newRetrievalComponent(params map[string]any) (Component, error) {
@@ -193,6 +195,7 @@ func (c *retrievalComponent) GetInputForm() map[string]any {
 func (c *retrievalComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered chunks for downstream LLM prompts.",
+		"json":               "Chunk payloads under the DSL-declared output name (Array<Object>).",
 		"chunks":             "Raw chunk payloads (id, document_id, content, score).",
 	}
 }
@@ -201,7 +204,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
 	query, _ := merged["query"].(string)
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
 			query = resolved
 		}
@@ -216,7 +219,10 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			emptySelection = len(ids) == 0
 		}
 		if emptySelection {
-			return map[string]any{"_ERROR": "No dataset is selected."}, nil
+			return normalizeRetrievalOutputs(map[string]any{
+				"_ERROR":             "No dataset is selected.",
+				"formalized_content": "",
+			}), nil
 		}
 	}
 	common.Debug("agent retrieval component: invoke",
@@ -226,12 +232,14 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
-		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
+		return nil, fmt.Errorf("agent: Retrieval: %w", err)
 	}
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-	return parseToolEnvelope(out), nil
+
+	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
+
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -244,6 +252,33 @@ func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]
 	// nil-stream as "non-streaming node, read Invoke() output"
 	// — a fallback frame would confuse downstream cpn wiring.
 	return nil, nil
+}
+
+// normalizeRetrievalOutputs pins the Retrieval node's chunk array under both
+// output names the canvas resolves: `json` (the DSL-declared output, typed
+// Array<Object> by the frontend) and `chunks` (the tool envelope's name).
+//
+// The tool marshals its envelope with `chunks` tagged omitempty, so a
+// zero-hit search drops the key outright, as does every early-return
+// envelope (empty query, search error, GraphRAG opt-in) and
+// parseToolEnvelope's `_raw` fallback. Without this, a downstream
+// {{<id>@json}} reference dies in ResolveTemplate with "Can't find variable"
+// instead of seeing the empty result set. Emptying the array — rather than
+// leaving the key absent or nil — is what every other tool-backed search
+// component emits unconditionally, and it is the shape callers iterate over.
+func normalizeRetrievalOutputs(decoded map[string]any) map[string]any {
+	if decoded == nil {
+		decoded = make(map[string]any, 3)
+	}
+	chunks, ok := decoded["chunks"]
+	if !ok || chunks == nil {
+		chunks = []any{}
+	}
+	decoded["chunks"] = chunks
+	if existing, has := decoded["json"]; !has || existing == nil {
+		decoded["json"] = chunks
+	}
+	return decoded
 }
 
 // applyDefaults folds the node-level params into the per-call
@@ -411,7 +446,7 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 		common.Warn("agent retrieval component: resolve dataset id by id failed",
 			zap.Error(err))
 	}
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		common.Debug("agent retrieval component: resolve dataset id context")
 		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
 			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(ctx, db, kbName, tenantID); lookupErr == nil && kb != nil {
@@ -459,6 +494,8 @@ type codeExecComponent struct {
 	outputs map[string]any
 }
 
+const componentNameCodeExec = "CodeExec"
+
 func newCodeExecComponent(params map[string]any) (Component, error) {
 	cloned := make(map[string]any, len(params))
 	for k, v := range params {
@@ -484,7 +521,7 @@ func (c *codeExecComponent) Inputs() map[string]string {
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
 	res := make(map[string]any, len(c.params))
-	for k, _ := range c.params {
+	for k := range c.params {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
@@ -514,7 +551,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 		merged[k] = v
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		state, _ := runtime.GetStateFromContext(ctx)
 		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
 	common.Debug("CodeExec wrapper invoke",
@@ -547,7 +584,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	attachCodeExecArtifacts(ctx, decoded)
 
 	if err != nil {
-		return decoded, fmt.Errorf("canvas: CodeExec: %w", err)
+		return decoded, fmt.Errorf("agent: CodeExec: %w", err)
 	}
 	return decoded, nil
 }
@@ -775,7 +812,7 @@ func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
 		return
 	}
 	sessionID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		sessionID = state.SessionID
 	}
 	// The CodeExec tool already hosts sandbox artifacts and surfaces

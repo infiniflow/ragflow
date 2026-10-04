@@ -220,7 +220,7 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 	if docEngine == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0) {
 		return fmt.Errorf("document engine is unavailable for user data cleanup")
 	}
-	if store == nil && (len(data.datasets) > 0 || len(data.documents) > 0 || len(data.files) > 0) {
+	if store == nil && (data.ownedTenantID != "" || len(data.datasets) > 0 || len(data.documents) > 0 || len(data.files) > 0) {
 		return fmt.Errorf("storage is unavailable for user data cleanup")
 	}
 	datasetIDs := make(map[string]struct{}, len(data.datasetIDs))
@@ -231,32 +231,48 @@ func (data *userDeletionData) deleteExternalData(ctx context.Context, docEngine 
 		if document.Location == nil || *document.Location == "" {
 			continue
 		}
+		docNameID := namedDocument(document)
 		exists, err := store.ObjectExists(ctx, document.KbID, *document.Location)
 		if err != nil {
 			return fmt.Errorf("check document %s: %w", document.ID, err)
 		}
 		if !exists {
-			common.Warn("Document object already missing", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+			common.Warn("Document object already missing", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 			continue
 		}
 		if err := store.Remove(ctx, document.KbID, *document.Location); err != nil {
-			return fmt.Errorf("remove document %s: %w", document.ID, err)
+			return fmt.Errorf("remove document %s: %w", docNameID, err)
 		}
-		common.Info("Removed document object", zap.String("document", namedDocument(document)), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
+		common.Info("Removed document object", zap.String("document", docNameID), zap.String("document_id", document.ID), zap.String("dataset", namedID(data.datasetNames[document.KbID], document.KbID)), zap.String("bucket", document.KbID))
 	}
 	for _, dataset := range data.datasets {
+		datasetNameID := namedID(dataset.Name, dataset.ID)
 		exists, err := store.BucketExistsWithError(ctx, dataset.ID)
 		if err != nil {
 			return fmt.Errorf("check dataset bucket %s: %w", dataset.ID, err)
 		}
 		if !exists {
-			common.Warn("Dataset bucket already missing", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+			common.Warn("Dataset bucket already missing", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
 			continue
 		}
-		if err := store.RemoveEmptyBucket(ctx, dataset.ID); err != nil {
-			common.Warn("Unable to remove empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID), zap.Error(err))
+		if err := store.RemoveBucket(ctx, dataset.ID); err != nil {
+			return fmt.Errorf("remove dataset bucket %s: %w", datasetNameID, err)
+		}
+		common.Info("Removed dataset bucket", zap.String("dataset", datasetNameID), zap.String("bucket", dataset.ID))
+	}
+	if data.ownedTenantID != "" {
+		downloadBucket := fmt.Sprintf("%s-downloads", data.ownedTenantID)
+		exists, err := store.BucketExistsWithError(ctx, downloadBucket)
+		if err != nil {
+			return fmt.Errorf("check downloads bucket %s: %w", downloadBucket, err)
+		}
+		if !exists {
+			common.Warn("Downloads bucket already missing", zap.String("bucket", downloadBucket))
 		} else {
-			common.Info("Removed empty dataset bucket", zap.String("dataset", namedID(dataset.Name, dataset.ID)), zap.String("bucket", dataset.ID))
+			if err := store.RemoveBucket(ctx, downloadBucket); err != nil {
+				return fmt.Errorf("remove downloads bucket %s: %w", downloadBucket, err)
+			}
+			common.Info("Removed downloads bucket", zap.String("bucket", downloadBucket))
 		}
 	}
 	for _, file := range data.files {
@@ -421,8 +437,8 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	}
 	owner := data.ownedTenantID
 	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs []string
-	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs, groupIDs []string
-	var ingestionTaskIDs, memoryTaskIDs, commitIDs []string
+	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs []string
+	var ingestionTaskIDs, pipelineLogIDs, memoryTaskIDs, commitIDs []string
 	var err error
 	if owner != "" {
 		if chatIDs, err = selectIDs(&entity.Chat{}, "tenant_id = ?", owner); err != nil {
@@ -478,9 +494,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		if modelIDs, err = selectIDs(&entity.TenantModel{}, "provider_id IN ?", providerIDs); err != nil {
 			return err
 		}
-		if err = tx.Model(&entity.TenantModelGroupMapping{}).Where("provider_id IN ?", providerIDs).Distinct().Pluck("group_id", &groupIDs).Error; err != nil {
-			return err
-		}
 	}
 	if len(data.documentIDs) > 0 || len(data.datasetIDs) > 0 {
 		query := tx.Model(&entity.IngestionTask{}).Where("user_id = ?", userID)
@@ -497,14 +510,38 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	if err != nil {
 		return err
 	}
+	if owner != "" || len(data.documentIDs) > 0 || len(data.datasetIDs) > 0 {
+		pipelineLogQuery := tx.Model(&entity.PipelineOperationLog{})
+		switch {
+		case owner != "":
+			pipelineLogQuery = pipelineLogQuery.Where("tenant_id = ?", owner)
+			if len(data.documentIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("document_id IN ?", data.documentIDs)
+			}
+			if len(data.datasetIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("kb_id IN ?", data.datasetIDs)
+			}
+		case len(data.documentIDs) > 0:
+			pipelineLogQuery = pipelineLogQuery.Where("document_id IN ?", data.documentIDs)
+			if len(data.datasetIDs) > 0 {
+				pipelineLogQuery = pipelineLogQuery.Or("kb_id IN ?", data.datasetIDs)
+			}
+		default:
+			pipelineLogQuery = pipelineLogQuery.Where("kb_id IN ?", data.datasetIDs)
+		}
+		if err = pipelineLogQuery.Pluck("id", &pipelineLogIDs).Error; err != nil {
+			return err
+		}
+	}
 	if len(data.memories) > 0 {
 		if err = tx.Model(&entity.MemoryTask{}).Where("memory_id IN ?", memoryIDs(data.memories)).Pluck("task_id", &memoryTaskIDs).Error; err != nil {
 			return err
 		}
 	}
 	commitQuery := tx.Model(&entity.FileCommit{}).Where("author_id = ?", userID)
-	if len(data.fileIDs) > 0 {
-		commitQuery = commitQuery.Or("folder_id IN ?", data.fileIDs)
+	commitFolderIDs := append(append([]string{}, data.fileIDs...), data.datasetIDs...)
+	if len(commitFolderIDs) > 0 {
+		commitQuery = commitQuery.Or("folder_id IN ?", commitFolderIDs)
 	}
 	if err = commitQuery.Pluck("id", &commitIDs).Error; err != nil {
 		return err
@@ -564,6 +601,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		}
 	}
 	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "task_id", ingestionTaskIDs); err != nil {
+		return err
+	}
+	if err := removeIDs("ingestion task logs", &entity.IngestionTaskLog{}, "pipeline_log_id", pipelineLogIDs); err != nil {
 		return err
 	}
 	if err := removeIDs("ingestion tasks", &entity.IngestionTask{}, "id", ingestionTaskIDs); err != nil {
@@ -656,22 +696,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			return fmt.Errorf("update dataset counters: %w", err)
 		}
 	}
-	if len(groupIDs) > 0 {
-		if err := removeIDs("model group mappings", &entity.TenantModelGroupMapping{}, "provider_id", providerIDs); err != nil {
-			return err
-		}
-		for _, groupID := range groupIDs {
-			var remaining int64
-			if err := tx.Model(&entity.TenantModelGroupMapping{}).Where("group_id = ?", groupID).Count(&remaining).Error; err != nil {
-				return err
-			}
-			if remaining == 0 {
-				if _, err := remove("model groups", &entity.TenantModelGroup{}, "id = ?", groupID); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	if err := removeIDs("models", &entity.TenantModel{}, "id", modelIDs); err != nil {
 		return err
 	}
@@ -702,11 +726,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 				return err
 			}
 		}
-		tenantLLMCount, err := remove("tenant LLMs", &entity.TenantLLM{}, "tenant_id = ?", owner)
-		if err != nil {
-			return err
-		}
-		result.TenantLLMCount = int(tenantLLMCount)
 		langfuseCount, err := remove("Langfuse credentials", &entity.TenantLangfuse{}, "tenant_id = ?", owner)
 		if err != nil {
 			return err

@@ -45,7 +45,7 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 
 	// Default Admin config
 	c.apiServer.Host = "localhost"
-	c.apiServer.HTTPPort = 9384
+	c.apiServer.HTTPPort = 9380
 
 	if !v.IsSet("ragflow") {
 		return nil
@@ -61,10 +61,6 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 
 	if sub.IsSet("http_port") {
 		c.apiServer.HTTPPort = sub.GetInt("http_port")
-	}
-
-	if c.apiServer.HTTPPort == 9380 {
-		c.apiServer.HTTPPort = 9384
 	}
 
 	if sub.IsSet("trusted_proxies") {

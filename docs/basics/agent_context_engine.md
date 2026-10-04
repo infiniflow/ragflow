@@ -25,8 +25,10 @@ This pattern is called Context Engineering. It is deeply tied to expert know-how
 
 The mission of an Agent Context Engine is to turn Context Engineering from an “art” into an industrial-grade science.
 
-Deconstructing the Agent Context Engine
+## Deconstructing the Agent Context Engine
+
 So, what exactly is an Agent Context Engine? It is a unified, intelligent, and automated platform responsible for the end-to-end process of assembling the optimal context for an LLM or Agent at the moment of inference. It moves from artisanal crafting to industrialized production.
+
 At its core, an Agent Context Engine is built on a triumvirate of next-generation retrieval capabilities, seamlessly integrated into a single service layer:
 
 1. The Knowledge Core (Advanced RAG): This is the evolution of traditional RAG. It moves beyond simple chunk-and-embed to intelligently process static, private enterprise knowledge. Techniques like TreeRAG (building LLM-generated document outlines for "locate-then-expand" retrieval) and GraphRAG (extracting entity networks to find semantically distant connections) work to close the "semantic gap." The engine’s Ingestion Pipeline acts as the ETL for unstructured data, parsing multi-format documents and using LLMs to enrich content with summaries, metadata, and structure before indexing.
@@ -45,11 +47,11 @@ The necessity of an Agent Context Engine becomes clear when we examine the alter
 
 The shift from Context Engineering to a Context Platform/Engine marks the maturation of enterprise AI, as summarized in the table below:
 
-| Dimension           | Context engineering (present)                                              | Context engineering/Platform (future)                                                               |
-| ------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Context creation    | Manual, artisanal work by developers and prompt engineers.                 | Automated, driven by intelligent ingestion pipelines and configurable rules.                        |
-| Context delivery    | Hard-coded prompts and static retrieval logic embedded in agent workflows. | Dynamic, real-time retrieval and assembly based on the agent's live state and intent.               |
-| Context maintenance | A development and operational burden, logic locked in code.                | A manageable platform function, with visibility and control returned to the business.               |
+| Dimension           | Context engineering (present)                                              | Context engineering/Platform (future)                                                 |
+|---------------------|----------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| Context creation    | Manual, artisanal work by developers and prompt engineers.                 | Automated, driven by intelligent ingestion pipelines and configurable rules.          |
+| Context delivery    | Hard-coded prompts and static retrieval logic embedded in agent workflows. | Dynamic, real-time retrieval and assembly based on the agent's live state and intent. |
+| Context maintenance | A development and operational burden, logic locked in code.                | A manageable platform function, with visibility and control returned to the business. |
 
 
 ## RAGFlow: A Resolute March Toward the Context Engine of Agents

@@ -150,7 +150,7 @@ func (dao *CompilationTemplateDAO) NameExistsInGroup(ctx context.Context, db *go
 // (used for reconciling group children).
 func (dao *CompilationTemplateDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.CompilationTemplate, error) {
 	var t entity.CompilationTemplate
-	if err := db.WithContext(ctx).Where("id = ?", id).First(&t).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&t, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &t, nil

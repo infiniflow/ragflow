@@ -41,7 +41,7 @@ Run
     WARP_PDF=test/benchmark/test_docs/Doc1.pdf \
         bash build.sh --test-manual ./internal/deepdoc/parser/pdf/ -run TestWarpAlignGo
     .venv/bin/python tools/render_diff/warp_align.py compare
-    # (needs HF weights in rag/res/deepdoc)
+    # (needs HF weights in internal/rag/res/deepdoc)
     .venv/bin/python tools/render_diff/warp_align.py rec
 """
 

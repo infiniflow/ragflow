@@ -359,6 +359,8 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
     assert create_payload["code"] == 0, create_payload
     dataset_id = create_payload["data"]["id"]
 
+    if IS_GO_PROXY:
+        pytest.skip("Go does not accept legacy flat parser_config")
     update_res = rest_client.put(
         f"/datasets/{dataset_id}",
         json={"parser_config": parser_config},
@@ -372,11 +374,6 @@ def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_d
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
     actual_parser_config = list_payload["data"][0]["parser_config"]
-    if IS_GO_PROXY:
-        assert isinstance(actual_parser_config, dict) and actual_parser_config, list_payload
-        assert "raptor" not in actual_parser_config, list_payload
-        assert "graphrag" not in actual_parser_config, list_payload
-        return
     for key, expected_value in parser_config.items():
         if key in {"graphrag", "raptor"}:
             assert key not in actual_parser_config, list_payload
@@ -1073,6 +1070,8 @@ def test_dataset_update_parser_config_invalid_contract(rest_client, clear_datase
         ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
         ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
     ]
+    if IS_GO_PROXY:
+        pytest.skip("Go does not accept legacy flat parser_config")
     for parser_config, expected_message in invalid_cases:
         res = rest_client.put(
             f"/datasets/{dataset_id}",
@@ -1082,6 +1081,78 @@ def test_dataset_update_parser_config_invalid_contract(rest_client, clear_datase
         payload = res.json()
         assert payload["code"] == 101, payload
         assert expected_message in payload["message"], payload
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "children_delimiter",
+    ["|", ";", "\n"],
+    ids=["delimiter_pipe", "delimiter_semicolon", "delimiter_newline"],
+)
+def test_dataset_update_parser_config_component_scoped_roundtrip(rest_client, clear_datasets, children_delimiter):
+    # The intended contract is component-scoped: every parser_config key must be
+    # keyed by a component id (e.g. "GeneralChunker:<id>"). This test verifies a
+    # dataset-level setting reaches the runtime chunker node and round-trips.
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_component_scoped"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    # Discover the real chunker component id from the created config.
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    parser_config = list_payload["data"][0]["parser_config"]
+    chunker_id = next(
+        (k for k in parser_config if k.split(":", 1)[0].endswith("Chunker")),
+        None,
+    )
+    assert chunker_id is not None, parser_config
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={
+            "parser_config": {
+                chunker_id: {
+                    "parent_child": {
+                        "use_parent_child": True,
+                        "children_delimiter": children_delimiter,
+                    }
+                }
+            }
+        },
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["code"] == 0, update_res.json()
+
+    list_res2 = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res2.status_code == 200
+    final_config = list_res2.json()["data"][0]["parser_config"]
+    chunker = final_config[chunker_id]
+    assert chunker["parent_child"]["use_parent_child"] is True, final_config
+    assert chunker["children_delimiters"] == [children_delimiter], final_config
+
+
+@pytest.mark.p3
+def test_dataset_update_parser_config_accepts_bare_file_node(rest_client, clear_datasets):
+    # The DSL emits a single input node keyed by the bare id "File" (no
+    # component colon). The Go backend tolerates this legacy shape (it is
+    # dropped server-side) rather than rejecting it, so existing frontends that
+    # send it must not receive a 101 error. See PR #20445.
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_bare_file"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"parser_config": {"File": {"layout_recognize": "DeepDOC"}}},
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["code"] == 0, update_res.json()
 
 
 @pytest.mark.p2
@@ -1317,6 +1388,8 @@ def test_dataset_create_embedding_model_format_contract(rest_client, clear_datas
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     payload = {
         "name": "test_parser_config_missing_fields",
         "parser_config": {"chunk_token_num": 1024},
@@ -1503,6 +1576,8 @@ def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_d
     ids=["only_raptor", "only_graphrag", "both_fields"],
 )
 def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_datasets, name, parser_config):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
     assert res.status_code == 200
     body = res.json()
@@ -1523,6 +1598,8 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     ids=["qa", "manual", "paper", "book", "laws", "presentation"],
 )
 def test_dataset_create_parser_config_different_chunk_methods_contract(rest_client, clear_datasets, chunk_method):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     payload = {
         "name": f"test_parser_config_{chunk_method}",
         PARSER_ID_FIELD: chunk_method,
@@ -1746,6 +1823,8 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
 
 @pytest.mark.p2
 def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datasets):
+    if IS_GO_PROXY:
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     invalid_cases = [
         ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
         ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
@@ -2373,7 +2452,10 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
         ],
     }
     if IS_GO_PROXY:
-        normalized_update_payload["enabled"] = True
+        # Go keeps the dataset-level metadata.enabled flag: it is not derived
+        # from whether fields are present, so a fresh dataset (flag disabled)
+        # stays disabled until enabled explicitly.
+        normalized_update_payload["enabled"] = False
     update_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json=update_payload)
     assert update_res.status_code == 200
     update_body = update_res.json()

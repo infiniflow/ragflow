@@ -7,7 +7,10 @@ import { useEffect, useRef } from 'react';
 // so the trace resets and Running -> Start), or failed. Views refresh their
 // data through this single path so pausing behaves exactly like completion.
 // Debounced to fire 1s after the run settles, so the refetch reads final state.
-export function useRunEndEffect(status: GenerateStatus, onRunEnd: () => void) {
+export function useRunEndEffect(
+  status: GenerateStatus,
+  onRunEnd: () => void = () => {},
+) {
   const prevStatusRef = useRef(status);
   const { run: scheduleRunEnd } = useDebounceFn(onRunEnd, { wait: 2000 });
 

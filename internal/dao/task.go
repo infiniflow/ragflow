@@ -49,7 +49,7 @@ func (dao *TaskDAO) CreateMany(ctx context.Context, db *gorm.DB, tasks []*entity
 // GetByID gets task by ID
 func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Task, error) {
 	var task entity.Task
-	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Take(&task, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

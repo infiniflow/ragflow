@@ -396,11 +396,8 @@ func (s *BotService) ChatbotCompletion(
 	// a sanitised error before any SSE byte is written when the
 	// service is unwired (test boot path) or the dialog has no LLM
 	// configured — see WriteChatbotFrame's sanitization contract.
-	// NewBotService wires both dependencies; the nil checks only
-	// guard a hand-rolled zero-value BotService against panicking.
-	if s.llmService == nil {
-		return nil, common.CodeServerError, errors.New("bot: llm service not wired")
-	}
+	// NewBotService wires the pipeline; the nil check only guards a
+	// hand-rolled zero-value BotService against panicking.
 	if s.pipeline == nil {
 		return nil, common.CodeServerError, errors.New("bot: chat pipeline not wired")
 	}

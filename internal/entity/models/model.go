@@ -494,7 +494,7 @@ func GetEmbeddingBatchSize(modelName string) int {
 	return DefaultEmbeddingBatchSize
 }
 
-// GetEmbeddingTokenizer returns the tokenizer id declared for the named model in
+// GetModelTokenizer returns the tokenizer id declared for the named model in
 // the provider catalog (conf/all_models.json "tokenizer"), or "" when the model
 // is unknown or declares none. The TOKENIZER_EMBEDDING_TOKENIZER env var overrides
 // everything, so an operator can pin a family without editing the catalog.
@@ -503,7 +503,7 @@ func GetEmbeddingBatchSize(modelName string) int {
 // is missing may fall back to a calibrated cl100k count is the CALLER's decision - the
 // ingest embedder refuses (internal/ingestion/task/embedder.go), while a model that
 // declares no tokenizer at all is calibrated by design.
-func GetEmbeddingTokenizer(modelName string) string {
+func GetModelTokenizer(modelName string) string {
 	if v := strings.TrimSpace(os.Getenv("TOKENIZER_EMBEDDING_TOKENIZER")); v != "" {
 		return v
 	}

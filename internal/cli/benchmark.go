@@ -18,6 +18,7 @@ package cli
 
 import (
 	"fmt"
+	"ragflow/internal/cli/utils"
 	"strings"
 	"sync"
 	"time"
@@ -74,7 +75,7 @@ func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*Benchmark
 		datasetIDs := make([]string, 0, len(datasetNames))
 		for _, name := range datasetNames {
 			name = strings.TrimSpace(name)
-			id, err := c.getDatasetID(name)
+			id, err := c.getDatasetIDByName(name)
 			if err != nil {
 				return nil, err
 			}
@@ -147,7 +148,7 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 		datasetIDs := make([]string, 0, len(datasetNames))
 		for _, name := range datasetNames {
 			name = strings.TrimSpace(name)
-			id, err := c.getDatasetID(name)
+			id, err := c.getDatasetIDByName(name)
 			if err != nil {
 				return nil, err
 			}
@@ -229,7 +230,7 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 			resp, err = httpClient.Request(1, "POST", "/kb/list", "web", nil, nil)
 		case "api_list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = httpClient.Request(1, "GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+			resp, err = httpClient.Request(1, "GET", utils.APIPath("/admin/users", userName, "datasets"), "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
 			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)

@@ -22,7 +22,7 @@ GITHUB_REPO="${GITHUB_REPO:-infiniflow/ragflow}"
 CLI_NAME="${CLI_NAME:-ragflow-cli}"
 VERSION="${VERSION:-latest}"
 
-RELEASE_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+LATEST_RELEASE_URL="https://github.com/${GITHUB_REPO}/releases/latest"
 RELEASE_BASE_URL=""
 OS=""
 ARCH=""
@@ -105,10 +105,12 @@ resolve_version() {
     fi
 
     info "Fetching latest release information"
-    response="$(curl -sSfL "$RELEASE_API")"
-    VERSION="$(printf '%s\n' "$response" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+    latest_url="$(curl -sSfL -o /dev/null -w '%{url_effective}' "$LATEST_RELEASE_URL")"
+    latest_url="${latest_url%%\?*}"
+    latest_url="${latest_url%/}"
+    VERSION="${latest_url##*/}"
 
-    if [ -z "$VERSION" ]; then
+    if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
         error "Could not determine latest version from GitHub"
         exit 1
     fi

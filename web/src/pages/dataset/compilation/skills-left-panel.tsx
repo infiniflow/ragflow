@@ -1,16 +1,9 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { Spin } from '@/components/ui/spin';
 import { TreeDataItem, TreeView } from '@/components/ui/tree-view';
-import {
-  useDeleteDatasetSkillPage,
-  useDeleteDatasetSkillTree,
-  useFetchDatasetSkillTree,
-} from '@/hooks/use-dataset-skill-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
+import { useFetchDatasetSkillTree } from '@/hooks/use-dataset-skill-request';
 import { useDebounce } from 'ahooks';
-import { FileText, Folder, Trash2 } from 'lucide-react';
+import { FileText, Folder } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -30,69 +23,12 @@ type SkillsLeftPanelProps = {
   onSelectSkill: (skillKwd: string | null) => void;
 };
 
-type SkillDeleteActionProps = {
-  skillKwd: string;
-  deleteLoading: boolean;
-  onDelete: (skillKwd: string) => void;
-};
-
-function SkillDeleteAction({
-  skillKwd,
-  deleteLoading,
-  onDelete,
-}: SkillDeleteActionProps) {
-  const { t } = useTranslation();
-  const isGo = useIsGoBackend();
-
-  const handleTriggerClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      // TreeView does not guard action clicks: without this the row would
-      // also get selected and a branch row would toggle its accordion.
-      e.stopPropagation();
-    },
-    [],
-  );
-
-  const handleConfirmDelete = useCallback(() => {
-    onDelete(skillKwd);
-  }, [skillKwd, onDelete]);
-
-  // The Go backend does not support deleting skill pages; don't mount the action.
-  if (isGo) return null;
-
-  return (
-    <ConfirmDeleteDialog
-      title={t('knowledgeCompilation.skillDeleteTitle')}
-      content={{ title: t('knowledgeCompilation.skillDeleteDescription') }}
-      onOk={handleConfirmDelete}
-    >
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        disabled={deleteLoading}
-        onClick={handleTriggerClick}
-        // TreeActions keeps actions always visible on the selected row;
-        // hide again so the button only appears while hovering the row.
-        // `hidden` (not opacity-0) so no invisible click target remains.
-        className="hidden group-hover:inline-flex"
-      >
-        <Trash2 />
-      </Button>
-    </ConfirmDeleteDialog>
-  );
-}
-
 export function SkillsLeftPanel({
-  selectedSkill,
+  selectedSkill: _selectedSkill,
   onSelectSkill,
 }: SkillsLeftPanelProps) {
   const { t } = useTranslation();
-  const isGo = useIsGoBackend();
   const { data: tree, loading } = useFetchDatasetSkillTree();
-  const { deleteSkillTree, loading: deleteTreeLoading } =
-    useDeleteDatasetSkillTree();
-  const { deleteSkillPage, loading: deletePageLoading } =
-    useDeleteDatasetSkillPage();
   const [searchString, setSearchString] = useState('');
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
@@ -108,37 +44,9 @@ export function SkillsLeftPanel({
     [],
   );
 
-  const handleDeleteAll = useCallback(async () => {
-    const data = await deleteSkillTree();
-    if (data?.code === 0) {
-      onSelectSkill(null);
-    }
-  }, [deleteSkillTree, onSelectSkill]);
-
-  const handleDeleteSkill = useCallback(
-    async (skillKwd: string) => {
-      const data = await deleteSkillPage(skillKwd);
-      if (data?.code === 0 && selectedSkill === skillKwd) {
-        onSelectSkill(null);
-      }
-    },
-    [deleteSkillPage, selectedSkill, onSelectSkill],
-  );
-
-  const renderSkillActions = useCallback(
-    (skillKwd: string) => (
-      <SkillDeleteAction
-        skillKwd={skillKwd}
-        deleteLoading={deletePageLoading}
-        onDelete={handleDeleteSkill}
-      />
-    ),
-    [deletePageLoading, handleDeleteSkill],
-  );
-
   const treeData = useMemo(
-    () => buildSkillTreeData(tree?.skill_with_weight, renderSkillActions),
-    [tree?.skill_with_weight, renderSkillActions],
+    () => buildSkillTreeData(tree?.skill_with_weight),
+    [tree?.skill_with_weight],
   );
 
   const filteredTreeData = useMemo(
@@ -159,24 +67,6 @@ export function SkillsLeftPanel({
         <span className="text-sm font-medium text-text-primary">
           {t('knowledgeCompilation.skillFolders')} ({totalCount})
         </span>
-        {!isGo && (
-          <ConfirmDeleteDialog
-            title={t('knowledgeCompilation.skillDeleteAllTitle')}
-            content={{
-              title: t('knowledgeCompilation.skillDeleteAllDescription'),
-            }}
-            onOk={handleDeleteAll}
-          >
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={deleteTreeLoading}
-              data-testid="skills-clear-trigger"
-            >
-              <Trash2 />
-            </Button>
-          </ConfirmDeleteDialog>
-        )}
       </section>
 
       <div className="px-3 py-2">

@@ -83,22 +83,23 @@ func TestExtractAllComponentParams(t *testing.T) {
 	if parser.ComponentName != "Parser" {
 		t.Errorf("Parser.ComponentName = %q, want %q", parser.ComponentName, "Parser")
 	}
-	// ParamsDefaults must contain "setups", must NOT contain "outputs".
-	if _, ok := parser.ParamsDefaults["setups"]; !ok {
-		t.Errorf("Parser.ParamsDefaults missing key %q", "setups")
+	// ParamsDefaults must be flat: file families at the top level, with the
+	// legacy nested "setups" group lifted and "outputs" excluded.
+	if _, ok := parser.ParamsDefaults["setups"]; ok {
+		t.Errorf("Parser.ParamsDefaults should NOT contain %q (flattened)", "setups")
 	}
 	if _, ok := parser.ParamsDefaults["outputs"]; ok {
 		t.Errorf("Parser.ParamsDefaults should NOT contain %q (excluded)", "outputs")
 	}
-	if setups, ok := parser.ParamsDefaults["setups"].(map[string]any); !ok {
-		t.Errorf("Parser.ParamsDefaults[\"setups\"] is not a map: %T", parser.ParamsDefaults["setups"])
-	} else {
-		if _, ok := setups["pdf"]; !ok {
-			t.Errorf("Parser setups missing key %q", "pdf")
-		}
-		if _, ok := setups["spreadsheet"]; !ok {
-			t.Errorf("Parser setups missing key %q", "spreadsheet")
-		}
+	pdf, ok := parser.ParamsDefaults["pdf"].(map[string]any)
+	if !ok {
+		t.Fatalf("Parser.ParamsDefaults[\"pdf\"] is not a map: %T", parser.ParamsDefaults["pdf"])
+	}
+	if pdf["parse_method"] != "deepdoc" {
+		t.Errorf("Parser pdf parse_method = %v, want deepdoc", pdf["parse_method"])
+	}
+	if _, ok := parser.ParamsDefaults["spreadsheet"]; !ok {
+		t.Errorf("Parser ParamsDefaults missing key %q", "spreadsheet")
 	}
 
 	// --- Tokenizer ---
@@ -126,6 +127,42 @@ func TestExtractAllComponentParams(t *testing.T) {
 	// --- No extra/leaked ---
 	if len(schemas) != 3 {
 		t.Errorf("expected 3 components, got %d: %v", len(schemas), componentIDs(schemas))
+	}
+}
+
+func TestExtractAllComponentParams_ParserFlatSetupsPassThrough(t *testing.T) {
+	// A canvas saved by the Go frontend already stores the Parser params in
+	// the flat shape; extraction must pass them through unchanged.
+	dsl := map[string]any{
+		"components": map[string]any{
+			"Parser:Flat": map[string]any{
+				"obj": map[string]any{
+					"component_name": "Parser",
+					"params": map[string]any{
+						"outputs": map[string]any{},
+						"pdf":     map[string]any{"parse_method": "deepdoc"},
+					},
+				},
+			},
+		},
+	}
+	dslJSON, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	schemas, err := ExtractAllComponentParams(dslJSON)
+	if err != nil {
+		t.Fatalf("ExtractAllComponentParams: %v", err)
+	}
+	if len(schemas) != 1 {
+		t.Fatalf("expected 1 component, got %d", len(schemas))
+	}
+	params := schemas[0].ParamsDefaults
+	if _, ok := params["pdf"]; !ok {
+		t.Error("flat pdf family missing from ParamsDefaults")
+	}
+	if _, ok := params["setups"]; ok {
+		t.Error("flat params must not gain a \"setups\" key")
 	}
 }
 
