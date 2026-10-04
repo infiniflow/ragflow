@@ -2232,6 +2232,115 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	}
 }
 
+// TestUpdateDatasetDocumentAllowsOwner pins the cycle-91 fix: a legitimate
+// caller (in this test, a TEAM-permission user whose user_id differs from
+// the dataset's tenant_id, linked via the user_tenant join) is allowed
+// through. The check is now kbDAO.Accessible, which short-circuits true
+// when kb.TenantID == userID and otherwise consults the user_tenant table
+// for TEAM-permission datasets. Before the fix the previous code passed
+// userID through a variable named tenantID into GetByIDAndTenantID — that
+// only ever matched when userID happened to equal kb.TenantID, so this
+// path was previously unreachable through ordinary code (#20411).
+func TestUpdateDatasetDocumentAllowsOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	// user-2 is a TEAM member of tenant-1 (not the owning tenant). Without
+	// the user_tenant row kbDAO.Accessible would reject this call.
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-user-2",
+		UserID:   "user-2",
+		TenantID: "tenant-1",
+		Role:     "normal",
+		Status:   sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert user_tenant: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	// Pass an empty request with no present fields; the call should reach the
+	// post-access code path and return success with no error. This pins that
+	// the auth check did not reject a legitimate team member.
+	data, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	if err != nil {
+		t.Fatalf("team-member call failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("team-member code = %v, want %v", code, common.CodeSuccess)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil response data")
+	}
+}
+
+// TestBatchUpdateDocumentStatusRejectsNonOwner pins the deny path for the
+// bulk status update endpoint that previously called
+// GetByIDAndTenantID(datasetID, userID) with the user's id instead of the
+// tenant id. After the fix, a non-owner gets a clear error (#20411).
+func TestBatchUpdateDocumentStatusRejectsNonOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "tenant-2", "kb-1", "0", []string{"doc-1"})
+	if err == nil {
+		t.Fatal("expected ownership error for non-owner")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "you don't own the dataset" {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+// TestBatchUpdateDocumentStatusAllowsOwner pins the happy path for the bulk
+// status update endpoint: a legitimate TEAM-permission user (user_id
+// differs from the dataset's tenant_id, linked via the user_tenant join)
+// succeeds. The cycle-91 fix uses kbDAO.Accessible which honours the
+// TEAM-permission user_tenant row, so this path is now reachable. Before
+// the fix the previous code passed userID through GetByIDAndTenantID —
+// that only ever matched when userID happened to equal kb.TenantID, so
+// this path was previously unreachable through ordinary code (#20411).
+func TestBatchUpdateDocumentStatusAllowsOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	// user-2 is a TEAM member of tenant-1 (not the owning tenant). Without
+	// the user_tenant row kbDAO.Accessible would reject this call.
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-user-2",
+		UserID:   "user-2",
+		TenantID: "tenant-1",
+		Role:     "normal",
+		Status:   sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert user_tenant: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	result, code, err := svc.BatchUpdateDocumentStatus(ctx, "user-2", "kb-1", "0", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("team-member call failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("team-member code = %v, want %v", code, common.CodeSuccess)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result map")
+	}
+	if status, ok := result["doc-1"].(map[string]string); !ok || status["status"] != "0" {
+		t.Fatalf("unexpected result[doc-1]: %#v", result["doc-1"])
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
