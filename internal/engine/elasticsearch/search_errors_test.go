@@ -15,8 +15,11 @@ import (
 
 type searchErrorTransport func(*http.Request) (*http.Response, error)
 
+// RoundTrip supplies controlled responses and failures through the injected transport.
 func (f searchErrorTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+// newSearchErrorEngine uses the injected transport and disables retries so
+// each index query makes a single controlled request.
 func newSearchErrorEngine(t *testing.T, transport searchErrorTransport) *Engine {
 	t.Helper()
 	if err := common.InitLogger("error", common.FileOutput{}, "elasticsearch_search_test"); err != nil {
@@ -29,6 +32,8 @@ func newSearchErrorEngine(t *testing.T, transport searchErrorTransport) *Engine 
 	return &Engine{client: client}
 }
 
+// searchErrorResponse includes the product header required by the Elasticsearch
+// client when accepting a synthetic backend response.
 func searchErrorResponse(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: http.Header{"X-Elastic-Product": []string{"Elasticsearch"}, "Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
 }
@@ -145,4 +150,5 @@ func TestSearchPreservesResponseReadError(t *testing.T) {
 
 type failedSearchReader struct{ err error }
 
+// Read surfaces the injected error after any preceding response prefix has been read.
 func (r failedSearchReader) Read([]byte) (int, error) { return 0, r.err }
