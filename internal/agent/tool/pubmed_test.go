@@ -260,6 +260,40 @@ func TestPubMed_BuildByNameAcceptsNodeParams(t *testing.T) {
 	}
 }
 
+// The agent UI saves the PubMed email as an empty string by default; a blank email
+// must build and fall back to the default contact address.
+func TestPubMed_BuildByNameBlankEmailUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	for _, email := range []string{"", "   "} {
+		built, err := BuildByName("pubmed", map[string]any{"top_n": 12, "email": email})
+		if err != nil {
+			t.Fatalf("BuildByName(email=%q): %v", email, err)
+		}
+		tool, ok := built.(*PubMedTool)
+		if !ok {
+			t.Fatalf("built type = %T, want *PubMedTool", built)
+		}
+		if tool.defaults.Email != "A.N.Other@example.com" {
+			t.Fatalf("email=%q: defaults.Email = %q, want A.N.Other@example.com", email, tool.defaults.Email)
+		}
+	}
+}
+
+func TestPubMed_BuildAllAcceptsBlankEmail(t *testing.T) {
+	t.Parallel()
+
+	tools, err := BuildAll([]string{"PubMed"}, map[string]map[string]any{
+		"pubmed": {"top_n": 12, "email": ""},
+	})
+	if err != nil {
+		t.Fatalf("BuildAll: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+}
+
 func TestPubMed_ComponentReferencesAndOutputs(t *testing.T) {
 	ctx := t.Context()
 	t.Parallel()
@@ -315,7 +349,7 @@ func TestPubMed_BuildByNameRejectsInvalidTopN(t *testing.T) {
 func TestPubMed_BuildByNameRejectsInvalidNodeTypes(t *testing.T) {
 	t.Parallel()
 
-	for _, params := range []map[string]any{{"top_n": 1.5}, {"email": 1}, {"email": ""}} {
+	for _, params := range []map[string]any{{"top_n": 1.5}, {"email": 1}} {
 		if _, err := BuildByName("pubmed", params); err == nil {
 			t.Fatalf("BuildByName(%#v) succeeded", params)
 		}
