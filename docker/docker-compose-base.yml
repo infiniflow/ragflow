@@ -269,9 +269,10 @@ services:
       - ragflow
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
-      interval: 10s
-      timeout: 10s
-      retries: 120
+      interval: 1s
+      timeout: 2s
+      retries: 30
+      start_period: 1s
     restart: unless-stopped
 
   minio:
