@@ -178,3 +178,32 @@ func HasCustomDelimiterList(delims []string) bool {
 	}
 	return false
 }
+
+// CustomDelimiterPrefixes returns the inner text of every backtick-wrapped
+// entry in a TokenChunker-style delimiter list, longest-first and deduplicated.
+// Used when a custom delimiter marks record boundaries across DOCX paragraphs.
+func CustomDelimiterPrefixes(delims []string) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	for _, d := range delims {
+		if !strings.HasPrefix(d, "`") || !strings.HasSuffix(d, "`") || len(d) < 2 {
+			continue
+		}
+		inner := d[1 : len(d)-1]
+		if inner == "" {
+			continue
+		}
+		if _, ok := seen[inner]; ok {
+			continue
+		}
+		seen[inner] = struct{}{}
+		out = append(out, inner)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return utf8.RuneCountInString(out[i]) > utf8.RuneCountInString(out[j])
+	})
+	return out
+}
