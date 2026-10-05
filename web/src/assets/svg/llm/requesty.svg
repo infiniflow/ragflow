@@ -1,0 +1,7 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(-6 64 64)">
+    <path fill="#1677FF" d="M32 16h66a14 14 0 0 1 14 14v56a14 14 0 0 1-14 14H54l-18 20v-20h-4a14 14 0 0 1-14-14V30a14 14 0 0 1 14-14z"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M40 40l20 16-20 16"/>
+    <path fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" d="M66 78h20"/>
+  </g>
+</svg>

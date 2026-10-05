@@ -3485,6 +3485,15 @@
             "url": "https://openrouter.ai/api/v1"
         },
         {
+            "name": "Requesty",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "rank": "885",
+            "url": "https://router.requesty.ai/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
