@@ -47,6 +47,16 @@ func setupArtifactGraphDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
+	// The DSN is a shared named in-memory database keyed on the test name, so the
+	// pool owns the data: leaving it open keeps the name alive after the test ends
+	// and a -count=2 re-run reuses it, hitting duplicate-key failures on insert
+	// before any handler assertion runs. Close the underlying pool, not just the
+	// wrapper, and keep restoring the package-level handle.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to open sqlite pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	origDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = origDB })
@@ -115,9 +125,9 @@ func TestArtifactGraph_InvalidTopNArgError(t *testing.T) {
 	insertArtifactGraphKB(t, db, kbID, "user-1")
 
 	cases := []struct {
-		name      string
-		query     string
-		badToken  string
+		name     string
+		query    string
+		badToken string
 	}{
 		{name: "top_n=not-a-number", query: "?top_n=not-a-number", badToken: "not-a-number"},
 		{name: "top_n=1.5 fractional", query: "?top_n=1.5", badToken: "1.5"},
