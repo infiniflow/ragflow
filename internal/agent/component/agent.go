@@ -1667,11 +1667,16 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 
 	rawParams, _ := item["params"].(map[string]any)
 	toolParams := cloneMap(rawParams)
-	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
-		if toolParams == nil {
-			toolParams = make(map[string]any)
-		}
-		toolParams["function_name"] = strings.TrimSpace(fn)
+	if toolParams == nil {
+		toolParams = make(map[string]any)
+	}
+	toolParams["component_name"] = toolName
+
+	functionName, _ := stringFrom(item, "function_name")
+	functionName = strings.TrimSpace(functionName)
+	if functionName != "" {
+		toolParams["function_name"] = functionName
+		return functionName, toolParams, true
 	}
 	return toolName, toolParams, true
 }
