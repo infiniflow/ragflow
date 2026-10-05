@@ -65,6 +65,12 @@ type retrievalArgs struct {
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
 	EmptyResponse            string         `json:"empty_response,omitempty"`
+	// FunctionName is the agent-visible tool name from the DSL. It is not
+	// exposed to the model as part of the tool arguments.
+	FunctionName string `json:"-"`
+	// Description is the agent-visible tool description from the DSL. It is
+	// not exposed to the model as part of the tool arguments.
+	Description string `json:"-"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -94,6 +100,8 @@ type chunkPayload struct {
 // surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct {
 	defaults retrievalArgs
+	name     string
+	desc     string
 }
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
@@ -108,15 +116,23 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 	if len(defaults.DatasetIDs) == 0 && len(defaults.KBIDs) != 0 {
 		defaults.DatasetIDs = append([]string(nil), defaults.KBIDs...)
 	}
-	return &RetrievalTool{defaults: defaults}
+	name := defaults.FunctionName
+	if strings.TrimSpace(name) == "" {
+		name = retrievalToolName
+	}
+	desc := defaults.Description
+	if strings.TrimSpace(desc) == "" {
+		desc = retrievalToolDescription
+	}
+	return &RetrievalTool{defaults: defaults, name: name, desc: desc}
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: retrievalToolName,
-		Desc: retrievalToolDescription,
+		Name: r.name,
+		Desc: r.desc,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
