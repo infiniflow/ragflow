@@ -908,6 +908,13 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 		markWikiDirtyFunc: func(tenantID, datasetID, documentID string, chunkIDs []string) {
 			wikiCalls++
 		},
+		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
+			driver := &stubEmbeddingDriver{embeddings: []models.EmbeddingData{
+				{Embedding: []float64{1, 2}},
+				{Embedding: []float64{3, 4}},
+			}}
+			return models.NewEmbeddingModel(driver, nil, &models.APIConfig{}, 0), nil
+		},
 	}
 
 	removeMode := imageUpdateModeRemove
@@ -2017,8 +2024,10 @@ func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
 }
 
 type stubEmbeddingDriver struct {
-	embeddings []models.EmbeddingData
-	embedErr   error
+	embeddings    []models.EmbeddingData
+	embedErr      error
+	embedRequests []models.EmbedRequest
+	embedConfigs  []models.EmbeddingConfig
 }
 
 func (d *stubEmbeddingDriver) NewInstance(map[string]string) models.ModelDriver { return d }
@@ -2029,7 +2038,11 @@ func (d *stubEmbeddingDriver) ChatWithMessages(context.Context, string, []models
 func (d *stubEmbeddingDriver) ChatStreamlyWithSender(context.Context, string, []models.Message, *models.APIConfig, *models.ChatConfig, *common.ModelUsage, func(*string, *string) error) error {
 	return nil
 }
-func (d *stubEmbeddingDriver) Embed(context.Context, *string, models.EmbedRequest, *models.APIConfig, *models.EmbeddingConfig, *common.ModelUsage) ([]models.EmbeddingData, error) {
+func (d *stubEmbeddingDriver) Embed(_ context.Context, _ *string, req models.EmbedRequest, _ *models.APIConfig, config *models.EmbeddingConfig, _ *common.ModelUsage) ([]models.EmbeddingData, error) {
+	d.embedRequests = append(d.embedRequests, req)
+	if config != nil {
+		d.embedConfigs = append(d.embedConfigs, *config)
+	}
 	return d.embeddings, d.embedErr
 }
 func (d *stubEmbeddingDriver) Rerank(context.Context, *string, models.RerankRequest, *models.APIConfig, *models.RerankConfig, *common.ModelUsage) (*models.RerankResponse, error) {
