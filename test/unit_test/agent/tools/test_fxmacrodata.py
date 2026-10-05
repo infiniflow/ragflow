@@ -58,7 +58,9 @@ class Session:
 
 
 def sent_key(call):
-    return (call[2]["headers"] or {}).get("X-API-Key")
+    headers = call[2]["headers"] or {}
+    bearer = headers.get("Authorization") or ""
+    return headers.get("X-API-Key") or (bearer.removeprefix("Bearer ") if bearer.startswith("Bearer ") else None)
 
 
 def arguments_for(operation):
@@ -162,6 +164,27 @@ def test_environment_key_is_invocation_only_and_not_serialized(make_canvas, monk
     assert session.calls and all(sent_key(call) == secret for call in session.calls)
     assert all("api_key" not in (call[2]["params"] or {}) for call in session.calls)
     assert secret not in str(canvas) + caplog.text + json.dumps(tool.get_meta())
+
+
+def test_mcp_calls_send_bearer_key_and_rest_calls_keep_x_api_key(make_canvas, monkeypatch):
+    secret = "synthetic-mcp-credential-sentinel"
+    monkeypatch.setenv("FXMACRODATA_API_KEY", secret)
+    session = transport(monkeypatch, {"content": [{"type": "text", "text": "fixture"}], "isError": False})
+    _, tool = make_canvas("mcp_ping", {}, use_credentials=True)
+    tool.invoke(**tool.get_input())
+    assert not tool.output("_ERROR")
+    assert session.calls and all(call[1] == client_module.MCP_URL for call in session.calls)
+    for call in session.calls:
+        assert call[2]["headers"]["Authorization"] == "Bearer " + secret
+        assert "X-API-Key" not in call[2]["headers"]
+
+    session = transport(monkeypatch, {"data": [{"fixture": "rest"}]})
+    _, tool = make_canvas(use_credentials=True)
+    tool.invoke(**tool.get_input())
+    assert session.calls and all(call[1] != client_module.MCP_URL for call in session.calls)
+    for call in session.calls:
+        assert call[2]["headers"]["X-API-Key"] == secret
+        assert "Authorization" not in call[2]["headers"]
 
 
 def test_public_mode_ignores_inherited_credentials(make_canvas, monkeypatch):

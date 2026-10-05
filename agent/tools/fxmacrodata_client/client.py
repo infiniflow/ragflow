@@ -150,7 +150,7 @@ class FXMacroDataClient:
             if headers and headers.get("Mcp-Session-Id"):
                 response = None
                 try:
-                    response = self._request("DELETE", MCP_URL, headers={**headers, **self._auth_headers()}, timeout=min(self.timeout, 2))
+                    response = self._request("DELETE", MCP_URL, headers={**headers, **self._mcp_auth_headers()}, timeout=min(self.timeout, 2))
                 except Exception:
                     # Closing a session is best effort and must not mask a tool
                     # result or expose an underlying request/credential error.
@@ -302,6 +302,11 @@ class FXMacroDataClient:
     def _auth_headers(self) -> dict[str, str]:
         return {"X-API-Key": self._api_key} if self._api_key else {}
 
+    def _mcp_auth_headers(self) -> dict[str, str]:
+        # The hosted MCP endpoint reads the key from an Authorization bearer
+        # header (or ?api_key=), not from X-API-Key like the REST API.
+        return {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+
     def execute(self, operation_name: str, arguments: dict[str, Any] | None = None) -> Result:
         with self._lock, protected_diagnostics(self._api_key):
             return self._execute(operation_name, arguments)
@@ -402,7 +407,7 @@ class FXMacroDataClient:
         if not notification:
             self._request_id += 1
             body["id"] = self._request_id
-        response = self._request("POST", MCP_URL, headers={**headers, **self._auth_headers()}, body=body)
+        response = self._request("POST", MCP_URL, headers={**headers, **self._mcp_auth_headers()}, body=body)
         response_headers = dict(response.headers)
         if notification:
             try:
