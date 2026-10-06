@@ -221,7 +221,13 @@ class PipelineOperationLogService(CommonService):
             if dsl_id is not None:
                 references.add((dsl_id, dsl_version))
 
-        versions = cls._load_dsl_versions(references)
+        try:
+            versions = cls._load_dsl_versions(references)
+        except Exception:
+            if strict:
+                raise
+            logger.exception("Could not load pipeline DSL versions for operation logs")
+            versions = None
 
         for log in logs:
             dsl_id = log.pop("dsl_id", None)
@@ -230,11 +236,12 @@ class PipelineOperationLogService(CommonService):
             if (dsl_id is None) != (dsl_version is None):
                 error = f"Pipeline operation log {log.get('id')!r} has an incomplete DSL reference."
             elif dsl_id is not None:
-                dsl = versions.get((dsl_id, dsl_version))
-                if dsl is None:
+                if versions is None:
+                    error = f"Pipeline DSL version referenced by operation log {log.get('id')!r} is unavailable."
+                elif (dsl_id, dsl_version) not in versions:
                     error = f"Pipeline DSL version {dsl_id!r}@{dsl_version} referenced by operation log {log.get('id')!r} was not found."
                 else:
-                    log["dsl"] = dsl
+                    log["dsl"] = versions[(dsl_id, dsl_version)]
 
             if error is not None:
                 if strict:
@@ -567,11 +574,11 @@ class PipelineOperationLogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_id_and_kb_id(cls, log_id, kb_id):
+    def get_by_id_and_kb_id(cls, log_id, kb_id, *, strict=False):
         log = cls.model.select(*cls.get_file_logs_fields()).where((cls.model.id == log_id) & (cls.model.kb_id == kb_id)).dicts().first()
         if log is None:
             return None
-        return cls._resolve_dsl_references([log], strict=True)[0]
+        return cls._resolve_dsl_references([log], strict=strict)[0]
 
     @classmethod
     @DB.connection_context()

@@ -208,7 +208,7 @@ class DataflowService:
             assert e, "User pipeline not found."
             return cvs.dsl, dataflow_id
 
-        pipeline_log = PipelineOperationLogService.get_by_id_and_kb_id(dataflow_id, ctx.kb_id)
+        pipeline_log = PipelineOperationLogService.get_by_id_and_kb_id(dataflow_id, ctx.kb_id, strict=True)
         assert pipeline_log is not None, "Pipeline log not found."
         return pipeline_log["dsl"], pipeline_log["pipeline_id"]
 

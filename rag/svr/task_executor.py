@@ -822,7 +822,7 @@ async def run_dataflow(task: dict):
         assert e, "User pipeline not found."
         dsl = cvs.dsl
     else:
-        pipeline_log = PipelineOperationLogService.get_by_id_and_kb_id(dataflow_id, task["kb_id"])
+        pipeline_log = PipelineOperationLogService.get_by_id_and_kb_id(dataflow_id, task["kb_id"], strict=True)
         assert pipeline_log is not None, "Pipeline log not found."
         dsl = pipeline_log["dsl"]
         dataflow_id = pipeline_log["pipeline_id"]

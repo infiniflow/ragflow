@@ -400,4 +400,4 @@ class TestDataflowServiceLoadDsl:
 
             assert dsl == '{"id": "test_pipeline"}'
             assert corrected_id == "corrected_pipeline_id"
-            mock_log.get_by_id_and_kb_id.assert_called_once_with(dataflow_id, "kb_test")
+            mock_log.get_by_id_and_kb_id.assert_called_once_with(dataflow_id, "kb_test", strict=True)

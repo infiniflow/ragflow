@@ -18,11 +18,11 @@ package dao
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 
@@ -112,9 +112,7 @@ func (dao *PipelineOperationLogDAO) GetDatasetLogsByKBID(ctx context.Context, db
 	if err := query.Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
-	if err := dao.resolveDSLReferences(ctx, db, logs); err != nil {
-		return nil, 0, err
-	}
+	dao.resolveDSLReferences(ctx, db, logs)
 	return logs, count, nil
 }
 
@@ -165,9 +163,7 @@ func (dao *PipelineOperationLogDAO) GetFileLogsByKBID(ctx context.Context, db *g
 	if err := query.Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
-	if err := dao.resolveDSLReferences(ctx, db, logs); err != nil {
-		return nil, 0, err
-	}
+	dao.resolveDSLReferences(ctx, db, logs)
 	return logs, count, nil
 }
 
@@ -176,7 +172,7 @@ type pipelineDSLVersionKey struct {
 	Version int64
 }
 
-func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db *gorm.DB, logs []*entity.PipelineOperationLog) error {
+func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db *gorm.DB, logs []*entity.PipelineOperationLog) {
 	keys := make(map[pipelineDSLVersionKey]struct{})
 	for _, log := range logs {
 		if log == nil {
@@ -193,7 +189,7 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 		}
 	}
 	if len(keys) == 0 {
-		return nil
+		return
 	}
 
 	pairs := make([][]any, 0, len(keys))
@@ -201,10 +197,11 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 		pairs = append(pairs, []any{key.DSLID, key.Version})
 	}
 	var versions []*entity.PipelineDSLVersion
-	if err := db.WithContext(ctx).
+	loadErr := db.WithContext(ctx).
 		Where("(dsl_id, version) IN ?", pairs).
-		Find(&versions).Error; err != nil {
-		return fmt.Errorf("load pipeline DSL versions: %w", err)
+		Find(&versions).Error
+	if loadErr != nil {
+		common.Warn(fmt.Sprintf("load pipeline DSL versions for operation logs: %v", loadErr))
 	}
 
 	versionsByKey := make(map[pipelineDSLVersionKey]entity.JSONMap, len(versions))
@@ -220,6 +217,11 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 			continue
 		}
 		key := pipelineDSLVersionKey{DSLID: *log.DSLID, Version: *log.DSLVersion}
+		if loadErr != nil {
+			log.DSL = nil
+			log.DSLResolutionError = fmt.Sprintf("pipeline DSL version referenced by operation log %q is unavailable", log.ID)
+			continue
+		}
 		dsl, ok := versionsByKey[key]
 		if !ok {
 			log.DSL = nil
@@ -228,17 +230,6 @@ func (dao *PipelineOperationLogDAO) resolveDSLReferences(ctx context.Context, db
 		}
 		log.DSL = dsl
 	}
-	return nil
-}
-
-func (dao *PipelineOperationLogDAO) resolveDSLReference(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
-	if err := dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{log}); err != nil {
-		return err
-	}
-	if log != nil && log.DSLResolutionError != "" {
-		return errors.New(log.DSLResolutionError)
-	}
-	return nil
 }
 
 // OpenPipelineOperationStatuses returns the operation_status values of a
@@ -360,16 +351,14 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 	return &log, nil
 }
 
-// GetByIDAndKBIDWithDSL fetches a scoped ingestion log and resolves its exact
-// recorded DSL. It rejects incomplete or missing version references.
+// GetByIDAndKBIDWithDSL fetches a scoped ingestion log and resolves its recorded
+// DSL. An unavailable version leaves the log metadata readable.
 func (dao *PipelineOperationLogDAO) GetByIDAndKBIDWithDSL(ctx context.Context, db *gorm.DB, logID, kbID string) (*entity.PipelineOperationLog, error) {
 	log, err := dao.GetByIDAndKBID(ctx, db, logID, kbID)
 	if err != nil {
 		return nil, err
 	}
-	if err := dao.resolveDSLReference(ctx, db, log); err != nil {
-		return nil, err
-	}
+	dao.resolveDSLReferences(ctx, db, []*entity.PipelineOperationLog{log})
 	return log, nil
 }
 

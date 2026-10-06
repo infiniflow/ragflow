@@ -113,7 +113,7 @@ func TestPipelineOperationLogDAOResolvesExactDSLVersion(t *testing.T) {
 	}
 }
 
-func TestPipelineOperationLogDAOStrictLookupRejectsBrokenDSLReference(t *testing.T) {
+func TestPipelineOperationLogDAODetailKeepsMetadataForBrokenDSLReference(t *testing.T) {
 	db := setupPipelineDSLVersionTestDB(t)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
 		t.Fatalf("auto-migrate pipeline operation logs: %v", err)
@@ -125,8 +125,9 @@ func TestPipelineOperationLogDAOStrictLookupRejectsBrokenDSLReference(t *testing
 	seedPipelineOperationLog(t, db, incomplete)
 
 	logDAO := NewPipelineOperationLogDAO()
-	if _, err := logDAO.GetByIDAndKBIDWithDSL(t.Context(), db, incomplete.ID, incomplete.KbID); err == nil || !strings.Contains(err.Error(), "incomplete DSL reference") {
-		t.Fatalf("incomplete reference error = %v", err)
+	got, err := logDAO.GetByIDAndKBIDWithDSL(t.Context(), db, incomplete.ID, incomplete.KbID)
+	if err != nil || got.ID != incomplete.ID || got.DSL != nil || !strings.Contains(got.DSLResolutionError, "incomplete DSL reference") {
+		t.Fatalf("incomplete reference detail = (%#v, %v)", got, err)
 	}
 
 	missingVersion := int64(3)
@@ -134,8 +135,9 @@ func TestPipelineOperationLogDAOStrictLookupRejectsBrokenDSLReference(t *testing
 	missing.DSLID = &dslID
 	missing.DSLVersion = &missingVersion
 	seedPipelineOperationLog(t, db, missing)
-	if _, err := logDAO.GetByIDAndKBIDWithDSL(t.Context(), db, missing.ID, missing.KbID); err == nil || !strings.Contains(err.Error(), "missing pipeline DSL version") {
-		t.Fatalf("missing reference error = %v", err)
+	got, err = logDAO.GetByIDAndKBIDWithDSL(t.Context(), db, missing.ID, missing.KbID)
+	if err != nil || got.ID != missing.ID || got.DSL != nil || !strings.Contains(got.DSLResolutionError, "missing pipeline DSL version") {
+		t.Fatalf("missing reference detail = (%#v, %v)", got, err)
 	}
 
 	for _, log := range []*entity.PipelineOperationLog{incomplete, missing} {
@@ -239,7 +241,7 @@ func TestPipelineOperationLogDAOListHandlesOnlyIncompleteDSLReferences(t *testin
 	}
 }
 
-func TestPipelineOperationLogDAOListReturnsDSLVersionQueryError(t *testing.T) {
+func TestPipelineOperationLogDAOListKeepsMetadataWhenDSLVersionQueryFails(t *testing.T) {
 	db := setupPipelineDSLVersionTestDB(t)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
 		t.Fatalf("auto-migrate pipeline operation logs: %v", err)
@@ -254,10 +256,15 @@ func TestPipelineOperationLogDAOListReturnsDSLVersionQueryError(t *testing.T) {
 		t.Fatalf("drop pipeline DSL version table: %v", err)
 	}
 
-	_, _, err := NewPipelineOperationLogDAO().GetFileLogsByKBID(
+	logs, count, err := NewPipelineOperationLogDAO().GetFileLogsByKBID(
 		t.Context(), db, "kb-1", 1, 30, nil, "", "", nil, "", "",
 	)
-	if err == nil || !strings.Contains(err.Error(), "load pipeline DSL versions") {
-		t.Fatalf("list error = %v, want DSL version query error", err)
+	if err != nil || count != 1 || len(logs) != 1 || logs[0].DSL != nil || !strings.Contains(logs[0].DSLResolutionError, "unavailable") {
+		t.Fatalf("list with unavailable DSL store = (%#v, %d, %v)", logs, count, err)
+	}
+
+	detail, err := NewPipelineOperationLogDAO().GetByIDAndKBIDWithDSL(t.Context(), db, log.ID, log.KbID)
+	if err != nil || detail.ID != log.ID || detail.DSL != nil || !strings.Contains(detail.DSLResolutionError, "unavailable") {
+		t.Fatalf("detail with unavailable DSL store = (%#v, %v)", detail, err)
 	}
 }

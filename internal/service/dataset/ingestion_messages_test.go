@@ -163,7 +163,7 @@ func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
 	assertLatestEventMap(t, result, 1, "latest detail")
 }
 
-func TestGetIngestionLogRejectsMissingDSLVersion(t *testing.T) {
+func TestGetIngestionLogKeepsMetadataForMissingDSLVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}, &entity.PipelineDSLVersion{}); err != nil {
@@ -179,8 +179,8 @@ func TestGetIngestionLogRejectsMissingDSLVersion(t *testing.T) {
 	}
 
 	result, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
-	if result != nil || err == nil || code != common.CodeServerError {
-		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want strict DSL resolution error", result, code, err)
+	if err != nil || code != common.CodeSuccess || result["id"] != "run-1" || result["operation_status"] != string(entity.TaskStatusDone) || result["dsl"] != nil || result["dsl_resolution_error"] == "" {
+		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want metadata with unavailable DSL", result, code, err)
 	}
 }
 

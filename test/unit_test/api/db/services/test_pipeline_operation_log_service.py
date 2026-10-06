@@ -17,6 +17,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -244,5 +245,51 @@ def test_resolve_dsl_references_isolates_missing_version(monkeypatch, pol_module
     with pytest.raises(RuntimeError, match="pipeline-1.*@3.*not found"):
         service._resolve_dsl_references(
             [{"id": "broken", "dsl_id": "pipeline-1", "dsl_version": 3, "dsl": {}}],
+            strict=True,
+        )
+
+
+def test_get_by_id_and_kb_id_keeps_metadata_when_dsl_version_is_missing(monkeypatch, pol_module):
+    service = pol_module.PipelineOperationLogService
+    row = {"id": "log-1", "operation_status": "done", "dsl_id": "pipeline-1", "dsl_version": 3, "dsl": {"stale": True}}
+    model = MagicMock()
+    model.select.return_value.where.return_value.dicts.return_value.first.side_effect = lambda: row.copy()
+    monkeypatch.setattr(service, "model", model)
+    monkeypatch.setattr(service, "get_file_logs_fields", classmethod(lambda cls: []))
+    monkeypatch.setattr(service, "_load_dsl_versions", classmethod(lambda cls, references: {}))
+
+    detail = service.get_by_id_and_kb_id("log-1", "kb-1")
+
+    assert detail["id"] == "log-1"
+    assert detail["operation_status"] == "done"
+    assert detail["dsl"] is None
+    assert "not found" in detail["dsl_resolution_error"]
+
+    with pytest.raises(RuntimeError, match="not found"):
+        service.get_by_id_and_kb_id("log-1", "kb-1", strict=True)
+
+
+def test_resolve_dsl_references_keeps_logs_when_version_query_fails(monkeypatch, pol_module, caplog):
+    service = pol_module.PipelineOperationLogService
+
+    def unavailable(cls, references):
+        raise RuntimeError("snapshot store unavailable")
+
+    monkeypatch.setattr(service, "_load_dsl_versions", classmethod(unavailable))
+    logs = [
+        {"id": "referenced", "dsl_id": "pipeline-1", "dsl_version": 1, "dsl": {"stale": True}},
+        {"id": "legacy", "dsl_id": None, "dsl_version": None, "dsl": {"legacy": True}},
+    ]
+
+    resolved = service._resolve_dsl_references(logs)
+
+    assert resolved[0]["dsl"] is None
+    assert "unavailable" in resolved[0]["dsl_resolution_error"]
+    assert resolved[1] == {"id": "legacy", "dsl": {"legacy": True}}
+    assert "snapshot store unavailable" in caplog.text
+
+    with pytest.raises(RuntimeError, match="snapshot store unavailable"):
+        service._resolve_dsl_references(
+            [{"id": "referenced", "dsl_id": "pipeline-1", "dsl_version": 1, "dsl": {}}],
             strict=True,
         )
