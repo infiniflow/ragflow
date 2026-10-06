@@ -41,7 +41,7 @@ const DocumentViewer = () => {
 
   const isHandled =
     Images.includes(ext!) ||
-    ['md', 'mdx', 'txt', 'eml', 'epub', 'pdf', 'xlsx', 'xls', 'csv', 'docx', 'ppt', 'pptx'].includes(
+    ['md', 'mdx', 'txt', 'eml', 'epub', 'pdf', 'xlsx', 'csv', 'docx', 'ppt', 'pptx'].includes(
       ext!,
     );
 
@@ -67,9 +67,7 @@ const DocumentViewer = () => {
       {ext === 'pdf' && (
         <PdfPreview url={api} className="!h-dvh p-5"></PdfPreview>
       )}
-      {(ext === 'xlsx' || ext === 'xls') && (
-        <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>
-      )}
+      {ext === 'xlsx' && <ExcelCsvPreviewer url={api}></ExcelCsvPreviewer>}
       {ext === 'csv' && (
         <section className="m-1">
           <CSVFileViewer url={api} />
