@@ -79,7 +79,7 @@ func TestSDKTransportsAndTools(t *testing.T) {
 			if err != nil || len(tools.Tools) != 3 {
 				t.Fatalf("tools=%v err=%v", tools, err)
 			}
-			if tools.CacheScope != "public" && tools.CacheScope != "private" {
+			if tools.CacheScope != "private" {
 				t.Fatalf("cacheScope=%q", tools.CacheScope)
 			}
 			var expected []*sdk.Tool
