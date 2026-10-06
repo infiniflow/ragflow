@@ -357,7 +357,11 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if !ok {
 			continue
 		}
-		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
+		rawContent := keenableValueString(result["snippet"])
+		if rawContent == "" || rawContent == "None" {
+			rawContent = keenableValueString(result["description"])
+		}
+		content := truncateKeenableRunes(strings.TrimSpace(rawContent), 10000)
 		if content == "" || content == "None" {
 			continue
 		}
