@@ -384,6 +384,34 @@ func TestLangfuseHandler_TenantResolution_NoOwnerReturns400(t *testing.T) {
 	}
 }
 
+// TestLangfuseHandler_TenantResolution_MultipleOwnersReturns400 fails closed
+// rather than choosing an arbitrary tenant when the owner invariant is violated.
+func TestLangfuseHandler_TenantResolution_MultipleOwnersReturns400(t *testing.T) {
+	var serviceCalled bool
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+			serviceCalled = true
+			return nil, common.CodeServerError, "", nil
+		},
+	}, userTenantDAO: stubTenantFinder([]*entity.UserTenant{
+		{UserID: "user-1", TenantID: "tenant-1", Role: "owner"},
+		{UserID: "user-1", TenantID: "tenant-2", Role: "owner"},
+	}, nil)}
+
+	resp := serveLangfuseAs(http.MethodGet, "/api/v1/langfuse/api-key", "", "user-1", h.GetAPIKey)
+
+	if serviceCalled {
+		t.Fatal("service should not be called when multiple owner tenants make resolution ambiguous")
+	}
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", resp.Code)
+	}
+	payload := decode(t, resp)
+	if payload["message"] != "Tenant not found" {
+		t.Fatalf("message=%v, want %q", payload["message"], "Tenant not found")
+	}
+}
+
 // TestLangfuseHandler_TenantResolution_DAOErrorReturns400 locks the
 // DB-error branch from the resolver. The handler must short-circuit with
 // a 400 rather than calling the service. The bug prior to this commit

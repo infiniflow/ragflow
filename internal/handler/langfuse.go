@@ -83,7 +83,7 @@ func NewLangfuse() *LangfuseHandler {
 // providers.go; a user with no owner role cannot manage workspace credentials.
 func (h *LangfuseHandler) resolveLangfuseTenantID(c *gin.Context, user *entity.User) (string, bool) {
 	tenants, err := h.userTenantDAO.GetByUserIDAndRole(c.Request.Context(), dao.DB, user.ID, "owner")
-	if err != nil || len(tenants) == 0 {
+	if err != nil || len(tenants) != 1 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return "", false
 	}
