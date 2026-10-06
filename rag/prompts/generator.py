@@ -144,8 +144,10 @@ def _kb_block(ck, index: int, hash_id: bool = False) -> str | None:
     "skip" (mirrors `if not c: continue`).
     """
     content = get_value(ck, "content", "content_with_weight")
-    if not content:
+    img_id = ck.get("img_id") or ck.get("image_id")
+    if not content and not img_id:
         return None
+    content = content or ""
 
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
@@ -162,6 +164,8 @@ def _kb_block(ck, index: int, hash_id: bool = False) -> str | None:
         cnt += draw_node(k, v)
     cnt += "\n└── Content:\n"
     cnt += content
+    if img_id and f"fig:{img_id}" not in content:
+        cnt += f"\n![Image](fig:{img_id})"
     return cnt
 
 
@@ -183,6 +187,208 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
         used_token_count += block_tokens
         out.append(block)
     return out
+
+
+def shorten_image_tags(knowledges, chunks=None):
+    """Translates long or chunk-specific image identifiers (e.g. fig:p1_f1 or fig:docid_p1_f1)
+    in candidate knowledge text into concise session-level short tags (e.g. fig:1, fig:2),
+    preventing LLMs from hallucinating or truncating long string paths during autoregressive generation.
+
+    Args:
+        knowledges: list of string (chunk content list) or a single str
+        chunks: list of dict (metadata dicts for corresponding chunks, optional)
+
+    Returns:
+        (shortened_knowledges, session_image_map)
+        where session_image_map is {"1": "global_unique_image_id", ...}
+    """
+    tag_to_sess_id = {}
+    session_image_map = {}
+    counter = 1
+
+    pattern = re.compile(r"(?:fig|img):([a-zA-Z0-9_\-\.]+)", flags=re.IGNORECASE)
+
+    def _get_full_id(tag, chunk=None):
+        if chunk and isinstance(chunk, dict):
+            im = chunk.get("image_map") or {}
+            if isinstance(im, str):
+                try:
+                    im = json.loads(im)
+                except Exception:
+                    im = {}
+            if isinstance(im, dict) and tag in im:
+                return im[tag]
+            kb_id = chunk.get("kb_id", "")
+            doc_id = chunk.get("doc_id", "")
+            if tag.isdigit() and int(tag) < 1000:
+                return None
+            if "-" in tag:
+                return tag
+            if doc_id and tag.startswith(f"{doc_id}_"):
+                return f"{kb_id}-{tag}" if kb_id else tag
+            elif doc_id:
+                return f"{kb_id}-{doc_id}_{tag}" if kb_id else f"{doc_id}_{tag}"
+            else:
+                return f"{kb_id}-{tag}" if kb_id else tag
+        return tag
+
+    def _replace_in_text(text, chunk=None):
+        if not text:
+            return text
+
+        def _sub(match):
+            nonlocal counter
+            raw_tag = match.group(1)
+            # If already a small integer tag and NOT in chunk's image_map, keep it
+            im = chunk.get("image_map") or {} if (chunk and isinstance(chunk, dict)) else {}
+            if isinstance(im, str):
+                try:
+                    im = json.loads(im)
+                except Exception:
+                    im = {}
+            if raw_tag.isdigit() and int(raw_tag) < 1000 and (not isinstance(im, dict) or raw_tag not in im):
+                return match.group(0)
+
+            full_id = _get_full_id(raw_tag, chunk) or raw_tag
+            if full_id not in tag_to_sess_id:
+                sess_id = str(counter)
+                tag_to_sess_id[full_id] = sess_id
+                session_image_map[sess_id] = full_id
+                counter += 1
+            return f"fig:{tag_to_sess_id[full_id]}"
+
+        return pattern.sub(_sub, text)
+
+    if isinstance(knowledges, list):
+        shortened = []
+        for i, k in enumerate(knowledges):
+            ck = chunks[i] if (chunks and isinstance(chunks, list) and i < len(chunks)) else None
+            shortened.append(_replace_in_text(k, ck))
+        return shortened, session_image_map
+    elif isinstance(knowledges, str):
+        ck = chunks[0] if (chunks and isinstance(chunks, list) and len(chunks) > 0) else (chunks if isinstance(chunks, dict) else None)
+        shortened = _replace_in_text(knowledges, ck)
+        return shortened, session_image_map
+    return knowledges, session_image_map
+
+
+def restore_image_tags(text: str, session_image_map: dict, url_prefix: str = "/api/v1/documents/images/") -> str:
+    """Restores session-level short image tags in model answers (e.g. fig:1, fig: 1, fig：1, image:1)
+    to standardized image URLs (e.g. /api/v1/documents/images/...) or custom protocol (e.g. fig:...).
+
+    Args:
+        text: LLM generated answer text
+        session_image_map: mapping dict produced by shorten_image_tags {"1": "full_tag", ...}
+        url_prefix: URL prefix for document images, defaults to "/api/v1/documents/images/". Set to "fig:" for raw fig protocol.
+
+    Returns:
+        Answer text with restored image tags/URLs
+    """
+    if not text or not session_image_map:
+        return text
+
+    def _make_url(target: str) -> str:
+        if url_prefix == "fig:":
+            return f"fig:{target}"
+        if target.startswith(("http://", "https://", "/")):
+            if target.startswith("/api/v1/documents/images/") and "?" in url_prefix and "?" not in target:
+                _, query = url_prefix.split("?", 1)
+                return f"{target}?{query}"
+            return target
+        if "?" in url_prefix:
+            prefix, query = url_prefix.split("?", 1)
+            return f"{prefix}{target}?{query}"
+        return f"{url_prefix}{target}"
+
+    # Single-pass regex to replace both markdown image embeds and standalone image references
+    # without ever causing nested ![caption](![Image](url))
+    combined_pattern = re.compile(
+        r"!\[(?P<caption>.*?)\]\((?:(?:fig|figure|image|img)[\.:：\s]*|#)?(?P<md_num>\d+)\)"
+        r"|(?<![!/a-zA-Z0-9_])\b(?:fig|figure|image|img)[\.:：\s]*(?P<raw_num>\d+)\b",
+        flags=re.IGNORECASE,
+    )
+
+    def _replace_combined(match):
+        caption = match.group("caption")
+        num_str = match.group("md_num") or match.group("raw_num")
+        if num_str in session_image_map:
+            target = session_image_map[num_str]
+            url = _make_url(target)
+            if caption is not None:
+                caption = caption.strip() or "Image"
+                return f"![{caption}]({url})"
+            if url_prefix == "fig:":
+                return url
+            return f"![Image]({url})"
+        return match.group(0)
+
+    return combined_pattern.sub(_replace_combined, text)
+
+
+def strip_image_tags(text_or_list):
+    """Cleans all image tags (Markdown images, fig/img tags, and captions)
+    when with_image=False.
+    """
+    def _clean_str(text):
+        if not text:
+            return text
+        text = re.sub(r"(?:配图|附图|插图|图)[:：]\s*!\[.*?\]\([^\)]*\)[ \t]*", "", text)
+        text = re.sub(r"!\[.*?\]\([^\)]*\)[ \t]*", "", text)
+        text = re.sub(r"[\(\[\（【]\s*fig:[a-zA-Z0-9_#-]+\s*[\)\]\）】]", "", text)
+        text = re.sub(r"\bfig:[a-zA-Z0-9_#-]+", "", text)
+        text = re.sub(r"^[ \t]*(?:配图|附图|插图|图)[:：][ \t]*$", "", text, flags=re.MULTILINE)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+    if isinstance(text_or_list, list):
+        return [_clean_str(t) for t in text_or_list]
+    elif isinstance(text_or_list, str):
+        return _clean_str(text_or_list)
+    return text_or_list
+
+
+def clean_chunk_images(chunk):
+    """Cleans chunk image metadata and tags when with_image=False."""
+    if not isinstance(chunk, dict):
+        return chunk
+    for field in ("content_with_weight", "content", "content_ltks"):
+        if chunk.get(field):
+            chunk[field] = strip_image_tags(chunk[field])
+    if isinstance(chunk.get("highlight"), str):
+        chunk["highlight"] = strip_image_tags(chunk["highlight"])
+    elif isinstance(chunk.get("highlight"), dict):
+        for hk, hv in chunk["highlight"].items():
+            if isinstance(hv, str):
+                chunk["highlight"][hk] = strip_image_tags(hv)
+    chunk.pop("image_id", None)
+    chunk.pop("img_id", None)
+    chunk.pop("image_map", None)
+    return chunk
+
+
+def image_citation_instruction() -> str:
+    """Universal guidelines instructing the LLM on how to cite inline images."""
+    return (
+        "# Image Citation & Presentation Guidelines / 图文引用与展示规范：\n"
+        "- **Mandatory Full Inclusion / 全量图文呈现**: Whenever the retrieved context contains images (e.g. `![caption](fig:n)` or `![Image](fig:n)`), you MUST embed and display ALL relevant images in your answer. Do NOT omit or drop any image! 检索内容中凡是带图片的步骤、界面或表格，回答中必须完整嵌入对应图片，严禁遗漏任何一张图片。\n"
+        "- **Step & Interface Embedding / 步骤与界面截图必须配图**: For every operation step, symptom, panel, or screen described in the context that is accompanied by an image, embed the image immediately following that step. NEVER describe the step in text only without embedding its image! 只要知识库步骤处附有图片，回答在该步骤下方必须紧跟着嵌入对应图片，严禁只写文字而不贴图。\n"
+        "- **Sequential & Consecutive Images / 连续画面全量嵌入**: When multiple images appear consecutively within the same operation step or procedure (such as an operation interface followed by a device status/verification screen), embed ALL of them in sequence right after that step with descriptive captions. 同一步骤若包含多张连续截图（如操作面板与监控重载界面），必须全部依次嵌入。\n"
+        "- **Supporting Data & Reference Images / 辅助数据与历史报警参考**: When the context contains supporting images (e.g. historical alarm logs, parameter tables, layout diagrams, or error codes), create a dedicated reference section (e.g. '### 相关历史报警及监控参考') to present and embed them with explanations. 知识库中的历史报警表格或参数图表必须建立参考小节嵌入展示。\n"
+        "- **Embed Syntax / 嵌入语法**: Always embed images using Markdown image syntax `![descriptive caption](fig:n)` directly within the flow of the answer. Do not use plain text labels like 'Fig. 1' or '(fig:1)'. Place each image immediately after the specific item or step it visualizes.\n"
+        "- **Faithfulness & Anti-Hallucination**: ONLY use image tags `fig:n` that explicitly appear in the retrieved context. Do not invent non-existent image tags.\n\n"
+        "## Example of Multi-Image Response / 多图展示示范：\n"
+        "1. **故障处理步骤1**：针对隐裂情况处理：\n"
+        "在屏幕上点击识码失败人工处理按钮直接放行：\n"
+        "![识码失败人工处理放行界面](fig:1) [ID:1]\n\n"
+        "2. **故障处理步骤2**：正常状态手动复位重启：\n"
+        "进入手动操作界面，将设备回原，清空任务，重载BCS并重启打码：\n"
+        "![手动操作及回原面板](fig:2) [ID:1]\n"
+        "![打标机与PLC状态监控界面](fig:3) [ID:1]\n\n"
+        "3. **相关历史报警与监控参考**：\n"
+        "系统历史报警记录排查：\n"
+        "![历史报警记录表](fig:4) [ID:2]"
+    )
+
 
 
 def memory_prompt(message_list, max_tokens):

@@ -710,7 +710,7 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, doc_id=""):
         """Parse a DOCX file into ordered (text, image, table) triples.
 
         Each element is a plain-text paragraph, an image, or an HTML table,
@@ -720,12 +720,22 @@ class Docx(DocxParser):
         pn = 0
         lines = []
         last_image = None
+        last_image_idx = 0
         table_idx = 0
+        p_idx = 0
 
         def flush_last_image():
-            nonlocal last_image, lines
+            nonlocal last_image, last_image_idx, lines
             if last_image is not None:
-                lines.append({"text": "", "image": last_image, "table": None, "style": "Image"})
+                tag = f"{doc_id}_p{last_image_idx}_f1" if doc_id else f"p{last_image_idx}_f1"
+                # If the immediately preceding line is a text paragraph without an image, attach to it
+                if lines and lines[-1].get("text") and not lines[-1].get("table") and not lines[-1].get("image"):
+                    prev = lines[-1]
+                    caption = prev["text"].strip().split("\n")[-1] or "Image"
+                    prev["text"] = f"{prev['text']}\n\n![{caption}](fig:{tag})"
+                    prev["image"] = last_image
+                else:
+                    lines.append({"text": f"![Image](fig:{tag})", "image": last_image, "table": None, "style": "Image"})
                 last_image = None
 
         for block in self.doc._element.body:
@@ -734,6 +744,7 @@ class Docx(DocxParser):
 
             if block.tag.endswith("p"):
                 p = Paragraph(block, self.doc)
+                p_idx += 1
 
                 if from_page <= pn < to_page:
                     text = p.text.strip()
@@ -747,40 +758,62 @@ class Docx(DocxParser):
 
                         elif style_name == "Caption":
                             former_image = None
+                            former_idx = p_idx
 
                             if lines and lines[-1].get("image") and lines[-1].get("style") != "Caption":
                                 former_image = lines[-1].get("image")
+                                former_idx = lines[-1].get("p_idx", p_idx)
                                 lines.pop()
 
                             elif last_image is not None:
                                 former_image = last_image
+                                former_idx = last_image_idx
                                 last_image = None
 
-                            lines.append(
-                                {
-                                    "text": self.__clean(text),
-                                    "image": former_image if former_image else None,
-                                    "table": None,
-                                }
-                            )
+                            clean_text = self.__clean(text)
+                            if former_image:
+                                tag = f"{doc_id}_p{former_idx}_f1" if doc_id else f"p{former_idx}_f1"
+                                lines.append(
+                                    {
+                                        "text": f"{clean_text}\n\n![{clean_text}](fig:{tag})",
+                                        "image": former_image,
+                                        "table": None,
+                                        "style": "Caption",
+                                        "p_idx": p_idx,
+                                    }
+                                )
+                            else:
+                                lines.append(
+                                    {
+                                        "text": clean_text,
+                                        "image": None,
+                                        "table": None,
+                                        "style": "Caption",
+                                        "p_idx": p_idx,
+                                    }
+                                )
 
                         else:
                             flush_last_image()
-                            lines.append(
-                                {
-                                    "text": self.__clean(text),
-                                    "image": None,
-                                    "table": None,
-                                }
-                            )
-
+                            clean_text = self.__clean(text)
                             current_image = self.get_picture(self.doc, p)
                             if current_image is not None:
+                                tag = f"{doc_id}_p{p_idx}_f1" if doc_id else f"p{p_idx}_f1"
                                 lines.append(
                                     {
-                                        "text": "",
+                                        "text": f"{clean_text}\n\n![{clean_text}](fig:{tag})",
                                         "image": current_image,
                                         "table": None,
+                                        "p_idx": p_idx,
+                                    }
+                                )
+                            else:
+                                lines.append(
+                                    {
+                                        "text": clean_text,
+                                        "image": None,
+                                        "table": None,
+                                        "p_idx": p_idx,
                                     }
                                 )
 
@@ -789,6 +822,7 @@ class Docx(DocxParser):
                         if current_image is not None:
                             flush_last_image()
                             last_image = current_image
+                            last_image_idx = p_idx
 
                     # Text boxes are anchored in a paragraph but keep their text out of
                     # `Paragraph.text`; emit each of them as a block of its own.
@@ -1145,7 +1179,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
 
-    doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+    doc = {"doc_id": kwargs.get("doc_id", ""), "kb_id": kwargs.get("kb_id", ""), "docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     pdf_parser = None
@@ -1192,7 +1226,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         _SerializedRelationships.load_from_xml = load_from_xml_v2
 
         # sections = (text, image, tables)
-        sections = Docx()(filename, binary)
+        doc_id = kwargs.get("doc_id", "")
+        sections = Docx()(filename, binary, doc_id=doc_id)
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
 
         # chunks list[dict]

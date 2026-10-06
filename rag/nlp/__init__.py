@@ -425,7 +425,24 @@ def tokenize(d, txt, eng, language="English"):
     rag_tokenizer.tokenizer.set_language(language)
     d["content_with_weight"] = txt
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
-    d["content_ltks"] = rag_tokenizer.tokenize(t)
+
+    def _clean_img(m):
+        cap = m.group(1).strip()
+        return " " if re.match(r"^(?:图|figure|fig|image)?\s*[\d\-_.]+$", cap, re.IGNORECASE) else f" {cap} "
+
+    clean_t = re.sub(r"!\[(.*?)\]\((?:fig:|img:|/v1/document/image/)[^)]+\)", _clean_img, t)
+    if not d.get("img_id"):
+        m = re.search(r"!\[.*?\]\((?:fig:|img:|/v1/document/image/)([^)]+)\)", d.get("content_with_weight", ""))
+        if m:
+            tag = m.group(1)
+            kb = d.get("kb_id", "")
+            doc_id = d.get("doc_id", "")
+            tag_clean = tag[4:] if tag.startswith("fig:") else tag
+            if doc_id and not tag_clean.startswith(f"{doc_id}_") and "-" not in tag_clean:
+                tag_clean = f"{doc_id}_{tag_clean}"
+            d["img_id"] = f"{kb}-{tag_clean}" if kb and not tag_clean.startswith(f"{kb}-") else tag_clean
+
+    d["content_ltks"] = rag_tokenizer.tokenize(clean_t)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
@@ -514,6 +531,14 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
         d = copy.deepcopy(doc)
         if ck.get("image"):
             d["image"] = ck.get("image")
+            if not re.search(r"!\[.*?\]\((?:fig:|img:)[^\)]+\)", text):
+                doc_id = doc.get("doc_id", "")
+                tag = f"{doc_id}_img_{ii}" if doc_id else f"img_{ii}"
+                caption = text.strip()[:60] or "Image"
+                text = f"{text}\n\n![{caption}](fig:{tag})"
+                d.setdefault("images", {})[tag] = ck.get("image")
+        if ck.get("images"):
+            d["images"] = ck.get("images")
         add_positions(d, [[ii] * 5])
 
         if ck.get("ck_type") == "text":
@@ -544,6 +569,17 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
             d["mom_with_weight"] = ck.removeprefix("\n")
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng, language=language))
             continue
+        if image is not None:
+            if not re.search(r"!\[.*?\]\(fig:[^\)]+\)", ck):
+                doc_id = doc.get("doc_id", "")
+                tag = f"{doc_id}_img_{ii}" if doc_id else f"img_{ii}"
+                caption = ck.strip()[:60] or "Image"
+                ck = f"{ck}\n\n![{caption}](fig:{tag})"
+                d["images"] = {tag: image}
+            else:
+                tags = re.findall(r"!\[.*?\]\(fig:([^\)]+)\)", ck)
+                if tags:
+                    d["images"] = {tag: image for tag in tags}
         tokenize(d, ck, eng, language=language)
         res.append(d)
     return res
@@ -551,19 +587,22 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
 
 def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     res = []
+    doc_id = doc.get("doc_id", "")
     # add tables
-    for (img, rows), poss in tbls:
+    for idx_tbl, ((img, rows), poss) in enumerate(tbls):
         if not rows:
             continue
         # Media producers use strings for tables and lists for figures. Keep
         # that contract explicit instead of guessing the type from HTML tags.
         if isinstance(rows, str):
             d = copy.deepcopy(doc)
-            tokenize(d, rows, eng, language=language)
             d["content_with_weight"] = rows
             d["doc_type_kwd"] = "table"
             if img is not None:
                 d["image"] = img
+                tag = f"{doc_id}_t{idx_tbl}_f1" if doc_id else f"t{idx_tbl}_f1"
+                d["images"] = {tag: img}
+            tokenize(d, rows, eng, language=language)
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -573,10 +612,15 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
         for i in range(0, len(rows), batch_size):
             d = copy.deepcopy(doc)
             r = de.join(rows[i : i + batch_size])
+            if img is not None:
+                page = poss[0][0] if poss and len(poss) > 0 and len(poss[0]) > 0 else 0
+                tag = f"{doc_id}_p{page}_f{idx_tbl}_{i}" if doc_id else f"p{page}_f{idx_tbl}_{i}"
+                caption = r.strip()[:60] or "Image"
+                r = f"{r}\n\n![{caption}](fig:{tag})"
+                d["image"] = img
+                d["images"] = {tag: img}
             tokenize(d, r, eng, language=language)
             d["doc_type_kwd"] = "image"
-            if img is not None:
-                d["image"] = img
             add_positions(d, poss)
             res.append(d)
     return res
@@ -1675,18 +1719,24 @@ def _build_cks(sections, delimiter):
         document order and swapping context_above / context_below in
         _add_context() (which decides "above"/"below" by array position).
         """
-        nonlocal seg
+        nonlocal seg, seg_images, seg_image
         if seg and seg.strip():
             s = seg.strip()
-            cks.append(
-                {
-                    "text": s,
-                    "image": None,
-                    "ck_type": "text",
-                    "tk_nums": num_tokens_from_string(s),
-                }
-            )
+            ck_dict = {
+                "text": s,
+                "image": seg_image,
+                "ck_type": "text",
+                "tk_nums": num_tokens_from_string(s),
+            }
+            if seg_images:
+                ck_dict["images"] = dict(seg_images)
+            cks.append(ck_dict)
         seg = ""
+        seg_images = {}
+        seg_image = None
+
+    seg_images = {}
+    seg_image = None
 
     for text, image, table in sections:
         # normalize text: ensure string and prepend newline for continuity
@@ -1712,19 +1762,40 @@ def _build_cks(sections, delimiter):
             continue
 
         if image:
-            # image chunk (text kept as-is for context)
-            _flush_seg()
-            idx = len(cks)
-            cks.append(
-                {
-                    "text": text,
-                    "image": image,
-                    "ck_type": "image",
-                    "tk_nums": num_tokens_from_string(text),
-                }
-            )
-            images.append(idx)
-            continue
+            # Check if this is an inline image with markdown tag
+            fig_tags = re.findall(r"!\[.*?\]\(fig:([^\)]+)\)", text)
+            if fig_tags:
+                # Add to text stream so inline image tags remain part of the text chunks
+                seg = (seg + "\n" + text) if seg else text
+                seg_images.update({tag: image for tag in fig_tags})
+                if not seg_image:
+                    seg_image = image
+                # ALSO emit standalone image chunk for VLM description & image preview
+                idx = len(cks)
+                cks.append(
+                    {
+                        "text": text,
+                        "image": image,
+                        "ck_type": "image",
+                        "tk_nums": num_tokens_from_string(text),
+                    }
+                )
+                images.append(idx)
+                continue
+            else:
+                # Standalone image chunk (text kept as-is for context)
+                _flush_seg()
+                idx = len(cks)
+                cks.append(
+                    {
+                        "text": text,
+                        "image": image,
+                        "ck_type": "image",
+                        "tk_nums": num_tokens_from_string(text),
+                    }
+                )
+                images.append(idx)
+                continue
 
         # pure text chunk(s) — split on every parsed delimiter when present
         if split_pattern:
@@ -1736,32 +1807,12 @@ def _build_cks(sections, delimiter):
                 # ① matched delimiter (exact capture; do not strip — wrapped
                 # whitespace delimiters such as `` ` ` `` or `\n` must match here)
                 if re.fullmatch(split_pattern, sub_sec):
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    _flush_seg()
                     continue
 
                 # ② empty or whitespace-only ordinary segment → flush current buffer
                 if not sub_sec.strip():
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    _flush_seg()
                     continue
 
                 # ③ normal text content → accumulate
@@ -1890,6 +1941,15 @@ def _merge_cks(cks, chunk_token_num, has_custom):
 
         merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + (cks[i].get("text") or "")
         merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + cks[i].get("tk_nums", 0)
+
+        prev_images = merged[prev_text_ck].get("images") or {}
+        new_images = cks[i].get("images") or {}
+        if prev_images or new_images or cks[i].get("image") or merged[prev_text_ck].get("image"):
+            combined_images = dict(prev_images)
+            combined_images.update(new_images)
+            merged[prev_text_ck]["images"] = combined_images
+            if not merged[prev_text_ck].get("image"):
+                merged[prev_text_ck]["image"] = cks[i].get("image") or (next(iter(combined_images.values())) if combined_images else None)
 
     return merged, image_idxs
 

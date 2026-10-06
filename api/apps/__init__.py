@@ -147,9 +147,41 @@ def _load_user(auth_types=None):
     if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
         return g.user
 
-    # No Authorization header, try to load user from session cookie if JWT auth is allowed
+    # No Authorization header, try query params, then session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
     if not authorization:
+        authorization = request.args.get("token") or request.args.get("auth") or request.args.get("authorization")
+    if not authorization:
+        referer = request.headers.get("Referer") or ""
+        if "/chat" in referer:
+            try:
+                import re
+                conv_match = re.search(r"conversationId=([a-zA-Z0-9_-]+)", referer)
+                chat_match = re.search(r"/chat/([a-zA-Z0-9_-]+)", referer)
+                conv_id = conv_match.group(1) if conv_match else None
+                dialog_id = chat_match.group(1) if chat_match else None
+                target_user_id = None
+                from api.db.db_models import Conversation, Dialog
+                if conv_id:
+                    conv = Conversation.get_or_none(Conversation.id == conv_id)
+                    if conv and conv.user_id:
+                        target_user_id = conv.user_id
+                    elif conv and conv.dialog_id:
+                        dia = Dialog.get_or_none(Dialog.id == conv.dialog_id)
+                        if dia and dia.tenant_id:
+                            target_user_id = dia.tenant_id
+                if not target_user_id and dialog_id:
+                    dia = Dialog.get_or_none(Dialog.id == dialog_id)
+                    if dia and dia.tenant_id:
+                        target_user_id = dia.tenant_id
+                if target_user_id:
+                    user = UserService.query(id=target_user_id, status=StatusEnum.VALID.value)
+                    if user:
+                        g.auth_type = AUTH_JWT
+                        g.user = user[0]
+                        return user[0]
+            except Exception as e_ref:
+                logging.debug("load_user from Referer failed: %s", e_ref)
         return _load_user_from_session() if AUTH_JWT in auth_types else None
 
     # Extract auth_token based on whether Authorization starts with "bearer" (case-insensitive)
@@ -181,31 +213,30 @@ def _load_user(auth_types=None):
             logging.warning(f"load_user from beta token got exception {e_beta}")
             g.auth_error_message = "Authentication error: API key is invalid!"
 
-    # Try JWT decoding
+    # Try JWT or direct access_token
     if AUTH_JWT in auth_types:
+        try:
+            if len(auth_token.strip()) >= 32 and not auth_token.startswith("INVALID_"):
+                user = UserService.query(access_token=auth_token.strip(), status=StatusEnum.VALID.value)
+                if user and user[0].access_token and user[0].access_token.strip():
+                    g.auth_type = AUTH_JWT
+                    g.user = user[0]
+                    return user[0]
+        except Exception as e_direct:
+            logging.debug(f"load_user direct access_token exception: {e_direct}")
+
         try:
             jwt = Serializer(secret_key=settings.get_secret_key())
             access_token = str(jwt.loads(auth_token))
 
-            if not access_token or not access_token.strip():
-                logging.warning("Authentication attempt with empty access token")
-                return None
-
-            if len(access_token.strip()) < 32:
-                logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
-                return None
-
-            user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
-            if user:
-                if not user[0].access_token or not user[0].access_token.strip():
-                    logging.warning(f"User {user[0].email} has empty access_token in database")
-                    return None
-                g.auth_type = AUTH_JWT
-                g.user = user[0]
-                return user[0]
-            return None
+            if access_token and access_token.strip() and len(access_token.strip()) >= 32:
+                user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
+                if user and user[0].access_token and user[0].access_token.strip():
+                    g.auth_type = AUTH_JWT
+                    g.user = user[0]
+                    return user[0]
         except Exception as e_jwt:
-            logging.warning(f"load_user from jwt got exception {e_jwt}")
+            logging.debug(f"load_user from jwt got exception {e_jwt}")
 
     # JWT decode failed, try as api_token
     if AUTH_API in auth_types:

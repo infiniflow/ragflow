@@ -1258,6 +1258,14 @@ async def session_completion(chat_id_in_arg=""):
     chat_model_id = req.pop("llm_id", "")
 
     chat_model_config = pop_generation_config(req)
+    auth_header = request.headers.get("Authorization")
+    user_token = ""
+    if auth_header:
+        user_token = auth_header.split(maxsplit=1)[1] if auth_header[:7].lower() == "bearer " else auth_header
+    if not user_token and current_user and getattr(current_user, "access_token", None):
+        user_token = current_user.access_token
+    if user_token:
+        req["auth_token"] = user_token
 
     try:
         conv = None

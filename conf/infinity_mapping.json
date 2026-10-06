@@ -7,6 +7,7 @@
 	"create_time": {"type": "varchar", "default": ""},
 	"create_timestamp_flt": {"type": "float", "default": 0.0},
 	"img_id": {"type": "varchar", "default": ""},
+	"image_map": {"type": "json", "default": "{}", "enabled": false},
 	"docnm": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "docnm_kwd, title_tks, title_sm_tks"},
 	"name": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"name_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

@@ -47,8 +47,23 @@ from common.text_utils import normalize_arabic_digits
 from rag.advanced_rag.knowlege_compile.mind_map_extractor import MindMapExtractor
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
+from rag.prompts.generator import (
+    chunks_format,
+    citation_prompt,
+    cross_languages,
+    full_question,
+    kb_prompt,
+    keyword_extraction,
+    message_fit_in,
+    PROMPT_JINJA_ENV,
+    ASK_SUMMARY,
+    shorten_image_tags,
+    restore_image_tags,
+    strip_image_tags,
+    clean_chunk_images,
+    image_citation_instruction,
+)
 from rag.utils.web_search_conn import create_web_search_provider, has_web_search_provider
 from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
@@ -796,7 +811,52 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
         _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
+    with_image = kwargs.get("with_image")
+    if with_image is None:
+        with_image = prompt_config.get("with_image", True)
+    if isinstance(with_image, str):
+        with_image = with_image.lower() in ("true", "1", "yes")
+
+    image_protocol = kwargs.get("image_protocol")
+    if not image_protocol:
+        image_protocol = prompt_config.get("image_protocol", "url")
+    url_prefix = "fig:" if image_protocol == "fig" else "/api/v1/documents/images/"
+    if url_prefix != "fig:":
+        auth_token = kwargs.get("auth_token") or kwargs.get("user_token")
+        if not auth_token:
+            try:
+                from quart import request
+                auth_header = request.headers.get("Authorization") if request else None
+                if auth_header:
+                    auth_token = auth_header.split(maxsplit=1)[1] if auth_header[:7].lower() == "bearer " else auth_header
+            except Exception:
+                pass
+        if not auth_token and dialog and hasattr(dialog, "tenant_id"):
+            try:
+                from api.db.services.user_service import UserService
+                users = UserService.query(id=dialog.tenant_id)
+                if users and users[0].access_token:
+                    auth_token = users[0].access_token
+            except Exception:
+                pass
+        if auth_token:
+            url_prefix = f"/api/v1/documents/images/?token={auth_token}"
+
     knowledges = kb_prompt(kbinfos, max_tokens)
+    session_image_map = {}
+    if with_image:
+        if knowledges:
+            knowledges, session_image_map = shorten_image_tags(knowledges, kbinfos.get("chunks", []))
+            if session_image_map:
+                logging.debug("[IMAGE_PROXY] Generated session image tag map (%d images)", len(session_image_map))
+    else:
+        if knowledges:
+            knowledges = strip_image_tags(knowledges)
+        # Note: Do NOT clean chunk images from kbinfos['chunks']!
+        # with_image only controls inline images in the generated answer text;
+        # reference chunk hover cards and document drawer must keep their images.
+        session_image_map = {}
+        logging.debug("[IMAGE_PROXY] with_image is False, stripped image tags from LLM knowledge but kept reference chunk images")
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
@@ -830,10 +890,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # placeholder, auto-append it so the LLM still sees the context.
     if knowledges and "{knowledge}" not in prompt_config.get("system", ""):
         system_content += kwargs["knowledge"]
-    msg = [{"role": "system", "content": system_content}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
+    if session_image_map:
+        prompt4citation += ("\n\n" if prompt4citation else "") + image_citation_instruction()
+    if prompt4citation:
+        system_content += "\n\n" + prompt4citation
+
+    msg = [{"role": "system", "content": system_content}]
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
     if text_attachments_content and msg:
         msg[-1]["content"] += text_attachments_content
@@ -853,7 +918,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
     async def decorate_answer(answer):
-        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation
+        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation, session_image_map, with_image, url_prefix
 
         refs = []
         ans = answer.split("</think>")
@@ -861,6 +926,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
+
+        if session_image_map:
+            answer = restore_image_tags(answer, session_image_map, url_prefix=url_prefix)
+
+        if not with_image:
+            answer = strip_image_tags(answer)
 
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             idx = set([])
@@ -962,17 +1033,49 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if stream:
         if llm_model_config["model_type"] == "chat":
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf)
+            stream_iter = chat_mdl.async_chat_streamly_delta(prompt, msg[1:], gen_conf)
         else:
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
+            stream_iter = chat_mdl.async_chat_streamly_delta(prompt, msg[1:], gen_conf, images=image_files)
         last_state = None
+        accumulated_text = ""
+        emitted_len = 0
+
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             last_state = state
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
                 continue
-            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+
+            if not with_image:
+                clean_val = strip_image_tags(value)
+                if clean_val:
+                    yield {"answer": clean_val, "reference": {}, "audio_binary": tts(tts_mdl, clean_val), "final": False}
+                continue
+
+            if session_image_map:
+                accumulated_text += value
+                restored = restore_image_tags(accumulated_text, session_image_map, url_prefix=url_prefix)
+                # Hold back any trailing incomplete image reference so a multi-digit
+                # tag (e.g. "fig:12") split across deltas is never emitted prematurely.
+                m = re.search(
+                    r"(?:(?:\b|[(\[（{])(?:fig|image|img)[:：\s]*\d*|!\[[^\]]*\]\([^)]*)\s*$",
+                    restored,
+                    re.IGNORECASE,
+                )
+                safe_len = m.start() if m else len(restored)
+                if safe_len > emitted_len:
+                    delta = restored[emitted_len:safe_len]
+                    emitted_len = safe_len
+                    yield {"answer": delta, "reference": {}, "audio_binary": tts(tts_mdl, delta), "final": False}
+            else:
+                yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+
+        if with_image and session_image_map and accumulated_text:
+            restored = restore_image_tags(accumulated_text, session_image_map, url_prefix=url_prefix)
+            if len(restored) > emitted_len:
+                delta = restored[emitted_len:]
+                yield {"answer": delta, "reference": {}, "audio_binary": tts(tts_mdl, delta), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
@@ -982,9 +1085,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
-            answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
+            answer = await chat_mdl.async_chat(prompt, msg[1:], gen_conf)
         else:
-            answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
+            answer = await chat_mdl.async_chat(prompt, msg[1:], gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = await decorate_answer(answer)
@@ -1575,6 +1678,11 @@ def clean_tts_text(text: str) -> str:
     # Strip XML/SSML/HTML-like tags so the TTS engine does not hang on
     # unclosed or unknown markup (e.g. <abc> in empty_response).
     text = re.sub(r"<[^>]*>", "", text)
+
+    # Strip markdown images and image URLs so TTS does not read URLs or image tags aloud.
+    text = re.sub(r"!\[.*?\]\([^\)]*\)", "", text)
+    text = re.sub(r"(?:/api)?/v1/documents?/images?/[a-zA-Z0-9_\-\.]+", "", text)
+    text = re.sub(r"(?:fig|image|img)[:：]\s*[a-zA-Z0-9_\-\.]+", "", text, flags=re.IGNORECASE)
 
     text = re.sub(r"\s+", " ", text).strip()
 

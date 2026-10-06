@@ -15,6 +15,7 @@
 #
 import logging
 import random
+import re
 from datetime import datetime
 from time import monotonic
 
@@ -1034,7 +1035,13 @@ class DocumentService(CommonService):
         if not e:
             return None
 
-        filters = {"img_id": image_id}
+        target_keys = [image_id]
+        if "-" in image_id:
+            target_keys.append(image_id.split("-", 1)[1])
+        else:
+            target_keys.append(f"{kb_id}-{image_id}")
+
+        filters = {"img_id": target_keys}
         if doc_id:
             filters["doc_id"] = doc_id
         try:
@@ -1055,8 +1062,26 @@ class DocumentService(CommonService):
             return None
 
         for row in (rows or {}).values():
-            if row.get("img_id") == image_id and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
+            if row.get("img_id") in target_keys and row.get("doc_id") and (not doc_id or row["doc_id"] == doc_id):
                 return row["doc_id"]
+
+        # Multimodal inline image fallback:
+        # Decoupled images in chunks use composite keys like {kb_id}-{chunk_id}_{tag} or {chunk_id}_{tag}.
+        # Resolve the parent chunk to verify document ownership.
+        target_name = image_id.split("-", 1)[1] if "-" in image_id else image_id
+        candidate_id = target_name.split("_")[0] if "_" in target_name else target_name
+        # Defensive guard: candidate_id must be a valid alphanumeric/uuid string with sufficient length (>= 8 chars)
+        if candidate_id and re.match(r"^[a-zA-Z0-9_\-]{8,64}$", candidate_id):
+            e, d = cls.get_by_id(candidate_id)
+            if e and d.kb_id == kb_id and (not doc_id or d.id == doc_id):
+                return d.id
+            try:
+                chunk = settings.docStoreConn.get(candidate_id, search.index_name(kb.tenant_id), [kb_id])
+                if chunk and chunk.get("doc_id") and (not doc_id or chunk["doc_id"] == doc_id):
+                    return chunk["doc_id"]
+            except Exception:
+                pass
+
         return None
 
     @classmethod

@@ -26,7 +26,9 @@ This module orchestrates the chunk building pipeline by delegating to:
 
 import asyncio
 import copy
+import json
 import logging
+import re
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
@@ -242,17 +244,57 @@ class ChunkService:
                 d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
                 d["create_timestamp_flt"] = datetime.now().timestamp()
 
+                content_text = d.get("content_with_weight", "")
+                image_map = {}
+                kb_id = str(ctx.kb_id or "")
+                doc_id = str(ctx.doc_id or "")
+                for m in re.finditer(r"!\[.*?\]\((?:fig:|img:|/v1/document/image/)?([a-zA-Z0-9_\-\.]+)\)", content_text):
+                    tag = m.group(1)
+                    tag_clean = tag[4:] if tag.startswith("fig:") else tag
+                    if kb_id and tag_clean.startswith(f"{kb_id}-"):
+                        full_id = tag_clean
+                    elif doc_id and tag_clean.startswith(f"{doc_id}_"):
+                        full_id = f"{kb_id}-{tag_clean}" if kb_id else tag_clean
+                    else:
+                        full_id = f"{kb_id}-{doc_id}_{tag_clean}" if kb_id and doc_id else (f"{doc_id}_{tag_clean}" if doc_id else tag_clean)
+                    image_map[tag_clean] = full_id
+                if image_map:
+                    d["image_map"] = json.dumps(image_map)
+
+                # Multimodal inline image support: upload all images bound to this chunk
+                images_to_upload = {}
+                if isinstance(d.get("images"), dict):
+                    images_to_upload.update(d.pop("images"))
+                elif d.get("image") and image_map:
+                    first_tag = next(iter(image_map.keys()))
+                    images_to_upload[first_tag] = d.pop("image")
+
+                for tag_key, img_val in images_to_upload.items():
+                    if img_val:
+                        temp_d = {"image": img_val}
+                        await image2id(temp_d, partial(settings.STORAGE_IMPL.put, tenant_id=ctx.tenant_id), tag_key, ctx.kb_id)
+                        if tag_key in image_map:
+                            d["img_id"] = image_map[tag_key]
+                        elif temp_d.get("img_id"):
+                            d["img_id"] = temp_d["img_id"]
+
+                d.pop("images", None)
+
                 if d.get("img_id"):
-                    docs.append(d)
-                    return
+                    clean_id = d["img_id"]
+                    if ctx.kb_id and not clean_id.startswith(f"{ctx.kb_id}-"):
+                        d["img_id"] = f"{ctx.kb_id}-{clean_id}"
+                else:
+                    if not d.get("image"):
+                        _ = d.pop("image", None)
+                        d.setdefault("img_id", "")
+                        docs.append(d)
+                        return
+                    await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=ctx.tenant_id), d["id"], ctx.kb_id)
 
-                if not d.get("image"):
-                    _ = d.pop("image", None)
-                    d["img_id"] = ""
-                    docs.append(d)
-                    return
-
-                await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=ctx.tenant_id), d["id"], ctx.kb_id)
+                if not isinstance(d.get("image"), bytes) and hasattr(d.get("image"), "close"):
+                    d["image"].close()
+                d.pop("image", None)
                 docs.append(d)
             except Exception:
                 logging.exception("Saving image of chunk {}/{}/{} got exception".format(ctx.location, ctx.name, d["id"]))
