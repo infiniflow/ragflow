@@ -158,9 +158,9 @@ func TestArtifactGraph_InvalidTopNArgError(t *testing.T) {
 
 // TestArtifactGraph_MissingTopNReachesService verifies that omitting top_n
 // does not trigger the new validation: the request must pass through to the
-// service layer. We don't have a real Elasticsearch here, so the call is
-// expected to fail with a service-side error (CodeDataError) — but never with
-// CodeArgumentError, which would mean the validation fired on empty input.
+// service layer, which fails on the uninitialized document engine with
+// CodeDataError — never with CodeArgumentError, which would mean the
+// validation fired on empty input.
 func TestArtifactGraph_MissingTopNReachesService(t *testing.T) {
 	db := setupArtifactGraphDB(t)
 	const kbID = "22222222222242228222222222222222"
@@ -170,8 +170,8 @@ func TestArtifactGraph_MissingTopNReachesService(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status=%d want 200, body=%+v", status, body)
 	}
-	if body.Code == int(common.CodeArgumentError) {
-		t.Fatalf("missing top_n must not surface as CodeArgumentError; got message=%q",
-			body.Message)
+	if body.Code != int(common.CodeDataError) {
+		t.Fatalf("missing top_n must reach the service and return CodeDataError; got code=%d message=%q",
+			body.Code, body.Message)
 	}
 }
