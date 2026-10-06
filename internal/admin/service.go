@@ -1331,10 +1331,21 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {
-	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
+	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* and ADMIN_DEFAULT_PASSWORD defaults)
 	defaultNickname := "admin"
+	if nick := common.GetEnv(common.EnvDefaultSuperuserNickname); nick != "" {
+		defaultNickname = nick
+	}
 	defaultEmail := "admin@ragflow.io"
+	if email := common.GetEnv(common.EnvDefaultSuperuserEmail); email != "" {
+		defaultEmail = email
+	}
 	defaultPassword := "admin"
+	if pwd := common.GetEnv(common.EnvDefaultSuperuserPassword); pwd != "" {
+		defaultPassword = pwd
+	} else if pwd := common.GetEnv(common.EnvAdminDefaultPassword); pwd != "" {
+		defaultPassword = pwd
+	}
 
 	// Query superusers
 	var users []*entity.User
