@@ -1,0 +1,105 @@
+# Code ownership for RAGFlow.
+#
+# Each line is:  <pattern> <owner> [owner ...]
+# Order matters — the LAST matching pattern wins, so keep general rules on top
+# and progressively more specific rules below.
+# Owners must be GitHub users or teams with write access to this repository.
+
+# ---------------------------------------------------------------------------
+# Default: everything not matched below goes to the repo lead.
+# ---------------------------------------------------------------------------
+*                                   @JinHai-CN
+
+# ---------------------------------------------------------------------------
+# Go backend — core plumbing
+# ---------------------------------------------------------------------------
+/cmd/                               @JinHai-CN
+/internal/server/                   @JinHai-CN
+/internal/router/                   @JinHai-CN
+/internal/common/                   @JinHai-CN
+/internal/utility/                  @JinHai-CN
+/internal/storage/                  @qinling0210
+/internal/entity/                   @JinHai-CN @qinling0210
+/internal/dao/                      @JinHai-CN @Lynn-Inf
+/internal/service/                  @qinling0210 @JinHai-CN
+/internal/handler/                  @wangq8 @JinHai-CN
+/internal/admin/                    @JinHai-CN
+/internal/cli/                      @JinHai-CN @qinling0210
+/internal/binding/                  @JinHai-CN @xugangqiang
+/internal/tokenizer/                @xugangqiang
+
+# ---------------------------------------------------------------------------
+# Ingestion / parsing / DeepDoc
+# ---------------------------------------------------------------------------
+/internal/ingestion/                @xugangqiang @yuzhichang
+/internal/parser/                   @xugangqiang @yuzhichang
+/internal/deepdoc/                  @xugangqiang
+
+# ---------------------------------------------------------------------------
+# Retrieval / engine / RAG
+# ---------------------------------------------------------------------------
+/internal/engine/                   @qinling0210 @xugangqiang
+/internal/rag/                      @qinling0210
+/internal/agentic_rag/              @qinling0210 @yuzhichang
+
+# ---------------------------------------------------------------------------
+# Agent runtime
+# ---------------------------------------------------------------------------
+/internal/agent/                    @yuzhichang @qinling0210
+/internal/harness/                  @yuzhichang @qinling0210
+
+# ---------------------------------------------------------------------------
+# Sync / channels / MCP  (data-source integrations)
+# ---------------------------------------------------------------------------
+/internal/syncer/                   @yuzhichang @wangq8
+/internal/channels/                 @wangq8 @yuzhichang
+/internal/mcp/                      @wangq8 @yuzhichang
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+/web/                               @cike8899 @wangq8
+
+# ---------------------------------------------------------------------------
+# Config / model definitions
+# ---------------------------------------------------------------------------
+/conf/                              @Lynn-Inf @JinHai-CN
+
+# ---------------------------------------------------------------------------
+# SDK / tooling / dependency preparation
+# ---------------------------------------------------------------------------
+/sdk/                               @yuzhichang
+/tools/                             @yuzhichang @xugangqiang
+/scripts/                           @xugangqiang
+/ragflow_deps/                      @xugangqiang
+/example/                           @yuzhichang
+
+# ---------------------------------------------------------------------------
+# Build / packaging / CI
+# ---------------------------------------------------------------------------
+/build.sh                           @yuzhichang @xugangqiang
+/Dockerfile*                        @yuzhichang @xugangqiang
+/docker/                            @yuzhichang
+/.github/                           @JinHai-CN @xugangqiang @yuzhichang
+/.github/CODEOWNERS                 @JinHai-CN
+/lefthook.yml                       @cike8899
+/codecov.yml                        @xugangqiang
+/go.mod                             @JinHai-CN @qinling0210
+/go.sum                             @JinHai-CN @qinling0210
+
+# ---------------------------------------------------------------------------
+# Docs
+# ---------------------------------------------------------------------------
+/docs/                              @wangq8
+/README*.md                         @wangq8
+/AGENTS.md                          @JinHai-CN
+
+# ---------------------------------------------------------------------------
+# Legacy Python (pending removal per AGENTS.md — do not extend)
+# ---------------------------------------------------------------------------
+/api/                               @Lynn-Inf @wangq8
+/rag/                               @Lynn-Inf @qinling0210
+/deepdoc/                           @xugangqiang
+/agent/                             @yuzhichang
+/test/                              @Lynn-Inf
+/pyproject.toml                     @Lynn-Inf
