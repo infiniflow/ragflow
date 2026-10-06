@@ -665,10 +665,10 @@ func TestRetrieveYouComWebSearchRejectsErrorStatuses(t *testing.T) {
 	}
 }
 
-// Brave, Exa, Firecrawl, Linkup and Parallel all authenticate with a key and
-// ship no keyless path, so selecting one without a key must leave web search
-// unconfigured rather than silently degrade. (Exa has a free tier, but the key
-// is still mandatory — see its own test.)
+// TestResolveWebSearchProviderSelectsKeyedProviders asserts that Brave, Exa, Firecrawl,
+// Linkup and Parallel all authenticate with a key and ship no keyless path, so
+// selecting one without a key must leave web search unconfigured rather than silently
+// degrade. (Exa has a free tier, but the key is still mandatory — see its own test.)
 func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 	cases := []struct {
 		provider   string
