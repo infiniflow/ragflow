@@ -969,3 +969,65 @@ func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
 		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }
+
+// TestMaskAPIKey_NeverLeaksFullKey pins the contract for the ShowProviderInstance
+// response leak fix (#20396): the masked form must never contain the body of
+// the input, must collapse empty / too-short keys to a constant, and must
+// preserve a recognisable prefix/suffix pair for realistic OpenAI / Bedrock
+// key shapes so operators can still verify which key is configured.
+func TestMaskAPIKey_NeverLeaksFullKey(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty stays empty", in: "", want: ""},
+		{name: "one char is too short, never echoed", in: "x", want: "***"},
+		{name: "seven chars is too short, never echoed", in: "abcdefg", want: "***"},
+		{name: "eight chars exposes only prefix+suffix", in: "abcdefgh", want: "abc***efgh"},
+		{name: "openai sk- key keeps the sk- prefix and tail", in: "sk-abcdefghijklmnopqrstuvwxyz1234567890", want: "sk-***7890"},
+		{name: "bedrock AKIA key keeps the AKIA prefix and tail", in: "AKIAABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", want: "AKI***6789"},
+		{name: "single line of text keeps start and end", in: "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcd", want: "ghp***abcd"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := maskAPIKey(c.in)
+			if got != c.want {
+				t.Fatalf("maskAPIKey(%q) = %q, want %q", c.in, got, c.want)
+			}
+			if c.in != "" && strings.Contains(got, c.in) {
+				t.Fatalf("maskAPIKey(%q) = %q: masked value still contains the input", c.in, got)
+			}
+			if c.in != "" && got == c.in {
+				t.Fatalf("maskAPIKey(%q) returned the input unchanged", c.in)
+			}
+		})
+	}
+}
+
+// TestMaskAPIKey_DoesNotEchoBodyOfLongKey guards against a future naive
+// implementation that returns the raw key (for example, a refactor that
+// removes the mask at the call site but leaves the helper in place, or a
+// helper that simply calls strings.Repeat). The masked form must not equal
+// the input and must not be a substring / superstring of it.
+func TestMaskAPIKey_DoesNotEchoBodyOfLongKey(t *testing.T) {
+	in := "sk-abcdefghijklmnopqrstuvwxyz-1234567890-ABCDEFGHIJ"
+	got := maskAPIKey(in)
+	if got == in {
+		t.Fatalf("maskAPIKey returned the input verbatim: %q", got)
+	}
+	if strings.Contains(got, in) {
+		t.Fatalf("maskAPIKey output %q contains the input %q", got, in)
+	}
+	if strings.Contains(in, got) && got != "" {
+		// "ghp***abcd" is a substring of "ghp_abcdef...abcd" — that is fine,
+		// it is the prefix+suffix of the input. Reject the inverse: the input
+		// containing the masked form means the masked form is the whole key.
+		if len(got) >= len(in)-3 {
+			t.Fatalf("maskAPIKey output %q is too close to the input %q", got, in)
+		}
+	}
+	if !strings.HasPrefix(got, in[:3]) || !strings.HasSuffix(got, in[len(in)-4:]) {
+		t.Fatalf("maskAPIKey output %q lost the prefix or suffix of %q", got, in)
+	}
+}

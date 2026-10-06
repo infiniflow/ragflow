@@ -39,6 +39,25 @@ import (
 // repaired by retrying the same task.
 var errModelConfigUnavailable = errors.New("model configuration unavailable")
 
+// maskAPIKey returns a non-reversible display form of an API key: the first
+// three characters, the literal "***", and the last four characters. Keys
+// too short to safely expose even a prefix or suffix collapse to the
+// constant "***". Empty input is left empty so the JSON field stays
+// distinguishable from a real-but-masked key.
+//
+// The mask is deterministic on purpose: the existing frontend display logic
+// already masks before rendering, and the field name in the response is
+// unchanged, so the contract for callers is preserved.
+func maskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 7 {
+		return "***"
+	}
+	return key[:3] + "***" + key[len(key)-4:]
+}
+
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -689,7 +708,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"provider_id":   provider.ID,
 		"region":        extraFields["region"],
 		"base_url":      extraFields["base_url"],
-		"api_key":       instance.APIKey,
+		"api_key":       maskAPIKey(instance.APIKey),
 		"status":        instance.Status,
 	}
 
