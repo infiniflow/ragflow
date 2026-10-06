@@ -37,15 +37,8 @@ type APIKeyResponse struct {
 	UpdateDate *time.Time `json:"update_date,omitempty"`
 }
 
-// maskAPIToken returns a non-reversible display form of an API token: the
-// first four characters, the literal "***", and the last four characters.
-// Tokens too short to safely expose any prefix or suffix collapse to the
-// constant "***". Empty input is left empty so the JSON field stays
-// distinguishable from a real-but-masked token.
-//
-// The shape mirrors maskAPIKey in model_service.go (cycle 96) so the
-// display contract for every masked credential in this service is the same
-// — same prefix length, same suffix length, same overflow rule.
+// maskAPIToken formats a token for display using its first and last four characters.
+// Empty tokens stay empty; tokens shorter than eight characters become "***".
 func maskAPIToken(token string) string {
 	if token == "" {
 		return ""
