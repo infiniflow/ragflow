@@ -322,6 +322,9 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
                 <br />
                 {error}
               </p>
+              <a href={url} className="text-accent-primary underline mt-4 inline-block">
+                Download file
+              </a>
             </div>
           </div>
         )}
