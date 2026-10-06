@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -1329,18 +1331,102 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	return UpdateServer(message.ServerName, status)
 }
 
-// defaultSuperuserPassword is the password InitDefaultAdmin stores for the
-// first superuser. DEFAULT_SUPERUSER_PASSWORD is canonical.
-// ADMIN_DEFAULT_PASSWORD (docker/.env) is accepted when the canonical name
-// is unset. When both are unset, the historical default "admin" is kept.
-func defaultSuperuserPassword() string {
+// adminBootstrapPasswordFile is where a generated first-superuser password is
+// stored when neither DEFAULT_SUPERUSER_PASSWORD nor ADMIN_DEFAULT_PASSWORD
+// is set. docker/.env documents this path on the container logs volume.
+const adminBootstrapPasswordFile = "logs/admin_bootstrap_password.txt"
+
+// configuredSuperuserPassword reads the password for a new superuser.
+// DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is used
+// when the canonical name is empty. The boolean is false when both are empty.
+func configuredSuperuserPassword() (string, bool) {
 	if password := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword)); password != "" {
-		return password
+		return password, true
 	}
 	if password := strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword)); password != "" {
-		return password
+		return password, true
 	}
-	return "admin"
+	return "", false
+}
+
+// superuserPasswordForNewAdmin returns the configured password, or a generated
+// password written once to adminBootstrapPasswordFile. It does not fall back
+// to a public default. A write failure refuses creation of the first superuser.
+func superuserPasswordForNewAdmin() (string, error) {
+	if password, ok := configuredSuperuserPassword(); ok {
+		return password, nil
+	}
+	password, err := bootstrapSuperuserPassword(adminBootstrapPasswordFile)
+	if err != nil {
+		return "", fmt.Errorf("refuse to create the first superuser: %w", err)
+	}
+	return password, nil
+}
+
+func bootstrapSuperuserPassword(path string) (string, error) {
+	existing, err := readBootstrapPassword(path)
+	if err != nil {
+		return "", err
+	}
+	if existing != "" {
+		return existing, nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("replace empty bootstrap password file: %w", err)
+	}
+
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate bootstrap password: %w", err)
+	}
+	password := hex.EncodeToString(buf)
+	if err := writeBootstrapPassword(path, password); err != nil {
+		if stored, readErr := readBootstrapPassword(path); readErr == nil && stored != "" {
+			return stored, nil
+		}
+		return "", err
+	}
+	common.Info("Wrote generated superuser password", zap.String("file", path))
+	return password, nil
+}
+
+func readBootstrapPassword(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read bootstrap password: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func writeBootstrapPassword(path, password string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create bootstrap password directory: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	remove := true
+	defer func() {
+		_ = file.Close()
+		if remove {
+			_ = os.Remove(path)
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return fmt.Errorf("restrict bootstrap password file: %w", err)
+	}
+	if _, err := file.WriteString(password + "\n"); err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	remove = false
+	return nil
 }
 
 // InitDefaultAdmin initialize default admin user
@@ -1349,7 +1435,6 @@ func (s *Service) InitDefaultAdmin() error {
 	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
 	defaultNickname := "admin"
 	defaultEmail := "admin@ragflow.io"
-	defaultPassword := defaultSuperuserPassword()
 
 	// Query superusers
 	var users []*entity.User
@@ -1359,6 +1444,11 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
+		defaultPassword, err := superuserPasswordForNewAdmin()
+		if err != nil {
+			return err
+		}
+
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
