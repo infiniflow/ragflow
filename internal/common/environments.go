@@ -68,6 +68,7 @@ const (
 	EnvRAGFlowTTSCacheTTLSeconds         = "RAGFLOW_TTS_CACHE_TTL_SECONDS"
 	EnvRerankTokenLimitMode              = "RERANK_TOKEN_LIMIT_MODE"
 	EnvComponentExecTimeout              = "COMPONENT_EXEC_TIMEOUT"
+	EnvMCPAllowPrivateHosts              = "RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS"
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
 	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
