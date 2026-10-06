@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"regexp"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -1328,13 +1329,27 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	return UpdateServer(message.ServerName, status)
 }
 
+// defaultSuperuserPassword is the password InitDefaultAdmin stores for the
+// first superuser. DEFAULT_SUPERUSER_PASSWORD is canonical.
+// ADMIN_DEFAULT_PASSWORD (docker/.env) is accepted when the canonical name
+// is unset. When both are unset, the historical default "admin" is kept.
+func defaultSuperuserPassword() string {
+	if password := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword)); password != "" {
+		return password
+	}
+	if password := strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword)); password != "" {
+		return password
+	}
+	return "admin"
+}
+
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {
 	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
 	defaultNickname := "admin"
 	defaultEmail := "admin@ragflow.io"
-	defaultPassword := "admin"
+	defaultPassword := defaultSuperuserPassword()
 
 	// Query superusers
 	var users []*entity.User
