@@ -205,8 +205,9 @@ func TestRenameLinkedDocumentsLookupErrorPropagates(t *testing.T) {
 	}
 }
 
-// Renaming while moving into the same parent folder (no storage move) must
-// also propagate the new name to every linked document.
+// TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments verifies that renaming while
+// moving into the same parent folder (no storage move) must also propagate the new
+// name to every linked document.
 func TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments(t *testing.T) {
 	db := setupFolderTestDB(t)
 	insertFolderTestFile(t, "file-1", "folder-1", "old.pdf")
