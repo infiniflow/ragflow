@@ -106,7 +106,8 @@ export interface IPipelineFileLogDetail {
     graph: GraphData;
     task_id: string;
     path: Array<string>;
-  };
+  } | null;
+  dsl_resolution_error?: string;
   id: string;
   kb_id: string;
   operation_status: string;

@@ -24,6 +24,7 @@ import { Images } from '@/constants/common';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { Routes } from '@/routes';
+import { formatDate } from '@/utils/date';
 import { LucideArrowBigLeft } from 'lucide-react';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
@@ -139,6 +140,26 @@ const DataflowResult = () => {
           {t('common.back')}
         </Button>
       </PageHeader>
+
+      {!isAgent && dataset?.dsl_resolution_error && (
+        <div
+          role="alert"
+          className="mx-3 mt-3 rounded-lg border border-state-warning bg-state-warning/10 p-3 text-text-primary"
+        >
+          <p className="font-medium">
+            {t('dataflowParser.definitionUnavailable')}
+          </p>
+          <p className="mt-1 text-sm text-text-secondary">
+            {dataset.document_name} · {dataset.operation_status} ·{' '}
+            {formatDate(dataset.process_begin_at)}
+          </p>
+          {dataset.progress_msg && (
+            <p className="mt-1 text-sm text-text-secondary">
+              {dataset.progress_msg}
+            </p>
+          )}
+        </div>
+      )}
 
       {type === 'dataflow' && (
         <div className=" absolute ml-[50%] translate-x-[-50%] top-4 flex justify-center">

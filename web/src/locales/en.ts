@@ -396,6 +396,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
+      definitionUnavailable: 'Recorded definition unavailable',
       continueUpload: 'Continue upload',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
@@ -3788,6 +3789,8 @@ Important structured information may include: names, dates, locations, events, k
       page: '{{page}} / Page',
     },
     dataflowParser: {
+      definitionUnavailable:
+        'The configuration used for this execution is unavailable. Its execution details remain accessible.',
       result: 'Result',
       parseSummary: 'Parse summary',
       parseSummaryTip: 'Parser：DeepDoc',

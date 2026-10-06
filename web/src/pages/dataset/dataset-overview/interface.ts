@@ -37,6 +37,7 @@ export interface IFileLogItem {
   document_suffix: string;
   document_type: string;
   dsl: any;
+  dsl_resolution_error?: string;
   path: string[];
   task_id: string;
   id: string;

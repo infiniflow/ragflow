@@ -30,6 +30,7 @@ export interface ILogInfo {
   endTime?: string;
   duration?: string;
   details: string;
+  definitionUnavailable?: boolean;
   events?: IngestionEventItem[];
   loadPreviousEvents?: () => Promise<unknown>;
   hasPreviousEvents?: boolean;
@@ -100,6 +101,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
     'loadPreviousEvents',
     'hasPreviousEvents',
     'isLoadingPreviousEvents',
+    'definitionUnavailable',
   ];
   const logInfo = useMemo(() => {
     return initData;
@@ -142,6 +144,14 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
       className="process-log-modal"
     >
       <div className=" rounded-lg">
+        {logInfo.definitionUnavailable && (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg border border-state-warning bg-state-warning/10 p-3 text-sm text-text-primary"
+          >
+            {t('definitionUnavailable')}
+          </p>
+        )}
         <div className="flex flex-wrap ">
           {Object?.keys(logInfo).map((key) => {
             if (

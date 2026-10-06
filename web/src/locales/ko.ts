@@ -377,6 +377,7 @@ export default {
       dataFlowRequired: '데이터 흐름을 선택해 주세요',
     },
     knowledgeDetails: {
+      definitionUnavailable: '실행 당시 설정을 볼 수 없음',
       metadata: {
         fields: '필드',
         selectFiles: '{{count}}개 파일 선택됨',
@@ -2920,6 +2921,8 @@ Important structured information may include: names, dates, locations, events, k
       page: '{{page}} / 페이지',
     },
     dataflowParser: {
+      definitionUnavailable:
+        '이 실행에 사용된 설정을 볼 수 없습니다. 실행 기록은 계속 확인할 수 있습니다.',
       result: '결과',
       parseSummary: '파싱 요약',
       parseSummaryTip: '파서: DeepDoc',

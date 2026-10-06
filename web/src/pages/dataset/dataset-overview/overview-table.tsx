@@ -24,7 +24,6 @@ import {
   RunningStatusMap,
 } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { cn } from '@/lib/utils';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useIsGoBackend } from '@/utils/backend-variant';
@@ -94,8 +93,15 @@ export const getFileLogsTableColumns = (
           <TooltipTrigger asChild>
             <div className="flex gap-2 cursor-pointer">
               <FileIcon name={row.original.document_name}></FileIcon>
-              <span className={cn('truncate')}>
-                {row.original.document_name}
+              <span className="min-w-0">
+                <span className="block truncate">
+                  {row.original.document_name}
+                </span>
+                {row.original.dsl_resolution_error && (
+                  <span className="block text-xs text-state-warning">
+                    {t('definitionUnavailable')}
+                  </span>
+                )}
               </span>
             </div>
           </TooltipTrigger>
@@ -301,16 +307,19 @@ export const getDatasetLogsTableColumns = (
       accessorKey: 'operation_status',
       header: t('status'),
       cell: ({ row }) => (
-        // <FileStatusBadge
-        //   status={row.original.status}
-        //   name={row.original.statusName}
-        // />
-        <FileStatusBadge
-          status={row.original.operation_status as RunningStatus}
-          name={
-            RunningStatusMap[row.original.operation_status as RunningStatus]
-          }
-        />
+        <div className="flex flex-col gap-1">
+          <FileStatusBadge
+            status={row.original.operation_status as RunningStatus}
+            name={
+              RunningStatusMap[row.original.operation_status as RunningStatus]
+            }
+          />
+          {row.original.dsl_resolution_error && (
+            <span className="text-xs text-state-warning">
+              {t('definitionUnavailable')}
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -371,6 +380,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
         row.original.process_duration || 0,
       ),
       details: row.original.progress_msg ?? '',
+      definitionUnavailable: Boolean(row.original.dsl_resolution_error),
     } as ILogInfo;
     setLogInfo(logDetail);
     setSelectedLogID(row.original.id);
