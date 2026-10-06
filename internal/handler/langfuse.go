@@ -42,7 +42,7 @@ type LangfuseService interface {
 // unit tests can inject a stub without standing up a real DB. The concrete
 // *dao.UserTenantDAO satisfies it via the methods below.
 type userTenantFinder interface {
-	GetByUserIDAndRole(ctx context.Context, db *gorm.DB, userID, role string) ([]entity.UserTenant, error)
+	GetByUserIDAndRole(ctx context.Context, db *gorm.DB, userID, role string) ([]*entity.UserTenant, error)
 }
 
 // LangfuseHandler handles /langfuse/api-key HTTP requests.

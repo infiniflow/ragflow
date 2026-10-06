@@ -65,22 +65,22 @@ func (f fakeLangfuseService) DeleteAPIKey(ctx context.Context, tenantID string) 
 // happy-path tests pass without modification. Tests for the resolution
 // failure mode override the findFn field.
 type fakeUserTenantFinder struct {
-	findFn func(ctx context.Context, userID, role string) ([]entity.UserTenant, error)
+	findFn func(ctx context.Context, userID, role string) ([]*entity.UserTenant, error)
 }
 
-func (f fakeUserTenantFinder) GetByUserIDAndRole(_ context.Context, _ *gorm.DB, userID, role string) ([]entity.UserTenant, error) {
+func (f fakeUserTenantFinder) GetByUserIDAndRole(_ context.Context, _ *gorm.DB, userID, role string) ([]*entity.UserTenant, error) {
 	if f.findFn != nil {
 		return f.findFn(context.Background(), userID, role)
 	}
-	return []entity.UserTenant{{UserID: userID, TenantID: "tenant-1", Role: role}}, nil
+	return []*entity.UserTenant{{UserID: userID, TenantID: "tenant-1", Role: role}}, nil
 }
 
 // stubTenantFinder returns a finder whose resolution matches the supplied
 // tenants (or an empty slice if tenants is nil). Convenience for the
 // failure-path tests below.
-func stubTenantFinder(tenants []entity.UserTenant, err error) fakeUserTenantFinder {
+func stubTenantFinder(tenants []*entity.UserTenant, err error) fakeUserTenantFinder {
 	return fakeUserTenantFinder{
-		findFn: func(_ context.Context, userID, role string) ([]entity.UserTenant, error) {
+		findFn: func(_ context.Context, userID, role string) ([]*entity.UserTenant, error) {
 			if err != nil {
 				return nil, err
 			}
@@ -338,11 +338,11 @@ func TestLangfuseHandler_TenantResolution_ResolvesUserToTenant(t *testing.T) {
 			}, common.CodeSuccess, "success", nil
 		},
 	}, userTenantDAO: fakeUserTenantFinder{
-		findFn: func(_ context.Context, u, role string) ([]entity.UserTenant, error) {
+		findFn: func(_ context.Context, u, role string) ([]*entity.UserTenant, error) {
 			if u != userID || role != "owner" {
 				t.Fatalf("finder lookup u=%q role=%q, want %q / %q", u, role, userID, "owner")
 			}
-			return []entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
+			return []*entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
 		},
 	}}
 
@@ -417,8 +417,8 @@ func TestLangfuseHandler_TenantResolution_DAOErrorReturns400(t *testing.T) {
 func TestLangfuseHandler_TenantResolution_MultiUserSameTenant(t *testing.T) {
 	const tenantID = "tenant-shared"
 
-	lookupFn := func(_ context.Context, u, role string) ([]entity.UserTenant, error) {
-		return []entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
+	lookupFn := func(_ context.Context, u, role string) ([]*entity.UserTenant, error) {
+		return []*entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
 	}
 
 	// User A configures the keys.
