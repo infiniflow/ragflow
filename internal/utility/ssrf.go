@@ -30,6 +30,14 @@ import (
 // PinnedHTTPClient returns an HTTP client whose Transport dials resolvedIP
 // for hostname and rejects other hosts (including redirect targets), closing
 // the TOCTOU window between AssertURLSafe and the TCP connection.
+//
+// http.Transport pre-encodes the hostname via idna.Lookup.ToASCII before
+// calling DialContext, so the guard compares against the Punycode form of
+// the validated host and lets Unicode URLs through unchanged.
+//
+// The single-host one-shot pattern is kept separate from
+// common.PinTable (which the strict SSRF transport uses to pin a
+// dynamic set of validated IPs in its shared DialContext).
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 	asciiHostname := hostname
 	var idnaErr error
