@@ -2142,3 +2142,41 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
 	}
 }
+
+func TestParseMetadataSelector_RejectsNonStringDocumentIDs(t *testing.T) {
+	// Case 1: valid string document IDs
+	validRaw := map[string]interface{}{
+		"document_ids": []interface{}{"doc-1", "doc-2"},
+	}
+	sel, errStr := parseMetadataSelector(validRaw)
+	if errStr != "" {
+		t.Fatalf("expected empty error string, got %q", errStr)
+	}
+	if len(sel.DocumentIDs) != 2 || sel.DocumentIDs[0] != "doc-1" || sel.DocumentIDs[1] != "doc-2" {
+		t.Fatalf("unexpected document IDs: %v", sel.DocumentIDs)
+	}
+
+	// Case 2: numeric document ID should return validation error instead of panicking
+	invalidNumeric := map[string]interface{}{
+		"document_ids": []interface{}{123},
+	}
+	selNum, errStrNum := parseMetadataSelector(invalidNumeric)
+	if selNum != nil {
+		t.Fatalf("expected nil selector for numeric document ID, got %v", selNum)
+	}
+	if errStrNum != "document_ids must contain strings." {
+		t.Fatalf("expected validation error 'document_ids must contain strings.', got %q", errStrNum)
+	}
+
+	// Case 3: mixed types
+	invalidMixed := map[string]interface{}{
+		"document_ids": []interface{}{"valid-id", true, nil},
+	}
+	selMixed, errStrMixed := parseMetadataSelector(invalidMixed)
+	if selMixed != nil {
+		t.Fatalf("expected nil selector for mixed document IDs, got %v", selMixed)
+	}
+	if errStrMixed != "document_ids must contain strings." {
+		t.Fatalf("expected validation error 'document_ids must contain strings.', got %q", errStrMixed)
+	}
+}

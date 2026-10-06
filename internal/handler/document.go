@@ -2015,7 +2015,11 @@ func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string)
 			return nil, "document_ids must be a list."
 		}
 		for _, id := range ids {
-			selector.DocumentIDs = append(selector.DocumentIDs, id.(string))
+			idStr, ok := id.(string)
+			if !ok {
+				return nil, "document_ids must contain strings."
+			}
+			selector.DocumentIDs = append(selector.DocumentIDs, idStr)
 		}
 	}
 	if v, ok := m["metadata_condition"]; ok && v != nil {
