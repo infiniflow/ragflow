@@ -663,6 +663,11 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				"compile_kwd":         compileKinds,
 				"knowledge_graph_kwd": []string{"entity", "relation"},
 			},
+			// Stable sort on the unique keyword `id`: without an explicit
+			// OrderBy this scan pages with from/size, which Elasticsearch
+			// rejects once from+size passes max_result_window, and the
+			// resulting error aborts the structure merge through its caller.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
 			Offset: offset,
 			Limit:  pageSize,
 		})
