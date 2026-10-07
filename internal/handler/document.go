@@ -2015,7 +2015,15 @@ func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string)
 			return nil, "document_ids must be a list."
 		}
 		for _, id := range ids {
-			selector.DocumentIDs = append(selector.DocumentIDs, id.(string))
+			// encoding/json yields float64 for numbers, bool for booleans,
+			// and map[string]interface{} for objects — an unchecked
+			// id.(string) panics on any of them. The documented type is
+			// list[string]; reject non-string items with a data error.
+			strID, ok := id.(string)
+			if !ok {
+				return nil, "document_ids items must be strings."
+			}
+			selector.DocumentIDs = append(selector.DocumentIDs, strID)
 		}
 	}
 	if v, ok := m["metadata_condition"]; ok && v != nil {
