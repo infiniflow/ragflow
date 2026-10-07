@@ -559,3 +559,64 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		t.Fatalf("expected server error for tenant lookup failure, got code=%v err=%v", code, err)
 	}
 }
+
+// TestModularMetadataConfigWithLegacyFlatBuiltInMetadata covers the runtime
+// recovery for pre-#18511 datasets (#20142): the legacy flat top-level
+// built_in_metadata / enable_metadata / metadata fields are bridged onto
+// the modular shape so the dataset metadata API returns the configured
+// fields instead of an empty list.
+func TestModularMetadataConfigWithLegacyFlatBuiltInMetadata(t *testing.T) {
+	pc := map[string]any{
+		"enable_metadata": true,
+		"metadata": []any{
+			map[string]any{"key": "author", "type": "string"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+	present, enabled, meta, builtIn, usedLegacy := modularMetadataConfigWithLegacy(pc)
+	if !present {
+		t.Fatal("present = false, want true (legacy fallback fired)")
+	}
+	if !enabled {
+		t.Errorf("enabled = false, want true (from legacy enable_metadata)")
+	}
+	if !usedLegacy {
+		t.Errorf("usedLegacy = false, want true (legacy bridge was used)")
+	}
+	if len(meta) != 1 {
+		t.Errorf("metadata len = %d, want 1", len(meta))
+	}
+	if len(builtIn) != 1 || builtIn[0].(map[string]any)["key"] != "file_name" {
+		t.Errorf("built_in_metadata = %#v, want [{file_name}]", builtIn)
+	}
+}
+
+// TestModularMetadataConfigWithLegacyNotFiredForModularShape pins the
+// invariant that the legacy bridge is only a fallback: a parser_config
+// that already carries the new parser_config.metadata does not trigger
+// usedLegacy, even if it also has stale flat built_in_metadata alongside.
+func TestModularMetadataConfigWithLegacyNotFiredForModularShape(t *testing.T) {
+	pc := map[string]any{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "new_key", "type": "string"},
+			},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "stale_key", "type": "string"},
+		},
+	}
+	present, enabled, meta, builtIn, usedLegacy := modularMetadataConfigWithLegacy(pc)
+	if !present || !enabled {
+		t.Fatalf("present=%v enabled=%v, want both true (new shape)", present, enabled)
+	}
+	if usedLegacy {
+		t.Errorf("usedLegacy = true with the new shape present, want false")
+	}
+	if len(meta) != 1 || len(builtIn) != 0 {
+		t.Errorf("meta=%#v builtIn=%#v, want [{new_key}] and [] (stale legacy ignored)", meta, builtIn)
+	}
+}
