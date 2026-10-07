@@ -16,6 +16,7 @@ package nlp
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -97,6 +98,10 @@ func TestQueryBuilder_SubSpecialChar(t *testing.T) {
 		{"Tilde", "~tilde", `\~tilde`},
 		{"Caret", "^caret", `\^caret`},
 		{"Multiple", `:{}/[]-*"()|+~^`, `\:\{\}\/\[\]\-\*\"\(\)\|\+\~\^`},
+		{"Single quote removed", "it's", "its"},
+		{"Question mark", "a?b", `a\?b`},
+		{"Trim surrounding spaces", " x ", "x"},
+		{"Quote stripped then trimmed", " ' x ' ", "x"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -441,5 +446,31 @@ func TestQueryBuilder_SetQueryFields(t *testing.T) {
 	expr := qb.Paragraph("", []string{"test"}, 0)
 	if !reflect.DeepEqual(expr.Fields, newFields) {
 		t.Errorf("Paragraph fields not updated after SetQueryFields, got %v, want %v", expr.Fields, newFields)
+	}
+}
+
+// TestQueryBuilder_Question_SynonymSingleQuote ensures English synonyms are
+// cleaned of single quotes before being embedded in the full-text query.
+// WordNet returns e.g. "cat-o'-nine-tails" for "cat", and a raw single quote
+// breaks the Infinity query parser (see #13823).
+func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
+	qb := NewQueryBuilder()
+	qb.synonym.dictionary = map[string][]string{
+		"cat": {"cat-o'-nine-tails", "'"},
+	}
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	if expr == nil {
+		t.Fatal("Question returned nil expr")
+	}
+	if strings.Contains(expr.MatchingText, "'") {
+		t.Errorf("MatchingText contains single quote: %q", expr.MatchingText)
+	}
+	if strings.Contains(expr.MatchingText, `""`) {
+		t.Errorf("MatchingText contains empty synonym phrase: %q", expr.MatchingText)
+	}
+	for _, kw := range keywords {
+		if strings.Contains(kw, "'") || strings.TrimSpace(kw) == "" {
+			t.Errorf("keyword not cleaned: %q (all: %q)", kw, keywords)
+		}
 	}
 }
