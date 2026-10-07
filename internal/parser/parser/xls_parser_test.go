@@ -187,6 +187,9 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	if !ok || len(positions) != 3 {
 		t.Fatalf("first positions = %#v, want header plus two data rows", first["positions"])
 	}
+	if got, want := positions[1], []float64{1, 2, 2, 1, 2}; !slices.Equal(got, want) {
+		t.Fatalf("first data row position = %v, want %v", got, want)
+	}
 	if got, want := positions[2], []float64{1, 3, 3, 1, 2}; !slices.Equal(got, want) {
 		t.Fatalf("last row position = %v, want %v", got, want)
 	}
