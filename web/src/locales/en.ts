@@ -1687,7 +1687,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional: comma-separated emails whose entire "My Drive" contents should be indexed. Leave empty to sync only the folders in "Shared folder URLs".',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
