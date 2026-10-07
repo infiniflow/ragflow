@@ -76,6 +76,7 @@ export default {
       seeAll: '查看全部',
       owner: '所有者',
       running: '运行中...',
+      loading: '加载中...',
     },
     login: {
       loginTitle: '登录账户',
