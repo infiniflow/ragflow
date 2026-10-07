@@ -110,6 +110,7 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
 }
 
 // Please lowercase the file name
@@ -203,6 +204,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -231,6 +233,7 @@ export const APIMapUrl = {
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
