@@ -1789,6 +1789,164 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 	}
 }
 
+// TestGetDocumentByID_NotAccessible verifies that /document/:id returns 404
+// when the document exists but the caller cannot access the document's dataset
+// (#20404).
+func TestGetDocumentByID_NotAccessible(t *testing.T) {
+	setupDocumentPermissionDB(t, false)
+
+	fake := &fakeDocumentService{
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/doc-1", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentByID(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["error"] != "document not found" {
+		t.Fatalf("unexpected response body: %v", resp)
+	}
+}
+
+// TestGetDocumentByID_Accessible verifies the happy-path: the document is
+// returned when the caller has access to the document's dataset.
+func TestGetDocumentByID_Accessible(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/doc-1", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	h.GetDocumentByID(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got: %v", resp["data"])
+	}
+	if data["id"] != "doc-1" {
+		t.Fatalf("expected doc id doc-1, got %v", data["id"])
+	}
+	if data["kb_id"] != "kb-owner" {
+		t.Fatalf("expected kb_id kb-owner, got %v", data["kb_id"])
+	}
+}
+
+// TestMetadataSummary_NotAccessible verifies that POST /document/metadata/summary
+// returns an error when the caller cannot access the dataset whose id was
+// passed in the request body (#20404).
+func TestMetadataSummary_NotAccessible(t *testing.T) {
+	setupDocumentPermissionDB(t, false)
+
+	fake := &fakeDocumentService{
+		metadataSummary: map[string]interface{}{"author": "alice"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser(
+		"POST",
+		"/api/v1/document/metadata/summary",
+		`{"kb_id":"kb-owner","doc_ids":["doc-1"]}`,
+	)
+	h.MetadataSummary(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected server error code, got %v: %v", resp["code"], resp)
+	}
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "kb-owner") {
+		t.Fatalf("expected message to mention kb-owner, got %q", msg)
+	}
+	if fake.metadataKBID != "" {
+		t.Fatalf("GetMetadataSummary should not be called without dataset access, got kbID=%q", fake.metadataKBID)
+	}
+}
+
+// TestMetadataSummary_Accessible verifies that POST /document/metadata/summary
+// returns the summary when the caller has access to the dataset.
+func TestMetadataSummary_Accessible(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	fake := &fakeDocumentService{
+		metadataSummary: map[string]interface{}{
+			"author": map[string]interface{}{
+				"type": "string",
+				"values": []interface{}{
+					[]interface{}{"alice", 2},
+				},
+			},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser(
+		"POST",
+		"/api/v1/document/metadata/summary",
+		`{"kb_id":"kb-owner","doc_ids":["doc-1"]}`,
+	)
+	h.MetadataSummary(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if fake.metadataKBID != "kb-owner" {
+		t.Fatalf("expected kbID kb-owner, got %q", fake.metadataKBID)
+	}
+	if len(fake.metadataDocIDs) != 1 || fake.metadataDocIDs[0] != "doc-1" {
+		t.Fatalf("unexpected docIDs: %#v", fake.metadataDocIDs)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp)
+	}
+	data := resp["data"].(map[string]interface{})
+	summary := data["summary"].(map[string]interface{})
+	author := summary["author"].(map[string]interface{})
+	if author["type"] != "string" {
+		t.Fatalf("expected author type string, got %v", author["type"])
+	}
+}
+
 func TestGetThumbnail_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeDocumentService{

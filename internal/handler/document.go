@@ -120,7 +120,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -137,6 +137,16 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "document not found",
+		})
+		return
+	}
+
+	// Tenant authorization: the requester must have access to the document's
+	// dataset. Without this check, any authenticated user can read any document
+	// by ID regardless of which tenant owns the dataset (#20404).
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "document not found",
 		})
@@ -1304,7 +1314,7 @@ func stringValue(value *string) string {
 
 // MetadataSummary handles the metadata summary request
 func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -1326,7 +1336,16 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 		return
 	}
 
+	// Tenant authorization: the caller must have access to the dataset whose
+	// metadata summary is being requested. Without this check, the kb_id in the
+	// request body is trusted blindly and any authenticated user can read any
+	// tenant's metadata (#20404).
 	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, kbID, user.ID) {
+		common.ErrorWithCode(c, common.CodeServerError, "You don't own the dataset "+kbID)
+		return
+	}
+
 	summary, err := h.documentService.GetMetadataSummary(ctx, kbID, requestBody.DocIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to get metadata summary: "+err.Error())
