@@ -256,12 +256,12 @@ func TestEnsureVectorColumnAndIndexUsesGraphIndex(t *testing.T) {
 }
 
 // TestDynamicColumnDefinitionTypes checks unknown-field typing: floatvector
-// for q_N_vec names, short varchar otherwise.
+// for q_N_vec names, unbounded text otherwise.
 func TestDynamicColumnDefinitionTypes(t *testing.T) {
 	if got := dynamicColumnDefinition("q_1024_vec"); got.typeSQL != "floatvector(1024)" || got.defaultSQL != "" {
 		t.Fatalf("vector dynamic column = %#v", got)
 	}
-	if got := dynamicColumnDefinition("custom_field"); got.typeSQL != "varchar(256)" || got.defaultSQL != "''" {
+	if got := dynamicColumnDefinition("custom_field"); got.typeSQL != "text" || got.defaultSQL != "''" {
 		t.Fatalf("scalar dynamic column = %#v", got)
 	}
 }

@@ -22,25 +22,28 @@ VB_USER_IDENT=${VB_USER//\"/\"\"}
 VB_PASS_LIT=${VB_PASS//\'/\'\'}
 VB_DB_IDENT=${VB_VEC_DB//\"/\"\"}
 
-# ── Step 1: Create user (must be in a DO block) ──────────────────────────
-# Contains the password in cleartext: mktemp gives 0600 perms, and the EXIT
-# trap removes it even when `set -e` aborts on a failed vsql call.
+# ── Step 1: Create user ──────────────────────────────────────────────────
+# Role existence is probed with a plain query first so the CREATE can be a
+# bare statement in the temp file: no DO $$ block is involved, so a password
+# containing "$$" cannot terminate a dollar-quoted body early (doubling
+# single quotes is complete escaping for a plain SQL string literal, but it
+# does not protect a dollar-quoted one).
 SQL_FILE="$(mktemp /tmp/init_vastbase.XXXXXX.sql)"
 trap 'rm -f "${SQL_FILE}"' EXIT
 
-cat > "${SQL_FILE}" << SQL
+if vsql -tA -c "SELECT 1 FROM pg_roles WHERE rolname = '${VB_USER_LIT}'" | grep -qx 1; then
+    echo "User ${VB_USER} already exists"
+else
+    # Contains the password in cleartext: mktemp gives 0600 perms, and the
+    # EXIT trap removes it even when `set -e` aborts on a failed vsql call.
+    cat > "${SQL_FILE}" << SQL
 SET standard_conforming_strings = on;
-DO \$\$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${VB_USER_LIT}') THEN
-        CREATE ROLE "${VB_USER_IDENT}" LOGIN PASSWORD '${VB_PASS_LIT}';
-    END IF;
-END
-\$\$;
+CREATE ROLE "${VB_USER_IDENT}" LOGIN PASSWORD '${VB_PASS_LIT}';
 SQL
 
-echo "Creating user ${VB_USER}..."
-vsql -f "${SQL_FILE}"
+    echo "Creating user ${VB_USER}..."
+    vsql -f "${SQL_FILE}"
+fi
 
 # ── Step 2: Create databases (outside DO block — CREATE DATABASE requires
 #            a transaction commit and cannot run inside a PL/pgSQL block) ──

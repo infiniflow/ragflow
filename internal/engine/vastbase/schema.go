@@ -273,7 +273,7 @@ func (e *Engine) ensureColumn(ctx context.Context, tableName string, column colu
 
 // ensureDynamicColumns adds columns for chunk fields the static schema does
 // not know, mirroring ES dynamic mapping: q_(\d+)_vec becomes floatvector(N),
-// anything else becomes varchar(256) with ” default. Known static columns are
+// anything else becomes text with ” default. Known static columns are
 // skipped so their declared types win.
 func (e *Engine) ensureDynamicColumns(ctx context.Context, tableName string, fieldNames []string) error {
 	static := make(map[string]bool, len(chunkColumns)+len(memoryColumns)+len(skillColumns))
@@ -298,13 +298,15 @@ func (e *Engine) ensureDynamicColumns(ctx context.Context, tableName string, fie
 }
 
 // dynamicColumnDefinition maps an unknown document field to its column type:
-// floatvector(N) for q_N_vec names, a short varchar otherwise.
+// floatvector(N) for q_N_vec names, unbounded text otherwise — normalized
+// values are never truncated, so a varchar would reject anything longer than
+// its limit and roll back the whole delete+insert batch.
 func dynamicColumnDefinition(field string) columnDefinition {
 	if match := vectorDimRegex.FindStringSubmatch(field); match != nil {
 		dim, _ := strconv.Atoi(match[1])
 		return columnDefinition{name: field, typeSQL: fmt.Sprintf("floatvector(%d)", dim)}
 	}
-	return columnDefinition{name: field, typeSQL: "varchar(256)", defaultSQL: "''"}
+	return columnDefinition{name: field, typeSQL: "text", defaultSQL: "''"}
 }
 
 // validFieldName reports whether name matches the identifier pattern every

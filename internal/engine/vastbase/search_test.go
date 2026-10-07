@@ -65,7 +65,7 @@ func TestFullTextCTESingleColumnGolden(t *testing.T) {
 		ExtraOptions: map[string]interface{}{"minimum_should_match": 0.5},
 	}
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("t1", []string{"id", "content_ltks"}, `"kb_id" = $1`,
+	got, err := engine.fullTextCTE("t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
 		[]interface{}{"kb-1"}, text, 100, args)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 		TopN:         50,
 	}
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("t1", []string{"id"}, `"kb_id" = $1`,
+	got, err := engine.fullTextCTE("t1", "chunk", []string{"id"}, `"kb_id" = $1`,
 		[]interface{}{"kb-1"}, text, 50, args)
 	if err != nil {
 		t.Fatal(err)
@@ -101,11 +101,12 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 		return `(SELECT "id", bm25_score() AS bm25_score FROM "t1" ` +
 			`WHERE (` + filterPart + `) AND (` + field + ` @~@ ` + placeholder + `) ORDER BY bm25_score DESC LIMIT 100)`
 	}
-	// Each branch re-binds the filter, so placeholders advance per branch.
-	want := `SELECT "id", "SCORE" AS _score FROM (SELECT DISTINCT ON (id) "id", bm25_score AS "SCORE" FROM (` +
+	// Each branch re-binds the filter, so placeholders advance per branch; the
+	// dedup keys on the kind's row identifier.
+	want := `SELECT "id", "SCORE" AS _score FROM (SELECT DISTINCT ON ("id") "id", bm25_score AS "SCORE" FROM (` +
 		branch(`"title_tks"`, `2`, `"kb_id" = $1`, `$2`) + " UNION ALL " +
 		branch(`"content_ltks"`, `1`, `"kb_id" = $3`, `$4`) +
-		`) AS unioned ORDER BY id, "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT 50`
+		`) AS unioned ORDER BY "id", "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT 50`
 	if got != want {
 		t.Fatalf("multi-column CTE =\n%s\nwant\n%s", got, want)
 	}
@@ -115,6 +116,98 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 	}
 	if args.values[3] != "boosted query @<PARAM:MINIMUM_SHOULD_MATCH=0% PARAM:BOOST=1>@" {
 		t.Fatalf("operand 2 = %#v", args.values[3])
+	}
+}
+
+// TestFullTextCTEPGModeSingleColumnGolden pins the PG-mode single-column CTE:
+// predicates restate the indexed to_tsvector('cn_tokenizer', ...) expression
+// against plainto_tsquery, terms OR together below 100% minimum_should_match,
+// and ts_rank supplies the score.
+func TestFullTextCTEPGModeSingleColumnGolden(t *testing.T) {
+	engine := &Engine{dbCompatibility: compatPG}
+	text := &types.MatchTextExpr{
+		Fields:       []string{"content_ltks"},
+		MatchingText: "hello world",
+		TopN:         100,
+		ExtraOptions: map[string]interface{}{"minimum_should_match": 0.5},
+	}
+	args := &sqlArgs{}
+	got, err := engine.fullTextCTE("t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
+		[]interface{}{"kb-1"}, text, 100, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rank := `GREATEST(ts_rank(to_tsvector('cn_tokenizer', "content_ltks"), plainto_tsquery('cn_tokenizer', $2)), ` +
+		`ts_rank(to_tsvector('cn_tokenizer', "content_ltks"), plainto_tsquery('cn_tokenizer', $3)))`
+	match := `to_tsvector('cn_tokenizer', "content_ltks") @@ plainto_tsquery('cn_tokenizer', $2) OR ` +
+		`to_tsvector('cn_tokenizer', "content_ltks") @@ plainto_tsquery('cn_tokenizer', $3)`
+	want := `SELECT "id", "content_ltks", (` + rank + ` * 1) AS _score FROM "t1" ` +
+		`WHERE ("kb_id" = $1) AND (` + match + `) ORDER BY _score DESC LIMIT 100`
+	if got != want {
+		t.Fatalf("PG single-column CTE =\n%s\nwant\n%s", got, want)
+	}
+	if !reflect.DeepEqual(args.values, []interface{}{"kb-1", "hello", "world"}) {
+		t.Fatalf("args = %#v", args.values)
+	}
+}
+
+// TestFullTextCTEPGModeMultiColumnSkillGolden pins the PG-mode UNION form and
+// the skill table's row identifier: branches deduplicate on skill_id, and a
+// 100% minimum_should_match AND-joins the term predicates.
+func TestFullTextCTEPGModeMultiColumnSkillGolden(t *testing.T) {
+	engine := &Engine{dbCompatibility: compatPG}
+	text := &types.MatchTextExpr{
+		Fields:       []string{"name_tks^2", "content_tks"},
+		MatchingText: "deploy",
+		TopN:         50,
+		ExtraOptions: map[string]interface{}{"minimum_should_match": "100%"},
+	}
+	args := &sqlArgs{}
+	got, err := engine.fullTextCTE("skill_t1", "skill", []string{"skill_id"}, `"space_id" = $1`,
+		[]interface{}{"sp-1"}, text, 50, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch := func(field, weight, filterPart, placeholder string) string {
+		return `(SELECT "skill_id", (GREATEST(ts_rank(to_tsvector('cn_tokenizer', ` + field +
+			`), plainto_tsquery('cn_tokenizer', ` + placeholder + `))) * ` + weight + `) AS "SCORE" FROM "skill_t1" ` +
+			`WHERE (` + filterPart + `) AND (to_tsvector('cn_tokenizer', ` + field + `) @@ plainto_tsquery('cn_tokenizer', ` +
+			placeholder + `)) ORDER BY "SCORE" DESC LIMIT 100)`
+	}
+	want := `SELECT "skill_id", "SCORE" AS _score FROM (SELECT DISTINCT ON ("skill_id") "skill_id", "SCORE" FROM (` +
+		branch(`"name_tks"`, `2`, `"space_id" = $1`, `$2`) + " UNION ALL " +
+		branch(`"content_tks"`, `1`, `"space_id" = $3`, `$4`) +
+		`) AS unioned ORDER BY "skill_id", "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT 50`
+	if got != want {
+		t.Fatalf("PG skill multi-column CTE =\n%s\nwant\n%s", got, want)
+	}
+	if !reflect.DeepEqual(args.values, []interface{}{"sp-1", "deploy", "sp-1", "deploy"}) {
+		t.Fatalf("args = %#v", args.values)
+	}
+}
+
+// TestMinimumShouldMatchCoversAllTerms checks when the PG-mode predicate
+// AND-joins terms instead of OR-joining them.
+func TestMinimumShouldMatchCoversAllTerms(t *testing.T) {
+	cases := []struct {
+		minimumShouldMatch string
+		terms              int
+		want               bool
+	}{
+		{"0%", 2, false},
+		{"50%", 2, false},
+		{"100%", 2, true},
+		{"200%", 1, true},
+		{"75%", 0, false},
+		{"2", 2, true},
+		{"1", 2, false},
+		{"3<-25%", 3, false},
+		{"nonsense", 2, false},
+	}
+	for _, test := range cases {
+		if got := minimumShouldMatchCoversAllTerms(test.minimumShouldMatch, test.terms); got != test.want {
+			t.Fatalf("minimumShouldMatchCoversAllTerms(%q, %d) = %v", test.minimumShouldMatch, test.terms, got)
+		}
 	}
 }
 
@@ -153,7 +246,8 @@ func TestVectorCTEGolden(t *testing.T) {
 	}
 }
 
-// TestSearchFusionQueryGolden pins the fused full-text-plus-vector query SQL.
+// TestSearchFusionQueryGolden pins the fused full-text-plus-vector query SQL
+// for PG mode: the ts_rank CTE, the vector KNN scan, and the identifier join.
 func TestSearchFusionQueryGolden(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -170,18 +264,19 @@ func TestSearchFusionQueryGolden(t *testing.T) {
 		`COALESCE(a."pagerank_fea", b."pagerank_fea") AS "pagerank_fea", ` +
 		`COALESCE(a."q_3_vec", b."q_3_vec") AS "q_3_vec"`
 	fields := `"content_ltks", "id", "kb_id", "pagerank_fea", "q_3_vec"`
-	fulltextCTE := `SELECT ` + fields + `, bm25_score AS _score FROM (SELECT ` + fields +
-		`, bm25_score() AS bm25_score FROM "t1" WHERE ("kb_id" IN ($1)) AND ("content_ltks" @~@ $2) ` +
-		`ORDER BY bm25_score DESC LIMIT 10) AS ranked`
+	fulltextScore := `(GREATEST(ts_rank(to_tsvector('cn_tokenizer', "content_ltks"), plainto_tsquery('cn_tokenizer', $2))) * 1)`
+	fulltextMatch := `to_tsvector('cn_tokenizer', "content_ltks") @@ plainto_tsquery('cn_tokenizer', $2)`
+	fulltextCTE := `SELECT ` + fields + `, ` + fulltextScore + ` AS _score FROM "t1" ` +
+		`WHERE ("kb_id" IN ($1)) AND (` + fulltextMatch + `) ORDER BY _score DESC LIMIT 10`
 	vectorCTE := `SELECT * FROM (SELECT ` + fields + `, (1 - ("q_3_vec" <=> $4)) AS _score FROM "t1" ` +
 		`WHERE "kb_id" IN ($3) ORDER BY "q_3_vec" <=> $5 LIMIT 10) AS knn WHERE _score >= $6`
 	fused := `(COALESCE(a._score, 0) / COALESCE(NULLIF((SELECT MAX(_score) FROM filter_fulltext), 0), 1) * 0.7 + COALESCE(b._score, 0) * 0.3)`
 	query := `WITH filter_fulltext AS (` + fulltextCTE + `), filter_vector AS (` + vectorCTE + `) ` +
 		`SELECT ` + projection + `, ` + fused + ` AS _score ` +
-		`FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a.id = b.id ORDER BY _score DESC LIMIT 10 OFFSET 0`
+		`FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a."id" = b."id" ORDER BY _score DESC LIMIT 10 OFFSET 0`
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
-		WithArgs("kb-1", "hello @<PARAM:MINIMUM_SHOULD_MATCH=0% PARAM:BOOST=1>@",
+		WithArgs("kb-1", "hello",
 			"kb-1", "[0.1,0.2,0.3]", "[0.1,0.2,0.3]", 0.2).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "content_ltks", "kb_id", "pagerank_fea", "q_3_vec", "_score"}).
 			AddRow("c1", "hello world", "kb-1", 0.5, "[0.1,0.2,0.3]", 0.9))
@@ -207,6 +302,72 @@ func TestSearchFusionQueryGolden(t *testing.T) {
 	}
 	if score, _ := numberToFloat(result.Chunks[0]["_score"]); score != 0.9 {
 		t.Fatalf("fused score = %#v", result.Chunks[0]["_score"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSearchSkillFusionUsesSkillIdentifier drives a skill-table hybrid
+// search end to end: the fused join and the projected row key must use
+// skill_id, not id.
+func TestSearchSkillFusionUsesSkillIdentifier(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+
+	skillColumns := []string{"skill_id", "name", "name_tks", "content_tks", "q_2_vec"}
+	listSkillColumns := func() {
+		expectCount(mock, tableCountQuery(), "skill_t1")
+		rows := sqlmock.NewRows([]string{"column_name", "data_type", "column_default", "is_nullable"})
+		for _, column := range skillColumns {
+			rows.AddRow(column, "text", nil, "YES")
+		}
+		mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs("skill_t1").WillReturnRows(rows)
+	}
+	listSkillColumns()
+	listSkillColumns() // searchFusion re-lists columns for the "*" expansion
+
+	fields := `"content_tks", "name", "name_tks", "q_2_vec", "skill_id"`
+	fulltextScore := `(GREATEST(ts_rank(to_tsvector('cn_tokenizer', "name_tks"), plainto_tsquery('cn_tokenizer', $1))) * 1)`
+	fulltextCTE := `SELECT ` + fields + `, ` + fulltextScore + ` AS _score FROM "skill_t1" ` +
+		`WHERE (1=1) AND (to_tsvector('cn_tokenizer', "name_tks") @@ plainto_tsquery('cn_tokenizer', $1)) ` +
+		`ORDER BY _score DESC LIMIT 10`
+	vectorCTE := `SELECT * FROM (SELECT ` + fields + `, (1 - ("q_2_vec" <=> $2)) AS _score FROM "skill_t1" ` +
+		`WHERE 1=1 ORDER BY "q_2_vec" <=> $3 LIMIT 10) AS knn WHERE _score >= $4`
+	projection := `COALESCE(a."content_tks", b."content_tks") AS "content_tks", ` +
+		`COALESCE(a."name", b."name") AS "name", COALESCE(a."name_tks", b."name_tks") AS "name_tks", ` +
+		`COALESCE(a."q_2_vec", b."q_2_vec") AS "q_2_vec", COALESCE(a."skill_id", b."skill_id") AS "skill_id"`
+	fused := `(COALESCE(a._score, 0) / COALESCE(NULLIF((SELECT MAX(_score) FROM filter_fulltext), 0), 1) * 0.5 + COALESCE(b._score, 0) * 0.5)`
+	query := `WITH filter_fulltext AS (` + fulltextCTE + `), filter_vector AS (` + vectorCTE + `) ` +
+		`SELECT ` + projection + `, ` + fused + ` AS _score ` +
+		`FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a."skill_id" = b."skill_id" ` +
+		`ORDER BY _score DESC LIMIT 10 OFFSET 0`
+
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs("deploy", "[0.5,0.25]", "[0.5,0.25]", 0.2).
+		WillReturnRows(sqlmock.NewRows([]string{"skill_id", "name", "_score"}).AddRow("s1", "deploy skill", 0.8))
+
+	result, err := engine.Search(context.Background(), &types.SearchRequest{
+		IndexNames:   []string{"skill_t1"},
+		SelectFields: []string{"*"},
+		Limit:        10,
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{Fields: []string{"name_tks"}, MatchingText: "deploy", TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.5, 0.25},
+				TopN: 10, ExtraOptions: map[string]interface{}{"similarity": 0.2}},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 10,
+				FusionParams: map[string]interface{}{"weights": "0.5,0.5"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Chunks) != 1 || result.Chunks[0]["skill_id"] != "s1" {
+		t.Fatalf("chunks = %#v", result.Chunks)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -249,7 +410,8 @@ func TestSearchFusionWeightDegeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Vector weight 0: the dense leg is dropped, only the bm25 scan runs.
+	// Vector weight 0: the dense leg is dropped, only the full-text scan runs
+	// (PG mode: the plainto_tsquery predicate).
 	db2, mock2, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -257,8 +419,8 @@ func TestSearchFusionWeightDegeneration(t *testing.T) {
 	defer db2.Close()
 	engine2 := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db2)
 	expectChunkColumns(mock2, "t1")
-	mock2.ExpectQuery(`@~@ \$2`).
-		WithArgs("kb-1", "hello @<PARAM:MINIMUM_SHOULD_MATCH=0% PARAM:BOOST=1>@").
+	mock2.ExpectQuery(regexp.QuoteMeta(`@@ plainto_tsquery('cn_tokenizer', $2)`)).
+		WithArgs("kb-1", "hello").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "pagerank_fea", "_score"}).AddRow("c1", 0, 1.5))
 	if _, err := engine2.Search(context.Background(), newReq("1,0")); err != nil {
 		t.Fatal(err)
@@ -286,10 +448,11 @@ func TestSearchMemoryFullTextUsesTSQuery(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs("memory_t1").WillReturnRows(rows)
 
 	// The score expression is built after the match predicate, so the
-	// ts_rank placeholder ($3) trails the match placeholder ($2).
-	query := `SELECT "content_ltks", "id", ts_rank(to_tsvector('simple', COALESCE(content_ltks, '')), to_tsquery('simple', $3)) AS _score ` +
+	// ts_rank placeholder ($3) trails the match placeholder ($2); both run
+	// over the fine-grained tokenized_content_ltks column.
+	query := `SELECT "content_ltks", "id", ts_rank(to_tsvector('simple', COALESCE(tokenized_content_ltks, '')), to_tsquery('simple', $3)) AS _score ` +
 		`FROM "memory_t1" WHERE "memory_id" IN ($1) AND ("forget_at" IS NULL OR "forget_at" = '') ` +
-		`AND to_tsvector('simple', COALESCE(content_ltks, '')) @@ to_tsquery('simple', $2) ` +
+		`AND to_tsvector('simple', COALESCE(tokenized_content_ltks, '')) @@ to_tsquery('simple', $2) ` +
 		`ORDER BY _score DESC LIMIT 30 OFFSET 0`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("mem-1", "hello & world", "hello & world").
@@ -329,10 +492,10 @@ func TestSearchMemoryFusionCandidatesGolden(t *testing.T) {
 	}
 	mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs("memory_t1").WillReturnRows(rows)
 
-	score := `(ts_rank(to_tsvector('simple', COALESCE(content_ltks, '')), to_tsquery('simple', $3)) * 0.7 + (1 - ("q_2_vec" <=> $4)) * 0.3)`
+	score := `(ts_rank(to_tsvector('simple', COALESCE(tokenized_content_ltks, '')), to_tsquery('simple', $3)) * 0.7 + (1 - ("q_2_vec" <=> $4)) * 0.3)`
 	inner := `SELECT "content_ltks", "id", "q_2_vec", ` + score + ` AS _score FROM "memory_t1" ` +
 		`WHERE "memory_id" IN ($1) AND ("forget_at" IS NULL OR "forget_at" = '') ` +
-		`AND to_tsvector('simple', COALESCE(content_ltks, '')) @@ to_tsquery('simple', $2) LIMIT 20`
+		`AND to_tsvector('simple', COALESCE(tokenized_content_ltks, '')) @@ to_tsquery('simple', $2) LIMIT 20`
 	query := `SELECT * FROM (` + inner + `) AS candidates WHERE (1 - ("q_2_vec" <=> $5)) >= $6 ORDER BY _score DESC LIMIT 10 OFFSET 0`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("mem-1", "hello", "hello", "[0.5,0.25]", "[0.5,0.25]", 0.2).
@@ -552,6 +715,12 @@ func TestBuildSearchOutput(t *testing.T) {
 	memoryOutput := buildSearchOutput([]string{"content", "status", "content_embed"}, "memory", memory, true, nil)
 	if !reflect.DeepEqual(memoryOutput, []string{"content_ltks", "status_int", "q_2_vec", "id"}) {
 		t.Fatalf("memory output = %#v", memoryOutput)
+	}
+	// Skill rows key on skill_id, not id.
+	skill := map[string]columnMeta{"skill_id": {}, "name": {}, "content_tks": {}}
+	skillOutput := buildSearchOutput([]string{"name"}, "skill", skill, true, nil)
+	if !reflect.DeepEqual(skillOutput, []string{"name", "skill_id"}) {
+		t.Fatalf("skill output = %#v", skillOutput)
 	}
 }
 

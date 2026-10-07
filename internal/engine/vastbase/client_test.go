@@ -18,7 +18,9 @@ package vastbase
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"ragflow/internal/server/config"
@@ -112,6 +114,64 @@ func TestDistanceOpPerCompatibility(t *testing.T) {
 	if op := (&Engine{dbCompatibility: "weird"}).distanceOp(); op != "<=>" {
 		t.Fatalf("fallback operator = %q", op)
 	}
+}
+
+// TestInitializeCompatibilityGate checks the datcompatibility gate: a
+// matching instance initializes, a mismatched one fails startup before any
+// document operation can run, and a failing probe surfaces instead of being
+// silently swallowed.
+func TestInitializeCompatibilityGate(t *testing.T) {
+	newCase := func(t *testing.T, configured string) (*Engine, sqlmock.Sqlmock, func()) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: configured}, db)
+		mock.ExpectQuery("SELECT vb_version()").
+			WillReturnRows(sqlmock.NewRows([]string{"vb_version"}).AddRow("G100 v1.4"))
+		return engine, mock, func() { db.Close() }
+	}
+
+	t.Run("matching mode initializes", func(t *testing.T) {
+		engine, mock, done := newCase(t, compatB)
+		defer done()
+		mock.ExpectQuery("SELECT datcompatibility FROM pg_database").
+			WillReturnRows(sqlmock.NewRows([]string{"datcompatibility"}).AddRow("B"))
+		if err := engine.initialize(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("mismatched mode fails startup", func(t *testing.T) {
+		engine, mock, done := newCase(t, compatPG)
+		defer done()
+		mock.ExpectQuery("SELECT datcompatibility FROM pg_database").
+			WillReturnRows(sqlmock.NewRows([]string{"datcompatibility"}).AddRow("B"))
+		err := engine.initialize(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "dbcompatibility mismatch") {
+			t.Fatalf("err = %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("probe failure surfaces", func(t *testing.T) {
+		engine, mock, done := newCase(t, compatB)
+		defer done()
+		mock.ExpectQuery("SELECT datcompatibility FROM pg_database").
+			WillReturnError(fmt.Errorf("pg_database unreadable"))
+		err := engine.initialize(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "read datcompatibility") {
+			t.Fatalf("err = %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 // TestGetTypeAndSupportsPageRank checks the engine's type string and pagerank

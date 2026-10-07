@@ -19,6 +19,7 @@ package vastbase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -162,6 +163,70 @@ func TestInsertChunksRequiresVectorSizeForNewStore(t *testing.T) {
 	if _, err := engine.InsertChunks(context.Background(),
 		[]map[string]interface{}{{"id": "c1", "content_ltks": "x"}}, "t1", "kb-1"); err == nil {
 		t.Fatal("creating a new store without an inferable vector dimension must fail")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A batch without vectors must still flow into an existing table even while
+// the full-text index DDL keeps failing: ChunkStoreExists reports the store
+// missing (it requires the index), but the vector size is only needed to
+// create a brand-new table.
+func TestInsertChunksVectorlessBatchOnTableWithFailedFullTextIndex(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+
+	// ChunkStoreExists: table and b-tree indexes present, GIN index missing.
+	expectCount(mock, tableCountQuery(), "t1")
+	for _, column := range chunkIndexColumns {
+		expectCount(mock, indexCountQuery(), "t1", regularIndexName("t1", column))
+	}
+	mock.ExpectQuery(regexp.QuoteMeta(indexCountQuery())).WithArgs("t1", "text_gin_idx_t1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	// The table itself exists, so no vector size is inferred; the store is
+	// re-created to self-heal the missing index.
+	expectCount(mock, tableCountQuery(), "t1")
+	// CreateChunkStore: ensureTable and the regular indexes are no-ops.
+	expectCount(mock, tableCountQuery(), "t1")
+	for _, column := range chunkIndexColumns {
+		expectCount(mock, indexCountQuery(), "t1", regularIndexName("t1", column))
+	}
+	// The GIN DDL fails again — a warning, not an error.
+	mock.ExpectQuery(regexp.QuoteMeta(indexCountQuery())).WithArgs("t1", "text_gin_idx_t1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	expressions := make([]string, 0, len(fullTextFields))
+	for _, field := range fullTextFields {
+		expressions = append(expressions, fmt.Sprintf("to_tsvector('cn_tokenizer', %s)", quoteIdent(field)))
+	}
+	mock.ExpectExec(regexp.QuoteMeta(fmt.Sprintf(
+		`CREATE INDEX IF NOT EXISTS "text_gin_idx_t1" ON "t1" USING gin (%s)`,
+		strings.Join(expressions, ", ")))).WillReturnError(fmt.Errorf("gin extension missing"))
+	// vectorSize 0: no vector column or index is created.
+
+	// backfillVectorColumns lists the live columns (no vector column present).
+	expectListColumns(mock, "t1",
+		[2]string{"id", "varchar"}, [2]string{"kb_id", "varchar"}, [2]string{"content_ltks", "text"},
+	)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`DELETE FROM "t1" WHERE "id" IN ($1)`)).
+		WithArgs("c3").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta(
+		`INSERT INTO "t1" ("content_ltks", "id", "kb_id") VALUES ($1,$2,$3)`)).
+		WithArgs("third", "c3", "kb-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if _, err := engine.InsertChunks(context.Background(), []map[string]interface{}{
+		{"id": "c3", "kb_id": "kb-1", "content_ltks": "third"},
+	}, "t1", "kb-1"); err != nil {
+		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

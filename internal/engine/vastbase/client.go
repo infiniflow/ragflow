@@ -45,6 +45,16 @@ const (
 	connMaxLifetime         = 30 * time.Minute
 )
 
+// connectionTimeout caps the whole retry loop: 24 attempts at the 5 s cadence
+// is the Python connector's two-minute contract, and the cap keeps a server
+// that accepts but stalls pings from stretching it to 24 x 10 s.
+const connectionTimeout = 2 * time.Minute
+
+// initializeTimeout bounds the post-ping initialization queries, so a server
+// that answers PingContext but stalls on SELECT vb_version() cannot block
+// startup forever.
+const initializeTimeout = 30 * time.Second
+
 // Compatibility modes accepted for VastbaseConfig.DBCompatibility.
 const (
 	compatPG = "PG"
@@ -120,8 +130,13 @@ func NewEngine(cfg config.VastbaseConfig) (*Engine, error) {
 	}
 
 	var lastErr error
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), connectionTimeout)
+	defer cancelConnect()
 	for attempt := 0; attempt < connectionAttempts; attempt++ {
-		pingCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if connectCtx.Err() != nil {
+			break
+		}
+		pingCtx, cancel := context.WithTimeout(connectCtx, 10*time.Second)
 		lastErr = db.PingContext(pingCtx)
 		cancel()
 		if lastErr == nil {
@@ -133,7 +148,10 @@ func NewEngine(cfg config.VastbaseConfig) (*Engine, error) {
 			zap.String("dsn", e.dsnSafe),
 			zap.Error(lastErr))
 		if attempt+1 < connectionAttempts {
-			time.Sleep(connectionRetryInterval)
+			select {
+			case <-time.After(connectionRetryInterval):
+			case <-connectCtx.Done():
+			}
 		}
 	}
 	if lastErr != nil {
@@ -141,7 +159,9 @@ func NewEngine(cfg config.VastbaseConfig) (*Engine, error) {
 		return nil, fmt.Errorf("vastbase: connect %s: %w", e.dsnSafe, lastErr)
 	}
 
-	if err := e.initialize(context.Background()); err != nil {
+	initCtx, cancelInit := context.WithTimeout(context.Background(), initializeTimeout)
+	defer cancelInit()
+	if err := e.initialize(initCtx); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -221,10 +241,11 @@ func buildDSN(cfg config.VastbaseConfig) string {
 	return strings.Join(parts, " ")
 }
 
-// initialize verifies the server answers and warns when the configured
+// initialize verifies the server answers and fails when the configured
 // compatibility mode does not match the instance's datcompatibility. A B-mode
-// distance operator issued against a PG instance fails at query time, so the
-// early warning saves a debugging round trip.
+// distance operator or bm25 predicate issued against a PG instance (and vice
+// versa) fails at query time, so a confirmed mismatch must stop startup
+// before any document operation runs.
 func (e *Engine) initialize(ctx context.Context) error {
 	var version string
 	if err := e.db.QueryRowContext(ctx, "SELECT vb_version()").Scan(&version); err != nil {
@@ -234,16 +255,18 @@ func (e *Engine) initialize(ctx context.Context) error {
 
 	var datCompat string
 	if err := e.db.QueryRowContext(ctx,
-		"SELECT datcompatibility FROM pg_database WHERE datname = current_database()").Scan(&datCompat); err == nil {
-		expected := "PG"
-		if e.dbCompatibility == compatB {
-			expected = "B"
-		}
-		if !strings.EqualFold(strings.TrimSpace(datCompat), expected) {
-			common.Warn("Vastbase dbcompatibility mismatch: instance reports " +
-				datCompat + ", engine configured for " + e.dbCompatibility +
-				"; distance operators and full-text indexes may fail")
-		}
+		"SELECT datcompatibility FROM pg_database WHERE datname = current_database()").Scan(&datCompat); err != nil {
+		return fmt.Errorf("vastbase: read datcompatibility: %w", err)
+	}
+	expected := compatPG
+	if e.dbCompatibility == compatB {
+		expected = compatB
+	}
+	datCompat = strings.TrimSpace(datCompat)
+	if !strings.EqualFold(datCompat, expected) {
+		return fmt.Errorf("vastbase: dbcompatibility mismatch: instance reports %q but the engine is configured for %q; "+
+			"set dbcompatibility to the database's mode (VB_DBCOMPATIBILITY in docker deployments) or recreate the database, "+
+			"because distance operators and full-text indexes differ between modes", datCompat, e.dbCompatibility)
 	}
 	return nil
 }

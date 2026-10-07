@@ -84,9 +84,9 @@ func fieldKeyword(field string) bool {
 
 // normalizeChunk encodes a chunk document for insert/update. Unknown fields
 // are kept as-is: ensureDynamicColumns has (or will) materialize them as real
-// varchar(256) columns — the ES dynamic-mapping equivalent. Unlike the
-// OceanBase codec there is no extra folding and no whole-column padding; the
-// table DEFAULTs fill the gaps so unwritten fields keep their ES-parity ”.
+// text columns — the ES dynamic-mapping equivalent. Unlike the OceanBase
+// codec there is no extra folding and no whole-column padding; the table
+// DEFAULTs fill the gaps so unwritten fields keep their ES-parity ”.
 func normalizeChunk(document map[string]interface{}) (map[string]interface{}, error) {
 	result := make(map[string]interface{}, len(document))
 	for key, value := range document {

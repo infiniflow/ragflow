@@ -65,11 +65,13 @@ func (s *sqlArgs) embedFilter(filterSQL string, filterArgs []interface{}) string
 }
 
 // Search executes filter, full-text, vector, or hybrid search. Chunk and skill
-// tables use the ParadeDB-style bm25 operator @~@ with one scan per column
-// (UNION ALL, never OR — OR plans pick a BitmapOr node that nulls bm25_score)
-// fused with a pure KNN scan whose ORDER BY stays bare so the graph_index
-// stays eligible; memory tables use to_tsquery/ts_rank instead, since they
-// carry no full-text index.
+// tables pick the full-text dialect by compatibility mode: B mode uses the
+// ParadeDB-style bm25 operator @~@ with one scan per column (UNION ALL, never
+// OR — OR plans pick a BitmapOr node that nulls bm25_score), PG mode matches
+// the GIN index with to_tsvector/plainto_tsquery and ranks with ts_rank; both
+// fuse with a pure KNN scan whose ORDER BY stays bare so the graph_index
+// stays eligible. Memory tables use to_tsquery/ts_rank over the tokenized
+// content column instead, since they carry no full-text index.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	if req == nil || len(req.IndexNames) == 0 {
 		return nil, fmt.Errorf("index names cannot be empty")
@@ -224,7 +226,7 @@ func buildSearchOutput(selectFields []string, kind string, columns map[string]co
 			fields[i] = mapMemoryField(field)
 		}
 	}
-	fields = append(fields, "id")
+	fields = append(fields, identifierColumn(kind))
 	if scored && kind == "chunk" {
 		fields = append(fields, "pagerank_fea")
 	}
@@ -274,7 +276,7 @@ func expandOutputIfStar(output []string, columns map[string]columnMeta) []string
 func (e *Engine) searchFullText(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	fulltextLimit := fullTextLimit(plan, limit)
 	args := &sqlArgs{}
-	cte, err := e.fullTextCTE(tableName, output, filterSQL, filterArgs, plan.text, fulltextLimit, args)
+	cte, err := e.fullTextCTE(tableName, kind, output, filterSQL, filterArgs, plan.text, fulltextLimit, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -287,11 +289,14 @@ func (e *Engine) searchFullText(ctx context.Context, tableName, kind string, out
 	return chunks, int64(len(chunks)), nil
 }
 
-// fullTextCTE builds the per-column bm25 scan: a single field stays a plain
-// WHERE predicate, multiple fields run one @~@ scan per column UNION ALL'd
-// and deduplicated with DISTINCT ON so a row matching several fields is kept
-// once with its best score.
-func (e *Engine) fullTextCTE(tableName string, output []string, filterSQL string, filterArgs []interface{}, text *types.MatchTextExpr, fulltextLimit int, args *sqlArgs) (string, error) {
+// fullTextCTE builds the full-text candidate scan for chunk and skill tables,
+// in the dialect the compatibility mode provisions indexes for: B mode keeps
+// the per-column bm25 @~@ scans (single field as a plain WHERE predicate,
+// multiple fields UNION ALL'd and deduplicated with DISTINCT ON so a row
+// matching several fields is kept once with its best score); PG mode matches
+// the GIN expression index with to_tsvector/plainto_tsquery. Both deduplicate
+// on the kind's row identifier.
+func (e *Engine) fullTextCTE(tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, text *types.MatchTextExpr, fulltextLimit int, args *sqlArgs) (string, error) {
 	fields, weights := parseFullTextFields(text)
 	if len(fields) == 0 {
 		return "", fmt.Errorf("vastbase: fulltext expression carries no fields")
@@ -299,6 +304,11 @@ func (e *Engine) fullTextCTE(tableName string, output []string, filterSQL string
 	fieldsExpr := selectFieldsSQL(output)
 	query := fullTextQuery(text)
 	minimumShouldMatch := formatMinimumShouldMatch(text)
+	idColumn := identifierColumn(kind)
+
+	if e.dbCompatibility != compatB {
+		return e.pgFullTextCTE(tableName, idColumn, fieldsExpr, fields, weights, filterSQL, filterArgs, query, minimumShouldMatch, fulltextLimit, args)
+	}
 
 	if len(fields) == 1 {
 		filterPart := args.embedFilter(filterSQL, filterArgs)
@@ -317,8 +327,78 @@ func (e *Engine) fullTextCTE(tableName string, output []string, filterSQL string
 		branches = append(branches, fmt.Sprintf("(SELECT %s, bm25_score() AS bm25_score FROM %s WHERE (%s) AND (%s @~@ $%d) ORDER BY bm25_score DESC LIMIT %d)",
 			fieldsExpr, quoteIdent(tableName), filterPart, quoteIdent(field), operandPlaceholder, perColumnLimit))
 	}
-	return fmt.Sprintf(`SELECT %s, "SCORE" AS _score FROM (SELECT DISTINCT ON (id) %s, bm25_score AS "SCORE" FROM (%s) AS unioned ORDER BY id, "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT %d`,
-		fieldsExpr, fieldsExpr, strings.Join(branches, " UNION ALL "), fulltextLimit), nil
+	return fmt.Sprintf(`SELECT %s, "SCORE" AS _score FROM (SELECT DISTINCT ON (%s) %s, bm25_score AS "SCORE" FROM (%s) AS unioned ORDER BY %s, "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT %d`,
+		fieldsExpr, quoteIdent(idColumn), fieldsExpr, strings.Join(branches, " UNION ALL "), quoteIdent(idColumn), fulltextLimit), nil
+}
+
+// pgFullTextCTE builds the PG-mode full-text scan over the GIN index
+// ensureFullTextIndexes provisions: every predicate re-states the indexed
+// to_tsvector('cn_tokenizer', column) expression and matches it against
+// plainto_tsquery under the same text-search config, so the index stays
+// eligible and no tsquery-operator escaping is ever needed. PostgreSQL has no
+// partial minimum_should_match: at 100% (or a count covering every term) the
+// per-term predicates AND together, anything looser ORs them. Ranking uses
+// ts_rank, multiplied by the field weight.
+func (e *Engine) pgFullTextCTE(tableName, idColumn, fieldsExpr string, fields, weights []string, filterSQL string, filterArgs []interface{}, query, minimumShouldMatch string, fulltextLimit int, args *sqlArgs) (string, error) {
+	terms := fullTextTerms(query)
+	if len(terms) == 0 {
+		terms = []string{query}
+	}
+	joiner := " OR "
+	if minimumShouldMatchCoversAllTerms(minimumShouldMatch, len(terms)) {
+		joiner = " AND "
+	}
+	predicateFor := func(field string) (match string, rank string) {
+		matches := make([]string, 0, len(terms))
+		ranks := make([]string, 0, len(terms))
+		for _, term := range terms {
+			placeholder := args.add(term)
+			matches = append(matches, fmt.Sprintf("to_tsvector('cn_tokenizer', %s) @@ plainto_tsquery('cn_tokenizer', $%d)",
+				quoteIdent(field), placeholder))
+			ranks = append(ranks, fmt.Sprintf("ts_rank(to_tsvector('cn_tokenizer', %s), plainto_tsquery('cn_tokenizer', $%d))",
+				quoteIdent(field), placeholder))
+		}
+		return strings.Join(matches, joiner), "GREATEST(" + strings.Join(ranks, ", ") + ")"
+	}
+
+	if len(fields) == 1 {
+		filterPart := args.embedFilter(filterSQL, filterArgs)
+		match, rank := predicateFor(fields[0])
+		score := fmt.Sprintf("(%s * %s)", rank, weights[0])
+		return fmt.Sprintf("SELECT %s, %s AS _score FROM %s WHERE (%s) AND (%s) ORDER BY _score DESC LIMIT %d",
+			fieldsExpr, score, quoteIdent(tableName), filterPart, match, fulltextLimit), nil
+	}
+
+	perColumnLimit := max(fulltextLimit*2, 1)
+	branches := make([]string, 0, len(fields))
+	for i, field := range fields {
+		filterPart := args.embedFilter(filterSQL, filterArgs)
+		match, rank := predicateFor(field)
+		branches = append(branches, fmt.Sprintf("(SELECT %s, (%s * %s) AS \"SCORE\" FROM %s WHERE (%s) AND (%s) ORDER BY \"SCORE\" DESC LIMIT %d)",
+			fieldsExpr, rank, weights[i], quoteIdent(tableName), filterPart, match, perColumnLimit))
+	}
+	return fmt.Sprintf(`SELECT %s, "SCORE" AS _score FROM (SELECT DISTINCT ON (%s) %s, "SCORE" FROM (%s) AS unioned ORDER BY %s, "SCORE" DESC) AS deduped ORDER BY _score DESC LIMIT %d`,
+		fieldsExpr, quoteIdent(idColumn), fieldsExpr, strings.Join(branches, " UNION ALL "), quoteIdent(idColumn), fulltextLimit), nil
+}
+
+// fullTextTerms splits the stripped full-text query into plaintext terms for
+// the PG-mode predicate; each term is bound through plainto_tsquery verbatim.
+func fullTextTerms(query string) []string {
+	return strings.Fields(query)
+}
+
+// minimumShouldMatchCoversAllTerms reports whether the minimum_should_match
+// option demands every query term — the one case a tsquery can express
+// exactly (terms AND-joined). Lower percentages and lower counts degrade to
+// OR: PostgreSQL text search has no partial minimum.
+func minimumShouldMatchCoversAllTerms(minimumShouldMatch string, terms int) bool {
+	value := strings.TrimSpace(minimumShouldMatch)
+	if strings.HasSuffix(value, "%") {
+		percent, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64)
+		return err == nil && percent >= 100
+	}
+	count, err := strconv.Atoi(value)
+	return err == nil && terms > 0 && count >= terms
 }
 
 // fullTextLimit scales the bm25 recall up to the fusion topn: the text expr's
@@ -391,7 +471,7 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 	}
 	output = expandOutputIfStar(output, columns)
 	args := &sqlArgs{}
-	fulltextSQL, err := e.fullTextCTE(tableName, output, filterSQL, filterArgs, plan.text, fullTextLimit(plan, limit), args)
+	fulltextSQL, err := e.fullTextCTE(tableName, kind, output, filterSQL, filterArgs, plan.text, fullTextLimit(plan, limit), args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -400,11 +480,11 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 		return nil, 0, err
 	}
 
-	// Normalize the bm25 score by this table's maximum to [0,1] before the
-	// weighted sum: raw bm25 fused directly with the [0,1] cosine similarity
-	// lets any fulltext hit outrank every vector-only row. The divisor falls
-	// back to 1 when fulltext is empty or all-zero so vector-only rows keep a
-	// numeric score.
+	// Normalize the full-text score by this table's maximum to [0,1] before
+	// the weighted sum: a raw bm25 (or small ts_rank) fused directly with the
+	// [0,1] cosine similarity lets any fulltext hit outrank every vector-only
+	// row. The divisor falls back to 1 when fulltext is empty or all-zero so
+	// vector-only rows keep a numeric score.
 	vectorWeight := fusionVectorWeight(plan.fusion)
 	textWeight := 1 - vectorWeight
 	fused := fmt.Sprintf("(COALESCE(a._score, 0) / COALESCE(NULLIF((SELECT MAX(_score) FROM filter_fulltext), 0), 1) * %s + COALESCE(b._score, 0) * %s)",
@@ -414,8 +494,9 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 		projection = append(projection, fmt.Sprintf("COALESCE(a.%s, b.%s) AS %s", quoteIdent(field), quoteIdent(field), quoteIdent(field)))
 	}
 	projection = append(projection, fused+" AS _score")
-	query := fmt.Sprintf("WITH filter_fulltext AS (%s), filter_vector AS (%s) SELECT %s FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a.id = b.id ORDER BY _score DESC LIMIT %d OFFSET %d",
-		fulltextSQL, vectorSQL, strings.Join(projection, ", "), minPositive(limit, plan.fusion.TopN), offset)
+	idColumn := quoteIdent(identifierColumn(kind))
+	query := fmt.Sprintf("WITH filter_fulltext AS (%s), filter_vector AS (%s) SELECT %s FROM filter_fulltext a FULL OUTER JOIN filter_vector b ON a.%s = b.%s ORDER BY _score DESC LIMIT %d OFFSET %d",
+		fulltextSQL, vectorSQL, strings.Join(projection, ", "), idColumn, idColumn, minPositive(limit, plan.fusion.TopN), offset)
 	rows, err := e.queryRows(ctx, query, args.values...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("vastbase: fusion search %s: %w", tableName, err)
@@ -425,8 +506,10 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 }
 
 // searchMemoryFullText matches memory content with the built-in tsvector
-// machinery ('simple' dictionary), the path memory tables use since they carry
-// no full-text index; ts_rank is naturally ~[0,1].
+// machinery ('simple' dictionary) over tokenized_content_ltks — the
+// fine-grained token column, the ES engine's memory search field — the path
+// memory tables use since they carry no full-text index; ts_rank is naturally
+// ~[0,1].
 func (e *Engine) searchMemoryFullText(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, text *types.MatchTextExpr) ([]map[string]interface{}, int64, error) {
 	tsquery := memoryTSQuery(text)
 	if tsquery == "" {
@@ -434,8 +517,8 @@ func (e *Engine) searchMemoryFullText(ctx context.Context, tableName, kind strin
 	}
 	args := &sqlArgs{}
 	filterPart := args.embedFilter(filterSQL, filterArgs)
-	match := fmt.Sprintf("to_tsvector('simple', COALESCE(content_ltks, '')) @@ to_tsquery('simple', $%d)", args.add(tsquery))
-	score := fmt.Sprintf("ts_rank(to_tsvector('simple', COALESCE(content_ltks, '')), to_tsquery('simple', $%d))", args.add(tsquery))
+	match := fmt.Sprintf("to_tsvector('simple', COALESCE(tokenized_content_ltks, '')) @@ to_tsquery('simple', $%d)", args.add(tsquery))
+	score := fmt.Sprintf("ts_rank(to_tsvector('simple', COALESCE(tokenized_content_ltks, '')), to_tsquery('simple', $%d))", args.add(tsquery))
 	query := fmt.Sprintf("SELECT %s, %s AS _score FROM %s WHERE %s AND %s ORDER BY _score DESC LIMIT %d OFFSET %d",
 		selectFieldsSQL(output), score, quoteIdent(tableName), filterPart, match, limit, offset)
 	rows, err := e.queryRows(ctx, query, args.values...)
@@ -470,8 +553,8 @@ func (e *Engine) searchMemoryFusion(ctx context.Context, tableName, kind string,
 
 	args := &sqlArgs{}
 	filterPart := args.embedFilter(filterSQL, filterArgs)
-	match := fmt.Sprintf("to_tsvector('simple', COALESCE(content_ltks, '')) @@ to_tsquery('simple', $%d)", args.add(tsquery))
-	score := fmt.Sprintf("(ts_rank(to_tsvector('simple', COALESCE(content_ltks, '')), to_tsquery('simple', $%d)) * %s + (1 - (%s %s $%d)) * %s)",
+	match := fmt.Sprintf("to_tsvector('simple', COALESCE(tokenized_content_ltks, '')) @@ to_tsquery('simple', $%d)", args.add(tsquery))
+	score := fmt.Sprintf("(ts_rank(to_tsvector('simple', COALESCE(tokenized_content_ltks, '')), to_tsquery('simple', $%d)) * %s + (1 - (%s %s $%d)) * %s)",
 		args.add(tsquery), formatFloat(textWeight), column, e.distanceOp(), args.add(vector), formatFloat(vectorWeight))
 	inner := fmt.Sprintf("SELECT %s, %s AS _score FROM %s WHERE %s AND %s LIMIT %d",
 		selectFieldsSQL(output), score, quoteIdent(tableName), filterPart, match, numCandidates)
@@ -607,8 +690,12 @@ func formatMinimumShouldMatch(text *types.MatchTextExpr) string {
 	return "0%"
 }
 
-// memoryTSQuery builds the 'simple' to_tsquery operand: the original query
-// words AND-joined, with tsquery operator characters stripped per word.
+// memoryTSQuery builds the 'simple' to_tsquery operand. The query runs
+// through the same tokenize/fine-grain pipeline as the
+// tokenized_content_ltks column it is matched against (gracefully degrading
+// to the raw text when the tokenizer is unavailable), so multi-word and CJK
+// queries split on the same boundaries the stored content did; tsquery
+// operator characters are then stripped per token and the tokens AND-joined.
 func memoryTSQuery(text *types.MatchTextExpr) string {
 	query := ""
 	if text.ExtraOptions != nil {
@@ -617,7 +704,8 @@ func memoryTSQuery(text *types.MatchTextExpr) string {
 	if query == "" {
 		query = boostSuffixRegex.ReplaceAllString(text.MatchingText, "")
 	}
-	words := strings.FieldsFunc(query, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' })
+	tokenized := tokenizeMemoryContent(query)
+	words := strings.FieldsFunc(tokenized, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' })
 	operands := make([]string, 0, len(words))
 	for _, word := range words {
 		word = strings.Map(func(r rune) rune {

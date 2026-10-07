@@ -51,7 +51,16 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		return nil, err
 	}
 	if !exists {
-		if vectorSize == 0 {
+		// ChunkStoreExists also reports false while a full-text index DDL
+		// keeps failing (ensureFullTextIndexes degrades to a warning), so the
+		// vector size is required only to create a brand-new table; a batch
+		// without vectors must still flow into an existing one and re-run the
+		// self-healing CreateChunkStore path.
+		tablePresent, err := e.tableExists(ctx, baseName)
+		if err != nil {
+			return nil, err
+		}
+		if !tablePresent && vectorSize == 0 {
 			return nil, fmt.Errorf("cannot infer vector size from documents")
 		}
 		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
