@@ -2142,3 +2142,118 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
 	}
 }
+
+// parseMetadataSelector projects a JSON-decoded map onto
+// document.MetadataSelector. The documented type of selector.document_ids is
+// list[string]; the function must reject any non-string element with a data
+// error instead of panicking on the unchecked `id.(string)` cast.
+func TestParseMetadataSelector_RejectsNonStringDocumentIDs(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantIDs []string
+		wantErr string
+	}{
+		{
+			name:    "string list accepted",
+			body:    `{"document_ids": ["doc-1", "doc-2"]}`,
+			wantIDs: []string{"doc-1", "doc-2"},
+		},
+		{
+			name:    "empty list accepted",
+			body:    `{"document_ids": []}`,
+			wantIDs: []string{},
+		},
+		{
+			name:    "int list rejected",
+			body:    `{"document_ids": [123]}`,
+			wantErr: "document_ids items must be strings.",
+		},
+		{
+			name:    "bool list rejected",
+			body:    `{"document_ids": [true, false]}`,
+			wantErr: "document_ids items must be strings.",
+		},
+		{
+			name:    "null list rejected",
+			body:    `{"document_ids": [null]}`,
+			wantErr: "document_ids items must be strings.",
+		},
+		{
+			name:    "object list rejected",
+			body:    `{"document_ids": [{"id": "doc-1"}]}`,
+			wantErr: "document_ids items must be strings.",
+		},
+		{
+			name:    "mixed list rejected",
+			body:    `{"document_ids": ["doc-1", 2, true]}`,
+			wantErr: "document_ids items must be strings.",
+		},
+		{
+			name:    "document_ids not a list rejected",
+			body:    `{"document_ids": "doc-1"}`,
+			wantErr: "document_ids must be a list.",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw map[string]interface{}
+			if err := json.Unmarshal([]byte(tc.body), &raw); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			sel, errMsg := parseMetadataSelector(raw)
+			if tc.wantErr != "" {
+				if errMsg != tc.wantErr {
+					t.Fatalf("error mismatch: got %q, want %q", errMsg, tc.wantErr)
+				}
+				if sel != nil {
+					t.Fatalf("expected nil selector when error is set, got %+v", sel)
+				}
+				return
+			}
+			if errMsg != "" {
+				t.Fatalf("unexpected error: %q", errMsg)
+			}
+			if sel == nil {
+				t.Fatal("expected non-nil selector on success")
+			}
+			if len(sel.DocumentIDs) != len(tc.wantIDs) {
+				t.Fatalf("DocumentIDs len: got %d (%v), want %d (%v)",
+					len(sel.DocumentIDs), sel.DocumentIDs, len(tc.wantIDs), tc.wantIDs)
+			}
+			for i, id := range tc.wantIDs {
+				if sel.DocumentIDs[i] != id {
+					t.Fatalf("DocumentIDs[%d]: got %q, want %q", i, sel.DocumentIDs[i], id)
+				}
+			}
+		})
+	}
+}
+
+func TestParseMetadataSelector_OtherBranches(t *testing.T) {
+	// nil selector — empty selector, no error.
+	if sel, errMsg := parseMetadataSelector(nil); errMsg != "" || sel == nil || len(sel.DocumentIDs) != 0 {
+		t.Fatalf("nil selector: got sel=%+v err=%q", sel, errMsg)
+	}
+
+	// Not-an-object selector.
+	if _, errMsg := parseMetadataSelector("not-an-object"); errMsg != "selector must be an object." {
+		t.Fatalf("non-object selector: got %q", errMsg)
+	}
+
+	// metadata_condition not an object.
+	raw := map[string]interface{}{"metadata_condition": "bad"}
+	if _, errMsg := parseMetadataSelector(raw); errMsg != "metadata_condition must be an object." {
+		t.Fatalf("non-object metadata_condition: got %q", errMsg)
+	}
+
+	// metadata_condition object accepted.
+	raw = map[string]interface{}{"metadata_condition": map[string]interface{}{"k": "v"}}
+	sel, errMsg := parseMetadataSelector(raw)
+	if errMsg != "" {
+		t.Fatalf("valid metadata_condition: %q", errMsg)
+	}
+	if sel == nil || sel.MetadataCondition["k"] != "v" {
+		t.Fatalf("metadata_condition round-trip failed: %+v", sel)
+	}
+}
