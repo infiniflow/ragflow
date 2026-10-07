@@ -1796,12 +1796,27 @@ def _build_cks(sections, delimiter):
                             )
                         seg = ""
                     else:
-                        # Bare delimiter: retain it by attaching it to the
-                        # preceding segment, so punctuation such as `。；！？`
-                        # is kept — lossless, the #20276 parity with the Go
-                        # TokenChunker. Concatenating the emitted text chunks
-                        # reproduces the source exactly.
-                        seg += sub_sec
+                        # Bare delimiter: retain it by emitting the preceding
+                        # text together with the delimiter as a chunk (lossless,
+                        # the #20276 parity with the Go TokenChunker — sentence
+                        # punctuation such as `。；！？` is kept), then reset the
+                        # buffer so the next segment starts a fresh chunk.
+                        # #20384 attached the delimiter to `seg` but never
+                        # flushed, which collapsed the whole section into a
+                        # single chunk (the docx "不分块" regression). Flushing
+                        # here restores the per-delimiter split; _merge_cks
+                        # still merges small chunks up to chunk_token_num.
+                        if seg and seg.strip():
+                            s = (seg + sub_sec).strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
                     continue
 
                 # ② empty or whitespace-only ordinary segment
