@@ -500,3 +500,86 @@ func TestKeenable_BuildByNameRejectsInvalidCanvasParams(t *testing.T) {
 		}
 	}
 }
+
+// TestKeenable_BuildReferencesReadsSnippetFirst pins the #20477 fix:
+// the Go Keenable tool was reading result.description to build the
+// chunk content, but the Keenable API returns the page text in
+// result.snippet and leaves description empty. The Python tool's
+// after-#18341 helper prefers snippet; the Go port now mirrors it.
+func TestKeenable_BuildReferencesReadsSnippetFirst(t *testing.T) {
+	t.Parallel()
+
+	envelope := map[string]any{
+		"results": []any{
+			// Typical: snippet carries the page text, description is empty.
+			map[string]any{
+				"title":       "Result A",
+				"url":         "https://example.com/a",
+				"snippet":     "alpha page text with real content",
+				"description": "",
+			},
+			// Backwards-compat: only description populated (older API response).
+			map[string]any{
+				"title":       "Result B",
+				"url":         "https://example.com/b",
+				"snippet":     "",
+				"description": "beta page text from description",
+			},
+			// Both populated: snippet wins.
+			map[string]any{
+				"title":       "Result C",
+				"url":         "https://example.com/c",
+				"snippet":     "from snippet",
+				"description": "from description",
+			},
+			// Both empty: dropped (was dropped before, must still be dropped).
+			map[string]any{
+				"title":       "Result D",
+				"url":         "https://example.com/d",
+				"snippet":     "",
+				"description": "",
+			},
+		},
+	}
+	chunks, _ := buildKeenableReferences(envelope)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks len = %d, want 3 (one per non-empty result)", len(chunks))
+	}
+	wantContents := []string{
+		"alpha page text with real content",
+		"beta page text from description",
+		"from snippet",
+	}
+	for i, want := range wantContents {
+		if got := chunks[i]["content"]; got != want {
+			t.Errorf("chunks[%d].content = %q, want %q", i, got, want)
+		}
+	}
+}
+
+// TestKeenable_ResultContentHelper pins the helper directly so the
+// fallback contract is enforced in isolation, independent of how
+// buildKeenableReferences happens to use it.
+func TestKeenable_ResultContentHelper(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		result map[string]any
+		want   string
+	}{
+		{"snippet only", map[string]any{"snippet": "page text", "description": ""}, "page text"},
+		{"description only", map[string]any{"snippet": "", "description": "fallback text"}, "fallback text"},
+		{"both populated prefers snippet", map[string]any{"snippet": "from snippet", "description": "from description"}, "from snippet"},
+		{"both empty", map[string]any{"snippet": "", "description": ""}, ""},
+		{"whitespace only", map[string]any{"snippet": "   ", "description": "fallback text"}, "fallback text"},
+		{"nil values", map[string]any{"snippet": nil, "description": "fallback text"}, "fallback text"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := keenableResultContent(tc.result); got != tc.want {
+				t.Errorf("keenableResultContent = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
