@@ -15,6 +15,15 @@ import (
 // authoritative and replaces each Extractor node's metadata; when absent, the
 // node's own modular metadata is preserved. It mutates the provided map in
 // place and returns it for convenience.
+//
+// The flat delimiter keys (delimiter / delimiters) at the top level are
+// bridged onto the canonical GeneralChunker:SixApplesFall node so a user
+// who enters a delimiter in the parser-config "Delimiter" field actually
+// persists it instead of having the request return HTTP 200 and silently
+// drop the value (#20497). The chunker reads delimiters from the
+// component-scoped node's own params map only; without the bridge the
+// flat transport key was never rewritten into a node the chunker would
+// ever look at.
 func ApplyComponentScopedParserConfig(
 	parserConfig entity.JSONMap,
 	llmID string,
@@ -61,6 +70,17 @@ func ApplyComponentScopedParserConfig(
 		}
 	}
 
+	// Bridge flat delimiter / delimiters onto the canonical general chunker
+	// node so a user who enters a delimiter in the parser-config panel has it
+	// actually persisted (#20497). The chunker reads delimiters from
+	// GeneralChunker:SixApplesFall.delimiters (or .delimiter); without this
+	// bridge the flat transport key is silently dropped.
+	if flatDelim, ok := parserConfig["delimiters"]; ok {
+		bridgeFlatDelimiter(parserConfig, "delimiters", flatDelim)
+	} else if flatDelim, ok := parserConfig["delimiter"]; ok {
+		bridgeFlatDelimiter(parserConfig, "delimiter", flatDelim)
+	}
+
 	// Documents and datasets are uniformly component-scoped (every dataset and
 	// document DSL defines an Extractor node), so the flat "metadata" transport
 	// key is never a first-class config: it is scoped onto an Extractor node
@@ -74,6 +94,27 @@ func ApplyComponentScopedParserConfig(
 	delete(parserConfig, "metadata")
 
 	return parserConfig
+}
+
+// generalChunkerNodeID is the canonical identifier the GeneralChunker node
+// registers under in dataset state. The chunker's Update method only reads
+// from its own params map (internal/ingestion/component/chunker/general.go:69-77)
+// so any flat-top-level delimiter must be bridged onto this node before it
+// will take effect.
+const generalChunkerNodeID = "GeneralChunker:SixApplesFall"
+
+// bridgeFlatDelimiter writes a single delimiter value (either a string or a
+// JSON-array of strings) into the canonical GeneralChunker node's params map
+// under the original transport key, creating the node if it does not exist.
+// Called once per parser_config by ApplyComponentScopedParserConfig.
+func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
+	node, ok := parserConfig[generalChunkerNodeID].(map[string]any)
+	if !ok {
+		node = map[string]any{}
+		parserConfig[generalChunkerNodeID] = node
+	}
+	node[key] = value
+	delete(parserConfig, key)
 }
 
 func cloneJSONMap(in map[string]any) map[string]any {
