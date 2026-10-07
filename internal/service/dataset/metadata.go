@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -85,7 +87,18 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
-	_, enabled, metadata, builtInMetadata := modularMetadataConfig(kb.ParserConfig)
+	_, enabled, metadata, builtInMetadata, usedLegacy := modularMetadataConfigWithLegacy(kb.ParserConfig)
+	if usedLegacy {
+		// #20142: pre-#18511 datasets carry built_in_metadata at the top
+		// level of parser_config. The runtime synthesizes the new modular
+		// shape on read so the data still appears, but the operator
+		// should run the documented migration statement to retire the
+		// legacy shape. Warn once per dataset, on this user-initiated
+		// read path only, to avoid log spam from per-document ingestion.
+		common.WarnCtx(ctx, "dataset parser_config still uses pre-#18511 flat metadata shape; runtime is bridging to the modular shape",
+			zap.String("dataset_id", datasetID),
+		)
+	}
 
 	return map[string]interface{}{
 		"enabled":           enabled,
@@ -178,15 +191,31 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 // component-scoped copy under an Extractor node is used as a fallback (the
 // stored form after scoping). Configs without either (e.g. minimal fixtures)
 // yield a disabled, empty result.
+//
+// When neither the new modular shape nor an Extractor component node is
+// present, falls back to common.LegacyFlatMetadataConfig so pre-#18511
+// datasets keep returning their built_in_metadata on every read instead
+// of silently returning empty (#20142).
+//
+// modularMetadataConfigWithLegacy returns the same four values plus a
+// usedLegacy signal so callers can warn per request when the legacy
+// bridge fired. modularMetadataConfig delegates to it and discards the
+// signal so existing call sites that don't need the warning are
+// unaffected.
 func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
+	present, enabled, meta, builtIn, _ := modularMetadataConfigWithLegacy(parserConfig)
+	return present, enabled, meta, builtIn
+}
+
+func modularMetadataConfigWithLegacy(parserConfig map[string]any) (present, enabled bool, metadata, builtIn []any, usedLegacy bool) {
 	if parserConfig == nil {
-		return false, false, []any{}, []any{}
+		return false, false, []any{}, []any{}, false
 	}
 	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
-		enabled, _ := metaObj["enabled"].(bool)
-		metadata := anyOrEmptyList(metaObj["metadata"])
-		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
-		return true, enabled, metadata, builtIn
+		enabled, _ = metaObj["enabled"].(bool)
+		metadata = anyOrEmptyList(metaObj["metadata"])
+		builtIn = anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn, false
 	}
 	for cpnID, raw := range parserConfig {
 		lower := strings.ToLower(cpnID)
@@ -201,12 +230,18 @@ func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []an
 		if !ok {
 			continue
 		}
-		enabled, _ := metaObj["enabled"].(bool)
-		metadata := anyOrEmptyList(metaObj["metadata"])
-		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
-		return true, enabled, metadata, builtIn
+		enabled, _ = metaObj["enabled"].(bool)
+		metadata = anyOrEmptyList(metaObj["metadata"])
+		builtIn = anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn, false
 	}
-	return false, false, []any{}, []any{}
+	if metaObj, ok := common.LegacyFlatMetadataConfig(parserConfig); ok {
+		enabled, _ = metaObj["enabled"].(bool)
+		metadata = anyOrEmptyList(metaObj["metadata"])
+		builtIn = anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn, true
+	}
+	return false, false, []any{}, []any{}, false
 }
 
 func anyOrEmptyList(value any) []any {
