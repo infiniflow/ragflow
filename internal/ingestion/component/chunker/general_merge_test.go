@@ -475,6 +475,135 @@ func TestGeneralChunkerSplitsChildrenAfterParentMerge(t *testing.T) {
 	}
 }
 
+// TestMergeDOCXUnitsPrefixGreedy covers the prefix-greedy merge that fixes
+// #20496 (cycle 94): when a backtick-wrapped custom-delimiter prefix is
+// supplied (e.g. "问："), a paragraph whose stripped text starts with the
+// prefix begins a new chunk, while other paragraphs extend the current
+// chunk up to chunk_token_size. Without a prefix the legacy "custom
+// delimiter means no merge" behaviour is preserved.
+func TestMergeDOCXUnitsPrefixGreedy(t *testing.T) {
+	t.Run("single-record-groups-five-paragraphs", func(t *testing.T) {
+		units := []schema.ChunkDoc{
+			{Text: "问：什么是RAG？", DocType: "text", CKType: "text", TKNums: intPtr(3)},
+			{Text: "名称：检索增强生成", DocType: "text", CKType: "text", TKNums: intPtr(4)},
+			{Text: "发布日期：2026-01-01", DocType: "text", CKType: "text", TKNums: intPtr(3)},
+			{Text: "答：RAG是检索增强生成。", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+			{Text: "", DocType: "text", CKType: "text", TKNums: intPtr(0)},
+		}
+		got := mergeDOCXUnits(units, 1024, true, "问：", "\n")
+		texts := generalChunkTexts(got)
+		if len(texts) != 1 {
+			t.Fatalf("texts = %q, want exactly one chunk (record grouped)", texts)
+		}
+		want := "问：什么是RAG？\n名称：检索增强生成\n发布日期：2026-01-01\n答：RAG是检索增强生成。"
+		if texts[0] != want {
+			t.Fatalf("texts[0] = %q, want %q", texts[0], want)
+		}
+	})
+
+	t.Run("multiple-records-keep-boundaries", func(t *testing.T) {
+		units := []schema.ChunkDoc{
+			{Text: "问：Q1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "答：A1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "", DocType: "text", CKType: "text", TKNums: intPtr(0)},
+			{Text: "问：Q2", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "答：A2", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		}
+		got := mergeDOCXUnits(units, 1024, true, "问：", "\n")
+		texts := generalChunkTexts(got)
+		if len(texts) != 2 {
+			t.Fatalf("texts = %q, want exactly two chunks", texts)
+		}
+		want1 := "问：Q1\n答：A1"
+		want2 := "问：Q2\n答：A2"
+		if texts[0] != want1 {
+			t.Fatalf("texts[0] = %q, want %q", texts[0], want1)
+		}
+		if texts[1] != want2 {
+			t.Fatalf("texts[1] = %q, want %q", texts[1], want2)
+		}
+	})
+
+	t.Run("token-cap-enforced-mid-record", func(t *testing.T) {
+		units := []schema.ChunkDoc{
+			{Text: "问：开头", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+			{Text: "第一段", DocType: "text", CKType: "text", TKNums: intPtr(3)},
+			{Text: "第二段", DocType: "text", CKType: "text", TKNums: intPtr(3)},
+			{Text: "第三段", DocType: "text", CKType: "text", TKNums: intPtr(3)},
+		}
+		// target=5: the second paragraph pushes the running total to 5
+		// (=target), so the third paragraph must start a new chunk even
+		// though no prefix-match fires.
+		got := mergeDOCXUnits(units, 5, true, "问：", "\n")
+		texts := generalChunkTexts(got)
+		if len(texts) < 2 {
+			t.Fatalf("texts = %q, want token-cap to force a split", texts)
+		}
+		want := "问：开头\n第一段"
+		if texts[0] != want {
+			t.Fatalf("texts[0] = %q, want %q", texts[0], want)
+		}
+	})
+
+	t.Run("legacy-no-prefix-keeps-no-merge-behaviour", func(t *testing.T) {
+		units := []schema.ChunkDoc{
+			{Text: "问：Q1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "答：A1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "问：Q2", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		}
+		// customPrefix="" preserves the legacy "any custom-delimiter means
+		// no merge" behaviour: every paragraph becomes its own chunk.
+		got := mergeDOCXUnits(units, 1024, true, "", "\n")
+		texts := generalChunkTexts(got)
+		if len(texts) != 3 {
+			t.Fatalf("texts = %q, want three standalone chunks", texts)
+		}
+	})
+
+	t.Run("media-resets-merge-target", func(t *testing.T) {
+		units := []schema.ChunkDoc{
+			{Text: "问：Q1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+			{Text: "first table", DocType: "text", CKType: "table", TKNums: intPtr(1)},
+			{Text: "答：A1", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		}
+		got := mergeDOCXUnits(units, 1024, true, "问：", "\n")
+		// text + table + text. The text after the table must NOT extend
+		// the text before it: media breaks the merge target.
+		if len(got) != 3 {
+			t.Fatalf("got len = %d, want 3 (text, table, text)", len(got))
+		}
+		if got[0].CKType != "text" {
+			t.Fatalf("got[0].CKType = %q, want text", got[0].CKType)
+		}
+		if got[1].CKType != "table" {
+			t.Fatalf("got[1].CKType = %q, want table", got[1].CKType)
+		}
+		if got[2].CKType != "text" {
+			t.Fatalf("got[2].CKType = %q, want text", got[2].CKType)
+		}
+	})
+
+	t.Run("non-prefix-paragraph-extends-current-chunk", func(t *testing.T) {
+		// Regression for the cycle-94 fix: a paragraph that does NOT start
+		// with the prefix must extend the previous chunk even when the
+		// running token total is well below chunk_token_size.
+		units := []schema.ChunkDoc{
+			{Text: "问：开头", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+			{Text: "第一段", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+			{Text: "第二段", DocType: "text", CKType: "text", TKNums: intPtr(2)},
+		}
+		got := mergeDOCXUnits(units, 1024, true, "问：", "\n")
+		texts := generalChunkTexts(got)
+		if len(texts) != 1 {
+			t.Fatalf("texts = %q, want exactly one chunk (no prefix-match = extend)", texts)
+		}
+		want := "问：开头\n第一段\n第二段"
+		if texts[0] != want {
+			t.Fatalf("texts[0] = %q, want %q", texts[0], want)
+		}
+	})
+}
+
 func generalChunkTexts(chunks []schema.ChunkDoc) []string {
 	texts := make([]string, len(chunks))
 	for i := range chunks {
