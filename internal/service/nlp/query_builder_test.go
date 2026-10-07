@@ -474,3 +474,28 @@ func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
 		}
 	}
 }
+
+// TestQueryBuilder_Question_SynonymQuestionMark ensures "?" in an English
+// synonym is escaped in the query string (reserved in Infinity) while the
+// keyword keeps the unescaped form.
+func TestQueryBuilder_Question_SynonymQuestionMark(t *testing.T) {
+	qb := NewQueryBuilder()
+	qb.synonym.dictionary = map[string][]string{
+		"cat": {"what?cat"},
+	}
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	if expr == nil {
+		t.Fatal("Question returned nil expr")
+	}
+	if strings.Contains(strings.ReplaceAll(expr.MatchingText, `\?`, ""), "?") {
+		t.Errorf("MatchingText contains unescaped ?: %q", expr.MatchingText)
+	}
+	if !strings.Contains(expr.MatchingText, `\?`) {
+		t.Errorf("MatchingText missing escaped synonym: %q", expr.MatchingText)
+	}
+	for _, kw := range keywords {
+		if strings.Contains(kw, `\`) {
+			t.Errorf("keyword should not be escaped: %q", kw)
+		}
+	}
+}

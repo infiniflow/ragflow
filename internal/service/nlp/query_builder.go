@@ -344,7 +344,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				for _, syn := range tkSyns {
 					syn = cleanSynonym(syn)
 					if syn != "" {
-						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, syn, tw.w/4.0))
+						// Escape "?" (reserved in Infinity) only in the query string;
+						// keywords keep the cleaned, unescaped form.
+						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, strings.ReplaceAll(syn, "?", `\?`), tw.w/4.0))
 						// Extend keywords with cleaned synonyms
 						keywords = append(keywords, syn)
 					}
