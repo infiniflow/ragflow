@@ -1353,6 +1353,8 @@ func TestIsPublicAddr(t *testing.T) {
 	}
 }
 
+// TestAssertHostIsSafeRejectsLocalhost checks that a loopback name stays
+// blocked when ALLOW_ANY_HOST is unset.
 func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "")
 	_, err := AssertHostIsSafe("localhost")
@@ -1364,6 +1366,9 @@ func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 	}
 }
 
+// TestAssertHostIsSafeAllowsPrivateHostWhenConfigured checks that
+// ALLOW_ANY_HOST pins a private database host and still rejects a name
+// that does not resolve.
 func TestAssertHostIsSafeAllowsPrivateHostWhenConfigured(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "1")
 	orig := common.LookupHost

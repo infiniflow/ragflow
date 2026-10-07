@@ -202,6 +202,9 @@ func TestResolveAndValidate(t *testing.T) {
 	})
 }
 
+// TestResolveAndValidateProductionEnvCannotDisableURLGuard checks that
+// ALLOW_ANY_HOST does not relax user-controlled URL checks, while a
+// database host dial still accepts the resolved address.
 func TestResolveAndValidateProductionEnvCannotDisableURLGuard(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "true")
 
@@ -218,6 +221,8 @@ func TestResolveAndValidateProductionEnvCannotDisableURLGuard(t *testing.T) {
 	}
 }
 
+// TestValidateDBHostAllowAnyHostPinsPrivateResolution checks that a
+// private DNS answer is accepted and the dial stays pinned to that IP.
 func TestValidateDBHostAllowAnyHostPinsPrivateResolution(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "1")
 	orig := common.LookupHost

@@ -153,6 +153,8 @@ func isNonGlobalIP(ip net.IP) bool {
 	return err != nil
 }
 
+// allowAnyHost reports the in-memory test override. ValidateDBHost also
+// honors ALLOW_ANY_HOST; ResolveAndValidate does not.
 func allowAnyHost() bool {
 	return common.AllowAnyHostForTest
 }

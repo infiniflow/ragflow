@@ -21,6 +21,8 @@ import (
 	"testing"
 )
 
+// TestAllowConfiguredPrivateHost checks the ALLOW_ANY_HOST truthy values
+// accepted by the Python host guard.
 func TestAllowConfiguredPrivateHost(t *testing.T) {
 	cases := []struct {
 		value string
@@ -47,6 +49,8 @@ func TestAllowConfiguredPrivateHost(t *testing.T) {
 	}
 }
 
+// TestResolveHostPinSkipsPublicCheck checks that a private resolution is
+// returned as the pin, and that empty or unresolvable hosts still fail.
 func TestResolveHostPinSkipsPublicCheck(t *testing.T) {
 	orig := LookupHost
 	LookupHost = func(host string) ([]string, error) {

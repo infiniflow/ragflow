@@ -50,6 +50,8 @@ type TestDBConnectionRequest struct {
 // or Invoke checks.
 var AllowAnyHostForTest = false
 
+// allowAnyHost reports the in-memory test override. AssertHostIsSafe checks
+// ALLOW_ANY_HOST separately so URL and Invoke guards stay strict.
 func allowAnyHost() bool {
 	return AllowAnyHostForTest
 }

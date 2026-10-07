@@ -309,6 +309,8 @@ func TestConnectorStripAuthHeadersRemovesCredentials(t *testing.T) {
 // Host-type SSRF guards (IMAP / MySQL / PostgreSQL / S3-compatible)
 // ---------------------------------------------------------------------------
 
+// TestAssertConnectorHostSafe checks the strict host guard used by
+// MySQL, PostgreSQL, and IMAP when ALLOW_ANY_HOST is unset.
 func TestAssertConnectorHostSafe(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "")
 	connectorAllowLoopbackForTest = false
@@ -344,6 +346,8 @@ func TestAssertConnectorHostSafe(t *testing.T) {
 	}
 }
 
+// TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback checks that
+// the unit-test loopback hook does not allow other private addresses.
 func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "")
 	withConnectorLoopbackTestHook(t)
@@ -362,6 +366,9 @@ func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 	}
 }
 
+// TestAssertConnectorHostSafeHonorsAllowAnyHost checks that a private
+// connector host is pinned when ALLOW_ANY_HOST is set, and that URL
+// connector checks stay strict.
 func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "1")
 	connectorAllowLoopbackForTest = false
