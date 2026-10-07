@@ -2,11 +2,13 @@ package parser
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"errors"
 	"image"
 	"image/png"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -102,6 +104,47 @@ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH///////////////8AAAAA
 AAD+////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf//////////
 /////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP7///8AAAAAAAAAAA==
 `
+
+// formulaErrorBIFF8FixtureGzipBase64 was generated with xlwt 1.3.0 and
+// patched to carry the cached BIFF8 error value for the formula 1/0. It is
+// compressed to keep the mostly empty OLE container compact in source.
+const formulaErrorBIFF8FixtureGzipBase64 = `
+H4sIAAAAAAAC/+1YPWgUQRT+ZnP/JJe9eBES8TgCRhPTiI1NslGIqQzRRhFBL+YKSbiT1UYbo/FKQbBSbAJpbKIW/qGFdhZCRAtBEO60tBIULJLbvPl2Vy6JRQ40GJlvmTfv3ps3827mzZudfbuYqc497K5hDYbQgrqXRKxBpqQkwx82RO95mg3rhBTPYEshmZCFjEXxvO1NXK+hXu8aLDyIvBIKfJZyCucxVi4V85uIQ/ShoLQPg0IV7ookjS561UF6lnQb6X22fEE6TMkN0kFpW1UnseiM9R8IoviE1UNdGrrfJ7T5SMk+dOK1juIrN5XfNoqD7rnC9L+pyEVaMQ9Zt9FiqegWpqvIygLO44eXB76HO/Vl3sg3V64g8p+r5fHfyG9ZEWAG3hkGeEUC8lGLvwlHXLfsXliSLKuCxBuFL0zpJMxNa6/atG0M5lahk2gnn2FI25KWl+59e3dkYtw5TckME7Xf6y7tATxc1RZinKbG+qXvJ7+X9Bp73UG+mzQrXkndO94ZMIdn2eY6tb0yzn7ivbO7gd8jfOXr0ae5yhenT/iF0drl7MIHZw49crxMir1+ZjGgBtSd2xrPnLBWwdb/RNq1Lg0kLDvw3QvOrHYsI0U2Q6pbqDUtYthJmZ6xOA8xXxVHTiEn8ztkdeAxZ2W44TxMwcDAwMDAwMDAwGBrQQWv+/reEfGvGbxOxIPvOstS6uYzyX+LYyjLc1EupiMoSe3iUlPxsx1RFfalNmgTfi/UOC6ju5jCBP2Yajp+5TqoGv/Phg3tP7eFmh2/3oyff3n8FQEt9k4AFgAA
+`
+
+func TestXLSParser_PreservesFormulaErrors(t *testing.T) {
+	compressed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(formulaErrorBIFF8FixtureGzipBase64))
+	if err != nil {
+		t.Fatalf("decode formula-error fixture: %v", err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatalf("open formula-error fixture: %v", err)
+	}
+	data, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("decompress formula-error fixture: %v", err)
+	}
+	if err := zr.Close(); err != nil {
+		t.Fatalf("close formula-error fixture: %v", err)
+	}
+
+	p, err := NewXLSParser("excelize")
+	if err != nil {
+		t.Fatalf("NewXLSParser failed: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "formula-error.xls", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("res.JSON len = %d, want 1", len(res.JSON))
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if !strings.Contains(text, "<tr><td>#DIV/0!</td></tr>") {
+		t.Fatalf("table markup = %q, want formula error row", text)
+	}
+}
 
 func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	data, err := base64.StdEncoding.DecodeString(genuineBIFF8FixtureBase64)

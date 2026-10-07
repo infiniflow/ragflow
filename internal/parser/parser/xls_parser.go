@@ -121,7 +121,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 }
 
 func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, error) {
-	reader, err := excel.OpenXLS(bytes.NewReader(data))
+	reader, err := excel.OpenXLS(bytes.NewReader(data), excel.WithErrorValues(true))
 	if err != nil {
 		return nil, 0, fmt.Errorf("open BIFF workbook: %w", err)
 	}
