@@ -66,13 +66,20 @@ func (b *filterBuilder) join() string {
 // buildFilter translates an ES-style condition map into a parameterized WHERE
 // clause, porting the Python connector's equivalent_condition_to_str:
 //
-//   - falsy values and fieldKeyword columns are dropped (the Python code drops
-//     keyword conditions entirely — a known, test-locked gap kept for parity),
+//   - falsy values are dropped (the Python code skipped them too),
+//   - keyword columns (source_id, *_kwd except docnm_kwd/knowledge_graph_kwd)
+//     store ###-joined lists, so their term/terms conditions become LIKE
+//     containment tests on the separator-padded column. Dropping them instead
+//     would collapse a write filter to its dataset scope and let an update or
+//     delete hit every row of the dataset,
 //   - a column missing from the live schema matches no row (1=0), like an
 //     unmapped ES field; a nil columns map means "unknown schema" and allows
 //     every column,
 //   - exists on a text column excludes DEFAULT ” rows, because unwritten text
 //     columns hold ” rather than NULL; must_not.exists is the mirror image.
+//
+// Memory tables skip the keyword translation: their keyword-named columns
+// (message_type_kwd, source_id) store plain scalars.
 //
 // Unlike the Python connector, kb_id is NOT skipped: Go tables are shared per
 // baseName with kb_id/memory_id as row-level dataset discriminators, so the
@@ -93,7 +100,8 @@ func buildFilter(condition map[string]interface{}, kind string, columns map[stri
 		if isEmptyFilterValue(value) {
 			continue
 		}
-		if fieldKeyword(key) {
+		if fieldKeyword(key) && kind != "memory" {
+			filter.appendKeywordTerms(key, value, columns)
 			continue
 		}
 		switch key {
@@ -171,6 +179,48 @@ func (b *filterBuilder) appendExists(column string, columns map[string]columnMet
 	b.raw(quoted + " IS NOT NULL")
 }
 
+// likeEscaper neutralizes LIKE metacharacters so a bound value matches
+// literally; backslash is the default LIKE escape character.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// appendKeywordTerms translates a term/terms condition on a ###-joined keyword
+// column into LIKE containment tests: padding the column with separators makes
+// first and last list elements match and prevents substring false positives
+// ("nav_doc" must not match a stored "nav_doc_2" element). A terms list ORs
+// one test per value, matching the ES any-of semantics. The pattern is bound
+// as a parameter, so only the value's own LIKE metacharacters need escaping.
+func (b *filterBuilder) appendKeywordTerms(column string, value interface{}, columns map[string]columnMeta) {
+	if columns != nil {
+		if _, known := columns[column]; !known {
+			// ES dynamic-mapping parity: a field this table never stored exists
+			// on no row.
+			b.raw("1=0")
+			return
+		}
+	}
+	values := []interface{}{value}
+	if list, ok := interfaceSlice(value); ok {
+		values = list
+	}
+	padded := "('" + keywordSeparator + "' || " + quoteIdent(column) + " || '" + keywordSeparator + "')"
+	parts := make([]string, 0, len(values))
+	for _, item := range values {
+		text := stringValue(item)
+		if text == "" {
+			continue
+		}
+		pattern := "%" + keywordSeparator + likeEscaper.Replace(text) + keywordSeparator + "%"
+		parts = append(parts, padded+" LIKE "+b.placeholder(pattern))
+	}
+	if len(parts) == 0 {
+		// Only empty-string values remain. The decode side drops empty
+		// elements, so no stored row can ever contain one.
+		b.raw("1=0")
+		return
+	}
+	b.raw("(" + strings.Join(parts, " OR ") + ")")
+}
+
 // metadataJSON reads the metadata text column as jsonb, mapping rows the
 // writer left at DEFAULT ” to an empty object so the cast never fails the
 // whole query.
@@ -216,7 +266,10 @@ func (b *filterBuilder) appendMetadataFilteringConditions(raw interface{}) error
 		if name == "" || operator == "" || strings.ContainsAny(name, `"\\`) {
 			continue
 		}
-		path := "$." + name
+		// A plain top-level key, not a MySQL "$.name" JSON path: the jsonb
+		// ->>/-> text operand is a literal key lookup, and no metadata object
+		// carries a key literally named "$.name".
+		path := name
 		value := condition["value"]
 		switch operator {
 		case "is", "is not":

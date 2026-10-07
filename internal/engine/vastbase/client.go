@@ -52,7 +52,10 @@ const (
 )
 
 var (
-	dsnKeywordPwRe = regexp.MustCompile(`(password=)('(?:[^'\\]|\\.)*'|\S+)`)
+	// lib/pq's parseOpts tolerates whitespace around "=" and treats a
+	// backslash-escaped space as part of an unquoted value, so the value
+	// alternation must cover both forms or the redaction leaks.
+	dsnKeywordPwRe = regexp.MustCompile(`(password\s*=\s*)('(?:[^'\\]|\\.)*'|(?:\\.|[^\s\\])+)`)
 	dsnURLPwRe     = regexp.MustCompile(`(://[^:/@\s]+:)[^@\s]+(@)`)
 )
 
@@ -71,6 +74,16 @@ func quoteDSNValue(v string) string {
 	r := strings.ReplaceAll(v, `\`, `\\`)
 	r = strings.ReplaceAll(r, `'`, `\'`)
 	return "'" + r + "'"
+}
+
+// isLocalDBHost reports whether the host is loopback or a unix-socket path —
+// the only addresses allowed to default to plaintext transport.
+func isLocalDBHost(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	}
+	return strings.HasPrefix(host, "/")
 }
 
 // Engine is the Vastbase G100 document engine backed by database/sql.
@@ -149,14 +162,18 @@ func newEngineWithDB(cfg config.VastbaseConfig, db *sql.DB) *Engine {
 }
 
 // buildDSN assembles a lib/pq keyword DSN. VASTBASE_DSN overrides everything;
-// otherwise config values fill in. Unrecognized keywords such as
-// statement_timeout are forwarded to the server as startup runtime parameters.
+// otherwise config values fill in. An unset ssl_mode follows the transport
+// policy: plaintext (disable) only for loopback or unix-socket hosts, and
+// certificate-verified TLS (verify-full) for every other TCP host — remote
+// deployments must not silently fall back to cleartext. Unrecognized keywords
+// such as statement_timeout are forwarded to the server as startup runtime
+// parameters.
 func buildDSN(cfg config.VastbaseConfig) string {
 	if env := os.Getenv("VASTBASE_DSN"); env != "" {
 		return env
 	}
 	host, port, user, password, dbName := "vastbase", 5432, "ragflow", "", "ragflow"
-	sslMode := "disable"
+	sslMode := ""
 	if cfg.Host != "" {
 		host = cfg.Host
 	}
@@ -172,6 +189,13 @@ func buildDSN(cfg config.VastbaseConfig) string {
 	}
 	if cfg.SSLMode != "" {
 		sslMode = cfg.SSLMode
+	}
+	if sslMode == "" {
+		if isLocalDBHost(host) {
+			sslMode = "disable"
+		} else {
+			sslMode = "verify-full"
+		}
 	}
 	parts := []string{
 		fmt.Sprintf("host=%s", quoteDSNValue(host)),

@@ -17,6 +17,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -31,7 +32,7 @@ func TestParseVastbaseConfigDefaultsAndOverrides(t *testing.T) {
 	}
 	defaults := c.GetVastbaseConfig()
 	if defaults.Host != "vastbase" || defaults.Port != 5432 || defaults.User != "ragflow" ||
-		defaults.DBName != "ragflow" || defaults.DBCompatibility != "PG" || defaults.SSLMode != "disable" {
+		defaults.DBName != "ragflow" || defaults.DBCompatibility != "PG" || defaults.SSLMode != "" {
 		t.Fatalf("vastbase defaults = %#v", defaults)
 	}
 
@@ -71,6 +72,34 @@ func TestParseVastbaseConfigNormalizesCompatibility(t *testing.T) {
 		if got := c.GetVastbaseConfig().DBCompatibility; got != test.want {
 			t.Fatalf("dbcompatibility(%q) = %q, want %q", test.raw, got, test.want)
 		}
+	}
+}
+
+// Env-only deployments (no service_conf.yaml) configure Vastbase through
+// RAGFLOW_VASTBASE_* variables: the parser must read them through the parent
+// viper's AutomaticEnv, not a Sub view that drops it.
+func TestParseVastbaseConfigEnvironmentOnly(t *testing.T) {
+	t.Setenv("RAGFLOW_VASTBASE_HOST", "env-host")
+	t.Setenv("RAGFLOW_VASTBASE_PORT", "25432")
+	t.Setenv("RAGFLOW_VASTBASE_PASSWORD", "env-secret")
+	t.Setenv("RAGFLOW_VASTBASE_DBCOMPATIBILITY", "b")
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	c := &Config{}
+	if err := c.ParseDocEngineConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	got := c.GetVastbaseConfig()
+	if got.Host != "env-host" || got.Port != 25432 ||
+		got.Password != "env-secret" || got.DBCompatibility != "B" {
+		t.Fatalf("vastbase env-only overrides = %#v", got)
+	}
+	// Fields without an env override keep their defaults (SSLMode stays
+	// unset: the engine derives it from the host).
+	if got.User != "ragflow" || got.DBName != "ragflow" || got.SSLMode != "" {
+		t.Fatalf("unset vastbase fields must keep defaults: %#v", got)
 	}
 }
 

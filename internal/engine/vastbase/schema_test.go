@@ -112,6 +112,9 @@ func TestCreateChunkStoreBModeProvisionsFullTextPerColumn(t *testing.T) {
 	createChunkPattern := strings.Join([]string{
 		regexp.QuoteMeta(`CREATE TABLE IF NOT EXISTS "t1" ("id" varchar(256) NOT NULL PRIMARY KEY`),
 		regexp.QuoteMeta(`"docnm_kwd" text DEFAULT ''`),
+		// Fractional feedback deltas must survive: pagerank_fea is double
+		// precision, not integer.
+		regexp.QuoteMeta(`"pagerank_fea" double precision DEFAULT 0.0`),
 		regexp.QuoteMeta(`"available_int" integer DEFAULT 1`),
 		regexp.QuoteMeta(`"position_int" integer[]`),
 		regexp.QuoteMeta(`"metadata" text DEFAULT ''`),
@@ -327,6 +330,30 @@ func TestChunkStoreExistsRequiresStaticIndexes(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	exists, err = engine.ChunkStoreExists(context.Background(), "t1", "kb-1")
 	if err != nil || exists {
+		t.Fatalf("exists = %v err = %v", exists, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// In B mode a skill table's full-text contract is skillFullTextFields —
+// probing the chunk fields would always miss and re-run CreateChunkStore on
+// every skill write.
+func TestChunkStoreExistsSkillBModeProbesSkillFullTextFields(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatB}, db)
+
+	expectCount(mock, tableCountQuery(), "skill_t1")
+	for _, field := range skillFullTextFields {
+		expectCount(mock, indexCountQuery(), "skill_t1", regularIndexName("skill_t1", field+"_fulltext"))
+	}
+	exists, err := engine.ChunkStoreExists(context.Background(), "skill_t1", "skill")
+	if err != nil || !exists {
 		t.Fatalf("exists = %v err = %v", exists, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -90,6 +90,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	hiddenSortFields := searchHiddenSortFields(req, mergeTables)
 	scored := effectivePlan.text != nil || effectivePlan.dense != nil
 
+	// Single-table searches page inside each SQL statement. Multi-table
+	// searches window only once, on the merged set: every table returns the
+	// whole candidate range (LIMIT offset+limit OFFSET 0) and
+	// mergeSearchChunks applies req's page window after merging — a
+	// per-table OFFSET would skip rows that belong in the global window.
+	tableOffset := max(req.Offset, 0)
+	tableLimit := positiveOr(req.Limit, 30)
+	if mergeTables {
+		tableLimit = tableOffset + tableLimit
+		tableOffset = 0
+	}
+
 	result := &types.SearchResult{Chunks: []map[string]interface{}{}}
 	for _, tableName := range tableNames {
 		if err := validateIdentifier(tableName); err != nil {
@@ -126,7 +138,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		} else if kind == "chunk" && len(req.KbIDs) > 0 {
 			condition["kb_id"] = req.KbIDs
 		}
-		chunks, total, err := e.searchTable(ctx, tableName, kind, columns, output, condition, req, effectivePlan)
+		chunks, total, err := e.searchTable(ctx, tableName, kind, columns, output, condition, req, tableOffset, tableLimit, effectivePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -151,13 +163,14 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	return result, nil
 }
 
-func (e *Engine) searchTable(ctx context.Context, tableName, kind string, columns map[string]columnMeta, output []string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
+// searchTable runs one table's query. offset/limit form the per-table SQL
+// window: req's page in single-table mode, the whole candidate range in merge
+// mode, where mergeSearchChunks applies the page window after merging.
+func (e *Engine) searchTable(ctx context.Context, tableName, kind string, columns map[string]columnMeta, output []string, condition map[string]interface{}, req *types.SearchRequest, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	filterSQL, filterArgs, err := buildFilter(condition, kind, columns)
 	if err != nil {
 		return nil, 0, err
 	}
-	offset := max(req.Offset, 0)
-	limit := positiveOr(req.Limit, 30)
 
 	switch {
 	case plan.text != nil && plan.dense != nil:

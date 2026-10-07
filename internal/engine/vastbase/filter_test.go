@@ -86,9 +86,10 @@ func TestBuildFilterUnknownColumnMatchesNothing(t *testing.T) {
 	}
 }
 
-func TestBuildFilterKeywordConditionsAreDropped(t *testing.T) {
-	// Locked Python gap: keyword-column conditions (source_id, *_kwd except
-	// docnm_kwd/knowledge_graph_kwd) are silently dropped, not translated.
+func TestBuildFilterKeywordConditionsMatchJoinedValues(t *testing.T) {
+	// Keyword columns store ###-joined lists: term conditions translate to
+	// LIKE containment on the separator-padded column (dropping them would
+	// collapse a write filter to its dataset scope).
 	sqlText, args, err := buildFilter(map[string]interface{}{
 		"source_id":     "doc-1",
 		"important_kwd": "alpha",
@@ -97,11 +98,45 @@ func TestBuildFilterKeywordConditionsAreDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sqlText != `"docnm_kwd" = $1` {
+	want := `"docnm_kwd" = $1 AND (('###' || "important_kwd" || '###') LIKE $2) AND (('###' || "source_id" || '###') LIKE $3)`
+	if sqlText != want {
 		t.Fatalf("filter = %q", sqlText)
 	}
-	if !reflect.DeepEqual(args, []interface{}{"title"}) {
+	if !reflect.DeepEqual(args, []interface{}{"title", "%###alpha###%", "%###doc-1###%"}) {
 		t.Fatalf("args = %#v", args)
+	}
+}
+
+func TestBuildFilterKeywordTermsListORsAndEscapes(t *testing.T) {
+	sqlText, args, err := buildFilter(map[string]interface{}{
+		"tag_kwd": []interface{}{"red", "blue%ish", "gr_en"},
+	}, "chunk", testColumns())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `(('###' || "tag_kwd" || '###') LIKE $1 OR ('###' || "tag_kwd" || '###') LIKE $2 OR ('###' || "tag_kwd" || '###') LIKE $3)`
+	if sqlText != want {
+		t.Fatalf("filter = %q", sqlText)
+	}
+	// LIKE metacharacters in the values are escaped so they match literally.
+	if !reflect.DeepEqual(args, []interface{}{"%###red###%", `%###blue\%ish###%`, `%###gr\_en###%`}) {
+		t.Fatalf("args = %#v", args)
+	}
+	// A terms list whose every element is empty matches no row: the decode
+	// side never yields an empty element.
+	sqlText, args, err = buildFilter(map[string]interface{}{"tag_kwd": []interface{}{"", ""}}, "chunk", testColumns())
+	if err != nil || sqlText != "1=0" || len(args) != 0 {
+		t.Fatalf("empty-element filter = %q args = %#v err %v", sqlText, args, err)
+	}
+}
+
+func TestBuildFilterUnknownKeywordColumnMatchesNothing(t *testing.T) {
+	sqlText, args, err := buildFilter(map[string]interface{}{"ghost_kwd": "x"}, "chunk", testColumns())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sqlText != "1=0" || len(args) != 0 {
+		t.Fatalf("filter = %q args = %#v", sqlText, args)
 	}
 }
 
@@ -181,12 +216,12 @@ func TestBuildFilterMemoryFieldMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// message_type maps to message_type_kwd, a keyword column: the condition
-	// is dropped exactly like the Python connector drops it.
-	if sqlText != `"id" = $1` {
+	// message_type maps to message_type_kwd; memory stores that column as a
+	// plain scalar, so it keeps plain equality (no ### padding).
+	if sqlText != `"id" = $1 AND "message_type_kwd" = $2` {
 		t.Fatalf("memory filter = %q", sqlText)
 	}
-	if !reflect.DeepEqual(args, []interface{}{"m1_1"}) {
+	if !reflect.DeepEqual(args, []interface{}{"m1_1", "raw"}) {
 		t.Fatalf("args = %#v", args)
 	}
 }
@@ -245,8 +280,8 @@ func TestBuildFilterMetadataConditions(t *testing.T) {
 	if len(args) != 6 {
 		t.Fatalf("args = %#v", args)
 	}
-	if args[0] != "$.year" || args[2] != "$.author" {
-		t.Fatalf("json paths = %#v", args)
+	if args[0] != "year" || args[2] != "author" {
+		t.Fatalf("json key arguments = %#v", args)
 	}
 }
 

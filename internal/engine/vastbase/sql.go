@@ -18,6 +18,7 @@ package vastbase
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -27,7 +28,11 @@ var sqlLimitPattern = regexp.MustCompile(`(?i)\blimit\b`)
 
 // RunSQL executes the read-only SQL produced by the chat SQL-retrieval flow.
 // The service layer injects the kb_id filter before the SQL reaches the
-// engine (shared tables are not auto-scoped here).
+// engine (shared tables are not auto-scoped here). The SELECT/WITH prefix
+// check is a guardrail, not the read-only control: a data-modifying CTE
+// (WITH d AS (DELETE FROM ... RETURNING *) SELECT * FROM d) also starts with
+// WITH, so the statement runs inside a READ ONLY transaction the engine
+// always rolls back — the server itself rejects writes on that path.
 func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
 	if tableName != "" {
 		if err := validateIdentifier(tableName); err != nil {
@@ -45,5 +50,10 @@ func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []
 	if !sqlLimitPattern.MatchString(normalized) {
 		normalized += " LIMIT 1024"
 	}
-	return e.queryRows(ctx, normalized)
+	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("vastbase: begin read-only sql transaction: %w", err)
+	}
+	defer tx.Rollback()
+	return queryRowsTx(ctx, tx, normalized)
 }

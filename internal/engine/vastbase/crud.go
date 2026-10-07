@@ -78,7 +78,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			document, err = normalizeSkill(chunk, documentID)
 		default:
 			document, err = normalizeChunk(chunk)
-			if stringValue(document["kb_id"]) == "" {
+			// normalizeChunk returns a nil map on encode errors; checking
+			// err first keeps the kb_id backfill from panicking on it.
+			if err == nil && stringValue(document["kb_id"]) == "" {
 				document["kb_id"] = datasetID
 			}
 		}

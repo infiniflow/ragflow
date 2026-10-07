@@ -185,8 +185,9 @@ services:
       - VB_PASSWORD=${VB_PASSWORD}
       - VB_USERNAME=${VB_USERNAME}
       - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
     ports:
-      - ${VB_PORT:-5432}:5432
+      - ${EXPOSE_VB_PORT:-5432}:5432
     volumes:
       - vastbase_data:/home/vastbase/data
       - ./vastbase/init:/docker-entrypoint-initdb.d

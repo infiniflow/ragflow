@@ -41,13 +41,25 @@ func TestBuildDSNAssemblesKeywordForm(t *testing.T) {
 
 func TestBuildDSNDefaultsAndOverride(t *testing.T) {
 	t.Setenv("VASTBASE_DSN", "")
+	// Unset ssl_mode: the default host is a TCP service name, so the
+	// transport policy requires certificate-verified TLS.
 	got := buildDSN(config.VastbaseConfig{})
-	if !regexp.MustCompile(`^host='vastbase' port=5432 user='ragflow' dbname='ragflow' sslmode='disable' connect_timeout=30`).MatchString(got) {
+	if !regexp.MustCompile(`^host='vastbase' port=5432 user='ragflow' dbname='ragflow' sslmode='verify-full' connect_timeout=30`).MatchString(got) {
 		t.Fatalf("default DSN = %q", got)
 	}
 	// No password configured: the keyword must be absent, not empty.
 	if regexp.MustCompile(`password=''`).MatchString(got) {
 		t.Fatalf("empty password must be omitted: %q", got)
+	}
+	// Loopback and unix sockets may default to plaintext.
+	for _, host := range []string{"localhost", "127.0.0.1"} {
+		if got := buildDSN(config.VastbaseConfig{Host: host}); !regexp.MustCompile(`sslmode='disable'`).MatchString(got) {
+			t.Fatalf("local host %s must default to disable: %q", host, got)
+		}
+	}
+	// An explicit ssl_mode is honored for any host.
+	if got := buildDSN(config.VastbaseConfig{SSLMode: "require"}); !regexp.MustCompile(`sslmode='require'`).MatchString(got) {
+		t.Fatalf("explicit ssl_mode must be honored: %q", got)
 	}
 	t.Setenv("VASTBASE_DSN", "postgres://u:secret@h:5432/db")
 	if got := buildDSN(config.VastbaseConfig{Host: "ignored"}); got != "postgres://u:secret@h:5432/db" {
@@ -59,6 +71,21 @@ func TestRedactDSN(t *testing.T) {
 	keyword := redactDSN(`host='h' password='s3cret' user='u'`)
 	if keyword != `host='h' password=*** user='u'` {
 		t.Fatalf("keyword redaction = %q", keyword)
+	}
+	// lib/pq accepts whitespace around "=" — those DSNs must redact too.
+	spaced := redactDSN(`host=h user=u password = 'secret' dbname=d`)
+	if spaced != `host=h user=u password = *** dbname=d` {
+		t.Fatalf("spaced keyword redaction = %q", spaced)
+	}
+	// Escaped characters survive in unquoted values, including escaped
+	// spaces: the whole token is the password, not just its first word.
+	escaped := redactDSN(`password=se\ cret dbname=d`)
+	if escaped != `password=*** dbname=d` {
+		t.Fatalf("escaped unquoted redaction = %q", escaped)
+	}
+	escapedQuote := redactDSN(`host=h password='a\'b' port=5432`)
+	if escapedQuote != `host=h password=*** port=5432` {
+		t.Fatalf("escaped quoted redaction = %q", escapedQuote)
 	}
 	url := redactDSN("postgres://ragflow:Infini_Rag%40123@vastbase:5432/ragflow")
 	if url != "postgres://ragflow:***@vastbase:5432/ragflow" {

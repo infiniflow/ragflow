@@ -91,7 +91,11 @@ type VastbaseConfig struct {
 	Password        string `mapstructure:"password"`
 	DBName          string `mapstructure:"db_name"`
 	DBCompatibility string `mapstructure:"dbcompatibility"`
-	SSLMode         string `mapstructure:"ssl_mode"`
+	// SSLMode is the lib/pq sslmode. Empty is not a plaintext license: the
+	// engine decides by host — disable on loopback or unix sockets,
+	// verify-full on every other TCP host. Plaintext to a non-loopback host
+	// (e.g. the bundled docker network) must set this explicitly.
+	SSLMode string `mapstructure:"ssl_mode"`
 }
 
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
@@ -105,43 +109,41 @@ func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 }
 
 func (c *Config) parseVastbaseConfig(v *viper.Viper) {
-	// Default Vastbase config
+	// Default Vastbase config. SSLMode stays empty (unset): buildDSN picks
+	// disable for loopback hosts and verify-full for everything else, so a
+	// remote Host without an explicit ssl_mode never degrades to cleartext.
 	c.docEngine.Vastbase.Host = "vastbase"
 	c.docEngine.Vastbase.Port = 5432
 	c.docEngine.Vastbase.User = "ragflow"
 	c.docEngine.Vastbase.Password = "Infini_Rag@123"
 	c.docEngine.Vastbase.DBName = "ragflow"
 	c.docEngine.Vastbase.DBCompatibility = "PG"
-	c.docEngine.Vastbase.SSLMode = "disable"
 
-	if !v.IsSet("vastbase") {
-		return
+	// Fully qualified parent keys, not v.Sub("vastbase"): Sub drops the root
+	// AutomaticEnv (env prefix/replacer), and IsSet("vastbase") cannot see
+	// child environment variables, so an env-only deployment
+	// (RAGFLOW_VASTBASE_HOST, ... with no YAML section) would silently keep
+	// every default.
+	if v.IsSet("vastbase.host") {
+		c.docEngine.Vastbase.Host = v.GetString("vastbase.host")
 	}
-	sub := v.Sub("vastbase")
-	if sub == nil {
-		return
+	if v.IsSet("vastbase.port") {
+		c.docEngine.Vastbase.Port = v.GetInt("vastbase.port")
 	}
-
-	if sub.IsSet("host") {
-		c.docEngine.Vastbase.Host = sub.GetString("host")
+	if v.IsSet("vastbase.user") {
+		c.docEngine.Vastbase.User = v.GetString("vastbase.user")
 	}
-	if sub.IsSet("port") {
-		c.docEngine.Vastbase.Port = sub.GetInt("port")
+	if v.IsSet("vastbase.password") {
+		c.docEngine.Vastbase.Password = v.GetString("vastbase.password")
 	}
-	if sub.IsSet("user") {
-		c.docEngine.Vastbase.User = sub.GetString("user")
+	if v.IsSet("vastbase.db_name") {
+		c.docEngine.Vastbase.DBName = v.GetString("vastbase.db_name")
 	}
-	if sub.IsSet("password") {
-		c.docEngine.Vastbase.Password = sub.GetString("password")
+	if v.IsSet("vastbase.dbcompatibility") {
+		c.docEngine.Vastbase.DBCompatibility = v.GetString("vastbase.dbcompatibility")
 	}
-	if sub.IsSet("db_name") {
-		c.docEngine.Vastbase.DBName = sub.GetString("db_name")
-	}
-	if sub.IsSet("dbcompatibility") {
-		c.docEngine.Vastbase.DBCompatibility = sub.GetString("dbcompatibility")
-	}
-	if sub.IsSet("ssl_mode") {
-		c.docEngine.Vastbase.SSLMode = sub.GetString("ssl_mode")
+	if v.IsSet("vastbase.ssl_mode") {
+		c.docEngine.Vastbase.SSLMode = v.GetString("vastbase.ssl_mode")
 	}
 
 	c.docEngine.Vastbase.DBCompatibility = strings.ToUpper(strings.TrimSpace(c.docEngine.Vastbase.DBCompatibility))

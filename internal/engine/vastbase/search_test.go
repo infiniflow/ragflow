@@ -18,6 +18,7 @@ package vastbase
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"regexp"
 	"testing"
@@ -533,5 +534,63 @@ func TestScoredChunkSortFoldsPagerank(t *testing.T) {
 	sortScoredChunks(chunks)
 	if chunks[0]["id"] != "high" || chunks[1]["id"] != "low" || chunks[2]["id"] != "mid" {
 		t.Fatalf("order = %#v", chunks)
+	}
+}
+
+// Multi-table searches page only once, on the merged set: each table's SQL
+// must cover the whole candidate range (LIMIT offset+limit OFFSET 0), not
+// page with req's OFFSET — otherwise mergeSearchChunks skips offset rows a
+// second time and loses page-2 rows that ranked inside a single table.
+func TestSearchMultiTableWindowsOnlyAfterMerge(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+
+	for _, table := range []string{"t1", "t2"} {
+		expectChunkColumns(mock, table)
+		mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT COUNT("id") FROM "%s" WHERE 1=1`, table))).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+		// searchFilterOnly re-lists columns before building ORDER BY.
+		expectChunkColumns(mock, table)
+		prefix := "a"
+		if table == "t2" {
+			prefix = "b"
+		}
+		rows := sqlmock.NewRows([]string{"id"})
+		for i := 1; i <= 5; i++ {
+			rows.AddRow(fmt.Sprintf("%s%d", prefix, i))
+		}
+		mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(
+			`SELECT "id" FROM "%s" WHERE 1=1 ORDER BY "id" ASC LIMIT 5 OFFSET 0`, table))).
+			WillReturnRows(rows)
+	}
+
+	result, err := engine.Search(context.Background(), &types.SearchRequest{
+		IndexNames:   []string{"t1", "t2"},
+		Offset:       2,
+		Limit:        3,
+		SelectFields: []string{"id"},
+		OrderBy:      &types.OrderByExpr{Fields: []types.OrderByField{{Field: "id", Type: types.SortAsc}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Global order a1..a5, b1..b5; the page window [2:5) keeps a3..a5 —
+	// exactly the rows the double-offset path dropped.
+	got := make([]string, 0, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		got = append(got, chunk["id"].(string))
+	}
+	if !reflect.DeepEqual(got, []string{"a3", "a4", "a5"}) {
+		t.Fatalf("merged page ids = %v", got)
+	}
+	if result.Total != 10 {
+		t.Fatalf("total = %d", result.Total)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

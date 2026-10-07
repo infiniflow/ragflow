@@ -21,6 +21,7 @@ import (
 	"errors"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine/types"
@@ -94,6 +95,34 @@ func TestInsertChunksRunsDeleteThenInsertInOneTransaction(t *testing.T) {
 	}
 }
 
+// A malformed chunk must surface the encode error, not panic: normalizeChunk
+// returns a nil map on failure, and the kb_id backfill used to write into it
+// before the error check.
+func TestInsertChunksReturnsEncodeErrorForMalformedVector(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+
+	expectExistingChunkStore(mock, "t1")
+	// vectorDimension reads the column name, so the store side runs before the
+	// chunk body is ever encoded.
+	expectCount(mock, columnCountQuery(), "t1", "q_3_vec")
+	expectCount(mock, indexCountQuery(), "t1", regularIndexName("t1", "q_3_vec_graph"))
+
+	_, err = engine.InsertChunks(context.Background(), []map[string]interface{}{{
+		"id": "c1", "q_3_vec": "oops",
+	}}, "t1", "kb-1")
+	if err == nil || !strings.Contains(err.Error(), "encode q_3_vec") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInsertChunksGroupsByColumnSet(t *testing.T) {
 	documents := []map[string]interface{}{
 		{"id": "a", "title_tks": "x"},
@@ -149,6 +178,56 @@ func TestUpdateChunksShiftsWherePlaceholdersAfterSet(t *testing.T) {
 	if err := engine.UpdateChunks(context.Background(),
 		map[string]interface{}{"id": "c1"},
 		map[string]interface{}{"title_tks": "new title"},
+		"t1", "kb-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A write filter whose only row selectors are keyword conditions must keep
+// them: dropping compile_kwd/type_kwd/title_kwd (navigation-graph updates)
+// would leave the dataset scope alone and hit every row of the dataset.
+func TestUpdateAndDeleteKeepKeywordPredicates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+
+	expectCount(mock, tableCountQuery(), "t1")
+	expectListColumns(mock, "t1",
+		[2]string{"id", "varchar"}, [2]string{"kb_id", "varchar"},
+		[2]string{"title_kwd", "varchar"}, [2]string{"title_tks", "text"},
+	)
+	// Filter order follows sortedKeys: kb_id first, then the keyword predicate.
+	mock.ExpectExec(regexp.QuoteMeta(
+		`UPDATE "t1" SET "title_tks" = $1 WHERE "kb_id" = $2 AND (('###' || "title_kwd" || '###') LIKE $3 OR ('###' || "title_kwd" || '###') LIKE $4)`)).
+		WithArgs("x", "kb-1", "%###nav_cluster###%", "%###nav_doc###%").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := engine.UpdateChunks(context.Background(),
+		map[string]interface{}{"title_kwd": []string{"nav_cluster", "nav_doc"}},
+		map[string]interface{}{"title_tks": "x"},
+		"t1", "kb-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	expectCount(mock, tableCountQuery(), "t1")
+	expectListColumns(mock, "t1",
+		[2]string{"id", "varchar"}, [2]string{"kb_id", "varchar"},
+		[2]string{"compile_kwd", "varchar"}, [2]string{"type_kwd", "varchar"},
+	)
+	// sortedKeys puts compile_kwd before kb_id before type_kwd.
+	mock.ExpectExec(regexp.QuoteMeta(
+		`DELETE FROM "t1" WHERE (('###' || "compile_kwd" || '###') LIKE $1) AND "kb_id" = $2 AND (('###' || "type_kwd" || '###') LIKE $3)`)).
+		WithArgs("%###done###%", "kb-1", "%###nav_cluster###%").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if _, err := engine.DeleteChunks(context.Background(),
+		map[string]interface{}{"compile_kwd": "done", "type_kwd": "nav_cluster"},
 		"t1", "kb-1"); err != nil {
 		t.Fatal(err)
 	}

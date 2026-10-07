@@ -80,6 +80,34 @@ func TestDecodeLogicalRowMemoryRenames(t *testing.T) {
 	}
 }
 
+// A memory table can carry several q_N_vec columns after an embedding-model
+// change; backfillVectorColumns zero-fills the stale ones and GetChunk's
+// SELECT * reads them all. Whichever way the map iterates, content_embed must
+// be the real embedding, never the zero placeholder.
+func TestDecodeLogicalRowMemorySkipsZeroVectorPlaceholders(t *testing.T) {
+	row := map[string]interface{}{
+		"id":      "m1_1",
+		"q_2_vec": "[0.5,0.25]",
+		"q_4_vec": "[0,0,0,0]",
+	}
+	for i := 0; i < 50; i++ { // exercise both map iteration orders
+		decoded := decodeLogicalRow(row, "memory")
+		if !reflect.DeepEqual(decoded["content_embed"], []float64{0.5, 0.25}) {
+			t.Fatalf("content_embed = %#v", decoded["content_embed"])
+		}
+	}
+
+	// All-zero row: a placeholder is retained when no real vector exists
+	// (its dimension depends on iteration order; only zero-ness is stable).
+	decoded := decodeLogicalRow(map[string]interface{}{
+		"q_2_vec": "[0,0]", "q_4_vec": "[0,0,0,0]",
+	}, "memory")
+	placeholder, _ := decoded["content_embed"].([]float64)
+	if !isZeroVector(placeholder) || len(placeholder) == 0 {
+		t.Fatalf("all-zero content_embed = %#v", decoded["content_embed"])
+	}
+}
+
 func TestRegroupPositionsHandlesRemainders(t *testing.T) {
 	// The 5-tuple regroup is a lossy contract locked with the Python writer:
 	// a partial trailing group is preserved as-is, never padded.

@@ -18,6 +18,7 @@ package vastbase
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -32,6 +33,20 @@ func (e *Engine) queryRows(ctx context.Context, query string, args ...interface{
 		return nil, err
 	}
 	defer rows.Close()
+	return scanRows(rows)
+}
+
+// queryRowsTx is queryRows bound to an open transaction.
+func queryRowsTx(ctx context.Context, tx *sql.Tx, query string, args ...interface{}) ([]map[string]interface{}, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRows(rows)
+}
+
+func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -73,6 +88,19 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 		column := rawColumn
 		if kind == "memory" {
 			if vectorColumnPattern.MatchString(column) {
+				// Multiple q_N_vec columns coexist after an embedding-model
+				// change; backfillVectorColumns zero-fills the stale ones, and
+				// GetChunk's SELECT * reads them all. A zero placeholder must
+				// not overwrite a real embedding: keep the first non-zero
+				// vector and skip zeros once content_embed is set.
+				if text, ok := value.(string); ok {
+					if vector := parseFloatVectorText(text); !isZeroVector(vector) {
+						result["content_embed"] = vector
+						continue
+					} else if _, set := result["content_embed"]; set {
+						continue
+					}
+				}
 				column = "content_embed"
 			} else if mapped, ok := memoryColumnToField[column]; ok {
 				column = mapped
@@ -173,6 +201,17 @@ func parseFloatVectorText(text string) []float64 {
 		values = append(values, number)
 	}
 	return values
+}
+
+// isZeroVector reports whether a decoded vector is the all-zero placeholder
+// backfillVectorColumns writes into stale dimension columns.
+func isZeroVector(values []float64) bool {
+	for _, value := range values {
+		if value != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // parsePgIntArray decodes a PostgreSQL integer[] text literal ("{1,2,3}").

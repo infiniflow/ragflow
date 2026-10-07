@@ -154,11 +154,18 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID, datasetID string, me
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE id = $1", quoteIdent(tableName)), docID); err != nil {
+	result, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET meta_fields = $1 WHERE id = $2", quoteIdent(tableName)), encoded, docID)
+	if err != nil {
 		return fmt.Errorf("vastbase: replace metadata: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id, kb_id, meta_fields) VALUES ($1, $2, $3)", quoteIdent(tableName)), docID, datasetID, encoded); err != nil {
+	affected, err := result.RowsAffected()
+	if err != nil {
 		return fmt.Errorf("vastbase: replace metadata: %w", err)
+	}
+	if affected == 0 {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id, kb_id, doc_id, meta_fields) VALUES ($1, $2, $3, $4)", quoteIdent(tableName)), docID, datasetID, docID, encoded); err != nil {
+			return fmt.Errorf("vastbase: replace metadata: %w", err)
+		}
 	}
 	return tx.Commit()
 }

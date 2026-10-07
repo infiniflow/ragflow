@@ -77,7 +77,7 @@ var chunkColumns = []columnDefinition{
 	{"content_with_weight", "text", "''"},
 	{"content_ltks", "text", "''"},
 	{"content_sm_ltks", "text", "''"},
-	{"pagerank_fea", "integer", "0"},
+	{"pagerank_fea", "double precision", "0.0"},
 	{"important_kwd", "text", "''"},
 	{"important_tks", "text", "''"},
 	{"question_kwd", "text", "''"},
@@ -547,7 +547,14 @@ func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID strin
 	}
 	if fullText {
 		if e.dbCompatibility == compatB {
-			for _, field := range fullTextFields {
+			// Skill tables carry full-text indexes over skillFullTextFields,
+			// not the chunk fields; probing the chunk set would always miss
+			// and re-run the whole CreateChunkStore path on every write.
+			fields := fullTextFields
+			if kind == "skill" {
+				fields = skillFullTextFields
+			}
+			for _, field := range fields {
 				exists, err = e.indexExists(ctx, baseName, regularIndexName(baseName, field+"_fulltext"))
 				if err != nil || !exists {
 					return exists, err
