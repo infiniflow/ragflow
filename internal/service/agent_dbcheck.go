@@ -44,17 +44,10 @@ type TestDBConnectionRequest struct {
 	Password string      `json:"password"`
 }
 
-// AllowAnyHostForTest mirrors common.AllowAnyHostForTest: a test-only
-// override that disables the SSRF guard in AssertHostIsSafe. Production
-// code MUST leave this at false. Tests that need to talk to a local
-// httptest server or stub-resolved DB host flip it on and reset it
-// in t.Cleanup.
-//
-// The previous form was an env-var check (ALLOW_ANY_HOST=1) which was
-// a live runtime toggle any operator could flip to disable the SSRF
-// guard globally. PR review round 6, Major #3: this is a process-
-// memory boolean only — no env var, no deployment flag, no path to
-// bypass from outside the test binary.
+// AllowAnyHostForTest is a test-only override that disables the SSRF guard
+// in AssertHostIsSafe. Production code must leave it false. Operators allow
+// private database hosts with ALLOW_ANY_HOST; that flag does not relax URL
+// or Invoke checks.
 var AllowAnyHostForTest = false
 
 func allowAnyHost() bool {
@@ -75,6 +68,10 @@ func AssertHostIsSafe(host string) (string, error) {
 			zap.String("host", host),
 		)
 		return host, nil
+	}
+	if common.AllowConfiguredPrivateHost() {
+		common.NoteAllowConfiguredPrivateHost(host)
+		return common.ResolveHostPin(host)
 	}
 
 	ips, err := net.LookupIP(host)

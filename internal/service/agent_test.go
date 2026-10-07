@@ -1354,12 +1354,41 @@ func TestIsPublicAddr(t *testing.T) {
 }
 
 func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "")
 	_, err := AssertHostIsSafe("localhost")
 	if err == nil {
 		t.Fatal("expected localhost to be rejected")
 	}
 	if !strings.Contains(err.Error(), "non-public address") {
 		t.Fatalf("expected non-public address error, got %v", err)
+	}
+}
+
+func TestAssertHostIsSafeAllowsPrivateHostWhenConfigured(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	t.Cleanup(func() { common.LookupHost = orig })
+
+	got, err := AssertHostIsSafe("host.docker.internal")
+	if err != nil {
+		t.Fatalf("AssertHostIsSafe(host.docker.internal) = %v", err)
+	}
+	if got != "192.168.65.254" {
+		t.Fatalf("AssertHostIsSafe(host.docker.internal) = %q, want 192.168.65.254", got)
+	}
+
+	literal, err := AssertHostIsSafe("10.1.2.3")
+	if err != nil || literal != "10.1.2.3" {
+		t.Fatalf("AssertHostIsSafe(10.1.2.3) = %q, %v", literal, err)
+	}
+	if _, err = AssertHostIsSafe("missing.internal"); err == nil {
+		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
 	}
 }
 

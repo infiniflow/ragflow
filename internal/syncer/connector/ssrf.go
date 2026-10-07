@@ -49,6 +49,10 @@ var connectorAssertHostSafe = common.AssertHostSafe
 // validated public IP so callers can pin the dial, preventing DNS rebinding
 // between validation and the connection.
 //
+// When ALLOW_ANY_HOST is set, the public-address check is skipped for this
+// host dial (MySQL, PostgreSQL, IMAP). The hostname is still resolved and
+// the dial stays pinned to that address. URL connectors do not use this path.
+//
 // When connectorAllowLoopbackForTest is set, loopback-only hosts are allowed
 // (unit tests run against local listeners); anything else falls through to the
 // strict guard, so a mixed private address is still rejected.
@@ -69,7 +73,26 @@ func assertConnectorHostSafe(host string) (net.IP, error) {
 		}
 		// Not allowed by the test hook — fall through to the strict guard.
 	}
+	if common.AllowConfiguredPrivateHost() {
+		return resolveConfiguredConnectorHost(host)
+	}
 	ipStr, err := connectorAssertHostSafe(host)
+	if err != nil {
+		return nil, err
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return nil, fmt.Errorf("Could not parse validated address %q for host %q", ipStr, host)
+	}
+	return ip, nil
+}
+
+// resolveConfiguredConnectorHost pins a connector host when ALLOW_ANY_HOST is
+// set. Private addresses such as host.docker.internal are accepted. The dial
+// still uses the resolved IP, so DNS cannot rebind the connection afterwards.
+func resolveConfiguredConnectorHost(host string) (net.IP, error) {
+	common.NoteAllowConfiguredPrivateHost(host)
+	ipStr, err := common.ResolveHostPin(host)
 	if err != nil {
 		return nil, err
 	}
