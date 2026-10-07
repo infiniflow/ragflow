@@ -1709,6 +1709,24 @@ def _build_cks(sections, delimiter):
     pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
+    # Text chunks are stripped, so a line break between two of them (a
+    # paragraph boundary or a bare "\n" delimiter) is recorded in the next
+    # chunk's "line_break" for _merge_cks to restore.
+    line_break = False
+
+    def _append_text(raw):
+        nonlocal line_break
+        s = raw.strip()
+        cks.append(
+            {
+                "text": s,
+                "image": None,
+                "ck_type": "text",
+                "tk_nums": num_tokens_from_string(s),
+                "line_break": line_break or "\n" in raw[: len(raw) - len(raw.lstrip())],
+            }
+        )
+        line_break = "\n" in raw[len(raw.rstrip()) :]
 
     def _flush_seg():
         """Emit pending text before a table/image chunk is appended.
@@ -1721,15 +1739,7 @@ def _build_cks(sections, delimiter):
         """
         nonlocal seg
         if seg and seg.strip():
-            s = seg.strip()
-            cks.append(
-                {
-                    "text": s,
-                    "image": None,
-                    "ck_type": "text",
-                    "tk_nums": num_tokens_from_string(s),
-                }
-            )
+            _append_text(seg)
         seg = ""
 
     for text, image, table in sections:
@@ -1807,15 +1817,9 @@ def _build_cks(sections, delimiter):
                         # here restores the per-delimiter split; _merge_cks
                         # still merges small chunks up to chunk_token_num.
                         if seg and seg.strip():
-                            s = (seg + sub_sec).strip()
-                            cks.append(
-                                {
-                                    "text": s,
-                                    "image": None,
-                                    "ck_type": "text",
-                                    "tk_nums": num_tokens_from_string(s),
-                                }
-                            )
+                            _append_text(seg + sub_sec)
+                        elif "\n" in seg + sub_sec:
+                            line_break = True
                         seg = ""
                     continue
 
@@ -1846,27 +1850,11 @@ def _build_cks(sections, delimiter):
                 seg += sub_sec
         else:
             if text and text.strip():
-                t = text.strip()
-                cks.append(
-                    {
-                        "text": t,
-                        "image": None,
-                        "ck_type": "text",
-                        "tk_nums": num_tokens_from_string(t),
-                    }
-                )
+                _append_text(text)
 
     # final flush after loop (only when delimiters were used for splitting)
     if split_pattern and seg and seg.strip():
-        s = seg.strip()
-        cks.append(
-            {
-                "text": s,
-                "image": None,
-                "ck_type": "text",
-                "tk_nums": num_tokens_from_string(s),
-            }
-        )
+        _append_text(seg)
 
     return cks, tables, images, has_custom
 
@@ -1961,13 +1949,14 @@ def _merge_cks(cks, chunk_token_num, has_custom):
                 image_idxs.append(len(merged) - 1)
             continue
 
+        line_break = cks[i].pop("line_break", False)
         if prev_text_ck < 0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
             merged.append(cks[i])
             prev_text_ck = len(merged) - 1
             continue
 
-        # _build_cks strips each text chunk, so the separator has to be restored here, as naive_merge keeps it
-        merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + "\n" + (cks[i].get("text") or "")
+        sep = "\n" if line_break else ""
+        merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + sep + (cks[i].get("text") or "")
         merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + cks[i].get("tk_nums", 0)
 
     return merged, image_idxs
