@@ -47,15 +47,19 @@ type filterBuilder struct {
 	args  []interface{}
 }
 
+// raw appends a pre-built SQL fragment to the conjunction.
 func (b *filterBuilder) raw(part string) {
 	b.parts = append(b.parts, part)
 }
 
+// placeholder binds a value and returns its $n reference.
 func (b *filterBuilder) placeholder(value interface{}) string {
 	b.args = append(b.args, value)
 	return fmt.Sprintf("$%d", len(b.args))
 }
 
+// join renders the accumulated parts as one AND chain, with a trivially
+// true predicate for the empty case.
 func (b *filterBuilder) join() string {
 	if len(b.parts) == 0 {
 		return "1=1"
@@ -163,6 +167,9 @@ func buildFilter(condition map[string]interface{}, kind string, columns map[stri
 	return filter.join(), filter.args, nil
 }
 
+// appendExists renders an exists/does-not-exist filter against a column,
+// treating never-stored fields as absent on every row (ES dynamic-mapping
+// parity).
 func (b *filterBuilder) appendExists(column string, columns map[string]columnMeta) {
 	meta, known := columns[column]
 	if !known {
@@ -239,6 +246,8 @@ func (b *filterBuilder) metadataCast(path, castType, pattern string) string {
 	return "(CASE WHEN " + text + " ~ '" + pattern + "' THEN (" + text + ")::" + castType + " ELSE NULL END)"
 }
 
+// appendMetadataFilteringConditions adds the post-filter conditions from
+// the metadata filtering option, joined as a conjunction.
 func (b *filterBuilder) appendMetadataFilteringConditions(raw interface{}) error {
 	filter, ok := raw.(map[string]interface{})
 	if !ok {
@@ -319,6 +328,8 @@ func (b *filterBuilder) appendMetadataFilteringConditions(raw interface{}) error
 	return nil
 }
 
+// isEmptyFilterValue reports whether a filter value means "match nothing":
+// nil, empty string/collection, false, or zero.
 func isEmptyFilterValue(value interface{}) bool {
 	if value == nil {
 		return true
@@ -341,6 +352,7 @@ func isEmptyFilterValue(value interface{}) bool {
 	return false
 }
 
+// sortedKeys lists a map's keys in sorted order for deterministic SQL.
 func sortedKeys(source map[string]interface{}) []string {
 	keys := make([]string, 0, len(source))
 	for key := range source {

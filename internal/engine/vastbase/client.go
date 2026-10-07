@@ -151,6 +151,8 @@ func NewEngine(cfg config.VastbaseConfig) (*Engine, error) {
 	return e, nil
 }
 
+// newEngineWithDB builds an engine around an already-open database handle,
+// for tests that drive the SQL layer with a mock driver.
 func newEngineWithDB(cfg config.VastbaseConfig, db *sql.DB) *Engine {
 	return &Engine{
 		db:              db,
@@ -295,6 +297,8 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kb
 	return nil
 }
 
+// envInt reads a positive integer environment variable, falling back to the
+// default when unset, empty, or invalid.
 func envInt(name string, fallback int) int {
 	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {

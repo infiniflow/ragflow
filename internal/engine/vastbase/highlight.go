@@ -77,6 +77,7 @@ func (m *highlightMarker) markText(text, tokenizedText string) string {
 	return applyMatches(text, matches)
 }
 
+// normalizeKeywords trims, lowercases, and deduplicates highlight keywords.
 func normalizeKeywords(keywords []string) []string {
 	seen := make(map[string]struct{}, len(keywords))
 	result := make([]string, 0, len(keywords))
@@ -98,6 +99,8 @@ func normalizeKeywords(keywords []string) []string {
 	return result
 }
 
+// isMostlyEnglish reports whether Latin letters dominate, which selects the
+// word-boundary highlight strategy over CJK substring matching.
 func isMostlyEnglish(text string) bool {
 	letters := 0
 	latinLetters := 0
@@ -113,6 +116,8 @@ func isMostlyEnglish(text string) bool {
 	return letters > 0 && latinLetters*2 > letters
 }
 
+// findPatternMatches collects regex match spans, optionally keeping only
+// those with word boundaries on both sides.
 func findPatternMatches(text string, patterns []*regexp.Regexp, requireBoundary bool) []textMatch {
 	candidates := make([]textMatch, 0)
 	for _, pattern := range patterns {
@@ -127,6 +132,9 @@ func findPatternMatches(text string, patterns []*regexp.Regexp, requireBoundary 
 	return selectMatches(candidates)
 }
 
+// findTokenMatches locates keyword spans in text by scanning its tokenized
+// form right-to-left, so each token maps to the occurrence nearest its
+// neighbors.
 func findTokenMatches(text, tokenizedText string, keywordSet map[string]struct{}) []textMatch {
 	tokens := strings.Fields(tokenizedText)
 	lastPosition := len(text)
@@ -145,6 +153,8 @@ func findTokenMatches(text, tokenizedText string, keywordSet map[string]struct{}
 	return selectMatches(candidates)
 }
 
+// hasWordBoundaries reports whether a match starts and ends on non-word
+// characters (or the text edges).
 func hasWordBoundaries(text string, match textMatch) bool {
 	if match.start > 0 {
 		previous, _ := utf8.DecodeLastRuneInString(text[:match.start])
@@ -161,10 +171,14 @@ func hasWordBoundaries(text string, match textMatch) bool {
 	return true
 }
 
+// isWordRune reports whether a rune participates in a word for boundary
+// checks.
 func isWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
+// selectMatches picks non-overlapping spans from the candidates, preferring
+// earlier starts and longer matches.
 func selectMatches(candidates []textMatch) []textMatch {
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].start != candidates[j].start {
@@ -184,6 +198,7 @@ func selectMatches(candidates []textMatch) []textMatch {
 	return selected
 }
 
+// applyMatches wraps the selected spans in <em> markers.
 func applyMatches(text string, matches []textMatch) string {
 	var result strings.Builder
 	position := 0

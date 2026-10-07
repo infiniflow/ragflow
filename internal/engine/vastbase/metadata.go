@@ -29,8 +29,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// metadataTableName is the per-tenant metadata table name.
 func metadataTableName(tenantID string) string { return "ragflow_doc_meta_" + tenantID }
 
+// validatedMetadataTableName maps a tenant to its metadata table name,
+// rejecting tenant IDs the identifier pattern refuses.
 func validatedMetadataTableName(tenantID string) (string, error) {
 	tableName := metadataTableName(tenantID)
 	if err := validateIdentifier(tableName); err != nil {
@@ -123,6 +126,8 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	return []string{}, nil
 }
 
+// encodeMetaFields serializes a metadata value for the meta_fields column,
+// passing strings through and JSON-encoding objects.
 func encodeMetaFields(value interface{}) (string, error) {
 	switch typed := value.(type) {
 	case string:
@@ -230,6 +235,7 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID, datasetID string
 	return err
 }
 
+// DropMetadataStore drops a tenant's metadata table.
 func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
 	tableName, err := validatedMetadataTableName(tenantID)
 	if err != nil {
@@ -239,6 +245,7 @@ func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
 	return err
 }
 
+// MetadataStoreExists reports whether the tenant's metadata table exists.
 func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
 	tableName, err := validatedMetadataTableName(tenantID)
 	if err != nil {

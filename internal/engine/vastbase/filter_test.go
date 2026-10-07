@@ -22,6 +22,8 @@ import (
 	"testing"
 )
 
+// testColumns builds the column metadata fixture the filter tests filter
+// against.
 func testColumns() map[string]columnMeta {
 	columns := make(map[string]columnMeta)
 	for _, column := range chunkColumns {
@@ -31,6 +33,8 @@ func testColumns() map[string]columnMeta {
 	return columns
 }
 
+// TestBuildFilterBasicsAndPlaceholderOrdering checks simple predicates and
+// that placeholder numbering follows sorted field order.
 func TestBuildFilterBasicsAndPlaceholderOrdering(t *testing.T) {
 	columns := testColumns()
 	sqlText, args, err := buildFilter(map[string]interface{}{
@@ -50,6 +54,8 @@ func TestBuildFilterBasicsAndPlaceholderOrdering(t *testing.T) {
 	}
 }
 
+// TestBuildFilterListBecomesIN checks that a list value becomes an IN
+// predicate with one placeholder per element.
 func TestBuildFilterListBecomesIN(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{
 		"doc_id": []interface{}{"d1", "d2", "d3"},
@@ -65,6 +71,8 @@ func TestBuildFilterListBecomesIN(t *testing.T) {
 	}
 }
 
+// TestBuildFilterUnknownColumnMatchesNothing checks that filtering a column
+// the table never stored matches no rows.
 func TestBuildFilterUnknownColumnMatchesNothing(t *testing.T) {
 	// ES dynamic mapping parity: a field the table never stored exists on no
 	// row, so the condition collapses to 1=0 instead of erroring.
@@ -86,6 +94,8 @@ func TestBuildFilterUnknownColumnMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestBuildFilterKeywordConditionsMatchJoinedValues checks equality against
+// the separator-joined keyword storage, with padding on both sides.
 func TestBuildFilterKeywordConditionsMatchJoinedValues(t *testing.T) {
 	// Keyword columns store ###-joined lists: term conditions translate to
 	// LIKE containment on the separator-padded column (dropping them would
@@ -107,6 +117,8 @@ func TestBuildFilterKeywordConditionsMatchJoinedValues(t *testing.T) {
 	}
 }
 
+// TestBuildFilterKeywordTermsListORsAndEscapes checks that a keyword terms
+// list becomes an OR of LIKE predicates with escaped wildcards.
 func TestBuildFilterKeywordTermsListORsAndEscapes(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{
 		"tag_kwd": []interface{}{"red", "blue%ish", "gr_en"},
@@ -130,6 +142,8 @@ func TestBuildFilterKeywordTermsListORsAndEscapes(t *testing.T) {
 	}
 }
 
+// TestBuildFilterUnknownKeywordColumnMatchesNothing checks that keyword
+// terms against a never-stored column match no rows.
 func TestBuildFilterUnknownKeywordColumnMatchesNothing(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{"ghost_kwd": "x"}, "chunk", testColumns())
 	if err != nil {
@@ -140,6 +154,8 @@ func TestBuildFilterUnknownKeywordColumnMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestBuildFilterExistsParity checks the exists filter against stored and
+// never-stored columns.
 func TestBuildFilterExistsParity(t *testing.T) {
 	columns := testColumns()
 	sqlText, _, err := buildFilter(map[string]interface{}{
@@ -167,6 +183,8 @@ func TestBuildFilterExistsParity(t *testing.T) {
 	}
 }
 
+// TestBuildFilterMustNotExistsMirror checks that must_not exists inverts the
+// exists predicate.
 func TestBuildFilterMustNotExistsMirror(t *testing.T) {
 	columns := testColumns()
 	sqlText, _, err := buildFilter(map[string]interface{}{
@@ -204,6 +222,8 @@ func TestBuildFilterMustNotExistsMirror(t *testing.T) {
 	}
 }
 
+// TestBuildFilterMemoryFieldMapping checks that logical memory field names
+// filter their mapped columns.
 func TestBuildFilterMemoryFieldMapping(t *testing.T) {
 	memory := make(map[string]columnMeta)
 	for _, column := range memoryColumns {
@@ -226,12 +246,16 @@ func TestBuildFilterMemoryFieldMapping(t *testing.T) {
 	}
 }
 
+// TestBuildFilterIDKeyRejected checks that the reserved "id" key is refused
+// rather than treated as a column.
 func TestBuildFilterIDKeyRejected(t *testing.T) {
 	if _, _, err := buildFilter(map[string]interface{}{"_id": "x"}, "chunk", testColumns()); err == nil {
 		t.Fatal("_id must be rejected in favor of id")
 	}
 }
 
+// TestBuildFilterEmptyAndFalsy checks that empty and falsy filter values
+// match nothing instead of matching everything.
 func TestBuildFilterEmptyAndFalsy(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{}, "chunk", testColumns())
 	if err != nil || sqlText != "1=1" || len(args) != 0 {
@@ -243,6 +267,8 @@ func TestBuildFilterEmptyAndFalsy(t *testing.T) {
 	}
 }
 
+// TestShiftPlaceholders checks $n renumbering when a fragment joins a
+// statement that already consumed arguments.
 func TestShiftPlaceholders(t *testing.T) {
 	if got := shiftPlaceholders(`"a" = $1 AND "b" IN ($2, $3)`, 3); got != `"a" = $4 AND "b" IN ($5, $6)` {
 		t.Fatalf("shift = %q", got)
@@ -252,6 +278,8 @@ func TestShiftPlaceholders(t *testing.T) {
 	}
 }
 
+// TestBuildFilterMetadataConditions checks jsonb operators rendered for the
+// metadata post-filter conditions.
 func TestBuildFilterMetadataConditions(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{
 		"metadata_filtering_conditions": map[string]interface{}{
@@ -285,6 +313,8 @@ func TestBuildFilterMetadataConditions(t *testing.T) {
 	}
 }
 
+// TestBuildFilterMetadataContainsUsesJSONBContainment checks that a metadata
+// "contains" over an object becomes jsonb containment.
 func TestBuildFilterMetadataContainsUsesJSONBContainment(t *testing.T) {
 	sqlText, args, err := buildFilter(map[string]interface{}{
 		"metadata_filtering_conditions": map[string]interface{}{
@@ -306,6 +336,7 @@ func TestBuildFilterMetadataContainsUsesJSONBContainment(t *testing.T) {
 	}
 }
 
+// TestBuildFilterMetadataEmptyChecks checks empty metadata operand handling.
 func TestBuildFilterMetadataEmptyChecks(t *testing.T) {
 	sqlText, _, err := buildFilter(map[string]interface{}{
 		"metadata_filtering_conditions": map[string]interface{}{

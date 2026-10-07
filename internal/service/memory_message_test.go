@@ -315,6 +315,9 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	}
 }
 
+// TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines pins the
+// forget_at companion column behavior for engines that store it as a plain
+// nullable field.
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 

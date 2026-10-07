@@ -23,6 +23,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+// TestParseVastbaseConfigDefaultsAndOverrides checks the config defaults
+// against an empty viper instance and that file values override them.
 func TestParseVastbaseConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("DB_TYPE", "")
 	v := viper.New()
@@ -54,6 +56,8 @@ func TestParseVastbaseConfigDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+// TestParseVastbaseConfigNormalizesCompatibility checks the accepted
+// spellings of the dbcompatibility setting and their canonical B/PG forms.
 func TestParseVastbaseConfigNormalizesCompatibility(t *testing.T) {
 	for _, test := range []struct{ raw, want string }{
 		{" b ", "B"},
@@ -103,6 +107,8 @@ func TestParseVastbaseConfigEnvironmentOnly(t *testing.T) {
 	}
 }
 
+// TestVastbaseEnvironmentTypeIsAccepted checks that DOC_ENGINE=vastbase is a
+// selectable engine type from the environment.
 func TestVastbaseEnvironmentTypeIsAccepted(t *testing.T) {
 	t.Setenv("DOC_ENGINE", "vastbase")
 	c := &Config{}
@@ -114,6 +120,8 @@ func TestVastbaseEnvironmentTypeIsAccepted(t *testing.T) {
 	}
 }
 
+// TestVastbaseExportConfigsKeys checks the exported vastbase configuration
+// carries exactly the expected keys.
 func TestVastbaseExportConfigsKeys(t *testing.T) {
 	exported := VastbaseConfig{
 		Host: "h", Port: 1, User: "u", Password: "p",

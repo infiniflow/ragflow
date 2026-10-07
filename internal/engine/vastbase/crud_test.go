@@ -42,6 +42,8 @@ func expectExistingChunkStore(mock sqlmock.Sqlmock, table string) {
 	expectCount(mock, indexCountQuery(), table, "text_gin_idx_"+table)
 }
 
+// expectListColumns stubs the existence probe and column listing round trip
+// with name/type pairs.
 func expectListColumns(mock sqlmock.Sqlmock, table string, columns ...[2]string) {
 	expectCount(mock, tableCountQuery(), table)
 	rows := sqlmock.NewRows([]string{"column_name", "data_type", "column_default", "is_nullable"})
@@ -51,6 +53,8 @@ func expectListColumns(mock sqlmock.Sqlmock, table string, columns ...[2]string)
 	mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs(table).WillReturnRows(rows)
 }
 
+// TestInsertChunksRunsDeleteThenInsertInOneTransaction checks the replace
+// semantics: the delete and the insert share one transaction.
 func TestInsertChunksRunsDeleteThenInsertInOneTransaction(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -123,6 +127,8 @@ func TestInsertChunksReturnsEncodeErrorForMalformedVector(t *testing.T) {
 	}
 }
 
+// TestInsertChunksGroupsByColumnSet checks that documents with different
+// column sets are inserted as separate grouped statements.
 func TestInsertChunksGroupsByColumnSet(t *testing.T) {
 	documents := []map[string]interface{}{
 		{"id": "a", "title_tks": "x"},
@@ -140,6 +146,9 @@ func TestInsertChunksGroupsByColumnSet(t *testing.T) {
 	}
 }
 
+// TestInsertChunksRequiresVectorSizeForNewStore checks that creating a
+// brand-new chunk store without a vector size fails instead of guessing a
+// column.
 func TestInsertChunksRequiresVectorSizeForNewStore(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -159,6 +168,8 @@ func TestInsertChunksRequiresVectorSizeForNewStore(t *testing.T) {
 	}
 }
 
+// TestUpdateChunksShiftsWherePlaceholdersAfterSet checks that UPDATE
+// placeholder numbering keeps SET arguments ahead of the WHERE clause's.
 func TestUpdateChunksShiftsWherePlaceholdersAfterSet(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -236,6 +247,8 @@ func TestUpdateAndDeleteKeepKeywordPredicates(t *testing.T) {
 	}
 }
 
+// TestUpdateChunksRemoveStringResetsColumnDefault checks that removing a
+// field resets its column to the declared default instead of NULL.
 func TestUpdateChunksRemoveStringResetsColumnDefault(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -272,6 +285,8 @@ func TestUpdateChunksRemoveStringResetsColumnDefault(t *testing.T) {
 	}
 }
 
+// TestUpdateChunksKeywordRemovalReadsModifiesWrites checks that removing a
+// keyword rewrites the joined value through a read-modify-write.
 func TestUpdateChunksKeywordRemovalReadsModifiesWrites(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -308,6 +323,8 @@ func TestUpdateChunksKeywordRemovalReadsModifiesWrites(t *testing.T) {
 	}
 }
 
+// TestUpdateChunksMemoryContentRewritesTokenizedCompanion checks that a
+// memory content update re-derives the tokenized lookup column.
 func TestUpdateChunksMemoryContentRewritesTokenizedCompanion(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -337,6 +354,8 @@ func TestUpdateChunksMemoryContentRewritesTokenizedCompanion(t *testing.T) {
 	}
 }
 
+// TestUpdateChunksMissingTableReportsIndexNotFound checks the error shape
+// when the named table does not exist.
 func TestUpdateChunksMissingTableReportsIndexNotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -354,6 +373,8 @@ func TestUpdateChunksMissingTableReportsIndexNotFound(t *testing.T) {
 	}
 }
 
+// TestDeleteChunksScopesByDataset checks that deletes are scoped to the
+// dataset's rows through the kb_id discriminator.
 func TestDeleteChunksScopesByDataset(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -388,6 +409,7 @@ func TestDeleteChunksScopesByDataset(t *testing.T) {
 	}
 }
 
+// TestGetChunkScopedQuery pins the GetChunk select and its dataset scoping.
 func TestGetChunkScopedQuery(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -430,6 +452,8 @@ func TestGetChunkScopedQuery(t *testing.T) {
 	}
 }
 
+// TestTableKindRouting checks tableKind classification across skill,
+// memory, and chunk tables.
 func TestTableKindRouting(t *testing.T) {
 	cases := []struct {
 		table    string

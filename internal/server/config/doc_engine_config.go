@@ -98,6 +98,8 @@ type VastbaseConfig struct {
 	SSLMode string `mapstructure:"ssl_mode"`
 }
 
+// ParseDocEngineConfig reads every document-engine section from the
+// service configuration into the doc engine settings.
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
@@ -387,6 +389,7 @@ func (i InfinityConfig) ExportConfigs() map[string]interface{} {
 	return infinityConfigs
 }
 
+// GetSereneDBConfig returns the SereneDB doc engine connection settings.
 func (c *Config) GetSereneDBConfig() SereneDBConfig {
 	return c.docEngine.SereneDB
 }

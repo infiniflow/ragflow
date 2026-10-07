@@ -48,11 +48,16 @@ type sqlArgs struct {
 	values []interface{}
 }
 
+// add appends values and returns the 1-based placeholder index of the last
+// one appended.
 func (s *sqlArgs) add(values ...interface{}) int {
 	s.values = append(s.values, values...)
 	return len(s.values)
 }
 
+// embedFilter splices a standalone filter fragment into this statement:
+// its $n placeholders are shifted past the arguments already consumed, and
+// its arguments are appended in matching order.
 func (s *sqlArgs) embedFilter(filterSQL string, filterArgs []interface{}) string {
 	shifted := shiftPlaceholders(filterSQL, len(s.values))
 	s.values = append(s.values, filterArgs...)
@@ -236,6 +241,8 @@ func buildSearchOutput(selectFields []string, kind string, columns map[string]co
 	return output
 }
 
+// selectFieldsSQL renders the SELECT list, quoting every field and passing
+// "*" through untouched.
 func selectFieldsSQL(output []string) string {
 	quoted := make([]string, len(output))
 	for i, field := range output {
@@ -262,6 +269,8 @@ func expandOutputIfStar(output []string, columns map[string]columnMeta) []string
 	return names
 }
 
+// searchFullText runs the keyword path: a ranked full-text CTE wrapped in a
+// query that applies the SQL window over the ranking order.
 func (e *Engine) searchFullText(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	fulltextLimit := fullTextLimit(plan, limit)
 	args := &sqlArgs{}
@@ -323,6 +332,8 @@ func fullTextLimit(plan searchPlan, limit int) int {
 	return fulltextLimit
 }
 
+// searchVector runs the dense path over the expression's q_N_vec column,
+// ordered by distance-derived similarity.
 func (e *Engine) searchVector(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, dense *types.MatchDenseExpr) ([]map[string]interface{}, int64, error) {
 	if err := validateVectorExpr(dense); err != nil {
 		return nil, 0, err
@@ -364,6 +375,8 @@ func (e *Engine) vectorCTE(tableName string, output []string, filterSQL string, 
 	return fmt.Sprintf("SELECT * FROM (%s) AS knn WHERE _score >= $%d", inner, thresholdPlaceholder), nil
 }
 
+// searchFusion runs the hybrid path: full-text and vector candidates scored
+// and combined by the weighted-fusion formula.
 func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	if err := validateVectorExpr(plan.dense); err != nil {
 		return nil, 0, err
@@ -474,6 +487,8 @@ func (e *Engine) searchMemoryFusion(ctx context.Context, tableName, kind string,
 	return chunks, int64(len(chunks)), nil
 }
 
+// searchFilterOnly serves requests with no text or vector expression: one
+// COUNT for the total plus one filtered, ordered select for the page.
 func (e *Engine) searchFilterOnly(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, req *types.SearchRequest, offset, limit int) ([]map[string]interface{}, int64, error) {
 	identifier := quoteIdent(identifierColumn(kind))
 	var count int64
@@ -514,6 +529,8 @@ func memoryVectorColumn(columns map[string]columnMeta) string {
 	return best
 }
 
+// buildOrderBy renders the ORDER BY clause, mapping memory field names to
+// columns and rejecting sort fields the table does not carry.
 func buildOrderBy(orderBy *types.OrderByExpr, kind string, columns map[string]columnMeta) (string, error) {
 	if orderBy == nil || len(orderBy.Fields) == 0 {
 		return "", nil
@@ -546,6 +563,8 @@ func fullTextQuery(text *types.MatchTextExpr) string {
 	return boostSuffixRegex.ReplaceAllString(text.MatchingText, "")
 }
 
+// parseFullTextFields splits "name^weight" field specifications into field
+// names and weight strings, skipping entries that carry no name.
 func parseFullTextFields(text *types.MatchTextExpr) ([]string, []string) {
 	if len(text.Fields) == 0 {
 		return nil, nil
@@ -567,6 +586,8 @@ func parseFullTextFields(text *types.MatchTextExpr) ([]string, []string) {
 	return fields, weights
 }
 
+// formatMinimumShouldMatch renders the minimum_should_match option in the
+// percent form the SQL full-text rank formula expects.
 func formatMinimumShouldMatch(text *types.MatchTextExpr) string {
 	if text.ExtraOptions == nil {
 		return "0%"
@@ -613,6 +634,8 @@ func memoryTSQuery(text *types.MatchTextExpr) string {
 	return strings.Join(operands, " & ")
 }
 
+// parseSearchPlan flattens the match expression list into the text, dense,
+// and fusion expressions the SQL search paths consume.
 func parseSearchPlan(expressions []interface{}) searchPlan {
 	var plan searchPlan
 	for _, expression := range expressions {
@@ -636,6 +659,8 @@ func parseSearchPlan(expressions []interface{}) searchPlan {
 	return plan
 }
 
+// validateVectorExpr rejects empty, non-float, or malformed vector
+// expressions before any SQL is built from them.
 func validateVectorExpr(dense *types.MatchDenseExpr) error {
 	if dense == nil || len(dense.EmbeddingData) == 0 {
 		return fmt.Errorf("vector expression is empty")
@@ -649,6 +674,8 @@ func validateVectorExpr(dense *types.MatchDenseExpr) error {
 	return nil
 }
 
+// denseSimilarity extracts the similarity threshold from the expression's
+// extra options.
 func denseSimilarity(dense *types.MatchDenseExpr) float64 {
 	if dense.ExtraOptions != nil {
 		switch value := dense.ExtraOptions["similarity"].(type) {
@@ -663,6 +690,8 @@ func denseSimilarity(dense *types.MatchDenseExpr) float64 {
 	return 0
 }
 
+// fusionVectorWeight reads the vector side of a "text,vector" fusion weight
+// pair, defaulting to an even split on any malformed input.
 func fusionVectorWeight(fusion *types.FusionExpr) float64 {
 	if fusion == nil || fusion.FusionParams == nil {
 		return 0.5
@@ -678,18 +707,22 @@ func fusionVectorWeight(fusion *types.FusionExpr) float64 {
 	return weight
 }
 
+// sortScoredChunks orders scored chunks by their ranking key, descending.
 func sortScoredChunks(chunks []map[string]interface{}) {
 	sort.SliceStable(chunks, func(i, j int) bool {
 		return scoredChunkSortKey(chunks[i]) > scoredChunkSortKey(chunks[j])
 	})
 }
 
+// scoredChunkSortKey is a chunk's merged ranking key: _score plus
+// pagerank_fea.
 func scoredChunkSortKey(chunk map[string]interface{}) float64 {
 	score, _ := numberToFloat(chunk["_score"])
 	pagerank, _ := numberToFloat(chunk["pagerank_fea"])
 	return score + pagerank
 }
 
+// decodeRows decodes each physical row into logical field names.
 func decodeRows(rows []map[string]interface{}, kind string) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(rows))
 	for i, row := range rows {
@@ -698,6 +731,8 @@ func decodeRows(rows []map[string]interface{}, kind string) []map[string]interfa
 	return result
 }
 
+// mergeSearchChunks sorts the merged multi-table result — by ranking key when
+// scored, otherwise by the request's ORDER BY — then applies the page window.
 func mergeSearchChunks(chunks []map[string]interface{}, req *types.SearchRequest, scored bool) []map[string]interface{} {
 	if scored {
 		sortScoredChunks(chunks)
@@ -722,6 +757,8 @@ func mergeSearchChunks(chunks []map[string]interface{}, req *types.SearchRequest
 	return chunks[offset:end]
 }
 
+// compareSearchValues orders two sort-field values, with nil sorting first;
+// zero means equal or unordered.
 func compareSearchValues(left, right interface{}, field string) int {
 	if left == nil {
 		if right == nil {
@@ -747,6 +784,8 @@ func compareSearchValues(left, right interface{}, field string) int {
 	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
+// searchSortNumber coerces a sort value to a number, summing the elements of
+// multi-value fields the way the Python engines sort them.
 func searchSortNumber(value interface{}, field string) (float64, bool) {
 	if values, ok := interfaceSlice(value); ok {
 		if len(values) == 0 {
@@ -776,8 +815,11 @@ func searchSortNumber(value interface{}, field string) (float64, bool) {
 	return 0, false
 }
 
+// formatFloat renders a float as a minimal SQL literal.
 func formatFloat(value float64) string { return strconv.FormatFloat(value, 'g', -1, 64) }
 
+// minPositive returns the smaller positive value, falling back to the other
+// one when either is non-positive.
 func minPositive(first, second int) int {
 	if first <= 0 {
 		return second
@@ -788,6 +830,7 @@ func minPositive(first, second int) int {
 	return second
 }
 
+// positiveOr returns value when positive, otherwise fallback.
 func positiveOr(value, fallback int) int {
 	if value > 0 {
 		return value
@@ -795,6 +838,7 @@ func positiveOr(value, fallback int) int {
 	return fallback
 }
 
+// uniqueStrings deduplicates while preserving first-seen order.
 func uniqueStrings(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	result := make([]string, 0, len(values))
@@ -807,10 +851,14 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
+// globalSearchCandidateLimit is the candidate range a merged search fetches
+// from every table: the page offset plus limit (default page size 30).
 func globalSearchCandidateLimit(req *types.SearchRequest) int {
 	return max(req.Offset, 0) + positiveOr(req.Limit, 30)
 }
 
+// expandSearchPlan raises the text and dense TopNs to at least the candidate
+// limit so merged searches do not under-fetch from any table.
 func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
 	expanded := plan
 	if plan.text != nil {
@@ -826,6 +874,8 @@ func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
 	return expanded
 }
 
+// searchHiddenSortFields lists ORDER BY fields missing from SelectFields, so
+// merged SQL can still sort by them before the page window drops rows.
 func searchHiddenSortFields(req *types.SearchRequest, mergeTables bool) []string {
 	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || containsString(req.SelectFields, "*") {
 		return nil

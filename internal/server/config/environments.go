@@ -114,6 +114,8 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+// GetEnvironments overlays environment variables on top of the file-based
+// settings, filling the runtime environment snapshot.
 func (c *Config) GetEnvironments() error {
 
 	// Language

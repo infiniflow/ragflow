@@ -447,6 +447,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}, nil
 }
 
+// scoreSearchResult computes the per-chunk term, vector, and fused
+// similarity scores for a search result, reranking through the configured
+// model when the engine does not fuse natively.
 func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64, error) {
 	// sim = tkWeight*tsim + vtWeight*vsim
 	vtWeight := *req.VectorSimilarityWeight

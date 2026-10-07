@@ -36,14 +36,19 @@ func expectCount(mock sqlmock.Sqlmock, query string, args ...driver.Value) *sqlm
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 }
 
+// tableCountQuery is the information_schema probe stub shared by the schema
+// tests.
 func tableCountQuery() string {
 	return "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = $1"
 }
 
+// indexCountQuery is the pg_indexes probe stub shared by the schema tests.
 func indexCountQuery() string {
 	return "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = $1 AND indexname = $2"
 }
 
+// columnCountQuery is the information_schema column probe stub shared by
+// the schema tests.
 func columnCountQuery() string {
 	return "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2"
 }
@@ -57,6 +62,8 @@ func expectIndexProvision(mock sqlmock.Sqlmock, table, indexName, ddl string) {
 	expectCount(mock, indexCountQuery(), table, indexName)
 }
 
+// TestCreateMemoryStoreDDLGolden pins the memory table's CREATE TABLE and
+// companion DDL.
 func TestCreateMemoryStoreDDLGolden(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -96,6 +103,8 @@ func TestCreateMemoryStoreDDLGolden(t *testing.T) {
 	}
 }
 
+// TestCreateChunkStoreBModeProvisionsFullTextPerColumn checks that B mode
+// provisions one full-text index per indexed chunk column.
 func TestCreateChunkStoreBModeProvisionsFullTextPerColumn(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -143,6 +152,8 @@ func TestCreateChunkStoreBModeProvisionsFullTextPerColumn(t *testing.T) {
 	}
 }
 
+// TestCreateChunkStoreBModeDegradesWhenFullTextIndexFails checks that a
+// failed full-text index degrades to a warning instead of failing the store.
 func TestCreateChunkStoreBModeDegradesWhenFullTextIndexFails(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -182,6 +193,8 @@ func TestCreateChunkStoreBModeDegradesWhenFullTextIndexFails(t *testing.T) {
 	}
 }
 
+// TestEnsureFullTextIndexesPGModeBuildsOneGIN checks that PG mode builds a
+// single GIN index over the concatenated text columns.
 func TestEnsureFullTextIndexesPGModeBuildsOneGIN(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -210,6 +223,8 @@ func TestEnsureFullTextIndexesPGModeBuildsOneGIN(t *testing.T) {
 	}
 }
 
+// TestEnsureVectorColumnAndIndexUsesGraphIndex pins the q_N_vec column and
+// graph_index DDL.
 func TestEnsureVectorColumnAndIndexUsesGraphIndex(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -240,6 +255,8 @@ func TestEnsureVectorColumnAndIndexUsesGraphIndex(t *testing.T) {
 	}
 }
 
+// TestDynamicColumnDefinitionTypes checks unknown-field typing: floatvector
+// for q_N_vec names, short varchar otherwise.
 func TestDynamicColumnDefinitionTypes(t *testing.T) {
 	if got := dynamicColumnDefinition("q_1024_vec"); got.typeSQL != "floatvector(1024)" || got.defaultSQL != "" {
 		t.Fatalf("vector dynamic column = %#v", got)
@@ -249,6 +266,8 @@ func TestDynamicColumnDefinitionTypes(t *testing.T) {
 	}
 }
 
+// TestRegularIndexNameTruncatesWithinLimit checks the hashed truncation that
+// keeps index names inside the length limit.
 func TestRegularIndexNameTruncatesWithinLimit(t *testing.T) {
 	long := regularIndexName(strings.Repeat("t", 40), strings.Repeat("c", 30))
 	// Truncation keeps headroom below the 63-char PG limit and appends a
@@ -264,6 +283,9 @@ func TestRegularIndexNameTruncatesWithinLimit(t *testing.T) {
 	}
 }
 
+// TestDropChunkStoreDeletesDatasetRowsButKeepsSharedTable checks that
+// dropping a chunk store deletes only the dataset's rows in the shared
+// table.
 func TestDropChunkStoreDeletesDatasetRowsButKeepsSharedTable(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -300,6 +322,8 @@ func TestDropChunkStoreDeletesDatasetRowsButKeepsSharedTable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreExistsRequiresStaticIndexes checks that store existence is
+// judged by the presence of the static schema indexes, not the data.
 func TestChunkStoreExistsRequiresStaticIndexes(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

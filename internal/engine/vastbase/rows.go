@@ -46,6 +46,7 @@ func queryRowsTx(ctx context.Context, tx *sql.Tx, query string, args ...interfac
 	return scanRows(rows)
 }
 
+// scanRows drains a result set into per-row maps keyed by column name.
 func scanRows(rows *sql.Rows) ([]map[string]interface{}, error) {
 	columns, err := rows.Columns()
 	if err != nil {
@@ -122,6 +123,9 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 	return result
 }
 
+// decodeColumnValue converts one physical column value to its logical form:
+// vector text to float slices, keyword joins back to lists, JSON columns to
+// maps.
 func decodeColumnValue(kind, column string, value interface{}) interface{} {
 	if value == nil {
 		return nil
@@ -266,6 +270,7 @@ func parsePgArray(literal string) []string {
 	return out
 }
 
+// containsString reports whether target appears in values.
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {

@@ -23,6 +23,8 @@ import (
 	"github.com/lib/pq"
 )
 
+// TestNormalizeChunkEncodesPythonStorageFormats checks the physical
+// encodings the Python connector's storage formats map to.
 func TestNormalizeChunkEncodesPythonStorageFormats(t *testing.T) {
 	document := map[string]interface{}{
 		"id":            "chunk-1",
@@ -72,6 +74,8 @@ func TestNormalizeChunkEncodesPythonStorageFormats(t *testing.T) {
 	}
 }
 
+// TestNormalizeChunkKeepsZeroAndFalsyValues checks that zero-valued fields
+// survive normalization instead of being dropped as absent.
 func TestNormalizeChunkKeepsZeroAndFalsyValues(t *testing.T) {
 	got, err := normalizeChunk(map[string]interface{}{
 		"available_int": 0, "weight_flt": 0.0, "removed_kwd": "",
@@ -84,6 +88,8 @@ func TestNormalizeChunkKeepsZeroAndFalsyValues(t *testing.T) {
 	}
 }
 
+// TestNormalizeMemoryAliasesAndDefaults checks memory field aliasing and
+// default filling.
 func TestNormalizeMemoryAliasesAndDefaults(t *testing.T) {
 	got, err := normalizeMemory(map[string]interface{}{
 		"id": "memory-1_1", "message_id": "1",
@@ -120,6 +126,7 @@ func TestNormalizeMemoryAliasesAndDefaults(t *testing.T) {
 	}
 }
 
+// TestNormalizeMemoryStatusDefaultsToOne checks the memory status default.
 func TestNormalizeMemoryStatusDefaultsToOne(t *testing.T) {
 	got, err := normalizeMemory(map[string]interface{}{"id": "m1", "memory_id": "m"}, "m")
 	if err != nil {
@@ -130,6 +137,8 @@ func TestNormalizeMemoryStatusDefaultsToOne(t *testing.T) {
 	}
 }
 
+// TestNormalizeSkillDerivesTokenFields checks that skill normalization
+// derives the tokenized companion fields.
 func TestNormalizeSkillDerivesTokenFields(t *testing.T) {
 	got, err := normalizeSkill(map[string]interface{}{
 		"skill_id": "s-1", "name": "pdf reader", "content": "opens files",
@@ -152,6 +161,8 @@ func TestNormalizeSkillDerivesTokenFields(t *testing.T) {
 	}
 }
 
+// TestEncodeUpdateValueRoutesByKind checks UPDATE value encoding per row
+// kind and column.
 func TestEncodeUpdateValueRoutesByKind(t *testing.T) {
 	vector, err := encodeUpdateValue("chunk", "q_2_vec", []interface{}{0.5, -0.5})
 	if err != nil || vector != "[0.5,-0.5]" {
@@ -171,6 +182,8 @@ func TestEncodeUpdateValueRoutesByKind(t *testing.T) {
 	}
 }
 
+// TestVectorEncodingIsFloat32Precision checks that vector text round-trips
+// through float32 precision, matching the Python connector.
 func TestVectorEncodingIsFloat32Precision(t *testing.T) {
 	// Python wrote np.float32 components; values beyond float32 precision
 	// must round to the float32 rendering so shared tables stay byte-stable.
@@ -186,6 +199,8 @@ func TestVectorEncodingIsFloat32Precision(t *testing.T) {
 	}
 }
 
+// TestZeroVectorAndDimensionInference checks the zero-vector placeholder
+// text and dimension inference from documents.
 func TestZeroVectorAndDimensionInference(t *testing.T) {
 	if zeroVector(1) != "[0]" || zeroVector(3) != "[0,0,0]" {
 		t.Fatalf("zeroVector format changed: %q %q", zeroVector(1), zeroVector(3))
@@ -201,6 +216,8 @@ func TestZeroVectorAndDimensionInference(t *testing.T) {
 	}
 }
 
+// TestFieldKeywordClassification checks which columns count as
+// keyword-joined fields.
 func TestFieldKeywordClassification(t *testing.T) {
 	for field, want := range map[string]bool{
 		"source_id": true, "important_kwd": true, "entity_type_kwd": true,

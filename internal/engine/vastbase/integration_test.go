@@ -45,6 +45,8 @@ func vbITEnvOr(name, fallback string) string {
 	return fallback
 }
 
+// TestVastbaseStorageRoundTrip exercises the full storage surface against a
+// live Vastbase instance: DDL, writes, searches, and cleanup.
 func TestVastbaseStorageRoundTrip(t *testing.T) {
 	host := vbITEnvOr("RAGFLOW_TEST_VASTBASE_HOST", "")
 	if host == "" {

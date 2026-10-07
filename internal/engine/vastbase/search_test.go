@@ -38,10 +38,14 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+// chunkColumnRows is the standard chunk table column list shared by the
+// search golden tests.
 func chunkColumnRows() []string {
 	return []string{"id", "kb_id", "content_ltks", "pagerank_fea", "q_3_vec"}
 }
 
+// expectChunkColumns stubs the listTableColumns round trip with the standard
+// chunk column set.
 func expectChunkColumns(mock sqlmock.Sqlmock, table string) {
 	expectCount(mock, tableCountQuery(), table)
 	rows := sqlmock.NewRows([]string{"column_name", "data_type", "column_default", "is_nullable"})
@@ -51,6 +55,7 @@ func expectChunkColumns(mock sqlmock.Sqlmock, table string) {
 	mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs(table).WillReturnRows(rows)
 }
 
+// TestFullTextCTESingleColumnGolden pins the single-column bm25 CTE SQL.
 func TestFullTextCTESingleColumnGolden(t *testing.T) {
 	engine := &Engine{dbCompatibility: compatB}
 	text := &types.MatchTextExpr{
@@ -77,6 +82,8 @@ func TestFullTextCTESingleColumnGolden(t *testing.T) {
 	}
 }
 
+// TestFullTextCTEMultiColumnUnionGolden pins the UNION ALL form the CTE takes
+// when several columns carry full-text indexes.
 func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 	engine := &Engine{dbCompatibility: compatB}
 	text := &types.MatchTextExpr{
@@ -111,6 +118,8 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 	}
 }
 
+// TestVectorCTEGolden pins the dense-vector CTE SQL, including the bare
+// ORDER BY that keeps the graph index eligible.
 func TestVectorCTEGolden(t *testing.T) {
 	dense := &types.MatchDenseExpr{
 		VectorColumnName: "q_3_vec",
@@ -144,6 +153,7 @@ func TestVectorCTEGolden(t *testing.T) {
 	}
 }
 
+// TestSearchFusionQueryGolden pins the fused full-text-plus-vector query SQL.
 func TestSearchFusionQueryGolden(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -203,6 +213,8 @@ func TestSearchFusionQueryGolden(t *testing.T) {
 	}
 }
 
+// TestSearchFusionWeightDegeneration checks that all-or-nothing fusion
+// weights collapse the hybrid path into the single remaining path.
 func TestSearchFusionWeightDegeneration(t *testing.T) {
 	newReq := func(weights string) *types.SearchRequest {
 		return &types.SearchRequest{
@@ -256,6 +268,8 @@ func TestSearchFusionWeightDegeneration(t *testing.T) {
 	}
 }
 
+// TestSearchMemoryFullTextUsesTSQuery pins the memory keyword path, which
+// ranks through to_tsquery instead of the bm25 operator.
 func TestSearchMemoryFullTextUsesTSQuery(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -298,6 +312,8 @@ func TestSearchMemoryFullTextUsesTSQuery(t *testing.T) {
 	}
 }
 
+// TestSearchMemoryFusionCandidatesGolden pins the memory fusion candidate
+// query that scores vectors over CTE rows.
 func TestSearchMemoryFusionCandidatesGolden(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -347,6 +363,8 @@ func TestSearchMemoryFusionCandidatesGolden(t *testing.T) {
 	}
 }
 
+// TestSearchFilterOnlyCountsThenPages checks the two-statement shape of the
+// filter-only path: one COUNT for the total, one paged select.
 func TestSearchFilterOnlyCountsThenPages(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -397,6 +415,8 @@ func TestSearchFilterOnlyCountsThenPages(t *testing.T) {
 	}
 }
 
+// TestSearchSkipsMissingTables checks that a search naming a table the
+// schema never created skips it instead of failing.
 func TestSearchSkipsMissingTables(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -424,6 +444,8 @@ func TestSearchSkipsMissingTables(t *testing.T) {
 	}
 }
 
+// TestMemoryTSQuery checks the memory tsquery builder's term joining and
+// escaping.
 func TestMemoryTSQuery(t *testing.T) {
 	cases := []struct {
 		text *types.MatchTextExpr
@@ -447,6 +469,8 @@ func TestMemoryTSQuery(t *testing.T) {
 	}
 }
 
+// TestParseFullTextFields checks "field^weight" specification parsing,
+// including entries without a weight.
 func TestParseFullTextFields(t *testing.T) {
 	fields, weights := parseFullTextFields(&types.MatchTextExpr{
 		Fields: []string{"title_tks^10", "content_ltks", "question_tks^0.5"},
@@ -459,6 +483,8 @@ func TestParseFullTextFields(t *testing.T) {
 	}
 }
 
+// TestFusionVectorWeight checks fusion weight parsing and its even-split
+// fallbacks.
 func TestFusionVectorWeight(t *testing.T) {
 	cases := []struct {
 		fusion *types.FusionExpr
@@ -478,6 +504,8 @@ func TestFusionVectorWeight(t *testing.T) {
 	}
 }
 
+// TestFormatMinimumShouldMatch checks the percent rendering of the
+// minimum_should_match option across its accepted types.
 func TestFormatMinimumShouldMatch(t *testing.T) {
 	cases := []struct {
 		options map[string]interface{}
@@ -501,6 +529,8 @@ func TestFormatMinimumShouldMatch(t *testing.T) {
 	}
 }
 
+// TestBuildSearchOutput checks how requested fields, kinds, and hidden sort
+// fields turn into the SQL select list.
 func TestBuildSearchOutput(t *testing.T) {
 	columns := testColumns()
 	output := buildSearchOutput([]string{"content_ltks", "_score", "ghost_field"}, "chunk", columns, true, nil)
@@ -525,6 +555,8 @@ func TestBuildSearchOutput(t *testing.T) {
 	}
 }
 
+// TestScoredChunkSortFoldsPagerank checks that merged ranking folds
+// pagerank_fea into the sort key.
 func TestScoredChunkSortFoldsPagerank(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"id": "low", "_score": 0.8, "pagerank_fea": 0},

@@ -50,6 +50,8 @@ func TestKeywordRoundTripMatchesPythonFormat(t *testing.T) {
 	}
 }
 
+// TestVectorRoundTripMatchesPsycopg2Float32 checks float32 precision both
+// ways: encode narrows, decode widens back.
 func TestVectorRoundTripMatchesPsycopg2Float32(t *testing.T) {
 	// float32 precision both ways: encode narrows, decode widens back.
 	encoded, err := encodeVector([]interface{}{0.123456789, 2.5, -0.75})
@@ -73,6 +75,8 @@ func TestVectorRoundTripMatchesPsycopg2Float32(t *testing.T) {
 	}
 }
 
+// TestPositionIntRoundTripRegroupsByFive checks that the flattened
+// [[page,x1,y1,x2,y2],...] storage regroups into fives on read.
 func TestPositionIntRoundTripRegroupsByFive(t *testing.T) {
 	original := []interface{}{
 		[]interface{}{int64(0), 12, 34, 56, 78},
@@ -95,6 +99,7 @@ func TestPositionIntRoundTripRegroupsByFive(t *testing.T) {
 	}
 }
 
+// TestIntegerArrayRoundTrip checks plain integer array encode/decode.
 func TestIntegerArrayRoundTrip(t *testing.T) {
 	stored, err := encodeColumnValue("page_num_int", []interface{}{int64(3), int64(1), int64(4)})
 	if err != nil {
@@ -109,6 +114,7 @@ func TestIntegerArrayRoundTrip(t *testing.T) {
 	}
 }
 
+// TestJSONColumnRoundTrip checks JSON column text against map round-trips.
 func TestJSONColumnRoundTrip(t *testing.T) {
 	object := map[string]interface{}{"_group_id": "g-7", "nested": map[string]interface{}{"k": 1.5}}
 	encoded, err := encodeColumnValue("metadata", object)
@@ -127,6 +133,8 @@ func TestJSONColumnRoundTrip(t *testing.T) {
 	}
 }
 
+// TestZeroBackfillVectorFormat checks the zero-vector placeholder format
+// backfill writes into stale dimension columns.
 func TestZeroBackfillVectorFormat(t *testing.T) {
 	// Documents missing a vector column the table already has are backfilled
 	// with zeros; the text form must match encodeVector's rendering.
@@ -142,6 +150,8 @@ func TestZeroBackfillVectorFormat(t *testing.T) {
 	}
 }
 
+// TestKbIDListCollapsesToFirst checks that a kb_id list keeps only its
+// first element on write.
 func TestKbIDListCollapsesToFirst(t *testing.T) {
 	// The Python writer stored the first kb of the list; shared tables rely
 	// on that single value for row-level scoping.
@@ -157,6 +167,8 @@ func TestKbIDListCollapsesToFirst(t *testing.T) {
 	}
 }
 
+// TestTextColumnsCarryEmptyStringDefault checks that text columns default
+// to empty strings, not NULLs.
 func TestTextColumnsCarryEmptyStringDefault(t *testing.T) {
 	// The mapping's ES-parity contract: unwritten text is '' (not NULL), so
 	// exists filters can treat '' as absent and must_not as present.

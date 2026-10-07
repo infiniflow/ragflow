@@ -107,6 +107,9 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 	return result, nil
 }
 
+// encodeColumnValue converts one document value into its physical column
+// representation: kb_id keeps only the first element of a list, integer
+// arrays flatten, maps serialize as JSON, and keyword lists join.
 func encodeColumnValue(columnName string, value interface{}) (interface{}, error) {
 	if value == nil {
 		return nil, nil
@@ -168,6 +171,9 @@ func encodeIntegerArray(columnName string, value interface{}) (interface{}, erro
 	return pq.Int64Array(flat), nil
 }
 
+// normalizeMemory maps a memory document onto the memory columns, encoding
+// content_embed into its q_N_vec column and deriving the tokenized content
+// lookup column.
 func normalizeMemory(document map[string]interface{}, datasetID string) (map[string]interface{}, error) {
 	result := make(map[string]interface{}, len(memoryColumns)+1)
 	for key, value := range document {
@@ -217,6 +223,9 @@ func normalizeMemory(document map[string]interface{}, datasetID string) (map[str
 	return result, nil
 }
 
+// tokenizeMemoryContent produces the fine-grained token string the memory
+// full-text lookup queries, falling back to coarser inputs on tokenizer
+// failure.
 func tokenizeMemoryContent(content string) string {
 	tokens, err := tokenizer.Tokenize(content)
 	if err != nil {
@@ -229,6 +238,8 @@ func tokenizeMemoryContent(content string) string {
 	return fineTokens
 }
 
+// normalizeSkill maps a skill document onto the skill columns, passing
+// vector fields through encoded and dropping unknown keys.
 func normalizeSkill(document map[string]interface{}, documentID string) (map[string]interface{}, error) {
 	result := make(map[string]interface{}, len(skillColumns)+1)
 	for key, value := range document {
@@ -261,6 +272,9 @@ func normalizeSkill(document map[string]interface{}, documentID string) (map[str
 	return result, nil
 }
 
+// encodeUpdateValue converts one field for an UPDATE, applying the same
+// physical representations as encodeColumnValue (vectors, memory status
+// bools, JSON maps).
 func encodeUpdateValue(kind, columnName string, value interface{}) (interface{}, error) {
 	if vectorColumnPattern.MatchString(columnName) {
 		return encodeVector(value)
@@ -300,6 +314,8 @@ func zeroVector(dimension int) string {
 	return "[" + strings.Repeat("0,", dimension-1) + "0]"
 }
 
+// vectorDimension reports the embedding size a document carries, from its
+// q_N_vec column or content_embed length.
 func vectorDimension(document map[string]interface{}) int {
 	for key, value := range document {
 		if matches := vectorColumnPattern.FindStringSubmatch(key); len(matches) == 2 {
@@ -315,6 +331,8 @@ func vectorDimension(document map[string]interface{}) int {
 	return 0
 }
 
+// sortedColumns lists a document's columns in sorted order, keeping INSERT
+// and UPDATE column ordering deterministic.
 func sortedColumns(document map[string]interface{}) []string {
 	columns := make([]string, 0, len(document))
 	for column := range document {
@@ -324,6 +342,7 @@ func sortedColumns(document map[string]interface{}) []string {
 	return columns
 }
 
+// interfaceSlice converts any slice or array value to []interface{}.
 func interfaceSlice(value interface{}) ([]interface{}, bool) {
 	if value == nil {
 		return nil, false
@@ -339,6 +358,7 @@ func interfaceSlice(value interface{}) ([]interface{}, bool) {
 	return result, true
 }
 
+// floatSlice converts a value to []float64 when every element is numeric.
 func floatSlice(value interface{}) ([]float64, bool) {
 	values, ok := interfaceSlice(value)
 	if !ok {
@@ -358,6 +378,8 @@ func floatSlice(value interface{}) ([]float64, bool) {
 	return result, true
 }
 
+// numberToFloat coerces the numeric kinds database/sql and JSON decode to
+// into a float64.
 func numberToFloat(value interface{}) (float64, bool) {
 	switch number := value.(type) {
 	case float64:
@@ -381,6 +403,8 @@ func numberToFloat(value interface{}) (float64, bool) {
 	}
 }
 
+// numberToInt64 coerces the numeric kinds database/sql and JSON decode to
+// into an int64.
 func numberToInt64(value interface{}) (int64, bool) {
 	switch number := value.(type) {
 	case int:
@@ -404,6 +428,8 @@ func numberToInt64(value interface{}) (int64, bool) {
 	}
 }
 
+// stringValue renders a value as the empty string for nil, itself for a
+// string, and fmt's default otherwise.
 func stringValue(value interface{}) string {
 	if value == nil {
 		return ""

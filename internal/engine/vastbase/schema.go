@@ -216,6 +216,8 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	return e.ensureVectorColumnAndIndex(ctx, baseName, vectorSize)
 }
 
+// ensureTable creates tableName with the given columns under the DDL lock,
+// turning an already-present table into a no-op.
 func (e *Engine) ensureTable(ctx context.Context, tableName string, columns []columnDefinition) error {
 	primaryKey := primaryKeyColumn(columns)
 	return e.withDDLLock(ctx, "vb_create_table_"+tableName, func() (bool, error) {
@@ -238,6 +240,8 @@ func (e *Engine) ensureTable(ctx context.Context, tableName string, columns []co
 	})
 }
 
+// primaryKeyColumn picks the primary key column for a column set: id, or
+// skill_id for skill tables.
 func primaryKeyColumn(columns []columnDefinition) string {
 	for _, column := range columns {
 		switch column.name {
@@ -248,6 +252,7 @@ func primaryKeyColumn(columns []columnDefinition) string {
 	return ""
 }
 
+// ensureColumn adds one column to a table under the DDL lock when missing.
 func (e *Engine) ensureColumn(ctx context.Context, tableName string, column columnDefinition) error {
 	return e.withDDLLock(ctx, "vb_add_"+column.name+"_"+tableName, func() (bool, error) {
 		return e.columnExists(ctx, tableName, column.name)
@@ -292,6 +297,8 @@ func (e *Engine) ensureDynamicColumns(ctx context.Context, tableName string, fie
 	return nil
 }
 
+// dynamicColumnDefinition maps an unknown document field to its column type:
+// floatvector(N) for q_N_vec names, a short varchar otherwise.
 func dynamicColumnDefinition(field string) columnDefinition {
 	if match := vectorDimRegex.FindStringSubmatch(field); match != nil {
 		dim, _ := strconv.Atoi(match[1])
@@ -300,10 +307,14 @@ func dynamicColumnDefinition(field string) columnDefinition {
 	return columnDefinition{name: field, typeSQL: "varchar(256)", defaultSQL: "''"}
 }
 
+// validFieldName reports whether name matches the identifier pattern every
+// table, column, and index component must satisfy.
 func validFieldName(field string) bool {
 	return identifierPattern.MatchString(field)
 }
 
+// ensureRegularIndex creates a b-tree index on one column when absent,
+// serialized by the DDL lock.
 func (e *Engine) ensureRegularIndex(ctx context.Context, tableName, columnName string) error {
 	indexName := regularIndexName(tableName, columnName)
 	return e.withDDLLock(ctx, "vb_add_idx_"+tableName+"_"+columnName, func() (bool, error) {
@@ -360,6 +371,8 @@ func (e *Engine) ensureFullTextIndexes(ctx context.Context, tableName string, fi
 	return nil
 }
 
+// ensureVectorColumnAndIndex provisions the q_N_vec column for an embedding
+// size and its HNSW graph index.
 func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName string, vectorSize int) error {
 	if vectorSize <= 0 {
 		return nil
@@ -382,6 +395,8 @@ func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName strin
 	})
 }
 
+// regularIndexName builds ix_<table>_<column>, hashing the tail when the
+// name would exceed the kernel's index-name length limit.
 func regularIndexName(tableName, columnName string) string {
 	indexName := fmt.Sprintf("ix_%s_%s", tableName, columnName)
 	if len(indexName) <= maxIndexNameLength {
@@ -392,6 +407,8 @@ func regularIndexName(tableName, columnName string) string {
 	return indexName[:maxIndexNameLength-indexNameTruncationSpace] + suffix
 }
 
+// withDDLLock serializes a check-then-act DDL step on one object per
+// process: probe under the lock and act only when the probe misses.
 func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() (bool, error), action func() error) error {
 	value, _ := ddlLocks.LoadOrStore(lockName, &sync.Mutex{})
 	lock := value.(*sync.Mutex)
@@ -457,6 +474,7 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 	return nil
 }
 
+// tableExists probes the current schema for a table by name.
 func (e *Engine) tableExists(ctx context.Context, tableName string) (bool, error) {
 	if !validFieldName(tableName) {
 		return false, fmt.Errorf("vastbase: invalid table name %q", tableName)
@@ -468,6 +486,7 @@ func (e *Engine) tableExists(ctx context.Context, tableName string) (bool, error
 	return count > 0, err
 }
 
+// columnExists probes a table for a column by name.
 func (e *Engine) columnExists(ctx context.Context, tableName, columnName string) (bool, error) {
 	var count int
 	err := e.db.QueryRowContext(ctx,
@@ -476,6 +495,7 @@ func (e *Engine) columnExists(ctx context.Context, tableName, columnName string)
 	return count > 0, err
 }
 
+// indexExists probes pg_indexes for a named index.
 func (e *Engine) indexExists(ctx context.Context, tableName, indexName string) (bool, error) {
 	var count int
 	err := e.db.QueryRowContext(ctx,
@@ -603,10 +623,13 @@ func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string)
 	return err
 }
 
+// quoteIdent double-quotes an SQL identifier, escaping embedded quotes.
 func quoteIdent(identifier string) string {
 	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
 }
 
+// validateIdentifier rejects empty names or names outside the identifier
+// pattern before they reach any SQL text.
 func validateIdentifier(identifier string) error {
 	if identifier == "" || !identifierPattern.MatchString(identifier) {
 		return fmt.Errorf("invalid SQL identifier: %q", identifier)
@@ -614,6 +637,8 @@ func validateIdentifier(identifier string) error {
 	return nil
 }
 
+// isDuplicateDDLError reports whether a DDL failure is a benign
+// already-exists race rather than a real error.
 func isDuplicateDDLError(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "duplicate") || strings.Contains(message, "already exists")

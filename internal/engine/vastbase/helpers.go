@@ -114,6 +114,7 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 	return result
 }
 
+// GetChunkIDs collects chunk or skill ids from result rows.
 func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	result := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -150,6 +151,7 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 	return map[string]interface{}{"hits": map[string]interface{}{"hits": hits}}, nil
 }
 
+// GetScores extracts the per-hit scores from a KNN result envelope.
 func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 {
 	result := make(map[string]float64)
 	if knnResult == nil {
@@ -167,6 +169,8 @@ func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 
 	return result
 }
 
+// cosineSimilarity computes the cosine of two equally sized vectors,
+// yielding 0 for mismatched or empty inputs.
 func cosineSimilarity(left, right []float64) float64 {
 	if len(left) != len(right) || len(left) == 0 {
 		return 0

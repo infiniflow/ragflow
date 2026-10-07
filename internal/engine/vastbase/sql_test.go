@@ -28,6 +28,8 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+// TestRunSQLExecutesInReadOnlyRolledBackTransaction checks the admin SQL
+// console's read-only, always-rolled-back execution envelope.
 func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -56,6 +58,8 @@ func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
 	}
 }
 
+// TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction checks that even
+// data-modifying CTEs fail under the read-only envelope.
 func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -80,6 +84,8 @@ func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
 	}
 }
 
+// TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase checks statement
+// validation happens before any connection is made.
 func TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

@@ -176,6 +176,8 @@ func groupByColumnSet(documents []map[string]interface{}) [][]map[string]interfa
 	return result
 }
 
+// insertGroup writes one same-shape batch of documents as a single
+// multi-row INSERT inside the caller's transaction.
 func insertGroup(ctx context.Context, tx *sql.Tx, tableName string, documents []map[string]interface{}) error {
 	columns := sortedColumns(documents[0])
 	quoted := make([]string, len(columns))
@@ -445,6 +447,8 @@ func placeholderList(count, offset int) string {
 	return strings.Join(placeholders, ", ")
 }
 
+// stringArgs widens a string slice to the interface slice database/sql
+// variadic calls need.
 func stringArgs(values []string) []interface{} {
 	args := make([]interface{}, len(values))
 	for i, value := range values {
@@ -453,6 +457,8 @@ func stringArgs(values []string) []interface{} {
 	return args
 }
 
+// tableKind classifies a table row set: skill tables carry skill_id, memory_
+// tables hold memory rows, everything else is a chunk table.
 func tableKind(tableName string, datasetIDs ...string) string {
 	for _, datasetID := range datasetIDs {
 		if datasetID == "skill" {
@@ -471,6 +477,7 @@ func tableKind(tableName string, datasetIDs ...string) string {
 	}
 }
 
+// identifierColumn is the primary-key column name for a row kind.
 func identifierColumn(kind string) string {
 	if kind == "skill" {
 		return "skill_id"
@@ -478,6 +485,8 @@ func identifierColumn(kind string) string {
 	return "id"
 }
 
+// mapMemoryField translates a logical memory field to its column name,
+// passing unknown fields through.
 func mapMemoryField(field string) string {
 	if mapped, ok := memoryFieldToColumn[field]; ok {
 		return mapped
@@ -485,6 +494,8 @@ func mapMemoryField(field string) string {
 	return field
 }
 
+// copyMap shallow-copies a filter map so per-table discriminators can be
+// added without aliasing the request's filter.
 func copyMap(source map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{}, len(source)+1)
 	for key, value := range source {
@@ -493,6 +504,7 @@ func copyMap(source map[string]interface{}) map[string]interface{} {
 	return result
 }
 
+// sortedSet lists a set's members in sorted order.
 func sortedSet(source map[string]bool) []string {
 	values := make([]string, 0, len(source))
 	for value := range source {
@@ -502,6 +514,7 @@ func sortedSet(source map[string]bool) []string {
 	return values
 }
 
+// sortedMapKeys lists a map's keys in sorted order.
 func sortedMapKeys[V any](source map[string]V) []string {
 	keys := make([]string, 0, len(source))
 	for key := range source {

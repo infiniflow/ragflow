@@ -26,6 +26,8 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+// TestBuildDSNAssemblesKeywordForm pins the keyword DSN, including quoting
+// and escaping of values with spaces and special characters.
 func TestBuildDSNAssemblesKeywordForm(t *testing.T) {
 	t.Setenv("VASTBASE_DSN", "")
 	got := buildDSN(config.VastbaseConfig{
@@ -39,6 +41,8 @@ func TestBuildDSNAssemblesKeywordForm(t *testing.T) {
 	}
 }
 
+// TestBuildDSNDefaultsAndOverride checks the host-based sslmode defaults,
+// explicit overrides, and the VASTBASE_DSN escape hatch.
 func TestBuildDSNDefaultsAndOverride(t *testing.T) {
 	t.Setenv("VASTBASE_DSN", "")
 	// Unset ssl_mode: the default host is a TCP service name, so the
@@ -67,6 +71,8 @@ func TestBuildDSNDefaultsAndOverride(t *testing.T) {
 	}
 }
 
+// TestRedactDSN checks password redaction across the keyword and URL DSN
+// forms lib/pq accepts, including whitespace and escaped values.
 func TestRedactDSN(t *testing.T) {
 	keyword := redactDSN(`host='h' password='s3cret' user='u'`)
 	if keyword != `host='h' password=*** user='u'` {
@@ -93,6 +99,8 @@ func TestRedactDSN(t *testing.T) {
 	}
 }
 
+// TestDistanceOpPerCompatibility checks the cosine-distance operator per
+// compatibility mode and the PG fallback.
 func TestDistanceOpPerCompatibility(t *testing.T) {
 	if op := (&Engine{dbCompatibility: compatB}).distanceOp(); op != "<+>" {
 		t.Fatalf("B-mode operator = %q", op)
@@ -106,6 +114,8 @@ func TestDistanceOpPerCompatibility(t *testing.T) {
 	}
 }
 
+// TestGetTypeAndSupportsPageRank checks the engine's type string and pagerank
+// support flag.
 func TestGetTypeAndSupportsPageRank(t *testing.T) {
 	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatB}, nil)
 	if engine.GetType() != "vastbase" {
@@ -116,6 +126,8 @@ func TestGetTypeAndSupportsPageRank(t *testing.T) {
 	}
 }
 
+// TestAdjustChunkPagerankSQL pins the clamped pagerank UPDATE and the
+// rejection of invalid table names.
 func TestAdjustChunkPagerankSQL(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -141,6 +153,7 @@ func TestAdjustChunkPagerankSQL(t *testing.T) {
 	}
 }
 
+// TestValidateIdentifier checks accepted and rejected identifier names.
 func TestValidateIdentifier(t *testing.T) {
 	for _, name := range []string{"t1", "memory_x", "skill_abc", "ragflow_doc_meta_tenant-1"} {
 		if err := validateIdentifier(name); err != nil {
@@ -154,6 +167,7 @@ func TestValidateIdentifier(t *testing.T) {
 	}
 }
 
+// TestQuoteIdentEscapesDoubleQuotes checks identifier quoting.
 func TestQuoteIdentEscapesDoubleQuotes(t *testing.T) {
 	if got := quoteIdent(`we"ird`); got != `"we""ird"` {
 		t.Fatalf("quoteIdent = %q", got)

@@ -21,6 +21,8 @@ import (
 	"testing"
 )
 
+// TestDecodeColumnValueBranches checks per-column-kind decoding: vectors,
+// arrays, keyword joins, and JSON.
 func TestDecodeColumnValueBranches(t *testing.T) {
 	vector := decodeColumnValue("chunk", "q_3_vec", "[0.1,0.2,0.3]")
 	if !reflect.DeepEqual(vector, []float64{0.1, 0.2, 0.3}) {
@@ -55,6 +57,8 @@ func TestDecodeColumnValueBranches(t *testing.T) {
 	}
 }
 
+// TestDecodeLogicalRowMemoryRenames checks memory column-to-field renaming
+// on decoded rows.
 func TestDecodeLogicalRowMemoryRenames(t *testing.T) {
 	decoded := decodeLogicalRow(map[string]interface{}{
 		"id": "m1_1", "message_type_kwd": "raw", "status_int": int64(1),
@@ -108,6 +112,8 @@ func TestDecodeLogicalRowMemorySkipsZeroVectorPlaceholders(t *testing.T) {
 	}
 }
 
+// TestRegroupPositionsHandlesRemainders checks regrouping tolerates
+// non-multiple-of-five array lengths.
 func TestRegroupPositionsHandlesRemainders(t *testing.T) {
 	// The 5-tuple regroup is a lossy contract locked with the Python writer:
 	// a partial trailing group is preserved as-is, never padded.
@@ -121,6 +127,8 @@ func TestRegroupPositionsHandlesRemainders(t *testing.T) {
 	}
 }
 
+// TestParseFloatVectorText checks vector text parsing, including malformed
+// input.
 func TestParseFloatVectorText(t *testing.T) {
 	if got := parseFloatVectorText("[0.1,0.2]"); !reflect.DeepEqual(got, []float64{0.1, 0.2}) {
 		t.Fatalf("parse = %#v", got)
@@ -136,6 +144,7 @@ func TestParseFloatVectorText(t *testing.T) {
 	}
 }
 
+// TestParsePgArray checks PostgreSQL array-literal parsing.
 func TestParsePgArray(t *testing.T) {
 	if got := parsePgArray("{a,b,c}"); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
 		t.Fatalf("simple = %#v", got)
@@ -154,6 +163,7 @@ func TestParsePgArray(t *testing.T) {
 	}
 }
 
+// TestParsePgIntArray checks integer array-literal parsing.
 func TestParsePgIntArray(t *testing.T) {
 	if got := parsePgIntArray("{1,2,3}"); !reflect.DeepEqual(got, []int64{1, 2, 3}) {
 		t.Fatalf("parse = %#v", got)
@@ -163,6 +173,8 @@ func TestParsePgIntArray(t *testing.T) {
 	}
 }
 
+// TestDecodeLogicalRowToleratesNilColumns checks decoding skips NULL column
+// values without KeyError-style panics.
 func TestDecodeLogicalRowToleratesNilColumns(t *testing.T) {
 	// NULL columns are dropped by the queryRows scan layer before decoding
 	// (the ES _source contract: never-written fields come back absent); any
