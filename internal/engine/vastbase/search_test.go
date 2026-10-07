@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -55,6 +56,14 @@ func expectChunkColumns(mock sqlmock.Sqlmock, table string) {
 	mock.ExpectQuery(regexp.QuoteMeta(listColumnsQuery)).WithArgs(table).WillReturnRows(rows)
 }
 
+// expectLexemeProbe stubs the server-side cn_tokenizer parse round trip that
+// derives the PG-mode full-text terms.
+func expectLexemeProbe(mock sqlmock.Sqlmock, query, rendered string) {
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT to_tsvector('cn_tokenizer', $1)::text AS lexemes`)).
+		WithArgs(query).
+		WillReturnRows(sqlmock.NewRows([]string{"lexemes"}).AddRow(rendered))
+}
+
 // TestFullTextCTESingleColumnGolden pins the single-column bm25 CTE SQL.
 func TestFullTextCTESingleColumnGolden(t *testing.T) {
 	engine := &Engine{dbCompatibility: compatB}
@@ -65,7 +74,7 @@ func TestFullTextCTESingleColumnGolden(t *testing.T) {
 		ExtraOptions: map[string]interface{}{"minimum_should_match": 0.5},
 	}
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
+	got, err := engine.fullTextCTE(context.Background(), "t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
 		[]interface{}{"kb-1"}, text, 100, args)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +101,7 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 		TopN:         50,
 	}
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("t1", "chunk", []string{"id"}, `"kb_id" = $1`,
+	got, err := engine.fullTextCTE(context.Background(), "t1", "chunk", []string{"id"}, `"kb_id" = $1`,
 		[]interface{}{"kb-1"}, text, 50, args)
 	if err != nil {
 		t.Fatal(err)
@@ -121,18 +130,24 @@ func TestFullTextCTEMultiColumnUnionGolden(t *testing.T) {
 
 // TestFullTextCTEPGModeSingleColumnGolden pins the PG-mode single-column CTE:
 // predicates restate the indexed to_tsvector('cn_tokenizer', ...) expression
-// against plainto_tsquery, terms OR together below 100% minimum_should_match,
-// and ts_rank supplies the score.
+// against plainto_tsquery, the server-parsed lexemes OR together below 100%
+// minimum_should_match, and ts_rank supplies the score.
 func TestFullTextCTEPGModeSingleColumnGolden(t *testing.T) {
-	engine := &Engine{dbCompatibility: compatPG}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
 	text := &types.MatchTextExpr{
 		Fields:       []string{"content_ltks"},
 		MatchingText: "hello world",
 		TopN:         100,
 		ExtraOptions: map[string]interface{}{"minimum_should_match": 0.5},
 	}
+	expectLexemeProbe(mock, "hello world", `'hello':1 'world':2`)
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
+	got, err := engine.fullTextCTE(context.Background(), "t1", "chunk", []string{"id", "content_ltks"}, `"kb_id" = $1`,
 		[]interface{}{"kb-1"}, text, 100, args)
 	if err != nil {
 		t.Fatal(err)
@@ -149,21 +164,30 @@ func TestFullTextCTEPGModeSingleColumnGolden(t *testing.T) {
 	if !reflect.DeepEqual(args.values, []interface{}{"kb-1", "hello", "world"}) {
 		t.Fatalf("args = %#v", args.values)
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestFullTextCTEPGModeMultiColumnSkillGolden pins the PG-mode UNION form and
 // the skill table's row identifier: branches deduplicate on skill_id, and a
 // 100% minimum_should_match AND-joins the term predicates.
 func TestFullTextCTEPGModeMultiColumnSkillGolden(t *testing.T) {
-	engine := &Engine{dbCompatibility: compatPG}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
 	text := &types.MatchTextExpr{
 		Fields:       []string{"name_tks^2", "content_tks"},
 		MatchingText: "deploy",
 		TopN:         50,
 		ExtraOptions: map[string]interface{}{"minimum_should_match": "100%"},
 	}
+	expectLexemeProbe(mock, "deploy", `'deploy':1`)
 	args := &sqlArgs{}
-	got, err := engine.fullTextCTE("skill_t1", "skill", []string{"skill_id"}, `"space_id" = $1`,
+	got, err := engine.fullTextCTE(context.Background(), "skill_t1", "skill", []string{"skill_id"}, `"space_id" = $1`,
 		[]interface{}{"sp-1"}, text, 50, args)
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +207,100 @@ func TestFullTextCTEPGModeMultiColumnSkillGolden(t *testing.T) {
 	}
 	if !reflect.DeepEqual(args.values, []interface{}{"sp-1", "deploy", "sp-1", "deploy"}) {
 		t.Fatalf("args = %#v", args.values)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPGFullTextCTECJKQuerySplitsServerLexemes is the CJK regression: an
+// unspaced Chinese query parses into several server lexemes, and a
+// minimum_should_match below 100% must OR the per-lexeme predicates — with
+// whitespace splitting the query stayed one term whose lexemes
+// plainto_tsquery AND-joins, so the OR relaxation never engaged.
+func TestPGFullTextCTECJKQuerySplitsServerLexemes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+	text := &types.MatchTextExpr{
+		Fields:       []string{"content_ltks"},
+		MatchingText: "机器学习",
+		TopN:         100,
+	}
+	expectLexemeProbe(mock, "机器学习", `'机器':1 '学习':2`)
+	args := &sqlArgs{}
+	got, err := engine.fullTextCTE(context.Background(), "t1", "chunk", []string{"id"}, `"kb_id" = $1`,
+		[]interface{}{"kb-1"}, text, 100, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := `to_tsvector('cn_tokenizer', "content_ltks") @@ plainto_tsquery('cn_tokenizer', $2) OR ` +
+		`to_tsvector('cn_tokenizer', "content_ltks") @@ plainto_tsquery('cn_tokenizer', $3)`
+	if !strings.Contains(got, match) {
+		t.Fatalf("per-lexeme OR predicates missing:\n%s", got)
+	}
+	if !reflect.DeepEqual(args.values, []interface{}{"kb-1", "机器", "学习"}) {
+		t.Fatalf("args = %#v", args.values)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPGFullTextCTEStopwordParseFallsBackToWhitespace checks the fallback
+// when the server parse yields no lexemes (stopword-only query): terms fall
+// back to whitespace words.
+func TestPGFullTextCTEStopwordParseFallsBackToWhitespace(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+	text := &types.MatchTextExpr{
+		Fields:       []string{"content_ltks"},
+		MatchingText: "the of",
+		TopN:         100,
+	}
+	expectLexemeProbe(mock, "the of", "")
+	args := &sqlArgs{}
+	got, err := engine.fullTextCTE(context.Background(), "t1", "chunk", []string{"id"}, `"kb_id" = $1`,
+		[]interface{}{"kb-1"}, text, 100, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `@@ plainto_tsquery('cn_tokenizer', $2) OR`) {
+		t.Fatalf("whitespace fallback predicates missing:\n%s", got)
+	}
+	if !reflect.DeepEqual(args.values, []interface{}{"kb-1", "the", "of"}) {
+		t.Fatalf("args = %#v", args.values)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestParseTSVectorLexemes checks lexeme extraction from a tsvector's text
+// rendering: doubled quotes unescape, positions and weights drop, empty and
+// duplicate lexemes filter out.
+func TestParseTSVectorLexemes(t *testing.T) {
+	cases := []struct {
+		rendered string
+		want     []string
+	}{
+		{`'机器':1 '学习':2`, []string{"机器", "学习"}},
+		{`'don''t':2`, []string{"don't"}},
+		{`'a':1,3 'b':2B`, []string{"a", "b"}},
+		{`'a':1 'a':2`, []string{"a"}},
+		{"", []string{}},
+	}
+	for _, test := range cases {
+		if got := parseTSVectorLexemes(test.rendered); !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("parseTSVectorLexemes(%q) = %#v want %#v", test.rendered, got, test.want)
+		}
 	}
 }
 
@@ -258,6 +376,7 @@ func TestSearchFusionQueryGolden(t *testing.T) {
 
 	expectChunkColumns(mock, "t1")
 	expectChunkColumns(mock, "t1") // searchFusion re-lists columns for the "*" expansion
+	expectLexemeProbe(mock, "hello", `'hello':1`)
 
 	projection := `COALESCE(a."content_ltks", b."content_ltks") AS "content_ltks", ` +
 		`COALESCE(a."id", b."id") AS "id", COALESCE(a."kb_id", b."kb_id") AS "kb_id", ` +
@@ -330,6 +449,7 @@ func TestSearchSkillFusionUsesSkillIdentifier(t *testing.T) {
 	}
 	listSkillColumns()
 	listSkillColumns() // searchFusion re-lists columns for the "*" expansion
+	expectLexemeProbe(mock, "deploy", `'deploy':1`)
 
 	fields := `"content_tks", "name", "name_tks", "q_2_vec", "skill_id"`
 	fulltextScore := `(GREATEST(ts_rank(to_tsvector('cn_tokenizer', "name_tks"), plainto_tsquery('cn_tokenizer', $1))) * 1)`
@@ -419,6 +539,7 @@ func TestSearchFusionWeightDegeneration(t *testing.T) {
 	defer db2.Close()
 	engine2 := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db2)
 	expectChunkColumns(mock2, "t1")
+	expectLexemeProbe(mock2, "hello", `'hello':1`)
 	mock2.ExpectQuery(regexp.QuoteMeta(`@@ plainto_tsquery('cn_tokenizer', $2)`)).
 		WithArgs("kb-1", "hello").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "pagerank_fea", "_score"}).AddRow("c1", 0, 1.5))

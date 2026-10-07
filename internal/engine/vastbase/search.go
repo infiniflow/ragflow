@@ -38,6 +38,10 @@ type searchPlan struct {
 var (
 	boostSuffixRegex = regexp.MustCompile(`[~^]\d+(?:\.\d+)?`)
 	fieldSpecRegex   = regexp.MustCompile(`^(.+?)(?:\^(\d+(?:\.\d+)?))?$`)
+	// tsvectorLexemeRegex captures the lexemes of a tsvector's text rendering:
+	// each lexeme is single-quoted with embedded quotes doubled, positions and
+	// weights trail the closing quote ('lex':2,4A 'don''t':1).
+	tsvectorLexemeRegex = regexp.MustCompile(`'((?:[^']|'')*)'`)
 )
 
 // sqlArgs accumulates bound arguments while their $n placeholders are embedded
@@ -276,7 +280,7 @@ func expandOutputIfStar(output []string, columns map[string]columnMeta) []string
 func (e *Engine) searchFullText(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	fulltextLimit := fullTextLimit(plan, limit)
 	args := &sqlArgs{}
-	cte, err := e.fullTextCTE(tableName, kind, output, filterSQL, filterArgs, plan.text, fulltextLimit, args)
+	cte, err := e.fullTextCTE(ctx, tableName, kind, output, filterSQL, filterArgs, plan.text, fulltextLimit, args)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -294,9 +298,9 @@ func (e *Engine) searchFullText(ctx context.Context, tableName, kind string, out
 // the per-column bm25 @~@ scans (single field as a plain WHERE predicate,
 // multiple fields UNION ALL'd and deduplicated with DISTINCT ON so a row
 // matching several fields is kept once with its best score); PG mode matches
-// the GIN expression index with to_tsvector/plainto_tsquery. Both deduplicate
-// on the kind's row identifier.
-func (e *Engine) fullTextCTE(tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, text *types.MatchTextExpr, fulltextLimit int, args *sqlArgs) (string, error) {
+// the GIN expression index with to_tsvector/plainto_tsquery over the server's
+// own parse of the query. Both deduplicate on the kind's row identifier.
+func (e *Engine) fullTextCTE(ctx context.Context, tableName, kind string, output []string, filterSQL string, filterArgs []interface{}, text *types.MatchTextExpr, fulltextLimit int, args *sqlArgs) (string, error) {
 	fields, weights := parseFullTextFields(text)
 	if len(fields) == 0 {
 		return "", fmt.Errorf("vastbase: fulltext expression carries no fields")
@@ -307,7 +311,7 @@ func (e *Engine) fullTextCTE(tableName, kind string, output []string, filterSQL 
 	idColumn := identifierColumn(kind)
 
 	if e.dbCompatibility != compatB {
-		return e.pgFullTextCTE(tableName, idColumn, fieldsExpr, fields, weights, filterSQL, filterArgs, query, minimumShouldMatch, fulltextLimit, args)
+		return e.pgFullTextCTE(ctx, tableName, idColumn, fieldsExpr, fields, weights, filterSQL, filterArgs, query, minimumShouldMatch, fulltextLimit, args)
 	}
 
 	if len(fields) == 1 {
@@ -335,12 +339,22 @@ func (e *Engine) fullTextCTE(tableName, kind string, output []string, filterSQL 
 // ensureFullTextIndexes provisions: every predicate re-states the indexed
 // to_tsvector('cn_tokenizer', column) expression and matches it against
 // plainto_tsquery under the same text-search config, so the index stays
-// eligible and no tsquery-operator escaping is ever needed. PostgreSQL has no
-// partial minimum_should_match: at 100% (or a count covering every term) the
-// per-term predicates AND together, anything looser ORs them. Ranking uses
-// ts_rank, multiplied by the field weight.
-func (e *Engine) pgFullTextCTE(tableName, idColumn, fieldsExpr string, fields, weights []string, filterSQL string, filterArgs []interface{}, query, minimumShouldMatch string, fulltextLimit int, args *sqlArgs) (string, error) {
-	terms := fullTextTerms(query)
+// eligible and no tsquery-operator escaping is ever needed. The query's terms
+// are the lexemes of the server's own cn_tokenizer parse (pgQueryLexemes), so
+// minimum_should_match operates on exactly the terms the index parses out of
+// the columns. PostgreSQL has no partial minimum_should_match: at 100% (or a
+// count covering every term) the per-term predicates AND together, anything
+// looser ORs them. Ranking uses ts_rank, multiplied by the field weight.
+func (e *Engine) pgFullTextCTE(ctx context.Context, tableName, idColumn, fieldsExpr string, fields, weights []string, filterSQL string, filterArgs []interface{}, query, minimumShouldMatch string, fulltextLimit int, args *sqlArgs) (string, error) {
+	terms, err := e.pgQueryLexemes(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	if len(terms) == 0 {
+		// Stopword-only parse: fall back to whitespace words, then to the raw
+		// query, so the predicate still holds something to match.
+		terms = fullTextTerms(query)
+	}
 	if len(terms) == 0 {
 		terms = []string{query}
 	}
@@ -381,8 +395,42 @@ func (e *Engine) pgFullTextCTE(tableName, idColumn, fieldsExpr string, fields, w
 		fieldsExpr, quoteIdent(idColumn), fieldsExpr, strings.Join(branches, " UNION ALL "), quoteIdent(idColumn), fulltextLimit), nil
 }
 
-// fullTextTerms splits the stripped full-text query into plaintext terms for
-// the PG-mode predicate; each term is bound through plainto_tsquery verbatim.
+// pgQueryLexemes derives the query's terms from the server's own
+// cn_tokenizer parse — the same parse the GIN index applies to the columns —
+// by rendering the query's tsvector and reading its lexemes back. Whitespace
+// splitting cannot stand in: a CJK query typically carries no spaces, so all
+// of its lexemes would stay AND-joined inside one plainto_tsquery and the OR
+// relaxation below 100% minimum_should_match would never engage.
+func (e *Engine) pgQueryLexemes(ctx context.Context, query string) ([]string, error) {
+	rows, err := e.queryRows(ctx, "SELECT to_tsvector('cn_tokenizer', $1)::text AS lexemes", query)
+	if err != nil {
+		return nil, fmt.Errorf("vastbase: parse fulltext query: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return parseTSVectorLexemes(stringValue(rows[0]["lexemes"])), nil
+}
+
+// parseTSVectorLexemes extracts the lexemes from a tsvector's text rendering,
+// unescaping doubled single quotes; the positions and weights trailing each
+// closing quote are skipped.
+func parseTSVectorLexemes(rendered string) []string {
+	matches := tsvectorLexemeRegex.FindAllStringSubmatch(rendered, -1)
+	lexemes := make([]string, 0, len(matches))
+	for _, match := range matches {
+		lexeme := strings.TrimSpace(strings.ReplaceAll(match[1], "''", "'"))
+		if lexeme != "" && !containsString(lexemes, lexeme) {
+			lexemes = append(lexemes, lexeme)
+		}
+	}
+	return lexemes
+}
+
+// fullTextTerms splits the stripped full-text query into plaintext terms. It
+// is only the fallback for a server parse that yields nothing (stopword-only
+// queries); the primary term derivation is pgQueryLexemes, and each term is
+// bound through plainto_tsquery verbatim either way.
 func fullTextTerms(query string) []string {
 	return strings.Fields(query)
 }
@@ -471,7 +519,7 @@ func (e *Engine) searchFusion(ctx context.Context, tableName, kind string, outpu
 	}
 	output = expandOutputIfStar(output, columns)
 	args := &sqlArgs{}
-	fulltextSQL, err := e.fullTextCTE(tableName, kind, output, filterSQL, filterArgs, plan.text, fullTextLimit(plan, limit), args)
+	fulltextSQL, err := e.fullTextCTE(ctx, tableName, kind, output, filterSQL, filterArgs, plan.text, fullTextLimit(plan, limit), args)
 	if err != nil {
 		return nil, 0, err
 	}
