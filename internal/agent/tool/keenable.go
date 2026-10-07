@@ -357,7 +357,11 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if !ok {
 			continue
 		}
-		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
+		// Prefer snippet (page text) over description (often empty), matching
+		// the Python tool's behaviour after #18341 (#20477). The Go port
+		// was still reading description, so every result with the typical
+		// empty-description payload was dropped on the next line.
+		content := truncateKeenableRunes(strings.TrimSpace(keenableResultContent(result)), 10000)
 		if content == "" || content == "None" {
 			continue
 		}
@@ -405,6 +409,19 @@ func keenableValueString(value any) string {
 		return "None"
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+// keenableResultContent returns the result's page text: snippet when
+// present and non-empty, otherwise description, otherwise "". The Keenable
+// API carries the page text in snippet and leaves description empty in
+// the typical response, so reading description alone drops every result
+// at #20477. The Python tool's after-#18341 _result_content helper applies
+// the same fallback; the Go port now mirrors it.
+func keenableResultContent(result map[string]any) string {
+	if s := strings.TrimSpace(keenableValueString(result["snippet"])); s != "" && s != "None" {
+		return s
+	}
+	return strings.TrimSpace(keenableValueString(result["description"]))
 }
 
 func keenableHashInt(value string, modulus int64) int64 {
