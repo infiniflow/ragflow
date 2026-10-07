@@ -73,7 +73,7 @@ vastbase:
   password: 'Infini_Rag@123'
   db_name: 'ragflow'
   dbcompatibility: 'B'
-  ssl_mode: 'disable'
+  ssl_mode: '' # empty: engine picks by host (disable on loopback, verify-full otherwise)
 kvrocks:
   db: 1
   username: ''

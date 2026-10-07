@@ -98,7 +98,10 @@ vastbase:
   password: '${VB_PASSWORD:-Infini_Rag@123}'
   db_name: '${VB_VEC_DBNAME:-ragflow}'
   dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
-  ssl_mode: '${VB_SSL_MODE:-disable}'
+  # No disable fallback: an empty ssl_mode reaches the engine's host policy
+  # (disable on loopback, verify-full otherwise). docker/.env sets disable
+  # explicitly for the bundled private-network deployment.
+  ssl_mode: '${VB_SSL_MODE:-}'
 kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'

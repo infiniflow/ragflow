@@ -186,8 +186,12 @@ services:
       - VB_USERNAME=${VB_USERNAME}
       - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
       - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
+    # Bind the published port to loopback by default: the database ships
+    # default credentials, and RAGFlow reaches it over the shared `ragflow`
+    # network. Remote access is an explicit opt-in through VB_BIND_ADDR
+    # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
     ports:
-      - ${EXPOSE_VB_PORT:-5432}:5432
+      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
     volumes:
       - vastbase_data:/home/vastbase/data
       - ./vastbase/init:/docker-entrypoint-initdb.d
