@@ -472,6 +472,50 @@ func DatasetMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
 	return metaObj, ok
 }
 
+// LegacyFlatMetadataConfig returns a synthesized modular-shape metaObj when
+// the parser_config only carries the pre-#18511 flat metadata fields
+// (enable_metadata / metadata / built_in_metadata at the top level). When
+// parser_config.metadata is already present, the new shape wins and this
+// helper returns ok=false so callers prefer the new shape. The synthesis is
+// used by the runtime read path so an upgrade that skipped the manual
+// migration statement keeps the dataset's built_in_metadata visible
+// instead of silently returning empty (#20142).
+//
+// ok=true means the synthesized metaObj should be treated as the dataset's
+// metadata config for this read.
+func LegacyFlatMetadataConfig(parserConfig map[string]any) (map[string]any, bool) {
+	if parserConfig == nil {
+		return nil, false
+	}
+	if _, ok := parserConfig["metadata"].(map[string]any); ok {
+		// New shape already present — let callers prefer it. The legacy
+		// fields, if they also exist alongside the new shape, are
+		// considered stale leftovers from a partial migration and are
+		// ignored here.
+		return nil, false
+	}
+	flatMeta, hasMeta := parserConfig["metadata"]
+	flatBuiltIn, hasBuiltIn := parserConfig["built_in_metadata"]
+	flatEnabled, hasFlatEnabled := parserConfig["enable_metadata"]
+	if !hasMeta && !hasBuiltIn && !hasFlatEnabled {
+		return nil, false
+	}
+	metaObj := map[string]any{}
+	if hasFlatEnabled {
+		// Top-level enable_metadata was a plain bool flag in the legacy
+		// shape; map it to the new "enabled" key so callers using the
+		// synthesis see the correct enabled state.
+		metaObj["enabled"] = ParserConfigBool(flatEnabled)
+	}
+	if hasMeta {
+		metaObj["metadata"] = MetadataRawFieldList(flatMeta)
+	}
+	if hasBuiltIn {
+		metaObj["built_in_metadata"] = MetadataRawFieldList(flatBuiltIn)
+	}
+	return metaObj, true
+}
+
 // MetadataRawFieldList normalizes a metadata field list that may arrive as []any (the DB
 // round-trip) or []map[string]any (in-memory construction) into a []any.
 func MetadataRawFieldList(value any) []any {
@@ -539,10 +583,18 @@ func MetadataFieldDefsFromRaw(value any) []MetadataFieldDef {
 // exists BEFORE anything is indexed, and it carries each field's meaning (description) and
 // allowed values (enum) — what a model needs to fill a filter correctly rather than guess.
 // Fields declared in both lists are de-duplicated, first occurrence winning.
+//
+// When neither the new modular shape nor an Extractor component node is
+// present, falls back to LegacyFlatMetadataConfig so pre-#18511 datasets
+// keep returning their built_in_metadata on every read instead of silently
+// returning empty (#20142).
 func DeclaredMetadataFieldsFromParserConfig(parserConfig map[string]any) []MetadataFieldDef {
 	metaObj, ok := DatasetMetadataConfig(parserConfig)
 	if !ok {
 		metaObj, ok = ExtractorMetadataConfig(parserConfig)
+	}
+	if !ok {
+		metaObj, ok = LegacyFlatMetadataConfig(parserConfig)
 	}
 	if !ok {
 		return nil
