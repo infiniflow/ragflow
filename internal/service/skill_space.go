@@ -164,13 +164,22 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 		s.spaceCreateMu.Delete(tenantKey)
 	}()
 
-	// Double-check after acquiring lock: Check if space with same name already exists (active status)
-	existingSpace, err := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, req.TenantID, req.Name)
+	// Fall back to a numbered name when an active space already uses the
+	// requested one, mirroring the dataset create rule.
+	spaceName, err := common.UniqueName(req.Name, func(candidate string) (bool, error) {
+		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, req.TenantID, candidate)
+		if lookupErr != nil {
+			if dao.IsNotFoundErr(lookupErr) {
+				return false, nil
+			}
+			return false, lookupErr
+		}
+		return existing != nil, nil
+	})
 	if err != nil {
-		// Space doesn't exist, continue
-	} else if existingSpace != nil {
-		return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", req.Name)
+		return nil, common.CodeOperatingError, err
 	}
+	req.Name = spaceName
 
 	// Check if there's a space with the same name that is currently being deleted
 	existingSpaceAny, err := s.spaceDAO.GetByTenantAndNameAnyStatus(ctx, dao.DB, req.TenantID, req.Name)
@@ -328,9 +337,22 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, ten
 	updates := make(map[string]interface{})
 
 	if req.Name != "" && req.Name != space.Name {
-		// Check if name already exists
-		existingSpace, _ := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, req.Name)
-		if existingSpace != nil && existingSpace.ID != spaceID {
+		// Reject a rename onto another space's name; case-only changes are
+		// allowed, matching the dataset rename rule.
+		available, err := common.NameAvailable(space.Name, req.Name, func(candidate string) (bool, error) {
+			existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
+			if lookupErr != nil {
+				if dao.IsNotFoundErr(lookupErr) {
+					return false, nil
+				}
+				return false, lookupErr
+			}
+			return existing != nil && existing.ID != spaceID, nil
+		})
+		if err != nil {
+			return nil, common.CodeOperatingError, err
+		}
+		if !available {
 			return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", req.Name)
 		}
 

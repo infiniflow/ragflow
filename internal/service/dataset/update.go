@@ -195,14 +195,23 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			updates[key] = value
 		}
 
-		if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(lockedKB.Name) {
-			var existing entity.Knowledgebase
-			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, tenantID, string(entity.StatusValid)).First(&existing).Error
-			if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
+		if nameValue, ok := updates["name"].(string); ok {
+			available, nameErr := common.NameAvailable(lockedKB.Name, nameValue, func(candidate string) (bool, error) {
+				var existing entity.Knowledgebase
+				lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", candidate, tenantID, string(entity.StatusValid)).First(&existing).Error
+				if lookupErr != nil {
+					if dao.IsNotFoundErr(lookupErr) {
+						return false, nil
+					}
+					return false, lookupErr
+				}
+				return true, nil
+			})
+			if nameErr != nil {
 				txCode = common.CodeServerError
 				return errors.New("database operation failed")
 			}
-			if lookupErr == nil {
+			if !available {
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}

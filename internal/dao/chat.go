@@ -176,20 +176,11 @@ func (dao *ChatDAO) GetByIDAndStatus(ctx context.Context, db *gorm.DB, id string
 	return &chat, nil
 }
 
-// GetExistingNames gets existing dialog names for a tenant
-func (dao *ChatDAO) GetExistingNames(ctx context.Context, db *gorm.DB, tenantID string, status string) ([]string, error) {
-	var names []string
-	err := db.WithContext(ctx).Model(&entity.Chat{}).
-		Where("tenant_id = ? AND status = ?", tenantID, status).
-		Pluck("name", &names).Error
-	return names, err
-}
-
 // ExistsByNameTenantStatus checks whether a chat with the given name exists.
 func (dao *ChatDAO) ExistsByNameTenantStatus(ctx context.Context, db *gorm.DB, name, tenantID, status string) (bool, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.Chat{}).
-		Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, status).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, status).
 		Count(&count).Error
 	return count > 0, err
 }

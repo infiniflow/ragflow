@@ -1730,6 +1730,35 @@ func TestUpdateAgentRejectsCategoryOnlyDuplicateTitleInDestinationCategory(t *te
 	}
 }
 
+func TestUpdateAgentAllowsCaseOnlyTitleChange(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-case-only-title",
+		UserID:         "user-1",
+		Title:          sptr("Case Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-case-only-title", map[string]interface{}{
+		"title": "case title",
+	}); err != nil {
+		t.Fatalf("UpdateAgent failed for case-only title change: %v", err)
+	}
+
+	persisted, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-case-only-title")
+	if err != nil {
+		t.Fatalf("failed to reload agent: %v", err)
+	}
+	if persisted.Title == nil || *persisted.Title != "case title" {
+		t.Fatalf("persisted title = %v, want %q", persisted.Title, "case title")
+	}
+}
+
 func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 

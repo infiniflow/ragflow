@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -117,6 +118,14 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 	if err := validateGroupPayload(req, true); err != nil {
 		return nil, err
 	}
+	// Fall back to a numbered name when the requested one is already taken.
+	uniqueName, err := common.UniqueName(strings.TrimSpace(req.Name), func(candidate string) (bool, error) {
+		return s.groupDAO.NameExists(ctx, dao.DB, tenantID, candidate, "")
+	})
+	if err != nil {
+		return nil, err
+	}
+	req.Name = uniqueName
 	scope, err := s.deriveScope(req.Templates)
 	if err != nil {
 		return nil, err
@@ -135,7 +144,7 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 		if cerr := s.groupDAO.Create(ctx, tx, group); cerr != nil {
 			return cerr
 		}
-		return s.insertChildren(ctx, tx, tenantID, groupID, req.Templates, nil)
+		return s.insertChildren(ctx, tx, tenantID, groupID, req.Templates)
 	}); err != nil {
 		return nil, err
 	}
@@ -363,15 +372,15 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 	return nil
 }
 
-// insertChildren inserts new child templates. usedForReconcile controls whether
-// the duplicate-name guard applies (create always; reconcile passes seen set).
-func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate, seen map[string]struct{}) error {
+// insertChildren inserts new child templates, falling back to a numbered name
+// when a requested name already exists in the group.
+func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate) error {
 	for _, child := range templates {
-		name := strings.TrimSpace(child.Name)
-		if exists, err := s.templateDAO.NameExistsInGroup(ctx, dao.DB, tenantID, groupID, name, ""); err != nil {
+		name, err := common.UniqueName(strings.TrimSpace(child.Name), func(candidate string) (bool, error) {
+			return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
+		})
+		if err != nil {
 			return err
-		} else if exists {
-			return groupValidationErrorf("template name '%s' already exists in this group.", name)
 		}
 		desc := child.Description
 		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
@@ -441,6 +450,15 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		}
 		desc := child.Description
 		if target != nil {
+			available, err := common.NameAvailable(target.Name, name, func(candidate string) (bool, error) {
+				return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, target.ID)
+			})
+			if err != nil {
+				return err
+			}
+			if !available {
+				return groupValidationErrorf("template name '%s' already exists in this group.", name)
+			}
 			updates := map[string]interface{}{
 				"name": name, "kind": strings.TrimSpace(child.Kind), "config": config,
 			}
@@ -453,13 +471,19 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 			retained[target.ID] = struct{}{}
 			continue
 		}
+		newName, err := common.UniqueName(name, func(candidate string) (bool, error) {
+			return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
+		})
+		if err != nil {
+			return err
+		}
 		newID := utility.GenerateUUID()
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
 			ID:       newID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
-			Name:     name,
+			Name:     newName,
 			Kind:     strings.TrimSpace(child.Kind),
 			Config:   config,
 			Status:   &valid,

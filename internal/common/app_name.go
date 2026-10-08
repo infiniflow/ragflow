@@ -20,84 +20,95 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-// splitNameCounter splits a filename into base name and counter
-// Handles names in format "filename(123)" pattern
-//
-// Parameters:
-//   - filename: The filename to split
-//
-// Returns:
-//   - string: The base name without counter
-//   - *int: The counter value, or nil if no counter exists
+// maxNameRetries bounds how many numbered suffixes UniqueName may try before
+// giving up on a free name.
+const maxNameRetries = 1000
+
+// splitNameCounter splits a name stem (already stripped of its file extension)
+// into its base and a trailing "(N)" counter. The boolean reports whether a
+// trailing counter was present.
 //
 // Example:
 //
-//	splitNameCounter("test(5)") returns ("test", 5)
-//	splitNameCounter("test") returns ("test", nil)
-func splitNameCounter(filename string) (string, *int) {
-	re := regexp.MustCompile(`^(.+)\((\d+)\)$`)
-	matches := re.FindStringSubmatch(filename)
-	if len(matches) >= 3 {
-		counter := -1
-		fmt.Sscanf(matches[2], "%d", &counter)
-		stem := strings.TrimRight(matches[1], " ")
-		return stem, &counter
+//	splitNameCounter("test(5)") returns ("test", 5, true)
+//	splitNameCounter("test")    returns ("test", 0, false)
+func splitNameCounter(stem string) (string, int, bool) {
+	re := regexp.MustCompile(`^(.*)\((\d+)\)$`)
+	matches := re.FindStringSubmatch(stem)
+	if matches == nil {
+		return stem, 0, false
 	}
-	return filename, nil
+	counter, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return stem, 0, false
+	}
+	return strings.TrimRight(matches[1], " "), counter, true
 }
 
-// DuplicateName generates a unique name by appending a counter if the name already exists
-// It tries up to 1000 times to generate a unique name
+// UniqueName returns a non-colliding variant of name. When the name already
+// exists it appends "(1)", "(2)", ... It continues from an existing trailing
+// counter and preserves the file extension:
 //
-// Parameters:
-//   - queryFunc: Function to check if a name already exists (returns true if exists)
-//   - name: The original name
-//   - tenantID: The tenant ID for name uniqueness check
+//	UniqueName("topic", ...)           -> "topic(1)"
+//	UniqueName("topic(1)", ...)        -> "topic(2)"
+//	UniqueName("report.pdf", ...)      -> "report(1).pdf"
+//	UniqueName("report(1).pdf", ...)   -> "report(2).pdf"
 //
-// Returns:
-//   - string: A unique name (either original or with counter appended)
-//
-// Example:
-//
-//	DuplicateName(func(name string, tid string) bool { return false }, "test", "tenant1") returns "test"
-//	DuplicateName(func(name string, tid string) bool { return true }, "test", "tenant1") returns "test(1)"
-func DuplicateName(queryFunc func(name string, tenantID string) bool, name string, tenantID string) (string, error) {
-	const maxRetries = 1000
-
-	originalName := name
-	currentName := name
-	retries := 0
-
-	for retries < maxRetries {
-		if !queryFunc(currentName, tenantID) {
-			return currentName, nil
+// exists reports whether a candidate already collides. A lookup error is
+// returned to the caller instead of being treated as "free".
+func UniqueName(name string, exists func(candidate string) (bool, error)) (string, error) {
+	current := name
+	for i := 0; i < maxNameRetries; i++ {
+		taken, err := exists(current)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return current, nil
 		}
 
-		stem, counter := splitNameCounter(currentName)
-		ext := path.Ext(stem)
-		stemBase := strings.TrimSuffix(stem, ext)
-
-		newCounter := 1
-		if counter != nil {
-			newCounter = *counter + 1
+		ext := path.Ext(current)
+		stem := strings.TrimSuffix(current, ext)
+		base, counter, ok := splitNameCounter(stem)
+		if !ok {
+			base = stem
 		}
-
-		currentName = fmt.Sprintf("%s(%d)%s", stemBase, newCounter, ext)
-		retries++
-
-		if err := ValidateName(currentName); err != nil {
+		current = fmt.Sprintf("%s(%d)%s", base, counter+1, ext)
+		if err := ValidateName(current); err != nil {
 			return "", err
 		}
 	}
 
-	return "", fmt.Errorf("failed to generate unique name after %d attempts, conflict name: %s", maxRetries, originalName)
+	return "", fmt.Errorf("failed to generate a unique name after %d attempts, conflict name: %s", maxNameRetries, name)
 }
 
+// NameAvailable reports whether newName is free to use for a rename.
+//
+// A case-only change (strings.EqualFold) is always allowed and skips the
+// existence check, matching the dataset rename rule. Otherwise the caller's
+// case-insensitive existence check decides.
+//
+// It returns (true, nil) when the name can be used, (false, nil) when it is
+// already taken, and (false, err) when the existence lookup fails.
+func NameAvailable(currentName, newName string, exists func(candidate string) (bool, error)) (bool, error) {
+	if strings.EqualFold(currentName, newName) {
+		return true, nil
+	}
+	taken, err := exists(newName)
+	if err != nil {
+		return false, err
+	}
+	return !taken, nil
+}
+
+// AppNameLimit is the maximum allowed length of a name, in bytes.
 const AppNameLimit = 256
 
+// ValidateName rejects empty names and names longer than AppNameLimit bytes.
 func ValidateName(name string) error {
 	// Validate name is not empty after trimming
 	trimmedName := strings.TrimSpace(name)

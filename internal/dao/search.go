@@ -180,7 +180,7 @@ func (dao *SearchDAO) GetDetailByID(ctx context.Context, db *gorm.DB, searchID s
 // GetByNameAndTenant gets search by name and tenant ID
 func (dao *SearchDAO) GetByNameAndTenant(ctx context.Context, db *gorm.DB, name string, tenantID string) ([]*entity.Search, error) {
 	var searches []*entity.Search
-	err := db.WithContext(ctx).Where("name = ? AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
+	err := db.WithContext(ctx).Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, "1").Find(&searches).Error
 	return searches, err
 }
 

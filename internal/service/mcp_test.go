@@ -294,7 +294,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				}
 			}
 			var roundTripped entity.MCPServer
-			if err := testDB.Where("name = ?", "parallel_0").First(&roundTripped).Error; err != nil {
+			if err := testDB.Where("name = ?", "parallel(1)").First(&roundTripped).Error; err != nil {
 				t.Fatalf("load reimported server: %v", err)
 			}
 			if len(roundTripped.Headers) != len(tc.headers) {
