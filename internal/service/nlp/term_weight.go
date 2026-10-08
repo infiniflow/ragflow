@@ -23,12 +23,54 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
+
+// Hoisted out of Weights' per-token loops: MatchString and MustCompile compile
+// the pattern on every call.
+var (
+	rePretokenDigit  = regexp.MustCompile(`^[0-9]$`)
+	reShortAlnum     = regexp.MustCompile(`^[0-9a-z]{1,2}$`)
+	reLeadingAlnum   = regexp.MustCompile(`^[0-9a-zA-Z]`)
+	reSpaceRun       = regexp.MustCompile(`[ \t]+`)
+	reEndsWithLetter = regexp.MustCompile(`.*[a-zA-Z]$`)
+	reNumLike        = regexp.MustCompile(`^[0-9,.]{2,}$`)
+	reShortLetters   = regexp.MustCompile(`^[a-z]{1,2}$`)
+	reNumSpace       = regexp.MustCompile(`^[0-9. -]{2,}$`)
+	reTagNumeric     = regexp.MustCompile(`^[0-9-]+`)
+)
+
+// Does not parse: the trailing \] escapes the closing bracket. MatchString used
+// to swallow that error and report "no match", so Pretoken's "#" substitution
+// has never fired. Compiling once keeps that behaviour.
+const pretokenPunctPattern = `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
+
+// Compiling here keeps the pattern off the per-token path, but the error cannot
+// be reported here: package-level variables are initialised before
+// common.InitLogger installs the global logger, so common.Warn would silently
+// drop it. The error is carried to warnPunctPatternOnce, which runs once the
+// logger is live. rePretokenPunct is nil while the pattern stays unparseable.
+var (
+	rePretokenPunct, pretokenPunctErr = regexp.Compile(pretokenPunctPattern)
+	pretokenPunctWarnOnce             sync.Once
+)
+
+// warnPunctPatternOnce reports the unparseable punct pattern on the first call
+// to Pretoken. That runs on the request path, after InitLogger has installed the
+// global logger, which is where the warning is actually visible.
+func warnPunctPatternOnce() {
+	pretokenPunctWarnOnce.Do(func() {
+		if pretokenPunctErr != nil {
+			common.Warn("invalid regular expression; matching is skipped",
+				zap.String("pattern", pretokenPunctPattern), zap.Error(pretokenPunctErr))
+		}
+	})
+}
 
 // TermWeightDealer calculates term weights for text processing
 // Reference: rag/nlp/term_weight.py
@@ -152,8 +194,7 @@ func loadDict(fnm string) map[string]int {
 // Pretoken preprocesses and tokenizes text
 // Reference: term_weight.py L92-114
 func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
-	patt := `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
-
+	warnPunctPatternOnce()
 	res := []string{}
 	tokenized, err := tokenizer.Tokenize(txt)
 	if err != nil {
@@ -170,11 +211,11 @@ func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
 			}
 		}
 		// Check single digit (unless num is true)
-		if matched, _ := regexp.MatchString("^[0-9]$", tk); matched && !num {
+		if rePretokenDigit.MatchString(tk) && !num {
 			continue
 		}
-		// Check patterns
-		if matched, _ := regexp.MatchString(patt, t); matched {
+		// rePretokenPunct is nil while pretokenPunctPattern stays unparseable.
+		if rePretokenPunct != nil && rePretokenPunct.MatchString(t) {
 			tk = "#"
 		}
 		if tk != "#" && tk != "" {
@@ -194,8 +235,7 @@ func (d *TermWeightDealer) TokenMerge(tks []string) []string {
 			return true
 		}
 		// Match 1-2 alphanumeric characters
-		matched, _ := regexp.MatchString("^[0-9a-z]{1,2}$", t)
-		return matched
+		return reShortAlnum.MatchString(t)
 	}
 
 	if len(tks) == 0 {
@@ -209,7 +249,7 @@ func (d *TermWeightDealer) TokenMerge(tks []string) []string {
 		if i == 0 && len(tks) > 1 && oneTerm(tks[i]) {
 			nextLen := len([]rune(tks[i+1]))
 			isNextMultiChar := nextLen > 1
-			isNextNotAlnum, _ := regexp.MatchString("^[0-9a-zA-Z]", tks[i+1])
+			isNextNotAlnum := reLeadingAlnum.MatchString(tks[i+1])
 			if isNextMultiChar && !isNextNotAlnum {
 				res = append(res, tks[0]+" "+tks[1])
 				i = 2
@@ -282,7 +322,7 @@ func (d *TermWeightDealer) Split(txt string) []string {
 
 	tks := []string{}
 	// Normalize spaces (tabs and multiple spaces -> single space)
-	txt = regexp.MustCompile("[ \\t]+").ReplaceAllString(txt, " ")
+	txt = reSpaceRun.ReplaceAllString(txt, " ")
 	txt = strings.TrimSpace(txt)
 
 	for t := range strings.SplitSeq(txt, " ") {
@@ -291,8 +331,8 @@ func (d *TermWeightDealer) Split(txt string) []string {
 			continue
 		}
 		if len(tks) > 0 {
-			prevEndsWithLetter, _ := regexp.MatchString(".*[a-zA-Z]$", tks[len(tks)-1])
-			currEndsWithLetter, _ := regexp.MatchString(".*[a-zA-Z]$", t)
+			prevEndsWithLetter := reEndsWithLetter.MatchString(tks[len(tks)-1])
+			currEndsWithLetter := reEndsWithLetter.MatchString(t)
 			prevNE := d.ne[tks[len(tks)-1]]
 			currNE := d.ne[t]
 			if prevEndsWithLetter && currEndsWithLetter &&
@@ -309,16 +349,31 @@ func (d *TermWeightDealer) Split(txt string) []string {
 // Weights calculates weights for tokens
 // Reference: term_weight.py L163-246
 func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
-	numPattern := regexp.MustCompile("^[0-9,.]{2,}$")
-	shortLetterPattern := regexp.MustCompile("^[a-z]{1,2}$")
-	numSpacePattern := regexp.MustCompile("^[0-9. -]{2,}$")
+	// One dictionary lookup per distinct term. Both halves come from the same
+	// entry, tks repeats terms (title x2, important x5, question x6), and the
+	// consumers below are pure functions of the term, so caching the pair for the
+	// duration of this call cannot change any weight.
+	type freqTag struct {
+		freq int32
+		tag  string
+	}
+	lookups := make(map[string]freqTag, len(tks))
+	lookup := func(t string) freqTag {
+		if v, ok := lookups[t]; ok {
+			return v
+		}
+		freq, tag := tokenizer.GetTermFreqAndTag(t)
+		v := freqTag{freq: freq, tag: tag}
+		lookups[t] = v
+		return v
+	}
 
 	// ner weight function
 	nerWeight := func(t string) float64 {
-		if numPattern.MatchString(t) {
+		if reNumLike.MatchString(t) {
 			return 2
 		}
-		if shortLetterPattern.MatchString(t) {
+		if reShortLetters.MatchString(t) {
 			return 0.01
 		}
 		if d.ne == nil {
@@ -338,7 +393,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 
 	// postag weight function using real POS tagger
 	postagWeight := func(t string) float64 {
-		tag := tokenizer.GetTermTag(t)
+		tag := lookup(t).tag
 		// Map POS tags to weights (matching Python implementation)
 		if tag == "r" || tag == "c" || tag == "d" {
 			return 0.3
@@ -350,7 +405,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 			return 2
 		}
 		// Fallback to heuristic for terms without tags
-		if matched, _ := regexp.MatchString("^[0-9-]+", tag); matched {
+		if reTagNumeric.MatchString(tag) {
 			return 2
 		}
 		return 1
@@ -359,11 +414,11 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	// freq function using real frequency dictionary
 	var freq func(t string) float64
 	freq = func(t string) float64 {
-		if numSpacePattern.MatchString(t) {
+		if reNumSpace.MatchString(t) {
 			return 3
 		}
-		// Use tokenizer's freq function
-		s := tokenizer.GetTermFreq(t)
+		// Use the entry resolved for this term earlier in the call.
+		s := lookup(t).freq
 		if s == 0 {
 			if oovFrequency, ok := alphabeticOOVFrequency(t); ok {
 				return oovFrequency
@@ -407,7 +462,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	// df function
 	var df func(t string) float64
 	df = func(t string) float64 {
-		if numSpacePattern.MatchString(t) {
+		if reNumSpace.MatchString(t) {
 			return 5
 		}
 		if v, ok := d.df[t]; ok {
