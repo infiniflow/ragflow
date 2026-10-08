@@ -151,7 +151,7 @@ func firstWords(s string, n int) string {
 
 func installProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -180,7 +180,7 @@ func deterministicVec(s string, dim int) []float32 {
 
 func installMockDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: mockChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -448,7 +448,7 @@ func wikiScopeFixtureChunks() []any {
 
 func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, _, _ string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, _, _ string) (common.Deps, error) {
 		return common.Deps{
 			Chat:            proseChat{},
 			Embed:           mockEmbedder{dim: 8},
@@ -782,7 +782,7 @@ func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 // product share one vector, and we supply that vector as a historical candidate;
 // the run must drop the near-duplicate products so none survive in the output.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     proseChat{},
 			Embed:    constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -830,7 +830,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 }
 
 func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     wikiUpdateChat{},
 			Embed:    mockEmbedder{dim: 8},
@@ -921,7 +921,7 @@ func (f *fakeHistoricalKNN) TopKHistory(_ context.Context, _ string, datasetID, 
 // scoped to the dataset, not the document.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	knn := &fakeHistoricalKNN{hit: true} // every product is a near-dup -> dropped
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:          proseChat{},
 			Embed:         constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -1041,7 +1041,7 @@ func (s wikiStoreTestStub) GetPageBySlug(_ context.Context, _, _, slug string) (
 // entity/relation. A fenced ```json ... ``` reply is now unwrapped and parsed,
 // so the extraction still yields its entities.
 func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: fencedChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -1081,7 +1081,7 @@ func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
 // regression: when the reply is genuinely unparseable (not just fenced), the
 // component must fail loudly instead of silently emitting zero knowledge units.
 func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseOnlyChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })

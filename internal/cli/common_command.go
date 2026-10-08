@@ -1459,6 +1459,7 @@ func (c *CLI) CommonUseAPIServerCommand(commandCount int, cmd *Command) (Respons
 
 	c.Config.APIClientConfig.CurrentAPIServer = serverName
 	c.Config.CLIMode = APIMode
+	c.setFilesystemClient(httpClient)
 
 	var result SimpleResponse
 	result.Code = 0

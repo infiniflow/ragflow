@@ -185,6 +185,24 @@ func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsDoesNotUseMaxOutputAsContextWindow(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "chat-model", "model_types": []string{"chat"}, "context_length": 128000, "max_output": 4096},
+	}
+	remote := []map[string]interface{}{
+		{"name": "CHAT-MODEL", "model_types": []string{"chat"}, "context_length": 256000, "max_output": 8192},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	model := got["chat-model"]
+	if model["max_tokens"] != 128000 {
+		t.Fatalf("legacy max_tokens = %v, want catalog context length 128000", model["max_tokens"])
+	}
+	if model["max_output"] != 8192 {
+		t.Fatalf("max_output = %v, want remote output ceiling 8192", model["max_output"])
+	}
+}
+
 func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	static := []map[string]interface{}{
 		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
