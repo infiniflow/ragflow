@@ -375,6 +375,9 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		meta["name"] = v
 	}
 	if v, ok := c["entity_type_kwd"].(string); ok && v != "" {
+		if expect == kccommon.VariantMindmap && v == "mindmap" {
+			v = "mind_map"
+		}
 		meta["entity_type"] = v
 	}
 	if v, ok := c["from_entity_kwd"].(string); ok && v != "" {

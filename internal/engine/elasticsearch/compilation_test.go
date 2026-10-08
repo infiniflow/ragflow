@@ -77,6 +77,9 @@ func TestCompilationQueryMatchesNewAndOldRows(t *testing.T) {
 		{"structure survives nav cleanup", map[string]interface{}{"compile_kwd": "dataset_nav"}, map[string]interface{}{"kb_id": "kb1", "compile_kwd": "page_index", "type_kwd": "entity"}, false},
 		{"wiki graph cleanup", map[string]interface{}{"compile_kwd": []string{"wiki_entity", "wiki_relation"}}, map[string]interface{}{"kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_relation"}, true},
 		{"page survives graph cleanup", map[string]interface{}{"compile_kwd": []string{"wiki_entity", "wiki_relation"}}, map[string]interface{}{"kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_page"}, false},
+		{"mind map type reads old spelling", map[string]interface{}{"entity_type_kwd": "mind_map"}, map[string]interface{}{"kb_id": "kb1", "entity_type_kwd": "mindmap"}, true},
+		{"mind map type reads new spelling", map[string]interface{}{"entity_type_kwd": "mindmap"}, map[string]interface{}{"kb_id": "kb1", "entity_type_kwd": "mind_map"}, true},
+		{"mind map type remains scoped", map[string]interface{}{"entity_type_kwd": "mind_map"}, map[string]interface{}{"kb_id": "kb2", "entity_type_kwd": "mindmap"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			query := buildBoolQueryFromCondition(test.filter, []string{"kb1"}, false, false)

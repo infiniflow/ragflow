@@ -148,6 +148,16 @@ func CompilationFilter(filter map[string]any) map[string]any {
 				alternatives = nil
 				out[field] = value
 			}
+		case "entity_type_kwd":
+			out[field] = value
+			for _, entityType := range compilationValues(value) {
+				if entityType == "mind_map" || entityType == "mindmap" {
+					entityTypes := append([]string(nil), compilationValues(value)...)
+					entityTypes = append(entityTypes, "mind_map", "mindmap")
+					out[field] = entityTypes
+					break
+				}
+			}
 		case "page_type_kwd":
 			alternatives = append(alternatives,
 				map[string]any{"compile_kwd": "wiki", "entity_type_kwd": value},

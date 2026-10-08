@@ -574,6 +574,9 @@ func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 		kind, _ := c["type_kwd"].(string)
 		if kind == "entity" {
 			entityCount++
+			if c["entity_type_kwd"] != "mind_map" {
+				t.Fatalf("mindmap entity_type_kwd = %v, want mind_map", c["entity_type_kwd"])
+			}
 			if _, ok := c["name_kwd"]; !ok {
 				t.Fatalf("mindmap entity chunk missing name_kwd: %+v", c)
 			}

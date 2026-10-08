@@ -44,6 +44,9 @@ func TestCompilationFilterReadsMixedGenerations(t *testing.T) {
 		{"new category", map[string]any{"page_type_kwd": "concept"}, map[string]any{"compile_kwd": "wiki", "entity_type_kwd": "concept"}, true},
 		{"old category", map[string]any{"page_type_kwd": "concept"}, map[string]any{"compile_kwd": "wiki_page", "page_type_kwd": "concept"}, true},
 		{"category wins", map[string]any{"page_type_kwd": "entity"}, map[string]any{"compile_kwd": "wiki", "entity_type_kwd": "concept", "page_type_kwd": "entity"}, false},
+		{"mind map type reads old value", map[string]any{"entity_type_kwd": "mind_map"}, map[string]any{"entity_type_kwd": "mindmap"}, true},
+		{"old mind map type reads new value", map[string]any{"entity_type_kwd": []string{"mindmap"}}, map[string]any{"entity_type_kwd": "mind_map"}, true},
+		{"mind map type excludes other types", map[string]any{"entity_type_kwd": []any{"mind_map"}}, map[string]any{"entity_type_kwd": "person"}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if got := matchesCompilationFilter(test.row, CompilationFilter(test.filter)); got != test.want {

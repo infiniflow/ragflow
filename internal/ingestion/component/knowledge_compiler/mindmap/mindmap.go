@@ -149,7 +149,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 //
 // Mapping:
 //   - each node (including the root) → an entity product (kind="entity",
-//     name = node id, type = "mindmap").
+//     name = node id, type = "mind_map").
 //   - each parent→child edge → a relation product (kind="relation",
 //     from = parent id, to = child id, type = "related", matching Python's
 //     mindmap structure-graph projection).
@@ -165,11 +165,11 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 	seen := map[string]bool{}
 	// Entity: root node.
 	rootSourceChunkIDs := nodeSourceChunkIDs(root, fallbackSourceChunkIDs)
-	rootPayload := map[string]any{"name": root.ID, "type": "mindmap"}
+	rootPayload := map[string]any{"name": root.ID, "type": "mind_map"}
 	rootMeta := map[string]any{
 		"kind":        "entity",
 		"name":        root.ID,
-		"entity_type": "mindmap",
+		"entity_type": "mind_map",
 		"compile_kwd": "mindmap",
 	}
 	if len(rootSourceChunkIDs) > 0 {
@@ -203,11 +203,11 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 			if !seen[child.ID] {
 				seen[child.ID] = true
 				childSourceChunkIDs := nodeSourceChunkIDs(child, fallbackSourceChunkIDs)
-				childPayload := map[string]any{"name": child.ID, "type": "mindmap"}
+				childPayload := map[string]any{"name": child.ID, "type": "mind_map"}
 				childMeta := map[string]any{
 					"kind":        "entity",
 					"name":        child.ID,
-					"entity_type": "mindmap",
+					"entity_type": "mind_map",
 					"compile_kwd": "mindmap",
 				}
 				if len(childSourceChunkIDs) > 0 {

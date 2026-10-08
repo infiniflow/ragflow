@@ -1671,6 +1671,9 @@ func normalizedStructureEntityName(name string) string {
 func preferredStructureEntityType(existing, incoming string) string {
 	existing = strings.TrimSpace(existing)
 	incoming = strings.TrimSpace(incoming)
+	if existing == "mindmap" && incoming == "mind_map" {
+		return incoming
+	}
 	if existing == "" || strings.EqualFold(existing, "other") {
 		if incoming != "" && !strings.EqualFold(incoming, "other") {
 			return incoming
