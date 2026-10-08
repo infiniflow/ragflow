@@ -16,6 +16,9 @@ import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
+/**
+ * Hook providing the Zod validation schema for chat dialog application settings.
+ */
 export function useChatSettingSchema() {
   const { t } = useTranslate('chat');
 
@@ -41,6 +44,7 @@ export function useChatSettingSchema() {
     linkup_api_key: z.string().optional(),
     parallel_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
+    serpapi_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
     tavily_api_key: z.string().optional(),
     youcom_api_key: z.string().optional(),
@@ -52,6 +56,7 @@ export function useChatSettingSchema() {
         WebSearchProvider.Linkup,
         WebSearchProvider.Parallel,
         WebSearchProvider.Querit,
+        WebSearchProvider.SerpApi,
         WebSearchProvider.Serply,
         WebSearchProvider.Tavily,
         WebSearchProvider.YouCom,

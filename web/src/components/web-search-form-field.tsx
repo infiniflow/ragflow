@@ -20,6 +20,7 @@ import firecrawlLogo from '@/assets/firecrawl.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
 import queritLogo from '@/assets/querit.png';
+import serpApiLogo from '@/assets/svg/serpapi.svg';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
@@ -70,6 +71,11 @@ const webSearchProviderCatalog = [
     value: WebSearchProvider.Querit,
   },
   {
+    name: 'SerpApi',
+    logo: serpApiLogo,
+    value: WebSearchProvider.SerpApi,
+  },
+  {
     name: 'Serply',
     logo: serplyLogo,
     value: WebSearchProvider.Serply,
@@ -107,6 +113,9 @@ const providerOptions = webSearchProviderCatalog
     value,
   }));
 
+/**
+ * Resolves the user-facing display name of a web search provider from the catalog.
+ */
 const providerDisplayName = (provider?: WebSearchProvider) =>
   webSearchProviderCatalog.find((entry) => entry.value === provider)?.name ??
   '';
@@ -148,6 +157,12 @@ const providerKeyConfig = {
     placeholder: 'queritApiKeyMessage',
     helpUrl: 'https://querit.ai',
   },
+  [WebSearchProvider.SerpApi]: {
+    name: 'prompt_config.serpapi_api_key',
+    tip: 'serpapiApiKeyTip',
+    placeholder: 'serpapiApiKeyMessage',
+    helpUrl: 'https://serpapi.com/manage-api-key',
+  },
   [WebSearchProvider.Serply]: {
     name: 'prompt_config.serply_api_key',
     tip: 'serplyApiKeyTip',
@@ -169,6 +184,9 @@ const providerKeyConfig = {
   },
 } as const;
 
+/**
+ * Renders the form fields for selecting a web search provider and entering its API key.
+ */
 export function WebSearchFormField({ prefix = '' }: IProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');

@@ -1168,6 +1168,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
+      serpapiApiKeyTip:
+        '选择 SerpApi 后，将通过 SerpApi 使用 Google 搜索结果补充知识库检索。',
+      serpapiApiKeyMessage: '请输入 SerpApi API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
