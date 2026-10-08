@@ -1452,7 +1452,7 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 	page := common.Product{
 		ID: "page-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
 		Content: "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta).", ParentID: "",
-		Meta: map[string]any{"kind": "page", "slug": "entity/alpha", "title": "Alpha", "page_type": "entity", "source_chunk_ids": []string{"c1"}},
+		Meta: map[string]any{"kind": "page", "slug": "entity/alpha", "title": "Alpha", "page_type": "entity", "summary": "Body", "source_chunk_ids": []string{"c1"}},
 	}
 	section := common.Product{
 		ID: "section-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
@@ -1481,6 +1481,9 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 		if kind == "wiki_page" {
 			pageKWD = kind
 			pageBody, _ = row["content_with_weight"].(string)
+			if summary, _ := d.GetExtraString("summary_with_weight"); summary != "Body" {
+				t.Errorf("page summary_with_weight = %q, want Body", summary)
+			}
 			// Python's page row has only title_tks; the Infinity writer folds
 			// title_sm_tks into docnm.
 			if _, ok := d.ToMap()["title_sm_tks"]; ok {
