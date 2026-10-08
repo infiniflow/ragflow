@@ -383,7 +383,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           panActivationKeyCode={null}
         >
           {canvasBackground.setting ? (
-            <AgentBackground setting={canvasBackground.setting}></AgentBackground>
+            <AgentBackground
+              setting={canvasBackground.setting}
+            ></AgentBackground>
           ) : null}
           {canvasBackground.setting?.mode === 'default' ? (
             <Spotlight className="z-0" opcity={0.7} coverage={70} />

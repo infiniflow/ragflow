@@ -2392,7 +2392,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       canvasBackgroundImage: 'Immagine',
       canvasBackgroundDefault: 'Predefinito',
       canvasBackgroundClear: 'Cancella',
-      canvasBackgroundImageError: 'L\'immagine è troppo grande',
+      canvasBackgroundImageError: "L'immagine è troppo grande",
       noteDescription: 'Nota',
       notePlaceholder: 'Inserisci una nota',
       invoke: 'Richiesta HTTP',
