@@ -974,6 +974,55 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 	}
 }
 
+func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kb := entity.Knowledgebase{
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := db.First(&kb, "id = ?", kb.ID).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if kb.ParserConfig != nil {
+		t.Fatalf("dataset parser_config = %#v, want nil", kb.ParserConfig)
+	}
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(newFakeUploadStorage())
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	result, err := testDocumentService(t).Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector:     entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: kb,
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-nil-config",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID: "source-1", SemanticIdentifier: "source", Extension: ".txt", Blob: []byte("content"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("sync document: %v", err)
+	}
+	if result.Action != service.DocumentActionAdded {
+		t.Fatalf("sync action = %q, want added", result.Action)
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", result.DocID).Error; err != nil {
+		t.Fatalf("load synced document: %v", err)
+	}
+	if doc.ParserConfig == nil || len(doc.ParserConfig) != 0 {
+		t.Fatalf("document parser_config = %#v, want empty object", doc.ParserConfig)
+	}
+}
+
 func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	db := setupServiceTestDB(t)
@@ -3721,7 +3770,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 		Title:          sptr("Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	// Seed an API4Conversation whose message references the filename.
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), db, &entity.API4Conversation{

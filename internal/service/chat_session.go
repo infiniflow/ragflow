@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -59,10 +60,10 @@ type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
-type chatModelConfigResolver interface {
-	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error)
-	ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error)
-	ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error)
+type chatModelInfoResolver interface {
+	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+	ResolveDefaultInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelModule.ModelInfo, error)
+	ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -87,7 +88,7 @@ type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
 	userTenantDAO        userTenantStore
 	pipeline             chatPipelineRunner
-	modelProviderSvc     chatModelConfigResolver
+	modelFactory         chatModelInfoResolver
 	chunkFeedbackApplier chunkFeedbackApplier
 	docEngine            engine.DocEngine
 }
@@ -95,129 +96,12 @@ type ChatSessionService struct {
 // NewChatSessionService create chat session service
 func NewChatSessionService() *ChatSessionService {
 	return &ChatSessionService{
-		chatSessionDAO:   dao.NewChatSessionDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
-		pipeline:         NewChatPipelineService(),
-		modelProviderSvc: NewModelSolver(),
-		docEngine:        engine.Get(),
+		chatSessionDAO: dao.NewChatSessionDAO(),
+		userTenantDAO:  dao.NewUserTenantDAO(),
+		pipeline:       NewChatPipelineService(),
+		modelFactory:   NewModelFactory(),
+		docEngine:      engine.Get(),
 	}
-}
-
-// SetChatSessionRequest set chat session request.
-type SetChatSessionRequest struct {
-	SessionID string `json:"conversation_id,omitempty"`
-	DialogID  string `json:"dialog_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	IsNew     bool   `json:"is_new"`
-}
-
-// SetChatSessionResponse set chat session response.
-type SetChatSessionResponse struct {
-	*entity.ChatSession
-}
-
-// SetChatSession creates or updates a chat session.
-// Kept as a compatibility entrypoint for older chat-session callers.
-func (s *ChatSessionService) SetChatSession(ctx context.Context, userID string, req *SetChatSessionRequest) (*SetChatSessionResponse, error) {
-	name := req.Name
-	if name == "" {
-		name = "New chat session"
-	}
-	if len(name) > 255 {
-		name = name[:255]
-	}
-
-	if !req.IsNew {
-		updates := map[string]interface{}{
-			"name":    name,
-			"user_id": userID,
-		}
-		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, req.SessionID, updates); err != nil {
-			return nil, errors.New("chat session not found")
-		}
-		session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, req.SessionID)
-		if err != nil {
-			return nil, errors.New("fail to update a chat session")
-		}
-		return &SetChatSessionResponse{ChatSession: session}, nil
-	}
-
-	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, req.DialogID)
-	if err != nil {
-		return nil, errors.New("dialog not found")
-	}
-
-	prologue := "Hi! I'm your assistant. What can I do for you?"
-	if dialog.PromptConfig != nil {
-		if p, ok := dialog.PromptConfig["prologue"].(string); ok && p != "" {
-			prologue = p
-		}
-	}
-	messagesJSON, _ := json.Marshal([]map[string]interface{}{
-		{
-			"role":       "assistant",
-			"content":    prologue,
-			"created_at": float64(time.Now().Unix()),
-		},
-	})
-	referenceJSON, _ := json.Marshal([]interface{}{})
-
-	session := &entity.ChatSession{
-		ID:        utility.GenerateUUID(),
-		DialogID:  req.DialogID,
-		Name:      &name,
-		Message:   messagesJSON,
-		UserID:    &userID,
-		Reference: referenceJSON,
-	}
-	if err = s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
-		return nil, errors.New("fail to create a chat session")
-	}
-
-	return &SetChatSessionResponse{ChatSession: session}, nil
-}
-
-// RemoveChatSessions removes chat sessions.
-// Kept as a compatibility entrypoint for older chat-session callers.
-func (s *ChatSessionService) RemoveChatSessions(ctx context.Context, userID string, chatSessions []string) error {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return err
-	}
-
-	tenantIDSet := make(map[string]bool)
-	for _, tid := range tenantIDs {
-		tenantIDSet[tid] = true
-	}
-	tenantIDSet[userID] = true
-
-	for _, convID := range chatSessions {
-		session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, convID)
-		if err != nil {
-			return fmt.Errorf("chat session not found: %s", convID)
-		}
-
-		isOwner := false
-		for tenantID := range tenantIDSet {
-			exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, tenantID, session.DialogID)
-			if err != nil {
-				return err
-			}
-			if exists {
-				isOwner = true
-				break
-			}
-		}
-		if !isOwner {
-			return errors.New("only owner of chat session authorized for this operation")
-		}
-
-		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, convID); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // ListChatSessionsRequest list chat sessions request.
@@ -1530,11 +1414,9 @@ func (s *ChatSessionService) ChatCompletions(
 						}
 						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					}
-					// Turn compaction: progressive persistence has been
-					// writing every delta into the assistant message. The
-					// next turn re-enters AsyncChat with this session as its
-					// history, so the stored message must end up holding the
-					// turn's final answer alone.
+					// Synchronize the in-memory session snapshot with the final
+					// event before building the response. This does not write
+					// through to the DAO.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 					continue
@@ -1573,11 +1455,9 @@ func (s *ChatSessionService) ChatCompletions(
 				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 			} else {
 				if result.Final {
-					// Turn compaction, same as the legacy branch: progressive
-					// persistence wrote every delta into the assistant
-					// message. The next user input re-enters AsyncChat with
-					// this session as history, so the stored message must
-					// hold the final answer alone.
+					// Synchronize the in-memory session snapshot with the final
+					// event before building the response. This does not write
+					// through to the DAO.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					if strings.Contains(result.Answer, "**ERROR**") {
 						ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
@@ -1922,18 +1802,10 @@ func (s *ChatSessionService) appendAssistantToSession(session *entity.ChatSessio
 	session.Message, _ = json.Marshal(messages)
 }
 
-// compactSessionAssistant rewrites the session's stored assistant message to
-// the turn's FINAL answer, which is what the next turn must see.
-//
-// Streaming persistence (appendAssistantToSession on every delta) deliberately
-// keeps partial text in the session so a client that refreshes mid-stream still
-// sees what was produced. The next user input re-enters AsyncChat with this
-// session as its history, so the stored message must carry the turn's final
-// answer rather than every intermediate delta.
-//
-// A turn therefore ends compacted to question + final answer. A blank final
-// (an error result, or a run that produced nothing) leaves the streamed text
-// standing rather than blanking the message the user can already see.
+// compactSessionAssistant replaces the assistant content in the in-memory
+// session snapshot with a non-blank final answer. It does not write to the DAO;
+// any persistence is handled by the caller. A blank final leaves the accumulated
+// content unchanged.
 func (s *ChatSessionService) compactSessionAssistant(session *entity.ChatSession, final, messageID string) {
 	if session == nil || strings.TrimSpace(final) == "" {
 		return
@@ -1984,16 +1856,17 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 }
 
 func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID, modelName string) (bool, error) {
-	resolver := s.modelProviderSvc
-	if resolver == nil {
-		resolver = NewModelSolver()
+	modelFactory := s.modelFactory
+	if modelFactory == nil {
+		modelFactory = NewModelFactory()
 	}
 	var err error
+	access := ModelAccess{TenantID: tenantID}
 	if modelName == "" {
-		_, err = resolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+		_, err = modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
 	} else {
 		modelType := entity.ModelTypeChat
-		if modelTypes, typeErr := resolver.ResolveModelType(ctx, tenantID, modelName); typeErr == nil {
+		if modelTypes, typeErr := modelFactory.ResolveModelType(ctx, access, modelName); typeErr == nil {
 			for _, resolvedType := range modelTypes {
 				if resolvedType.Has(entity.ModelTypeImage2Text) {
 					modelType = entity.ModelTypeImage2Text
@@ -2001,7 +1874,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 				}
 			}
 		}
-		_, err = resolver.ResolveModelConfig(ctx, tenantID, modelType, modelName)
+		_, err = modelFactory.ResolveInfo(ctx, access, modelType, modelName)
 	}
 	if err != nil {
 		return false, err

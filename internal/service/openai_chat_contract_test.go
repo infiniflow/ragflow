@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 type stubOpenAIChatGetter struct {
@@ -21,6 +22,22 @@ type stubOpenAIChatGetter struct {
 
 func (s stubOpenAIChatGetter) GetChat(context.Context, string, string) (*GetChatResponse, error) {
 	return s.response, s.err
+}
+
+type stubOpenAIModelResolver struct {
+	resolveInfo func(context.Context, ModelAccess, entity.ModelType, string) (*modelModule.ModelInfo, error)
+}
+
+func (s stubOpenAIModelResolver) ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+	return s.resolveInfo(ctx, access, modelType, modelRef)
+}
+
+type stubOpenAITenantLLMKeyGetter struct {
+	key string
+}
+
+func (s stubOpenAITenantLLMKeyGetter) GetAPIKeyFromInstance(context.Context, string, string) (string, error) {
+	return s.key, nil
 }
 
 type stubOpenAIPipeline struct {
@@ -199,6 +216,81 @@ func TestOpenAICompleteReturnsSuccessPayload(t *testing.T) {
 	}
 	if resp.TotalTokens != resp.PromptTokens+resp.CompletionTokens {
 		t.Fatalf("usage is inconsistent: %+v", resp)
+	}
+}
+
+func TestOpenAIExplicitModelResolutionContract(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		stream     bool
+		resolveErr error
+	}{
+		{name: "complete"},
+		{name: "stream", stream: true},
+		{name: "complete denied", resolveErr: errors.New("model access denied")},
+		{name: "stream denied", stream: true, resolveErr: errors.New("model access denied")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			results := make(chan AsyncChatResult, 1)
+			results <- AsyncChatResult{Answer: "answer", Final: true}
+			close(results)
+			pipeline := &stubOpenAIPipeline{results: results}
+			svc := newOpenAIContractService(pipeline)
+			resolved := false
+			svc.modelResolver = stubOpenAIModelResolver{resolveInfo: func(_ context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+				resolved = true
+				if access != (ModelAccess{UserID: "user-1", TenantID: "tenant-1"}) {
+					t.Errorf("model access = %+v, want requesting user and chat tenant", access)
+				}
+				if modelType != entity.ModelTypeChat || modelRef != "explicit-model" {
+					t.Errorf("model type = %v, ref = %q", modelType, modelRef)
+				}
+				return &modelModule.ModelInfo{Name: modelRef}, test.resolveErr
+			}}
+			svc.tenantLLMSvc = stubOpenAITenantLLMKeyGetter{key: "test-key"}
+			req := validOpenAIChatRequest()
+			req.Model = "explicit-model"
+
+			var err error
+			if test.stream {
+				var stream *OpenAIChatStream
+				stream, err = svc.Stream(t.Context(), "user-1", "chat-1", req)
+				if err == nil {
+					if stream.Model != req.Model {
+						t.Errorf("stream model = %q, want %q", stream.Model, req.Model)
+					}
+					var events []OpenAIStreamEvent
+					for event := range stream.Events {
+						events = append(events, event)
+					}
+					if len(events) != 1 || events[0].Kind != OpenAIEventFinal || events[0].FinalAnswer != "answer" {
+						t.Errorf("stream events = %+v, want final answer", events)
+					}
+				}
+			} else {
+				var response *OpenAICompletionResponse
+				response, err = svc.Complete(t.Context(), "user-1", "chat-1", req)
+				if err == nil && (response.Model != req.Model || response.Content != "answer") {
+					t.Errorf("response = %+v, want explicit model and answer", response)
+				}
+			}
+			if !resolved {
+				t.Fatal("explicit model was not resolved")
+			}
+			if test.resolveErr != nil {
+				assertOpenAICodedError(t, err, common.CodeArgumentError, "`llm_id` explicit-model doesn't exist")
+				if pipeline.called {
+					t.Fatal("pipeline started after model resolution failed")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("completion error = %v", err)
+			}
+			if chat := svc.chatSvc.(stubOpenAIChatGetter).response.Chat; chat.LLMID != req.Model {
+				t.Errorf("pipeline chat model = %q, want %q", chat.LLMID, req.Model)
+			}
+		})
 	}
 }
 

@@ -33,12 +33,12 @@ import (
 
 // ChatHandler chat handler
 type ChatHandler struct {
-	chatService *service.ChatService
-	userService *service.UserService
-	searchSvc   *service.SearchService
-	tenantSvc   *service.TenantService
-	llm         *service.ModelProviderService
-	chunkSvc    service.Retriever
+	chatService  *service.ChatService
+	userService  *service.UserService
+	searchSvc    *service.SearchService
+	tenantSvc    *service.TenantService
+	modelFactory *service.ModelFactory
+	chunkSvc     service.Retriever
 }
 
 // NewChatHandler create chat handler
@@ -50,10 +50,10 @@ func NewChatHandler(chatService *service.ChatService, userService *service.UserS
 }
 
 // SetMindMapDependencies sets dependencies used by POST /api/v1/chat/mindmap.
-func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) {
+func (h *ChatHandler) SetMindMapDependencies(searchSvc *service.SearchService, tenantSvc *service.TenantService, modelFactory *service.ModelFactory, chunkSvc service.Retriever) {
 	h.searchSvc = searchSvc
 	h.tenantSvc = tenantSvc
-	h.llm = llm
+	h.modelFactory = modelFactory
 	h.chunkSvc = chunkSvc
 }
 
@@ -225,7 +225,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		AuthUserID:    user.ID,
 		ModelTenantID: modelTenantID,
 		ChunkSvc:      h.chunkSvc,
-		LLM:           h.llm,
+		LLM:           h.modelFactory,
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
@@ -364,33 +364,33 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Build response (same as Python _build_chat_response)
 	// The service already returns GetChatResponse with DatasetIDs and KBNames
 	result := map[string]interface{}{
-		"id":                       chat.ID,
-		"tenant_id":                chat.TenantID,
-		"name":                     chat.Name,
-		"description":              chat.Description,
-		"icon":                     chat.Icon,
-		"language":                 chat.Language,
-		"llm_id":                   chat.LLMID,
-		"llm_setting":              chat.LLMSetting,
-		"prompt_type":              chat.PromptType,
-		"prompt_config":            chat.PromptConfig,
-		"meta_data_filter":         chat.MetaDataFilter,
-		"similarity_threshold":     chat.SimilarityThreshold,
-		"vector_similarity_weight": chat.VectorSimilarityWeight,
-		"top_n":                    chat.TopN,
-		"rerank_candidates_count":  chat.RerankCandidatesCount,
-		"top_k":                    chat.TopK,
-		"do_refer":                 chat.DoRefer,
-		"rerank_id":                chat.RerankID,
-		"dataset_ids":              chat.DatasetIDs,
-		"kb_names":                 chat.KBNames,
-		"status":                   chat.Status,
-		"create_time":              chat.CreateTime,
-		"create_date":              chat.CreateDate,
-		"update_time":              chat.UpdateTime,
-		"update_date":              chat.UpdateDate,
-		"tenant_llm_id":            chat.TenantLLMID,
-		"tenant_rerank_id":         chat.TenantRerankID,
+		"id":                         chat.ID,
+		"tenant_id":                  chat.TenantID,
+		"name":                       chat.Name,
+		"description":                chat.Description,
+		"icon":                       chat.Icon,
+		"language":                   chat.Language,
+		"llm_id":                     chat.LLMID,
+		"llm_setting":                chat.LLMSetting,
+		"prompt_type":                chat.PromptType,
+		"prompt_config":              chat.PromptConfig,
+		"meta_data_filter":           chat.MetaDataFilter,
+		"keywords_similarity_weight": 1 - chat.VectorSimilarityWeight,
+		"similarity_threshold":       chat.SimilarityThreshold,
+		"top_n":                      chat.TopN,
+		"rerank_candidates_count":    chat.RerankCandidatesCount,
+		"top_k":                      chat.TopK,
+		"do_refer":                   chat.DoRefer,
+		"rerank_id":                  chat.RerankID,
+		"dataset_ids":                chat.DatasetIDs,
+		"kb_names":                   chat.KBNames,
+		"status":                     chat.Status,
+		"create_time":                chat.CreateTime,
+		"create_date":                chat.CreateDate,
+		"update_time":                chat.UpdateTime,
+		"update_date":                chat.UpdateDate,
+		"tenant_llm_id":              chat.TenantLLMID,
+		"tenant_rerank_id":           chat.TenantRerankID,
 	}
 
 	// Return success response

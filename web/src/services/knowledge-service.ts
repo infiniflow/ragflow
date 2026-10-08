@@ -196,7 +196,7 @@ const chunkService = {
       page: rest.page,
       page_size: rest.page_size ?? rest.size,
       similarity_threshold: rest.similarity_threshold,
-      vector_similarity_weight: rest.vector_similarity_weight,
+      keywords_similarity_weight: rest.keywords_similarity_weight,
       top_k: rest.top_k,
       knn_top_k: rest.knn_top_k,
       knn_num_candidates: rest.knn_num_candidates,

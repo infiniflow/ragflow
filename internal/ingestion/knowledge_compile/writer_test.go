@@ -88,7 +88,7 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	cases := map[string]string{
 		"slug_kwd":            "entity/alpha",
 		"title_kwd":           "Alpha",
-		"page_type_kwd":       "entity",
+		"entity_type_kwd":     "entity",
 		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
 		// The wiki page body goes to md_with_weight, the column Python writes
@@ -199,13 +199,28 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 	var entity map[string]interface{}
 	for _, row := range eng.insertedChunks {
-		if row["knowledge_graph_kwd"] == "entity" {
+		if row["type_kwd"] == "entity" {
 			entity = row
 			break
 		}
 	}
 	if entity == nil {
 		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if _, ok := entity["knowledge_graph_kwd"]; ok {
+		t.Fatalf("new entity row still writes knowledge_graph_kwd: %+v", entity)
+	}
+	var foundBuildMeta bool
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "kg_build_meta" {
+			foundBuildMeta = true
+			if _, ok := row["knowledge_graph_kwd"]; ok {
+				t.Fatalf("new build marker still writes knowledge_graph_kwd: %+v", row)
+			}
+		}
+	}
+	if !foundBuildMeta {
+		t.Fatalf("inserted rows contain no type_kwd=kg_build_meta marker: %+v", eng.insertedChunks)
 	}
 	if entity["id"] == oldID {
 		t.Fatalf("old type-scoped id was reused: %v", entity["id"])
@@ -269,9 +284,9 @@ func TestDeleteMergedScopesToMergedWikiRows(t *testing.T) {
 	if cond["available_int"] != 1 {
 		t.Errorf("DeleteMerged must scope to available_int=1, got %v", cond["available_int"])
 	}
-	variants, ok := cond["compile_kwd"].([]string)
+	variants, ok := cond["type_kwd"].([]string)
 	if !ok {
-		t.Fatalf("DeleteMerged must pass a compile_kwd string slice, got %T", cond["compile_kwd"])
+		t.Fatalf("DeleteMerged must pass a compile_kwd string slice, got %T", cond["type_kwd"])
 	}
 	if len(variants) != 2 || variants[0] != compileKwdWikiPage || variants[1] != compileKwdWikiSection {
 		t.Errorf("DeleteMerged compile_kwd = %v, want [%q %q]", variants, compileKwdWikiPage, compileKwdWikiSection)
@@ -287,26 +302,22 @@ func TestDeleteMergedForVariant_EmptySetClearsAll(t *testing.T) {
 	if err := w.DeleteMergedForVariant(context.Background(), "t1", "kb1", nil); err != nil {
 		t.Fatalf("DeleteMergedForVariant: %v", err)
 	}
-	// The full clean issues two deletes: the compile_kwd bucket first, then the
-	// scope_kwd="dataset" sweep. Assert on the first (compile_kwd) delete.
-	if len(eng.deleteConds) < 1 {
-		t.Fatal("engine.DeleteChunks was not called")
+	if len(eng.deleteConds) != 2 {
+		t.Fatalf("full clean issued %d deletes, want 2", len(eng.deleteConds))
 	}
-	kwds, ok := eng.deleteConds[0]["compile_kwd"].([]string)
-	if !ok {
-		t.Fatalf("compile_kwd filter not a string slice, got %T", eng.deleteConds[0]["compile_kwd"])
-	}
-	want := []string{compileKwdNav, compileKwdWikiPage, compileKwdWikiSection, compileKwdStructure}
-	if len(kwds) != len(want) {
-		t.Fatalf("full clean compile_kwd = %v, want %v", kwds, want)
-	}
-	got := map[string]bool{}
-	for _, k := range kwds {
-		got[k] = true
-	}
-	for _, k := range want {
-		if !got[k] {
-			t.Errorf("full clean missing compile_kwd %q", k)
+	for _, test := range []struct {
+		row  map[string]interface{}
+		want bool
+	}{
+		{map[string]interface{}{"kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_page", "available_int": 1}, true},
+		{map[string]interface{}{"kb_id": "kb1", "compile_kwd": "wiki_page", "available_int": 1}, true},
+		{map[string]interface{}{"kb_id": "kb1", "compile_kwd": "page_index", "type_kwd": "nav_doc", "available_int": 0}, true},
+		{map[string]interface{}{"kb_id": "kb1", "compile_kwd": "graph", "type_kwd": "entity", "scope_kwd": "doc"}, false},
+		{map[string]interface{}{"kb_id": "kb1", "compile_kwd": "wiki", "type_kwd": "wiki_page", "available_int": 0}, false},
+		{map[string]interface{}{"kb_id": "kb2", "compile_kwd": "tree", "type_kwd": "nav_doc"}, false},
+	} {
+		if got := rowMatchesFilter(test.row, eng.deleteConds[0]); got != test.want {
+			t.Errorf("full clean matched %v = %v, want %v", test.row, got, test.want)
 		}
 	}
 	// The second delete sweeps structure scope_kwd="dataset".
@@ -337,9 +348,9 @@ func TestDeleteMergedForVariant_WikiScopesToAvailableOne(t *testing.T) {
 	if cond["available_int"] != 1 {
 		t.Errorf("wiki clean must scope to available_int=1, got %v", cond["available_int"])
 	}
-	kwds, ok := cond["compile_kwd"].([]string)
+	kwds, ok := cond["type_kwd"].([]string)
 	if !ok || len(kwds) != 2 {
-		t.Fatalf("wiki clean compile_kwd = %v, want [wiki_page wiki_section]", cond["compile_kwd"])
+		t.Fatalf("wiki clean compile_kwd = %v, want [wiki_page wiki_section]", cond["type_kwd"])
 	}
 }
 
@@ -377,11 +388,8 @@ func TestDeleteMergedForVariant_WikiPlusNavCoversNavRows(t *testing.T) {
 	}
 	var wikiCond, navCond map[string]interface{}
 	for _, cond := range eng.deleteConds {
-		kwds, _ := cond["compile_kwd"].([]string)
-		for _, k := range kwds {
-			if k == compileKwdNav {
-				navCond = cond
-			}
+		if roles, ok := cond["type_kwd"].([]string); ok && len(roles) == 2 && roles[0] == "nav_doc" && roles[1] == "nav_cluster" {
+			navCond = cond
 		}
 		if cond["available_int"] == 1 {
 			wikiCond = cond
@@ -391,7 +399,7 @@ func TestDeleteMergedForVariant_WikiPlusNavCoversNavRows(t *testing.T) {
 		t.Error("expected a wiki delete scoped to available_int=1")
 	}
 	if navCond == nil {
-		t.Error("expected a nav delete (compile_kwd=dataset_nav)")
+		t.Error("expected a nav delete scoped to nav_doc/nav_cluster")
 	} else if _, hasAvail := navCond["available_int"]; hasAvail {
 		t.Errorf("nav delete must not carry available_int (nav rows are 0), got %v", navCond["available_int"])
 	}

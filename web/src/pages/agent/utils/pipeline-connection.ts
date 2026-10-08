@@ -25,22 +25,21 @@ export interface PipelineNextOperators {
 
 /**
  * Build the "next step" operator menu for a pipeline source node. Mirrors the
- * Go topology rules from `isValidGoPipelineConnection`: on the Go backend a
- * Parser offers only the chunker group, and Extractor/Compiler/chunker sources
- * never offer the chunker group. Single-instance operators are filtered out
- * through `hasOperator`. Pure function so both the menu component and the
+ * topology rules from `isValidPipelineConnection`: a Parser offers only the
+ * chunker group, and Extractor/Compiler/chunker sources never offer the
+ * chunker group. Single-instance operators are filtered out through
+ * `hasOperator`. Pure function so both the menu component and the
  * connection-drag gate can reuse it.
  */
 export function buildPipelineNextOperators(
   source: Operator | undefined,
-  isGoBackend: boolean,
   hasOperator: (operator: Operator) => boolean,
 ): PipelineNextOperators {
   const operators: Operator[] = [];
 
-  // Go pipelines require a Parser to feed a chunker, so from a Parser node
-  // the menu offers only the chunker group.
-  if (!(isGoBackend && source === Operator.Parser)) {
+  // Pipelines require a Parser to feed a chunker, so from a Parser node the
+  // menu offers only the chunker group.
+  if (source !== Operator.Parser) {
     [Operator.Parser, Operator.Tokenizer, Operator.Compiler].forEach(
       (operator) => {
         if (!hasOperator(operator)) {
@@ -57,12 +56,12 @@ export function buildPipelineNextOperators(
   const chunkerSlotTaken = ChunkerOperators.some(hasOperator);
   const chunkerOperators = chunkerSlotTaken ? [] : ChunkerOperators;
 
-  // Go pipelines forbid chunker -> chunker, mirroring the existing rule
-  // that Extractor/Compiler never offer the chunker group.
+  // Pipelines forbid chunker -> chunker, mirroring the rule that
+  // Extractor/Compiler never offer the chunker group.
   const sourceExcluded =
     source === Operator.Extractor ||
     source === Operator.Compiler ||
-    (isGoBackend && !!source && isChunkerOperator(source));
+    (!!source && isChunkerOperator(source));
 
   return {
     operators,
@@ -78,22 +77,19 @@ export function buildPipelineNextOperators(
  */
 export function hasPipelineNextOperators(
   source: Operator | undefined,
-  isGoBackend: boolean,
   hasOperator: (operator: Operator) => boolean,
 ): boolean {
   const { operators, chunkerOperators, showChunker } =
-    buildPipelineNextOperators(source, isGoBackend, hasOperator);
+    buildPipelineNextOperators(source, hasOperator);
   return operators.length > 0 || (showChunker && chunkerOperators.length > 0);
 }
 
 /**
- * Go-backend pipeline topology rules, enforced when a connection is created:
+ * Pipeline topology rules, enforced when a connection is created:
  * a Parser may only feed a chunker, and a chunker may not feed another
- * chunker. All other source/target pairs are unrestricted. Pure function so
- * it can be unit-tested without mocking; callers gate on the backend through
- * `useIsGoBackend()`.
+ * chunker. All other source/target pairs are unrestricted.
  */
-export function isValidGoPipelineConnection(
+export function isValidPipelineConnection(
   source: Operator,
   target: Operator,
 ): boolean {

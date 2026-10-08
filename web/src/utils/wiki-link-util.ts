@@ -17,6 +17,9 @@ export function parseWikiLinkHref(
   const normalized = href.trim();
   if (!normalized) return null;
 
+  // Leave URLs with a scheme or authority to normal link navigation.
+  if (/^(?:[a-z][a-z\d+.-]*:|[\\/]{2})/i.test(normalized)) return null;
+
   // Prefer the artifact/{datasetId}/{pageType}/{slug} form.
   const artifactMatch = normalized.match(
     /(?:^|\/)artifact\/[^/]+\/(entity|concept|topic)\/([^\s"']+)/,

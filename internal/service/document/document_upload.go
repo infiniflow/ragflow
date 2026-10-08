@@ -327,6 +327,7 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // resolveDocumentParser); blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype, parserID string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := utility.GenerateToken()
+	parserConfig = cloneParserConfigForDocument(parserConfig)
 	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
@@ -356,6 +357,14 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 		doc.ContentHash = &hash
 	}
 	return doc
+}
+
+// cloneParserConfigForDocument copies a dataset's parser_config for a new
+// document row. A configuration loaded from the database hands out live nested
+// maps, so a component entry written for one document would otherwise be
+// written for the dataset and every sibling document too.
+func cloneParserConfigForDocument(config entity.JSONMap) entity.JSONMap {
+	return entity.JSONMap(common.DeepMergeMaps(config, nil))
 }
 
 // docToRawMap serialises a freshly created Document into the raw key shape the

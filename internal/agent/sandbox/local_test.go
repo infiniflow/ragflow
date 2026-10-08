@@ -26,6 +26,67 @@ import (
 	"time"
 )
 
+func TestLocalOutputCapture_DrainsBeyondLimit(t *testing.T) {
+	var output localOutputCapture
+	output.limit = 32
+	for range 100 {
+		if n, err := output.Write([]byte(strings.Repeat("x", 1024))); err != nil || n != 1024 {
+			t.Fatalf("Write = (%d, %v), want (1024, nil)", n, err)
+		}
+	}
+	if output.buffer.Len() > 32 {
+		t.Errorf("captured %d bytes, want at most 32", output.buffer.Len())
+	}
+	if output.total != 102400 {
+		t.Errorf("total = %d, want 102400", output.total)
+	}
+}
+
+func TestLocal_ExecuteCode_OutputLimit(t *testing.T) {
+	pythonPath, err := findBinary("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	p := newLocalForTest(t)
+	p.pythonBin = pythonPath
+	p.maxOutputBytes = 1024
+	inst, err := p.CreateInstance(t.Context(), "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	defer p.DestroyInstance(t.Context(), inst)
+
+	code := "import sys\n\ndef main():\n    sys.stdout.write('x' * 65536)\n    sys.stderr.write('y' * 65536)\n    return 1"
+	result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
+	if result != nil || err == nil || !strings.Contains(err.Error(), "local: output exceeds 1024 bytes (got ") {
+		t.Fatalf("ExecuteCode returned result=%t, err=%v; want output limit error", result != nil, err)
+	}
+}
+
+func TestLocal_ExecuteCode_NonzeroExitWithinOutputLimit(t *testing.T) {
+	pythonPath, err := findBinary("python3")
+	if err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	p := newLocalForTest(t)
+	p.pythonBin = pythonPath
+	p.maxOutputBytes = 1024
+	inst, err := p.CreateInstance(t.Context(), "python")
+	if err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+	defer p.DestroyInstance(t.Context(), inst)
+
+	code := "import sys\n\ndef main():\n    print('hello')\n    sys.stderr.write('failure\\n')\n    raise SystemExit(7)"
+	result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
+	if err != nil {
+		t.Fatalf("ExecuteCode: %v", err)
+	}
+	if result.ExitCode != 7 || result.Stdout != "hello\n" || result.Stderr != "failure\n" {
+		t.Errorf("result = (%d, %q, %q), want (7, hello, failure)", result.ExitCode, result.Stdout, result.Stderr)
+	}
+}
+
 // newLocalForTest builds a LocalProvider pointing at a temp
 // work_dir so tests don't pollute the operator's filesystem.
 func newLocalForTest(t *testing.T) *LocalProvider {

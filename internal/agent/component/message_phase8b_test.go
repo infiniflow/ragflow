@@ -125,7 +125,7 @@ func TestMessage_DownloadJSONStringSuppressesContent(t *testing.T) {
 	c, _ := NewMessageComponent(map[string]any{"text": "unused"})
 	state := canvas.NewCanvasState("r1", "t1")
 	ctx := withStateForTest(t.Context(), state)
-	downloadJSON := `{"doc_id":"d-1","filename":"report.md","mime_type":"text/markdown","url":"/api/v1/agents/attachments/d-1/download","include_download_info_in_content":true}`
+	downloadJSON := `{"doc_id":"d-1","filename":"report.md","mime_type":"text/markdown","url":"/api/v1/agents/attachments/d-1/download"}`
 
 	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   downloadJSON,

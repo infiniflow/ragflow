@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"regexp"
 	"strings"
 	"sync"
@@ -42,7 +43,7 @@ type openAITenantLLMKeyGetter interface {
 }
 
 type openAIModelResolver interface {
-	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error)
+	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
 }
 
 type openAIMetadataProvider interface {
@@ -150,7 +151,7 @@ func NewOpenAIChatService() *OpenAIChatService {
 	return &OpenAIChatService{
 		chatSvc:               NewChatService(),
 		tenantLLMSvc:          NewTenantLLMService(),
-		modelResolver:         pipeline.ModelProviderSvc.modelSolver(),
+		modelResolver:         pipeline.ModelFactory,
 		metadataSvc:           pipeline.MetadataSvc,
 		pipeline:              pipeline,
 		langfuseClientFactory: LangfuseClientFromTenant,
@@ -430,7 +431,7 @@ func (s *OpenAIChatService) prepare(
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.modelResolver.ResolveModelConfig(ctx, dialog.TenantID, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.modelResolver.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			return nil, common.NewCodedError(common.CodeArgumentError, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 		}
 		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)

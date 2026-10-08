@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -225,5 +226,62 @@ func TestChatServiceListChatsExcludesDeletedChats(t *testing.T) {
 	}
 	if result.Chats[0].Name == nil || *result.Chats[0].Name != "active_chat" {
 		t.Fatalf("expected active_chat, got %+v", result.Chats[0].Name)
+	}
+}
+
+// TestChatServiceListChatsPaginatesOwnerBranch covers the owner_ids branch end
+// to end: pagination happens in SQL now, so each page must carry only its own
+// rows while total still reports every matching chat.
+func TestChatServiceListChatsPaginatesOwnerBranch(t *testing.T) {
+	db := setupChatListTestDB(t)
+
+	for i := 1; i <= 5; i++ {
+		name := fmt.Sprintf("owner_page_%d", i)
+		createTime := int64(i * 100)
+		status := string(entity.StatusValid)
+		chat := &entity.Chat{
+			ID:           fmt.Sprintf("chat-%d", i),
+			TenantID:     "user-1",
+			Name:         &name,
+			LLMID:        "model-a",
+			LLMSetting:   entity.JSONMap{},
+			PromptType:   "simple",
+			PromptConfig: entity.JSONMap{},
+			KBIDs:        entity.JSONSlice{},
+			Status:       &status,
+			BaseModel:    entity.BaseModel{CreateTime: &createTime},
+		}
+		if err := db.Create(chat).Error; err != nil {
+			t.Fatalf("failed to create chat %d: %v", i, err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		page     int
+		pageSize int
+		wantIDs  []string
+	}{
+		{name: "middle page", page: 2, pageSize: 2, wantIDs: []string{"chat-3", "chat-2"}},
+		{name: "unpaginated returns every row", page: 0, pageSize: 0, wantIDs: []string{"chat-5", "chat-4", "chat-3", "chat-2", "chat-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := NewChatService().ListChats(t.Context(), "user-1", "1", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"user-1"})
+			if err != nil {
+				t.Fatalf("ListChats failed: %v", err)
+			}
+			if result.Total != 5 {
+				t.Fatalf("total = %d, want 5", result.Total)
+			}
+			if len(result.Chats) != len(tt.wantIDs) {
+				t.Fatalf("got %d chats, want %d", len(result.Chats), len(tt.wantIDs))
+			}
+			for i, chat := range result.Chats {
+				if chat.ID != tt.wantIDs[i] {
+					t.Fatalf("chat %d id = %v, want %s", i, chat.ID, tt.wantIDs[i])
+				}
+			}
+		})
 	}
 }

@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import is_sorted
@@ -423,7 +423,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
         ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
-        ("page_size zero", {"page_size": 0}, 0, 0 if IS_GO_PROXY else 5, ""),
+        ("page_size zero", {"page_size": 0}, 0, 0, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
@@ -587,7 +587,7 @@ def test_chat_recommendation_requires_question(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload
-    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
+    expected_message = "question is required"
     assert expected_message in payload["message"], payload
 
 
@@ -601,16 +601,8 @@ def test_related_questions_compatibility_requires_auth(rest_client_noauth):
     )
     assert res.status_code == 200
     payload = res.json()
-    if IS_GO_PROXY:
-        assert payload["code"] == 102, payload
-        assert payload["message"] == "Authorization is not valid!", payload
-    else:
-        assert payload["code"] == 102, payload
-        assert payload["message"].strip() in {
-            "Authorization is not valid!",
-            'Authentication error: API key is invalid!"',
-            "Authentication error: API key is invalid!",
-        }, payload
+    assert payload["code"] == 102, payload
+    assert payload["message"] == "Authorization is not valid!", payload
 
 
 @pytest.mark.p2

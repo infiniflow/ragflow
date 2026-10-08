@@ -19,11 +19,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
-	"strings"
 )
 
 // SearchService search service
@@ -102,22 +103,9 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, terms, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				searches = searches[start:end]
-			} else {
-				searches = []*entity.SearchListItem{}
-			}
 		}
 	}
 
@@ -177,7 +165,7 @@ func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[s
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": map[string]interface{}(search.SearchConfig),
+		"search_config": BuildSearchConfigResponse(map[string]interface{}(search.SearchConfig)),
 		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
@@ -220,7 +208,6 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
 		return len(existing) > 0
 	}, name, userID)
-
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +298,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 		Name:         detail.Name,
 		Description:  detail.Description,
 		CreatedBy:    detail.CreatedBy,
-		SearchConfig: detail.SearchConfig,
+		SearchConfig: BuildSearchConfigResponse(detail.SearchConfig),
 		UpdateTime:   detail.UpdateTime,
 	}, nil
 }
@@ -458,8 +445,10 @@ func BuildAskStreamOptions(searchID string, searchConfig map[string]interface{})
 	if value, ok := floatFromSearchConfig(searchConfig["similarity_threshold"]); ok {
 		opts.SimilarityThreshold = &value
 	}
-	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
-		opts.VectorSimilarityWeight = &value
+	keywordsSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "keywords_similarity_weight")
+	vectorSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "vector_similarity_weight")
+	if value, err := ResolveVectorSimilarityWeight(keywordsSimilarityWeight, vectorSimilarityWeight); err == nil && value != nil {
+		opts.VectorSimilarityWeight = value
 	}
 	if llmSetting, ok := searchConfigMapValue(searchConfig["llm_setting"]); ok {
 		opts.Temperature = generationFloat(llmSetting, "temperature", DefaultAskTemperature)
@@ -572,6 +561,22 @@ func floatFromSearchConfig(value interface{}) (float64, bool) {
 	}
 }
 
+// BuildSearchConfigResponse returns the public search configuration without
+// exposing the internally persisted vector weight.
+func BuildSearchConfigResponse(searchConfig map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(searchConfig))
+	for key, value := range searchConfig {
+		result[key] = value
+	}
+	if _, exists := result["keywords_similarity_weight"]; !exists {
+		if vectorWeight, ok := floatFromSearchConfig(result["vector_similarity_weight"]); ok {
+			result["keywords_similarity_weight"] = 1 - vectorWeight
+		}
+	}
+	delete(result, "vector_similarity_weight")
+	return result
+}
+
 // UpdateSearchRequest update search request
 // Reference: api/apps/restful_apis/search_api.py::update
 // Required fields: name, search_config
@@ -612,6 +617,9 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		if len(existing) > 0 {
 			return nil, fmt.Errorf("duplicated search name")
 		}
+	}
+	if err := NormalizeSimilarityWeights(req.SearchConfig); err != nil {
+		return nil, err
 	}
 
 	// Step 4: Merge search_config
@@ -663,7 +671,6 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 // GetDetail gets search details by ID including search_config
 func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
-
 	if err != nil {
 		return nil, err
 	}

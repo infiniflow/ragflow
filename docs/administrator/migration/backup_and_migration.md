@@ -29,14 +29,14 @@ Record the Compose project name and the volumes actually mounted by its running 
 
 The default Go stack can use these volumes, depending on the enabled services:
 
-| Service or data | Typical volume |
-| --- | --- |
-| Metadata database | `<project>_mysql_data` |
-| Uploaded objects in bundled MinIO | `<project>_minio_data` |
-| Search index with Elasticsearch | `<project>_esdata01` |
-| Go cache and persistent Redis-protocol data | `<project>_kvrocks_data` |
-| NATS JetStream data | `<project>_nats_data` |
-| ClickHouse analytics data | `<project>_clickhouse_data` |
+| Service or data                             | Typical volume              |
+|---------------------------------------------|-----------------------------|
+| Metadata database                           | `<project>_mysql_data`      |
+| Uploaded objects in bundled MinIO           | `<project>_minio_data`      |
+| Search index with Elasticsearch             | `<project>_esdata01`        |
+| Go cache and persistent Redis-protocol data | `<project>_kvrocks_data`    |
+| NATS JetStream data                         | `<project>_nats_data`       |
+| ClickHouse analytics data                   | `<project>_clickhouse_data` |
 
 Also retain `docker/.env`, the configuration template, and any custom certificates or mounted files. Protect the backup because these files may contain credentials.
 
@@ -68,6 +68,7 @@ fi
 Keep the volume name in each archive filename and copy the entire `backup-go` directory to the target host. Verify that every selected volume has a readable archive.
 
 ### 3. Restore on the target host
+
 
 Install the matching Go deployment and configuration on the target host. Keep services stopped and put `backup-go` in the repository root.
 

@@ -15,9 +15,9 @@
 //
 
 // Retrieval contracts live in internal/agent/runtime (the engine-agnostic
-// package the canvas agent depends on). This file re-exports them under the
-// historical tool.XXX names so the canvas tool package keeps its public API
-// stable without owning a second copy.
+// package both the canvas agent and the smart-reasoning agent depend on). This
+// file re-exports them under the historical tool.XXX names so the canvas tool
+// package keeps its public API stable without owning a second copy.
 package tool
 
 import (
@@ -28,9 +28,11 @@ import (
 type (
 	RetrievalChunk         = runtime.RetrievalChunk
 	RetrievalRequest       = runtime.RetrievalRequest
+	GrepRequest            = runtime.GrepRequest
 	RetrievalService       = runtime.RetrievalService
 	MemoryRetrievalService = runtime.MemoryRetrievalService
 	KGRetrievalService     = runtime.KGRetrievalService
+	GrepService            = runtime.GrepService
 )
 
 // ErrRetrievalServiceMissing is declared in retrieval.go so callers and the
@@ -39,6 +41,8 @@ var (
 	ErrRetrievalServiceMissing       = runtime.ErrRetrievalServiceMissing
 	ErrMemoryRetrievalServiceMissing = runtime.ErrMemoryRetrievalServiceMissing
 	ErrKGRetrievalServiceMissing     = runtime.ErrKGRetrievalServiceMissing
+	ErrGrepServiceMissing            = runtime.ErrGrepServiceMissing
+	ErrRegexpNotSupported            = runtime.ErrRegexpNotSupported
 )
 
 func SetRetrievalService(svc RetrievalService) { runtime.SetRetrievalService(svc) }
@@ -49,6 +53,15 @@ func GetMemoryRetrievalService() MemoryRetrievalService    { return runtime.GetM
 
 func SetKGRetrievalService(svc KGRetrievalService) { runtime.SetKGRetrievalService(svc) }
 func GetKGRetrievalService() KGRetrievalService    { return runtime.GetKGRetrievalService() }
+
+func SetGrepService(svc GrepService) { runtime.SetGrepService(svc) }
+func GetGrepService() GrepService    { return runtime.GetGrepService() }
+
+// Bm25Service mirrors runtime.Bm25Service for injection outside this package.
+type Bm25Service = runtime.Bm25Service
+
+func SetBm25Service(svc Bm25Service) { runtime.SetBm25Service(svc) }
+func GetBm25Service() Bm25Service    { return runtime.GetBm25Service() }
 
 // SetSimpleRetrievalService installs deterministic synthetic retrieval for
 // tests and local demos.

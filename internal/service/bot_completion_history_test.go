@@ -158,7 +158,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 		Title:          sptr("Victim Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed victim canvas: %v", err)
+		t.Fatalf("seed victim agent: %v", err)
 	}
 
 	// Seed tenant-B (the attacker's tenant).
@@ -233,7 +233,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 			},
 		},
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 
 	svc := NewBotService(nil)

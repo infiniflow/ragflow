@@ -26,6 +26,7 @@ package canvas
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -36,6 +37,21 @@ import (
 // blockingComponent is a runtime.Component whose Invoke blocks until ctx is
 // cancelled.
 type blockingComponent struct{}
+
+type failingComponent struct{}
+
+func (f *failingComponent) Name() string { return "failing" }
+
+func (f *failingComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	return nil, errors.New("boom")
+}
+
+func (f *failingComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+	return nil, nil
+}
+
+func (f *failingComponent) Inputs() map[string]string  { return nil }
+func (f *failingComponent) Outputs() map[string]string { return nil }
 
 func (b *blockingComponent) Name() string { return "blocking" }
 
@@ -57,7 +73,7 @@ func (b *blockingComponent) Outputs() map[string]string { return nil }
 // the only mechanism that stops a long-running component.
 func TestRealComponentBody_RespectsParentCancellation(t *testing.T) {
 	comp := &blockingComponent{}
-	body := realComponentBody("test-cpn", "TestBlocking", comp)
+	body := realComponentBody("test-cpn", "TestBlocking", "", comp)
 
 	parentCtx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancel
@@ -69,13 +85,31 @@ func TestRealComponentBody_RespectsParentCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled wrapped error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), `component "test-cpn" invoke`) {
+		t.Errorf("error = %q, want component ID fallback", err)
+	}
+}
+
+func TestRealComponentBody_UsesDisplayNameInError(t *testing.T) {
+	body := realComponentBody("CodeExec:SweetMooseTalk", "CodeExec", "Analyze sales", &failingComponent{})
+
+	_, err := body(t.Context(), nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), `component "Analyze sales" invoke`) {
+		t.Errorf("error = %q, want display name", err)
+	}
+	if strings.Contains(err.Error(), "CodeExec:SweetMooseTalk") {
+		t.Errorf("error = %q, should not contain component ID when display name is set", err)
+	}
 }
 
 // TestRealComponentBody_NoTimeoutWhenFast verifies that a component returning
 // immediately does not incur any timeout-induced latency or error wrapping.
 func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
 	comp := &echoComponent{}
-	body := realComponentBody("test-cpn", "TestEcho", comp)
+	body := realComponentBody("test-cpn", "TestEcho", "", comp)
 
 	out, err := body(t.Context(), map[string]any{"x": 1})
 	if err != nil {
@@ -113,5 +147,6 @@ func (e *echoComponent) Outputs() map[string]string { return nil }
 // Compile-time check that the stubs satisfy the interface.
 var (
 	_ runtime.Component = (*blockingComponent)(nil)
+	_ runtime.Component = (*failingComponent)(nil)
 	_ runtime.Component = (*echoComponent)(nil)
 )

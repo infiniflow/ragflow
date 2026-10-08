@@ -769,7 +769,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		KbIDs:        []string{datasetID},
 		Offset:       0,
 		Limit:        1,
-		SelectFields: []string{"content_with_weight", "knowledge_graph_kwd"},
+		SelectFields: []string{"content_with_weight", "type_kwd", "knowledge_graph_kwd"},
 		Filter: map[string]interface{}{
 			"kb_id":               []string{datasetID},
 			"knowledge_graph_kwd": []string{"graph"},
@@ -785,7 +785,10 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	chunk := searchResult.Chunks[0]
-	graphType := firstStringValue(chunk["knowledge_graph_kwd"])
+	graphType := firstStringValue(chunk["type_kwd"])
+	if graphType == "" {
+		graphType = firstStringValue(chunk["knowledge_graph_kwd"])
+	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
 		common.SuccessWithData(c, result, "success")
@@ -945,9 +948,8 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
-// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
-// Python-era TraceIndex task-progress endpoint for the Go backend. The optional
-// `kind` query parameter scopes the status to one compile type.
+// state. The optional `kind` query parameter scopes the status to one compile
+// type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -1199,10 +1201,20 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 

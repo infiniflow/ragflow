@@ -240,13 +240,12 @@ func (c *ParserComponent) Check() error {
 			}
 		}
 	}
-	// image family (parser.py:283-287). The legacy "ocr" setup value selects
-	// the tenant default vision model; image OCR is not run by this path.
+	// Image OCR runs independently of optional vision enhancement.
 	if img, ok := c.setups["image"]; ok {
 		pm, _ := img["parse_method"].(string)
 		// A model selected for optional image enhancement needs a language
 		// only when enhancement is enabled.
-		if c.enableVisionEnhancement && pm != "ocr" {
+		if c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
 			if lang, _ := img["lang"].(string); lang == "" {
 				return errors.New("image VLM language does not support empty value")
 			}
@@ -315,7 +314,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"llm_id":        "",
 			"lang":          "Chinese",
 			"system_prompt": "",
-			"suffix":        []string{"jpg", "jpeg", "png", "gif"},
+			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
 			"output_format": "json",
 		},
 		"email": {
@@ -481,8 +480,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	var handledImage bool
 	if !handledVision && !handledMedia {
-		// Image/Picture dispatch: optional IMAGE2TEXT vision description.
-		// Mirrors Python's rag/app/picture.py:chunk() image branch.
+		// Image dispatch: OCR with independently controlled VLM enhancement.
 		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement)
 		if visionErr != nil {
 			return nil, visionErr
