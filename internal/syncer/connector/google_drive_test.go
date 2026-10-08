@@ -378,3 +378,70 @@ func googleDriveTestFile(id, name, modifiedTime string) googleDriveFile {
 		WebViewLink:  "https://drive.google.com/file/d/" + id + "/view",
 	}
 }
+
+// TestGoogleDriveBuildScopesFolderOnlyDoesNotAddMyDriveScope pins the
+// fix for the bug where the Google Drive form forced a value in
+// `my_drive_emails`, which the Go syncer unioned with the folder URLs
+// and synced the user's entire My Drive. With the field now optional,
+// a folder-only configuration must produce only folder scopes.
+//
+// The check is direct on buildScopes (rather than through OpenSync) so
+// the regression is pinned to the scope list, not the full sync
+// pipeline's mocks.
+func TestGoogleDriveBuildScopesFolderOnlyDoesNotAddMyDriveScope(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails":    "",
+		"shared_folder_urls": "https://drive.google.com/drive/folders/folder-1",
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+
+	scopes, err := connector.buildScopes(t.Context())
+	if err != nil {
+		t.Fatalf("buildScopes failed: %v", err)
+	}
+	if len(scopes) != 1 {
+		t.Fatalf("scopes len = %d, want 1 (folder-only); scopes = %+v", len(scopes), scopes)
+	}
+	if scopes[0].corpora != "folder" || scopes[0].folderID != "folder-1" {
+		t.Fatalf("scope[0] = %+v, want corpora=folder folderID=folder-1", scopes[0])
+	}
+	for i, s := range scopes {
+		if s.corpora == "user" {
+			t.Fatalf("scope[%d] = %+v: My Drive scope must not be added when my_drive_emails is empty", i, s)
+		}
+	}
+}
+
+// TestGoogleDriveBuildScopesMyDriveEmailsOnlyDoesNotAddFolderScope is
+// the inverse: a my-drive-only configuration produces user (My Drive)
+// scopes and no folder scopes. Catches regressions in the opposite
+// direction.
+func TestGoogleDriveBuildScopesMyDriveEmailsOnlyDoesNotAddFolderScope(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"my_drive_emails": "admin@example.com",
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+
+	scopes, err := connector.buildScopes(t.Context())
+	if err != nil {
+		t.Fatalf("buildScopes failed: %v", err)
+	}
+	if len(scopes) != 1 {
+		t.Fatalf("scopes len = %d, want 1; scopes = %+v", len(scopes), scopes)
+	}
+	if scopes[0].corpora != "user" || scopes[0].userEmail != "admin@example.com" {
+		t.Fatalf("scope[0] = %+v, want corpora=user userEmail=admin@example.com", scopes[0])
+	}
+}
