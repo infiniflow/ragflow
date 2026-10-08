@@ -22,17 +22,20 @@ import (
 	"strings"
 )
 
-// AssertMCPURLSafe validates an operator-configured MCP server URL. It
-// delegates to common.AssertURLSafe by default. When the URL's host is listed
-// in the RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS allowlist (comma-separated hostnames
-// or IPs, a deployment-level operator decision), the public-routability
-// requirement is relaxed so self-hosted MCP servers on private/docker
-// networks work — scheme validation, DNS resolution, and connection pinning
-// to the resolved IP still apply. The allowlist does not weaken the guard
-// for any non-MCP caller and does not apply to hosts not on the list.
+// AssertMCPURLSafe validates an MCP server URL. It delegates to
+// common.AssertURLSafe by default. When the deployment sets
+// RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS=true (a deployment-level operator decision),
+// the public-routability requirement is relaxed so self-hosted MCP servers on
+// private/docker networks work — scheme validation, DNS resolution, and
+// connection pinning to the resolved IP still apply.
+//
+// Use this variant for operator-configured URLs (MCP server registrations and
+// direct tool calls). For URLs advertised by an SSE endpoint event, use
+// AssertMCPURLSafeSameOrigin so a malicious server cannot redirect POSTs to an
+// unrelated internal host.
 func AssertMCPURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
-	if err == nil || !mcpPrivateHostAllowed(rawURL) {
+	if err == nil || !mcpPrivateHostsAllowed() {
 		return hostname, resolvedIP, err
 	}
 	strictErr := err
@@ -51,23 +54,36 @@ func AssertMCPURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 	return host, addresses[0], nil
 }
 
-// mcpPrivateHostAllowed reports whether rawURL's host is on the
-// RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS allowlist (exact, case-insensitive
-// hostname or literal-IP match).
-func mcpPrivateHostAllowed(rawURL string) bool {
-	list := strings.TrimSpace(common.GetEnv(common.EnvMCPAllowPrivateHosts))
-	if list == "" {
-		return false
+// AssertMCPURLSafeSameOrigin validates a server-advertised URL (e.g., the POST
+// URL from an SSE endpoint event). Public URLs are accepted. Private URLs are
+// accepted only when RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS is enabled AND the
+// advertised host matches originURL's host, so the server cannot bounce POSTs
+// to an unrelated internal target.
+func AssertMCPURLSafeSameOrigin(rawURL, originURL string) (hostname, resolvedIP string, err error) {
+	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
+	if err == nil {
+		return hostname, resolvedIP, nil
 	}
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return false
+	if !mcpPrivateHostsAllowed() {
+		return "", "", err
 	}
-	host := parsed.Hostname()
-	for _, entry := range strings.Split(list, ",") {
-		if strings.EqualFold(strings.TrimSpace(entry), host) {
-			return true
-		}
+	origin, perr := url.Parse(strings.TrimSpace(originURL))
+	if perr != nil || origin.Hostname() == "" {
+		return "", "", err
 	}
-	return false
+	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
+	if perr != nil {
+		return "", "", err
+	}
+	if parsed.Hostname() != origin.Hostname() {
+		return "", "", err
+	}
+	return AssertMCPURLSafe(rawURL)
+}
+
+// mcpPrivateHostsAllowed reports whether RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS is
+// enabled (true/1/yes, case-insensitive).
+func mcpPrivateHostsAllowed() bool {
+	v := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvMCPAllowPrivateHosts)))
+	return v == "true" || v == "1" || v == "yes"
 }
