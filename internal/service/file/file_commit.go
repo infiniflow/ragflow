@@ -709,7 +709,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 		Limit:        1,
 		SelectFields: []string{"md_with_weight", "content_with_weight"},
 		Filter: map[string]interface{}{
-			"compile_kwd":   []string{"wiki_page"},
+			"type_kwd":      []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
 			"slug_kwd":      []string{slugKwd},
 			"available_int": 1,

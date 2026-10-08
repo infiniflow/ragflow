@@ -194,6 +194,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       parserRequired: 'Chunk-Methode ist erforderlich',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Setzen Sie den Upload fort. Das System stellt diese Dateien anschließend automatisch auf eine unterstützte integrierte Parsing-Konfiguration um.',
       metadata: {
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',

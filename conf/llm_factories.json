@@ -3485,6 +3485,14 @@
             "url": "https://openrouter.ai/api/v1"
         },
         {
+            "name": "Opper",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.opper.ai/v3/compat"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	enginetypes "ragflow/internal/engine/types"
 	"sort"
 	"strings"
 
@@ -597,14 +598,14 @@ func asString(v any) string {
 }
 
 // seedFilters builds the entity/relation condition: {"knowledge_graph_kwd": [kind]} plus an
-// optional compile_kwd ("tree") or compilation_template_kind_kwd selector.
+// optional canonical compilation-kind selector.
 func seedFilters(kind, compileKwd, templateKwd string) map[string][]string {
 	f := map[string][]string{"knowledge_graph_kwd": {kind}}
 	if compileKwd != "" {
 		f["compile_kwd"] = []string{compileKwd}
 	}
 	if templateKwd != "" {
-		f["compilation_template_kind_kwd"] = []string{templateKwd}
+		f["compile_kwd"] = []string{enginetypes.CanonicalCompilationKind(templateKwd)}
 	}
 	return f
 }

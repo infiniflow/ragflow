@@ -357,8 +357,8 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if !ok {
 			continue
 		}
-		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
-		if content == "" || content == "None" {
+		content := truncateKeenableRunes(keenableResultContent(result), 10000)
+		if content == "" {
 			continue
 		}
 		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
@@ -385,6 +385,18 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		})
 	}
 	return chunks, docAggs
+}
+
+// keenableResultContent returns a result's page text. Keenable carries it in
+// "snippet" and often leaves "description" empty, so "description" is only
+// the fallback.
+func keenableResultContent(result map[string]any) string {
+	for _, field := range []string{"snippet", "description"} {
+		if content := keenableValueString(result[field]); content != "" && content != "None" {
+			return content
+		}
+	}
+	return ""
 }
 
 func renderKeenableReferences(chunks []map[string]any) string {
