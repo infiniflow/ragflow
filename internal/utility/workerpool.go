@@ -131,8 +131,11 @@ func (p *WorkerPool[T, R]) start(workers int) {
 
 func (p *WorkerPool[T, R]) worker() {
 	atomic.AddInt64(&p.liveWorkers, 1)
+	retireClaimed := false
 	defer func() {
-		atomic.AddInt64(&p.liveWorkers, -1)
+		if !retireClaimed {
+			atomic.AddInt64(&p.liveWorkers, -1)
+		}
 		p.workerWg.Done()
 	}()
 
@@ -164,9 +167,20 @@ func (p *WorkerPool[T, R]) worker() {
 		}
 		p.markDone()
 
+		// Serialize the retirement decision under the same mu that Resize holds
+		// while spawning workers. Without serialization, every worker that
+		// finishes a job while live > desired observes the same un-decremented
+		// count and retires, taking the pool below the target. With
+		// serialization each retire decrements live first, and the next worker
+		// sees the decremented value, so retirements stop exactly at desired.
+		p.mu.Lock()
 		if atomic.LoadInt64(&p.liveWorkers) > atomic.LoadInt64(&p.desiredWorkers) {
+			atomic.AddInt64(&p.liveWorkers, -1)
+			retireClaimed = true
+			p.mu.Unlock()
 			return
 		}
+		p.mu.Unlock()
 	}
 }
 
@@ -191,10 +205,16 @@ func (p *WorkerPool[T, R]) Resize(workers int) {
 		return
 	}
 
-	current := int(atomic.LoadInt64(&p.desiredWorkers))
 	atomic.StoreInt64(&p.desiredWorkers, int64(workers))
-	if workers > current {
-		p.start(workers - current)
+	// Grow from the actual live worker count, not the previous desired count.
+	// After a shrink that has not yet drained the excess (workers only retire
+	// after completing their current job, so an idle pool keeps its old live
+	// count), the previous desired sits below live, and growing back to a value
+	// still below live must not spawn more goroutines. Growing to a value above
+	// live spawns only the gap.
+	live := int(atomic.LoadInt64(&p.liveWorkers))
+	if workers > live {
+		p.start(workers - live)
 	}
 }
 
