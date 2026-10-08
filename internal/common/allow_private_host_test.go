@@ -49,6 +49,33 @@ func TestAllowConfiguredPrivateHost(t *testing.T) {
 	}
 }
 
+// TestPinConfiguredPrivateHost checks that the shared opt-in is a no-op when
+// the flag is unset, and that an enabled flag pins the resolved address.
+func TestPinConfiguredPrivateHost(t *testing.T) {
+	t.Setenv(EnvAllowAnyHost, "")
+	if _, enabled, err := PinConfiguredPrivateHost("10.0.0.1"); enabled || err != nil {
+		t.Fatalf("disabled flag: enabled=%v err=%v", enabled, err)
+	}
+
+	t.Setenv(EnvAllowAnyHost, "1")
+	orig := LookupHost
+	LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	t.Cleanup(func() { LookupHost = orig })
+
+	got, enabled, err := PinConfiguredPrivateHost("host.docker.internal")
+	if err != nil || !enabled || got != "192.168.65.254" {
+		t.Fatalf("PinConfiguredPrivateHost = %q, %v, %v", got, enabled, err)
+	}
+	if _, enabled, err = PinConfiguredPrivateHost("missing.internal"); !enabled || err == nil {
+		t.Fatalf("unresolvable host: enabled=%v err=%v", enabled, err)
+	}
+}
+
 // TestResolveHostPinSkipsPublicCheck checks that a private resolution is
 // returned as the pin, and that empty or unresolvable hosts still fail.
 func TestResolveHostPinSkipsPublicCheck(t *testing.T) {

@@ -179,13 +179,13 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Test hook, or the operator opt-in ALLOW_ANY_HOST. Still resolve and
-	// return an IP so the SQL dial stays pinned. ResolveAndValidate does not
-	// use this branch: user-controlled URLs stay strict.
-	if allowAnyHost() || common.AllowConfiguredPrivateHost() {
-		if common.AllowConfiguredPrivateHost() {
-			common.NoteAllowConfiguredPrivateHost(host)
-		}
+	// Operator opt-in. ResolveAndValidate does not use this path, so
+	// user-controlled URLs stay strict.
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
+	}
+	// In-memory test hook. Still resolve so the SQL dial stays pinned.
+	if allowAnyHost() {
 		return common.ResolveHostPin(host)
 	}
 

@@ -44,8 +44,8 @@ func AllowConfiguredPrivateHost() bool {
 
 var noteAllowConfiguredPrivateHost sync.Once
 
-// NoteAllowConfiguredPrivateHost logs once that private hosts are permitted.
-func NoteAllowConfiguredPrivateHost(host string) {
+// noteConfiguredPrivateHost logs once that private hosts are permitted.
+func noteConfiguredPrivateHost(host string) {
 	noteAllowConfiguredPrivateHost.Do(func() {
 		zap.L().Warn("ALLOW_ANY_HOST is enabled; private database and connector hosts are allowed",
 			zap.String("host", host),
@@ -53,9 +53,21 @@ func NoteAllowConfiguredPrivateHost(host string) {
 	})
 }
 
+// PinConfiguredPrivateHost is the shared host-dial opt-in. When ALLOW_ANY_HOST
+// is unset, enabled is false and the caller keeps the strict public-address
+// check. When it is set, the host is resolved and the dial must use the
+// returned address. enabled stays true when resolution fails.
+func PinConfiguredPrivateHost(host string) (pinned string, enabled bool, err error) {
+	if !AllowConfiguredPrivateHost() {
+		return "", false, nil
+	}
+	noteConfiguredPrivateHost(host)
+	pinned, err = ResolveHostPin(host)
+	return pinned, true, err
+}
+
 // ResolveHostPin resolves host and returns the first address without checking
-// whether it is globally routable. Callers use it only after
-// AllowConfiguredPrivateHost is true, then dial the returned IP so a later
+// whether it is globally routable. Callers dial the returned IP so a later
 // DNS change cannot rebind the connection.
 func ResolveHostPin(host string) (string, error) {
 	host = strings.TrimSpace(host)

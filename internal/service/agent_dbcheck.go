@@ -71,9 +71,8 @@ func AssertHostIsSafe(host string) (string, error) {
 		)
 		return host, nil
 	}
-	if common.AllowConfiguredPrivateHost() {
-		common.NoteAllowConfiguredPrivateHost(host)
-		return common.ResolveHostPin(host)
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
 	}
 
 	ips, err := net.LookupIP(host)

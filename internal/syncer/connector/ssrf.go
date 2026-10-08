@@ -73,26 +73,17 @@ func assertConnectorHostSafe(host string) (net.IP, error) {
 		}
 		// Not allowed by the test hook — fall through to the strict guard.
 	}
-	if common.AllowConfiguredPrivateHost() {
-		return resolveConfiguredConnectorHost(host)
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		if err != nil {
+			return nil, err
+		}
+		ip := net.ParseIP(pinned)
+		if ip == nil {
+			return nil, fmt.Errorf("Could not parse validated address %q for host %q", pinned, host)
+		}
+		return ip, nil
 	}
 	ipStr, err := connectorAssertHostSafe(host)
-	if err != nil {
-		return nil, err
-	}
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return nil, fmt.Errorf("Could not parse validated address %q for host %q", ipStr, host)
-	}
-	return ip, nil
-}
-
-// resolveConfiguredConnectorHost pins a connector host when ALLOW_ANY_HOST is
-// set. Private addresses such as host.docker.internal are accepted. The dial
-// still uses the resolved IP, so DNS cannot rebind the connection afterwards.
-func resolveConfiguredConnectorHost(host string) (net.IP, error) {
-	common.NoteAllowConfiguredPrivateHost(host)
-	ipStr, err := common.ResolveHostPin(host)
 	if err != nil {
 		return nil, err
 	}
