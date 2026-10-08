@@ -48,13 +48,11 @@ const (
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
 // graphs, structures, navigation, skills) from the document engine.
-type DatasetArtifactService struct {
-	docEngine func() engine.DocEngine
-}
+type DatasetArtifactService struct{}
 
 // NewDatasetArtifactService creates a DatasetArtifactService.
 func NewDatasetArtifactService() *DatasetArtifactService {
-	return &DatasetArtifactService{docEngine: engine.Get}
+	return &DatasetArtifactService{}
 }
 
 // wikiIndexName returns the tenant document index name.
@@ -69,7 +67,7 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 }
 
 func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr, matchExprs []interface{}) ([]map[string]interface{}, int64, error) {
-	docEngine := s.docEngine()
+	docEngine := engine.Get()
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -284,7 +282,7 @@ func containsFold(s, lowerKeyword string) bool {
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
 // content_md_rendered to match the frontend IArtifactPage contract, which
-// renders the Markdown stored in content_with_weight directly.
+// renders the page's Markdown body directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
@@ -313,7 +311,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd",
+		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "md_with_weight",
 			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
 			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
@@ -337,7 +335,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
 		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-		ContentMd:      firstStringValue(c["content_with_weight"]),
+		ContentMd:      types.WikiPageContent(c),
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
@@ -352,7 +350,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 // title and outlinks through the document engine, then returns the refreshed
 // page.
 func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug, contentMd, title string, outlinks []string) (*WikiPageDetail, error) {
-	docEngine := s.docEngine()
+	docEngine := engine.Get()
 	if docEngine == nil {
 		return nil, fmt.Errorf("document engine is not initialized")
 	}
@@ -908,7 +906,7 @@ func sortedSetKeys(set map[string]struct{}) []string {
 
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
-	docEngine := s.docEngine()
+	docEngine := engine.Get()
 	if docEngine == nil {
 		return 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -1033,7 +1031,7 @@ func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, dat
 
 // DeleteSkills deletes skills of a dataset, optionally scoped by keyword.
 func (s *DatasetArtifactService) DeleteSkills(ctx context.Context, tenantID, datasetID, kwd string) (int, error) {
-	docEngine := s.docEngine()
+	docEngine := engine.Get()
 	if docEngine == nil {
 		return 0, fmt.Errorf("document engine is not initialized")
 	}

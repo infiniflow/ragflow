@@ -333,7 +333,7 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 			Offset:     offset,
 			Limit:      pageBatchSize,
 			SelectFields: []string{
-				"slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "content_with_weight",
+				"slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "md_with_weight", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
 				"type_kwd":      compileKwdWikiPage,
@@ -357,7 +357,7 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 			if !ok {
 				continue
 			}
-			result[target.key] = pageEngineString(row["content_with_weight"])
+			result[target.key] = types.WikiPageContent(row)
 		}
 		if len(res.Chunks) < pageBatchSize {
 			break

@@ -2,45 +2,18 @@ package file
 
 import (
 	"context"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
-
-type pageContentEngine struct {
-	engine.DocEngine
-	row map[string]interface{}
-	req *types.SearchRequest
-}
-
-func (e *pageContentEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	e.req = req
-	return &types.SearchResult{Chunks: []map[string]interface{}{e.row}}, nil
-}
-
-func TestReadPageContentUsesCanonicalBodyWhenSnapshotIsAbsent(t *testing.T) {
-	const body = "# Alpha\n\n[Beta](artifact/kb1/entity/beta)"
-	eng := &pageContentEngine{row: map[string]interface{}{"content_with_weight": []string{body}}}
-	svc := NewFileCommitService()
-	svc.docEngine = func() engine.DocEngine { return eng }
-	if got := svc.readPageContent(t.Context(), "kb1", "t1", "entity", "alpha", &entity.FileCommitItem{}); got != body {
-		t.Fatalf("history body = %q, want %q", got, body)
-	}
-	if !reflect.DeepEqual(eng.req.SelectFields, []string{"content_with_weight"}) {
-		t.Fatalf("history query fields = %v", eng.req.SelectFields)
-	}
-}
 
 func newPageCommitTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

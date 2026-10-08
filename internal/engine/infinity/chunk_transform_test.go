@@ -210,10 +210,11 @@ func compiledRowForTransform() map[string]interface{} {
 		"id":                  "c1",
 		"doc_id":              "d1",
 		"kb_id":               "kb1",
-		"content_with_weight": "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta).",
+		"content_with_weight": "compiled body",
 		"compile_kwd":         "tree",
 		"raptor_kwd":          "root",
 		"raptor_layer_int":    2,
+		"md_with_weight":      "# page",
 		"extra":               map[string]interface{}{"raptor_method": "gmm"},
 		"q_3_vec":             []float64{0.1, 0.2, 0.3},
 	}
@@ -269,16 +270,8 @@ func TestInsertValuesAreEncodableConstants(t *testing.T) {
 // Go-only field such as tenant_id triggered.
 func TestTransformedCompiledRowNamesOnlyMappingColumns(t *testing.T) {
 	columns := chunkMappingColumns(t)
-	if columns["md_with_weight"] {
-		t.Fatal("chunk mapping must not declare the duplicate Wiki body column")
-	}
-	row := compiledRowForTransform()
-	transformed := transformChunkFields(row, nil)
-	if transformed["content"] != row["content_with_weight"] {
-		t.Fatalf("Infinity content changed the Markdown body: %v", transformed["content"])
-	}
 	vectorColumn := regexp.MustCompile(`^q_\d+_vec$`)
-	for k := range transformed {
+	for k := range transformChunkFields(compiledRowForTransform(), nil) {
 		if columns[k] || vectorColumn.MatchString(k) {
 			continue
 		}

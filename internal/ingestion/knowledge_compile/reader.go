@@ -134,7 +134,7 @@ var compiledSelectFields = []string{
 // because Infinity's SQL binder rejects a partial wildcard (3013).
 var wikiSelectFields = []string{
 	"page_type_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
-	"entity_names_kwd", "summary_with_weight",
+	"entity_names_kwd", "summary_with_weight", "md_with_weight",
 	"related_kb_pages_kwd", "outlinks_kwd", "depth_int",
 	"q_*_vec",
 }
@@ -336,6 +336,9 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 // are rejected consistently rather than leaking into the wrong bucket.
 func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommon.Variant) (kccommon.Product, bool) {
 	content, _ := c["content_with_weight"].(string)
+	if expect == kccommon.VariantWiki {
+		content = types.WikiPageContent(c)
+	}
 	if content == "" {
 		return kccommon.Product{}, false
 	}

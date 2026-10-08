@@ -2,6 +2,30 @@ package types
 
 import "testing"
 
+func TestWikiPageContent(t *testing.T) {
+	const body = "  # Alpha\n\n[Beta](artifact/kb1/entity/beta)\n"
+	for _, test := range []struct {
+		name string
+		row  map[string]any
+		want string
+	}{
+		{"canonical", map[string]any{"content_with_weight": body}, body},
+		{"canonical wins", map[string]any{"content_with_weight": body, "md_with_weight": "stale body"}, body},
+		{"Markdown only", map[string]any{"md_with_weight": body}, body},
+		{"empty canonical", map[string]any{"content_with_weight": "", "md_with_weight": body}, body},
+		{"blank canonical", map[string]any{"content_with_weight": " \n", "md_with_weight": body}, body},
+		{"list values", map[string]any{"content_with_weight": []string{""}, "md_with_weight": []any{body}}, body},
+		{"canonical list", map[string]any{"content_with_weight": []string{body}, "md_with_weight": "stale body"}, body},
+		{"missing", nil, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := WikiPageContent(test.row); got != test.want {
+				t.Fatalf("WikiPageContent() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestCompilationKindPrefersCanonicalValue(t *testing.T) {
 	for _, test := range []struct {
 		row  map[string]any
