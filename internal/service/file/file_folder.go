@@ -284,7 +284,7 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 // appending (1), (2), ... when the requested name is already taken.
 func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
 	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
-		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID)
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
 	})
 }
 
@@ -317,7 +317,7 @@ func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID
 	}
 
 	existsInParent := func(candidate string) (bool, error) {
-		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID)
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
 	}
 	var uniqueName string
 	var err error
@@ -439,7 +439,7 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 			targetParentID = destFolder.ID
 		}
 		existsInTarget := func(candidate string) (bool, error) {
-			return s.fileDAO.NameExists(ctx, dao.DB, candidate, targetParentID, file.TenantID)
+			return s.fileDAO.NameExists(ctx, dao.DB, candidate, targetParentID, file.TenantID, file.ID)
 		}
 		if targetParentID == file.ParentID {
 			// Renaming within the same folder: a case-only change refers to the
@@ -463,18 +463,15 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 			}
 		}
 	} else if destFolder != nil {
-		// Plain move (no rename): check for duplicate names in destination folder
+		// Plain move (no rename): check for duplicate names in destination folder.
 		for _, file := range files {
-			var existingFiles []*entity.File
-			existingFiles, err = s.fileDAO.Query(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID)
+			var exists bool
+			exists, err = s.fileDAO.NameExists(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID, file.ID)
 			if err != nil {
 				return false, fmt.Sprintf("failed to query existing files: %v", err)
 			}
-			for _, f := range existingFiles {
-				// Ignore the source file itself
-				if f.ID != file.ID {
-					return false, "Duplicated file name in the same folder."
-				}
+			if exists {
+				return false, "Duplicated file name in the same folder."
 			}
 		}
 	}

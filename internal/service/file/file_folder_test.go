@@ -160,6 +160,29 @@ func TestFileService_MoveFilesRejectsCaseVariantDuplicateInDestinationFolder(t *
 	}
 }
 
+// A plain move (no new_name) must detect a case-variant duplicate in the
+// destination folder too, not only the rename path.
+func TestFileService_MoveFilesRejectsCaseVariantDuplicateWithoutRename(t *testing.T) {
+	setupFolderTestDB(t)
+
+	for _, f := range []*entity.File{
+		{ID: "pf1", ParentID: "pf1", TenantID: "tenant-1", Name: "root", Type: FileTypeFolder},
+		{ID: "d1", ParentID: "pf1", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "s1", ParentID: "pf1", TenantID: "tenant-1", Name: "report.txt", Type: "pdf"},
+		{ID: "existing", ParentID: "d1", TenantID: "tenant-1", Name: "REPORT.TXT", Type: "pdf"},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"s1"}, "d1", "")
+	if ok || !strings.Contains(msg, "Duplicated file name") {
+		t.Fatalf("plain move into case-variant duplicate = %v, %q, want duplicate error", ok, msg)
+	}
+}
+
 // setupFolderTestDB initializes an in-memory SQLite database for file folder tests.
 func setupFolderTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

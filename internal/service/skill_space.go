@@ -180,18 +180,17 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	if err != nil {
 		return nil, common.CodeOperatingError, err
 	}
-	req.Name = spaceName
 
 	// Check if there's a space with the same name that is currently being deleted
-	existingSpaceAny, err := s.spaceDAO.GetByTenantAndNameAnyStatus(ctx, dao.DB, req.TenantID, req.Name)
+	existingSpaceAny, err := s.spaceDAO.GetByTenantAndNameAnyStatus(ctx, dao.DB, req.TenantID, spaceName)
 	if err == nil && existingSpaceAny != nil && existingSpaceAny.Status == entity.SpaceStatusDeleting {
-		return nil, common.CodeDataError, fmt.Errorf("space with name '%s' is being deleted, please try again later", req.Name)
+		return nil, common.CodeDataError, fmt.Errorf("space with name '%s' is being deleted, please try again later", spaceName)
 	}
 
 	// Check if there's a deleted/non-active space with the same name and permanently delete it
 	// This handles the case where a previous creation failed partially
 	// Only delete non-active spaces (status != '1') to prevent TOCTOU race
-	if err = s.spaceDAO.DeletePermanentByName(ctx, dao.DB, req.TenantID, req.Name); err != nil {
+	if err = s.spaceDAO.DeletePermanentByName(ctx, dao.DB, req.TenantID, spaceName); err != nil {
 		common.Warn("Failed to delete permanent space by name", zap.Error(err))
 	}
 
@@ -204,13 +203,13 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 
 	// Check if there's an existing folder with the same name under skills folder
 	// If exists, delete it to prevent duplicate folder names
-	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, req.Name, skillsFolderID, req.TenantID)
+	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, spaceName, skillsFolderID, req.TenantID)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to query existing folders: %w", err)
 	}
 	for _, f := range existingFolders {
-		if f.Type == "folder" && f.Name == req.Name {
-			common.Info("Deleting existing space folder with same name", zap.String("folderID", f.ID), zap.String("name", req.Name))
+		if f.Type == "folder" && f.Name == spaceName {
+			common.Info("Deleting existing space folder with same name", zap.String("folderID", f.ID), zap.String("name", spaceName))
 			if err = s.deleteFolderRecursive(ctx, f.ID); err != nil {
 				common.Warn("Failed to delete existing folder", zap.String("folderID", f.ID), zap.Error(err))
 			}
@@ -228,7 +227,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 		ParentID:   skillsFolderID,
 		TenantID:   req.TenantID,
 		CreatedBy:  req.TenantID,
-		Name:       req.Name,
+		Name:       spaceName,
 		Type:       "folder",
 		Size:       0,
 		SourceType: "skill_space",
@@ -243,7 +242,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	space := &entity.SkillSpace{
 		ID:          spaceID,
 		TenantID:    req.TenantID,
-		Name:        req.Name,
+		Name:        spaceName,
 		FolderID:    folderID,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
