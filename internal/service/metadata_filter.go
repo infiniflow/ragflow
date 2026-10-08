@@ -17,6 +17,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -125,27 +126,51 @@ func getMetaFilterTemplate() (string, error) {
 	return templateContent, nil
 }
 
+// metaFilterIfBlock matches one {% if name %}...{% endif %} block of
+// meta_filter.md, together with the newline after each tag so a dropped or
+// unwrapped block leaves no stray blank line (Jinja's trim_blocks).
+func metaFilterIfBlock(name string) *regexp.Regexp {
+	return regexp.MustCompile(`(?s)\{%\s*if\s+` + name + `\s*%\}\n?(.*?)\{%\s*endif\s*%\}\n?`)
+}
+
+var (
+	metaFilterConstraintsBlock  = metaFilterIfBlock("constraints")
+	metaFilterDescriptionsBlock = metaFilterIfBlock("metadata_descriptions")
+)
+
 // renderMetaFilterTemplate renders the Jinja2-like template from meta_filter.md
-func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints string) (string, error) {
+func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints, descriptions string) (string, error) {
 	templateContent, err := getMetaFilterTemplate()
 	if err != nil {
 		return "", err
 	}
 
-	// Replace variables
-	result := strings.ReplaceAll(templateContent, "{{ current_date }}", currentDate)
-	result = strings.ReplaceAll(result, "{{ metadata_keys }}", metadataKeys)
-	result = strings.ReplaceAll(result, "{{ user_question }}", question)
-
-	// Handle {% if constraints %}...{% endif %}
-	constraintRegex := regexp.MustCompile(`(?s)\{%\s*if\s+constraints\s*%\}(.+?)\{%\s*endif\s*%\}`)
-	if constraints != "" {
-		// Replace with the content inside the if block
-		result = constraintRegex.ReplaceAllString(result, "$1")
-	} else {
-		// Remove the entire if block
-		result = constraintRegex.ReplaceAllString(result, "")
+	// Resolve the conditional blocks before substituting any value, so text
+	// coming from the question or a dataset owner's description is never
+	// parsed as template syntax.
+	result := templateContent
+	for _, block := range []struct {
+		re   *regexp.Regexp
+		keep bool
+	}{
+		{metaFilterConstraintsBlock, constraints != ""},
+		{metaFilterDescriptionsBlock, descriptions != ""},
+	} {
+		if block.keep {
+			result = block.re.ReplaceAllString(result, "$1")
+		} else {
+			result = block.re.ReplaceAllString(result, "")
+		}
 	}
+
+	// A single pass: a substituted value is not scanned for further placeholders.
+	result = strings.NewReplacer(
+		"{{ current_date }}", currentDate,
+		"{{ metadata_keys }}", metadataKeys,
+		"{{ user_question }}", question,
+		"{{ constraints }}", constraints,
+		"{{ metadata_descriptions }}", descriptions,
+	).Replace(result)
 
 	// Clean up any extra newlines from removed blocks
 	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
@@ -154,8 +179,8 @@ func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints s
 }
 
 // genMetaFilterPrompt builds the prompt for LLM-based metadata filter generation
-func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate string) string {
-	prompt, err := renderMetaFilterTemplate(currentDate, metaDataJSON, question, constraintsJSON)
+func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, descriptionsJSON, currentDate string) string {
+	prompt, err := renderMetaFilterTemplate(currentDate, metaDataJSON, question, constraintsJSON, descriptionsJSON)
 	if err != nil {
 		common.Warn("Failed to render meta filter template, using fallback", zap.Error(err))
 		// Fallback to empty prompt
@@ -164,8 +189,51 @@ func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate st
 	return prompt
 }
 
+// metaFilterDescriptionLimit caps the characters of a single metadata key
+// description that reach the meta_filter prompt.
+const metaFilterDescriptionLimit = 1024
+
+// offeredMetaKeyDescriptions renders the key descriptions for the prompt, as a
+// JSON object, or "" when none apply.
+//
+// Only the keys actually offered are kept: a semi_auto call narrows the key
+// set deliberately, and a description for a key the model cannot filter on is
+// noise it may act upon. HTML escaping is off so a description reaches the
+// model as written, not with "&" turned into "\u0026".
+func offeredMetaKeyDescriptions(offeredKeys map[string][]string, descriptions map[string]string) string {
+	offered := make(map[string]string, len(descriptions))
+	for key, description := range descriptions {
+		if _, ok := offeredKeys[key]; !ok || strings.TrimSpace(description) == "" {
+			continue
+		}
+		// A description is a legend for a value space, but the dataset config
+		// accepts 65535 characters per key. Cap it: this prompt carries no
+		// token budgeting, and a description long enough to crowd out the
+		// value space, the question or the answer costs the filter entirely.
+		if runes := []rune(description); len(runes) > metaFilterDescriptionLimit {
+			description = string(runes[:metaFilterDescriptionLimit]) + "…"
+		}
+		offered[key] = description
+	}
+	if len(offered) == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(offered); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(buf.String())
+}
+
 // GenMetaFilter generates filter conditions using LLM based on metadata and question.
-func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData common.MetaData, question string, constraints map[string]string) (*MetaFilterResult, error) {
+//
+// descriptions optionally maps a metadata key to what it means, for value
+// spaces whose values are codes the model cannot interpret on sight ("SP",
+// "DRP"). They come from the datasets' own metadata config; see
+// loadMetaKeyDescriptions.
+func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData common.MetaData, question string, constraints map[string]string, descriptions map[string]string) (*MetaFilterResult, error) {
 	if chatModel == nil {
 		return nil, fmt.Errorf("chat model is nil")
 	}
@@ -193,7 +261,8 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 
 	// Build the prompt
 	currentDate := time.Now().Format("2006-01-02")
-	systemPrompt := genMetaFilterPrompt(string(metaDataJSON), question, constraintsJSON, currentDate)
+	descriptionsJSON := offeredMetaKeyDescriptions(metaDataStructure, descriptions)
+	systemPrompt := genMetaFilterPrompt(string(metaDataJSON), question, constraintsJSON, descriptionsJSON, currentDate)
 
 	// Build user message
 	userMessage := "Generate filters:"
@@ -600,6 +669,44 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 	return strings.Join(filtered, ",")
 }
 
+// loadMetaKeyDescriptions returns what each metadata key means, as declared in
+// the datasets' own metadata config (parser_config.metadata, edited at
+// /datasets/<id>/metadata/config). The parse-time extractor already reads it;
+// the filter generator needs it too, or a value space made of codes leaves it
+// nothing to map the wording of a question onto.
+//
+// Best effort, and only called for the LLM-driven methods, so manual filters
+// never pay for the dataset reads. A dataset without a config contributes
+// nothing, and the first non-empty description for a key wins when several
+// datasets are searched together. A variable so tests can stub the database.
+var loadMetaKeyDescriptions = func(ctx context.Context, kbIDs []string) map[string]string {
+	if len(kbIDs) == 0 || dao.DB == nil {
+		return nil
+	}
+	fields, err := NewMetadataService().DeclaredMetadataFields(ctx, kbIDs)
+	if err != nil {
+		common.Warn("Metadata key descriptions could not be read", zap.Strings("kb_ids", kbIDs), zap.Error(err))
+		return nil
+	}
+	return metaKeyDescriptions(fields)
+}
+
+// metaKeyDescriptions folds declared metadata fields into {key: description},
+// the first non-empty description for a key winning.
+func metaKeyDescriptions(fields []common.MetadataFieldDef) map[string]string {
+	out := make(map[string]string, len(fields))
+	for _, field := range fields {
+		description := strings.TrimSpace(field.Description)
+		if description == "" {
+			continue
+		}
+		if _, seen := out[field.Key]; !seen {
+			out[field.Key] = description
+		}
+	}
+	return out
+}
+
 // ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
 // Supports three modes:
 // - auto: generate filter conditions via LLM
@@ -662,7 +769,7 @@ func ApplyMetaDataFilter(
 
 	switch method {
 	case "auto":
-		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
+		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil, loadMetaKeyDescriptions(ctx, kbIDs))
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
 			return baseDocIDs, false
@@ -704,7 +811,7 @@ func ApplyMetaDataFilter(
 			}
 
 			if len(filteredMeta) > 0 {
-				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
+				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints, loadMetaKeyDescriptions(ctx, kbIDs))
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
 					return baseDocIDs, false
