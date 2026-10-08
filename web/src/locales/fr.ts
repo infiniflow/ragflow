@@ -365,6 +365,8 @@ export default {
       dataFlowRequired: 'Le flux de données est requis',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Poursuivez le téléversement ; le système basculera automatiquement ces fichiers vers une configuration d’analyse intégrée compatible.',
       dataset: 'Ensemble de données',
       testing: 'Test de récupération',
       files: 'Fichiers',
@@ -1920,7 +1922,7 @@ Exemple : Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Veuillez téléverser au moins un fichier',
     },
     flow: {
-      cite: 'Citation',
+      cite: 'Afficher les citations',
       citeTip: 'Astuce citation',
       name: 'Nom',
       nameMessage: 'Veuillez saisir un nom',

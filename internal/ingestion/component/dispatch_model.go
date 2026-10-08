@@ -247,9 +247,13 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
-	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxOutput != nil {
-		maxTokens = *mi.MaxOutput
+	contextLength := 0
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil {
+		if mi.ContextLength != nil {
+			contextLength = *mi.ContextLength
+		} else if mi.MaxTokens != nil {
+			contextLength = *mi.MaxTokens
+		}
 	}
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
@@ -257,11 +261,11 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 			return nil, "", nil, 0, err
 		}
 		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			maxTokens = *tenantExtra.MaxTokens
+			contextLength = *tenantExtra.MaxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
+	return driver, modelObj.ModelName, apiConfig, contextLength, nil
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -305,9 +309,13 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
+		contextLength := 0
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
+			if mi.ContextLength != nil {
+				contextLength = *mi.ContextLength
+			} else if mi.MaxTokens != nil {
+				contextLength = *mi.MaxTokens
+			}
 		}
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
@@ -315,20 +323,16 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 				return nil, "", nil, 0, err
 			}
 			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				maxTokens = *tenantExtra.MaxTokens
+				contextLength = *tenantExtra.MaxTokens
 			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
+		return driver, modelObj.ModelName, apiConfig, contextLength, nil
 	case !errorsIsRecordNotFound(modelErr):
 		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if targetProvider == nil {
 		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}
@@ -347,11 +351,13 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		return nil, "", nil, 0, err
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
+	contextLength := 0
+	if llmInfo.ContextLength != nil {
+		contextLength = *llmInfo.ContextLength
+	} else if llmInfo.MaxTokens != nil {
+		contextLength = *llmInfo.MaxTokens
 	}
-	return driver, llmInfo.Name, apiConfig, maxTokens, nil
+	return driver, llmInfo.Name, apiConfig, contextLength, nil
 }
 
 func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {

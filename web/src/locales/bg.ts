@@ -197,6 +197,8 @@ export default {
       parserRequired: 'Методът за разделяне е задължителен',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Продължете с качването и системата автоматично ще превключи тези файлове към поддържана вградена конфигурация за анализиране.',
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
         fieldNameInvalid:
@@ -1517,7 +1519,7 @@ The above is the content you need to summarize.`,
       dataManipulation: 'Манипулация на данни',
       flow: 'Поток',
       dialog: 'Диалог',
-      cite: 'Цитирай',
+      cite: 'Показвай цитатите',
       citeTip: 'citeTip',
       name: 'Име',
       nameMessage: 'Моля, въведете име',

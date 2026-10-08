@@ -78,7 +78,7 @@ func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-2", nil)
 
-	_, err := NewModelSolver().ResolveDefaultModelConfig(t.Context(), "tenant-2", entity.ModelTypeTTS)
+	_, err := NewModelFactory().resolveDefaultConfig(t.Context(), ModelAccess{TenantID: "tenant-2"}, entity.ModelTypeTTS)
 	if err == nil {
 		t.Fatal("expected error for nil tts_id, got nil")
 	}

@@ -664,7 +664,7 @@ func resolveDatasetStructureKind(kind string) string {
 		return "knowledge_graph"
 	case "mindmap", "mind_map":
 		// Align with Python _DATASET_STRUCTURE_KIND_ALIASES: resolve the
-		// user-facing "mindmap" to the stored compilation_template_kind_kwd value
+		// user-facing "mindmap" to the canonical compilation kind
 		// "mind_map" (the template kind, which is what read/delete paths match on).
 		return "mind_map"
 	case "timeline":
@@ -880,7 +880,7 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 		}
 		for _, row := range rows {
 			templateID := rowTemplateID(row)
-			kind := firstStringValue(row["compilation_template_kind_kwd"])
+			kind := types.CompilationKind(row)
 			if kind == "" {
 				kind = firstStringValue(row["compile_kwd"])
 			}
@@ -947,17 +947,8 @@ type DatasetStructureGraphResponse struct {
 	Templates         []DocumentStructureGraphTemplate `json:"templates"`
 }
 
-// GetDatasetStructure returns the dataset-scope structure graph for a resolved
-// kind, mirroring Python get_dataset_structure (dataset_api_service.py). Discovery
-// scans knowledge_graph_kwd=["entity"] dataset rows (scope_kwd="dataset") and
-// matches the resolved kind against the stamped compilation_template_kind_kwd —
-// NOT compile_kwd (compile_kwd holds the autotype "hypergraph"/"list"/"mindmap",
-// which is never the kind discriminator; Python _discover_scope_templates matches
-// _resolve_dataset_structure_kind against compilation_template_kind_kwd the same
-// way). It collects distinct template ids, then reads each template's dataset
-// entity/relation rows via buildBucket. It does NOT read kg_build_meta (write/
-// delete-side only). When Keywords is set, it returns the keyword-matched
-// entity subgraph using the name/BM25 and relation expansion path.
+// GetDatasetStructure returns dataset-scope entity/relation graphs for the
+// requested compilation kind, optionally narrowed by keyword matching.
 func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (*DatasetStructureGraphResponse, error) {
 	resolved := resolveDatasetStructureKind(in.Kind)
 	if resolved == "" {
@@ -968,31 +959,27 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	}
 	resp := &DatasetStructureGraphResponse{Kind: resolved, Templates: []DocumentStructureGraphTemplate{}}
 
-	// Discover distinct template ids whose stamped template kind resolves to the
-	// requested kind, scanning dataset-scope entity rows only. scope_kwd="dataset"
-	// is required here (unlike the legacy doc_graph fallback) because dataset rows
-	// are the only ones carrying compilation_template_kind_kwd we can trust for the
-	// dataset-scope kind match.
+	// Discover templates from dataset entity rows of the requested kind.
 	templateIDs := map[string]struct{}{}
 	// "id" must be projected: graphRowSearch keys its result map by the row id,
 	// and Infinity only returns fields listed in SelectFields (it does not
 	// synthesize id), so omitting it silently drops every row (review Major).
 	// The resolved kind is pushed into the filter so the engine applies the
 	// predicate instead of scanning all entity rows and discarding them in Go.
-	metaFields := []string{"id", "compilation_template_kind_kwd", "compilation_template_ids"}
+	metaFields := []string{"id", "compile_kwd", "compilation_template_kind_kwd", "compilation_template_ids"}
 	entityCountFilter := map[string]interface{}{
-		"knowledge_graph_kwd":           []string{"entity"},
-		"scope_kwd":                     []string{"dataset"},
-		"compilation_template_kind_kwd": []string{resolved},
+		"knowledge_graph_kwd": []string{"entity"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
 	}
 	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
 	if err != nil {
 		return nil, err
 	}
 	relationCountFilter := map[string]interface{}{
-		"knowledge_graph_kwd":           []string{"relation"},
-		"scope_kwd":                     []string{"dataset"},
-		"compilation_template_kind_kwd": []string{resolved},
+		"knowledge_graph_kwd": []string{"relation"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
 	}
 	_, relationTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, relationCountFilter, nil, 0, 1, nil)
 	if err != nil {
@@ -1006,7 +993,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 			return nil, err
 		}
 		for _, row := range rows {
-			tkind := firstStringValue(row["compilation_template_kind_kwd"])
+			tkind := types.CompilationKind(row)
 			if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
 				continue
 			}
@@ -1041,10 +1028,10 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 				}
 			}
 			bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, "", keywords, templateMeta, map[string]interface{}{
-				"scope_kwd":                     []string{"dataset"},
-				"compilation_template_ids":      []string{tid},
-				"compilation_template_kind_kwd": []string{resolved},
-				"knowledge_graph_kwd":           []string{"entity"},
+				"scope_kwd":                []string{"dataset"},
+				"compilation_template_ids": []string{tid},
+				"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
+				"knowledge_graph_kwd":      []string{"entity"},
 			})
 			if err != nil {
 				return nil, err
@@ -1068,9 +1055,9 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	// Read each template's dataset entity/relation rows.
 	for tid := range templateIDs {
 		scope := map[string]interface{}{
-			"scope_kwd":                     []string{"dataset"},
-			"compilation_template_ids":      []string{tid},
-			"compilation_template_kind_kwd": []string{resolved},
+			"scope_kwd":                []string{"dataset"},
+			"compilation_template_ids": []string{tid},
+			"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
 		}
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, scope, nil)
 		if err != nil {
@@ -1096,7 +1083,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 // resolveGraphBucket mirrors Python _resolve_bucket.
 func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
 	compileKwd := firstStringValue(row["compile_kwd"])
-	kindVal := firstStringValue(row["compilation_template_kind_kwd"])
+	kindVal := types.CompilationKind(row)
 	if kindVal == "" {
 		kindVal = compileKwd
 	}
@@ -1292,7 +1279,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
 		template := rowTemplateID(candidate.row)
 		if template == "" {
-			template = firstStringValue(candidate.row["compilation_template_kind_kwd"])
+			template = types.CompilationKind(candidate.row)
 		}
 		if template == "" {
 			template = firstStringValue(candidate.row["compile_kwd"])

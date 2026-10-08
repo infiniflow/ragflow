@@ -205,6 +205,8 @@ export default {
       parserRequired: 'طريقة التقسيم مطلوبة',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'تابع الرفع، وسيحوّل النظام هذه الملفات تلقائيًا إلى إعداد تحليل مدمج يدعم أنواعها.',
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',
@@ -1445,7 +1447,7 @@ export default {
       dataManipulation: 'التلاعب بالبيانات',
       flow: 'تدفق',
       dialog: 'حوار',
-      cite: 'استشهد',
+      cite: 'إظهار الاستشهادات',
       citeTip: 'citeTip',
       name: 'اسم',
       nameMessage: 'الرجاء إدخال الاسم',

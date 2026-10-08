@@ -1896,7 +1896,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 	if err != nil {
 		return nil
 	}
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	for _, node := range c.Components {
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
@@ -1905,7 +1905,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: userID}, entity.ModelTypeChat, modelRef); err != nil {
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}
@@ -2280,7 +2280,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				attachment = v
 			}
 		}
-		referencePayload := agentRunReferencePayload(state, legacyReference)
+		referencePayload := agentRunReferencePayload(c, state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
@@ -2651,20 +2651,39 @@ func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) en
 	return dsl
 }
 
-func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+func agentRunReferencePayload(c *canvas.Canvas, state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	var reference map[string]interface{}
 	if state != nil {
-		if reference := state.GetRetrievalReference(); len(reference) > 0 {
-			return reference
+		reference = state.GetRetrievalReference()
+	}
+	if len(reference) == 0 {
+		if len(legacyChunks) == 0 {
+			return nil
+		}
+		reference = map[string]interface{}{
+			"chunks":   legacyChunks,
+			"doc_aggs": []interface{}{},
+			"total":    len(legacyChunks),
 		}
 	}
-	if len(legacyChunks) == 0 {
-		return nil
+	if c != nil && state != nil {
+		snapshot := state.Snapshot()
+		hasAgent, cite := false, false
+		for cpnID, component := range c.Components {
+			if !strings.EqualFold(component.Obj.ComponentName, "Agent") || len(snapshot[cpnID]) == 0 {
+				continue
+			}
+			hasAgent = true
+			if enabled, _ := component.Obj.Params["cite"].(bool); enabled {
+				cite = true
+				break
+			}
+		}
+		if hasAgent && !cite {
+			delete(reference, "doc_aggs")
+		}
 	}
-	return map[string]interface{}{
-		"chunks":   legacyChunks,
-		"doc_aggs": []interface{}{},
-		"total":    len(legacyChunks),
-	}
+	return reference
 }
 
 func stringifyAgentUserInput(userInput any) string {

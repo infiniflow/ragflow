@@ -377,6 +377,8 @@ export default {
       dataFlowRequired: '데이터 흐름을 선택해 주세요',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        '업로드를 계속하면 시스템이 이 파일들을 지원되는 기본 제공 구문 분석 구성으로 자동 전환합니다.',
       metadata: {
         fields: '필드',
         selectFiles: '{{count}}개 파일 선택됨',
@@ -1991,7 +1993,7 @@ export default {
       dataManipulation: '데이터 조작',
       flow: '플로우',
       dialog: '대화',
-      cite: '인용',
+      cite: '인용 표시',
       citeTip: 'citeTip',
       name: '이름',
       nameMessage: '이름을 입력해 주세요',

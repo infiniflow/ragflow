@@ -34,11 +34,14 @@ func (e wireVectorNavEngine) Search(ctx context.Context, req *types.SearchReques
 	return &types.SearchResult{Chunks: rows, Total: result.Total}, nil
 }
 
-func assertNavMembership(t *testing.T, engine *memNavEngine, want int) {
+func assertNavMembership(t *testing.T, engine *memNavEngine, want int, compileKind string) {
 	t.Helper()
 	clusters := map[string]map[string]interface{}{}
 	members := map[string]string{}
 	for _, row := range engine.rows {
+		if kind := firstStringValue(row["compile_kwd"]); kind != compileKind {
+			t.Errorf("row %s compile_kwd=%q, want %q", firstStringValue(row["id"]), kind, compileKind)
+		}
 		if row["type_kwd"] != "nav_cluster" {
 			continue
 		}
@@ -83,61 +86,73 @@ func assertNavMembership(t *testing.T, engine *memNavEngine, want int) {
 
 // TestNavMembershipSurvivesSplitsAndRemoval checks document ownership instead of partition implementation details.
 func TestNavMembershipSurvivesSplitsAndRemoval(t *testing.T) {
-	engine := newMemNavEngine()
-	service := newTestNav(engine)
-	service.engine = wireVectorNavEngine{engine}
-	for i := 0; i < 110; i++ {
-		id := fmt.Sprintf("member_%03d", i)
-		input := navUpsertInput("t1", "kb1", id, "Alpha Topic")
-		if err := service.UpsertDoc(t.Context(), input); err != nil {
-			t.Fatal(err)
-		}
-		assertNavMembership(t, engine, i+1)
-		if i%17 == 0 {
+	for _, compileKind := range []string{"tree", "page_index"} {
+		t.Run(compileKind, func(t *testing.T) {
+			engine := newMemNavEngine()
+			service := newTestNav(engine)
+			service.engine = wireVectorNavEngine{engine}
+			for i := 0; i < 110; i++ {
+				id := fmt.Sprintf("member_%03d", i)
+				input := navUpsertInput("t1", "kb1", id, "Alpha Topic")
+				input.CompileKind = compileKind
+				if err := service.UpsertDoc(t.Context(), input); err != nil {
+					t.Fatal(err)
+				}
+				assertNavMembership(t, engine, i+1, compileKind)
+				if i%17 == 0 {
+					if err := service.UpsertDoc(t.Context(), input); err != nil {
+						t.Fatal(err)
+					}
+					assertNavMembership(t, engine, i+1, compileKind)
+				}
+			}
+			// Remove the document that first triggered a split and retry the removal.
+			if err := service.RemoveDoc(t.Context(), "t1", "kb1", "member_051"); err != nil {
+				t.Fatal(err)
+			}
+			assertNavMembership(t, engine, 109, compileKind)
+			if err := service.RemoveDoc(t.Context(), "t1", "kb1", "member_051"); err != nil {
+				t.Fatal(err)
+			}
+			assertNavMembership(t, engine, 109, compileKind)
+			input := navUpsertInput("t1", "kb1", "member_051", "Alpha Topic")
+			input.CompileKind = compileKind
 			if err := service.UpsertDoc(t.Context(), input); err != nil {
 				t.Fatal(err)
 			}
-			assertNavMembership(t, engine, i+1)
-		}
+			assertNavMembership(t, engine, 110, compileKind)
+		})
 	}
-	// Remove the document that first triggered a split and retry the removal.
-	if err := service.RemoveDoc(t.Context(), "t1", "kb1", "member_051"); err != nil {
-		t.Fatal(err)
-	}
-	assertNavMembership(t, engine, 109)
-	if err := service.RemoveDoc(t.Context(), "t1", "kb1", "member_051"); err != nil {
-		t.Fatal(err)
-	}
-	assertNavMembership(t, engine, 109)
-	if err := service.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "member_051", "Alpha Topic")); err != nil {
-		t.Fatal(err)
-	}
-	assertNavMembership(t, engine, 110)
 }
 
 // TestNavAppendMemberRetryDoesNotIncrement checks both supported keyword-array response shapes.
 func TestNavAppendMemberRetryDoesNotIncrement(t *testing.T) {
-	for _, wrapped := range []bool{false, true} {
-		t.Run(fmt.Sprint(wrapped), func(t *testing.T) {
-			engine := newMemNavEngine()
-			service := newTestNav(engine)
-			if err := service.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "member", "Alpha")); err != nil {
-				t.Fatal(err)
-			}
-			var cluster string
-			for _, row := range engine.rows {
-				if row["type_kwd"] == "nav_cluster" {
-					cluster = firstStringValue(row["title_kwd"])
-					if wrapped {
-						row["doc_ids_kwd"] = []interface{}{"member"}
+	for _, compileKind := range []string{"tree", "page_index"} {
+		for _, wrapped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%t", compileKind, wrapped), func(t *testing.T) {
+				engine := newMemNavEngine()
+				service := newTestNav(engine)
+				input := navUpsertInput("t1", "kb1", "member", "Alpha")
+				input.CompileKind = compileKind
+				if err := service.UpsertDoc(t.Context(), input); err != nil {
+					t.Fatal(err)
+				}
+				var cluster string
+				for _, row := range engine.rows {
+					if row["type_kwd"] == "nav_cluster" {
+						cluster = firstStringValue(row["title_kwd"])
+						row["compile_kwd"] = "dataset_nav"
+						if wrapped {
+							row["doc_ids_kwd"] = []interface{}{"member"}
+						}
 					}
 				}
-			}
-			parent, err := service.appendDocToCluster(t.Context(), engine, "t1", "kb1", cluster, "member", "")
-			if err != nil || parent != cluster {
-				t.Fatalf("parent=%q err=%v", parent, err)
-			}
-			assertNavMembership(t, engine, 1)
-		})
+				parent, err := service.appendDocToCluster(t.Context(), engine, "t1", "kb1", cluster, "member", "", compileKind)
+				if err != nil || parent != cluster {
+					t.Fatalf("parent=%q err=%v", parent, err)
+				}
+				assertNavMembership(t, engine, 1, compileKind)
+			})
+		}
 	}
 }
