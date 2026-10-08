@@ -303,17 +303,12 @@ func buildSubWorkflow(
 			if !members[up] || !messageEdgeIsOrderingOnly(c, up) {
 				continue
 			}
-			if first {
-				nodes[cpnID].AddInput(up, compose.MapFields("content", "__message_status__"))
-				first = false
-			} else {
-				nodes[cpnID].AddDependency(up)
-			}
+			nodes[cpnID].AddDependency(up)
 		}
 		if first {
-			// No in-subgraph upstream: wire from init (this happens
-			// for body entries whose only upstream in the DSL is the
-			// Loop itself).
+			// No in-subgraph data upstream. The loop input stays the
+			// data source, including when the only body predecessor is
+			// a Message. That edge only orders execution.
 			nodes[cpnID].AddInput(loopInitKey)
 		}
 	}

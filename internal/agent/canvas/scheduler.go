@@ -644,15 +644,16 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			return fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
 		}
 		if messageEdgeIsOrderingOnly(c, e.up) {
-			// A real predecessor, if any, already owns the data slot.
-			// Otherwise map one scratch field so this node still runs
-			// when Message finishes, inside the same branch, without
-			// taking Message's output or the original workflow input.
+			// This edge leaves a Message. Wait for it, but do not copy
+			// its output. Edges into a Message are wired above and still
+			// copy the previous node's output, including the final message.
+			// When nothing else supplies data, read the workflow input
+			// without a direct edge from START, so an unselected branch
+			// does not run this node.
+			cpnNode.AddDependency(e.up)
 			if !first[e.cpn] {
-				cpnNode.AddInput(e.up, compose.MapFields("content", "__message_status__"))
+				cpnNode.AddInputWithOptions(compose.START, nil, compose.WithNoDirectDependency())
 				first[e.cpn] = true
-			} else {
-				cpnNode.AddDependency(e.up)
 			}
 			return nil
 		}
@@ -750,8 +751,10 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	return wf, nil
 }
 
-// messageEdgeIsOrderingOnly reports that an edge out of Message schedules
-// the next node without copying Message's output into that node's inputs.
+// messageEdgeIsOrderingOnly reports that an edge leaving a Message only
+// schedules the next node. Message output is not that node's input.
+// The check looks at the upstream id, so an edge whose target is a
+// Message still carries the previous node's output into that Message.
 func messageEdgeIsOrderingOnly(c *Canvas, upstreamID string) bool {
 	if c == nil {
 		return false
