@@ -65,6 +65,15 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	if entity == nil {
 		t.Fatal("missing entity")
 	}
+	var payload struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+		t.Fatalf("decode graph entity: %v", err)
+	}
+	if payload.Description != p.Summary {
+		t.Fatalf("description = %q, want stored summary %q", payload.Description, p.Summary)
+	}
 	// Python tokenizes slug + description into content_ltks and writes no title
 	// token column on the entity row (dataset_wiki_generator.py:750-773); the
 	// row's title stays in title_kwd / the payload.
