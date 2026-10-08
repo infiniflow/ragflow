@@ -921,8 +921,12 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		if err != nil {
 			return fmt.Errorf("tokenizer: title fine-grain: %w", err)
 		}
-		ck.TitleTks = titleTk
-		ck.TitleSmTks = titleSmTk
+		// Fold title_tks / title_sm_tks to lowercase so the ES whitespace
+		// analyzer matches the lowercased query text emitted by
+		// internal/service/nlp.QueryBuilder.Question (line 240). Same
+		// pattern as content_ltks / content_sm_ltks (cycle 85).
+		ck.TitleTks = strings.ToLower(titleTk)
+		ck.TitleSmTks = strings.ToLower(titleSmTk)
 
 		// Question / keyword / summary fields are optional. The python
 		// path branches on each independently.
@@ -934,7 +938,8 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if err != nil {
 				return fmt.Errorf("tokenizer: question tokenize: %w", err)
 			}
-			if err = ck.SetExtraValue("question_tks", qt); err != nil {
+			// Fold question_tks to lowercase (same rationale as title_tks).
+			if err = ck.SetExtraValue("question_tks", strings.ToLower(qt)); err != nil {
 				return fmt.Errorf("tokenizer: question tokens marshal: %w", err)
 			}
 		}
@@ -960,7 +965,8 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if err != nil {
 				return fmt.Errorf("tokenizer: keyword tokenize: %w", err)
 			}
-			if err = ck.SetExtraValue("important_tks", it); err != nil {
+			// Fold important_tks to lowercase (same rationale as title_tks).
+			if err = ck.SetExtraValue("important_tks", strings.ToLower(it)); err != nil {
 				return fmt.Errorf("tokenizer: keyword tokens marshal: %w", err)
 			}
 		}

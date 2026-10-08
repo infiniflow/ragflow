@@ -757,7 +757,11 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
 	ck["important_kwd"] = kwds
 	if tkErr == nil {
-		ck["important_tks"] = tks
+		// Fold important_tks to lowercase so the ES whitespace analyzer
+		// matches the lowercased query text emitted by
+		// internal/service/nlp.QueryBuilder.Question (line 240). Same
+		// pattern as content_ltks / title_tks.
+		ck["important_tks"] = strings.ToLower(tks)
 	}
 	return nil
 }
@@ -810,7 +814,8 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
 	ck["question_kwd"] = filtered
 	if tkErr == nil {
-		ck["question_tks"] = tks
+		// Fold question_tks to lowercase (same rationale as title_tks).
+		ck["question_tks"] = strings.ToLower(tks)
 	}
 	return nil
 }
