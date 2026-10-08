@@ -84,7 +84,7 @@
     "cmdk": "^1.0.4",
     "d3-force": "^3.0.0",
     "dayjs": "^1.11.10",
-    "dompurify": "^3.3.2",
+    "dompurify": "^3.4.16",
     "embla-carousel-react": "^8.6.0",
     "epubjs": "^0.3.93",
     "eventsource-parser": "^1.1.2",
