@@ -210,6 +210,8 @@ export default {
       parserRequired: 'Необходимо указать метод чанкирования',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Продолжите загрузку, и система автоматически переключит эти файлы на поддерживаемую встроенную конфигурацию анализа.',
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',

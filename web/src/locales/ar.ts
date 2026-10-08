@@ -205,6 +205,8 @@ export default {
       parserRequired: 'طريقة التقسيم مطلوبة',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'تابع الرفع، وسيحوّل النظام هذه الملفات تلقائيًا إلى إعداد تحليل مدمج يدعم أنواعها.',
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',

@@ -89,6 +89,8 @@ export default {
       noMoreData: 'Tất cả chỉ có thế, không còn gì nữa',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Tiếp tục tải lên, hệ thống sẽ tự động chuyển các tệp này sang cấu hình phân tích tích hợp được hỗ trợ.',
       dataset: 'Dữ liệu',
       testing: 'Kiểm tra truy hồi',
       files: 'Các tệp',

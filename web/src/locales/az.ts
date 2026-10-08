@@ -418,7 +418,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): cari parser konfiqurasiyası tərəfindən dəstəklənmir',
       reselectParserAfterUploadHint:
-        'Yükləməyə davam edin, sonra fayl siyahısında bu fayllar üçün təhlil üsulunu yenidən seçin.',
+        'Yükləməyə davam edin; sistem bu faylları avtomatik olaraq dəstəklənən daxili təhlil konfiqurasiyasına keçirəcək.',
       reselectParserToParseHint:
         'Təsirlənən fayllar üçün təhlil üsulunu yenidən seçin, sonra yenidən təhlil edin.',
       addModelAfterUploadHint:
