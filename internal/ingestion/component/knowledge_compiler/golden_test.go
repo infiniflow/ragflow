@@ -210,7 +210,7 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 	foundPage := false
 	for _, p := range prods {
 		// compile_kwd=wiki_page is the page/section discriminator.
-		if kwd, _ := p.GetExtraString("compile_kwd"); kwd == "wiki_page" {
+		if kwd, _ := p.GetExtraString("type_kwd"); kwd == "wiki_page" {
 			foundPage = true
 		}
 	}

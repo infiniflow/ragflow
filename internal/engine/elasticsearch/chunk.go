@@ -709,34 +709,34 @@ func conditionTermsList(value interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
-// mustNotExistsClauses renders the `must_not` exclusions a condition carries.
-// The only form RAGFlow produces is must_not={"exists": <field>} (e.g.
-// hybrid_search excluding compiled products); any other shape yields nothing.
+// mustNotExistsClauses renders field and existence exclusions.
 func mustNotExistsClauses(value interface{}) []map[string]interface{} {
 	exclusions, ok := value.(map[string]interface{})
 	if !ok {
 		return nil
 	}
-	clauses := make([]map[string]interface{}, 0, len(exclusions))
-	for field, value := range exclusions {
-		if field != "exists" {
-			continue
-		}
-		clauses = append(clauses, map[string]interface{}{
-			"exists": map[string]interface{}{"field": value},
-		})
+	if field, ok := exclusions["exists"]; ok && len(exclusions) == 1 {
+		return []map[string]interface{}{{"exists": map[string]interface{}{"field": field}}}
 	}
-	return clauses
+	if query := buildBoolQueryFromConditionRaw(exclusions, nil, false, false); query != nil {
+		return []map[string]interface{}{query}
+	}
+	return nil
 }
 
 // updateChunksByQuery handles multi-document update
 func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
+	condition = types.CompilationFilter(condition)
 
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	var mustNotClauses []map[string]interface{}
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			mustClauses = append(mustClauses, buildBoolQueryFromConditionRaw(map[string]interface{}{k: v}, nil, false, false))
+			continue
+		}
 		if k == "exists" {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"exists": map[string]interface{}{"field": v},
@@ -1010,6 +1010,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	var filterClauses []map[string]interface{}
@@ -1045,6 +1046,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 	// Add all other conditions as filters/must/must_not
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			filterClauses = append(filterClauses, buildBoolQueryFromConditionRaw(map[string]interface{}{k: v}, nil, false, false))
+			continue
+		}
 		if k == "id" || k == "kb_id" {
 			continue // Already handled above
 		}
@@ -2121,6 +2126,10 @@ func memoryMessageStatusBool(value interface{}) bool {
 // Skill indexes use status, regular chunk indexes use kb_id, and memory
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
+	return buildBoolQueryFromConditionRaw(types.CompilationFilter(filter), kbIDs, isSkillIndex, isMemoryIndex)
+}
+
+func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
 	var mustNotClauses []interface{}
 	var filterClauses []interface{}
@@ -2151,6 +2160,20 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	}
 
 	for k, v := range filter {
+		if k == "and" || k == "or" {
+			var children []interface{}
+			for _, child := range types.FilterClauses(v) {
+				children = append(children, buildBoolQueryFromConditionRaw(child, nil, false, isMemoryIndex))
+			}
+			if len(children) > 0 {
+				clause := map[string]interface{}{"filter": children}
+				if k == "or" {
+					clause = map[string]interface{}{"should": children, "minimum_should_match": 1}
+				}
+				filterClauses = append(filterClauses, map[string]interface{}{"bool": clause})
+			}
+			continue
+		}
 		if isMemoryIndex {
 			k = mapMemoryMessageESField(k, false)
 		}
@@ -2198,11 +2221,13 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			continue
 		}
 		if k == "must_not" {
-			if condition, ok := v.(map[string]interface{}); ok {
-				if field, ok := condition["exists"].(string); ok && field != "" {
-					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
-				}
+			for _, clause := range mustNotExistsClauses(v) {
+				mustNotClauses = append(mustNotClauses, clause)
 			}
+			continue
+		}
+		if k == "exists" {
+			filterClauses = append(filterClauses, map[string]interface{}{"exists": map[string]interface{}{"field": v}})
 			continue
 		}
 		if k == "knowledge_graph_kwd" {
