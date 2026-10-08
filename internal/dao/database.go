@@ -253,6 +253,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
 		}
+
+		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
+		}
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err

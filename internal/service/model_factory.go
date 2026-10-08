@@ -936,11 +936,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if targetProvider == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
