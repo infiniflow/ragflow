@@ -6,9 +6,10 @@ import (
 	"ragflow/internal/entity"
 )
 
-// cloneParserConfigForDocument must deep-copy the nested maps a database load
-// hands out, so writing a component entry onto one document's config cannot
-// leak into the dataset's config or a sibling document's config.
+// TestCloneParserConfigForDocument verifies that cloneParserConfigForDocument must
+// deep-copy the nested maps a database load hands out, so writing a component
+// entry onto one document's config cannot leak into the dataset's config or a
+// sibling document's config.
 func TestCloneParserConfigForDocument(t *testing.T) {
 	if clone := cloneParserConfigForDocument(nil); clone == nil || len(clone) != 0 {
 		t.Fatalf("nil config must clone to an empty object, got %#v", clone)
