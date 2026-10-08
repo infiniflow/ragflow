@@ -57,7 +57,7 @@ const defaultAgenticTemplateID = "smart-reasoning"
 // (see buildAgenticReference).
 func (s *ChatPipelineService) agenticRag(
 	ctx context.Context,
-	_ string,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -97,7 +97,7 @@ func (s *ChatPipelineService) agenticRag(
 			}
 		}
 
-		chain, chainErr := s.agenticModelChain(runCtx, chat)
+		chain, chainErr := s.agenticModelChain(runCtx, userID, chat)
 		if chainErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: resolve chat model", chainErr)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
@@ -223,8 +223,9 @@ func (s *ChatPipelineService) agenticRag(
 // the dialog configures. Agentic RAG must not silently broaden the dialog's
 // model choice to every chat model owned by the tenant: a failover chain is
 // exactly the list the dialog's author chose, and nothing else.
-func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
-	primary, err := s.agenticPrimaryModel(ctx, chat)
+func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID string, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
+	access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+	primary, err := s.agenticPrimaryModel(ctx, access, chat)
 	if err != nil {
 		return nil, err
 	}
@@ -238,14 +239,13 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 		if llmID == "" || llmID == chat.LLMID {
 			continue
 		}
-		target, resolveErr := s.ModelProviderSvc.modelSolver().
-			ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, llmID)
-		if resolveErr != nil || target == nil {
+		model, resolveErr := s.ModelFactory.NewChatModel(ctx, access, llmID)
+		if resolveErr != nil || model == nil {
 			common.WarnCtx(ctx, "agentic_rag: skipping unresolvable failover model",
 				zap.String("llm_id", llmID), zap.Error(resolveErr))
 			continue
 		}
-		chain = append(chain, modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig))
+		chain = append(chain, model)
 	}
 	common.InfoCtx(ctx, "agentic model chain resolved",
 		zap.Int("chain", len(chain)), zap.String("primary", chat.LLMID))
@@ -254,23 +254,23 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 
 // agenticPrimaryModel resolves the dialog's own model, or the tenant default
 // when it selected none.
-func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, chat *entity.Chat) (*modelModule.ChatModel, error) {
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access ModelAccess, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
-		target *ModelTarget
-		err    error
+		model *modelModule.ChatModel
+		err   error
 	)
 	if chat.LLMID == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		model, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
 	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		model, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	}
-	if err != nil || target == nil {
-		if err == nil {
-			err = fmt.Errorf("no chat model resolved for tenant %s", chat.TenantID)
-		}
+	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", err)
 	}
-	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig), nil
+	if model == nil {
+		return nil, fmt.Errorf("resolve chat model: no chat model resolved for tenant %s", chat.TenantID)
+	}
+	return model, nil
 }
 
 // agenticFailoverModelIDs reads the dialog's ordered failover list from

@@ -83,6 +83,8 @@ export default {
       searchKnowledgePlaceholder: 'Cari',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Lanjutkan pengunggahan, lalu sistem akan secara otomatis mengalihkan file-file ini ke konfigurasi parsing bawaan yang didukung.',
       dataset: 'Dataset',
       testing: 'Pengujian pengambilan',
       files: 'file',

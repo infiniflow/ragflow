@@ -368,7 +368,7 @@ export default {
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
       reselectParserAfterUploadHint:
-        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+        '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -2555,7 +2555,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       watermarkText: '水印文本',
       headerText: '页眉文本',
       footerText: '页脚文本',
-      includeDownloadInfoInContent: '在内容末尾附加下载信息',
       contentPlaceholder: '输入 Markdown 内容...',
       filenamePlaceholder: 'document.ext（留空则自动生成）',
       contentRequired: '内容不能为空',

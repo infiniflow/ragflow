@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -41,7 +40,7 @@ const navNamingMaxRetries = 2
 // chat model, mirroring Python dataset_nav._llm_create_summary / _llm_merge.
 //
 // It sits next to NavEmbedder in the service package, not with the seam it
-// implements, because it needs ModelProviderService and no inner package may
+// implements, because it needs ModelFactory and no inner package may
 // import service: service already imports nlp (chat_pipeline, deep_researcher,
 // memory) and nav (dataset_artifact_service). The nav package is deliberately a
 // dependency-light leaf — the agent tool layer and the nlp implementation both
@@ -49,7 +48,7 @@ const navNamingMaxRetries = 2
 // out here. Moving this type into nav would need the model access reduced to an
 // injected interface first.
 type NavMergeLLM struct {
-	modelSvc *ModelProviderService
+	modelFactory *ModelFactory
 	// llmID is the configured chat model ref (a composite
 	// "model@instance@provider" name or a tenant model id). Empty resolves the
 	// tenant's default chat model, matching the dataset-level deduper's fallback.
@@ -57,8 +56,8 @@ type NavMergeLLM struct {
 }
 
 // NewNavMergeLLM builds the production nav cluster namer/merger.
-func NewNavMergeLLM(modelSvc *ModelProviderService, llmID string) *NavMergeLLM {
-	return &NavMergeLLM{modelSvc: modelSvc, llmID: llmID}
+func NewNavMergeLLM(modelFactory *ModelFactory, llmID string) *NavMergeLLM {
+	return &NavMergeLLM{modelFactory: modelFactory, llmID: llmID}
 }
 
 // navNamingPrompt is the cluster-naming prompt (Python _llm_create_summary) plus
@@ -99,12 +98,12 @@ func (l *NavMergeLLM) CreateSummary(ctx context.Context, tenantID, text string) 
 	if text == "" {
 		return "", "", nil
 	}
-	llmID, err := l.chatModelID(ctx, tenantID)
+	llmID, err := l.chatModelRef()
 	if err != nil {
 		return "", "", err
 	}
 	temp := navNamingTemperature
-	reply, err := kccommon.GenJSON(ctx, navChatInvoker{modelSvc: l.modelSvc, tenantID: tenantID, llmID: llmID},
+	reply, err := kccommon.GenJSON(ctx, navChatInvoker{modelFactory: l.modelFactory, tenantID: tenantID, modelRef: llmID},
 		kccommon.ChatRequest{UserPrompt: navNamingPrompt(text), Temperature: &temp}, navNamingMaxRetries)
 	if err != nil {
 		return "", "", err
@@ -130,35 +129,25 @@ func (l *NavMergeLLM) Merge(ctx context.Context, tenantID string, texts []string
 	if added == "" {
 		return existing, nil
 	}
-	llmID, err := l.chatModelID(ctx, tenantID)
+	llmID, err := l.chatModelRef()
 	if err != nil {
 		return "", err
 	}
 	temp := navNamingTemperature
-	reply, err := navChatText(ctx, l.modelSvc, tenantID, llmID, "", navMergePrompt(existing, added), &temp)
+	reply, err := navChatText(ctx, l.modelFactory, tenantID, llmID, "", navMergePrompt(existing, added), &temp)
 	if err != nil {
 		return "", err
 	}
 	return navMergedFromReply(reply, existing), nil
 }
 
-// chatModelID resolves the chat model ref to call: the configured one, else the
-// tenant's default chat model.
-func (l *NavMergeLLM) chatModelID(ctx context.Context, tenantID string) (string, error) {
-	if l.modelSvc == nil {
-		return "", fmt.Errorf("datasetnav: model provider service not initialized")
+// chatModelRef returns the configured chat-model reference. An empty reference
+// asks ModelFactory to construct the tenant's default model at call time.
+func (l *NavMergeLLM) chatModelRef() (string, error) {
+	if l.modelFactory == nil {
+		return "", fmt.Errorf("datasetnav: model factory not initialized")
 	}
-	if ref := strings.TrimSpace(l.llmID); ref != "" {
-		return ref, nil
-	}
-	target, err := l.modelSvc.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
-	if err != nil {
-		return "", fmt.Errorf("datasetnav: resolve default chat model for tenant %s: %w", tenantID, err)
-	}
-	if target == nil || strings.TrimSpace(target.ModelID) == "" {
-		return "", fmt.Errorf("datasetnav: no default chat model for tenant %s", tenantID)
-	}
-	return target.ModelID, nil
+	return strings.TrimSpace(l.llmID), nil
 }
 
 // navSummaryFromReply mirrors Python _llm_create_summary's response handling:
@@ -213,17 +202,17 @@ func navReplyString(v any) string {
 	return strings.TrimSpace(s)
 }
 
-// navChatInvoker adapts the model provider service to the knowledge-compiler
+// navChatInvoker adapts a factory-created chat model to the knowledge-compiler
 // ChatInvoker seam, so the JSON naming prompt reuses kccommon.GenJSON's
 // extraction/repair/retry handling (the Go counterpart of Python gen_json).
 type navChatInvoker struct {
-	modelSvc *ModelProviderService
-	tenantID string
-	llmID    string
+	modelFactory *ModelFactory
+	tenantID     string
+	modelRef     string
 }
 
 func (c navChatInvoker) Chat(ctx context.Context, req kccommon.ChatRequest) (*kccommon.ChatResponse, error) {
-	content, err := navChatText(ctx, c.modelSvc, c.tenantID, c.llmID, req.SystemPrompt, req.UserPrompt, req.Temperature)
+	content, err := navChatText(ctx, c.modelFactory, c.tenantID, c.modelRef, req.SystemPrompt, req.UserPrompt, req.Temperature)
 	if err != nil {
 		return nil, err
 	}
@@ -232,12 +221,22 @@ func (c navChatInvoker) Chat(ctx context.Context, req kccommon.ChatRequest) (*kc
 
 // navChatText dispatches one non-streaming chat call. system may be empty (both
 // nav prompts are single-turn, matching Python's gen_json("", prompt, ...)).
-func navChatText(ctx context.Context, modelSvc *ModelProviderService, tenantID, llmID, system, user string, temperature *float64) (string, error) {
-	if modelSvc == nil {
-		return "", fmt.Errorf("datasetnav: model provider service not initialized")
+func navChatText(ctx context.Context, modelFactory *ModelFactory, tenantID, modelRef, system, user string, temperature *float64) (string, error) {
+	if modelFactory == nil {
+		return "", fmt.Errorf("datasetnav: model factory not initialized")
 	}
-	if strings.TrimSpace(llmID) == "" {
-		return "", fmt.Errorf("datasetnav: chat model is not resolved")
+	access := ModelAccess{TenantID: tenantID}
+	var (
+		chatModel *modelModule.ChatModel
+		err       error
+	)
+	if strings.TrimSpace(modelRef) == "" {
+		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
+	} else {
+		chatModel, err = modelFactory.NewChatModel(ctx, access, modelRef)
+	}
+	if err != nil {
+		return "", err
 	}
 	config := &modelModule.ChatConfig{}
 	if temperature != nil {
@@ -247,7 +246,7 @@ func navChatText(ctx context.Context, modelSvc *ModelProviderService, tenantID, 
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
 	}
-	resp, err := modelSvc.Chat(ctx, tenantID, llmID, msgs, config)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, config, nil)
 	if err != nil {
 		return "", err
 	}

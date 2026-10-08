@@ -19,11 +19,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
-	"strings"
 )
 
 // SearchService search service
@@ -102,22 +103,9 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, terms, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				searches = searches[start:end]
-			} else {
-				searches = []*entity.SearchListItem{}
-			}
 		}
 	}
 
@@ -695,7 +683,6 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 // GetDetail gets search details by ID including search_config
 func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
-
 	if err != nil {
 		return nil, err
 	}
