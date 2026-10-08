@@ -425,13 +425,7 @@ func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenan
 		return nil
 	}
 	// model_info not provided — add all factory default models.
-	// Mirrors Python's create_provider_instance
-	// (api/apps/services/provider_api_service.py:506-531).
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	factoryProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if factoryProvider == nil {
 		return nil
 	}
