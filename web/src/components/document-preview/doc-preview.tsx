@@ -16,6 +16,7 @@
 
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import {
   DocxEditorViewer,
@@ -27,6 +28,7 @@ import {
 import classNames from 'classnames';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import {
   isZipLikeBlob,
@@ -171,6 +173,20 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const showContent = !loading && !error;
+  const { t } = useTranslation();
+  const handleDownload = useCallback(async () => {
+    if (!url) return;
+    try {
+      const response = await request(url, {
+        method: 'GET',
+        responseType: 'blob',
+      });
+      const filename = url.split('/').pop() || 'document';
+      downloadFileFromBlob(response.data, filename);
+    } catch {
+      message.error(t('message.failed'));
+    }
+  }, [url, t]);
   const { zoomScale, minZoom, maxZoom, handleZoomIn, handleZoomOut } =
     useDocxPreviewZoom({
       url,
@@ -322,9 +338,13 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
                 <br />
                 {error}
               </p>
-              <a href={url} className="text-accent-primary underline mt-4 inline-block">
-                Download file
-              </a>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="appearance-none border-0 bg-transparent p-0 text-accent-primary underline mt-4 inline-block"
+              >
+                {t('common.downloadFile')}
+              </button>
             </div>
           </div>
         )}

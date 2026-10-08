@@ -44,6 +44,7 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
+      downloadFile: '下载文件',
       figure: '引文',
       close: '关闭',
       preview: '预览',
