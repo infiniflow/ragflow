@@ -95,6 +95,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
 		return NewMistralModel(baseURL, urlSuffix), nil
+	case "voxell forge":
+		return NewVoxellForgeModel(baseURL, urlSuffix), nil
 	case "upstage":
 		return NewUpstageModel(baseURL, urlSuffix), nil
 	case "stepfun":

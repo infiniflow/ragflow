@@ -110,6 +110,7 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  VoxellForge = 'Voxell Forge',
 }
 
 // Please lowercase the file name
@@ -203,6 +204,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.VoxellForge]: 'voxellforge',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -231,6 +233,7 @@ export const APIMapUrl = {
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.VoxellForge]: 'https://dash.voxell.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
