@@ -61,6 +61,7 @@ var registry = map[string]Factory{
 	"search_my_dataset":          buildRetrievalTool,
 	"search_my_dateset":          buildRetrievalTool,
 	"searxng":                    buildSearXNGTool,
+	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
 	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
@@ -81,6 +82,7 @@ var canvasToolNames = map[string]string{
 	"keenablesearch": "keenable",
 	"queritcontents": "querit_contents",
 	"queritsearch":   "querit_search",
+	"sofyasearch":    "sofya",
 	"tavilyextract":  "tavily_extract",
 	"tavilysearch":   "tavily",
 	"yahoofinance":   "yahoo_finance",
@@ -740,6 +742,33 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires api_key for realtime mode", "keenable")
 	}
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
+}
+
+func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := sofyaDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "sofya")
+		}
+	}
+	if value, ok := params["search_depth"]; ok {
+		searchDepth, valid := value.(string)
+		if !valid || (searchDepth != "basic" && searchDepth != "snippets") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported search_depth %v", "sofya", value)
+		}
+		defaults.SearchDepth = searchDepth
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "sofya")
+		}
+		defaults.TopN = topN
+	}
+	return newSofyaTool(nil, apiKey, defaults), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

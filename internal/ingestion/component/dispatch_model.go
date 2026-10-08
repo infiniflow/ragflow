@@ -332,11 +332,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if targetProvider == nil {
 		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}
