@@ -2537,6 +2537,13 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 	Type    string
 	Default interface{}
 }) string {
+	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns)
+}
+
+func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
 	if len(condition) == 0 {
 		return ""
 	}
@@ -2544,6 +2551,22 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 	var cond []string
 
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			var children []string
+			for _, child := range types.FilterClauses(v) {
+				if expr := equivalentConditionToStrRaw(child, tableColumns); expr != "" {
+					children = append(children, "("+expr+")")
+				}
+			}
+			operator := " AND "
+			if k == "or" {
+				operator = " OR "
+			}
+			if len(children) > 0 {
+				cond = append(cond, joinBalanced(children, operator))
+			}
+			continue
+		}
 		if k == "_id" || utility.IsEmpty(v) {
 			continue
 		}
@@ -2551,11 +2574,8 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range m {
-					if kk == "exists" {
-						// For must_not exists, use !='' since we don't have table schema
-						cond = append(cond, fmt.Sprintf("NOT (%v!='')", vv))
-					}
+				if expr := equivalentConditionToStrRaw(m, tableColumns); expr != "" {
+					cond = append(cond, "NOT ("+expr+")")
 				}
 			}
 			continue

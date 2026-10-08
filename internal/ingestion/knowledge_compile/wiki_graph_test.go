@@ -34,7 +34,7 @@ func page(pageType, slug string, outlinks ...string) wikiPageProjection {
 
 func findEntity(rows []map[string]interface{}, slug string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
 			return r
 		}
 	}
@@ -43,7 +43,7 @@ func findEntity(rows []map[string]interface{}, slug string) map[string]interface
 
 func findRelation(rows []map[string]interface{}, from, to string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
 			return r
 		}
 	}
@@ -252,8 +252,8 @@ func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	if e == nil {
 		t.Fatalf("missing entity")
 	}
-	if e["entity_type_kwd"] != "wiki_concept" {
-		t.Fatalf("expected entity_type_kwd=wiki_concept, got %v", e["entity_type_kwd"])
+	if e["entity_type_kwd"] != "concept" {
+		t.Fatalf("expected entity_type_kwd=concept, got %v", e["entity_type_kwd"])
 	}
 	// id format: wiki_entity:{kb}:{slug} xxhashed to 16 hex chars.
 	id, _ := e["id"].(string)
