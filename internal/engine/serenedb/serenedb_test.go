@@ -71,6 +71,14 @@ func TestBuildFiltersArrayUsesListContains(t *testing.T) {
 	mustContain(t, got[0], "list_contains(tag_kwd, 'b')")
 }
 
+func TestBuildFiltersKnowledgeGraphCompatibility(t *testing.T) {
+	got := buildFilters(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}})
+	want := "(type_kwd IN ('entity', 'relation') OR knowledge_graph_kwd IN ('entity', 'relation'))"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("graph filter = %v, want %q", got, want)
+	}
+}
+
 func TestBuildFiltersScalarAndIn(t *testing.T) {
 	scalar := buildFilters(map[string]interface{}{"doc_id": "d1"})
 	if len(scalar) != 1 || scalar[0] != "doc_id = 'd1'" {

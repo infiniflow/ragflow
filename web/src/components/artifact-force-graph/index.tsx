@@ -16,6 +16,7 @@
 
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
+import escape from 'lodash/escape';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
@@ -112,9 +113,9 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [],
   );
 
-  // Hover tooltip shows the entity description; empty string hides it
+  // ForceGraph treats tooltip strings as HTML; descriptions are plain text.
   const getNodeLabel = useCallback(
-    (node: ArtifactGraphNode) => node.description ?? '',
+    (node: ArtifactGraphNode) => escape(node.description ?? ''),
     [],
   );
 
