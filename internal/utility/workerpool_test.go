@@ -110,6 +110,138 @@ func TestWorkerPoolResize(t *testing.T) {
 	}
 }
 
+// TestWorkerPool_ResizeShrinkThenGrowDoesNotOverspawn covers the
+// "shrink then grow while idle" bug: workers only retire after completing a
+// job, so an idle pool keeps its old live count. Resize computes the spawn
+// count from the *previous* desired (now low) instead of the live count, and
+// grows back to a value still below live — spawning (target − desired) extra
+// goroutines on top of the still-idle original. With the fix the spawn count
+// is computed from live, so growing to a value ≤ live starts zero workers
+// while growing to > live starts only the gap.
+//
+// The test also verifies queued work continues to run after the sequence, so
+// the fix does not regress throughput.
+func TestWorkerPool_ResizeShrinkThenGrowDoesNotOverspawn(t *testing.T) {
+	for iter := 0; iter < 10; iter++ {
+		pool := NewWorkerPool[int, int](4, 32, func(_ context.Context, in int) (int, error) {
+			return in, nil
+		})
+
+		// Wait for the 4 initial workers to register in liveWorkers. The
+		// worker goroutine increments liveWorkers before parking on the
+		// workChan receive, but NewWorkerPool does not synchronize on that
+		// increment, so reading liveWorkers immediately after construction
+		// can race with worker startup.
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && pool.Stats().LiveWorkers < 4 {
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		// No work submitted between the two Resize calls, so the 4 initial
+		// workers stay idle and never trigger self-retirement.
+		pool.Resize(1)
+		pool.Resize(3)
+		// Pre-fix: live=4 (idle) + 2 (new) = 6.
+		// Post-fix: live=4, growing to 3 ≤ 4 spawns zero extra workers.
+		if got := pool.Stats().LiveWorkers; got != 4 {
+			pool.StopWait()
+			t.Fatalf("iter %d: live=%d, want 4 (shrink-then-grow overspawned)", iter, got)
+		}
+
+		ctx := t.Context()
+		for i := 0; i < 8; i++ {
+			f, err := pool.Submit(ctx, i)
+			if err != nil {
+				pool.StopWait()
+				t.Fatalf("iter %d Submit(%d): %v", iter, i, err)
+			}
+			res, err := f.Wait(ctx)
+			if err != nil {
+				pool.StopWait()
+				t.Fatalf("iter %d Wait(%d): %v", iter, i, err)
+			}
+			if res.Value != i {
+				pool.StopWait()
+				t.Fatalf("iter %d result[%d] = %d, want %d", iter, i, res.Value, i)
+			}
+		}
+		pool.StopWait()
+	}
+}
+
+// TestWorkerPool_ShrinkDoesNotRetireBelowTarget covers the retirement race:
+// N workers all finish a job at the same instant, all observe live > desired
+// concurrently, and (without serialization) all return — taking live below
+// desired. With the retirement decision serialized under the same mu Resize
+// holds, the first worker to retire decrements live, the next worker sees the
+// decremented count, and retirements stop exactly at desired.
+//
+// 16 workers gives the race a wide enough window to manifest reliably under
+// -race (the OS schedules enough of them into the retirement check
+// concurrently that the un-decremented live value is observed by all of them).
+func TestWorkerPool_ShrinkDoesNotRetireBelowTarget(t *testing.T) {
+	const nWorkers = 16
+	const nRetained = 2
+	for iter := 0; iter < 50; iter++ {
+		release := make(chan struct{})
+		started := make(chan struct{}, nWorkers)
+		pool := NewWorkerPool[int, int](nWorkers, 64, func(_ context.Context, in int) (int, error) {
+			started <- struct{}{}
+			<-release
+			return in, nil
+		})
+
+		var futures [nWorkers]WorkerPoolFuture[int, int]
+		for i := 0; i < nWorkers; i++ {
+			f, err := pool.Submit(t.Context(), i)
+			if err != nil {
+				close(release)
+				pool.StopWait()
+				t.Fatalf("iter %d Submit(%d): %v", iter, i, err)
+			}
+			futures[i] = f
+		}
+		for i := 0; i < nWorkers; i++ {
+			<-started
+		}
+		// All nWorkers workers are blocked in the handler. Shrink to
+		// nRetained: pre-fix the desired=nRetained is now below the
+		// nWorkers still-live workers; once we release them they can all
+		// decide to retire before any of them decrements liveWorkers,
+		// leaving live < nRetained. Post-fix retirements serialize under mu
+		// and stop at exactly nRetained.
+		pool.Resize(nRetained)
+		close(release)
+		for i := 0; i < nWorkers; i++ {
+			res, err := futures[i].Wait(context.Background())
+			if err != nil {
+				pool.StopWait()
+				t.Fatalf("iter %d Wait(%d): %v", iter, i, err)
+			}
+			if res.Value != i {
+				pool.StopWait()
+				t.Fatalf("iter %d result[%d] = %d, want %d", iter, i, res.Value, i)
+			}
+		}
+		// Give any in-flight retirement goroutine a chance to land its
+		// decrement. Stats() reads liveWorkers atomically, but the race we're
+		// pinning is the decision order under mu, not the visibility of the
+		// final write.
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if got := pool.Stats().LiveWorkers; got == nRetained {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := pool.Stats().LiveWorkers; got != nRetained {
+			pool.StopWait()
+			t.Fatalf("iter %d: live=%d, want %d (retirement raced below target)", iter, got, nRetained)
+		}
+		pool.StopWait()
+	}
+}
+
 // TestStopWaitConcurrentSubmitDoesNotPanic hammers Submit from several
 // goroutines while StopWait runs, repeated many times. Pre-fix, a submit that
 // passed the stopped-state check before StopWait closed workChan panicked with
