@@ -487,6 +487,34 @@ func (p *DatasetProvider) chunkToNode(chunk map[string]interface{}) *Node {
 
 // ==================== Document Operations ====================
 
+// buildDocumentsListPath appends page/page_size as URL query parameters to
+// the documents list path. The server's ListDocuments handler reads them
+// via c.Query, not from the headers argument of HTTPClientInterface.Request,
+// so they must go on the URL.
+//
+// When opts is nil or Limit is non-positive, page_size falls back to 10 so
+// the offset/page conversion always has a non-zero divisor (a non-positive
+// Limit with a positive Offset used to panic on Offset/opts.Limit). When
+// Limit is non-positive the offset is ignored too, since page=1 is the
+// only valid choice when the caller has not asked for a slice.
+func buildDocumentsListPath(path string, opts *ListOptions) string {
+	if opts == nil {
+		return path
+	}
+	pageSize := opts.Limit
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	page := 1
+	if opts.Offset > 0 && opts.Limit > 0 {
+		page = opts.Offset/opts.Limit + 1
+	}
+	return path + "?" + utils.APIQuery(
+		"page_size", strconv.Itoa(pageSize),
+		"page", strconv.Itoa(page),
+	)
+}
+
 func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, opts *ListOptions) (*Result, error) {
 	// First get the dataset ID
 	ds, err := p.getDataset(ctx, datasetName)
@@ -499,19 +527,12 @@ func (p *DatasetProvider) listDocuments(ctx stdctx.Context, datasetName string, 
 		return nil, fmt.Errorf("dataset ID not found")
 	}
 
-	// Build query parameters
-	params := make(map[string]string)
-	if opts != nil {
-		if opts.Limit > 0 {
-			params["page_size"] = fmt.Sprintf("%d", opts.Limit)
-		}
-		if opts.Offset > 0 {
-			params["page"] = fmt.Sprintf("%d", opts.Offset/opts.Limit+1)
-		}
-	}
-
-	path := utils.APIPath("/datasets", datasetID, "documents")
-	resp, err := p.httpClient.Request("GET", path, "auto", params, nil)
+	// Build the URL with page/page_size as query parameters. The server's
+	// ListDocuments handler reads them via c.Query, not from the headers
+	// argument to Request, so they must go on the URL — passing them as
+	// headers was a silent no-op on the server side.
+	path := buildDocumentsListPath(utils.APIPath("/datasets", datasetID, "documents"), opts)
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
