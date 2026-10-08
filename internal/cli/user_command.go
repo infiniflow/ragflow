@@ -3730,7 +3730,7 @@ func (c *CLI) oneshotChatCompletions(url string, body map[string]interface{}) (R
 	return out, nil
 }
 
-// streamChatCompletions performs a streaming POST and collects SSE chunks.
+// streamChatCompletions performs a streaming POST and displays native answer events.
 func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (ResponseIf, error) {
 	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 	reader, err := httpClient.RequestStream("POST", url, httpClient.AuthKind(), nil, body)
@@ -3740,38 +3740,15 @@ func (c *CLI) streamChatCompletions(url string, body map[string]interface{}) (Re
 	defer reader.Close()
 
 	start := time.Now()
-	scanner := bufio.NewScanner(reader)
-	var fullContent string
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimPrefix(line, "data:")
-		payload = strings.TrimSpace(payload)
-		if payload == "[DONE]" {
-			continue
-		}
-		var chunk struct {
-			Code    int                `json:"code"`
-			Message string             `json:"message"`
-			Data    chatCompletionData `json:"data"`
-		}
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			continue
-		}
-		if chunk.Data.Answer != "" {
-			fullContent += chunk.Data.Answer
-		}
+	legacy, _ := body["legacy"].(bool)
+	data, printed, err := consumeChatCompletionStream(reader, os.Stdout, legacy)
+	if err != nil {
+		return nil, fmt.Errorf("chat completions stream: %w", err)
 	}
-
-	fullContent = strings.TrimLeft(fullContent, "\n\r")
 	return &ChatCompletionsResponse{
-		Duration: time.Since(start).Seconds(),
-		Data: &chatCompletionData{
-			Answer: fullContent,
-		},
-		streamed: true,
+		Duration:      time.Since(start).Seconds(),
+		Data:          data,
+		answerPrinted: printed,
 	}, nil
 }
 
