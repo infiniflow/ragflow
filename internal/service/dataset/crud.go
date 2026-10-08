@@ -105,10 +105,14 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 
 	if req.ParserConfig != nil {
-		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
-			return nil, common.CodeArgumentError, err
+		dropped, err := ValidateParserConfig(req.ParserConfig)
+		if len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("tenant_id", tenantID),
+			)
 		}
-		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+		if err != nil {
 			return nil, common.CodeArgumentError, err
 		}
 		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {

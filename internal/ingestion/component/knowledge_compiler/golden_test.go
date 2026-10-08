@@ -165,8 +165,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 	// compact graph blob was removed by #19474).
 	graphCount, nodeCount, edgeCount := 0, 0, 0
 	for _, p := range prods {
-		// knowledge_graph_kwd discriminates the structure graph rows.
-		kind, _ := p.GetExtraString("knowledge_graph_kwd")
+		// type_kwd discriminates the structure graph rows.
+		kind, _ := p.GetExtraString("type_kwd")
 		switch kind {
 		case "graph":
 			graphCount++

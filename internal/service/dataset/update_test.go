@@ -928,8 +928,6 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroup{},
-		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)

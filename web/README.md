@@ -39,5 +39,5 @@ _Replace `[YOUR_MACHINE_IP]` with your actual machine IP address (e.g., `http://
 Ctrl + C or
 
 ```bash
-kill -f "umi dev"
+kill -f "vite"
 ```

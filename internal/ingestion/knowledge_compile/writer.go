@@ -160,7 +160,7 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 }
 
 // datasetStructureSupported reports whether the running doc engine can filter
-// the dataset-structure fields (knowledge_graph_kwd + scope_kwd + raw
+// the dataset-structure fields (type_kwd + scope_kwd + raw
 // compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
 // support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
 // these filter keys and would reject the query or silently drop unknown fields.
@@ -466,7 +466,7 @@ func pageEngineString(value any) string {
 // description, the union of source docs/chunks, and the bucket vector. Rows are
 // available_int=1 so the dataset-level structure index is searchable; the raw
 // compile kind (timeline/graph/mindmap) is stamped on compile_kwd and the
-// entity/relation discriminator on knowledge_graph_kwd.
+// entity/relation discriminator on type_kwd.
 func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb string, buckets []StructureBucket) error {
 	if len(buckets) == 0 {
 		return nil
@@ -560,12 +560,10 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		if b.FromEntity != "" || b.ToEntity != "" {
 			// relation row: carries from/to entities; kind=relation, no name_kwd.
-			row["knowledge_graph_kwd"] = "relation"
 			row["type_kwd"] = "relation"
 			row["from_entity_kwd"] = b.FromEntity
 			row["to_entity_kwd"] = b.ToEntity
 		} else {
-			row["knowledge_graph_kwd"] = "entity"
 			row["type_kwd"] = "entity"
 			row["name_kwd"] = b.Name
 			row["entity_type_kwd"] = b.Type
@@ -585,7 +583,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	// Python _META_ROW_KWD legacy field NOT present in the Infinity/ES/OS schemas,
 	// so writing it would fail with an undefined-column error — see review). It is
 	// a write/delete-side marker — GET discovery does NOT read it (it scans
-	// knowledge_graph_kwd=["entity"] rows instead, per §6).
+	// type_kwd=["entity"] rows instead, per §6).
 	seenKwd := map[string]bool{}
 	for _, b := range buckets {
 		ckwd := b.CompileKwd
@@ -603,7 +601,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			"available_int":        0,
 			"compile_kwd":          ckwd,
 			"scope_kwd":            "dataset",
-			"knowledge_graph_kwd":  "kg_build_meta",
+			"type_kwd":             "kg_build_meta",
 			"create_time":          now.Format("2006-01-02 15:04:05"),
 			"create_timestamp_flt": float64(now.Unix()),
 		})
@@ -654,7 +652,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			KbIDs:      []string{kb},
 			SelectFields: []string{
 				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
-				"knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 				"content_with_weight", "source_doc_ids", "source_chunk_ids",
 			},
 			Filter: map[string]interface{}{
@@ -743,7 +741,7 @@ func structureRowIdentity(row map[string]interface{}) string {
 	template := structureTemplateIdentity(templateID, structureString(row["compilation_template_kind_kwd"]))
 	compileKwd := structureCompileKind(structureString(row["compile_kwd"]))
 	payload := structureRowPayload(row)
-	if strings.EqualFold(structureString(row["knowledge_graph_kwd"]), "relation") {
+	if strings.EqualFold(structureRowType(row), "relation") {
 		from := structureString(row["from_entity_kwd"])
 		to := structureString(row["to_entity_kwd"])
 		if from == "" {
@@ -759,6 +757,13 @@ func structureRowIdentity(row map[string]interface{}) string {
 		name = structureString(payload["name"])
 	}
 	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name)
+}
+
+func structureRowType(row map[string]interface{}) string {
+	if value := structureString(row["type_kwd"]); value != "" {
+		return value
+	}
+	return structureString(row["knowledge_graph_kwd"])
 }
 
 func structureRowPayload(row map[string]interface{}) map[string]interface{} {
@@ -831,7 +836,7 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 			SelectFields: []string{"id", "source_doc_ids", "compile_kwd"},
 			// Match dataset-scope entity/relation rows across ALL structure kinds
 			// (timeline/graph/session_graph/mindmap), which now each stamp their
-			// raw compile_kwd; knowledge_graph_kwd ∈ {entity,relation} + scope_kwd
+			// raw compile_kwd; type_kwd ∈ {entity,relation} + scope_kwd
 			// =dataset is the kind-agnostic predicate (plan §1, §4.2).
 			Filter: map[string]interface{}{
 				"kb_id":               kb,
@@ -1614,8 +1619,8 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 				return errDatasetStructureUnsupported()
 			}
 			// structure/mindmap dataset rows are scope_kwd="dataset" +
-			// knowledge_graph_kwd ∈ {entity,relation,kg_build_meta} with a raw
-			// compile_kwd (timeline/graph/session_graph/mindmap). knowledge_graph_kwd
+			// type_kwd ∈ {entity,relation,kg_build_meta} with a raw
+			// compile_kwd (timeline/graph/session_graph/mindmap). type_kwd
 			// is required: wiki merged rows ALSO carry scope_kwd="dataset" (W5), so
 			// a scope-only sweep would wrongly delete wiki merged rows too (review
 			// Major). kg_build_meta (the build marker) is deleted together with the

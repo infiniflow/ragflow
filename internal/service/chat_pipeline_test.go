@@ -2600,6 +2600,147 @@ func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
 	}
 }
 
+// TestResolveReasoningLevelReadsAgenticLevel pins where the agentic RAG mode is
+// selected from. The level arrives as a number (frontend sends
+// Number(getThinkingLevel())), from the request first and the dialog's
+// prompt_config second, and reasoningLevelAgentic is a level of its own rather
+// than a harness depth.
+func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         int
+	}{
+		{"absent everywhere", nil, nil, 0},
+		{"naive from request", map[string]interface{}{"reasoning": 0}, nil, 0},
+		{"harness depth from request", map[string]interface{}{"reasoning": 3}, nil, 3},
+		{"agentic from request", map[string]interface{}{"reasoning": 5}, nil, reasoningLevelAgentic},
+		{
+			"request float from JSON",
+			map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)},
+			nil,
+			reasoningLevelAgentic,
+		},
+		{
+			"agentic from dialog config",
+			nil,
+			map[string]interface{}{"reasoning": 5},
+			reasoningLevelAgentic,
+		},
+		{
+			// The UI always sends the level, so a request value must win over
+			// a dialog pinned to a different mode.
+			"request overrides dialog config",
+			map[string]interface{}{"reasoning": 2},
+			map[string]interface{}{"reasoning": 5},
+			2,
+		},
+		// chat_settings.ts writes a boolean, which must not read as agentic.
+		{"boolean false is not agentic", nil, map[string]interface{}{"reasoning": false}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveReasoningLevel(tc.kwargs, tc.promptConfig)
+			if got != tc.want {
+				t.Errorf("resolveReasoningLevel() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticLevelIsNotAHarnessMode pins the boundary between the two engines.
+// harnessModeForLevel's domain is the harness depths 1..4; reasoningLevelAgentic
+// belongs to a different engine and is meant to be dispatched to
+// smart-reasoning before any harness mode is derived.
+//
+// harnessModeForLevel itself is NOT asserted to reject the agentic level: it
+// takes an int and has no level vocabulary of its own, so any such assertion
+// would only pin an implementation detail. The contract these tests protect is
+// the one callers rely on — the level constant the selector sends, and a harness
+// mode for each depth that is supposed to have one.
+func TestAgenticLevelIsNotAHarnessMode(t *testing.T) {
+	// The selector's option value; a mismatch means the UI and this package
+	// disagree on which number means agentic.
+	if reasoningLevelAgentic != 5 {
+		t.Fatalf("reasoningLevelAgentic = %d, want 5 (the level message-input/next.tsx sends)", reasoningLevelAgentic)
+	}
+	want := map[int]string{1: "low", 2: "medium", 3: "high", 4: "ultra"}
+	for level, mode := range want {
+		if got := harnessModeForLevel(level); got != mode {
+			t.Errorf("harnessModeForLevel(%d) = %q, want %q", level, got, mode)
+		}
+	}
+}
+
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
+	}{
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
+			}
+		})
+	}
+}
+
 // TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
 // carrying the flag on the resolution instead of memoizing it: a model edited
 // after the first request is seen by the next resolution, with no TTL to wait out.

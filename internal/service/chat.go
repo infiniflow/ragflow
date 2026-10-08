@@ -129,22 +129,9 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, terms, keywords)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				chats = chats[start:end]
-			} else {
-				chats = []*entity.ChatListItem{}
-			}
 		}
 	}
 

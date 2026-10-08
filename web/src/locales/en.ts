@@ -563,9 +563,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
-      vectorSimilarityWeight: 'Vector similarity weight',
-      vectorSimilarityWeightTip:
-        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
@@ -1168,6 +1165,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelHighDescription: 'Deep reasoning',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
+      failoverModels: 'Failover models',
+      failoverModelsTip:
+        'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
+      failoverModelsPrimaryLabel: 'Primary model',
+      failoverModelsNoPrimary: 'Tenant default',
+      failoverModelsEmpty:
+        'No fallback model. Add at least one so a provider failure can be survived.',
+      failoverModelsAdd: 'Add a fallback model',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
