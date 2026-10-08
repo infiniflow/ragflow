@@ -340,8 +340,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
-				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
-				// replaces the retired RunIndex/TraceIndex/DeleteIndex /index routes.
+				// Scheduler compile-status contract; replaces the retired
+				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
 
 				// Knowledge-compilation wiki artifacts

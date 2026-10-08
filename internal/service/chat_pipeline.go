@@ -55,17 +55,17 @@ var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "too
 // and all their supporting helpers. Callers (OpenAIChatService, ChatSessionService)
 // compose it to avoid code duplication.
 type ChatPipelineService struct {
-	ModelProviderSvc *ModelProviderService
-	MetadataSvc      *MetadataService
-	kbDAO            *dao.KnowledgebaseDAO
+	ModelFactory *ModelFactory
+	MetadataSvc  *MetadataService
+	kbDAO        *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
 func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
-		ModelProviderSvc: NewModelProviderService(),
-		MetadataSvc:      NewMetadataService(),
-		kbDAO:            dao.NewKnowledgebaseDAO(),
+		ModelFactory: NewModelFactory(),
+		MetadataSvc:  NewMetadataService(),
+		kbDAO:        dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -1667,12 +1667,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		}
 
-		// 4. Build the chat model wrapper.
-		var target *ModelTarget
+		// 4. Construct the selected chat model through the factory.
+		access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+		var chatModel *modelModule.ChatModel
 		if strings.TrimSpace(chat.LLMID) == "" {
-			target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+			chatModel, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
 		} else {
-			target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+			chatModel, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 		}
 		if err != nil {
 			out <- AsyncChatResult{
@@ -1681,19 +1682,17 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 			return
 		}
-		chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
 		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				target, ttsErr := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
-				if ttsErr != nil || target == nil {
+				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+				if err != nil || ttsModel == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
-						zap.Error(ttsErr))
-				} else {
-					ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
+						zap.Error(err))
+					ttsModel = nil
 				}
 			}
 		}
@@ -2179,54 +2178,31 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	if chat.LLMID == "" {
-		// Branch 3: no explicit LLM → tenant default chat model.
-		target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
-		if err != nil || target == nil {
-			return nil, "", "", "", err
-		}
-		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-			target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, err,
-		)
-		if err != nil {
-			return nil, "", "", "", err
-		}
-		// Probe the default model's enrolled types so a vision-capable
-		// default dispatches as image2text (same rule as the explicit-LLM
-		// branches below), and carry the tool capability the resolution
-		// already computed.
-		cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, modelTargetRef(target))
-		cfg["is_tools"] = target.SupportsTools
-		return cfg, modelName, factoryName, baseURL, nil
+	access := ModelAccess{TenantID: chat.TenantID}
+	var info *modelModule.ModelInfo
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+	} else {
+		info, err = s.ModelFactory.ResolveInfo(ctx, access, entity.ModelTypeChat, chat.LLMID)
 	}
-
-	// Branches 1/2: explicit LLM. Resolve it as a Chat model first so an
-	// image2text-only enrollment is rejected. The enrolled type is resolved
-	// separately below only to decide whether image attachments are allowed.
-	//
-	// This mirrors Python, which resolves chat_mdl once in get_models() and then
-	// reads chat_mdl.is_tools off it (dialog_service.py rag_agent): one lookup, and
-	// the model that runs is by construction the model that was judged.
-	target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil,
-	)
+	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(info)
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	cfg["is_tools"] = target.SupportsTools
+	cfg["model_type"] = "chat"
+	if entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+		cfg["model_type"] = "image2text"
+	}
+	cfg["is_tools"] = info.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
 
-// reasoningNeedsAgenticGraph collapses Python rag_agent's two guards: reasoning on
-// and a tool-calling chat model. The loop exists so the outer model can call the
-// bound rag tool — with a model that never emits a tool_call the whole research
-// budget goes to turns that retrieve nothing, so Python routes those requests to
-// async_chat, the regular RAG branch below.
+// reasoningNeedsAgenticGraph gates the agentic path on reasoning being enabled
+// and the resolved chat model supporting tool calls.
 func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, reasoningLevel int) bool {
 	if chat == nil || reasoningLevel <= 0 {
 		return false
@@ -2239,19 +2215,10 @@ func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, r
 	return false
 }
 
-// chatConfigSupportsTools mirrors Python's `getattr(chat_mdl, "is_tools", False)`.
-// The flag rides on the resolved model config — getLLMModelConfig copies it off
-// the resolution (resolvedModel.supportsTools) — so this is a field read, exactly
-// like Python's, with no second lookup that could resolve a different model than
-// the one the request runs on. A missing flag means the model was never resolved,
-// which counts as unsupported, the same as Python's default.
 func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 	if cfg == nil {
 		return false
 	}
-	// Read the resolved capability as a boolean. ModelSolver accepts the
-	// persisted JSON boolean and the historical string representation before it
-	// stores the result on ModelTarget.
 	switch v := cfg["is_tools"].(type) {
 	case bool:
 		return v
@@ -2259,56 +2226,30 @@ func chatConfigSupportsTools(cfg map[string]interface{}) bool {
 		return strings.EqualFold(strings.TrimSpace(v), "true")
 	case float64:
 		return v != 0
+	default:
+		return false
 	}
-	return false
 }
 
-// resolveChatModelType renders the enrolled type of llmRef as the config's
-// model_type value. Probe failures are conservative: they yield "chat", which
-// drops image attachments instead of risking a provider-side rejection.
-func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	return chatModelTypeName(s.ModelProviderSvc.modelSolver().ResolveChatModelType(ctx, tenantID, llmRef))
-}
-
-// chatModelTypeName renders a resolved model type as the model_type value
-// downstream image-attachment dispatch compares against.
-func chatModelTypeName(modelType entity.ModelType) string {
-	if modelType.Has(entity.ModelTypeImage2Text) {
-		return "image2text"
+// buildLLMModelConfig returns only the public metadata needed by RAG's token
+// fitting and attachment dispatch. The persisted legacy max_tokens value is
+// the input/context budget; generated output limits are enforced by ChatModel
+// against ModelInfo.MaxOutput.
+func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
+	if info == nil {
+		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
 	}
-	return "chat"
-}
-
-// buildLLMModelConfig collapses the (driver, modelName, apiConfig,
-// _, err) tuple from a model-provider lookup into the dict-shaped
-// config the rest of async_chat.go consumes. Default "model_type" is
-// "chat"; callers that resolved a different type overwrite the key
-// before returning.
-func (s *ChatPipelineService) buildLLMModelConfig(
-	driver modelModule.ModelDriver,
-	modelName string,
-	apiConfig *modelModule.APIConfig,
-	maxTokens int,
-	err error,
-) (map[string]interface{}, string, string, string, error) {
-	if err != nil {
-		return nil, "", "", "", err
-	}
-	// Match Python: llm.max_tokens if llm.max_tokens else 8192.
-	if maxTokens == 0 {
-		maxTokens = 8192
+	contextLength := info.ContextLength
+	if contextLength <= 0 {
+		contextLength = 8192
 	}
 	cfg := map[string]interface{}{
 		"model_type":  "chat",
-		"llm_name":    modelName,
-		"max_tokens":  maxTokens,
-		"llm_factory": driver.Name(),
+		"llm_name":    info.Name,
+		"max_tokens":  contextLength,
+		"llm_factory": info.ProviderName,
 	}
-	baseURL := ""
-	if apiConfig != nil && apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	return cfg, modelName, driver.Name(), baseURL, nil
+	return cfg, info.Name, info.ProviderName, "", nil
 }
 
 // getModels resolves all models needed for the RAG pipeline.
@@ -2349,9 +2290,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
-				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
-			)
+			model, err := s.ModelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: embdTenantID}, kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2359,42 +2298,30 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 					zap.Error(err))
 				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
-			embModel = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+			embModel = model
 		}
 	}
 
 	// Chat model.
-	var target *ModelTarget
-	var err error
-	if strings.TrimSpace(chat.LLMID) == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
-	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
-	}
+	access := ModelAccess{TenantID: chat.TenantID}
 	var chatModel *modelModule.ChatModel
-	if err == nil {
-		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	if strings.TrimSpace(chat.LLMID) == "" {
+		chatModel, _ = s.ModelFactory.NewDefaultChatModel(ctx, access)
+	} else {
+		chatModel, _ = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		target, err := s.ModelProviderSvc.modelSolver().ResolveModelConfig(
-			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
-		)
-		if err == nil {
-			rerankModel = modelModule.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
-		}
+		rerankModel, _ = s.ModelFactory.NewRerankModel(ctx, access, chat.RerankID)
 	}
 
 	// TTS model.
 	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
-			if err == nil {
-				ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
-			}
+			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(ctx, access)
 		}
 	}
 
@@ -2942,17 +2869,19 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	var target *ModelTarget
-	var err error
+	access := ModelAccess{TenantID: chat.TenantID}
 	if strings.TrimSpace(chat.LLMID) == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
-	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		model, err := s.ModelFactory.NewDefaultChatModel(ctx, access)
+		if err != nil {
+			return nil
+		}
+		return model
 	}
+	model, err := s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	if err != nil {
 		return nil
 	}
-	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+	return model
 }
 
 // HydrateChunkVectors fills the `vector` field on each chunk in `kbinfos`
