@@ -110,10 +110,10 @@ var compiledSelectFields = []string{
 	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
-	// under knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd
+	// under type_kwd (structure: graph/entity/relation) / raptor_kwd
 	// (tree: root/summary). Without these the reader cannot restore Meta["kind"]
 	// and the dataset-nav dispatch would skip structure/tree products (B2).
-	"knowledge_graph_kwd", "raptor_kwd",
+	"type_kwd", "knowledge_graph_kwd", "raptor_kwd",
 	// mention_count_int round-trips the entity mention count for reprojection.
 	// (relation type lives in the content_with_weight payload, matching Python —
 	// there is NO relation_type_kwd column.)
@@ -421,12 +421,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		}
 	}
 	// Restore the structure/tree product kind. The component stores it under
-	// knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd (tree:
+	// type_kwd (structure: graph/entity/relation) / raptor_kwd (tree:
 	// root/summary), and the dataset-nav dispatch (B2) keys off Meta["kind"] to
 	// pick the root/graph summary. Prefer these over the generic entity default.
 	// Use asString (not a bare type assertion): the engine may return a
 	// list-wrapped keyword column (review Major).
-	if v := asString(c["knowledge_graph_kwd"]); v != "" {
+	if v := asString(c["type_kwd"]); v != "" {
+		meta["kind"] = v
+	} else if v := asString(c["knowledge_graph_kwd"]); v != "" {
 		meta["kind"] = v
 	} else if v := asString(c["raptor_kwd"]); v != "" {
 		meta["kind"] = v

@@ -83,6 +83,10 @@ export const LlmSettingFieldSchema = {
   max_tokens: z.number().optional(),
   parameter: z.string().optional(),
   thinking: z.enum(['default', 'enabled', 'disabled']).optional(),
+  // Ordered fallback models for the agentic agent. It has to be declared here
+  // or z.object() strips it: an undeclared key never reaches the form, so the
+  // editor renders nothing and the value is dropped on submit.
+  failover_llm_ids: z.array(z.string()).optional(),
 };
 
 export const LlmSettingSchema = {

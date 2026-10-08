@@ -1504,6 +1504,214 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}, nil
 }
 
+// esIndexNameForTenant maps one tenant id to its physical ES index. Regexp
+// search deliberately has no multi-tenant mode.
+func esIndexNameForTenant(tenantID string) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return "", fmt.Errorf("tenant id cannot be empty")
+	}
+	if strings.Contains(tenantID, ",") {
+		return "", fmt.Errorf("regexp search supports exactly one tenant")
+	}
+	return "ragflow_" + tenantID, nil
+}
+
+// SearchByRegexp executes a regex-match-only search over chunk content. It
+// reuses the same scope-filter builder and response converter as Search but
+// emits a Lucene `regexp` query on the chunk content field instead of text /
+// dense match expressions. This backs the agent's grep_chunks tool.
+//
+// The caller is responsible for translating a user regex into Lucene syntax;
+// patterns using unsupported constructs should be detected and handled by the
+// caller (fallback to broad recall + in-memory filtering).
+func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("regexp search request cannot be nil")
+	}
+	// Map the engine-agnostic tenant to this engine's physical index. ES
+	// stores one index per tenant (ragflow_<tenant>).
+	indexName, err := esIndexNameForTenant(req.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Pattern) == "" {
+		return nil, fmt.Errorf("regexp pattern cannot be empty")
+	}
+
+	const maxRegexpResults = 30
+	maxResults := maxRegexpResults
+	if req.ReturnAll {
+		maxResults = 10000
+	}
+
+	// Build the scope filter (kb_id terms + available_int + explicit filters).
+	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
+
+	// Attach the regexp query as a must clause on the chunk content field.
+	// Two critical ES keyword-regexp behaviours:
+	//  1. ES regexp matches the WHOLE field value, not a substring. To emulate
+	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
+	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
+	//     whose content is exactly "何进" (yielding 0 hits).
+	//  2. Set case_insensitive explicitly so the public grep contract remains
+	//     case-insensitive for Latin text; it has no effect on CJK characters.
+	regexpPattern := ".*(" + req.Pattern + ").*"
+	regexpClause := map[string]interface{}{
+		"regexp": map[string]interface{}{
+			"content_with_weight": map[string]interface{}{
+				"value":            regexpPattern,
+				"flags":            "NONE",
+				"case_insensitive": true,
+			},
+		},
+	}
+
+	if boolQuery == nil {
+		boolQuery = map[string]interface{}{}
+	}
+	if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+		if must, ok := boolMap["must"].([]interface{}); ok {
+			boolMap["must"] = append(must, regexpClause)
+		} else {
+			boolMap["must"] = []interface{}{regexpClause}
+		}
+	} else {
+		boolQuery = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []interface{}{regexpClause},
+			},
+		}
+	}
+
+	// Regexp search is intentionally a first-page operation. Callers that need
+	// deep reading use chunk anchors rather than offset pagination.
+	queryBody := map[string]interface{}{
+		"query": boolQuery,
+		"size":  maxResults,
+		"from":  0,
+	}
+
+	// When an explicit sort is requested (e.g. a document's reading order), push
+	// it down so the capped first page is deterministic.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
+			queryBody["sort"] = sortClause
+		}
+	}
+
+	// Narrow the returned _source to the requested fields when given. The regexp
+	// matches content_with_weight, so callers must keep it in SelectFields or the
+	// hits will carry no content.
+	if len(req.SelectFields) > 0 {
+		queryBody["_source"] = req.SelectFields
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
+		return nil, fmt.Errorf("error encoding regexp query: %w", err)
+	}
+
+	payload := append([]byte(nil), buf.Bytes()...)
+
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithBody(bytes.NewReader(payload)),
+		e.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
+		return nil, err
+	}
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
+	}
+
+	var esResp SearchResponse
+	decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+	res.Body.Close()
+	if decodeErr != nil {
+		common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
+		return nil, fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
+	}
+
+	allResults := convertESResponse(&esResp, "")
+	totalHits := esResp.Hits.Total.Value
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		allResults = sortByFields(allResults, req.Sort)
+	} else {
+		// Regexp matches have no meaningful relevance score. Preserve ES's
+		// returned order when no explicit deterministic sort was requested.
+	}
+	if len(allResults) > maxResults {
+		allResults = allResults[:maxResults]
+	}
+
+	return &types.SearchResult{
+		Chunks: allResults,
+		Total:  totalHits,
+	}, nil
+}
+
+// sortByFields orders chunks by the given OrderByExpr fields ascending. It is
+// used for deterministic ordering of regexp results. Numeric fields sort
+// numerically, string fields lexicographically.
+func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
+	if expr == nil || len(expr.Fields) == 0 {
+		return chunks
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		for _, field := range expr.Fields {
+			vi, oki := chunks[i][field.Field]
+			vj, okj := chunks[j][field.Field]
+			if !oki || !okj {
+				// Missing field sorts before a present one.
+				if !oki && !okj {
+					continue
+				}
+				return !oki
+			}
+			// Compare the two values and derive a stable equality key. The raw
+			// interface{} equality test below would panic on uncomparable types
+			// ([]interface{}, map from ES source), so the equality check always
+			// runs on string forms instead.
+			var less bool
+			var keyI, keyJ string
+			if fi, ei := toFloat64(vi); ei {
+				if fj, ej := toFloat64(vj); ej {
+					less = fi < fj
+				} else {
+					less = false // numeric before non-numeric
+				}
+				keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
+			} else {
+				si, siOk := vi.(string)
+				sj, sjOk := vj.(string)
+				if siOk && sjOk {
+					less = si < sj
+					keyI, keyJ = si, sj
+				} else {
+					keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
+					less = keyI < keyJ
+				}
+			}
+			if keyI != keyJ {
+				if field.Type == types.SortDesc {
+					return !less
+				}
+				return less
+			}
+		}
+		return false
+	})
+	return chunks
+}
+
 func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
@@ -1994,6 +2202,31 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 				if field, ok := condition["exists"].(string); ok && field != "" {
 					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
 				}
+			}
+			continue
+		}
+		if k == "knowledge_graph_kwd" {
+			var graphTypeClauses []interface{}
+			for _, field := range []string{"type_kwd", "knowledge_graph_kwd"} {
+				switch val := v.(type) {
+				case []interface{}:
+					if len(val) > 0 {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"terms": map[string]interface{}{field: val}})
+					}
+				case []string:
+					if len(val) > 0 {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"terms": map[string]interface{}{field: val}})
+					}
+				case string:
+					if val != "" {
+						graphTypeClauses = append(graphTypeClauses, map[string]interface{}{"term": map[string]interface{}{field: val}})
+					}
+				}
+			}
+			if len(graphTypeClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{"bool": map[string]interface{}{
+					"should": graphTypeClauses, "minimum_should_match": 1,
+				}})
 			}
 			continue
 		}

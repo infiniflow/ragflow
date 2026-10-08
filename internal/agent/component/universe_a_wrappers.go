@@ -195,6 +195,7 @@ func (c *retrievalComponent) GetInputForm() map[string]any {
 func (c *retrievalComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered chunks for downstream LLM prompts.",
+		"json":               "Chunk payloads under the DSL-declared output name (Array<Object>).",
 		"chunks":             "Raw chunk payloads (id, document_id, content, score).",
 	}
 }
@@ -218,7 +219,10 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			emptySelection = len(ids) == 0
 		}
 		if emptySelection {
-			return map[string]any{"_ERROR": "No dataset is selected."}, nil
+			return normalizeRetrievalOutputs(map[string]any{
+				"_ERROR":             "No dataset is selected.",
+				"formalized_content": "",
+			}), nil
 		}
 	}
 	common.Debug("agent retrieval component: invoke",
@@ -233,13 +237,9 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-	decoded := parseToolEnvelope(out)
-	if chunks, ok := decoded["chunks"]; ok {
-		if _, has := decoded["json"]; !has {
-			decoded["json"] = chunks
-		}
-	}
-	return decoded, nil
+
+	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
+
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -252,6 +252,33 @@ func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]
 	// nil-stream as "non-streaming node, read Invoke() output"
 	// — a fallback frame would confuse downstream cpn wiring.
 	return nil, nil
+}
+
+// normalizeRetrievalOutputs pins the Retrieval node's chunk array under both
+// output names the canvas resolves: `json` (the DSL-declared output, typed
+// Array<Object> by the frontend) and `chunks` (the tool envelope's name).
+//
+// The tool marshals its envelope with `chunks` tagged omitempty, so a
+// zero-hit search drops the key outright, as does every early-return
+// envelope (empty query, search error, GraphRAG opt-in) and
+// parseToolEnvelope's `_raw` fallback. Without this, a downstream
+// {{<id>@json}} reference dies in ResolveTemplate with "Can't find variable"
+// instead of seeing the empty result set. Emptying the array — rather than
+// leaving the key absent or nil — is what every other tool-backed search
+// component emits unconditionally, and it is the shape callers iterate over.
+func normalizeRetrievalOutputs(decoded map[string]any) map[string]any {
+	if decoded == nil {
+		decoded = make(map[string]any, 3)
+	}
+	chunks, ok := decoded["chunks"]
+	if !ok || chunks == nil {
+		chunks = []any{}
+	}
+	decoded["chunks"] = chunks
+	if existing, has := decoded["json"]; !has || existing == nil {
+		decoded["json"] = chunks
+	}
+	return decoded
 }
 
 // applyDefaults folds the node-level params into the per-call
