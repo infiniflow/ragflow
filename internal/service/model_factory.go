@@ -491,7 +491,10 @@ func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error 
 	if access.TenantID == "" {
 		return fmt.Errorf("%w: tenant id is required", errModelConfigUnavailable)
 	}
-	if access.UserID == "" {
+	// A user's personal tenant uses the user ID as its tenant ID. The owner
+	// does not need a user_tenant membership row for that tenant; modelIdentity
+	// still checks whether the requested provider belongs to a reachable tenant.
+	if access.UserID == "" || access.UserID == access.TenantID {
 		return nil
 	}
 	if f.userTenantDAO == nil {
