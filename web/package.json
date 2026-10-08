@@ -178,7 +178,7 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "less": "^4.4.2",
-    "oxfmt": "^0.60.0",
+    "oxfmt": "^0.72.0",
     "oxlint": "^1.75.0",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.2.0",
