@@ -1447,7 +1447,7 @@ export default {
       dataManipulation: 'التلاعب بالبيانات',
       flow: 'تدفق',
       dialog: 'حوار',
-      cite: 'استشهد',
+      cite: 'إظهار الاستشهادات',
       citeTip: 'citeTip',
       name: 'اسم',
       nameMessage: 'الرجاء إدخال الاسم',

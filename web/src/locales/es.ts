@@ -551,7 +551,7 @@ export default {
       destinationFolder: 'Carpeta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citas',
       citeTip: 'Consejo de cita',
       name: 'Nombre',
       nameMessage: 'Por favor ingresa el nombre',

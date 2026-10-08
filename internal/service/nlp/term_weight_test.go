@@ -16,6 +16,7 @@ package nlp
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -892,4 +893,48 @@ func TestSplitEdgeCases(t *testing.T) {
 			t.Errorf("Expected 2 tokens when both have NE types, got %d: %v", len(result), result)
 		}
 	})
+}
+
+// A term's weight must depend only on the term, never on where it sits in tks or
+// on how often it repeats. Weights relies on that to resolve one dictionary
+// lookup per distinct term instead of one per position, and the duplicate-token
+// multipliers (title x2, important x5, question x6) rely on it too.
+//
+// Weights normalizes by the sum, so compare a ratio between two terms: the
+// normalization cancels and only the underlying weights remain.
+func TestWeightsDependOnlyOnTheTerm(t *testing.T) {
+	d := NewTermWeightDealer("")
+
+	ratio := func(tks []string, i, j int) float64 {
+		weights := d.Weights(tks, false)
+		if len(weights) != len(tks) {
+			t.Fatalf("got %d weights for %d terms", len(weights), len(tks))
+		}
+		if weights[j].Weight == 0 {
+			t.Fatalf("weight of %q is zero, cannot form a ratio", tks[j])
+		}
+		return weights[i].Weight / weights[j].Weight
+	}
+
+	// Use two terms with visibly different weights: "a" takes the short-letter
+	// ner penalty while "hello" takes the out-of-vocabulary prior. With two
+	// similar terms the ratio would be 1 and every check below would hold even
+	// if the weights were position-dependent, so assert it really discriminates.
+	want := ratio([]string{"a", "hello"}, 0, 1)
+	if math.Abs(want-1) < 0.01 {
+		t.Fatalf("a/hello = %v: the terms are indistinguishable, so this test proves nothing", want)
+	}
+
+	if got := ratio([]string{"hello", "a"}, 1, 0); math.Abs(got-want) > 1e-12 {
+		t.Errorf("a/hello = %v when a leads, %v when it trails", want, got)
+	}
+	if got := ratio([]string{"a", "a", "hello"}, 0, 2); math.Abs(got-want) > 1e-12 {
+		t.Errorf("a/hello = %v alone, %v when a repeats first", want, got)
+	}
+	if got := ratio([]string{"a", "hello", "a"}, 0, 1); math.Abs(got-want) > 1e-12 {
+		t.Errorf("a/hello = %v adjacent, %v when separated", want, got)
+	}
+	if got := ratio([]string{"hello", "a", "a"}, 2, 0); math.Abs(got-want) > 1e-12 {
+		t.Errorf("a/hello = %v alone, %v when a repeats last", want, got)
+	}
 }

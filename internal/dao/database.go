@@ -246,6 +246,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
+		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
+		}
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
