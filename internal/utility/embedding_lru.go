@@ -136,7 +136,7 @@ func (lru *EmbeddingLRU) Clear() {
 
 // Len returns the number of items in the cache.
 func (lru *EmbeddingLRU) Len() int {
-	lru.mu.Lock()
-	defer lru.mu.Unlock()
+	lru.mu.RLock()
+	defer lru.mu.RUnlock()
 	return lru.list.Len()
 }
