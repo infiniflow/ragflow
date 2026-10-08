@@ -36,21 +36,16 @@ import (
 
 // SkillSearchService handles business logic for skill search operations
 type SkillSearchService struct {
-	configDAO     *dao.SkillSearchConfigDAO
-	modelProvider *ModelProviderService
+	configDAO    *dao.SkillSearchConfigDAO
+	modelFactory *ModelFactory
 }
 
 // NewSkillSearchService creates a new SkillSearchService instance
 func NewSkillSearchService() *SkillSearchService {
 	return &SkillSearchService{
-		configDAO:     dao.NewSkillSearchConfigDAO(),
-		modelProvider: NewModelProviderService(),
+		configDAO:    dao.NewSkillSearchConfigDAO(),
+		modelFactory: NewModelFactory(),
 	}
-}
-
-// SetModelProvider sets the model provider for embedding generation
-func (s *SkillSearchService) SetModelProvider(provider *ModelProviderService) {
-	s.modelProvider = provider
 }
 
 // GetConfigRequest represents the request to get skill search config
@@ -659,7 +654,7 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 
 // getEmbedding generates embedding for text using the specified model
 func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, tenantID string) ([]float64, error) {
-	if s.modelProvider == nil {
+	if s.modelFactory == nil {
 		return nil, fmt.Errorf("model provider not set")
 	}
 
@@ -667,11 +662,10 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Query: true — getEmbedding is used only by the skill search legs
 	// (vectorSearch / hybridSearch) to embed the user's query.

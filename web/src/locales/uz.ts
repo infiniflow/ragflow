@@ -2901,8 +2901,6 @@ export default {
       watermarkText: 'Filigran matni',
       headerText: 'Yuqori kolontitul matni',
       footerText: 'Quyi kolontitul matni',
-      includeDownloadInfoInContent:
-        'Kontentga yuklab olish ma’lumotini qo‘shish',
       contentPlaceholder: 'Markdown kontentini kiriting...',
       filenamePlaceholder: 'document.ext (bo‘sh bo‘lsa avtomatik yaratiladi)',
       contentRequired: 'Kontent majburiy',

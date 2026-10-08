@@ -31,7 +31,6 @@ const FormSchema = z.object({
   watermark_text: z.string().optional(),
   add_page_numbers: z.boolean(),
   add_timestamp: z.boolean(),
-  include_download_info_in_content: z.boolean(),
   font_size: z.coerce.number().min(12, i18n.t('flow.fontSizeMin')),
   outputs: z.object({
     doc_id: z.object({ type: z.string() }),
@@ -79,12 +78,6 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
               placeholder={t('flow.contentPlaceholder')}
             ></PromptEditor>
           </RAGFlowFormItem>
-
-          <SwitchFormField
-            vertical={false}
-            label={t('flow.includeDownloadInfoInContent')}
-            name="include_download_info_in_content"
-          />
 
           <RAGFlowFormItem label={t('flow.filename')} name="filename">
             <Input placeholder={t('flow.filenamePlaceholder')}></Input>

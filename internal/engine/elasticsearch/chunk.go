@@ -1169,7 +1169,8 @@ type SearchResponse struct {
 	Aggregations map[string]interface{} `json:"aggregations"`
 }
 
-// Search executes search with unified types.SearchRequest
+// Search executes a unified search across the requested indices. Ordinary
+// searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	types.LogSearchRequest("Elasticsearch", req)
 
@@ -1454,8 +1455,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		for _, indexName := range req.IndexNames {
 			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
 			if esErr != nil {
-				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(esErr))
-				continue
+				return nil, fmt.Errorf("elasticsearch: search index %q: %w", indexName, esErr)
 			}
 			if hybrid {
 				// A window the backend could not fill is a candidate shortfall
@@ -1712,6 +1712,8 @@ func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []ma
 	return chunks
 }
 
+// searchOneIndex sends an ordinary search with a fresh request body. A valid
+// missing-index response is empty; other request and response failures propagate.
 func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
@@ -1726,7 +1728,22 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 	defer res.Body.Close()
 
 	if res.IsError() {
-		bodyBytes, _ := io.ReadAll(res.Body)
+		bodyBytes, readErr := io.ReadAll(res.Body)
+		if readErr != nil {
+			return nil, 0, fmt.Errorf("read elasticsearch error response: %w", readErr)
+		}
+		if res.StatusCode == http.StatusNotFound {
+			var failure struct {
+				Error struct {
+					Type string `json:"type"`
+				} `json:"error"`
+			}
+			// A tenant without indexed documents has no physical index yet.
+			// Preserve that empty result without hiding unrelated 404 errors.
+			if json.Unmarshal(bodyBytes, &failure) == nil && failure.Error.Type == "index_not_found_exception" {
+				return nil, 0, nil
+			}
+		}
 		common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
 		return nil, 0, fmt.Errorf("elasticsearch error response: %s", string(bodyBytes))
 	}

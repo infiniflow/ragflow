@@ -717,7 +717,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", "Document availability changes applied")
 		return nil
 	}
-	deduper, err := c.factory(tenant)
+	deduper, err := c.factory(ctx, tenant)
 	if err != nil || deduper == nil {
 		// A no-op deduper would silently disable dataset-level LLM merging: every
 		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
@@ -1291,7 +1291,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 	if len(indexes) == 0 {
 		return nil
 	}
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil {
 		return fmt.Errorf("resolve Wiki page rewrite dependencies: %w", err)
 	}
@@ -1386,7 +1386,7 @@ func refreshWikiProductVectors(ctx context.Context, tenant string, products []kc
 	if len(products) == 0 {
 		return products
 	}
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil || deps.Embed == nil {
 		return products
 	}

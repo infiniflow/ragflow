@@ -114,8 +114,8 @@ func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
 // KB-scoped deduper. On any failure it returns an error so the caller falls
 // back to the noop deduper (merged products are still written, just without
 // cross-document LLM merging).
-func defaultDeduperFactory(tenant string) (Deduper, error) {
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+func defaultDeduperFactory(ctx context.Context, tenant string) (Deduper, error) {
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil {
 		return nil, err
 	}
