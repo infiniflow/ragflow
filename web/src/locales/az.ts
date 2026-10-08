@@ -683,6 +683,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       reRankModelWaring: 'Yenidən sıralama modeli çox vaxt tələb edir.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Başlanğıc dəyər eyni nəticənin müxtəlif icralarda təkrar əldə olunmasını təmin edən psevdotəsadüfi alqoritmin başlanğıc nöqtəsidir.',
       datasetDescription: 'Verilənlər dəstinizi təsvir edin',

@@ -670,6 +670,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       reRankModelWaring: 'Yeniden sıralama modeli çok zaman alır.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Tohum, farklı çalıştırmalarda aynı çıktının yeniden üretilebilirliğini sağlayan sözde rastgele bir algoritmanın başlangıç noktasıdır.',
       datasetDescription: `Dataset'inizi açıklayın`,

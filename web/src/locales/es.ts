@@ -169,6 +169,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
       paddleocrApiUrlTip:
