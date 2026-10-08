@@ -223,20 +223,18 @@ func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
+func TestCreateDataset_ParseTypeBuiltinHasNoPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
 	ctx := t.Context()
 
-	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypeBuiltin := 1
 	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:       "ds-parse-builtin",
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-		ParseType:  &parseTypeBuiltin,
+		Name:      "ds-parse-builtin",
+		ParserID:  &chunkMethod,
+		ParseType: &parseTypeBuiltin,
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -261,10 +259,8 @@ func TestCreateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 
 	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypePipeline := 2
-	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
 		Name:       "ds-parse-pipeline",
-		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseTypePipeline,
 	}, "tenant-1")

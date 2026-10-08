@@ -56,8 +56,17 @@ class RestClient:
             # requests sets multipart boundary automatically.
             req_headers.pop("Content-Type", None)
 
-        timeout = request_kwargs.pop("timeout", self.timeout)
+        # The Go API requires parse_type on dataset creation (it explicitly
+        # selects BuiltIn (1) or Pipeline (2) mode). Historically a missing
+        # parse_type silently defaulted to BuiltIn/general; inject that
+        # previously-implicit default so dataset-create POSTs stay green without
+        # touching every call site. Tests that intentionally omit parse_type to
+        # assert the error path must pass parse_type explicitly.
         normalized_path = f"/{path.lstrip('/')}" if path else "/"
+        if method == "POST" and normalized_path == "/datasets" and isinstance(json, dict) and "parse_type" not in json:
+            json = {**json, "parse_type": 1, "parser_id": "general"}
+
+        timeout = request_kwargs.pop("timeout", self.timeout)
         response = requests.request(
             method=method,
             url=f"{self.api_root}{normalized_path}",

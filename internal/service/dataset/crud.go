@@ -39,15 +39,20 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	// parse_type is required on dataset creation: it explicitly selects BuiltIn
 	// (1) or Pipeline (2) mode. This replaces the previous silent default to
-	// BuiltIn when the field was omitted.
-	isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+	// BuiltIn when the field was omitted. FromRequest validates the
+	// parse_type/parser_id/pipeline_id triple; Resolve enforces that a selection
+	// is actually present (current is nil on create).
+	sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	if isBuiltin && req.PipelineID != nil {
+	if _, err = service.Resolve(nil, sel); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if sel.IsBuiltIn() && req.PipelineID != nil {
 		req.PipelineID = nil
 	}
-	if isPipeline && req.ParserID != nil {
+	if sel.IsPipeline() && req.ParserID != nil {
 		req.ParserID = nil
 	}
 
@@ -118,7 +123,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			return nil, common.CodeArgumentError, err
 		}
 	}
-	isPipeline = pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
 	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
 	parserConfig := entity.JSONMap{}
 	if dslErr != nil {
