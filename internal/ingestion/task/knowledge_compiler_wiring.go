@@ -258,7 +258,7 @@ func wikiCompiledRows(output map[string]any) []map[string]any {
 		if !ok {
 			continue
 		}
-		compileKWD := strings.TrimSpace(anyString(row["compile_kwd"]))
+		compileKWD := enginetypes.CompilationRowType(row)
 		if compileKWD != "wiki_page" && compileKWD != "wiki_section" {
 			continue
 		}
@@ -291,7 +291,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
-			"compile_kwd":   []string{"wiki_page", "wiki_section"},
+			"type_kwd":      []string{"wiki_page", "wiki_section"},
 			"available_int": 0,
 		},
 	})
@@ -316,7 +316,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	affectedPageIDs := make(map[string]struct{})
 	if existing != nil && !fullReplace {
 		for _, row := range existing.Chunks {
-			if anyString(row["compile_kwd"]) != "wiki_page" {
+			if enginetypes.CompilationRowType(row) != "wiki_page" {
 				continue
 			}
 			if _, ok := affected[anyString(row["slug_kwd"])]; ok {
@@ -326,7 +326,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	}
 	if existing != nil && fullReplace {
 		for _, row := range existing.Chunks {
-			if anyString(row["compile_kwd"]) == "wiki_page" {
+			if enginetypes.CompilationRowType(row) == "wiki_page" {
 				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
 			}
 		}
@@ -369,7 +369,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
 	_, err := docEngine.DeleteChunks(ctx, map[string]any{
 		"kb_id":          request.DatasetID,
-		"compile_kwd":    "wiki_map_active",
+		"type_kwd":       "wiki_map_active",
 		"available_int":  0,
 		"source_doc_ids": []string{request.DocumentID},
 	}, fmt.Sprintf("ragflow_%s", request.TenantID), request.DatasetID)
@@ -845,13 +845,13 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
 		// pages (sections carry compile_kwd="wiki_section"); there is no
 		// "kc_kind" column in the chunk schema, so filtering on it would return
 		// empty on Infinity.
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
+			"type_kwd": "wiki_page",
 		},
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
@@ -881,10 +881,10 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
-			"slug_kwd":    slug,
+			"type_kwd": "wiki_page",
+			"slug_kwd": slug,
 		},
 	}
 	res, err := s.docEngine.Search(ctx, req)
@@ -903,9 +903,9 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd":      "wiki_page",
+			"type_kwd":         "wiki_page",
 			"source_chunk_ids": chunkIDs,
 		},
 	}
@@ -929,7 +929,7 @@ func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
 		ID:        strings.TrimSpace(anyString(row["id"])),
 		Slug:      strings.TrimSpace(anyString(row["slug_kwd"])),
 		Title:     strings.TrimSpace(anyString(row["title_kwd"])),
-		PageType:  strings.TrimSpace(anyString(row["page_type_kwd"])),
+		PageType:  enginetypes.WikiPageCategory(row),
 		Topic:     strings.TrimSpace(anyString(row["topic_kwd"])),
 		PlanGroup: strings.TrimSpace(anyString(row["plan_group_kwd"])),
 		Summary:   strings.TrimSpace(anyString(row["summary_with_weight"])),

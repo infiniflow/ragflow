@@ -6,12 +6,14 @@ package knowledge_compiler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	clog "ragflow/internal/common"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
@@ -367,28 +369,13 @@ func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
 	}
 }
 
-// kindOrVariant returns the original template kind when present (the true
-// compilation_template.kind, e.g. "page_index"), otherwise the collapsed Go
-// variant. It drives the compilation_template_kind_kwd stamp.
+// kindOrVariant returns the producing template kind, or the execution variant
+// when a product has no template kind.
 func kindOrVariant(p common.Product) string {
 	if p.Kind != "" {
 		return p.Kind
 	}
 	return string(p.Variant)
-}
-
-// variantCompileKWD maps each Go variant to the compile_kwd discriminator value
-// Python writes into ES (rag/advanced_rag/knowlege_compile). It is the primary
-// key that distinguishes compiled knowledge units from ordinary chunks and
-// routes retrieval-side filters. The wiki value MUST be "wiki_page" (Python's
-// canonical WIKI_PAGE_COMPILE_KWD in wiki.py:1661 / wiki_incremental.py:44 /
-// dataset_wiki_generator.py:108) so Go-produced wiki pages are visible to the
-// artifact API (dataset_artifact_service.go reads compile_kwd="wiki_page").
-var variantCompileKWD = map[common.Variant]string{
-	common.VariantStructure: "structure",
-	common.VariantWiki:      "wiki_page",
-	common.VariantTree:      "tree",
-	common.VariantMindmap:   "mindmap",
 }
 
 // productsToChunkDocs converts the internal compiled Product rows into
@@ -434,29 +421,20 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				return nil, err
 			}
 		}
-		compileKWD := variantCompileKWD[p.Variant]
-		// A variant may pin a finer-grained compile_kwd per row via Meta
-		// (structure stamps the inferred compile kind — list/set/hypergraph —
-		// mirroring Python's per-row autotype stamp).
-		if v := metaString(p.Meta, "compile_kwd"); v != "" {
-			compileKWD = v
-		}
-		// Wiki sub-parts: sections get their own compile_kwd so that a page
-		// search on compile_kwd="wiki_page" returns pages only (page.go emits
-		// both kind:"page" and kind:"section" rows under VariantWiki). This is
-		// the schema-backed page/section discriminator: "wiki_page" == page,
-		// "wiki_section" == a page sub-section.
-		if p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "section" && compileKWD == "wiki_page" {
-			compileKWD = "wiki_section"
-		}
-		if compileKWD == "" {
-			compileKWD = string(p.Variant)
-		}
+		compileKWD := enginetypes.CanonicalCompilationKind(kindOrVariant(p))
 		if err := doc.SetExtraValue("compile_kwd", compileKWD); err != nil {
 			return nil, err
 		}
-		if err := doc.SetExtraValue("compilation_template_kind_kwd", kindOrVariant(p)); err != nil {
-			return nil, err
+		if p.Variant == common.VariantStructure {
+			if inferred := metaString(p.Meta, "compile_kwd"); inferred != "" {
+				extra, err := json.Marshal(map[string]string{"compile_type": inferred})
+				if err != nil {
+					return nil, err
+				}
+				if err := doc.SetExtraValue("extra", string(extra)); err != nil {
+					return nil, err
+				}
+			}
 		}
 		// scope_kwd marks doc/dataset-level rows (B8/O1=B). A doc-level compiled
 		// product is always a per-document (scope="doc") input to the dataset-level
@@ -516,7 +494,12 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
-		// One artifact_page row per wiki page; section rows reuse the same
+		if kind != "" {
+			if err := doc.SetExtraValue("type_kwd", "wiki_"+kind); err != nil {
+				return err
+			}
+		}
+		// Page and section roles reuse the same
 		// page-level columns so retrieval-side filters work uniformly.
 		// Match the Python writer contract (api/db/db_models.py slug_kwd):
 		// slug_kwd stores the full "<page_type>/<slug>" form, so retrieval
@@ -543,7 +526,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			setTitleTokens(doc, v)
 		}
 		if v := metaString(p.Meta, "page_type"); v != "" {
-			if err := doc.SetExtraValue("page_type_kwd", v); err != nil {
+			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 				return err
 			}
 		}

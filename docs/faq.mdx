@@ -332,7 +332,7 @@ The Go Compose deployment uses `SVR_HTTP_PORT` and `ADMIN_SVR_HTTP_PORT` for the
 Yes. The Go parser implementations are in `internal/parser/parser`, and the Go DeepDoc integration is in `internal/deepdoc`. The following tests provide concrete usage examples:
 
 - [`internal/deepdoc/parser/pdf/parser_pipeline_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/pdf/parser_pipeline_integration_test.go) demonstrates the PDF parsing and post-processing pipeline.
-- [`internal/deepdoc/parser/docx/parser_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/docx/parser_integration_test.go) demonstrates DOCX parsing.
+- [`internal/deepdoc/parser/office/parser_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/office/parser_integration_test.go) demonstrates DOCX parsing.
 - [`internal/parser/parser/pdf_parser_pages_e2e_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/parser/parser/pdf_parser_pages_e2e_test.go) demonstrates configuring and calling the higher-level PDF parser adapter.
 
 RAGFlow's ingestor uses these components when it processes documents. These files are integration or end-to-end tests, so review their prerequisites and build constraints before running them directly.
