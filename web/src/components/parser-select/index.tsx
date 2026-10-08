@@ -34,7 +34,12 @@ interface IProps {
 // ParserSelect is the single dropdown that merges pipeline (canvas) and builtin
 // parser options. It is a controlled component: the parent owns the form fields
 // and translates the kind/id pair into parser_id / pipeline_id / parse_type.
-export function ParserSelect({ value, onChange, placeholder, disabled }: IProps) {
+export function ParserSelect({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: IProps) {
   const { t } = useTranslation('knowledgeConfiguration');
   const { options, loading } = useParserOptions();
 

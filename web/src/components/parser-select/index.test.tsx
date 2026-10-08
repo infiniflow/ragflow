@@ -21,7 +21,11 @@ jest.mock('@/hooks/use-parser-options', () => {
   const parserOptions = {
     options: [
       { value: 'pipeline:pipe-1', label: 'My Flow', kind: 'pipeline' },
-      { value: 'builtin:general', label: 'General (built in)', kind: 'builtin' },
+      {
+        value: 'builtin:general',
+        label: 'General (built in)',
+        kind: 'builtin',
+      },
     ],
     loading: false,
   };

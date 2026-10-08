@@ -1,6 +1,9 @@
 import { AgentCategory } from '@/constants/agent';
 import { AgentListItemType } from '@/interfaces/database/agent';
-import { useFetchAgentList, useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
+import {
+  useFetchAgentList,
+  useFetchBuiltinPipelines,
+} from '@/hooks/use-agent-request';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -52,7 +55,9 @@ export function useParserOptions() {
 
   const options = useMemo<IParserOption[]>(() => {
     const pipeline = (pipelineData?.canvas ?? [])
-      .filter((item) => item.type !== AgentListItemType.CompilationTemplateGroup)
+      .filter(
+        (item) => item.type !== AgentListItemType.CompilationTemplateGroup,
+      )
       .map((item) => ({
         value: buildParserOptionValue('pipeline', item.id),
         label: item.title,

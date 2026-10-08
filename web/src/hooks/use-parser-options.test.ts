@@ -8,8 +8,7 @@ import {
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) =>
-      key === 'builtInSuffix' ? ' (built in)' : key,
+    t: (key: string) => (key === 'builtInSuffix' ? ' (built in)' : key),
   }),
 }));
 
@@ -34,8 +33,12 @@ beforeEach(() => {
 
 describe('parser option value encoding', () => {
   it('prefixes builtin and pipeline ids distinctly', () => {
-    expect(buildParserOptionValue('builtin', 'general')).toBe('builtin:general');
-    expect(buildParserOptionValue('pipeline', 'abc123')).toBe('pipeline:abc123');
+    expect(buildParserOptionValue('builtin', 'general')).toBe(
+      'builtin:general',
+    );
+    expect(buildParserOptionValue('pipeline', 'abc123')).toBe(
+      'pipeline:abc123',
+    );
   });
 
   it('round-trips builtin and pipeline values', () => {

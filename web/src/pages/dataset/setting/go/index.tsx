@@ -221,7 +221,10 @@ export default function DatasetSetting() {
                         <ParserSelect
                           value={
                             parseType === ParseType.BuiltIn
-                              ? buildParserOptionValue('builtin', builtinPipelineId ?? '')
+                              ? buildParserOptionValue(
+                                  'builtin',
+                                  builtinPipelineId ?? '',
+                                )
                               : pipelineId
                                 ? buildParserOptionValue('pipeline', pipelineId)
                                 : undefined
