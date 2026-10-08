@@ -2803,7 +2803,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       dataManipulation: 'Veri işleme',
       flow: 'Akış',
       dialog: 'Diyalog',
-      cite: 'Alıntı',
+      cite: 'Alıntıları göster',
       citeTip: 'alıntıİpucu',
       name: 'Ad',
       nameMessage: 'Lütfen ad girin',
