@@ -50,12 +50,18 @@ func insertKnowledgebase(t *testing.T, db *gorm.DB, id, parserConfig string) {
 	}
 }
 
-func knowledgebaseParserConfig(t *testing.T, db *gorm.DB, id string) map[string]interface{} {
+func knowledgebaseParserConfigRaw(t *testing.T, db *gorm.DB, id string) string {
 	t.Helper()
 	var raw string
 	if err := db.Table("knowledgebase").Where("id = ?", id).Pluck("parser_config", &raw).Error; err != nil {
 		t.Fatalf("failed to read parser config %s: %v", id, err)
 	}
+	return raw
+}
+
+func knowledgebaseParserConfig(t *testing.T, db *gorm.DB, id string) map[string]interface{} {
+	t.Helper()
+	raw := knowledgebaseParserConfigRaw(t, db, id)
 	config := make(map[string]interface{})
 	if err := json.Unmarshal([]byte(raw), &config); err != nil {
 		t.Fatalf("failed to parse parser config %s: %v", id, err)
@@ -134,11 +140,14 @@ func TestMigrateKnowledgebaseParserConfigToleratesMalformedPayload(t *testing.T)
 		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
 	}
 
-	config := knowledgebaseParserConfig(t, db, "kb1")
-	if len(config) != 0 {
-		t.Fatalf("malformed config rewritten as %#v", config)
+	// A payload the step cannot parse is left exactly as it was stored.
+	if got := knowledgebaseParserConfigRaw(t, db, "kb1"); got != "not-json" {
+		t.Fatalf("malformed config rewritten as %q", got)
 	}
-	config = knowledgebaseParserConfig(t, db, "kb2")
+	if got := knowledgebaseParserConfigRaw(t, db, "kb3"); got != "" {
+		t.Fatalf("empty config rewritten as %q", got)
+	}
+	config := knowledgebaseParserConfig(t, db, "kb2")
 	if _, ok := config["graphrag"]; ok {
 		t.Fatalf("graphrag survived the migration: %#v", config)
 	}
