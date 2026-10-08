@@ -410,7 +410,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): not supported by the current parser configuration',
       reselectParserAfterUploadHint:
-        'Continue uploading, then reselect a parse method for these files in the file list.',
+        'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
       addModelAfterUploadHint:
@@ -2969,7 +2969,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       watermarkText: 'Watermark Text',
       headerText: 'Header Text',
       footerText: 'Footer Text',
-      includeDownloadInfoInContent: 'Append download info to content',
       contentPlaceholder: 'Enter markdown content...',
       filenamePlaceholder: 'document.ext (auto-generated if empty)',
       contentRequired: 'Content is required',

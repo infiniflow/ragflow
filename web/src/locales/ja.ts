@@ -150,6 +150,8 @@ export default {
     },
 
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'アップロードを続行すると、これらのファイルは対応する組み込み解析設定に自動的に切り替わります。',
       dataset: 'データセット',
       testing: '検索テスト',
       files: 'ファイル',

@@ -22,7 +22,6 @@ type wikiPageResult struct {
 	RelatedKBPages []string
 	ContentRaw     string
 	Content        string
-	Summary        string
 	Outlinks       []string
 	SourceChunkIDs []string
 	SourceDocIDs   []string
@@ -111,7 +110,6 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 		Action:         "CREATE",
 		ContentRaw:     page,
 		Content:        page,
-		Summary:        firstParagraph(page),
 		SourceChunkIDs: sourceChunkIDs,
 		SourceDocIDs:   []string{docID},
 	}})
@@ -167,10 +165,7 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 		if strings.TrimSpace(content) == "" {
 			content = page.ContentRaw
 		}
-		summary := strings.TrimSpace(page.Summary)
-		if summary == "" {
-			summary = firstParagraph(content)
-		}
+		summary := summarizeMarkdown(content, title)
 		sourceChunkIDs := uniqueStrings(page.SourceChunkIDs)
 		sourceDocIDs := uniqueStrings(page.SourceDocIDs)
 		if len(sourceDocIDs) == 0 && docID != "" {
