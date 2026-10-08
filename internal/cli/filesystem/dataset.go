@@ -756,11 +756,17 @@ func parseTime(v interface{}) time.Time {
 		if parsed, err := strconv.ParseInt(val, 10, 64); err == nil {
 			ts = parsed
 		} else {
-			// If it's already a formatted date string, try parsing it
+			// If it's already a formatted date string, try parsing it.
+			// RFC3339Nano is tried first because it accepts every
+			// RFC3339-shaped input plus optional fractional seconds; the
+			// older hand-rolled formats below remain as a fallback for the
+			// non-Z, no-offset strings the server still returns.
 			formats := []string{
+				time.RFC3339Nano,
+				time.RFC3339,
+				"2006-01-02 15:04:05Z07:00",
 				"2006-01-02 15:04:05",
 				"2006-01-02T15:04:05",
-				"2006-01-02T15:04:05Z",
 				"2006-01-02",
 			}
 			for _, format := range formats {
@@ -774,9 +780,13 @@ func parseTime(v interface{}) time.Time {
 		return time.Time{}
 	}
 
-	// Convert milliseconds to seconds if timestamp is in milliseconds (13 digits)
+	// Numeric timestamps: 13+ digits are millisecond-precision epoch; 10
+	// digits are second-precision. Use time.UnixMilli when the value is in
+	// milliseconds so the trailing three digits are preserved as
+	// nanoseconds on the returned time.Time. Dividing and then calling
+	// time.Unix(sec, 0) silently dropped the sub-second remainder.
 	if ts > 1e12 {
-		ts = ts / 1000
+		return time.UnixMilli(ts)
 	}
 
 	return time.Unix(ts, 0)
