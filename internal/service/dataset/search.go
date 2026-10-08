@@ -241,8 +241,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
-		docIDs = selectMetadataFilteredDocIDs(docIDs, filteredDocIDs, hasMetadataCondition, filterReturnedEmpty)
+		filteredDocIDs, outcome := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
+		docIDs = selectMetadataFilteredDocIDs(docIDs, filteredDocIDs, hasMetadataCondition, outcome)
 	}
 
 	// Apply cross_languages and keyword extraction
@@ -359,9 +359,40 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}, nil
 }
 
-func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {
-	if hasMetadataCondition || !filterReturnedEmpty {
+// selectMetadataFilteredDocIDs folds the new 3-state MetaFilterOutcome into
+// the /api/v1/retrieval document list. The previous `filterReturnedEmpty` flag
+// collapsed three distinct cases ("no filter configured", "no conditions from
+// LLM", "conditions matched nothing") into a single bool — see #20533. The
+// new contract preserves the historical behaviour:
+//
+//   - MetaFilterOutcomeMatched       → use the filtered slice (the LLM found
+//     at least one match).
+//   - MetaFilterOutcomeNoConditions  → keep the unfiltered document list
+//     (LLM emitted no conditions; treat as
+//     "no metadata restriction").
+//   - MetaFilterOutcomeMatchedNothing, AND hasMetadataCondition is true
+//     → use the (empty) filtered slice —
+//     caller supplied a manual metadata
+//     condition in addition to the LLM
+//     filter, so the user's constraint
+//     still applies even when the LLM
+//     filter matched nothing.
+//   - MetaFilterOutcomeMatchedNothing, AND hasMetadataCondition is false
+//     → keep the unfiltered document list
+//     (LLM filter matched nothing; no
+//     manual override; fall back).
+func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition bool, outcome service.MetaFilterOutcome) []string {
+	switch outcome {
+	case service.MetaFilterOutcomeMatched:
 		return filteredDocIDs
+	case service.MetaFilterOutcomeNoConditions:
+		return currentDocIDs
+	case service.MetaFilterOutcomeMatchedNothing:
+		if hasMetadataCondition {
+			return filteredDocIDs
+		}
+		return currentDocIDs
+	default:
+		return currentDocIDs
 	}
-	return currentDocIDs
 }
