@@ -120,7 +120,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -140,6 +140,11 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "document not found",
 		})
+		return
+	}
+
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1304,7 +1309,7 @@ func stringValue(value *string) string {
 
 // MetadataSummary handles the metadata summary request
 func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -1327,6 +1332,11 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, kbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+		return
+	}
+
 	summary, err := h.documentService.GetMetadataSummary(ctx, kbID, requestBody.DocIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to get metadata summary: "+err.Error())
