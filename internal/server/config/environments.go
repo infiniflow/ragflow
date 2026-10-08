@@ -205,6 +205,9 @@ func (c *Config) GetEnvironments() error {
 	}
 
 	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
+	if superUserPassword == "" {
+		superUserPassword = common.GetEnv(common.EnvAdminDefaultPassword)
+	}
 	if superUserPassword != "" {
 		c.environments.DefaultSuperUser.Password = superUserPassword
 	}
@@ -595,7 +598,11 @@ func (c *Config) GetEnvDefaultSuperUserEmail() string {
 }
 
 func (c *Config) GetEnvDefaultSuperUserNick() string {
-	return c.environments.DefaultSuperUser.Email
+	return c.environments.DefaultSuperUser.Nickname
+}
+
+func (c *Config) GetEnvDefaultSuperUserPassword() string {
+	return c.environments.DefaultSuperUser.Password
 }
 
 func (c *Config) GetEnvDictionaryPath() string {

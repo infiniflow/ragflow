@@ -464,6 +464,42 @@ func TestKeenable_ComponentContractReferencesAndOutputs(t *testing.T) {
 	}
 }
 
+func TestKeenable_BuildReferencesPrefersSnippetOverDescription(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	tool := NewKeenableTool()
+
+	// Case 1: snippet populated, description empty (standard Keenable API response)
+	envelopeSnippetOnly := map[string]any{"results": []any{map[string]any{
+		"title":       "Keenable snippet test",
+		"url":         "https://example.com/snippet",
+		"snippet":     "Detailed page snippet from Keenable search",
+		"description": "",
+	}}}
+	chunks, _ := tool.BuildReferences(ctx, envelopeSnippetOnly)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0]["content"] != "Detailed page snippet from Keenable search" {
+		t.Fatalf("chunk content = %v, want snippet text", chunks[0]["content"])
+	}
+
+	// Case 2: snippet empty, description populated (fallback)
+	envelopeDescFallback := map[string]any{"results": []any{map[string]any{
+		"title":       "Keenable description fallback",
+		"url":         "https://example.com/fallback",
+		"snippet":     "",
+		"description": "Fallback description text",
+	}}}
+	chunksDesc, _ := tool.BuildReferences(ctx, envelopeDescFallback)
+	if len(chunksDesc) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunksDesc))
+	}
+	if chunksDesc[0]["content"] != "Fallback description text" {
+		t.Fatalf("chunk content = %v, want description text", chunksDesc[0]["content"])
+	}
+}
+
 func TestKeenable_BuildByNameAcceptsCanvasParams(t *testing.T) {
 	t.Parallel()
 
