@@ -304,20 +304,21 @@ func (m *EmbeddingModel) Info() *ModelInfo {
 	return cloneModelInfo(m.info)
 }
 
-// ResolveBatchSize returns the max texts per Embed request for this embedding
-// model. It prefers an explicit MaxBatchSize set at construction time and falls
-// back to the provider capability (all_models.json batch_size, added by
-// #17877/#17878) via GetEmbeddingBatchSize, which itself defaults to
-// DefaultEmbeddingBatchSize.
+// ResolveBatchSize returns the safe maximum texts per Embed request. The
+// effective limit cannot exceed either the model's declared maximum or the
+// provider/runtime batch capability; these values can differ (for example, a
+// provider model config can declare max_batch_size=32 while its driver only
+// accepts the default batch size of 16).
 func (m *EmbeddingModel) ResolveBatchSize() int {
-	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 {
-		return *m.MaxBatchSize
-	}
 	var name string
 	if m != nil && m.ModelName != nil {
 		name = *m.ModelName
 	}
-	return GetEmbeddingBatchSize(name)
+	batchSize := GetEmbeddingBatchSize(name)
+	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 && *m.MaxBatchSize < batchSize {
+		return *m.MaxBatchSize
+	}
+	return batchSize
 }
 
 // ResolveMaxTokens is ResolveBatchSize's counterpart for the input window: the
