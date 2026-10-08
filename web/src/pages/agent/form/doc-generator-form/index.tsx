@@ -92,12 +92,6 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
             ></PromptEditor>
           </RAGFlowFormItem>
 
-          <SwitchFormField
-            vertical={false}
-            label={t('flow.includeDownloadInfoInContent')}
-            name="include_download_info_in_content"
-          />
-
           <RAGFlowFormItem label={t('flow.filename')} name="filename">
             <Input placeholder={t('flow.filenamePlaceholder')}></Input>
           </RAGFlowFormItem>
