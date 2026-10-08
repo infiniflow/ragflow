@@ -62,6 +62,9 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 	entCount, relCount := 0, 0
 	fromTo := map[string]bool{}
 	for _, p := range products {
+		if p.Meta["compile_kwd"] != "mind_map" {
+			t.Errorf("product %s compile_kwd = %v, want mind_map", p.ID, p.Meta["compile_kwd"])
+		}
 		kind, _ := p.Meta["kind"].(string)
 		switch kind {
 		case "entity":
@@ -75,9 +78,6 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 			}
 			if p.Meta["entity_type"] != "mind_map" {
 				t.Errorf("entity %v type = %v, want mind_map", p.Meta["name"], p.Meta["entity_type"])
-			}
-			if p.Meta["compile_kwd"] != "mindmap" {
-				t.Errorf("entity %v compile_kwd = %v, want mindmap", p.Meta["name"], p.Meta["compile_kwd"])
 			}
 		case "relation":
 			relCount++

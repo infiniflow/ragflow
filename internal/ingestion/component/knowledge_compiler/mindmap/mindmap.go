@@ -170,7 +170,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 		"kind":        "entity",
 		"name":        root.ID,
 		"entity_type": "mind_map",
-		"compile_kwd": "mindmap",
+		"compile_kwd": "mind_map",
 	}
 	if len(rootSourceChunkIDs) > 0 {
 		rootPayload["source_chunk_ids"] = rootSourceChunkIDs
@@ -208,7 +208,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 					"kind":        "entity",
 					"name":        child.ID,
 					"entity_type": "mind_map",
-					"compile_kwd": "mindmap",
+					"compile_kwd": "mind_map",
 				}
 				if len(childSourceChunkIDs) > 0 {
 					childPayload["source_chunk_ids"] = childSourceChunkIDs
@@ -242,7 +242,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 						"from":          p.parent,
 						"to":            child.ID,
 						"relation_type": "related",
-						"compile_kwd":   "mindmap",
+						"compile_kwd":   "mind_map",
 					},
 				})
 			}
