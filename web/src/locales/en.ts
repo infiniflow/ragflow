@@ -2966,7 +2966,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       watermarkText: 'Watermark Text',
       headerText: 'Header Text',
       footerText: 'Footer Text',
-      includeDownloadInfoInContent: 'Append download info to content',
       contentPlaceholder: 'Enter markdown content...',
       filenamePlaceholder: 'document.ext (auto-generated if empty)',
       contentRequired: 'Content is required',
