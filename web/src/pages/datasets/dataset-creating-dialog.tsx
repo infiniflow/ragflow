@@ -19,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ParseType } from '@/constants/knowledge';
 import { buildParserOptionValue } from '@/hooks/use-parser-options';
+import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -96,6 +97,8 @@ export function InputForm({ onOk }: IModalProps<any>) {
     name: 'pipeline_id',
   });
 
+  const handleParserSelect = useParserSelectHandler(form);
+
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const nextData =
       parseType === ParseType.BuiltIn
@@ -147,20 +150,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
                 ? buildParserOptionValue('pipeline', pipelineId)
                 : undefined
           }
-          onChange={(kind, rawId) => {
-            if (kind === 'builtin') {
-              form.setValue('parse_type', ParseType.BuiltIn);
-              form.setValue('parser_id', rawId);
-              form.setValue('pipeline_id', '');
-            } else if (kind === 'pipeline') {
-              form.setValue('parse_type', ParseType.Pipeline);
-              form.setValue('pipeline_id', rawId);
-              form.setValue('parser_id', '');
-            } else {
-              form.setValue('parser_id', '');
-              form.setValue('pipeline_id', '');
-            }
-          }}
+          onChange={handleParserSelect}
         />
       </form>
     </Form>

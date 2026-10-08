@@ -12,6 +12,7 @@ import Divider from '@/components/ui/divider';
 import { Form, FormItem, FormLabel } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
 import { buildParserOptionValue } from '@/hooks/use-parser-options';
+import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   useActiveTab,
   usePipelineOperatorNodes,
@@ -56,6 +57,8 @@ export default function DatasetSetting() {
       connectors: [],
     },
   });
+
+  const handleParserSelect = useParserSelectHandler(form);
 
   const {
     knowledgeDetails,
@@ -229,20 +232,7 @@ export default function DatasetSetting() {
                                 ? buildParserOptionValue('pipeline', pipelineId)
                                 : undefined
                           }
-                          onChange={(kind, rawId) => {
-                            if (kind === 'builtin') {
-                              form.setValue('parse_type', ParseType.BuiltIn);
-                              form.setValue('parser_id', rawId);
-                              form.setValue('pipeline_id', '');
-                            } else if (kind === 'pipeline') {
-                              form.setValue('parse_type', ParseType.Pipeline);
-                              form.setValue('pipeline_id', rawId);
-                              form.setValue('parser_id', '');
-                            } else {
-                              form.setValue('parser_id', '');
-                              form.setValue('pipeline_id', '');
-                            }
-                          }}
+                          onChange={handleParserSelect}
                         />
                       </div>
                     </div>

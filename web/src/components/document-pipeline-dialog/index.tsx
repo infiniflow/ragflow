@@ -32,6 +32,7 @@ import { useCallback } from 'react';
 import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { buildParserOptionValue } from '@/hooks/use-parser-options';
+import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   IDocumentPipelineDialogProps,
   useDocumentPipelineForm,
@@ -66,6 +67,8 @@ export function DocumentPipelineDialog({
     showOperatorTabs,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
+
+  const handleParserSelect = useParserSelectHandler(form);
 
   const selectedParserId = useWatch({
     control: form.control,
@@ -123,20 +126,7 @@ export function DocumentPipelineDialog({
                     ? buildParserOptionValue('pipeline', selectedPipelineId)
                     : undefined
               }
-              onChange={(kind, rawId) => {
-                if (kind === 'builtin') {
-                  form.setValue('parse_type', ParseType.BuiltIn);
-                  form.setValue('parser_id', rawId);
-                  form.setValue('pipeline_id', '');
-                } else if (kind === 'pipeline') {
-                  form.setValue('parse_type', ParseType.Pipeline);
-                  form.setValue('pipeline_id', rawId);
-                  form.setValue('parser_id', '');
-                } else {
-                  form.setValue('parser_id', '');
-                  form.setValue('pipeline_id', '');
-                }
-              }}
+              onChange={handleParserSelect}
             />
             {showOperatorTabs && (
               <PipelineOperatorTabs

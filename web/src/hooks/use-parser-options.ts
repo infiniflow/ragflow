@@ -15,15 +15,15 @@ export interface IParserOption {
   kind: ParserOptionKind;
 }
 
-export const BUILTIN_PREFIX = 'builtin:';
-export const PIPELINE_PREFIX = 'pipeline:';
+export const BuiltinPrefix = 'builtin:';
+export const PipelinePrefix = 'pipeline:';
 
 // buildParserOptionValue packs the parser kind and the raw backend id into a
 // single select value. Prefixing avoids collisions between short builtin ids
 // (e.g. "general") and 32-char canvas pipeline ids, and keeps the value safe
 // to serialize.
 export function buildParserOptionValue(kind: ParserOptionKind, rawId: string) {
-  return `${kind === 'builtin' ? BUILTIN_PREFIX : PIPELINE_PREFIX}${rawId}`;
+  return `${kind === 'builtin' ? BuiltinPrefix : PipelinePrefix}${rawId}`;
 }
 
 export function parseParserOptionValue(value?: string): {
@@ -31,11 +31,11 @@ export function parseParserOptionValue(value?: string): {
   rawId: string;
 } | null {
   if (!value) return null;
-  if (value.startsWith(BUILTIN_PREFIX)) {
-    return { kind: 'builtin', rawId: value.slice(BUILTIN_PREFIX.length) };
+  if (value.startsWith(BuiltinPrefix)) {
+    return { kind: 'builtin', rawId: value.slice(BuiltinPrefix.length) };
   }
-  if (value.startsWith(PIPELINE_PREFIX)) {
-    return { kind: 'pipeline', rawId: value.slice(PIPELINE_PREFIX.length) };
+  if (value.startsWith(PipelinePrefix)) {
+    return { kind: 'pipeline', rawId: value.slice(PipelinePrefix.length) };
   }
   return null;
 }

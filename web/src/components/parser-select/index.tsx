@@ -20,7 +20,7 @@ import {
   useParserOptions,
   type ParserOptionKind,
 } from '@/hooks/use-parser-options';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useTranslation } from 'react-i18next';
 
 interface IProps {
   // Prefixed value produced by buildParserOptionValue, e.g. "builtin:general".
@@ -43,6 +43,18 @@ export function ParserSelect({
   const { t } = useTranslation('knowledgeConfiguration');
   const { options, loading } = useParserOptions();
 
+  const handleChange = useCallback(
+    (v: string) => {
+      const parsed = parseParserOptionValue(v);
+      if (!parsed) {
+        onChange(null, '');
+        return;
+      }
+      onChange(parsed.kind, parsed.rawId);
+    },
+    [onChange, parseParserOptionValue],
+  );
+
   return (
     <SelectWithSearch
       value={value}
@@ -50,14 +62,7 @@ export function ParserSelect({
       // Keep the current value visible while options are still loading so the
       // selection doesn't flash an empty trigger on edit screens.
       renderMissingValue={(v) => v}
-      onChange={(v: string) => {
-        const parsed = parseParserOptionValue(v);
-        if (!parsed) {
-          onChange(null, '');
-          return;
-        }
-        onChange(parsed.kind, parsed.rawId);
-      }}
+      onChange={handleChange}
       placeholder={placeholder ?? t('parserSelectPlaceholder')}
       options={options}
       disabled={disabled}
