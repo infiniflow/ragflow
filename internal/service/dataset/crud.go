@@ -37,19 +37,18 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
-	// A built-in parser_id is valid without parse_type. parse_type is only
-	// required when selecting a pipeline or explicitly supplied.
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if err != nil {
-			return nil, common.CodeDataError, err
-		}
-		if isBuiltin && req.PipelineID != nil {
-			req.PipelineID = nil
-		}
-		if isPipeline && req.ParserID != nil {
-			req.ParserID = nil
-		}
+	// parse_type is required on dataset creation: it explicitly selects BuiltIn
+	// (1) or Pipeline (2) mode. This replaces the previous silent default to
+	// BuiltIn when the field was omitted.
+	isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if isBuiltin && req.PipelineID != nil {
+		req.PipelineID = nil
+	}
+	if isPipeline && req.ParserID != nil {
+		req.ParserID = nil
 	}
 
 	parserID := string(entity.ParserTypeGeneral)
@@ -119,7 +118,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			return nil, common.CodeArgumentError, err
 		}
 	}
-	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	isPipeline = pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
 	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
 	parserConfig := entity.JSONMap{}
 	if dslErr != nil {

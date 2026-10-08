@@ -14,9 +14,7 @@
  *  limitations under the License.
  */
 
-import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
-import { DataFlowSelect } from '@/components/data-pipeline-select';
-import { ParseTypeItem } from '@/components/parse-type-form-field';
+import { ParserSelect } from '@/components/parser-select';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { ButtonLoading } from '@/components/ui/button';
 import {
@@ -31,8 +29,9 @@ import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
-import { FieldErrors, useFormState } from 'react-hook-form';
+import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { buildParserOptionValue } from '@/hooks/use-parser-options';
 import {
   IDocumentPipelineDialogProps,
   useDocumentPipelineForm,
@@ -67,6 +66,15 @@ export function DocumentPipelineDialog({
     showOperatorTabs,
     buildSubmitData,
   } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
+
+  const selectedParserId = useWatch({
+    control: form.control,
+    name: 'parser_id',
+  });
+  const selectedPipelineId = useWatch({
+    control: form.control,
+    name: 'pipeline_id',
+  });
 
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {
@@ -107,15 +115,29 @@ export function DocumentPipelineDialog({
             className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
-            <ParseTypeItem />
-            {parseType === ParseType.BuiltIn && <BuiltinPipelineItem />}
-            {parseType === ParseType.Pipeline && (
-              <DataFlowSelect
-                isMult={false}
-                showToDataPipeline={true}
-                formFieldName="pipeline_id"
-              />
-            )}
+            <ParserSelect
+              value={
+                parseType === ParseType.BuiltIn
+                  ? buildParserOptionValue('builtin', selectedParserId)
+                  : selectedPipelineId
+                    ? buildParserOptionValue('pipeline', selectedPipelineId)
+                    : undefined
+              }
+              onChange={(kind, rawId) => {
+                if (kind === 'builtin') {
+                  form.setValue('parse_type', ParseType.BuiltIn);
+                  form.setValue('parser_id', rawId);
+                  form.setValue('pipeline_id', '');
+                } else if (kind === 'pipeline') {
+                  form.setValue('parse_type', ParseType.Pipeline);
+                  form.setValue('pipeline_id', rawId);
+                  form.setValue('parser_id', '');
+                } else {
+                  form.setValue('parser_id', '');
+                  form.setValue('pipeline_id', '');
+                }
+              }}
+            />
             {showOperatorTabs && (
               <PipelineOperatorTabs
                 nodes={operatorNodes}

@@ -1,6 +1,4 @@
-import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
-import { DataFlowSelect } from '@/components/data-pipeline-select';
-import { ParseTypeItem } from '@/components/parse-type-form-field';
+import { ParserSelect } from '@/components/parser-select';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
@@ -11,9 +9,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
-import { Form } from '@/components/ui/form';
-import { FormLayout } from '@/constants/form';
+import { Form, FormItem, FormLabel } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
+import { buildParserOptionValue } from '@/hooks/use-parser-options';
 import {
   useActiveTab,
   usePipelineOperatorNodes,
@@ -214,18 +212,38 @@ export default function DatasetSetting() {
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.dataPipeline')}
                   </div>
-                  <ParseTypeItem line={1} name="parse_type" />
-                  {parseType === ParseType.BuiltIn && (
-                    <BuiltinPipelineItem line={1} name="parser_id" />
-                  )}
-                  {parseType === ParseType.Pipeline && (
-                    <DataFlowSelect
-                      isMult={false}
-                      showToDataPipeline={true}
-                      formFieldName="pipeline_id"
-                      layout={FormLayout.Horizontal}
-                    />
-                  )}
+                  <FormItem className="items-center space-y-0">
+                    <div className="flex items-center gap-1">
+                      <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
+                        {t('knowledgeConfiguration.parseType')}
+                      </FormLabel>
+                      <div className="text-muted-foreground w-3/4">
+                        <ParserSelect
+                          value={
+                            parseType === ParseType.BuiltIn
+                              ? buildParserOptionValue('builtin', builtinPipelineId ?? '')
+                              : pipelineId
+                                ? buildParserOptionValue('pipeline', pipelineId)
+                                : undefined
+                          }
+                          onChange={(kind, rawId) => {
+                            if (kind === 'builtin') {
+                              form.setValue('parse_type', ParseType.BuiltIn);
+                              form.setValue('parser_id', rawId);
+                              form.setValue('pipeline_id', '');
+                            } else if (kind === 'pipeline') {
+                              form.setValue('parse_type', ParseType.Pipeline);
+                              form.setValue('pipeline_id', rawId);
+                              form.setValue('parser_id', '');
+                            } else {
+                              form.setValue('parser_id', '');
+                              form.setValue('pipeline_id', '');
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </FormItem>
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}

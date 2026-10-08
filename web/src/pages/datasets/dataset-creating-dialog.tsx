@@ -1,6 +1,4 @@
-import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
-import { DataFlowSelect } from '@/components/data-pipeline-select';
-import { ParseTypeItem } from '@/components/parse-type-form-field';
+import { ParserSelect } from '@/components/parser-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,8 +17,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
+import { buildParserOptionValue } from '@/hooks/use-parser-options';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -45,7 +43,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
           message: t('knowledgeList.namePlaceholder'),
         })
         .trim(),
-      parseType: z.nativeEnum(ParseType).optional(),
+      parse_type: z.nativeEnum(ParseType).optional(),
       embedding_model: z
         .string()
         .min(1, {
@@ -56,16 +54,16 @@ export function InputForm({ onOk }: IModalProps<any>) {
       pipeline_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      // When parseType === BuiltIn, parser_id is required
-      if (data.parseType === ParseType.BuiltIn && !data.parser_id?.trim()) {
+      // When parse_type === BuiltIn, parser_id is required
+      if (data.parse_type === ParseType.BuiltIn && !data.parser_id?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.parserRequired'),
           path: ['parser_id'],
         });
       }
-      // When parseType === Pipeline, pipeline_id required
-      if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
+      // When parse_type === Pipeline, pipeline_id required
+      if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: t('knowledgeList.dataFlowRequired'),
@@ -78,15 +76,24 @@ export function InputForm({ onOk }: IModalProps<any>) {
     resolver: zodResolver(FormSchema),
     defaultValues: {
       name: '',
-      parseType: ParseType.BuiltIn,
-      parser_id: '',
+      parse_type: ParseType.BuiltIn,
+      parser_id: 'general',
+      pipeline_id: '',
       embedding_model: defaultModelDictionary?.embd_id,
     },
   });
 
   const parseType = useWatch({
     control: form.control,
-    name: 'parseType',
+    name: 'parse_type',
+  });
+  const parserId = useWatch({
+    control: form.control,
+    name: 'parser_id',
+  });
+  const pipelineId = useWatch({
+    control: form.control,
+    name: 'pipeline_id',
   });
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
@@ -96,12 +103,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
         : omit(data, ['parser_id']);
     onOk?.(nextData);
   }
-
-  useEffect(() => {
-    if (parseType === ParseType.BuiltIn) {
-      form.setValue('pipeline_id', '');
-    }
-  }, [parseType, form]);
 
   // Backfill the default embedding model once the async query resolves, but
   // never overwrite a model the user has already picked.
@@ -138,21 +139,29 @@ export function InputForm({ onOk }: IModalProps<any>) {
         />
 
         <EmbeddingModelItem line={2} isEdit={false} />
-        <ParseTypeItem
-          builtInLabelKey="knowledgeList.builtInTemplate"
-          pipelineLabelKey="knowledgeList.ingestionPipeline"
+        <ParserSelect
+          value={
+            parseType === ParseType.BuiltIn
+              ? buildParserOptionValue('builtin', parserId ?? '')
+              : pipelineId
+                ? buildParserOptionValue('pipeline', pipelineId)
+                : undefined
+          }
+          onChange={(kind, rawId) => {
+            if (kind === 'builtin') {
+              form.setValue('parse_type', ParseType.BuiltIn);
+              form.setValue('parser_id', rawId);
+              form.setValue('pipeline_id', '');
+            } else if (kind === 'pipeline') {
+              form.setValue('parse_type', ParseType.Pipeline);
+              form.setValue('pipeline_id', rawId);
+              form.setValue('parser_id', '');
+            } else {
+              form.setValue('parser_id', '');
+              form.setValue('pipeline_id', '');
+            }
+          }}
         />
-        {parseType === ParseType.BuiltIn && (
-          <BuiltinPipelineItem name="parser_id" />
-        )}
-        {parseType === ParseType.Pipeline && (
-          <DataFlowSelect
-            isMult={false}
-            showToDataPipeline={true}
-            formFieldName="pipeline_id"
-            layout={FormLayout.Vertical}
-          />
-        )}
       </form>
     </Form>
   );

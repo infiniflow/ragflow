@@ -661,7 +661,9 @@ func (c *CLI) APICreateDatasetCommand(commandCount int, cmd *Command) (ResponseI
 	}
 
 	payload := map[string]interface{}{
-		"name": datasetName,
+		"name":       datasetName,
+		"parse_type": 1,
+		"parser_id":  "general",
 	}
 
 	resp, err := httpClient.Request(commandCount, "POST", "/datasets", httpClient.AuthKind(), nil, payload)
