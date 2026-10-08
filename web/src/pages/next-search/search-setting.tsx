@@ -387,7 +387,6 @@ function SearchSetting({
               isTooltipShown
               similarityName="search_config.similarity_threshold"
               similarityWeightName="search_config.keywords_similarity_weight"
-              similarityWeightType="keyword"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField

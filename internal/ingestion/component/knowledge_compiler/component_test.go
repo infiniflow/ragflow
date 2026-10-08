@@ -150,7 +150,7 @@ func firstWords(s string, n int) string {
 
 func installProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -179,7 +179,7 @@ func deterministicVec(s string, dim int) []float32 {
 
 func installMockDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: mockChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -217,7 +217,7 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	// 2 input chunks + 3 entities + 2 relations = 7 total. The structure
 	// variant no longer emits a separate compact graph blob (#19474): the
 	// per-row entity/relation products are the whole output, mirroring the
-	// storage-model change that dropped the knowledge_graph_kwd="graph" row.
+	// storage-model change that dropped the type_kwd="graph" row.
 	if len(chunks) != 7 {
 		t.Fatalf("len(chunks) = %d, want 7 (2 input + 3 entities + 2 relations)", len(chunks))
 	}
@@ -229,8 +229,8 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 		if !ok {
 			continue
 		}
-		// knowledge_graph_kwd discriminates the graph row.
-		if kind, _ := cm["knowledge_graph_kwd"].(string); kind == "graph" {
+		// type_kwd discriminates the graph row.
+		if kind, _ := cm["type_kwd"].(string); kind == "graph" {
 			graphChunks++
 		}
 	}
@@ -447,7 +447,7 @@ func wikiScopeFixtureChunks() []any {
 
 func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, _, _ string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, _, _ string) (common.Deps, error) {
 		return common.Deps{
 			Chat:            proseChat{},
 			Embed:           mockEmbedder{dim: 8},
@@ -567,18 +567,18 @@ func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 	// children). Mindmap now emits entity/relation rows (plan §1.2): every node
 	// is an entity, every parent→child edge a relation. With a flat reply there
 	// is at least one entity (the root) and it must carry name_kwd +
-	// knowledge_graph_kwd="entity" (the structure-graph storage contract).
+	// type_kwd="entity" (the structure-graph storage contract).
 	chunks := runVariant(t, "mindmap", nil)
 	entityCount := 0
 	for _, c := range chunks {
-		kind, _ := c["knowledge_graph_kwd"].(string)
+		kind, _ := c["type_kwd"].(string)
 		if kind == "entity" {
 			entityCount++
 			if _, ok := c["name_kwd"]; !ok {
 				t.Fatalf("mindmap entity chunk missing name_kwd: %+v", c)
 			}
-			if kg, _ := c["knowledge_graph_kwd"].(string); kg != "entity" {
-				t.Fatalf("mindmap entity chunk knowledge_graph_kwd = %q, want entity", kg)
+			if kg, _ := c["type_kwd"].(string); kg != "entity" {
+				t.Fatalf("mindmap entity chunk type_kwd = %q, want entity", kg)
 			}
 		}
 	}
@@ -690,7 +690,7 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want 1 (the resolved template id)", cm["id"], cm["compilation_template_ids"])
 		}
 		// Entity rows must carry source_chunk_ids.
-		if kg, _ := cm["knowledge_graph_kwd"].(string); kg == "entity" {
+		if kg, _ := cm["type_kwd"].(string); kg == "entity" {
 			var idsCount int
 			switch ids := cm["source_chunk_ids"].(type) {
 			case []any:
@@ -781,7 +781,7 @@ func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 // product share one vector, and we supply that vector as a historical candidate;
 // the run must drop the near-duplicate products so none survive in the output.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     proseChat{},
 			Embed:    constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -829,7 +829,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 }
 
 func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     wikiUpdateChat{},
 			Embed:    mockEmbedder{dim: 8},
@@ -920,7 +920,7 @@ func (f *fakeHistoricalKNN) TopKHistory(_ context.Context, _ string, datasetID, 
 // scoped to the dataset, not the document.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	knn := &fakeHistoricalKNN{hit: true} // every product is a near-dup -> dropped
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:          proseChat{},
 			Embed:         constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -1040,7 +1040,7 @@ func (s wikiStoreTestStub) GetPageBySlug(_ context.Context, _, _, slug string) (
 // entity/relation. A fenced ```json ... ``` reply is now unwrapped and parsed,
 // so the extraction still yields its entities.
 func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: fencedChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -1080,7 +1080,7 @@ func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
 // regression: when the reply is genuinely unparseable (not just fenced), the
 // component must fail loudly instead of silently emitting zero knowledge units.
 func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseOnlyChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })

@@ -17,11 +17,42 @@
 package tool
 
 import (
+	"errors"
 	"net"
 	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
+
+func TestResolveAndValidateRejectsNonGlobalAddresses(t *testing.T) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if mixed := map[string]string{
+			"mixed-zero.example":      "0.1.2.3",
+			"mixed-cgnat.example":     "100.64.0.1",
+			"mixed-benchmark.example": "198.19.0.1",
+		}[host]; mixed != "" {
+			return []string{"1.1.1.1", mixed}, nil
+		}
+		return origLookup(host)
+	}
+	t.Cleanup(func() { common.LookupHost = origLookup })
+
+	for _, rawURL := range []string{
+		"http://0.1.2.3/", "http://100.64.0.1/", "http://198.19.0.1/",
+		"http://[::ffff:100.64.0.1]/", "http://[2002:7f00:101::1]/",
+		"http://[64:ff9b::7f00:1]/",
+		"http://mixed-zero.example/", "http://mixed-cgnat.example/",
+		"http://mixed-benchmark.example/",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			host, ip, err := ResolveAndValidate(rawURL)
+			if !errors.Is(err, ErrSSRFBlocked) || host != "" || ip != nil {
+				t.Fatalf("ResolveAndValidate(%q) = (%q, %v, %v), want blocked with no pinned IP", rawURL, host, ip, err)
+			}
+		})
+	}
+}
 
 func TestValidateURLForSSRF(t *testing.T) {
 	originalLookupHost := common.LookupHost

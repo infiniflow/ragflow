@@ -70,7 +70,7 @@ type parallelOptions struct {
 	runOpts             []compose.Option
 	checkpointBuilder   func(nodeKey string, index int) string
 	enableSubCheckpoint bool
-	contextBuilder      func(ctx context.Context, item any, index int) context.Context
+	contextBuilder      func(ctx context.Context, item any, index int) (context.Context, error)
 }
 
 // WithParallelMaxConcurrency caps the number of per-item sub-workflow
@@ -146,10 +146,9 @@ func WithParallelEnableSubCheckpoint(enable bool) ParallelOption {
 }
 
 // WithParallelContextBuilder decorates the per-item sub-workflow
-// context before Invoke. This lets callers attach item-scoped runtime
-// state without changing the outer []I -> []O parallel API.
+// context before Invoke. A builder error skips invoking that item.
 func WithParallelContextBuilder(
-	b func(ctx context.Context, item any, index int) context.Context,
+	b func(ctx context.Context, item any, index int) (context.Context, error),
 ) ParallelOption {
 	return func(o *parallelOptions) {
 		if b != nil {
@@ -666,7 +665,12 @@ func runParallelFanout[I, O any](
 		// Bridge store wiring for this item.
 		subCtx = withParallelBridgeState(subCtx, bridgeState)
 		if options.contextBuilder != nil {
-			subCtx = options.contextBuilder(subCtx, items[idx], idx)
+			var err error
+			subCtx, err = options.contextBuilder(subCtx, items[idx], idx)
+			if err != nil {
+				resultCh <- parallelTaskResult{index: idx, err: err}
+				return
+			}
 		}
 
 		invokeOpts := make([]compose.Option, 0, len(options.runOpts)+1)

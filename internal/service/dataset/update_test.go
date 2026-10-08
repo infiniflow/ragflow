@@ -928,8 +928,6 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroup{},
-		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
@@ -1195,7 +1193,7 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
-// extractorNodeMetadata returns the metadata object stored on the first
+// extractorNodeMetadataInTest returns the metadata object stored on the first
 // Extractor node of a parser_config (the component-scoped form).
 func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
 	t.Helper()

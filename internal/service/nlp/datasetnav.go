@@ -1767,7 +1767,8 @@ func firstStringValue(v interface{}) string {
 	return ""
 }
 
-// intValue returns the integer value of an engine field.
+// firstStringSlice returns v as a []string, unwrapping a []interface{} whose
+// elements are all strings; returns nil for any other type.
 func firstStringSlice(v interface{}) []string {
 	switch s := v.(type) {
 	case []string:

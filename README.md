@@ -255,12 +255,12 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
    cd ragflow
    ```
 
-2. Prepare native libraries and model files with the [Go dependency download script](./ragflow_deps/download_go_deps.py), then build the Go services:
+2. Prepare native libraries, model files, and tokenizer assets with the [Go dependency download script](./ragflow_deps/download_deps.py), then build the Go services:
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 

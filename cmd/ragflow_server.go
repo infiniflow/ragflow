@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/agent/retrievalbridge"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	smartagentic "ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
 	"ragflow/internal/deepdoc/native"
 	"ragflow/internal/deepdoc/parser/pdf"
@@ -68,7 +69,6 @@ import (
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
@@ -938,15 +938,14 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
 	// The embedder resolves the tenant's embedding model on demand, so both
 	// Search and UpsertDoc can embed queries/summaries automatically.
-	navModelService := service.NewModelProviderService()
-	navService := nlp.NewNavService(service.NewNavEmbedder(navModelService, ""))
+	navService := nlp.NewNavService(service.NewNavEmbedder(service.NewModelFactory(), ""))
 	// The cluster namer/merger is the counterpart of Python's
 	// _llm_create_summary / _llm_merge: a new cluster is named after the model's
 	// topic title and an existing cluster's description is fused with the joining
 	// document. Passing an empty model ref resolves each tenant's default chat
 	// model on demand; without one the nav service keeps its deterministic
 	// behaviour.
-	navService.SetNavMergeLLM(service.NewNavMergeLLM(navModelService, ""))
+	navService.SetNavMergeLLM(service.NewNavMergeLLM(service.NewModelFactory(), ""))
 	nav.SetNavService(navService)
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
@@ -1122,8 +1121,8 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
-	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService)
-	modelSolver := service.NewModelSolver()
+	modelFactory := service.NewModelFactory()
+	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -1141,25 +1140,40 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
 		docEngine,
 		documentDAO,
-		nil,
+		agenttool.RetrievalModelConstructors{
+			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
+				access := service.ModelAccess{TenantID: tenantID}
+				if strings.TrimSpace(modelRef) == "" {
+					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
+				}
+				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
+			},
+			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
+				access := service.ModelAccess{TenantID: tenantID}
+				if strings.TrimSpace(modelRef) == "" {
+					return modelFactory.NewDefaultChatModel(ctx, access)
+				}
+				return modelFactory.NewChatModel(ctx, access, modelRef)
+			},
+			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
+				return modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+			},
+		},
 		retrievalEnhancer,
 	)
-	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		var target *service.ModelTarget
-		var err error
-		if strings.TrimSpace(modelRef) == "" {
-			target, err = modelSolver.ResolveDefaultModelConfig(ctx, tenantID, modelType)
-		} else {
-			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
-		}
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
-	})
 	agenttool.SetRetrievalService(retrievalAdapter)
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
+
+	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
+	// pushdown and lexical BM25 over the same doc engine the retrieval adapter
+	// wraps. The locate tools resolve these services per call, so they must be
+	// registered before the server starts serving.
+	runtime.SetGrepService(smartagentic.NewGrepAdapter(docEngine))
+	bm25Adapter := smartagentic.NewBm25Adapter(docEngine)
+	bm25Adapter.SetQueryBuilder(nlp.GetQueryBuilder())
+	runtime.SetBm25Service(bm25Adapter)
+	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
 
 	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
 	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
@@ -1168,7 +1182,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// reasoning chats.
 	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
 	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
-	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelProviderService, metadataService, docEngine))
+	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelFactory, metadataService, docEngine))
 	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
 
 	// Initialize handler layer
@@ -1231,14 +1245,13 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		modelProviderService,
+		modelFactory,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(modelProviderService)
 	askService := service.NewAskService(chunkService, nil, 0, 0)
 	searchBotHandler.SetAskService(askService)
-	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderService, chunkService)
-	searchHandler.SetCompletionDependencies(modelProviderService, askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelFactory, chunkService)
+	searchHandler.SetCompletionDependencies(modelFactory, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
@@ -1247,7 +1260,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
-		modelSolver,
+		modelFactory,
 		metadataService,
 		retrievalService,
 		documentDAO,
@@ -1270,8 +1283,8 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically,
 	// and the cluster namer/merger resolves the tenant's default chat model the
 	// same way (see the ingestor's wrapping of SetNavMergeLLM).
-	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelProviderService, ""))
-	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelProviderService, ""))
+	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelFactory, ""))
+	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelFactory, ""))
 	nav.SetNavService(apiNavService)
 
 	// Install the compiled-wiki search service. It is backed directly by the
@@ -1674,10 +1687,14 @@ func logTokenizerCounters() {
 	if len(unavailable) > 0 {
 		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
 			zap.Strings("unavailable", unavailable),
-			zap.String("hint", "run `uv run ragflow_deps/download_go_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+			zap.String("hint", "run `uv run ragflow_deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
 	}
 }
 
+// resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
+// env, else the RAGFlow default model dir (internal/rag/res/deepdoc),
+// else the assets fetched by ragflow_deps/download_deps.py. The first
+// candidate that actually contains the required weights wins.
 func resolveDeepDocModelDir() string {
 	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {
 		return v

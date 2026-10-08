@@ -56,7 +56,7 @@ func signedVec(str string, dim int) []float32 {
 // installSignedProseDeps wires a prose LLM + signed deterministic embedder.
 func installSignedProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: signedEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -165,8 +165,8 @@ func TestGolden_Structure_ProductCount(t *testing.T) {
 	// compact graph blob was removed by #19474).
 	graphCount, nodeCount, edgeCount := 0, 0, 0
 	for _, p := range prods {
-		// knowledge_graph_kwd discriminates the structure graph rows.
-		kind, _ := p.GetExtraString("knowledge_graph_kwd")
+		// type_kwd discriminates the structure graph rows.
+		kind, _ := p.GetExtraString("type_kwd")
 		switch kind {
 		case "graph":
 			graphCount++

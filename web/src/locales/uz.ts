@@ -419,7 +419,7 @@ export default {
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): joriy parser konfiguratsiyasi tomonidan qo‘llab-quvvatlanmaydi',
       reselectParserAfterUploadHint:
-        'Yuklashni davom ettiring, so‘ng fayl ro‘yxatida bu fayllar uchun tahlil usulini qayta tanlang.',
+        'Yuklashni davom ettiring; tizim bu fayllarni avtomatik ravishda qo‘llab-quvvatlanadigan ichki tahlil konfiguratsiyasiga o‘tkazadi.',
       reselectParserToParseHint:
         'Ta’sirlangan fayllar uchun tahlil usulini qayta tanlang, so‘ng qayta tahlil qiling.',
       addModelAfterUploadHint:
