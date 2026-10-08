@@ -317,10 +317,14 @@ func (p *TenkiProvider) ExecuteCode(
 // main() return value.
 func buildTenkiExecutionResult(r *tenkisdk.Result, lang string, start time.Time) *ExecutionResult {
 	stdout, structured := ExtractStructuredResult(string(r.Stdout))
+	exitCode := int(r.ExitCode)
+	if r.Status == tenkisdk.CommandStatusTimedOut {
+		exitCode = 124
+	}
 	return &ExecutionResult{
 		Stdout:        stdout,
 		Stderr:        string(r.Stderr),
-		ExitCode:      int(r.ExitCode),
+		ExitCode:      exitCode,
 		ExecutionTime: time.Since(start).Seconds(),
 		Metadata: map[string]any{
 			"language":          lang,
