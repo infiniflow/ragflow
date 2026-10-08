@@ -92,7 +92,7 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 		common.Info("Legacy tenant_llm table not found; no max_tokens to backfill")
 		return 0, nil
 	}
-	if !scoped.Migrator().HasColumn("tenant_llm", "max_tokens") {
+	if !scoped.Migrator().HasColumn(&entity.TenantLLM{}, "MaxTokens") {
 		return 0, fmt.Errorf("legacy tenant_llm.max_tokens column is missing")
 	}
 	for _, table := range []string{"tenant_model_provider", "tenant_model_instance", "tenant_model"} {
