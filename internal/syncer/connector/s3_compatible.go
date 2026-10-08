@@ -207,11 +207,16 @@ func s3PinnedHTTPClient() *http.Client {
 		// correct endpoint. Only method-preserving 307/308 are followed, same
 		// as the SDK default. Without this, Go's default client would follow a
 		// 301/302 before the SDK sees it, replaying a request signed for one
-		// endpoint against another host.
+		// endpoint against another host. A followed hop must still be HTTPS:
+		// the dial-time pin cannot see the scheme, and Go keeps the
+		// Authorization header on a same-host or subdomain downgrade.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if req.Response != nil {
 				switch req.Response.StatusCode {
 				case http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+					if err := assertConnectorSchemeHTTPS(req.URL); err != nil {
+						return fmt.Errorf("refusing redirect: %w", err)
+					}
 					return nil
 				}
 			}

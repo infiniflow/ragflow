@@ -159,16 +159,27 @@ func loopbackTestAllow(hostname string) (string, net.IP, bool) {
 // TLS so credentials in request headers are never sent in the clear.
 func assertConnectorURLSafeHTTPS(rawURL string) (string, net.IP, error) {
 	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil {
-		if scheme := strings.ToLower(parsed.Scheme); scheme != "https" {
-			if !connectorAllowLoopbackForTest {
-				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
-			}
-			if _, _, ok := loopbackTestAllow(parsed.Hostname()); !ok {
-				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
-			}
+		if err := assertConnectorSchemeHTTPS(parsed); err != nil {
+			return "", nil, err
 		}
 	}
 	return assertConnectorURLSafe(rawURL)
+}
+
+// assertConnectorSchemeHTTPS is the scheme half of assertConnectorURLSafeHTTPS
+// for callers that already hold a parsed URL and whose host is validated
+// elsewhere (the S3 transport pins every dial).
+func assertConnectorSchemeHTTPS(parsed *url.URL) error {
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "https" {
+		return nil
+	}
+	if connectorAllowLoopbackForTest {
+		if _, _, ok := loopbackTestAllow(parsed.Hostname()); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("URL must use HTTPS (got %q)", scheme)
 }
 
 // validateConnectorURL is the config-time SSRF check used by connector
