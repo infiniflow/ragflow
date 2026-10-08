@@ -530,30 +530,55 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		}
 	}
 
-	// Pass 4: the final group must not hold two children with the same
-	// case-insensitive name. This replaces the per-row pre-check so renames and
-	// deletions that settle on unique names are accepted.
-	return s.assertUniqueChildNames(ctx, db, groupID)
+	// Pass 4: reject the case-insensitive duplicates this update introduces.
+	// Names that this update renames or creates are checked against the final
+	// group, while pre-existing duplicates between untouched names are left alone
+	// so a legacy group stays editable.
+	oldNames := make(map[string]string, len(current))
+	for _, c := range current {
+		oldNames[c.ID] = c.Name
+	}
+	return s.assertUniqueChildNames(ctx, db, groupID, oldNames)
 }
 
 // assertUniqueChildNames rejects a group whose valid children collide on a
 // case-insensitive name, matching the DAO's duplicate guard which ignores
-// built-in templates.
-func (s *CompilationTemplateGroupService) assertUniqueChildNames(ctx context.Context, db *gorm.DB, groupID string) error {
+// built-in templates. oldNames maps each child id to its name before the
+// update; a collision is only an error when at least one of the colliding rows
+// was renamed or newly created, so pre-existing duplicates between untouched
+// names are tolerated.
+func (s *CompilationTemplateGroupService) assertUniqueChildNames(ctx context.Context, db *gorm.DB, groupID string, oldNames map[string]string) error {
 	children, err := s.templateDAO.ListByGroup(ctx, db, groupID)
 	if err != nil {
 		return err
 	}
-	seen := make(map[string]struct{}, len(children))
+	type bucket struct {
+		count      int
+		anyChanged bool
+		name       string
+	}
+	buckets := make(map[string]*bucket, len(children))
 	for _, c := range children {
 		if c.IsBuiltin {
 			continue
 		}
 		key := strings.ToLower(strings.TrimSpace(c.Name))
-		if _, dup := seen[key]; dup {
-			return groupValidationErrorf("template name '%s' already exists in this group.", c.Name)
+		b := buckets[key]
+		if b == nil {
+			b = &bucket{}
+			buckets[key] = b
 		}
-		seen[key] = struct{}{}
+		b.count++
+		old, existed := oldNames[c.ID]
+		if !existed || !strings.EqualFold(strings.TrimSpace(old), strings.TrimSpace(c.Name)) {
+			b.anyChanged = true
+			b.name = c.Name
+		}
+	}
+	for _, b := range buckets {
+		if b.count >= 2 && b.anyChanged {
+			return groupValidationErrorf("template name '%s' already exists in this group.", b.name)
+		}
 	}
 	return nil
 }

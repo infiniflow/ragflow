@@ -17,6 +17,7 @@
 package service
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -74,6 +76,41 @@ func templateByName(t *testing.T, group *GroupListItem, name string) *TemplateLi
 	}
 	t.Fatalf("template %q not found in group %#v", name, group.Templates)
 	return nil
+}
+
+// seedLegacyCompilationGroup writes a group and its children straight to the
+// database, bypassing the service's case-insensitive dedupe so tests can model
+// rows created before that guard existed.
+func seedLegacyCompilationGroup(t *testing.T, tenantID, groupID string, names ...string) map[string]string {
+	t.Helper()
+
+	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.CompilationTemplateGroup{
+		ID:       groupID,
+		TenantID: tenantID,
+		Name:     "Legacy " + groupID,
+		Status:   &valid,
+	}).Error; err != nil {
+		t.Fatalf("seed legacy group: %v", err)
+	}
+
+	ids := make(map[string]string, len(names))
+	for i, name := range names {
+		id := fmt.Sprintf("%s-c%d", groupID, i)
+		ids[name] = id
+		if err := dao.DB.Create(&entity.CompilationTemplate{
+			ID:       id,
+			TenantID: &tenantID,
+			GroupID:  &groupID,
+			Name:     name,
+			Kind:     "text",
+			Config:   entity.JSONMap{},
+			Status:   &valid,
+		}).Error; err != nil {
+			t.Fatalf("seed legacy template %q: %v", name, err)
+		}
+	}
+	return ids
 }
 
 func templateByID(t *testing.T, group *GroupListItem, id string) *TemplateListItem {
@@ -189,6 +226,51 @@ func TestReconcileChildrenRejectsDuplicateSurvivingName(t *testing.T) {
 		Templates: []*GroupTemplate{
 			{ID: a.ID, Name: "b", Kind: "text", Config: entity.JSONMap{}},
 			{ID: b.ID, Name: "B", Kind: "text", Config: entity.JSONMap{}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists in this group") {
+		t.Fatalf("UpdateGroup error = %v, want duplicate-name error", err)
+	}
+}
+
+// A group that already carries case-variant duplicate child names (created
+// before the case-insensitive guard, on a case-sensitive collation) must stay
+// editable as long as the update does not touch those names.
+func TestReconcileChildrenAllowsLegacyCaseVariantDuplicates(t *testing.T) {
+	setupCompilationGroupTestDB(t)
+	svc := NewCompilationTemplateGroupService()
+	ctx := t.Context()
+
+	ids := seedLegacyCompilationGroup(t, "tenant-1", "legacy-group", "A", "a")
+
+	updated, err := svc.UpdateGroup(ctx, "tenant-1", "legacy-group", &GroupRequest{
+		Templates: []*GroupTemplate{
+			{ID: ids["A"], Name: "A", Kind: "text", Config: entity.JSONMap{}},
+			{ID: ids["a"], Name: "a", Kind: "text", Config: entity.JSONMap{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateGroup with legacy case-variant names: %v", err)
+	}
+	if len(updated.Templates) != 2 {
+		t.Fatalf("templates = %#v, want two", updated.Templates)
+	}
+}
+
+// A rename that lands on an untouched legacy name is a real collision and must
+// still be rejected.
+func TestReconcileChildrenRejectsRenameOntoUnchangedLegacyName(t *testing.T) {
+	setupCompilationGroupTestDB(t)
+	svc := NewCompilationTemplateGroupService()
+	ctx := t.Context()
+
+	ids := seedLegacyCompilationGroup(t, "tenant-1", "legacy-group-2", "A", "a", "B")
+
+	_, err := svc.UpdateGroup(ctx, "tenant-1", "legacy-group-2", &GroupRequest{
+		Templates: []*GroupTemplate{
+			{ID: ids["A"], Name: "b", Kind: "text", Config: entity.JSONMap{}},
+			{ID: ids["a"], Name: "a", Kind: "text", Config: entity.JSONMap{}},
+			{ID: ids["B"], Name: "B", Kind: "text", Config: entity.JSONMap{}},
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "already exists in this group") {
