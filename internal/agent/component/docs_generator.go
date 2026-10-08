@@ -79,16 +79,15 @@ var validOutputFormats = map[string]bool{
 
 // docsGeneratorParam is the static DSL param surface.
 type docsGeneratorParam struct {
-	OutputFormat                 string `json:"output_format"`
-	Content                      string `json:"content"`
-	Filename                     string `json:"filename"`
-	HeaderText                   string `json:"header_text"`
-	FooterText                   string `json:"footer_text"`
-	WatermarkText                string `json:"watermark_text"`
-	AddPageNumbers               bool   `json:"add_page_numbers"`
-	AddTimestamp                 bool   `json:"add_timestamp"`
-	FontSize                     int    `json:"font_size"`
-	IncludeDownloadInfoInContent bool   `json:"include_download_info_in_content"`
+	OutputFormat   string `json:"output_format"`
+	Content        string `json:"content"`
+	Filename       string `json:"filename"`
+	HeaderText     string `json:"header_text"`
+	FooterText     string `json:"footer_text"`
+	WatermarkText  string `json:"watermark_text"`
+	AddPageNumbers bool   `json:"add_page_numbers"`
+	AddTimestamp   bool   `json:"add_timestamp"`
+	FontSize       int    `json:"font_size"`
 }
 
 // Update copies a fresh params map into the receiver.
@@ -135,9 +134,6 @@ func (p *docsGeneratorParam) Update(conf map[string]any) error {
 	} else {
 		p.FontSize = defaultDocsFontSize
 	}
-	if v, ok := boolFrom(conf, "include_download_info_in_content"); ok {
-		p.IncludeDownloadInfoInContent = v
-	}
 	return nil
 }
 
@@ -162,16 +158,15 @@ func (p *docsGeneratorParam) Check() error {
 // AsDict returns the param as a plain map.
 func (p *docsGeneratorParam) AsDict() map[string]any {
 	return map[string]any{
-		"output_format":                    p.OutputFormat,
-		"content":                          p.Content,
-		"filename":                         p.Filename,
-		"header_text":                      p.HeaderText,
-		"footer_text":                      p.FooterText,
-		"watermark_text":                   p.WatermarkText,
-		"add_page_numbers":                 p.AddPageNumbers,
-		"add_timestamp":                    p.AddTimestamp,
-		"font_size":                        p.FontSize,
-		"include_download_info_in_content": p.IncludeDownloadInfoInContent,
+		"output_format":    p.OutputFormat,
+		"content":          p.Content,
+		"filename":         p.Filename,
+		"header_text":      p.HeaderText,
+		"footer_text":      p.FooterText,
+		"watermark_text":   p.WatermarkText,
+		"add_page_numbers": p.AddPageNumbers,
+		"add_timestamp":    p.AddTimestamp,
+		"font_size":        p.FontSize,
 	}
 }
 
@@ -307,14 +302,13 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	previewURL := utility.AgentAttachmentPreviewPath(docID, extWithoutDot, mime)
 	downloadURL := agentAttachmentDownloadPath(docID, extWithoutDot, mime, safeName)
 	downloadInfo := map[string]any{
-		"doc_id":                           docID,
-		"filename":                         safeName,
-		"mime_type":                        mime,
-		"size":                             size,
-		"url":                              downloadURL,
-		"download":                         downloadURL,
-		"preview_url":                      previewURL,
-		"include_download_info_in_content": param.IncludeDownloadInfoInContent,
+		"doc_id":      docID,
+		"filename":    safeName,
+		"mime_type":   mime,
+		"size":        size,
+		"url":         downloadURL,
+		"download":    downloadURL,
+		"preview_url": previewURL,
 	}
 	downloadJSON, err := json.Marshal(downloadInfo)
 	if err != nil {
@@ -322,17 +316,16 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 	}
 
 	return map[string]any{
-		"doc_id":                           docID,
-		"filename":                         safeName,
-		"mime_type":                        mime,
-		"size":                             size,
-		"bytes":                            payload,
-		"download":                         string(downloadJSON),
-		"download_info":                    downloadInfo,
-		"preview_url":                      previewURL,
-		"stored":                           stored,
-		"include_download_info_in_content": param.IncludeDownloadInfoInContent,
-		"created":                          time.Now().UTC().Format(time.RFC3339),
+		"doc_id":        docID,
+		"filename":      safeName,
+		"mime_type":     mime,
+		"size":          size,
+		"bytes":         payload,
+		"download":      string(downloadJSON),
+		"download_info": downloadInfo,
+		"preview_url":   previewURL,
+		"stored":        stored,
+		"created":       time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }
 
