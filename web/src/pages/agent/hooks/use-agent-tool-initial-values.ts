@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import { omit, pick } from 'lodash';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
@@ -70,6 +71,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'api_key', 'mode', 'site', 'top_n');
         case Operator.YouComSearch:
           return pick(initialValues, 'api_key', 'freshness', 'top_n');
+        case Operator.FXMacroData:
+          return pick(initialValues, 'operation', 'arguments', 'timeout', 'use_credentials');
         case Operator.SofyaSearch:
           return pick(initialValues, 'api_key', 'search_depth', 'top_n');
 

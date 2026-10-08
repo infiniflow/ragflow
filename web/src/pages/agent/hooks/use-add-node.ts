@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { Connection, Node, Position, ReactFlowInstance } from '@xyflow/react';
 import humanId from 'human-id';
@@ -32,6 +33,7 @@ import {
   initialIterationValues,
   initialKeenableValues,
   initialSofyaValues,
+  initialFXMacroDataValues,
   initialYouComValues,
   initialListOperationsValues,
   initialLoopValues,
@@ -177,6 +179,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.KeenableSearch]: initialKeenableValues,
       [Operator.YouComSearch]: initialYouComValues,
       [Operator.SofyaSearch]: initialSofyaValues,
+    [Operator.FXMacroData]: initialFXMacroDataValues,
       [Operator.UserFillUp]: initialUserFillUpValues,
       [Operator.StringTransform]: initialStringTransformValues,
       [Operator.TavilyExtract]: initialTavilyExtractValues,
