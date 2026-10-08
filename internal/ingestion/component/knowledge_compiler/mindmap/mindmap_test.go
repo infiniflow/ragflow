@@ -62,6 +62,9 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 	entCount, relCount := 0, 0
 	fromTo := map[string]bool{}
 	for _, p := range products {
+		if p.Meta["compile_kwd"] != "mind_map" {
+			t.Errorf("product %s compile_kwd = %v, want mind_map", p.ID, p.Meta["compile_kwd"])
+		}
 		kind, _ := p.Meta["kind"].(string)
 		switch kind {
 		case "entity":
@@ -70,14 +73,11 @@ func TestTreeToProducts_ParentLinks(t *testing.T) {
 			if err := json.Unmarshal([]byte(p.Content), &payload); err != nil {
 				t.Fatalf("entity %q content is not JSON: %v", p.Meta["name"], err)
 			}
-			if payload["name"] != p.Meta["name"] || payload["type"] != "mindmap" {
-				t.Errorf("entity payload = %v, want name=%v and type=mindmap", payload, p.Meta["name"])
+			if payload["name"] != p.Meta["name"] || payload["type"] != "mind_map" {
+				t.Errorf("entity payload = %v, want name=%v and type=mind_map", payload, p.Meta["name"])
 			}
-			if p.Meta["entity_type"] != "mindmap" {
-				t.Errorf("entity %v type = %v, want mindmap", p.Meta["name"], p.Meta["entity_type"])
-			}
-			if p.Meta["compile_kwd"] != "mindmap" {
-				t.Errorf("entity %v compile_kwd = %v, want mindmap", p.Meta["name"], p.Meta["compile_kwd"])
+			if p.Meta["entity_type"] != "mind_map" {
+				t.Errorf("entity %v type = %v, want mind_map", p.Meta["name"], p.Meta["entity_type"])
 			}
 		case "relation":
 			relCount++
