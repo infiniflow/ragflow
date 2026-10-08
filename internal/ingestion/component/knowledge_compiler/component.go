@@ -557,14 +557,6 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 				return err
 			}
 		}
-		// md_with_weight is the page-body column Python writes with the same
-		// value as content_with_weight (wiki_incremental.py:2190-2191), i.e. the
-		// rendered body; section rows have no page body of their own.
-		if metaString(p.Meta, "kind") == "page" && p.Content != "" {
-			if err := doc.SetExtraValue("md_with_weight", p.Content); err != nil {
-				return err
-			}
-		}
 		// Section depth goes to depth_int; there is no section_level_int column.
 		if v, ok := metaInt(p.Meta, "section_level"); ok {
 			if err := doc.SetExtraValue("depth_int", v); err != nil {
