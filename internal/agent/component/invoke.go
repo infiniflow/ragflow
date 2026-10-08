@@ -584,7 +584,7 @@ func (i *InvokeComponent) Inputs() map[string]string {
 		"proxy":        "Optional proxy URL (e.g. http://host:3128).",
 		"content_type": "Optional Content-Type; default 'application/json' for POST/PUT.",
 		"clean_html":   "When true, strip HTML tags from the response body.",
-		"datatype":     "Expected response datatype: 'json', 'text', or 'html'. Default 'json'.",
+		"datatype":     "Expected response datatype: 'json' (default), 'text', or 'html'. Also selects the POST/PUT variable-body encoding when no raw body is set: 'form' sends variables as 'application/x-www-form-urlencoded', anything else sends them as a JSON object.",
 		"variables":    "Optional template variables: sent as URL query parameters for GET/DELETE, or as a JSON/form request body for POST/PUT (a raw body takes precedence).",
 	}
 }
