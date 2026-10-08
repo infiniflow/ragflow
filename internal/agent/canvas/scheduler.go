@@ -646,12 +646,33 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if cpnNode == nil {
 			return nil, fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
 		}
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			// Message publishes text to the user. Its output map is not
+			// the next node's input; the edge only waits until that
+			// text has been sent. The next node keeps its own params.
+			cpnNode.AddDependency(e.up)
+			continue
+		}
 		if !first[e.cpn] {
 			cpnNode.AddInput(e.up)
 			first[e.cpn] = true
 		} else {
 			cpnNode.AddDependency(e.up)
 		}
+	}
+
+	// A node whose every predecessor is a Message has no data edge yet.
+	// Feed it the workflow input so it still runs, after those messages.
+	for cpnID, comp := range c.Components {
+		if macroMembers[cpnID] || len(comp.Upstream) == 0 || first[cpnID] {
+			continue
+		}
+		node := resolveNode(cpnID)
+		if node == nil {
+			continue
+		}
+		node.AddInput(compose.START)
+		first[cpnID] = true
 	}
 
 	// Pass 2.5: install MultiBranch edges for runtime-control parents.
@@ -722,6 +743,19 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 
 	return wf, nil
+}
+
+// messageEdgeIsOrderingOnly reports that an edge out of Message schedules
+// the next node without copying Message's output into that node's inputs.
+func messageEdgeIsOrderingOnly(c *Canvas, upstreamID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[upstreamID]
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(comp.Obj.ComponentName, "Message")
 }
 
 // directMessageDownstream reports whether a component may hand a deferred

@@ -288,6 +288,10 @@ func buildSubWorkflow(
 			if !members[up] {
 				continue
 			}
+			if messageEdgeIsOrderingOnly(c, up) {
+				nodes[cpnID].AddDependency(up)
+				continue
+			}
 			if first {
 				nodes[cpnID].AddInput(up)
 				first = false
