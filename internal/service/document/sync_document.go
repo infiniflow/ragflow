@@ -80,7 +80,18 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 	cleanupLocation := true
 	defer func() {
 		if cleanupLocation {
-			_ = storageImpl.Remove(context.WithoutCancel(ctx), kb.ID, location)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
+			defer cancel()
+			// A downstream failure can leave the staged key published. Only
+			// remove it when the database confirms it is no longer referenced.
+			current, lookupErr := s.documentDAO.GetByID(cleanupCtx, dao.DB, input.DocumentID)
+			if lookupErr != nil && !errorsIsRecordNotFound(lookupErr) {
+				return
+			}
+			if current != nil && current.Location != nil && *current.Location == location {
+				return
+			}
+			_ = storageImpl.Remove(cleanupCtx, kb.ID, location)
 		}
 	}()
 	if err = storageImpl.Put(ctx, kb.ID, location, input.SourceDocument.Blob); err != nil {
@@ -117,12 +128,14 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
 	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, parserID, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	doc.ID = input.DocumentID
+	// A fingerprint is acknowledged only after all dependent work succeeds.
+	doc.ContentHash = nil
 
 	// put 'file' in mysql `document`
 	if err = s.InsertDocument(doc); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
-	if err = s.publishSyncDocument(ctx, doc, location, contentHash); err != nil {
+	if err = s.publishSyncDocument(ctx, doc, location); err != nil {
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// link 'file' 2 'file_system'
@@ -130,7 +143,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// write metadata and do `auto_parse` (or not)
-	if err = s.afterSyncDocumentUpsert(ctx, input, doc, false); err != nil {
+	if err = s.afterSyncDocumentUpsert(ctx, input, doc, false, contentHash); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 
@@ -157,7 +170,7 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 	doc.Suffix = suffix
 	doc.SourceType = input.SourceType
 
-	if err := s.publishSyncDocument(ctx, doc, location, contentHash); err != nil {
+	if err := s.publishSyncDocument(ctx, doc, location); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 	// update new updated file
@@ -165,14 +178,17 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, err
 	}
 	// write metadata and do `auto_parse`
-	if err := s.afterSyncDocumentUpsert(ctx, input, doc, true); err != nil {
+	if err := s.afterSyncDocumentUpsert(ctx, input, doc, true, contentHash); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated}, nil
 }
 
 // publishSyncDocument publishes the staged object key after the document row exists.
-func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.Document, location, contentHash string) error {
+func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.Document, location string) error {
+	// Invalidate the old fingerprint atomically with the location change so
+	// runners and connectors cannot skip an incompletely processed revision.
+	contentHash := ""
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 		"location":     location,
 		"content_hash": contentHash,
@@ -185,7 +201,7 @@ func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.D
 }
 
 // afterSyncDocumentUpsert writes metadata and optionally enqueues parsing.
-func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool) error {
+func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool, contentHash string) error {
 	// write metadata
 	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
 		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
@@ -193,10 +209,24 @@ func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input ser
 		}
 	}
 	// do auto_parse if enabled
-	if !input.AutoParse {
-		return nil
+	if input.AutoParse {
+		if err := s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun}); err != nil {
+			return err
+		}
 	}
-	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun})
+	// A concurrent sync may have published another revision while metadata or
+	// parsing was being prepared. Never acknowledge its blob with our hash.
+	result := dao.DB.WithContext(ctx).Model(&entity.Document{}).
+		Where("id = ? AND location = ?", doc.ID, doc.Location).
+		Updates(map[string]interface{}{"content_hash": contentHash})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("synced document %s changed before its fingerprint was committed", doc.ID)
+	}
+	doc.ContentHash = &contentHash
+	return nil
 }
 
 // ensureSyncDocumentPostWrite retries dependent work before an unchanged document is skipped.
