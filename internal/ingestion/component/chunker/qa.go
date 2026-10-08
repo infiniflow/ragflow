@@ -141,11 +141,15 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		// content_with_weight-only chunk would share one empty-text id with
 		// every sibling and the index write would collapse all Q&A pairs
 		// into a single chunk.
+		//
+		// content_ltks / content_sm_ltks are folded to lowercase so the ES
+		// whitespace analyzer matches the lowercased query text emitted by
+		// internal/service/nlp.QueryBuilder.Question (line 240).
 		chunk := schema.ChunkDoc{
 			Text:          fmt.Sprintf("%s%s\t%s%s", qPrefix, rmQAPrefix(pair.Question), aPrefix, answer),
 			DocType:       "text",
-			ContentLtks:   contentLTKS,
-			ContentSmLtks: contentSMLTKS,
+			ContentLtks:   strings.ToLower(contentLTKS),
+			ContentSmLtks: strings.ToLower(contentSMLTKS),
 		}
 		//
 		// index), image id + coordinates carried from the source item.

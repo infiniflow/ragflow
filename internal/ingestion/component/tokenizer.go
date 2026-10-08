@@ -975,7 +975,12 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if st == "" {
 				st = s
 			}
-			ck.ContentLtks = st
+			// Fold content_ltks to lowercase so the ES whitespace analyzer
+			// matches the query text that internal/service/nlp's
+			// QueryBuilder.Question already lowercases at line 240. The
+			// analyzer does NOT lowercase itself, so without this fold an
+			// indexed "RAGFlow" token and a query "ragflow" miss each other.
+			ck.ContentLtks = strings.ToLower(st)
 			smt, err := tok.FineGrainedTokenize(st)
 			if err != nil {
 				return fmt.Errorf("tokenizer: summary fine-grain: %w", err)
@@ -983,7 +988,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if smt == "" {
 				smt = st
 			}
-			ck.ContentSmLtks = smt
+			ck.ContentSmLtks = strings.ToLower(smt)
 		} else if t := schema.ContextualText(*ck); strings.TrimSpace(t) != "" {
 			tt, err := tok.Tokenize(t)
 			if err != nil {
@@ -992,7 +997,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if tt == "" {
 				tt = t
 			}
-			ck.ContentLtks = tt
+			ck.ContentLtks = strings.ToLower(tt)
 			smt, err := tok.FineGrainedTokenize(tt)
 			if err != nil {
 				return fmt.Errorf("tokenizer: text fine-grain: %w", err)
@@ -1000,7 +1005,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			if smt == "" {
 				smt = tt
 			}
-			ck.ContentSmLtks = smt
+			ck.ContentSmLtks = strings.ToLower(smt)
 		}
 	}
 	return nil

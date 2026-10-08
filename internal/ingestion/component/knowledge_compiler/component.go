@@ -406,10 +406,13 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				indexText = d
 			}
 		}
+		// Fold content_ltks / content_sm_ltks to lowercase so the ES
+		// whitespace analyzer matches the lowercased query text emitted by
+		// internal/service/nlp.QueryBuilder.Question (line 240).
 		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
-			doc.ContentLtks = ltks
+			doc.ContentLtks = strings.ToLower(ltks)
 			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
-				doc.ContentSmLtks = sm
+				doc.ContentSmLtks = strings.ToLower(sm)
 			}
 		}
 		// Common identity columns.
