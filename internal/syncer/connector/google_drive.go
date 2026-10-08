@@ -332,7 +332,7 @@ func (c *GoogleDriveConnector) listFilePage(ctx context.Context, scope googleDri
 		return googleDriveFilePage{}, err
 	}
 	query := url.Values{
-		"fields":   {"nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,shortcutDetails,owners(emailAddress),size,md5Checksum,fileExtension)"},
+		"fields":   {"nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,shortcutDetails,owners(emailAddress),size,md5Checksum,fileExtension)"},
 		"pageSize": {strconv.Itoa(googleDriveItemsPerPage)},
 		"orderBy":  {"modifiedTime"},
 		"q":        {googleDriveFileQuery(scope, windowStart, windowEnd)},
@@ -366,6 +366,9 @@ func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope 
 	for attempt := 1; attempt <= googleDriveListRetryCount; attempt++ {
 		page, err := c.listFilePage(ctx, scope, pageToken, windowStart, windowEnd)
 		if err == nil {
+			if page.IncompleteSearch {
+				return googleDriveFilePage{}, fmt.Errorf("Google Drive file search is incomplete; narrow the connector's retrieval scope and retry")
+			}
 			return page, nil
 		}
 		lastErr = err
@@ -395,7 +398,7 @@ func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, par
 	for {
 		query := url.Values{
 			"corpora":                   {"allDrives"},
-			"fields":                    {"nextPageToken,files(id)"},
+			"fields":                    {"nextPageToken,incompleteSearch,files(id)"},
 			"includeItemsFromAllDrives": {"true"},
 			"supportsAllDrives":         {"true"},
 			"pageSize":                  {strconv.Itoa(googleDriveItemsPerPage)},
@@ -407,6 +410,9 @@ func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, par
 		var page googleDriveFilePage
 		if err = c.getJSON(ctx, client, "https://www.googleapis.com/drive/v3/files?"+query.Encode(), &page); err != nil {
 			return nil, err
+		}
+		if page.IncompleteSearch {
+			return nil, fmt.Errorf("Google Drive folder search for %s is incomplete; narrow the connector's retrieval scope and retry", parentID)
 		}
 		for _, file := range page.Files {
 			if file.ID != "" {
@@ -997,8 +1003,9 @@ type googleDriveListRequest struct {
 }
 
 type googleDriveFilePage struct {
-	NextPageToken string            `json:"nextPageToken"`
-	Files         []googleDriveFile `json:"files"`
+	NextPageToken    string            `json:"nextPageToken"`
+	IncompleteSearch bool              `json:"incompleteSearch"`
+	Files            []googleDriveFile `json:"files"`
 }
 
 type googleDriveDrivePage struct {
