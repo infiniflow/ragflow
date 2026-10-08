@@ -1,16 +1,16 @@
-import { useStore, useStoreApi } from "@xyflow/react";
-import { useCallback, useEffect, useRef } from "react";
-import useGraphStore from "../store";
-import { layoutCanvasNodes } from "../utils/canvas-auto-layout";
-import { useCanvasEdgeRoute } from "../utils/canvas-edge-route";
+import { useStore, useStoreApi } from '@xyflow/react';
+import { useCallback, useEffect, useRef } from 'react';
+import useGraphStore from '../store';
+import { layoutCanvasNodes } from '../utils/canvas-auto-layout';
+import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    tag === "SELECT" ||
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
     target.isContentEditable
   );
 }
@@ -40,13 +40,13 @@ export function useCanvasAutoLayout(enabled = true): () => void {
               const bounds = lookup.get(node.id)?.internals?.handleBounds;
               const handles = [
                 ...(bounds?.target ?? []).map((handle) => ({
-                  id: handle.id ?? "end",
-                  type: "target" as const,
+                  id: handle.id ?? 'end',
+                  type: 'target' as const,
                   y: handle.y,
                 })),
                 ...(bounds?.source ?? []).map((handle) => ({
-                  id: handle.id ?? "start",
-                  type: "source" as const,
+                  id: handle.id ?? 'start',
+                  type: 'source' as const,
                   y: handle.y,
                 })),
               ];
@@ -92,7 +92,7 @@ export function useCanvasAutoLayout(enabled = true): () => void {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!interactive) return;
       if (event.repeat || event.ctrlKey || event.metaKey) return;
-      if (!event.shiftKey || !event.altKey || event.code !== "KeyT") return;
+      if (!event.shiftKey || !event.altKey || event.code !== 'KeyT') return;
       if (isTypingTarget(event.target)) return;
       if (
         event.target instanceof Element &&
@@ -103,8 +103,8 @@ export function useCanvasAutoLayout(enabled = true): () => void {
       event.preventDefault();
       arrange();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [arrange, interactive]);
 
   return arrange;

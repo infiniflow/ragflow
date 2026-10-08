@@ -4,25 +4,25 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Panel } from "@xyflow/react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
-import { useTranslation } from "react-i18next";
+} from '@/components/ui/select';
+import { Panel } from '@xyflow/react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   CanvasLayoutAlgorithm,
   CanvasLayoutDirection,
   useCanvasEdgeRoute,
-} from "../utils/canvas-edge-route";
+} from '../utils/canvas-edge-route';
 
 const directions: Array<{
   id: CanvasLayoutDirection;
   icon: typeof ArrowRight;
   label: string;
 }> = [
-  { id: "LR", icon: ArrowRight, label: "Left to right" },
-  { id: "RL", icon: ArrowLeft, label: "Right to left" },
-  { id: "TB", icon: ArrowDown, label: "Top to bottom" },
-  { id: "BT", icon: ArrowUp, label: "Bottom to top" },
+  { id: 'LR', icon: ArrowRight, label: 'Left to right' },
+  { id: 'RL', icon: ArrowLeft, label: 'Right to left' },
+  { id: 'TB', icon: ArrowDown, label: 'Top to bottom' },
+  { id: 'BT', icon: ArrowUp, label: 'Bottom to top' },
 ];
 
 export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
@@ -36,11 +36,11 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
       className="nodrag nopan m-3 w-60 space-y-3 rounded-lg border border-border-button bg-bg-base p-3 text-xs text-text-primary shadow-md"
     >
       <label className="block space-y-1">
-        <span className="text-text-secondary">{t("flow.layoutAlgorithm")}</span>
+        <span className="text-text-secondary">{t('flow.layoutAlgorithm')}</span>
         <Select
           value={settings.algorithm}
           onValueChange={(value) => {
-            if (value === "elk" || value === "dagre") {
+            if (value === 'elk' || value === 'dagre') {
               setSettings({ algorithm: value as CanvasLayoutAlgorithm });
               onArrange();
             }
@@ -57,7 +57,7 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
       </label>
 
       <div className="space-y-1">
-        <span className="text-text-secondary">{t("flow.layoutDirection")}</span>
+        <span className="text-text-secondary">{t('flow.layoutDirection')}</span>
         <div className="grid grid-cols-4 gap-1">
           {directions.map((item) => {
             const Icon = item.icon;
@@ -70,8 +70,8 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
                 title={t(`flow.layoutDirection${item.id}`)}
                 className={
                   selected
-                    ? "flex h-8 items-center justify-center rounded-md border border-accent-primary bg-bg-base-hover text-text-primary"
-                    : "flex h-8 items-center justify-center rounded-md border border-border-button text-text-secondary hover:bg-bg-base-hover hover:text-text-primary"
+                    ? 'flex h-8 items-center justify-center rounded-md border border-accent-primary bg-bg-base-hover text-text-primary'
+                    : 'flex h-8 items-center justify-center rounded-md border border-border-button text-text-secondary hover:bg-bg-base-hover hover:text-text-primary'
                 }
                 onClick={() => {
                   setSettings({ direction: item.id as CanvasLayoutDirection });
@@ -88,7 +88,7 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
       <div className="space-y-3">
         <label className="block space-y-1">
           <span className="flex items-center justify-between text-text-secondary">
-            {t("flow.layoutNodeSpacing")}
+            {t('flow.layoutNodeSpacing')}
             <span className="text-text-primary">{settings.nodeSpacing}</span>
           </span>
           <input
@@ -106,7 +106,7 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
         </label>
         <label className="block space-y-1">
           <span className="flex items-center justify-between text-text-secondary">
-            {t("flow.layoutRankSpacing")}
+            {t('flow.layoutRankSpacing')}
             <span className="text-text-primary">{settings.rankSpacing}</span>
           </span>
           <input
@@ -125,11 +125,11 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
       </div>
 
       <label className="block space-y-1">
-        <span className="text-text-secondary">{t("flow.edgeRoute")}</span>
+        <span className="text-text-secondary">{t('flow.edgeRoute')}</span>
         <Select
           value={settings.route}
           onValueChange={(value) => {
-            if (value === "bezier" || value === "orthogonal") {
+            if (value === 'bezier' || value === 'orthogonal') {
               setSettings({ route: value });
               onArrange();
             }
@@ -139,9 +139,9 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="bezier">{t("flow.edgeRouteBezier")}</SelectItem>
+            <SelectItem value="bezier">{t('flow.edgeRouteBezier')}</SelectItem>
             <SelectItem value="orthogonal">
-              {t("flow.edgeRouteOrthogonal")}
+              {t('flow.edgeRouteOrthogonal')}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -152,7 +152,7 @@ export function CanvasLayoutPanel({ onArrange }: { onArrange: () => void }) {
         className="h-8 w-full rounded-md bg-accent-primary text-xs font-medium text-white hover:opacity-90"
         onClick={onArrange}
       >
-        {t("flow.autoArrange")}
+        {t('flow.autoArrange')}
       </button>
     </Panel>
   );
