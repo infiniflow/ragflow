@@ -344,9 +344,10 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				for _, syn := range tkSyns {
 					syn = cleanSynonym(syn)
 					if syn != "" {
-						// Escape "?" (reserved in Infinity) only in the query string;
-						// keywords keep the cleaned, unescaped form.
-						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, strings.ReplaceAll(syn, "?", `\?`), tw.w/4.0))
+						// Do not escape here. Python's English branch embeds the
+						// cleaned synonym as-is; SubSpecialChar would also escape '-',
+						// which WordNet synonyms contain constantly.
+						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, syn, tw.w/4.0))
 						// Extend keywords with cleaned synonyms
 						keywords = append(keywords, syn)
 					}

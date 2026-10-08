@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"ragflow/internal/engine/types"
+	"ragflow/internal/tokenizer"
 )
 
 func TestNewQueryBuilder(t *testing.T) {
@@ -453,7 +454,22 @@ func TestQueryBuilder_SetQueryFields(t *testing.T) {
 // cleaned of single quotes before being embedded in the full-text query.
 // WordNet returns e.g. "cat-o'-nine-tails" for "cat", and a raw single quote
 // breaks the Infinity query parser (see #13823).
+//
+// The Infinity engine's Tokenize returns the input unchanged, so quote
+// stripping is done by cleanSynonym, not by the analyzer. Set the engine
+// explicitly so the test does not pass via cleanSynonym's error fallback
+// when the tokenizer pool is uninitialized.
 func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+	tok, err := tokenizer.Tokenize("cat-o'-nine-tails")
+	if err != nil {
+		t.Fatalf("Tokenize: %v", err)
+	}
+	if tok != "cat-o'-nine-tails" {
+		t.Fatalf("infinity Tokenize = %q, want input unchanged", tok)
+	}
+
 	qb := NewQueryBuilder()
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"cat-o'-nine-tails", "'"},
@@ -468,6 +484,12 @@ func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
 	if strings.Contains(expr.MatchingText, `""`) {
 		t.Errorf("MatchingText contains empty synonym phrase: %q", expr.MatchingText)
 	}
+	if !strings.Contains(expr.MatchingText, `"cat-o-nine-tails"`) {
+		t.Errorf("MatchingText missing cleaned synonym: %q", expr.MatchingText)
+	}
+	if strings.Contains(expr.MatchingText, `\`) {
+		t.Errorf("MatchingText escaped a synonym character: %q", expr.MatchingText)
+	}
 	for _, kw := range keywords {
 		if strings.Contains(kw, "'") || strings.TrimSpace(kw) == "" {
 			t.Errorf("keyword not cleaned: %q (all: %q)", kw, keywords)
@@ -475,10 +497,23 @@ func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
 	}
 }
 
-// TestQueryBuilder_Question_SynonymQuestionMark ensures "?" in an English
-// synonym is escaped in the query string (reserved in Infinity) while the
-// keyword keeps the unescaped form.
+// TestQueryBuilder_Question_SynonymQuestionMark checks a synonym that contains
+// "?" once the Infinity tokenizer is initialized. SetEngineType("infinity")
+// makes Tokenize return the input unchanged, so "?" is preserved (the C++
+// analyzer, used only when the engine is not "infinity", rewrites "what?cat"
+// to "what cat"). Python's English branch does not escape "?", and neither
+// does this path.
 func TestQueryBuilder_Question_SynonymQuestionMark(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+	tok, err := tokenizer.Tokenize("what?cat")
+	if err != nil {
+		t.Fatalf("Tokenize: %v", err)
+	}
+	if tok != "what?cat" {
+		t.Fatalf("infinity Tokenize = %q, want input unchanged", tok)
+	}
+
 	qb := NewQueryBuilder()
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"what?cat"},
@@ -487,15 +522,22 @@ func TestQueryBuilder_Question_SynonymQuestionMark(t *testing.T) {
 	if expr == nil {
 		t.Fatal("Question returned nil expr")
 	}
-	if strings.Contains(strings.ReplaceAll(expr.MatchingText, `\?`, ""), "?") {
-		t.Errorf("MatchingText contains unescaped ?: %q", expr.MatchingText)
+	if !strings.Contains(expr.MatchingText, `"what?cat"`) {
+		t.Errorf("MatchingText missing unescaped synonym: %q", expr.MatchingText)
 	}
-	if !strings.Contains(expr.MatchingText, `\?`) {
-		t.Errorf("MatchingText missing escaped synonym: %q", expr.MatchingText)
+	if strings.Contains(expr.MatchingText, `\`) {
+		t.Errorf("MatchingText should not escape ?: %q", expr.MatchingText)
 	}
+	found := false
 	for _, kw := range keywords {
 		if strings.Contains(kw, `\`) {
 			t.Errorf("keyword should not be escaped: %q", kw)
 		}
+		if kw == "what?cat" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("keywords missing cleaned synonym %q: %q", "what?cat", keywords)
 	}
 }
