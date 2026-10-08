@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -466,6 +467,254 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	case <-proxyHit:
 	case <-time.After(time.Second):
 		t.Fatal("fake proxy was not hit; proxy dial was not pinned to validated IP")
+	}
+}
+
+// TestInvoke_GETVariablesAsQueryParams pins issue #20612: configured
+// variables must be serialized into the request. For GET they become
+// URL query parameters (appended to any query already on the URL).
+func TestInvoke_GETVariablesAsQueryParams(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "question", "ref": "", "value": "what is rag"},
+			map[string]any{"key": "top_k", "ref": "Retrieval:Search@k", "value": "5"},
+		},
+	})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method":             "GET",
+		"url":                srv.URL + "/search?lang=en",
+		"Retrieval:Search@k": "12",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The run-time input overrides the configured default "5".
+	if got := seenQuery.Get("top_k"); got != "12" {
+		t.Errorf("top_k query param = %q, want %q (run-time input wins)", got, "12")
+	}
+	if got := seenQuery.Get("question"); got != "what is rag" {
+		t.Errorf("question query param = %q, want %q", got, "what is rag")
+	}
+	if got := seenQuery.Get("lang"); got != "en" {
+		t.Errorf("lang query param = %q, want pre-existing query preserved", got)
+	}
+	if got, _ := out["result"].(string); got != "ok" {
+		t.Errorf("result = %q, want ok", got)
+	}
+}
+
+// TestInvoke_POSTVariablesAsJSONBody pins issue #20612: for POST with
+// the default json datatype, variables become a JSON object body.
+// Structured values keep their types instead of becoming opaque
+// strings.
+func TestInvoke_POSTVariablesAsJSONBody(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenCT string
+	var seenBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(b, &seenBody); err != nil {
+			t.Errorf("server: body is not valid JSON: %v (%q)", err, string(b))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "chunks", "ref": "Retrieval:Search@json", "value": ""},
+			map[string]any{"key": "top_k", "ref": "", "value": "12"},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method":                "POST",
+		"url":                   srv.URL,
+		"Retrieval:Search@json": []any{"a", "b"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if seenCT != "application/json" {
+		t.Errorf("server saw Content-Type %q, want application/json", seenCT)
+	}
+	// A Go slice value stays a JSON array, not an opaque string.
+	chunks, ok := seenBody["chunks"].([]any)
+	if !ok {
+		t.Fatalf("chunks = %#v, want JSON array", seenBody["chunks"])
+	}
+	if len(chunks) != 2 || chunks[0] != "a" || chunks[1] != "b" {
+		t.Errorf("chunks = %#v, want [a b]", chunks)
+	}
+	// A plain string default stays a string (no type inference).
+	if got, _ := seenBody["top_k"].(string); got != "12" {
+		t.Errorf("top_k = %#v, want string %q", seenBody["top_k"], "12")
+	}
+}
+
+// TestInvoke_POSTVariablesJSONStringArrayKeepsType covers the case
+// where an upstream output arrives as JSON text: a string holding a
+// JSON array/object is embedded as the structured value.
+func TestInvoke_POSTVariablesJSONStringArrayKeepsType(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(b, &seenBody); err != nil {
+			t.Errorf("server: body is not valid JSON: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "chunks", "ref": "Retrieval:Search@json", "value": ""},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method":                "POST",
+		"url":                   srv.URL,
+		"Retrieval:Search@json": `["x","y"]`,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := seenBody["chunks"].([]any); !ok {
+		t.Errorf("chunks = %#v, want JSON array (string holding JSON must not become opaque)", seenBody["chunks"])
+	}
+}
+
+// TestInvoke_POSTVariablesAsFormBody pins issue #20612 for the form
+// datatype: variables become application/x-www-form-urlencoded fields.
+func TestInvoke_POSTVariablesAsFormBody(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenCT string
+	var seenForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		seenForm, _ = url.ParseQuery(string(b))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"datatype": "form",
+		"variables": []any{
+			map[string]any{"key": "question", "ref": "", "value": "hello world"},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "POST",
+		"url":    srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if seenCT != "application/x-www-form-urlencoded" {
+		t.Errorf("server saw Content-Type %q, want application/x-www-form-urlencoded", seenCT)
+	}
+	if got := seenForm.Get("question"); got != "hello world" {
+		t.Errorf("question form field = %q, want %q", got, "hello world")
+	}
+}
+
+// TestInvoke_RawBodyTakesPrecedenceOverVariables pins issue #20612's
+// compatibility note: an explicit raw body keeps working exactly as
+// before, even when variables are configured.
+func TestInvoke_RawBodyTakesPrecedenceOverVariables(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		seenBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "question", "ref": "", "value": "ignored"},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "POST",
+		"url":    srv.URL,
+		"body":   `{"raw":true}`,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if seenBody != `{"raw":true}` {
+		t.Errorf("server saw body %q, want raw body untouched", seenBody)
+	}
+}
+
+// TestResolveInvokeVariables checks the resolution rules: run-time
+// inputs win over configured defaults, blank keys are skipped, and
+// a missing input falls back to the static value.
+func TestResolveInvokeVariables(t *testing.T) {
+	params := map[string]any{
+		"variables": []any{
+			map[string]any{"key": "q", "ref": "sys.query", "value": "default-q"},
+			map[string]any{"key": "k", "ref": "missing", "value": "default-k"},
+			map[string]any{"key": "  ", "ref": "x", "value": "skipped"},
+			"not-a-map",
+		},
+	}
+	vars := resolveInvokeVariables(params, map[string]any{"sys.query": "runtime-q"})
+	if len(vars) != 2 {
+		t.Fatalf("resolveInvokeVariables = %#v, want 2 entries", vars)
+	}
+	if vars[0].name != "q" || vars[0].value != "runtime-q" {
+		t.Errorf("vars[0] = %#v, want q=runtime-q", vars[0])
+	}
+	if vars[1].name != "k" || vars[1].value != "default-k" {
+		t.Errorf("vars[1] = %#v, want k=default-k", vars[1])
+	}
+}
+
+// TestInvokeJSONValue checks the typing rules for the JSON body:
+// structured values pass through, JSON-text arrays/objects embed
+// structurally, everything else stays a string.
+func TestInvokeJSONValue(t *testing.T) {
+	arr := []any{float64(1)}
+	if got := invokeJSONValue(arr); !reflect.DeepEqual(got, arr) {
+		t.Errorf("invokeJSONValue(slice) = %#v, want passthrough", got)
+	}
+	if got, ok := invokeJSONValue(`[1,2]`).([]any); !ok || len(got) != 2 {
+		t.Errorf("invokeJSONValue(%q) = %#v, want embedded array", `[1,2]`, got)
+	}
+	if got, ok := invokeJSONValue(`{"a":1}`).(map[string]any); !ok {
+		t.Errorf("invokeJSONValue(%q) = %#v, want embedded object", `{"a":1}`, got)
+	}
+	if got := invokeJSONValue("hello"); got != "hello" {
+		t.Errorf("invokeJSONValue(hello) = %#v, want string passthrough", got)
+	}
+	if got := invokeJSONValue("12"); got != "12" {
+		t.Errorf("invokeJSONValue(12) = %#v, want string (no type inference)", got)
+	}
+	if got := invokeJSONValue(""); got != "" {
+		t.Errorf("invokeJSONValue(empty) = %#v, want empty string", got)
 	}
 }
 

@@ -135,6 +135,27 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		return nil, fmt.Errorf("Invoke: parse url: %w", err)
 	}
 
+	// Resolve the node's configured template variables against the
+	// merged run-time inputs. GET/DELETE requests carry them as URL
+	// query parameters (appended to any query already on the URL);
+	// POST/PUT requests carry them in the request body unless an
+	// explicit raw body was configured.
+	vars := resolveInvokeVariables(i.params, inputs)
+	if len(vars) > 0 && (method == http.MethodGet || method == http.MethodDelete) {
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("Invoke: parse url: %w", err)
+		}
+		query := parsed.Query()
+		for _, v := range vars {
+			for _, scalar := range invokeScalarStrings(v.value) {
+				query.Add(v.name, scalar)
+			}
+		}
+		parsed.RawQuery = query.Encode()
+		rawURL = parsed.String()
+	}
+
 	// Step 1: SSRF guard for the target URL. The validated
 	// hostname + resolved public IP are reused for DNS pinning.
 	host, pinnedIP, err := common.AssertURLSafe(rawURL)
@@ -191,13 +212,51 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	contentType, _ := inputs["content_type"].(string)
-	if contentType == "" && (method == http.MethodPost || method == http.MethodPut) {
-		contentType = defaultInvokeContentCT
+
+	var (
+		body       io.Reader
+		bodyIsForm bool
+	)
+	if s, ok := inputs["body"].(string); ok && s != "" {
+		// An explicit raw body always wins — raw-body-only requests
+		// keep working exactly as before.
+		body = bytes.NewReader([]byte(s))
+	} else if len(vars) > 0 && (method == http.MethodPost || method == http.MethodPut) {
+		// No raw body: serialize the configured variables into the
+		// request body according to the datatype.
+		switch strings.ToLower(strings.TrimSpace(stringParam(inputs["datatype"]))) {
+		case "form":
+			form := url.Values{}
+			for _, v := range vars {
+				for _, scalar := range invokeScalarStrings(v.value) {
+					form.Add(v.name, scalar)
+				}
+			}
+			body = strings.NewReader(form.Encode())
+			bodyIsForm = true
+		default:
+			// "json" (and anything unrecognized): one JSON object.
+			// Structured values keep their types instead of being
+			// stringified into opaque strings.
+			payload := make(map[string]any, len(vars))
+			for _, v := range vars {
+				payload[v.name] = invokeJSONValue(v.value)
+			}
+			encoded, err := json.Marshal(payload)
+			if err != nil {
+				return nil, fmt.Errorf("Invoke: encode variables to JSON body: %w", err)
+			}
+			body = bytes.NewReader(encoded)
+		}
 	}
 
-	var body io.Reader
-	if s, ok := inputs["body"].(string); ok != false && s != "" {
-		body = bytes.NewReader([]byte(s))
+	if contentType == "" {
+		switch {
+		case bodyIsForm:
+			contentType = "application/x-www-form-urlencoded"
+		case method == http.MethodPost || method == http.MethodPut:
+			contentType = defaultInvokeContentCT
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
@@ -329,6 +388,96 @@ func (i *InvokeComponent) GetInputForm() map[string]any {
 	return form
 }
 
+// invokeVariable is one resolved Invoke template variable: the wire
+// name sent to the server and its resolved value.
+type invokeVariable struct {
+	name  string
+	value any
+}
+
+// resolveInvokeVariables resolves the node's configured variables
+// against the merged run-time inputs. A variable whose ref names a
+// present input takes that input's value (the canvas engine supplies
+// upstream outputs under their refs); otherwise the variable falls
+// back to its configured static value. Order follows the configured
+// variables list. Variables with a blank key are skipped.
+func resolveInvokeVariables(params map[string]any, inputs map[string]any) []invokeVariable {
+	raw, _ := params["variables"].([]any)
+	vars := make([]invokeVariable, 0, len(raw))
+	for _, item := range raw {
+		variable, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(stringParam(variable["key"]))
+		if name == "" {
+			continue
+		}
+		var value any
+		if ref := strings.TrimSpace(stringParam(variable["ref"])); ref != "" {
+			if v, ok := inputs[ref]; ok {
+				value = v
+			}
+		}
+		if value == nil {
+			value = variable["value"]
+		}
+		vars = append(vars, invokeVariable{name: name, value: value})
+	}
+	return vars
+}
+
+// invokeJSONValue converts a resolved variable value for the JSON
+// request body. Structured Go values pass through untouched. A
+// string that parses as a JSON array or object is embedded as the
+// structured value, so upstream JSON outputs keep their types
+// instead of becoming opaque strings; every other string is sent
+// as-is.
+func invokeJSONValue(value any) any {
+	s, ok := value.(string)
+	if !ok {
+		return value
+	}
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return s
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return s
+	}
+	switch decoded.(type) {
+	case []any, map[string]any:
+		return decoded
+	default:
+		return s
+	}
+}
+
+// invokeScalarStrings renders a resolved variable value as one or
+// more scalar strings for URL query parameters and form fields.
+// Slices expand to repeated parameters; structured values are
+// JSON-encoded.
+func invokeScalarStrings(value any) []string {
+	switch v := value.(type) {
+	case nil:
+		return []string{""}
+	case string:
+		return []string{v}
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, invokeScalarStrings(item)...)
+		}
+		return out
+	default:
+		if encoded, err := json.Marshal(v); err == nil {
+			return []string{string(encoded)}
+		}
+		return []string{fmt.Sprintf("%v", v)}
+	}
+}
+
 func (i *InvokeComponent) mergeInputs(inputs map[string]any) map[string]any {
 	merged := cloneInvokeParams(i.params)
 	for key, value := range inputs {
@@ -436,7 +585,7 @@ func (i *InvokeComponent) Inputs() map[string]string {
 		"content_type": "Optional Content-Type; default 'application/json' for POST/PUT.",
 		"clean_html":   "When true, strip HTML tags from the response body.",
 		"datatype":     "Expected response datatype: 'json', 'text', or 'html'. Default 'json'.",
-		"variables":    "Optional template variables for URL/body interpolation.",
+		"variables":    "Optional template variables: sent as URL query parameters for GET/DELETE, or as a JSON/form request body for POST/PUT (a raw body takes precedence).",
 	}
 }
 
