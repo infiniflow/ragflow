@@ -336,13 +336,13 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	name, err = common.UniqueName(name, func(candidate string) (bool, error) {
-		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
-	})
+	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, name, userID, string(entity.StatusValid))
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	req["name"] = name
+	if exists {
+		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
+	}
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {

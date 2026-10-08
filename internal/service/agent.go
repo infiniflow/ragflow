@@ -963,14 +963,11 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	uniqueTitle, err := common.UniqueName(title, func(candidate string) (bool, error) {
-		return s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, candidate, "")
-	})
-	if err != nil {
+	if exists, err := s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, title, ""); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
+	} else if exists {
+		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
-	title = uniqueTitle
-	req.Title = &title
 
 	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)

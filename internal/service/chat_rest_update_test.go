@@ -420,22 +420,21 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateDedupesDuplicateName(t *testing.T) {
+func TestChatServiceCreateRejectsDuplicateName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
 	ctx := t.Context()
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "chat-chat-1"})
-	if err != nil {
-		t.Fatalf("expected deduped create to succeed, got %v", err)
+	if err == nil {
+		t.Fatal("expected duplicate name error")
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
 	}
-	var created entity.Chat
-	if err := db.Where("tenant_id = ? AND name = ?", "user-1", "chat-chat-1(1)").First(&created).Error; err != nil {
-		t.Fatalf("expected a chat named %q: %v", "chat-chat-1(1)", err)
+	if !strings.Contains(err.Error(), "duplicated chat name") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
