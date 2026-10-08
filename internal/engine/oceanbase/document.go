@@ -40,7 +40,7 @@ func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc
 	}
 	vectorSize := vectorDimension(document)
 	if !ready {
-		if err := e.CreateChunkStore(ctx, indexName, "skill", vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, indexName, "skill", vectorSize, "", ""); err != nil {
 			return err
 		}
 	} else if vectorSize > 0 {
@@ -91,7 +91,7 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 		return nil, err
 	}
 	if !ready {
-		if err := e.CreateChunkStore(ctx, indexName, "skill", vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, indexName, "skill", vectorSize, "", ""); err != nil {
 			return nil, err
 		}
 	} else if vectorSize > 0 {

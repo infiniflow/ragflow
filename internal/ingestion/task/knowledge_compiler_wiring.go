@@ -305,7 +305,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		}
 	}
 	if len(rows) > 0 {
-		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID); err != nil {
+		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID, ""); err != nil {
 			return err
 		}
 	}

@@ -149,13 +149,13 @@ func loadDict(fnm string) map[string]int {
 	return res
 }
 
-// Pretoken preprocesses and tokenizes text
+// Pretoken preprocesses and tokenizes text with the dataset language.
 // Reference: term_weight.py L92-114
-func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool) []string {
+func (d *TermWeightDealer) Pretoken(txt string, num bool, stpwd bool, lang string) []string {
 	patt := `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
 
 	res := []string{}
-	tokenized, err := tokenizer.Tokenize(txt)
+	tokenized, err := tokenizer.New(lang).Tokenize(txt)
 	if err != nil {
 		// Fallback to simple split
 		tokenized = txt
@@ -306,9 +306,10 @@ func (d *TermWeightDealer) Split(txt string) []string {
 	return tks
 }
 
-// Weights calculates weights for tokens
+// Weights calculates weights for tokens with the dataset language ("" = English).
 // Reference: term_weight.py L163-246
-func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
+func (d *TermWeightDealer) Weights(tks []string, preprocess bool, lang string) []TermWeight {
+	tok := tokenizer.New(lang)
 	numPattern := regexp.MustCompile("^[0-9,.]{2,}$")
 	shortLetterPattern := regexp.MustCompile("^[a-z]{1,2}$")
 	numSpacePattern := regexp.MustCompile("^[0-9. -]{2,}$")
@@ -371,7 +372,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		}
 		if s == 0 && len([]rune(t)) >= 4 {
 			// Try fine-grained tokenization
-			fgTokens, _ := tokenizer.FineGrainedTokenize(t)
+			fgTokens, _ := tok.FineGrainedTokenize(t)
 			tokens := strings.Fields(fgTokens)
 
 			// Filter: only keep tokens with length > 1
@@ -418,7 +419,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 		}
 		if len([]rune(t)) >= 4 {
 			// Use fine-grained tokenization
-			fgTokens, _ := tokenizer.FineGrainedTokenize(t)
+			fgTokens, _ := tok.FineGrainedTokenize(t)
 			tokens := strings.Fields(fgTokens)
 
 			// Filter: only keep tokens with length > 1
@@ -485,7 +486,7 @@ func (d *TermWeightDealer) Weights(tks []string, preprocess bool) []TermWeight {
 	} else {
 		// With preprocessing
 		for _, tk := range tks {
-			tokens := d.Pretoken(tk, true, true)
+			tokens := d.Pretoken(tk, true, true, lang)
 			tt := d.TokenMerge(tokens)
 			if len(tt) == 0 {
 				continue
