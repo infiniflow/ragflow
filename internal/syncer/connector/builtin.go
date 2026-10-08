@@ -73,9 +73,10 @@ func RegisterBuiltIns(registry *Registry) {
 
 // newS3SourceConnector selects the client for the bucket type stored under an S3 source.
 // The data source form keeps an S3-compatible bucket under source "s3" with bucket_type "s3_compatible".
+// Compatible mode keeps the "s3" ID namespace, so documents already indexed under this source keep their IDs.
 func newS3SourceConnector(config map[string]any) (Connector, error) {
 	if strings.TrimSpace(stringConfig(config["bucket_type"])) == s3CompatibleSource {
-		return NewS3CompatibleConnector(config)
+		return newS3CompatibleConnector(config, s3Source)
 	}
 	return NewS3Connector(config)
 }

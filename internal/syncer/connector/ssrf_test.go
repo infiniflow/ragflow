@@ -559,19 +559,25 @@ func TestPostgreSQLConnectorOpenAllowsLoopbackUnderHook(t *testing.T) {
 }
 
 // TestValidateS3CompatibleEndpointSSRF verifies the user-controlled endpoint
-// is rejected when it resolves to non-public addresses and allowed for
-// loopback under the test hook.
+// is rejected when it resolves to non-public addresses or uses plain HTTP, and
+// that plain-HTTP loopback is allowed only under the test hook.
 func TestValidateS3CompatibleEndpointSSRF(t *testing.T) {
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
-	for _, endpoint := range []string{"http://10.0.0.5", "https://169.254.169.254", "http://127.0.0.1"} {
+	for _, endpoint := range []string{"https://10.0.0.5", "https://169.254.169.254", "https://127.0.0.1", "http://8.8.8.8"} {
 		if err := validateS3CompatibleEndpoint(endpoint); err == nil {
 			t.Fatalf("endpoint %q should be rejected", endpoint)
 		}
 	}
+	if err := validateS3CompatibleEndpoint("https://8.8.8.8"); err != nil {
+		t.Fatalf("public HTTPS endpoint should be allowed: %v", err)
+	}
 	withConnectorLoopbackTestHook(t)
 	if err := validateS3CompatibleEndpoint("http://127.0.0.1"); err != nil {
 		t.Fatalf("loopback endpoint should be allowed under the test hook: %v", err)
+	}
+	if err := validateS3CompatibleEndpoint("http://8.8.8.8"); err == nil {
+		t.Fatalf("public plain-HTTP endpoint should be rejected under the test hook")
 	}
 }
 

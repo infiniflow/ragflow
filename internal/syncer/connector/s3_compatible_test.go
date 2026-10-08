@@ -331,6 +331,7 @@ func TestS3CompatibleConnectorRejectsInvalidEndpointBeforeClientCreation(t *test
 		"https://evil.example#",
 		"evil.example#",
 		"ftp://evil.example",
+		"http://8.8.8.8",
 		"https://user:pass@evil.example",
 		"https://evil.example#fragment",
 		"https://",
