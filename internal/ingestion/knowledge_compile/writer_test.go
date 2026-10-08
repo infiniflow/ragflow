@@ -199,13 +199,28 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 	var entity map[string]interface{}
 	for _, row := range eng.insertedChunks {
-		if row["knowledge_graph_kwd"] == "entity" {
+		if row["type_kwd"] == "entity" {
 			entity = row
 			break
 		}
 	}
 	if entity == nil {
 		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if _, ok := entity["knowledge_graph_kwd"]; ok {
+		t.Fatalf("new entity row still writes knowledge_graph_kwd: %+v", entity)
+	}
+	var foundBuildMeta bool
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "kg_build_meta" {
+			foundBuildMeta = true
+			if _, ok := row["knowledge_graph_kwd"]; ok {
+				t.Fatalf("new build marker still writes knowledge_graph_kwd: %+v", row)
+			}
+		}
+	}
+	if !foundBuildMeta {
+		t.Fatalf("inserted rows contain no type_kwd=kg_build_meta marker: %+v", eng.insertedChunks)
 	}
 	if entity["id"] == oldID {
 		t.Fatalf("old type-scoped id was reused: %v", entity["id"])

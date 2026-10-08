@@ -292,11 +292,9 @@ const (
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//   - ragflow_deps/download_deps.py re-lists them as DEEPDOC_MODEL_FILES
 //     (it fetches the files one by one, so it MUST be edited by hand when this
 //     slice changes);
-//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
-//     (so .ort lands in the model dir automatically — no FILES edit needed).
 var DeepDocModelFiles = []string{
 	"det.ort",
 	"layout.ort",
@@ -320,9 +318,9 @@ func HasModelFiles(dir string) bool {
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
 // DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
-// FOUR raw version declarations that must stay equal (the other three are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py,
-// and ARG ORT_VERSION in Dockerfile_go) — NOT a single source of truth. The
+// THREE raw version declarations that must stay equal (the other two are
+// ORT_VERSION in ragflow_deps/download_deps.py and ARG ORT_VERSION in
+// Dockerfile) — NOT a single source of truth. The
 // download URL and extracted dir name are built from those ORT_VERSION
 // constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
@@ -332,12 +330,11 @@ func HasModelFiles(dir string) bool {
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, the four Go-side native pins above must change together
+// To bump ORT, the three Go-side native pins above must change together
 // (drift breaks the static link or the runtime OrtGetApiBase lookup):
 //   - DeepDocORTVersion (here, Go)
-//   - ORT_VERSION in ragflow_deps/download_go_deps.py
 //   - ORT_VERSION in ragflow_deps/download_deps.py
-//   - ARG ORT_VERSION in Dockerfile_go
+//   - ARG ORT_VERSION in Dockerfile
 //
 // Separately, keep these on the same ORT minor line but version them
 // independently of the Go native lib (see pyproject.toml / development.md):
