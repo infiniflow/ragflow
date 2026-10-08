@@ -1876,7 +1876,7 @@ export default {
     },
 
     flow: {
-      cite: '引用',
+      cite: '引用を表示',
       citeTip: '引用に関するヒント',
       name: '名前',
       nameMessage: '名前を入力してください',

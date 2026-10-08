@@ -766,7 +766,7 @@ export default {
       destinationFolder: 'Folder tujuan',
     },
     flow: {
-      cite: 'Kutip',
+      cite: 'Tampilkan kutipan',
       citeTip: 'tipKutip',
       name: 'Nama',
       nameMessage: 'Silakan masukkan nama',

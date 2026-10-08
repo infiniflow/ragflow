@@ -807,7 +807,7 @@ export default {
       destinationFolder: 'Thư mục đích',
     },
     flow: {
-      cite: 'Dẫn nguồn',
+      cite: 'Hiển thị trích dẫn',
       citeTip: 'Mẹo dẫn nguồn',
       name: 'Tên',
       nameMessage: 'Vui lòng nhập tên',

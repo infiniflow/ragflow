@@ -2762,7 +2762,7 @@ export default {
       dataManipulation: 'Ma’lumotlar bilan ishlash',
       flow: 'Flow',
       dialog: 'Dialog',
-      cite: 'Iqtibos',
+      cite: 'Iqtiboslarni koʻrsatish',
       citeTip: 'Iqtibos',
       name: 'Nomi',
       nameMessage: 'Iltimos, nomni kiriting',
