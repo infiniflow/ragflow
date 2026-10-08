@@ -628,30 +628,33 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 	wired := make(map[pendingEdge]struct{}, len(pending))
 	first := make(map[string]bool, len(c.Components))
-	for _, e := range pending {
-		// Multiple output handles may converge on the same downstream
-		// node. The DSL keeps one upstream entry per handle, while eino
-		// permits only one control edge for a source/target pair.
+	wireOne := func(e pendingEdge) error {
 		if _, ok := wired[e]; ok {
-			continue
+			return nil
 		}
 		wired[e] = struct{}{}
 		if e.cpn == e.up {
-			return nil, fmt.Errorf("agent: self-edge on %q", e.cpn)
+			return fmt.Errorf("agent: self-edge on %q", e.cpn)
 		}
 		if resolveNode(e.up) == nil {
-			return nil, fmt.Errorf("agent: component %q has unknown upstream %q", e.cpn, e.up)
+			return fmt.Errorf("agent: component %q has unknown upstream %q", e.cpn, e.up)
 		}
 		cpnNode := resolveNode(e.cpn)
 		if cpnNode == nil {
-			return nil, fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
+			return fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
 		}
 		if messageEdgeIsOrderingOnly(c, e.up) {
-			// Message publishes text to the user. Its output map is not
-			// the next node's input; the edge only waits until that
-			// text has been sent. The next node keeps its own params.
-			cpnNode.AddDependency(e.up)
-			continue
+			// A real predecessor, if any, already owns the data slot.
+			// Otherwise map one scratch field so this node still runs
+			// when Message finishes, inside the same branch, without
+			// taking Message's output or the original workflow input.
+			if !first[e.cpn] {
+				cpnNode.AddInput(e.up, compose.MapFields("content", "__message_status__"))
+				first[e.cpn] = true
+			} else {
+				cpnNode.AddDependency(e.up)
+			}
+			return nil
 		}
 		if !first[e.cpn] {
 			cpnNode.AddInput(e.up)
@@ -659,20 +662,22 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		} else {
 			cpnNode.AddDependency(e.up)
 		}
+		return nil
 	}
-
-	// A node whose every predecessor is a Message has no data edge yet.
-	// Feed it the workflow input so it still runs, after those messages.
-	for cpnID, comp := range c.Components {
-		if macroMembers[cpnID] || len(comp.Upstream) == 0 || first[cpnID] {
+	var messageEdges []pendingEdge
+	for _, e := range pending {
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			messageEdges = append(messageEdges, e)
 			continue
 		}
-		node := resolveNode(cpnID)
-		if node == nil {
-			continue
+		if err := wireOne(e); err != nil {
+			return nil, err
 		}
-		node.AddInput(compose.START)
-		first[cpnID] = true
+	}
+	for _, e := range messageEdges {
+		if err := wireOne(e); err != nil {
+			return nil, err
+		}
 	}
 
 	// Pass 2.5: install MultiBranch edges for runtime-control parents.
@@ -760,7 +765,10 @@ func messageEdgeIsOrderingOnly(c *Canvas, upstreamID string) bool {
 
 // directMessageDownstream reports whether a component may hand a deferred
 // stream to its downstream consumers. Only a direct Message child enables lazy
-// Agent execution, and only when EVERY direct downstream is a Message.
+// Agent execution, and only when EVERY direct downstream is a Message that
+// ends the branch. A Message that itself continues is a status line: the
+// Agent must run eagerly and write a real value, or the stream is never
+// opened and later nodes observe the unresolved placeholder.
 //
 // A mixed graph (Agent -> [Agent, Message]) must keep eager execution: the
 // deferred stream is opaque to non-Message consumers, which would otherwise
@@ -778,6 +786,9 @@ func directMessageDownstream(c *Canvas, cpnID string) bool {
 	for _, downID := range comp.Downstream {
 		down, ok := c.Components[downID]
 		if !ok || !strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return false
+		}
+		if len(down.Downstream) > 0 {
 			return false
 		}
 	}

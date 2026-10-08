@@ -273,10 +273,19 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		upstreams := c.Components[cpnID].Upstream
 		first := true
+		wireMember := func(up string) {
+			if !members[up] {
+				return
+			}
+			if first {
+				nodes[cpnID].AddInput(up)
+				first = false
+			} else {
+				nodes[cpnID].AddDependency(up)
+			}
+		}
 		for _, up := range upstreams {
 			if up == loopID {
-				// Upstream is the parent Loop; in the sub-graph the
-				// data source is the synthetic init node.
 				if first {
 					nodes[cpnID].AddInput(loopInitKey)
 					first = false
@@ -285,15 +294,17 @@ func buildSubWorkflow(
 				}
 				continue
 			}
-			if !members[up] {
+			if messageEdgeIsOrderingOnly(c, up) {
 				continue
 			}
-			if messageEdgeIsOrderingOnly(c, up) {
-				nodes[cpnID].AddDependency(up)
+			wireMember(up)
+		}
+		for _, up := range upstreams {
+			if !members[up] || !messageEdgeIsOrderingOnly(c, up) {
 				continue
 			}
 			if first {
-				nodes[cpnID].AddInput(up)
+				nodes[cpnID].AddInput(up, compose.MapFields("content", "__message_status__"))
 				first = false
 			} else {
 				nodes[cpnID].AddDependency(up)
