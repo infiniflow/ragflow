@@ -91,6 +91,17 @@ seekdb:
     password: '${SEEKDB_PASSWORD:-infini_rag_flow}'
     host: '${SEEKDB_HOST:-seekdb}'
     port: ${SEEKDB_PORT:-2881}
+vastbase:
+  host: '${VB_HOST:-vastbase}'
+  port: ${VB_PORT:-5432}
+  user: '${VB_USERNAME:-ragflow}'
+  password: '${VB_PASSWORD:-Infini_Rag@123}'
+  db_name: '${VB_VEC_DBNAME:-ragflow}'
+  dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
+  # No disable fallback: an empty ssl_mode reaches the engine's host policy
+  # (disable on loopback, verify-full otherwise). docker/.env sets disable
+  # explicitly for the bundled private-network deployment.
+  ssl_mode: '${VB_SSL_MODE:-}'
 kvrocks:
   db: 1
   username: '${KVROCKS_USERNAME:-}'

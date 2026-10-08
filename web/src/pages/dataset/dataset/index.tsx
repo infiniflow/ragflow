@@ -90,12 +90,11 @@ export default function Dataset() {
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
 
-  const { list, handleRunClick: handleOperationIconClick } =
-    useBulkOperateDataset({
-      documents,
-      rowSelection,
-      setRowSelection,
-    });
+  const { list } = useBulkOperateDataset({
+    documents,
+    rowSelection,
+    setRowSelection,
+  });
 
   const { selectedIds: selectedRowKeys } = useSelectedIds(
     rowSelection,

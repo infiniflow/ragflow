@@ -169,6 +169,8 @@ func GetConfig() *config.Config {
 	return globalConfig
 }
 
+// GetAllConfigs collects every backend's connection settings as exportable
+// maps, for diagnostics and the admin configuration view.
 func GetAllConfigs() ([]map[string]interface{}, error) {
 	var allConfigs []map[string]interface{}
 
@@ -200,6 +202,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	case "seekdb":
 		seekDBConfig := globalConfig.GetSeekDBConfig()
 		allConfigs = append(allConfigs, seekDBConfig.ExportConfigs())
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseConfig()
+		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
 	}

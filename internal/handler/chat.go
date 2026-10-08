@@ -82,6 +82,13 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 
 	// Parse query parameters
 	keywords := c.Query("keywords")
+	// Exact id and name filters take precedence over the fuzzy keyword
+	// search, as in the Python route and the API reference.
+	id := c.Query("id")
+	name := c.Query("name")
+	if id != "" || name != "" {
+		keywords = ""
+	}
 
 	page := 0
 	if pageStr := c.Query("page"); pageStr != "" {
@@ -120,7 +127,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, page, pageSize, terms, ownerIDs)
+	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, id, name, page, pageSize, terms, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return

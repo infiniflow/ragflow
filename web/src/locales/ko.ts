@@ -1993,7 +1993,7 @@ export default {
       dataManipulation: '데이터 조작',
       flow: '플로우',
       dialog: '대화',
-      cite: '인용',
+      cite: '인용 표시',
       citeTip: 'citeTip',
       name: '이름',
       nameMessage: '이름을 입력해 주세요',
