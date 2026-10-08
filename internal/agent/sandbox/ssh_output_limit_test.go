@@ -33,7 +33,7 @@ import (
 // startSSHExecServer runs an in-process SSH server whose exec'd command
 // writes stdoutBytes of filler to stdout and exits 0. It returns the
 // address to dial and the PEM-encoded private key the client must offer.
-func startSSHExecServer(t *testing.T, stdoutBytes int) (addr string, keyPEM []byte) {
+func startSSHExecServer(t *testing.T, stdoutBytes, stderrBytes int) (addr string, keyPEM []byte) {
 	t.Helper()
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -70,14 +70,14 @@ func startSSHExecServer(t *testing.T, stdoutBytes int) (addr string, keyPEM []by
 			if err != nil {
 				return
 			}
-			go serveSSHExecConn(conn, cfg, stdoutBytes)
+			go serveSSHExecConn(conn, cfg, stdoutBytes, stderrBytes)
 		}
 	}()
 
 	return listener.Addr().String(), pem.EncodeToMemory(block)
 }
 
-func serveSSHExecConn(conn net.Conn, cfg *ssh.ServerConfig, stdoutBytes int) {
+func serveSSHExecConn(conn net.Conn, cfg *ssh.ServerConfig, stdoutBytes, stderrBytes int) {
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
 		_ = conn.Close()
@@ -105,6 +105,19 @@ func serveSSHExecConn(conn net.Conn, cfg *ssh.ServerConfig, stdoutBytes int) {
 				}
 				if req.WantReply {
 					_ = req.Reply(true, nil)
+				}
+				// stderr travels as SSH extended data, exposed by
+				// Channel.Stderr(). Both streams are flushed before
+				// exit-status.
+				if stderrBytes > 0 {
+					chunk := []byte(strings.Repeat("y", 32*1024))
+					for written := 0; written < stderrBytes; {
+						n := min(len(chunk), stderrBytes-written)
+						if _, err := ch.Stderr().Write(chunk[:n]); err != nil {
+							return
+						}
+						written += n
+					}
 				}
 				chunk := []byte(strings.Repeat("x", 32*1024))
 				for written := 0; written < stdoutBytes; {
@@ -166,7 +179,7 @@ func TestSSH_RunRemoteCommand_BoundsRetainedOutput(t *testing.T) {
 		floodBytes  = 8 << 20 // what the remote host pushes
 		budgetBytes = 64 << 10
 	)
-	addr, keyPEM := startSSHExecServer(t, floodBytes)
+	addr, keyPEM := startSSHExecServer(t, floodBytes, 0)
 	p, client := dialSSHExecServer(t, addr, keyPEM)
 
 	stdout, stderr, _, err := p.runRemoteCommand(t.Context(), client, "flood", 30, budgetBytes)
@@ -189,14 +202,14 @@ func TestSSH_RunRemoteCommand_BoundsRetainedOutput(t *testing.T) {
 // TestSSH_RunRemoteCommand_ReportsTrueTotalWhenTruncated guards the
 // detection side of the fix. The cap bounds what is retained, so the
 // overflow has to be recognised from the bytes that were dropped rather
-// than from the truncated length — otherwise the bound would silently
+// than from the truncated length �?otherwise the bound would silently
 // turn every oversized stream into a passing result.
 func TestSSH_RunRemoteCommand_ReportsTrueTotalWhenTruncated(t *testing.T) {
 	const (
 		floodBytes  = 1 << 20
 		budgetBytes = 4 << 10
 	)
-	addr, keyPEM := startSSHExecServer(t, floodBytes)
+	addr, keyPEM := startSSHExecServer(t, floodBytes, 0)
 	p, client := dialSSHExecServer(t, addr, keyPEM)
 
 	_, _, _, err := p.runRemoteCommand(t.Context(), client, "flood", 30, budgetBytes)
@@ -208,12 +221,69 @@ func TestSSH_RunRemoteCommand_ReportsTrueTotalWhenTruncated(t *testing.T) {
 	}
 }
 
+// TestSSH_RunRemoteCommand_SharesBudgetAcrossStreams covers the case where
+// neither stream alone exceeds the budget but the two together do. With a
+// per-stream cap the process could retain nearly twice max_output_bytes
+// before the combined check rejected the command; the shared budget is
+// what makes max_output_bytes a real combined ceiling.
+func TestSSH_RunRemoteCommand_SharesBudgetAcrossStreams(t *testing.T) {
+	const (
+		perStream   = 48 << 10
+		budgetBytes = 64 << 10
+	)
+	addr, keyPEM := startSSHExecServer(t, perStream, perStream)
+	p, client := dialSSHExecServer(t, addr, keyPEM)
+
+	stdout, stderr, _, err := p.runRemoteCommand(t.Context(), client, "both", 30, budgetBytes)
+	if err == nil {
+		t.Fatal("runRemoteCommand accepted combined output over the cap, want an overflow error")
+	}
+	if !strings.Contains(err.Error(), "output exceeds 65536 bytes") {
+		t.Errorf("err = %v, want it to report the 65536-byte cap", err)
+	}
+	if want := "got 98304"; !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want it to report the true combined total %q", err, want)
+	}
+	// The point of the fix: one shared allowance, so the process holds at
+	// most the budget across both streams rather than one budget each.
+	if retained := len(stdout) + len(stderr); retained > budgetBytes {
+		t.Errorf("retained %d bytes across both streams, want at most %d: the budget is not shared",
+			retained, budgetBytes)
+	}
+}
+
+// TestSSH_RunRemoteCommand_BothStreamsWithinBudgetRetained pins the accepted
+// path for the two-stream case: when stdout and stderr together stay at the
+// budget, both are returned whole and no error is raised.
+func TestSSH_RunRemoteCommand_BothStreamsWithinBudgetRetained(t *testing.T) {
+	const (
+		perStream   = 4 << 10
+		budgetBytes = 64 << 10
+	)
+	addr, keyPEM := startSSHExecServer(t, perStream, perStream)
+	p, client := dialSSHExecServer(t, addr, keyPEM)
+
+	stdout, stderr, exitCode, err := p.runRemoteCommand(t.Context(), client, "both", 30, budgetBytes)
+	if err != nil {
+		t.Fatalf("runRemoteCommand: %v", err)
+	}
+	if exitCode != 0 {
+		t.Errorf("exitCode = %d, want 0", exitCode)
+	}
+	if len(stdout) != perStream {
+		t.Errorf("stdout length = %d, want %d", len(stdout), perStream)
+	}
+	if len(stderr) != perStream {
+		t.Errorf("stderr length = %d, want %d", len(stderr), perStream)
+	}
+}
+
 // TestSSH_RunRemoteCommand_WithinLimitIsUnaffected keeps the bound from
 // changing the ordinary path: output at or under the cap is returned whole
 // with no error.
 func TestSSH_RunRemoteCommand_WithinLimitIsUnaffected(t *testing.T) {
 	const payload = 4 << 10
-	addr, keyPEM := startSSHExecServer(t, payload)
+	addr, keyPEM := startSSHExecServer(t, payload, 0)
 	p, client := dialSSHExecServer(t, addr, keyPEM)
 
 	stdout, stderr, exitCode, err := p.runRemoteCommand(t.Context(), client, "small", 30, 64<<10)
@@ -236,7 +306,7 @@ func TestSSH_RunRemoteCommand_WithinLimitIsUnaffected(t *testing.T) {
 // only applies when a positive budget is passed.
 func TestSSH_RunRemoteCommand_UnlimitedBudgetRetainsAll(t *testing.T) {
 	const payload = 64 << 10
-	addr, keyPEM := startSSHExecServer(t, payload)
+	addr, keyPEM := startSSHExecServer(t, payload, 0)
 	p, client := dialSSHExecServer(t, addr, keyPEM)
 
 	stdout, _, _, err := p.runRemoteCommand(t.Context(), client, "flood", 30, 0)

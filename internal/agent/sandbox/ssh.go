@@ -528,16 +528,15 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 // transport-level failures and for output that exceeds maxBytes;
 // non-zero exit codes are reported via exit_code, not error.
 //
-// maxBytes bounds how much of each stream is retained in this
+// maxBytes bounds the combined stdout and stderr retained in this
 // process. The remote host is not trusted — ExecuteCode runs
-// caller-supplied code there — so stdout and stderr are captured
-// through outputCapture and stop growing at the cap instead of being
-// buffered in full. The remote command still runs to completion, and
-// because outputCapture.total counts every byte received, an overflow
-// is reported rather than silently returning a truncated result.
-// Callers pass the budget they already enforce downstream:
-// p.maxOutputBytes for command output, p.maxArtifactBytes for a
-// single artifact read.
+// caller-supplied code there — so both streams draw from one shared
+// budget and stop growing at the cap instead of being buffered in full.
+// The remote command still runs to completion, and because the budget
+// counts every byte received, an overflow is reported rather than
+// silently returning a truncated result. Callers pass the budget they
+// already enforce downstream: p.maxOutputBytes for command output,
+// p.maxArtifactBytes for a single artifact read.
 //
 // All in-package callers build the command argument via shq(),
 // which single-quote escapes any value so the shell cannot be
@@ -549,17 +548,15 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
 	}
 	defer sess.Close()
-	stdoutBuf, stderrBuf := &outputCapture{limit: maxBytes}, &outputCapture{limit: maxBytes}
+	budget := newOutputBudget(maxBytes)
+	stdoutBuf, stderrBuf := &outputCapture{budget: budget}, &outputCapture{budget: budget}
 	sess.Stdout = stdoutBuf
 	sess.Stderr = stderrBuf
 	// overflowErr reports the retained bytes against the cap. It uses
-	// total, not buffer length, so truncation is detected rather than
-	// hidden by the bound itself.
+	// the shared total, not the buffer lengths, so truncation is
+	// detected rather than hidden by the bound itself.
 	overflowErr := func() error {
-		if maxBytes <= 0 {
-			return nil
-		}
-		if combined := stdoutBuf.total + stderrBuf.total; combined > maxBytes {
+		if combined, exceeded := budget.usage(); exceeded {
 			return fmt.Errorf("ssh: output exceeds %d bytes (got %d)", maxBytes, combined)
 		}
 		return nil

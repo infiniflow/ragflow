@@ -320,8 +320,9 @@ func (p *LocalProvider) ExecuteCode(
 	}
 
 	maxOut := p.maxOutputBytes
-	stdout := outputCapture{limit: maxOut}
-	stderr := outputCapture{limit: maxOut}
+	budget := newOutputBudget(maxOut)
+	stdout := outputCapture{budget: budget}
+	stderr := outputCapture{budget: budget}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -357,13 +358,10 @@ func (p *LocalProvider) ExecuteCode(
 		return nil, fmt.Errorf("local: execution timed out after %d seconds", timeout)
 	}
 
-	// Validate output size: if stdout+stderr exceed the cap,
+	// Validate output size: if stdout+stderr exceed the shared cap,
 	// surface as a runtime error (matches the Python provider).
-	if maxOut > 0 {
-		combined := stdout.total + stderr.total
-		if combined > maxOut {
-			return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
-		}
+	if combined, exceeded := budget.usage(); exceeded {
+		return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
 	}
 
 	// Extract the structured result from stdout.
