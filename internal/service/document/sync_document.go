@@ -62,6 +62,14 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 	if contentHash == "" {
 		contentHash = contentHashHex(input.SourceDocument.Blob)
 	}
+	// Serialize publication and all dependent side effects, including the
+	// unchanged-revision path. A final fingerprint CAS cannot undo stale
+	// metadata written by an earlier concurrent revision.
+	unlock, err := acquireSyncDocumentLock(ctx, input.DocumentID)
+	if err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
+	defer unlock()
 
 	// if the 'file' is existing
 	existing, err := s.documentDAO.GetByID(ctx, dao.DB, input.DocumentID)
@@ -214,9 +222,11 @@ func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input ser
 			return err
 		}
 	}
-	// A concurrent sync may have published another revision while metadata or
-	// parsing was being prepared. Never acknowledge its blob with our hash.
-	result := dao.DB.WithContext(ctx).Model(&entity.Document{}).
+	// Defend against non-sync writers replacing the document while metadata
+	// or parsing was being prepared. Never acknowledge another blob's hash.
+	ackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
+	defer cancel()
+	result := dao.DB.WithContext(ackCtx).Model(&entity.Document{}).
 		Where("id = ? AND location = ?", doc.ID, doc.Location).
 		Updates(map[string]interface{}{"content_hash": contentHash})
 	if result.Error != nil {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -270,5 +272,131 @@ func TestSyncDocumentCleanupPreservesBlobWhenReferenceLookupFails(t *testing.T) 
 	}
 	if len(store.objects) != 2 {
 		t.Fatalf("unknown publication state removed a blob: objects = %d", len(store.objects))
+	}
+}
+
+func TestSyncDocumentSerializesMetadataAcrossRevisions(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		name := "new-document"
+		if existing {
+			name = "existing-document"
+		}
+		t.Run(name, func(t *testing.T) {
+			first, db, store, input := setupSyncDocumentTest(t, existing)
+			second := testDocumentService(t)
+			firstEntered := make(chan struct{})
+			releaseFirst := make(chan struct{})
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(releaseFirst) }) }
+			defer release()
+			var mu sync.Mutex
+			metadata := ""
+			firstEngine := &syncMetadataFaultEngine{onUpdate: func() error {
+				close(firstEntered)
+				<-releaseFirst
+				mu.Lock()
+				metadata = "first"
+				mu.Unlock()
+				return nil
+			}}
+			secondEngine := &syncMetadataFaultEngine{onUpdate: func() error {
+				mu.Lock()
+				metadata = "second"
+				mu.Unlock()
+				return nil
+			}}
+			first.docEngine = firstEngine
+			first.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), firstEngine)
+			second.docEngine = secondEngine
+			second.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), secondEngine)
+			input.SourceDocument.Metadata = map[string]interface{}{"revision": "first"}
+			firstResult := make(chan error, 1)
+			go func() { _, err := first.Upsert(t.Context(), input); firstResult <- err }()
+			select {
+			case <-firstEntered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("first revision did not reach metadata")
+			}
+			next := input
+			next.SourceDocument.Fingerprint = "second-hash"
+			next.SourceDocument.Blob = []byte("second content")
+			next.SourceDocument.Metadata = map[string]interface{}{"revision": "second"}
+			secondStarted := make(chan struct{})
+			secondResult := make(chan error, 1)
+			go func() {
+				close(secondStarted)
+				_, err := second.Upsert(t.Context(), next)
+				secondResult <- err
+			}()
+			<-secondStarted
+			select {
+			case err := <-secondResult:
+				t.Fatalf("second revision escaped the first revision's metadata barrier: %v", err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			release()
+			for _, result := range []<-chan error{firstResult, secondResult} {
+				select {
+				case err := <-result:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("serialized revision did not finish")
+				}
+			}
+			assertSyncDocumentState(t, db, store, next, "second-hash")
+			mu.Lock()
+			defer mu.Unlock()
+			if metadata != "second" {
+				t.Fatalf("acknowledged second revision has stale metadata %q", metadata)
+			}
+		})
+	}
+}
+
+func TestSyncDocumentAcknowledgesCompletedWorkAfterCancellation(t *testing.T) {
+	svc, db, store, input := setupSyncDocumentTest(t, true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	engine := &syncMetadataFaultEngine{onUpdate: func() error { cancel(); return nil }}
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+	input.SourceDocument.Metadata = map[string]interface{}{"revision": "new"}
+	result, err := svc.Upsert(ctx, input)
+	if err != nil || result.Action != service.DocumentActionUpdated {
+		t.Fatalf("completed dependent work was not acknowledged: result = %+v err = %v", result, err)
+	}
+	assertSyncDocumentState(t, db, store, input, "new-hash")
+}
+
+func TestSyncDocumentAcknowledgesParseEnqueueAfterCancellation(t *testing.T) {
+	svc, db, store, input := setupSyncDocumentTest(t, true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	publisher := &recordingTaskPublisher{}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	input.AutoParse = true
+	// Cancel at the final fingerprint write, after StartParseDocuments has
+	// completed both publication and its scheduled-state bookkeeping.
+	if err := db.Callback().Update().Before("gorm:update").Register("cancel-before-ack", func(tx *gorm.DB) {
+		updates, _ := tx.Statement.Dest.(map[string]interface{})
+		if tx.Statement.Table == "document" && updates["content_hash"] == input.SourceDocument.Fingerprint {
+			cancel()
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Upsert(ctx, input)
+	if err != nil || result.Action != service.DocumentActionUpdated {
+		t.Fatalf("successful enqueue was not acknowledged: result = %+v err = %v", result, err)
+	}
+	assertSyncDocumentState(t, db, store, input, "new-hash")
+	if len(publisher.messages) != 1 {
+		t.Fatalf("parse publications = %d, want 1", len(publisher.messages))
+	}
+	result, err = svc.Upsert(t.Context(), input)
+	if err != nil || result.Action != service.DocumentActionSkipped || len(publisher.messages) != 1 {
+		t.Fatalf("completed revision retried enqueue: result = %+v err = %v publications = %d", result, err, len(publisher.messages))
 	}
 }
