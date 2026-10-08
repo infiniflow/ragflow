@@ -44,10 +44,10 @@ func (f *fakeDocEngine) Search(_ context.Context, req *types.SearchRequest) (*ty
 	rows := f.searchRows
 	// Honor the compile_kwd filter so availability semantics are exercised
 	// faithfully (only rows carrying the requested compile_kwd match).
-	if kwd, ok := req.Filter["compile_kwd"].(string); ok {
+	if kwd, ok := req.Filter["type_kwd"].(string); ok {
 		filtered := make([]map[string]interface{}, 0, len(rows))
 		for _, r := range rows {
-			if r["compile_kwd"] == kwd {
+			if types.CompilationRowType(r) == kwd {
 				filtered = append(filtered, r)
 			}
 		}
@@ -109,8 +109,8 @@ func TestEngineService_QueryPages_NormalizesEngineRowShape(t *testing.T) {
 	if !reflect.DeepEqual(eng.searchReq.KbIDs, []string{"kb1"}) {
 		t.Errorf("KbIDs = %v, want [kb1]", eng.searchReq.KbIDs)
 	}
-	if f, ok := eng.searchReq.Filter["compile_kwd"].(string); !ok || f != "wiki_page" {
-		t.Errorf("compile_kwd filter = %v, want wiki_page", eng.searchReq.Filter["compile_kwd"])
+	if f, ok := eng.searchReq.Filter["type_kwd"].(string); !ok || f != "wiki_page" {
+		t.Errorf("compile_kwd filter = %v, want wiki_page", eng.searchReq.Filter["type_kwd"])
 	}
 	// SelectFields must project slug_kwd + source_chunk_ids (Infinity's default
 	// projection omits them), otherwise the page slug and P7 provenance are lost.
@@ -238,8 +238,8 @@ func TestEngineService_AvailableFor_BoundedExistenceSearch(t *testing.T) {
 	if eng.searchReq.Limit != 1 {
 		t.Errorf("existence Limit = %d, want 1 (bounded)", eng.searchReq.Limit)
 	}
-	if f, ok := eng.searchReq.Filter["compile_kwd"].(string); !ok || f != "wiki_page" {
-		t.Errorf("existence compile_kwd filter = %v, want wiki_page", eng.searchReq.Filter["compile_kwd"])
+	if f, ok := eng.searchReq.Filter["type_kwd"].(string); !ok || f != "wiki_page" {
+		t.Errorf("existence compile_kwd filter = %v, want wiki_page", eng.searchReq.Filter["type_kwd"])
 	}
 	if !reflect.DeepEqual(eng.searchReq.KbIDs, []string{"kb1"}) {
 		t.Errorf("existence KbIDs = %v, want [kb1]", eng.searchReq.KbIDs)
