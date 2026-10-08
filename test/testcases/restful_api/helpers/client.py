@@ -64,7 +64,12 @@ class RestClient:
         # assert the error path must pass parse_type explicitly.
         normalized_path = f"/{path.lstrip('/')}" if path else "/"
         if method == "POST" and normalized_path == "/datasets" and isinstance(json, dict) and "parse_type" not in json:
-            json = {**json, "parse_type": 1, "parser_id": "general"}
+            # Restore the previously-implicit default (BuiltIn/general) without
+            # clobbering any id the caller already supplied.
+            json = dict(json)
+            json["parse_type"] = 1
+            if "parser_id" not in json and "pipeline_id" not in json:
+                json["parser_id"] = "general"
 
         timeout = request_kwargs.pop("timeout", self.timeout)
         response = requests.request(
