@@ -50,10 +50,10 @@ func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantI
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "compile_kwd", "content_with_weight"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"id":            []string{key},
-			"compile_kwd":   wikiMapActiveCompileKWD,
+			"type_kwd":      wikiMapActiveCompileKWD,
 			"available_int": 0,
 		},
 	})
@@ -81,7 +81,8 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
 		"kb_id":               state.DatasetID,
-		"compile_kwd":         wikiMapActiveCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiMapActiveCompileKWD,
 		"scope_kwd":           "doc",
 		"source_doc_ids":      []string{state.DocumentID},
 		"content_with_weight": string(state.Payload),
@@ -173,11 +174,11 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 			KbIDs:      []string{datasetID},
 			Limit:      end - start,
 			SelectFields: []string{
-				"id", "compile_kwd", "content_with_weight",
+				"id", "compile_kwd", "type_kwd", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
 				"id":            keys[start:end],
-				"compile_kwd":   wikiMapExtractCompileKWD,
+				"type_kwd":      wikiMapExtractCompileKWD,
 				"available_int": 0,
 			},
 		})
@@ -188,7 +189,7 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 			continue
 		}
 		for _, row := range result.Chunks {
-			if mapStoreString(row["compile_kwd"]) != wikiMapExtractCompileKWD {
+			if types.CompilationRowType(row) != wikiMapExtractCompileKWD {
 				continue
 			}
 			id := mapStoreString(row["id"])
@@ -255,7 +256,8 @@ func wikiMapVersionRow(version kccommon.WikiMapVersion) map[string]interface{} {
 		// document deletion cannot remove a reusable chunk/hash version.
 		"doc_id":              wikiMapCacheDocID(version.DocumentID),
 		"kb_id":               version.DatasetID,
-		"compile_kwd":         wikiMapExtractCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiMapExtractCompileKWD,
 		"scope_kwd":           "doc",
 		"source_chunk_ids":    []string{version.ChunkID},
 		"source_doc_ids":      []string{version.DocumentID},

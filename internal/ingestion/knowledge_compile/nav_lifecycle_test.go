@@ -123,7 +123,7 @@ func TestProcessBatchReaddsEnabledDocumentToNavigation(t *testing.T) {
 			Meta:     map[string]any{"kind": "root"},
 		}}}),
 		WithWriter(&fakeWriter{}),
-		WithDeduperFactory(func(string) (Deduper, error) { return NewNoopDeduper(), nil }),
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) { return NewNoopDeduper(), nil }),
 		withWikiContributionStore(&memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}),
 	)
 
@@ -158,7 +158,7 @@ func TestProcessBatchRemovesNavigationForGraphOnlyDocument(t *testing.T) {
 			Meta:     map[string]any{"kind": "entity"},
 		}}}),
 		WithWriter(&fakeWriter{}),
-		WithDeduperFactory(func(string) (Deduper, error) { return NewNoopDeduper(), nil }),
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) { return NewNoopDeduper(), nil }),
 		withWikiContributionStore(&memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}),
 	)
 

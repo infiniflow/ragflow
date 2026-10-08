@@ -14,18 +14,27 @@
 //  limitations under the License.
 //
 
-package entity
+package utility
 
-// TenantModelGroup tenant model group table
-type TenantModelGroup struct {
-	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	GroupType string  `gorm:"column:group_type;size:32;not null" json:"group_type"`
-	ModelName *string `gorm:"column:model_name;size:128" json:"model_name,omitempty"`
-	Strategy  string  `gorm:"column:strategy;size:32;default:'weighted'" json:"strategy"`
-	BaseModel
-}
+import "testing"
 
-// TableName specify table name
-func (TenantModelGroup) TableName() string {
-	return "tenant_model_group"
+func TestAProgressOf096IsNotReportedAsFinished(t *testing.T) {
+	cases := []struct {
+		in   JSONFloat64
+		want string
+	}{
+		{0.96, "0.96"},
+		{0, "0.0"},
+		{1, "1.0"},
+		{-1, "-1.0"},
+	}
+	for _, c := range cases {
+		got, err := c.in.MarshalJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != c.want {
+			t.Fatalf("MarshalJSON(%v) = %s, want %s", float64(c.in), got, c.want)
+		}
+	}
 }

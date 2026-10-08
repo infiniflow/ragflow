@@ -105,7 +105,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		documentIDs = req.DocIDs
 	}
 
-	modelSolver := service.NewModelSolver()
+	modelFactory := service.NewModelFactory()
 
 	// Access check for all datasets
 	var tenantIDs []string
@@ -208,24 +208,22 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
+	var err error
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
+			access := service.ModelAccess{TenantID: tenantIDs[0]}
 			if chatID != "" {
-				target, err := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
+				chatModelForFilter, err = modelFactory.NewChatModel(ctx, access, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
-				} else {
-					chatModelForFilter = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			}
 
 			if chatModelForFilter == nil {
-				target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat)
+				chatModelForFilter, err = modelFactory.NewDefaultChatModel(ctx, access)
 				if err != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
-				} else {
-					chatModelForFilter = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			}
 		}
@@ -256,11 +254,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat)
+		chatModel, err := modelFactory.NewDefaultChatModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]})
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
-			chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 			extractedKeywords, err := service.KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
 			if err != nil {
 				common.Warn("Failed to extract keywords from question", zap.Error(err))
@@ -277,21 +274,19 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		target, embErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
-		if embErr != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
+		embeddingModel, err = modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, kbRecords[0].EmbdID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
-		embeddingModel = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		target, rErr := modelSolver.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
-		if rErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
+		rerankModel, err = modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, rerankID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}
-		rerankModel = modelModule.NewRerankModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{

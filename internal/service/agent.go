@@ -1896,7 +1896,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 	if err != nil {
 		return nil
 	}
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	for _, node := range c.Components {
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
@@ -1905,7 +1905,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: userID}, entity.ModelTypeChat, modelRef); err != nil {
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}

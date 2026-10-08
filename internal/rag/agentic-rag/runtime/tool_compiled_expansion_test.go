@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	enginetypes "ragflow/internal/engine/types"
 	"strings"
 	"testing"
 
@@ -248,6 +249,12 @@ func TestCompiledExpanderGroupsDocScopeByRealOwner(t *testing.T) {
 func rowMatchesFilters(r map[string]any, filters map[string][]string) bool {
 	for k, vals := range filters {
 		rv := asString(r[k])
+		if k == "compile_kwd" {
+			rv = enginetypes.CompilationKind(r)
+			if len(vals) > 0 && strings.HasPrefix(vals[0], "wiki_") {
+				rv = enginetypes.CompilationRowType(r)
+			}
+		}
 		matched := false
 		for _, v := range vals {
 			if rv == v {
