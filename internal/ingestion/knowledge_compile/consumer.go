@@ -719,20 +719,11 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		return nil
 	}
 	deduper, err := c.factory(ctx, tenant)
-	if err != nil || deduper == nil {
-		// A no-op deduper would silently disable dataset-level LLM merging: every
-		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
-		// merged row and duplicates would accumulate across runs. That degradation
-		// is never acceptable here, so fail loudly instead of papering over it.
-		common.Fatal("knowledge_compile: dataset-level LLM deduper unavailable, refusing to continue with a no-op merge",
-			zap.String("kb_id", kb),
-			zap.String("tenant_id", tenant),
-			zap.String("factory_err", func() string {
-				if err != nil {
-					return err.Error()
-				}
-				return "deduper factory returned nil"
-			}()))
+	if err != nil {
+		return fmt.Errorf("knowledge_compile: build deduper for tenant %s, dataset %s: %w", tenant, kb, err)
+	}
+	if deduper == nil {
+		return fmt.Errorf("knowledge_compile: deduper factory returned nil for tenant %s, dataset %s", tenant, kb)
 	}
 
 	// --- Completion merge ---
