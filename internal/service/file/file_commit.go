@@ -45,6 +45,7 @@ type FileCommitService struct {
 	commitItemDAO *dao.FileCommitItemDAO
 	fileDAO       *dao.FileDAO
 	kbDAO         *dao.KnowledgebaseDAO
+	docEngine     func() engine.DocEngine
 }
 
 // NewFileCommitService create file commit service
@@ -54,6 +55,7 @@ func NewFileCommitService() *FileCommitService {
 		commitItemDAO: dao.NewFileCommitItemDAO(),
 		fileDAO:       dao.NewFileDAO(),
 		kbDAO:         dao.NewKnowledgebaseDAO(),
+		docEngine:     engine.Get,
 	}
 }
 
@@ -674,7 +676,7 @@ func (s *FileCommitService) readPageContent(ctx context.Context, datasetID, tena
 				}
 			}
 		case "es":
-			if docEngine := engine.Get(); docEngine != nil && tenantID != "" {
+			if docEngine := s.docEngine(); docEngine != nil && tenantID != "" {
 				raw, err := docEngine.GetChunk(ctx, wikiIndexName(tenantID), location, []string{datasetID})
 				if err == nil {
 					if content := pageContentValue(raw); content != "" {
@@ -695,7 +697,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 	if tenantID == "" || datasetID == "" || pageType == "" || slug == "" {
 		return ""
 	}
-	docEngine := engine.Get()
+	docEngine := s.docEngine()
 	if docEngine == nil {
 		return ""
 	}
@@ -707,7 +709,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"md_with_weight", "content_with_weight"},
+		SelectFields: []string{"content_with_weight"},
 		Filter: map[string]interface{}{
 			"compile_kwd":   []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
@@ -718,11 +720,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 	if err != nil || result == nil || len(result.Chunks) == 0 {
 		return ""
 	}
-	content := pageContentValue(result.Chunks[0]["md_with_weight"])
-	if content == "" {
-		content = pageContentValue(result.Chunks[0]["content_with_weight"])
-	}
-	return content
+	return pageContentValue(result.Chunks[0]["content_with_weight"])
 }
 
 func pageContentValue(value interface{}) string {

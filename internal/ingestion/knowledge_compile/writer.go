@@ -341,7 +341,7 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 			Offset:     offset,
 			Limit:      pageBatchSize,
 			SelectFields: []string{
-				"slug_kwd", "page_type_kwd", "md_with_weight", "content_with_weight",
+				"slug_kwd", "page_type_kwd", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
 				"compile_kwd":   compileKwdWikiPage,
@@ -365,11 +365,7 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 			if !ok {
 				continue
 			}
-			content := pageEngineString(row["md_with_weight"])
-			if content == "" {
-				content = pageEngineString(row["content_with_weight"])
-			}
-			result[target.key] = content
+			result[target.key] = pageEngineString(row["content_with_weight"])
 		}
 		if len(res.Chunks) < pageBatchSize {
 			break
@@ -1024,11 +1020,6 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	}
 	if v := metaString(p.Meta, "summary"); v != "" {
 		m["summary_with_weight"] = v
-	}
-	// The merged wiki page keeps the page body in md_with_weight (the column
-	// GetWikiPage / the artifact API read), as Python does; sections have none.
-	if p.Variant == kccommon.VariantWiki && metaString(p.Meta, "kind") == "page" && p.Content != "" {
-		m["md_with_weight"] = p.Content
 	}
 	if v := metaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
 		m["entity_names_kwd"] = v

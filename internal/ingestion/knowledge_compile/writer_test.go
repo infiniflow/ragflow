@@ -2,6 +2,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,8 +22,6 @@ func (c *recordingPageCommitter) RecordPageEdit(_ context.Context, input file.Pa
 }
 
 func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
-	committer := &recordingPageCommitter{}
-	w := engineWriter{eng: &fakeEngine{}, commitService: committer}
 	products := []kccommon.Product{
 		{
 			Variant: kccommon.VariantWiki,
@@ -44,18 +43,34 @@ func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
 		},
 	}
 
-	if err := w.WriteMerged(t.Context(), "tenant-1", "kb-1", products); err != nil {
-		t.Fatalf("WriteMerged: %v", err)
-	}
-	if len(committer.inputs) != 1 {
-		t.Fatalf("generated page commits = %d, want 1", len(committer.inputs))
-	}
-	input := committer.inputs[0]
-	if input.DatasetID != "kb-1" || input.PageType != "entity" || input.Slug != "alpha" {
-		t.Fatalf("unexpected generated page identity: %+v", input)
-	}
-	if input.OldContent != "" || input.NewContent != "# Alpha\n\nBody" {
-		t.Fatalf("unexpected generated page content: %+v", input)
+	for _, oldContent := range []string{"", "# Alpha\n\n[Beta](artifact/kb-1/entity/beta)"} {
+		t.Run("old content="+oldContent, func(t *testing.T) {
+			committer := &recordingPageCommitter{}
+			eng := &fakeEngine{}
+			if oldContent != "" {
+				eng.searchChunks = []map[string]interface{}{{
+					"slug_kwd": "entity/alpha", "page_type_kwd": "entity",
+					"content_with_weight": oldContent,
+				}}
+			}
+			w := engineWriter{eng: eng, commitService: committer}
+			if err := w.WriteMerged(t.Context(), "tenant-1", "kb-1", products); err != nil {
+				t.Fatalf("WriteMerged: %v", err)
+			}
+			if len(committer.inputs) != 1 {
+				t.Fatalf("generated page commits = %d, want 1", len(committer.inputs))
+			}
+			input := committer.inputs[0]
+			if input.DatasetID != "kb-1" || input.PageType != "entity" || input.Slug != "alpha" {
+				t.Fatalf("unexpected generated page identity: %+v", input)
+			}
+			if input.OldContent != oldContent || input.NewContent != products[0].Content {
+				t.Fatalf("unexpected generated page content: %+v", input)
+			}
+			if slices.Contains(eng.lastSearchReq.SelectFields, "md_with_weight") {
+				t.Fatal("version generation must not query md_with_weight")
+			}
+		})
 	}
 }
 
@@ -67,7 +82,7 @@ func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
 func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	p := kccommon.Product{
 		ID: "merged-1", DocID: "kb1", TenantID: "t1", Variant: kccommon.VariantWiki,
-		Content: "# Alpha\n\nBody",
+		Content: "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta).",
 		Vector:  []float32{0.1, 0.2, 0.3},
 		Meta: map[string]any{
 			"kind":             "page",
@@ -91,12 +106,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		"page_type_kwd":       "entity",
 		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
-		// The wiki page body goes to md_with_weight, the column Python writes
-		// and reads (wiki_incremental.py:2190); artifact_slug_kwd was a Go-only
-		// column that exists in no engine mapping.
-		"md_with_weight": "# Alpha\n\nBody",
-		"plan_kwd":       "run-abc",
-		"input_hash_kwd": "hash-123",
+		"content_with_weight": p.Content,
+		"plan_kwd":            "run-abc",
+		"input_hash_kwd":      "hash-123",
 	}
 	// The wall-clock audit fields must be stamped from `now`, not omitted.
 	if m["create_time"] != now.Format("2006-01-02 15:04:05") {
@@ -109,6 +121,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		if got, _ := m[k].(string); got != want {
 			t.Errorf("merged row[%q] = %q, want %q", k, got, want)
 		}
+	}
+	if _, ok := m["md_with_weight"]; ok {
+		t.Fatal("merged Wiki rows must not duplicate the body in md_with_weight")
 	}
 	if v, _ := m["entity_names_kwd"].([]string); len(v) != 1 || v[0] != "Alpha" {
 		t.Errorf("entity_names_kwd = %#v, want [Alpha]", m["entity_names_kwd"])
@@ -149,6 +164,9 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 	p, ok := productFromChunkMap(c, "t1", kccommon.VariantWiki)
 	if !ok {
 		t.Fatalf("productFromChunkMap returned not-ok")
+	}
+	if p.Content != c["content_with_weight"] {
+		t.Fatalf("restored Markdown = %q, want %q", p.Content, c["content_with_weight"])
 	}
 	want := map[string]string{
 		"slug": "entity/alpha", "page_type": "entity", "topic": "Alpha",

@@ -48,11 +48,13 @@ const (
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
 // graphs, structures, navigation, skills) from the document engine.
-type DatasetArtifactService struct{}
+type DatasetArtifactService struct {
+	docEngine func() engine.DocEngine
+}
 
 // NewDatasetArtifactService creates a DatasetArtifactService.
 func NewDatasetArtifactService() *DatasetArtifactService {
-	return &DatasetArtifactService{}
+	return &DatasetArtifactService{docEngine: engine.Get}
 }
 
 // wikiIndexName returns the tenant document index name.
@@ -67,7 +69,7 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 }
 
 func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr, matchExprs []interface{}) ([]map[string]interface{}, int64, error) {
-	docEngine := engine.Get()
+	docEngine := s.docEngine()
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -281,8 +283,8 @@ func containsFold(s, lowerKeyword string) bool {
 }
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
-// content_md_rendered to match the frontend IArtifactPage contract (and Python's
-// get_wiki_page), which renders it directly.
+// content_md_rendered to match the frontend IArtifactPage contract, which
+// renders the Markdown stored in content_with_weight directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
@@ -311,7 +313,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "md_with_weight",
+		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd",
 			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
 			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
@@ -322,12 +324,6 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
-	// Python stores the page body in md_with_weight (incremental writer), falling
-	// back to content_with_weight for legacy rows; mirror that here.
-	content := firstStringValue(c["md_with_weight"])
-	if content == "" {
-		content = firstStringValue(c["content_with_weight"])
-	}
 	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
 	// "<page_type>/" prefix being doubled (matches ListWikiPages).
@@ -341,7 +337,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
 		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-		ContentMd:      content,
+		ContentMd:      firstStringValue(c["content_with_weight"]),
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
@@ -356,7 +352,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 // title and outlinks through the document engine, then returns the refreshed
 // page.
 func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug, contentMd, title string, outlinks []string) (*WikiPageDetail, error) {
-	docEngine := engine.Get()
+	docEngine := s.docEngine()
 	if docEngine == nil {
 		return nil, fmt.Errorf("document engine is not initialized")
 	}
@@ -382,9 +378,6 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
-		// GetWikiPage prefers md_with_weight and falls back to content_with_weight,
-		// so write both to keep the edit readable regardless of the row's writer.
-		update["md_with_weight"] = contentMd
 		update["content_with_weight"] = contentMd
 	}
 	if title != "" {
@@ -915,7 +908,7 @@ func sortedSetKeys(set map[string]struct{}) []string {
 
 // DeleteDocumentGraph deletes the structure graph of a single document.
 func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenantID, datasetID, documentID string) (int, error) {
-	docEngine := engine.Get()
+	docEngine := s.docEngine()
 	if docEngine == nil {
 		return 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -1040,7 +1033,7 @@ func (s *DatasetArtifactService) GetSkillPage(ctx context.Context, tenantID, dat
 
 // DeleteSkills deletes skills of a dataset, optionally scoped by keyword.
 func (s *DatasetArtifactService) DeleteSkills(ctx context.Context, tenantID, datasetID, kwd string) (int, error) {
-	docEngine := engine.Get()
+	docEngine := s.docEngine()
 	if docEngine == nil {
 		return 0, fmt.Errorf("document engine is not initialized")
 	}

@@ -17,10 +17,15 @@
 package task
 
 import (
+	"context"
+	"slices"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // TestKnowledgeCompilerRegisteredByWiring locks the composition-root contract:
@@ -40,6 +45,58 @@ func TestKnowledgeCompilerRegisteredByWiring(t *testing.T) {
 	}
 	if factory == nil {
 		t.Fatal("component \"Compiler\" registered with a nil factory")
+	}
+}
+
+type wikiPageStoreEngine struct {
+	engine.DocEngine
+	row map[string]interface{}
+	req *types.SearchRequest
+}
+
+func (e *wikiPageStoreEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.req = req
+	return &types.SearchResult{Chunks: []map[string]interface{}{e.row}}, nil
+}
+
+func TestWikiPageStoreReadsContentWithoutDuplicateColumn(t *testing.T) {
+	const body = "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta)."
+	eng := &wikiPageStoreEngine{row: map[string]interface{}{
+		"id": "page1", "slug_kwd": "entity/alpha", "content_with_weight": body,
+	}}
+	store := &kcWikiPageStore{docEngine: eng}
+	queries := map[string]func() ([]kc.WikiPageCandidate, error){
+		"slug": func() ([]kc.WikiPageCandidate, error) {
+			page, err := store.GetPageBySlug(t.Context(), "t1", "kb1", "entity/alpha")
+			if err != nil || page == nil {
+				return nil, err
+			}
+			return []kc.WikiPageCandidate{*page}, nil
+		},
+		"similarity": func() ([]kc.WikiPageCandidate, error) {
+			return store.FindSimilarPages(t.Context(), "t1", "kb1", []float32{0.1, 0.2}, 1)
+		},
+		"source chunks": func() ([]kc.WikiPageCandidate, error) {
+			return store.FindPagesBySourceChunks(t.Context(), "t1", "kb1", []string{"c1"}, 1)
+		},
+	}
+	for name, query := range queries {
+		t.Run(name, func(t *testing.T) {
+			pages, err := query()
+			if err != nil || len(pages) != 1 {
+				t.Fatalf("pages = %+v, err = %v", pages, err)
+			}
+			if pages[0].ContentMD != body || pages[0].ContentMDRaw != body {
+				t.Fatalf("incremental page body changed: %+v", pages[0])
+			}
+			if slices.Contains(eng.req.SelectFields, "md_with_weight") || !slices.Contains(eng.req.SelectFields, "content_with_weight") {
+				t.Fatalf("unexpected page body query fields: %v", eng.req.SelectFields)
+			}
+		})
+	}
+	eng.row["md_with_weight"] = "stale duplicate"
+	if page := wikiPageCandidateFromRow(eng.row); page.ContentMDRaw != body {
+		t.Fatalf("duplicate column overrides canonical Markdown: %+v", page)
 	}
 }
 
