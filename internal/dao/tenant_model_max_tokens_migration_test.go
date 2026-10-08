@@ -184,3 +184,64 @@ func TestMigrateTenantModelMaxTokensBackfillsOnlyMissingValues(t *testing.T) {
 		t.Fatalf("database migration version = %q, want %q", version, tenantModelMaxTokensTargetVersion)
 	}
 }
+
+func TestBackfillTenantModelMaxTokensSkipsCatalogDefaults(t *testing.T) {
+	var providerName, modelName, modelType string
+	var catalogLimit int64
+	for _, factory := range loadFactoryLLMInfos() {
+		for _, model := range factory.LLM {
+			if err := json.Unmarshal(model.MaxTokens, &catalogLimit); err == nil && catalogLimit > 0 {
+				providerName, modelName = factory.Name, model.LLMName
+				modelType = factoryLLMModelTypes(model.ModelType)[0]
+				break
+			}
+		}
+		if providerName != "" {
+			break
+		}
+	}
+	if providerName == "" {
+		t.Fatal("factory catalog contains no positive model limits")
+	}
+	for _, tc := range []struct {
+		name        string
+		limit       int64
+		wantUpdated int
+	}{
+		{name: "catalog default", limit: catalogLimit, wantUpdated: 0},
+		{name: "custom limit", limit: catalogLimit + 1, wantUpdated: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTenantModelMaxTokensMigrationDB(t)
+			seedLegacyTenantModelMaxTokens(t, db, tc.limit)
+			if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "provider-1").Update("provider_name", providerName).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&entity.TenantLLM{}).Where("tenant_id = ?", "tenant-1").Updates(map[string]any{
+				"llm_factory": providerName, "llm_name": modelName, "model_type": modelType,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			model := entity.TenantModel{
+				ID: "catalog-model", ProviderID: "provider-1", InstanceID: "instance-1",
+				ModelName: modelName, ModelType: modelTypeStringToBit[modelType], Extra: `{"is_tools":true}`,
+			}
+			if err := db.Create(&model).Error; err != nil {
+				t.Fatal(err)
+			}
+			updated, err := backfillTenantModelMaxTokens(t.Context(), db)
+			if err != nil || updated != tc.wantUpdated {
+				t.Fatalf("backfill = %d, %v; want %d, nil", updated, err, tc.wantUpdated)
+			}
+			if err := db.Where("id = ?", model.ID).Take(&model).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantUpdated == 0 && model.Extra != `{"is_tools":true}` {
+				t.Fatalf("catalog default changed extra: %s", model.Extra)
+			}
+			if tc.wantUpdated == 1 && int64(modelExtraMaxTokens(model.Extra)) != tc.limit {
+				t.Fatalf("custom limit was not preserved: %s", model.Extra)
+			}
+		})
+	}
+}

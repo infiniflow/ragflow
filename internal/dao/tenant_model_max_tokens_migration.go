@@ -43,11 +43,12 @@ type tenantModelMaxTokensTarget struct {
 }
 
 type tenantLLMMaxTokensSource struct {
-	ModelName  sql.NullString `gorm:"column:model_name"`
-	ModelType  sql.NullString `gorm:"column:model_type"`
-	APIKey     sql.NullString `gorm:"column:api_key"`
-	MaxTokens  sql.NullInt64  `gorm:"column:max_tokens"`
-	ProviderID string         `gorm:"column:provider_id"`
+	ModelName    sql.NullString `gorm:"column:model_name"`
+	ModelType    sql.NullString `gorm:"column:model_type"`
+	APIKey       sql.NullString `gorm:"column:api_key"`
+	MaxTokens    sql.NullInt64  `gorm:"column:max_tokens"`
+	ProviderID   string         `gorm:"column:provider_id"`
+	ProviderName string         `gorm:"column:provider_name"`
 }
 
 type tenantModelMaxTokensUpdate struct {
@@ -58,6 +59,7 @@ type tenantModelMaxTokensUpdate struct {
 // migrateTenantModelMaxTokens copies the legacy per-model context window into
 // tenant_model.extra for databases that already completed the tenant-model
 // migration. Existing extra.max_tokens values are never overwritten.
+// Values identical to the factory catalog are not stored as tenant overrides.
 //
 // It runs after the rc1 migrations because all database migrations share one
 // monotonically increasing version marker.
@@ -109,7 +111,7 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 	if err := scoped.Raw(`
 		SELECT tl.llm_name AS model_name, tl.model_type AS model_type,
 		       tl.api_key AS api_key, tl.max_tokens AS max_tokens,
-	       tmp.id AS provider_id
+	       tmp.id AS provider_id, tmp.provider_name AS provider_name
 		FROM tenant_llm tl
 		INNER JOIN tenant_model_provider tmp
 			ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory
@@ -133,8 +135,13 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 	}
 
 	updates := make(map[string]tenantModelMaxTokensUpdate)
+	catalogLimits := factoryModelMaxTokensLookup(loadFactoryLLMInfos())
 	for _, row := range sourceRows {
 		if !row.ModelName.Valid || !row.MaxTokens.Valid || row.MaxTokens.Int64 <= 0 {
+			continue
+		}
+		catalogKey := factoryModelMaxTokensKey(row.ProviderName, row.ModelName.String, row.ModelType.String)
+		if limit, exists := catalogLimits[catalogKey]; exists && limit == row.MaxTokens.Int64 {
 			continue
 		}
 		instanceID := instanceLookup[row.ProviderID+"\x00"+stripIsToolsFromAPIKey(row.APIKey.String)]
@@ -206,6 +213,26 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 
 func tenantModelMaxTokensKey(providerID, instanceID, modelName string) string {
 	return providerID + "\x00" + instanceID + "\x00" + modelName
+}
+
+func factoryModelMaxTokensKey(providerName, modelName, modelType string) string {
+	return strings.ToLower(providerName) + "\x00" + modelName + "\x00" + strings.ToLower(strings.TrimSpace(modelType))
+}
+
+func factoryModelMaxTokensLookup(factories []factoryLLMInfo) map[string]int64 {
+	limits := make(map[string]int64)
+	for _, factory := range factories {
+		for _, model := range factory.LLM {
+			var maxTokens int64
+			if err := json.Unmarshal(model.MaxTokens, &maxTokens); err != nil || maxTokens <= 0 {
+				continue
+			}
+			for _, modelType := range factoryLLMModelTypes(model.ModelType) {
+				limits[factoryModelMaxTokensKey(factory.Name, model.LLMName, modelType)] = maxTokens
+			}
+		}
+	}
+	return limits
 }
 
 func tenantModelExtraHasMaxTokens(extra string) (bool, error) {
