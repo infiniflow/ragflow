@@ -73,9 +73,9 @@ func TestFilesystemUsesSelectedAPIServer(t *testing.T) {
 	}
 	check("second")
 	if _, err := cli.CommonUseAPIServerCommand(0, &Command{Params: map[string]interface{}{"server_name": "first"}}); err != nil {
-			t.Fatal(err)
-		}
-		check("first")
+		t.Fatal(err)
+	}
+	check("first")
 }
 
 func (p *recordingFileProvider) Name() string        { return "files" }
