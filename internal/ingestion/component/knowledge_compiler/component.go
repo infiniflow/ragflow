@@ -149,7 +149,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		specParam.TemplateConfig = spec.Config
 		overlayTemplateConfig(&specParam, spec.Config)
 
-		deps, err := common.ResolveDeps(tenantID, specParam.LLMID, specParam.EmbeddingModel)
+		deps, err := common.ResolveDeps(ctx, tenantID, specParam.LLMID, specParam.EmbeddingModel)
 		if err != nil {
 			return nil, err
 		}
