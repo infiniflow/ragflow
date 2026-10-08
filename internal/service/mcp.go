@@ -44,15 +44,19 @@ const (
 
 // MCPService handles MCP server operations.
 type MCPService struct {
-	mcpServerDAO *dao.MCPServerDAO
-	tenantDAO    *dao.TenantDAO
+	mcpServerDAO  *dao.MCPServerDAO
+	tenantDAO     *dao.TenantDAO
+	userCanvasDAO *dao.UserCanvasDAO
+	userTenantDAO *dao.UserTenantDAO
 }
 
 // NewMCPService creates an MCP service.
 func NewMCPService() *MCPService {
 	return &MCPService{
-		mcpServerDAO: dao.NewMCPServerDAO(),
-		tenantDAO:    dao.NewTenantDAO(),
+		mcpServerDAO:  dao.NewMCPServerDAO(),
+		tenantDAO:     dao.NewTenantDAO(),
+		userCanvasDAO: dao.NewUserCanvasDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
 	}
 }
 
@@ -92,6 +96,7 @@ type MCPServerListItem struct {
 	Variables   entity.JSONMap `json:"variables"`
 	CreateDate  *string        `json:"create_date"`
 	UpdateDate  *string        `json:"update_date"`
+	ReadOnly    bool           `json:"read_only,omitempty"`
 }
 
 // ListMCPServersResponse is the response payload for listing MCP servers.
@@ -321,6 +326,170 @@ func (s *MCPService) GetMCPServer(ctx context.Context, tenantID, mcpID string) (
 	return server, common.CodeSuccess, nil
 }
 
+// allowedMCPToolFields is the set of tool metadata fields that may be exposed
+// when an MCP server is shared with a non-owning tenant member.
+var allowedMCPToolFields = map[string]struct{}{
+	"name":         {},
+	"title":        {},
+	"description":  {},
+	"inputSchema":  {},
+	"outputSchema": {},
+	"annotations":  {},
+	"enabled":      {},
+}
+
+// mcpToolSelection holds the names selected for a shared MCP server and whether
+// the server is referenced by any shared agent canvas at all.
+type mcpToolSelection struct {
+	names      map[string]struct{}
+	referenced bool
+}
+
+// GetSharedMCPServer returns sanitized metadata for an MCP server that is owned
+// by another tenant but referenced from a shared agent canvas visible to the
+// requesting user. If the user is not a member of the owning tenant, or the
+// server is not referenced by any shared agent, it returns a data error.
+func (s *MCPService) GetSharedMCPServer(ctx context.Context, userID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
+	server, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
+	}
+	if server == nil {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+	}
+	// The shared view is only for non-owning tenant members; owners use the
+	// normal GetMCPServer path so credentials are never exposed here.
+	if server.TenantID == userID {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+	}
+
+	rel, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, server.TenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant membership: %w", err)
+	}
+	if rel == nil || (rel.Role != "owner" && rel.Role != "normal") {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+	}
+
+	canvases, err := s.userCanvasDAO.GetAgentCanvasesByTenantID(ctx, dao.DB, server.TenantID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to list agent canvases: %w", err)
+	}
+	selection := selectedMCPToolsFromCanvases(canvases, mcpID)
+	if !selection.referenced {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+	}
+
+	variables := server.Variables
+	if variables == nil {
+		variables = entity.JSONMap{}
+	}
+	catalog, ok := variables["tools"].(map[string]interface{})
+	if !ok {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, userID)
+	}
+
+	tools := make(map[string]interface{})
+	for name := range selection.names {
+		meta, ok := catalog[name].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		filtered := make(map[string]interface{}, len(meta))
+		for k, v := range meta {
+			if _, allowed := allowedMCPToolFields[k]; allowed {
+				filtered[k] = v
+			}
+		}
+		if len(filtered) > 0 {
+			tools[name] = filtered
+		}
+	}
+
+	return &entity.MCPServer{
+		ID:         server.ID,
+		Name:       server.Name,
+		TenantID:   server.TenantID,
+		ServerType: server.ServerType,
+		URL:        "",
+		Variables:  entity.JSONMap{"tools": tools},
+		Headers:    nil,
+	}, common.CodeSuccess, nil
+}
+
+func selectedMCPToolsFromCanvases(canvases []*entity.UserCanvas, mcpID string) *mcpToolSelection {
+	selection := &mcpToolSelection{names: make(map[string]struct{})}
+	for _, canvas := range canvases {
+		if canvas.DSL == nil {
+			continue
+		}
+		components, ok := canvas.DSL["components"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, compAny := range components {
+			comp, ok := compAny.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			objAny, ok := comp["obj"]
+			if !ok {
+				continue
+			}
+			obj, ok := objAny.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			componentName, _ := obj["component_name"].(string)
+			if componentName != "Agent" {
+				continue
+			}
+			paramsAny, ok := obj["params"]
+			if !ok {
+				continue
+			}
+			params, ok := paramsAny.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			mcpListAny, ok := params["mcp"]
+			if !ok {
+				continue
+			}
+			mcpList, ok := mcpListAny.([]interface{})
+			if !ok {
+				continue
+			}
+			for _, mcpAny := range mcpList {
+				mcp, ok := mcpAny.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				id, _ := mcp["mcp_id"].(string)
+				if id != mcpID {
+					continue
+				}
+				toolsAny, ok := mcp["tools"]
+				if !ok {
+					continue
+				}
+				tools, ok := toolsAny.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				selection.referenced = true
+				for name := range tools {
+					selection.names[name] = struct{}{}
+				}
+			}
+		}
+	}
+	return selection
+}
+
 func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) (*ExportMCPServerResponse, common.ErrorCode, error) {
 	server, code, err := s.GetMCPServer(ctx, userID, mcpID)
 	if err != nil {
@@ -476,7 +645,8 @@ func isMCPServerNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
-// ListMCPServers lists MCP servers owned by a tenant.
+// ListMCPServers lists MCP servers owned by a tenant, plus sanitized metadata
+// for any requested MCP IDs that are shared through a visible agent canvas.
 func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
 	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc)
 	if err != nil {
@@ -489,30 +659,80 @@ func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []
 	if servers == nil {
 		servers = []*entity.MCPServer{}
 	}
-	servers = paginateMCPServers(servers, page, pageSize)
 
 	items := make([]*MCPServerListItem, 0, len(servers))
+	ownedIDs := make(map[string]struct{}, len(servers))
 	for _, server := range servers {
-		variables := server.Variables
-		if variables == nil {
-			variables = entity.JSONMap{}
-		}
-		items = append(items, &MCPServerListItem{
-			ID:          server.ID,
-			Name:        server.Name,
-			ServerType:  server.ServerType,
-			URL:         server.URL,
-			Description: server.Description,
-			Variables:   variables,
-			CreateDate:  formatMCPServerDate(server.CreateDate),
-			UpdateDate:  formatMCPServerDate(server.UpdateDate),
-		})
+		items = append(items, newMCPServerListItem(server, false))
+		ownedIDs[server.ID] = struct{}{}
 	}
+
+	// Only enumerate shared servers when the caller explicitly requested IDs.
+	// This prevents leaking every server referenced by shared canvases.
+	if len(ids) > 0 {
+		seen := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			if _, owned := ownedIDs[id]; owned {
+				continue
+			}
+			shared, code, err := s.GetSharedMCPServer(ctx, tenantID, id)
+			if err != nil {
+				if code == common.CodeServerError {
+					return nil, code, err
+				}
+				continue
+			}
+			if keywords != "" && !strings.Contains(strings.ToLower(shared.Name), strings.ToLower(keywords)) {
+				continue
+			}
+			items = append(items, newMCPServerListItem(shared, true))
+			total++
+		}
+	}
+
+	items = paginateMCPServerItems(items, page, pageSize)
 
 	return &ListMCPServersResponse{
 		MCPServers: items,
 		Total:      total,
 	}, common.CodeSuccess, nil
+}
+
+func newMCPServerListItem(server *entity.MCPServer, readOnly bool) *MCPServerListItem {
+	variables := server.Variables
+	if variables == nil {
+		variables = entity.JSONMap{}
+	}
+	return &MCPServerListItem{
+		ID:          server.ID,
+		Name:        server.Name,
+		ServerType:  server.ServerType,
+		URL:         server.URL,
+		Description: server.Description,
+		Variables:   variables,
+		CreateDate:  formatMCPServerDate(server.CreateDate),
+		UpdateDate:  formatMCPServerDate(server.UpdateDate),
+		ReadOnly:    readOnly,
+	}
+}
+
+func paginateMCPServerItems(items []*MCPServerListItem, page, pageSize int) []*MCPServerListItem {
+	if page <= 0 || pageSize <= 0 {
+		return items
+	}
+	start := (page - 1) * pageSize
+	if start >= len(items) {
+		return []*MCPServerListItem{}
+	}
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.

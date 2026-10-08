@@ -491,6 +491,18 @@ func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(ctx context.Context, db *gorm.
 	return canvasIDs, err
 }
 
+// GetAgentCanvasesByTenantID returns the DSL of all team-permission agent
+// canvases owned by a tenant. Used to determine which MCP tools a non-owning
+// tenant member is authorized to see.
+func (dao *UserCanvasDAO) GetAgentCanvasesByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.UserCanvas, error) {
+	var canvases []*entity.UserCanvas
+	err := db.WithContext(ctx).Model(&entity.UserCanvas{}).
+		Select("dsl").
+		Where("user_id = ? AND permission = ? AND canvas_category = ?", tenantID, "team", "agent_canvas").
+		Find(&canvases).Error
+	return canvases, err
+}
+
 // UpdateDSL updates a canvas DSL by canvas ID.
 func (dao *UserCanvasDAO) UpdateDSL(ctx context.Context, db *gorm.DB, canvasID string, dsl entity.JSONMap) (int64, error) {
 	result := db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("dsl", dsl)
