@@ -281,7 +281,7 @@ func TestUpdateAndDeleteKeepKeywordPredicates(t *testing.T) {
 	// Filter order follows sortedKeys: kb_id first, then the keyword predicate.
 	mock.ExpectExec(regexp.QuoteMeta(
 		`UPDATE "t1" SET "title_tks" = $1 WHERE "kb_id" = $2 AND (('###' || "title_kwd" || '###') LIKE $3 OR ('###' || "title_kwd" || '###') LIKE $4)`)).
-		WithArgs("x", "kb-1", "%###nav_cluster###%", "%###nav_doc###%").
+		WithArgs("x", "kb-1", `%###nav\_cluster###%`, `%###nav\_doc###%`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := engine.UpdateChunks(context.Background(),
@@ -299,7 +299,7 @@ func TestUpdateAndDeleteKeepKeywordPredicates(t *testing.T) {
 	// sortedKeys puts compile_kwd before kb_id before type_kwd.
 	mock.ExpectExec(regexp.QuoteMeta(
 		`DELETE FROM "t1" WHERE (('###' || "compile_kwd" || '###') LIKE $1) AND "kb_id" = $2 AND (('###' || "type_kwd" || '###') LIKE $3)`)).
-		WithArgs("%###done###%", "kb-1", "%###nav_cluster###%").
+		WithArgs("%###done###%", "kb-1", `%###nav\_cluster###%`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if _, err := engine.DeleteChunks(context.Background(),

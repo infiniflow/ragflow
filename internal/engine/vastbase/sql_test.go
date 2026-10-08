@@ -18,6 +18,7 @@ package vastbase
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"regexp"
@@ -28,17 +29,63 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-// TestRunSQLExecutesInReadOnlyRolledBackTransaction checks the admin SQL
-// console's read-only, always-rolled-back execution envelope.
-func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
-	db, mock, err := sqlmock.New()
+// txOptionsConnector opens the sqlmock connection under its registered DSN
+// and wraps it so tests can observe the driver.TxOptions database/sql hands
+// to BeginTx; go-sqlmock accepts but discards them, so it offers no
+// expectation API for transaction options.
+type txOptionsConnector struct {
+	drv driver.Driver
+	dsn string
+	got *driver.TxOptions
+}
+
+func (c txOptionsConnector) Connect(context.Context) (driver.Conn, error) {
+	conn, err := c.drv.Open(c.dsn)
+	if err != nil {
+		return nil, err
+	}
+	return txOptionsConn{Conn: conn, got: c.got}, nil
+}
+
+func (c txOptionsConnector) Driver() driver.Driver { return c.drv }
+
+type txOptionsConn struct {
+	driver.Conn
+	got *driver.TxOptions
+}
+
+func (c txOptionsConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	*c.got = opts
+	return c.Conn.(driver.ConnBeginTx).BeginTx(ctx, opts)
+}
+
+// QueryContext delegates so database/sql keeps using the query path instead
+// of falling back to Prepare on the wrapper.
+func (c txOptionsConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
+}
+
+// newRunSQLEngine wires an Engine around a sqlmock database that records the
+// transaction options in got, so tests can prove RunSQL opens its
+// transaction READ ONLY.
+func newRunSQLEngine(t *testing.T) (*Engine, sqlmock.Sqlmock, *driver.TxOptions) {
+	t.Helper()
+	db, mock, err := sqlmock.NewWithDSN(t.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+	got := new(driver.TxOptions)
+	recDB := sql.OpenDB(txOptionsConnector{drv: db.Driver(), dsn: t.Name(), got: got})
+	t.Cleanup(func() { recDB.Close(); db.Close() })
+	return newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, recDB), mock, got
+}
 
-	mock.ExpectBegin().WithTxOptions(driver.TxOptions{ReadOnly: true})
+// TestRunSQLExecutesInReadOnlyRolledBackTransaction checks the admin SQL
+// console's read-only, always-rolled-back execution envelope.
+func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
+	engine, mock, gotTxOptions := newRunSQLEngine(t)
+
+	mock.ExpectBegin()
 	// No LIMIT in the input: the engine must append one.
 	mock.ExpectQuery(regexp.QuoteMeta(
 		`SELECT "id" FROM "t1" WHERE kb_id = 'kb-1' LIMIT 1024`)).
@@ -56,21 +103,19 @@ func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
+	if !gotTxOptions.ReadOnly {
+		t.Fatal("RunSQL must open its transaction READ ONLY")
+	}
 }
 
 // TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction checks that even
 // data-modifying CTEs fail under the read-only envelope.
 func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
+	engine, mock, gotTxOptions := newRunSQLEngine(t)
 
 	// The CTE passes the SELECT/WITH prefix checks; only the READ ONLY
 	// transaction stops it, with the server rejecting the write.
-	mock.ExpectBegin().WithTxOptions(driver.TxOptions{ReadOnly: true})
+	mock.ExpectBegin()
 	mock.ExpectQuery("WITH d AS").
 		WillReturnError(fmt.Errorf("cannot execute DELETE in a read-only transaction"))
 	mock.ExpectRollback()
@@ -81,6 +126,9 @@ func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+	if !gotTxOptions.ReadOnly {
+		t.Fatal("RunSQL must open its transaction READ ONLY")
 	}
 }
 
