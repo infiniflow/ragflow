@@ -169,18 +169,20 @@ func validateRows(component string, params map[string]any, field string, require
 // nonblank key plus one value source: an upstream reference (ref) or a
 // literal (value). The two sources are alternatives — a reference row has
 // no literal and a literal row has no reference — so a row with neither
-// is still rejected.
+// is still rejected. Omitted and null variables carry no rows to check;
+// any other non-array value is malformed and rejected.
 func validateInvokeVariables(component string, params map[string]any) error {
-	rows, ok := params["variables"].([]any)
-	if !ok {
+	raw, present := params["variables"]
+	if !present || raw == nil {
 		return nil
+	}
+	rows, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("[%s] variables must be an array", component)
 	}
 	for i, raw := range rows {
 		row, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if isBlank(row["key"]) || !invokeRowHasSource(row) {
+		if !ok || !isNonBlankString(row["key"]) || !invokeRowHasSource(row) {
 			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
 		}
 	}

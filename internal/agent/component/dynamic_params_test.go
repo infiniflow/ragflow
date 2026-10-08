@@ -21,6 +21,8 @@ func TestValidateDynamicEntries(t *testing.T) {
 			map[string]any{"key": "top_k", "ref": "", "value": "12"},
 			map[string]any{"key": "limit", "ref": "", "value": 10},
 		}}),
+		// A null variables value carries no rows, same as an omitted one.
+		componentDSL("Invoke", map[string]any{"variables": nil}),
 		componentDSL("VariableAggregator", map[string]any{"groups": []any{map[string]any{
 			"group_name": "answer",
 			"variables":  []any{map[string]any{"value": "LLM@content"}},
@@ -63,6 +65,12 @@ func TestValidateDynamicEntries(t *testing.T) {
 		{"invoke variable", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "", "ref": "Begin@query", "value": "query"}}}), "variables[0]"},
 		{"invoke variable without source", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": ""}}}), "variables[0]"},
 		{"invoke variable with nil literal", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": "query", "ref": "", "value": nil}}}), "variables[0]"},
+		{"invoke variable row not a map", componentDSL("Invoke", map[string]any{"variables": []any{"query"}}), "variables[0]"},
+		{"invoke variable nil row", componentDSL("Invoke", map[string]any{"variables": []any{nil}}), "variables[0]"},
+		{"invoke variable without key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variable with numeric key", componentDSL("Invoke", map[string]any{"variables": []any{map[string]any{"key": 42, "ref": "Begin@query", "value": ""}}}), "variables[0]"},
+		{"invoke variables not an array", componentDSL("Invoke", map[string]any{"variables": "query"}), "variables must be an array"},
+		{"invoke variables object", componentDSL("Invoke", map[string]any{"variables": map[string]any{"key": "query"}}), "variables must be an array"},
 		{"invoke variable without source after valid row", componentDSL("Invoke", map[string]any{"variables": []any{
 			map[string]any{"key": "query", "ref": "Begin@query", "value": ""},
 			map[string]any{"key": "top_k", "ref": "", "value": " "},
