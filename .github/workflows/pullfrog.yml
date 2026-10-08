@@ -1,0 +1,81 @@
+# PULLFROG ACTION — DO NOT EDIT EXCEPT WHERE INDICATED
+name: Pullfrog
+run-name: ${{ inputs.name || github.workflow }}
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        type: string
+        description: Agent prompt
+      name:
+        type: string
+        description: Run name
+
+permissions:
+  contents: read
+
+jobs:
+  pullfrog:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - name: Run agent
+        uses: pullfrog/pullfrog@v0
+        with:
+          prompt: ${{ inputs.prompt }}
+        env:
+          # add at least one provider API key
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY:
+            ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          META_MODEL_API_KEY: ${{ secrets.META_MODEL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          
+          # for Amazon Bedrock (https://docs.pullfrog.com/bedrock)
+          # AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
+          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # AWS_REGION: us-east-1
+          # BEDROCK_MODEL_ID: <bedrock-model-id>
+          
+          # for Google Vertex AI (https://docs.pullfrog.com/vertex)
+          # VERTEX_SERVICE_ACCOUNT_JSON: >-
+          #   ${{ secrets.VERTEX_SERVICE_ACCOUNT_JSON }}
+          # GOOGLE_CLOUD_PROJECT: my-project
+          # VERTEX_LOCATION: global
+          # VERTEX_MODEL_ID: <vertex-model-id>
+
+          # for Azure OpenAI (https://docs.pullfrog.com/azure)
+          # AZURE_RESOURCE_NAME is the <name> in https://<name>.openai.azure.com
+          # AZURE_DEPLOYMENT is your deployment's name, not the model it serves
+          # AZURE_RESOURCE_NAME: my-resource
+          # AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          # AZURE_DEPLOYMENT: <deployment-name>
+          # both limits are required — set them to the real limits of that model
+          # AZURE_CONTEXT: "400000"
+          # AZURE_MAX_OUTPUT: "128000"
+
+          # for any OpenAI-compatible endpoint — LiteLLM, Cloudflare AI Gateway,
+          # self-hosted vLLM (https://docs.pullfrog.com/openai-compatible)
+          # OPENAI_COMPATIBLE_BASE_URL: https://litellm.example.com/v1
+          # OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENAI_COMPATIBLE_API_KEY }}
+          # OPENAI_COMPATIBLE_MODEL: <model-id>
+          # both limits are required — set them to the real limits of that model
+          # OPENAI_COMPATIBLE_CONTEXT: "128000"
+          # OPENAI_COMPATIBLE_MAX_OUTPUT: "16384"
+
