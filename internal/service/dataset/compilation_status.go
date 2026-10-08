@@ -15,9 +15,7 @@ import (
 )
 
 // CompilationStatus is the dataset-level knowledge-compile lifecycle state
-// surfaced by GET /datasets/:id/compilation/status. It is the Go scheduler
-// contract that replaces the Python-era RunIndex/TraceIndex task progress for
-// API_PROXY_SCHEME=go / hybrid.
+// surfaced by GET /datasets/:id/compilation/status.
 //
 // State only takes one of idle/pending/running/completed. Error is NOT a fifth
 // state: it is a diagnostic attached to a pending/running batch left for retry,

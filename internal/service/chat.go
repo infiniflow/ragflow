@@ -443,12 +443,12 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 			}
 		}
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -459,12 +459,12 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 	if _, ok := DefaultRerankModels[llmName]; ok {
 		return "", nil
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -1102,12 +1102,12 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 			}
 		}
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -1118,12 +1118,12 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {

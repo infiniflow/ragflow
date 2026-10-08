@@ -90,6 +90,8 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        '可繼續上傳，系統將自動切換至支援這些檔案類型的內建解析配置。',
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',

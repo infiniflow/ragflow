@@ -464,24 +464,24 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	// Resolve tenant model IDs, mirroring Python's ensure_tenant_model_ids_for_params.
 	// Resolution failure is non-fatal (e.g. Builtin models that have no
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
 				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
-		} else if target != nil && target.ModelID != "" {
-			tenantLLMID := target.ModelID
+		} else if info != nil && info.ID != "" {
+			tenantLLMID := info.ID
 			req.TenantLLMID = &tenantLLMID
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
 				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
-		} else if target != nil && target.ModelID != "" {
-			tenantEmbdID := target.ModelID
+		} else if info != nil && info.ID != "" {
+			tenantEmbdID := info.ID
 			req.TenantEmbdID = &tenantEmbdID
 		}
 	}
@@ -618,16 +618,16 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	// tenant_model row IDs so downstream code that depends on
 	// tenant_llm_id / tenant_embd_id stays consistent after an update.
 	// Resolution failure is non-fatal (e.g. Builtin models).
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeChat, *req.LLMID)
+			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
 					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
-			} else if target != nil && target.ModelID != "" {
-				updateDict["tenant_llm_id"] = target.ModelID
+			} else if info != nil && info.ID != "" {
+				updateDict["tenant_llm_id"] = info.ID
 			}
 		}
 	}
@@ -635,12 +635,12 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			target, err := modelSolver.ResolveModelConfig(ctx, ownerTenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
 					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
-			} else if target != nil && target.ModelID != "" {
-				updateDict["tenant_embd_id"] = target.ModelID
+			} else if info != nil && info.ID != "" {
+				updateDict["tenant_embd_id"] = info.ID
 			}
 		}
 	}
@@ -1494,11 +1494,10 @@ func memoryFusionWeights(keywordsSimilarityWeight float64) string {
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	target, err := NewModelSolver().ResolveModelConfig(ctx, memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: memory.TenantID}, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	// Query: true — the memory store is searched by question (Python
 	// memory/services/query.py uses emb_mdl.encode_queries).
 	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{question}, Query: true}, &models.EmbeddingConfig{Dimension: 0}, nil)

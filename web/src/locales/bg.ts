@@ -197,6 +197,8 @@ export default {
       parserRequired: 'Методът за разделяне е задължителен',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Продължете с качването и системата автоматично ще превключи тези файлове към поддържана вградена конфигурация за анализиране.',
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
         fieldNameInvalid:
