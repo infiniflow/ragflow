@@ -1920,7 +1920,7 @@ Exemple : Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Veuillez téléverser au moins un fichier',
     },
     flow: {
-      cite: 'Citation',
+      cite: 'Afficher les citations',
       citeTip: 'Astuce citation',
       name: 'Nom',
       nameMessage: 'Veuillez saisir un nom',
