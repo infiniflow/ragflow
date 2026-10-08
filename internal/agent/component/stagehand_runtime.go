@@ -292,7 +292,15 @@ func (r *stagehandRuntime) startSweeper(interval time.Duration) {
 // Active operations hold a lease until their session cleanup finishes.
 func (r *stagehandRuntime) evictExpired() {
 	cutoff := time.Now().Add(-r.ttl).UnixNano()
+	removed := r.retireExpired(cutoff)
+	for _, e := range removed {
+		e.Close()
+	}
+}
+
+func (r *stagehandRuntime) retireExpired(cutoff int64) []*stagehandClientEntry {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	var removed []*stagehandClientEntry
 	r.cache.Range(func(k, v any) bool {
 		e := v.(*stagehandClientEntry)
@@ -308,10 +316,7 @@ func (r *stagehandRuntime) evictExpired() {
 		}
 		return true
 	})
-	r.mu.Unlock()
-	for _, e := range removed {
-		e.Close()
-	}
+	return removed
 }
 
 // enforceLRUCap evicts the least-recently-used entry when the cache
