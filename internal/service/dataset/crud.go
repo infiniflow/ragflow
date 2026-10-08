@@ -234,7 +234,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 // dedupeDatasetName returns a non-colliding dataset name within the tenant,
 // appending (1), (2), ... when the requested name is already taken.
 func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
-	return common.UniqueName(name, func(candidate string) (bool, error) {
+	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
 		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
 	})
 }

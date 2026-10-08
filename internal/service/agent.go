@@ -963,7 +963,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	uniqueTitle, err := common.UniqueName(title, func(candidate string) (bool, error) {
+	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
 		return s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, candidate, "")
 	})
 	if err != nil {

@@ -166,7 +166,8 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 
 	// Fall back to a numbered name when an active space already uses the
 	// requested one, mirroring the dataset create rule.
-	spaceName, err := common.UniqueName(req.Name, func(candidate string) (bool, error) {
+	// skill_space.name is a 128-byte column; keep generated names within it.
+	spaceName, err := common.UniqueName(req.Name, 128, func(candidate string) (bool, error) {
 		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, req.TenantID, candidate)
 		if lookupErr != nil {
 			if dao.IsNotFoundErr(lookupErr) {

@@ -49,18 +49,40 @@ func splitNameCounter(stem string) (string, int, bool) {
 	return strings.TrimRight(matches[1], " "), counter, true
 }
 
-// UniqueName returns a non-colliding variant of name. When the name already
-// exists it appends "(1)", "(2)", ... It continues from an existing trailing
-// counter and preserves the file extension:
+// UniqueName returns a non-colliding variant of name by appending "(1)",
+// "(2)", ... to the end of the name. It continues from an existing trailing
+// counter. Use UniqueFileName for file or document names that must keep their
+// extension at the end.
 //
-//	UniqueName("topic", ...)           -> "topic(1)"
-//	UniqueName("topic(1)", ...)        -> "topic(2)"
-//	UniqueName("report.pdf", ...)      -> "report(1).pdf"
-//	UniqueName("report(1).pdf", ...)   -> "report(2).pdf"
+// maxLen is the maximum allowed length in bytes for the generated name;
+// maxLen <= 0 falls back to AppNameLimit.
+//
+//	UniqueName("topic", 0, ...)        -> "topic(1)"
+//	UniqueName("topic(1)", 0, ...)     -> "topic(2)"
+//	UniqueName("release v1.2", 0, ...) -> "release v1.2(1)"
 //
 // exists reports whether a candidate already collides. A lookup error is
 // returned to the caller instead of being treated as "free".
-func UniqueName(name string, exists func(candidate string) (bool, error)) (string, error) {
+func UniqueName(name string, maxLen int, exists func(candidate string) (bool, error)) (string, error) {
+	return uniqueName(name, maxLen, false, exists)
+}
+
+// UniqueFileName is UniqueName for file and document names: the suffix is
+// inserted before the file extension instead of at the end of the name.
+//
+//	UniqueFileName("report.pdf", 0, ...)    -> "report(1).pdf"
+//	UniqueFileName("report(1).pdf", 0, ...) -> "report(2).pdf"
+func UniqueFileName(name string, maxLen int, exists func(candidate string) (bool, error)) (string, error) {
+	return uniqueName(name, maxLen, true, exists)
+}
+
+// uniqueName appends an incrementing "(N)" suffix until exists reports the
+// candidate as free. keepExtension inserts the suffix before the file
+// extension instead of at the end of the name.
+func uniqueName(name string, maxLen int, keepExtension bool, exists func(candidate string) (bool, error)) (string, error) {
+	if maxLen <= 0 {
+		maxLen = AppNameLimit
+	}
 	current := name
 	for i := 0; i < maxNameRetries; i++ {
 		taken, err := exists(current)
@@ -71,14 +93,18 @@ func UniqueName(name string, exists func(candidate string) (bool, error)) (strin
 			return current, nil
 		}
 
-		ext := path.Ext(current)
-		stem := strings.TrimSuffix(current, ext)
+		stem := current
+		ext := ""
+		if keepExtension {
+			ext = path.Ext(current)
+			stem = strings.TrimSuffix(current, ext)
+		}
 		base, counter, ok := splitNameCounter(stem)
 		if !ok {
 			base = stem
 		}
 		current = fmt.Sprintf("%s(%d)%s", base, counter+1, ext)
-		if err := ValidateName(current); err != nil {
+		if err := validateNameLimit(current, maxLen); err != nil {
 			return "", err
 		}
 	}
@@ -110,6 +136,11 @@ const AppNameLimit = 256
 
 // ValidateName rejects empty names and names longer than AppNameLimit bytes.
 func ValidateName(name string) error {
+	return validateNameLimit(name, AppNameLimit)
+}
+
+// validateNameLimit rejects empty names and names longer than maxLen bytes.
+func validateNameLimit(name string, maxLen int) error {
 	// Validate name is not empty after trimming
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
@@ -117,8 +148,8 @@ func ValidateName(name string) error {
 	}
 
 	// Validate name length in bytes (not characters) - same as Python len(search_name.encode("utf-8"))
-	if len([]byte(name)) > AppNameLimit {
-		return fmt.Errorf("name length is %d which is large than %d", len([]byte(name)), AppNameLimit)
+	if len([]byte(name)) > maxLen {
+		return fmt.Errorf("name length is %d which is large than %d", len([]byte(name)), maxLen)
 	}
 
 	return nil

@@ -509,7 +509,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 		uniqueMemoryTypes = append(uniqueMemoryTypes, mt)
 	}
 
-	memoryName, err := common.UniqueName(memoryName, func(candidate string) (bool, error) {
+	memoryName, err := common.UniqueName(memoryName, MemoryNameLimit, func(candidate string) (bool, error) {
 		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 		if err != nil {
 			return false, err

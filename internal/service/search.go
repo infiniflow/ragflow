@@ -216,7 +216,8 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	searchID := utility.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
-	uniqueName, err := common.UniqueName(name, func(candidate string) (bool, error) {
+	// search.name is a 128-byte column; keep generated names within it.
+	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
 		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
 		if err != nil {
 			return false, err

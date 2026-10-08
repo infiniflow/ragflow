@@ -62,7 +62,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		filename, err := common.UniqueName(fh.Filename, func(candidate string) (bool, error) {
+		filename, err := common.UniqueFileName(fh.Filename, 255, func(candidate string) (bool, error) {
 			return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 		})
 		if err != nil {
@@ -119,7 +119,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
 func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
 	// Fall back to a numbered name when the requested one is already taken.
-	name, err := common.UniqueName(name, func(candidate string) (bool, error) {
+	name, err := common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 	})
 	if err != nil {
@@ -251,7 +251,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	}
 	filename := normalizeWebDocumentName(name, contentType, blob)
 	filename, _, blob = utility.NormalizeUploadInfoContent(filename, contentType, blob)
-	filename, err = common.UniqueName(filename, func(candidate string) (bool, error) {
+	filename, err = common.UniqueFileName(filename, 255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 	})
 	if err != nil {

@@ -336,7 +336,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	name, err = common.UniqueName(name, func(candidate string) (bool, error) {
+	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
 		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
 	})
 	if err != nil {

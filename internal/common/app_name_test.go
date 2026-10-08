@@ -47,7 +47,7 @@ func TestSplitNameCounter(t *testing.T) {
 }
 
 func TestUniqueName_NoCollision(t *testing.T) {
-	got, err := UniqueName("topic", func(string) (bool, error) { return false, nil })
+	got, err := UniqueName("topic", 0, func(string) (bool, error) { return false, nil })
 	if err != nil {
 		t.Fatalf("UniqueName returned error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestUniqueName_CounterContinuation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		taken := tc.taken
-		got, err := UniqueName(tc.name, func(c string) (bool, error) { return taken[c], nil })
+		got, err := UniqueName(tc.name, 0, func(c string) (bool, error) { return taken[c], nil })
 		if err != nil {
 			t.Fatalf("UniqueName(%q) error: %v", tc.name, err)
 		}
@@ -79,7 +79,20 @@ func TestUniqueName_CounterContinuation(t *testing.T) {
 	}
 }
 
-func TestUniqueName_PreservesExtension(t *testing.T) {
+// Non-file resource names keep their dots: the counter is appended to the end
+// of the whole name instead of being inserted before the last dot.
+func TestUniqueName_AppendsSuffixToDottedResourceName(t *testing.T) {
+	taken := map[string]bool{"release v1.2": true}
+	got, err := UniqueName("release v1.2", 0, func(c string) (bool, error) { return taken[c], nil })
+	if err != nil {
+		t.Fatalf("UniqueName error: %v", err)
+	}
+	if got != "release v1.2(1)" {
+		t.Fatalf("UniqueName = %q, want %q", got, "release v1.2(1)")
+	}
+}
+
+func TestUniqueFileName_PreservesExtension(t *testing.T) {
 	cases := []struct {
 		name  string
 		taken map[string]bool
@@ -92,32 +105,42 @@ func TestUniqueName_PreservesExtension(t *testing.T) {
 	}
 	for _, tc := range cases {
 		taken := tc.taken
-		got, err := UniqueName(tc.name, func(c string) (bool, error) { return taken[c], nil })
+		got, err := UniqueFileName(tc.name, 0, func(c string) (bool, error) { return taken[c], nil })
 		if err != nil {
-			t.Fatalf("UniqueName(%q) error: %v", tc.name, err)
+			t.Fatalf("UniqueFileName(%q) error: %v", tc.name, err)
 		}
 		if got != tc.want {
-			t.Errorf("UniqueName(%q) = %q, want %q", tc.name, got, tc.want)
+			t.Errorf("UniqueFileName(%q) = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
 
 func TestUniqueName_PropagatesLookupError(t *testing.T) {
 	wantErr := errors.New("lookup failed")
-	_, err := UniqueName("topic", func(string) (bool, error) { return false, wantErr })
+	_, err := UniqueName("topic", 0, func(string) (bool, error) { return false, wantErr })
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("UniqueName error = %v, want %v", err, wantErr)
 	}
 }
 
-func TestUniqueName_RejectsNameOverLimit(t *testing.T) {
-	long := strings.Repeat("a", AppNameLimit)
-	_, err := UniqueName(long, func(c string) (bool, error) { return c == long, nil })
-	if err == nil {
-		t.Fatal("expected length validation error for generated name")
-	}
-	if !strings.Contains(err.Error(), "large than") {
+// The generated candidate must respect the caller's resource-specific limit,
+// even when it is below the generic AppNameLimit.
+func TestUniqueName_EnforcesCallerLimit(t *testing.T) {
+	base := strings.Repeat("a", 128)
+	onlyBaseTaken := func(c string) (bool, error) { return c == base, nil }
+
+	if _, err := UniqueName(base, 128, onlyBaseTaken); err == nil {
+		t.Fatal("expected length validation error for generated name at caller limit")
+	} else if !strings.Contains(err.Error(), "large than") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := UniqueName(base, 0, onlyBaseTaken)
+	if err != nil {
+		t.Fatalf("UniqueName with default limit error: %v", err)
+	}
+	if want := base + "(1)"; got != want {
+		t.Fatalf("UniqueName = %q, want %q", got, want)
 	}
 }
 

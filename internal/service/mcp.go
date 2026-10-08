@@ -115,7 +115,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
 	}
 
-	name, err := common.UniqueName(req.Name, func(candidate string) (bool, error) {
+	name, err := common.UniqueName(req.Name, mcpServerNameLimit, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 	if err != nil {
@@ -728,7 +728,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 }
 
 func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID string) (string, error) {
-	return common.UniqueName(base, func(candidate string) (bool, error) {
+	return common.UniqueName(base, mcpServerNameLimit, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 }
