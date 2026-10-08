@@ -1045,10 +1045,6 @@ func (p *wikiPipeline) runRefinePage(
 	// full-slug is linked once, only if not already present in Outlinks.
 	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
 	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
-	summary := firstParagraph(contentRendered)
-	if summary == "" {
-		summary = firstNonEmpty(planItem.Title, planItem.Slug)
-	}
 	topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
 	return wikiPageResult{
 		Slug:           planItem.Slug,
@@ -1060,7 +1056,6 @@ func (p *wikiPipeline) runRefinePage(
 		RelatedKBPages: uniqueStrings(planItem.RelatedKB),
 		ContentRaw:     contentRaw,
 		Content:        contentRendered,
-		Summary:        summary,
 		Outlinks:       outlinks,
 		SourceChunkIDs: sourceChunkIDs,
 		SourceDocIDs:   sourceDocIDs,

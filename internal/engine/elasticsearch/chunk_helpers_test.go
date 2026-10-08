@@ -195,8 +195,8 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 	}
 	engine := &Engine{client: client}
 	deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{
-		"kb_id":       "kb-1",
-		"compile_kwd": []string{"wiki_entity", "wiki_relation"},
+		"kb_id":          "kb-1",
+		"source_doc_ids": []string{"doc-a", "doc-b"},
 	}, "ragflow_tenant", "kb-1")
 	if err != nil {
 		t.Fatalf("DeleteChunks: %v", err)
@@ -218,7 +218,7 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 		t.Fatalf("delete query must=%#v, want one terms clause", boolQuery["must"])
 	}
 	terms := must[0].(map[string]interface{})["terms"].(map[string]interface{})
-	assertEqual(t, terms["compile_kwd"], []interface{}{"wiki_entity", "wiki_relation"})
+	assertEqual(t, terms["source_doc_ids"], []interface{}{"doc-a", "doc-b"})
 }
 
 // TestDeleteChunksIDStringSlice guards against the id filter being dropped when
