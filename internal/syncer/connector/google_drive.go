@@ -361,6 +361,7 @@ func (c *GoogleDriveConnector) listFilePage(ctx context.Context, scope googleDri
 	return page, err
 }
 
+// listFilePageWithRetry retries rate limits and rejects incomplete search results.
 func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope googleDriveScope, pageToken string, windowStart *time.Time, windowEnd time.Time) (googleDriveFilePage, error) {
 	var lastErr error
 	for attempt := 1; attempt <= googleDriveListRetryCount; attempt++ {
@@ -385,6 +386,7 @@ func (c *GoogleDriveConnector) listFilePageWithRetry(ctx context.Context, scope 
 	return googleDriveFilePage{}, lastErr
 }
 
+// listFolderIDs lists child folders, failing if any page reports an incomplete search.
 func (c *GoogleDriveConnector) listFolderIDs(ctx context.Context, userEmail, parentID string) ([]string, error) {
 	if c.listFolders != nil {
 		return c.listFolders(ctx, userEmail, parentID)

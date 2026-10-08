@@ -381,7 +381,7 @@ func googleDriveTestFile(id, name, modifiedTime string) googleDriveFile {
 	}
 }
 
-// Both sessions must fail incomplete listings rather than signal a complete snapshot.
+// TestGoogleDriveSessionsRequireCompleteSearch verifies partial listings fail both sessions.
 func TestGoogleDriveSessionsRequireCompleteSearch(t *testing.T) {
 	tests := []struct {
 		name                string
