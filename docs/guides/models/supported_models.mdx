@@ -37,6 +37,7 @@ A complete list of model providers supported by RAGFlow, which will continue to 
 | DaoXE | `https://daoxe.com` |
 | DeepInfra | `https://deepinfra.com` |
 | DeepSeek | `https://www.deepseek.com` |
+| DemonRoute | `https://demonroute.com` |
 | DeerAPI | `https://deerapi.com` |
 | Fish Audio | `https://fish.audio` |
 | FunASR | `https://github.com/modelscope/FunASR` |
@@ -117,6 +118,19 @@ To configure AI Badgr:
 - **Model**: any AI Badgr chat or embedding model ID, as exposed by AI Badgr's OpenAI-compatible APIs
 
 AI Badgr implements OpenAI-compatible endpoints for `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`, so no additional code changes in RAGFlow are required.
+
+## Example: DemonRoute (OpenAI-Compatible)
+
+You can use **DemonRoute** with RAGFlow via the existing OpenAI-API-Compatible provider. DemonRoute offers access to uncensored models.
+
+To configure DemonRoute:
+
+- **Provider**: `OpenAI-API-Compatible`
+- **Base URL**: `https://api.demonroute.com/v1`
+- **API Key**: your DemonRoute API key
+- **Model**: any DemonRoute model ID, as exposed by DemonRoute's OpenAI-compatible APIs
+
+DemonRoute implements OpenAI-compatible endpoints for `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models`, so no additional code changes in RAGFlow are required.
 
 :::note
 The list of supported models is extracted from [this source](https://github.com/infiniflow/ragflow/blob/main/rag/llm/__init__.py) and may not be the most current. For the latest supported model list, please refer to the Python file.
