@@ -64,6 +64,7 @@ import (
 	"fmt"
 	"math"
 	"ragflow/internal/common"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -302,10 +303,20 @@ func (r *stagehandRuntime) retireExpired(cutoff int64) []*stagehandClientEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var removed []*stagehandClientEntry
+	var keys []string
 	r.cache.Range(func(k, v any) bool {
+		keys = append(keys, k.(string))
+		return true
+	})
+	sort.Strings(keys)
+	for _, k := range keys {
+		v, ok := r.cache.Load(k)
+		if !ok {
+			continue
+		}
 		e := v.(*stagehandClientEntry)
 		if e.lastUsedAt.Load() >= cutoff {
-			return true // still fresh
+			continue // still fresh
 		}
 		if cur, loaded := r.cache.LoadAndDelete(k); loaded {
 			e = cur.(*stagehandClientEntry)
@@ -314,8 +325,7 @@ func (r *stagehandRuntime) retireExpired(cutoff int64) []*stagehandClientEntry {
 				removed = append(removed, e)
 			}
 		}
-		return true
-	})
+	}
 	return removed
 }
 
