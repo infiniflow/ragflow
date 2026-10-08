@@ -260,7 +260,7 @@ func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, acce
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
 	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 

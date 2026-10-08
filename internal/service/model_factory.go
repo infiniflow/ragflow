@@ -338,35 +338,45 @@ type tenantModelExtra struct {
 }
 
 func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel) (*modelModule.Model, error) {
-	if modelInfo == nil || modelEntity == nil || strings.TrimSpace(modelEntity.Extra) == "" {
+	if modelEntity == nil {
 		return modelInfo, nil
 	}
 
+	model := modelModule.Model{Name: modelEntity.ModelName}
+	if modelInfo != nil {
+		model = *modelInfo
+		model.ModelTypes = append([]string(nil), modelInfo.ModelTypes...)
+		model.Dimensions = append([]int(nil), modelInfo.Dimensions...)
+		model.Alias = append([]string(nil), modelInfo.Alias...)
+		if modelInfo.ModelTypeMap != nil {
+			model.ModelTypeMap = make(map[string]bool, len(modelInfo.ModelTypeMap))
+			for modelType, enabled := range modelInfo.ModelTypeMap {
+				model.ModelTypeMap[modelType] = enabled
+			}
+		}
+		if modelInfo.Thinking != nil {
+			thinking := *modelInfo.Thinking
+			model.Thinking = &thinking
+		}
+	}
+
+	if modelEntity.ModelType != 0 {
+		setModelInfoTypes(&model, entity.ModelType(modelEntity.ModelType))
+	}
+
+	if strings.TrimSpace(modelEntity.Extra) == "" {
+		return &model, nil
+	}
 	var extra tenantModelExtra
 	if err := json.Unmarshal([]byte(modelEntity.Extra), &extra); err != nil {
 		return nil, err
-	}
-
-	model := *modelInfo
-	model.ModelTypes = append([]string(nil), modelInfo.ModelTypes...)
-	model.Dimensions = append([]int(nil), modelInfo.Dimensions...)
-	model.Alias = append([]string(nil), modelInfo.Alias...)
-	if modelInfo.ModelTypeMap != nil {
-		model.ModelTypeMap = make(map[string]bool, len(modelInfo.ModelTypeMap))
-		for modelType, enabled := range modelInfo.ModelTypeMap {
-			model.ModelTypeMap[modelType] = enabled
-		}
-	}
-	if modelInfo.Thinking != nil {
-		thinking := *modelInfo.Thinking
-		model.Thinking = &thinking
 	}
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
 		contextLength := *extra.MaxTokens
 		model.ContextLength = &contextLength
 	}
-	if len(extra.ModelTypes) > 0 {
+	if modelEntity.ModelType == 0 && len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
 		model.ModelTypeMap = make(map[string]bool, len(extra.ModelTypes))
 		for _, modelType := range extra.ModelTypes {
@@ -392,6 +402,17 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	return &model, nil
 }
 
+func setModelInfoTypes(modelInfo *modelModule.Model, modelTypes entity.ModelType) {
+	if modelInfo == nil {
+		return
+	}
+	modelInfo.ModelTypes = modelTypes.HumanReadable()
+	modelInfo.ModelTypeMap = make(map[string]bool, len(modelInfo.ModelTypes))
+	for _, modelType := range modelInfo.ModelTypes {
+		modelInfo.ModelTypeMap[modelType] = true
+	}
+}
+
 func contextLengthFromModelInfo(modelInfo *modelModule.Model) int {
 	if modelInfo == nil {
 		return 0
@@ -413,18 +434,6 @@ func maxOutputFromModelInfo(modelInfo *modelModule.Model) int {
 		return 0
 	}
 	return *modelInfo.MaxOutput
-}
-
-// modelTargetRef renders a resolved model as the lookups' reference: its
-// tenant_model id, or the composite "model@instance@provider" form.
-func modelTargetRef(target *modelTarget) string {
-	if target == nil {
-		return ""
-	}
-	if target.ModelID != "" {
-		return target.ModelID
-	}
-	return fmt.Sprintf("%s@%s@%s", target.ModelName, target.InstanceName, target.ProviderName)
 }
 
 // tenantCanReachProviderTenant reports whether userID owns the provider's tenant
@@ -450,9 +459,14 @@ func (s *ModelFactory) tenantCanReachProviderTenant(ctx context.Context, userID,
 }
 
 func (f *ModelFactory) resolveConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
+	access = normalizeModelAccess(access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
+	return f.resolveConfigAuthorized(ctx, access, modelType, modelRef)
+}
+
+func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	modelRef = strings.TrimSpace(modelRef)
 	if modelRef == "" {
 		return nil, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
@@ -461,48 +475,26 @@ func (f *ModelFactory) resolveConfig(ctx context.Context, access ModelAccess, mo
 		return nil, fmt.Errorf("%w: model type is required", errModelConfigUnavailable)
 	}
 
-	model, err := f.resolveModel(ctx, access, modelType, modelRef)
-	if err != nil {
-		return nil, err
-	}
+	return f.resolveModel(ctx, access, modelType, modelRef)
+}
 
-	contextLength := model.contextLength
-	if resolved := dao.ResolveModelContentLength(ctx, dao.DB, access.TenantID, modelRef, "", ""); resolved > 0 {
-		contextLength = resolved
-	}
-	if contextLength == 0 {
-		contextLength = contextLengthFromModelInfo(model.modelInfo)
-	}
-
-	return &modelTarget{
-		ModelID:       model.modelID,
-		ModelName:     model.modelName,
-		ModelType:     modelType,
-		ProviderName:  model.providerEntity.ProviderName,
-		InstanceID:    model.instanceID,
-		InstanceName:  model.instanceName,
-		Driver:        model.driver,
-		APIConfig:     model.apiConfig,
-		ModelInfo:     model.modelInfo,
-		ContextLength: contextLength,
-		MaxOutput:     maxOutputFromModelInfo(model.modelInfo),
-		SupportsTools: model.supportsTools(),
-	}, nil
+func normalizeModelAccess(access ModelAccess) ModelAccess {
+	access.TenantID = strings.TrimSpace(access.TenantID)
+	access.UserID = strings.TrimSpace(access.UserID)
+	return access
 }
 
 func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error {
 	if f == nil {
 		return fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
-	access.TenantID = strings.TrimSpace(access.TenantID)
-	access.UserID = strings.TrimSpace(access.UserID)
 	if access.TenantID == "" {
 		return fmt.Errorf("%w: tenant id is required", errModelConfigUnavailable)
 	}
 	if access.UserID == "" {
 		return nil
 	}
-	if f == nil || f.userTenantDAO == nil {
+	if f.userTenantDAO == nil {
 		return fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
 	}
 	if _, err := f.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID); err != nil {
@@ -514,36 +506,8 @@ func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error 
 	return nil
 }
 
-// ResolveChatModelType returns the output type used by the chat pipeline for
-// attachment dispatch. A model enrolled as both chat and image2text is rendered
-// as image2text so image content can be passed to it; a chat-only model remains
-// chat. An image2text-only enrollment remains chat here so NewChatModel
-// can reject it as an invalid chat model before this display type is used.
-//
-// Probe failures are conservative and yield chat: that is the type a plain chat
-// model is enrolled as, and it keeps image attachments out of a model whose
-// vision support could not be established.
-func (s *ModelFactory) ResolveChatModelType(ctx context.Context, tenantID, modelRef string) entity.ModelType {
-	if s == nil || strings.TrimSpace(modelRef) == "" {
-		return entity.ModelTypeChat
-	}
-	modelTypes, err := s.ResolveModelType(ctx, tenantID, modelRef)
-	if err != nil {
-		return entity.ModelTypeChat
-	}
-	hasChat := false
-	hasImage2Text := false
-	for _, mt := range modelTypes {
-		hasChat = hasChat || mt.Has(entity.ModelTypeChat)
-		hasImage2Text = hasImage2Text || mt.Has(entity.ModelTypeImage2Text)
-	}
-	if hasChat && hasImage2Text {
-		return entity.ModelTypeImage2Text
-	}
-	return entity.ModelTypeChat
-}
-
 func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelTarget, error) {
+	access = normalizeModelAccess(access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -563,14 +527,12 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 	}
 	modelName, modelID := defaultModelRefs(tenant, modelType)
 	if modelID != "" {
-		if target, idErr := f.resolveConfig(ctx, access, modelType, modelID); idErr == nil {
-			return target, nil
-		}
+		return f.resolveConfigAuthorized(ctx, access, modelType, modelID)
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("no default %s model is set", modelType)
 	}
-	return f.resolveConfig(ctx, access, modelType, modelName)
+	return f.resolveConfigAuthorized(ctx, access, modelType, modelName)
 }
 
 func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string, string) {
@@ -599,15 +561,19 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 
 // ResolveModelType returns every model category supported by modelRef. A
 // model may expose multiple categories, such as chat and vision.
-func (s *ModelFactory) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+func (s *ModelFactory) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
+	access = normalizeModelAccess(access)
+	if err := s.authorize(ctx, access); err != nil {
+		return nil, err
+	}
 	modelRef = strings.TrimSpace(modelRef)
 	if modelRef == "" {
 		return nil, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
 	}
 
-	model, err := s.lookupTenantModel(ctx, tenantID, modelRef)
+	model, err := s.lookupTenantModel(ctx, access.TenantID, modelRef)
 	if err == nil {
-		identity, identityErr := s.modelIdentity(ctx, tenantID, "", model, modelRef)
+		identity, identityErr := s.modelIdentity(ctx, access.TenantID, access.UserID, model, modelRef)
 		if identityErr != nil {
 			return nil, identityErr
 		}
@@ -617,7 +583,7 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, tenantID, modelRef 
 		return nil, err
 	}
 
-	modelType, err := s.resolveCompositeModelType(ctx, tenantID, modelRef)
+	modelType, err := s.resolveCompositeModelType(ctx, access.TenantID, modelRef)
 	if err != nil {
 		return nil, err
 	}
@@ -627,50 +593,8 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, tenantID, modelRef 
 type modelIdentity struct {
 	modelEntity    *entity.TenantModel
 	providerEntity *entity.TenantModelProvider
+	instanceEntity *entity.TenantModelInstance
 	modelType      entity.ModelType
-}
-
-type resolvedModel struct {
-	modelEntity    *entity.TenantModel
-	providerEntity *entity.TenantModelProvider
-	modelInfo      *modelModule.Model
-	modelType      entity.ModelType
-	modelID        string
-	modelName      string
-	instanceID     string
-	instanceName   string
-	driver         modelModule.ModelDriver
-	apiConfig      *modelModule.APIConfig
-	contextLength  int
-}
-
-// supportsTools reports whether the resolved model can emit tool calls. The
-// enrollment flag takes precedence over the instance credential and provider
-// catalog defaults.
-//
-// It is a method on the resolution rather than a separate lookup so that the
-// capability is answered by the row that was just loaded, instead of by a second
-// lookup the caller has to key on a type it may get wrong (see
-// ResolveChatModelType).
-func (m *resolvedModel) supportsTools() bool {
-	if m == nil {
-		return false
-	}
-	var extra, providerName, modelName, instanceAPIKey string
-	if m.modelEntity != nil {
-		extra = m.modelEntity.Extra
-		modelName = m.modelEntity.ModelName
-	}
-	if m.providerEntity != nil {
-		providerName = m.providerEntity.ProviderName
-	}
-	if modelName == "" {
-		modelName = m.modelName
-	}
-	if m.apiConfig != nil && m.apiConfig.ApiKey != nil {
-		instanceAPIKey = *m.apiConfig.ApiKey
-	}
-	return toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName)
 }
 
 func toolSupportFromEnrollment(extra, instanceAPIKey, providerName, modelName string) bool {
@@ -721,7 +645,6 @@ func (s *ModelFactory) lookupTenantModel(ctx context.Context, tenantID, modelRef
 	if s == nil {
 		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
-	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return nil, fmt.Errorf("%w: tenant id is required", errModelConfigUnavailable)
 	}
@@ -739,7 +662,7 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if modelEntity == nil {
 		return nil, fmt.Errorf("%w: tenant model %q not found", errModelConfigUnavailable, modelRef)
 	}
-	if modelEntity.Status != "active" {
+	if !strings.EqualFold(modelEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
 
@@ -761,7 +684,6 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if providerEntity == nil {
 		return nil, fmt.Errorf("%w: provider id=%s not found for model %q", errModelConfigUnavailable, modelEntity.ProviderID, modelRef)
 	}
-
 	allowed := providerEntity.TenantID == tenantID
 	if !allowed && userID != "" {
 		var err error
@@ -778,15 +700,29 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 			providerEntity.TenantID,
 		)
 	}
+	instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: instance id=%s not found for model %q", errModelConfigUnavailable, modelEntity.InstanceID, modelRef)
+		}
+		return nil, err
+	}
+	if instanceEntity == nil || instanceEntity.ProviderID != providerEntity.ID {
+		return nil, fmt.Errorf("%w: instance id=%s does not belong to provider id=%s", errModelConfigUnavailable, modelEntity.InstanceID, providerEntity.ID)
+	}
+	if !strings.EqualFold(instanceEntity.Status, "active") {
+		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceEntity.InstanceName)
+	}
 
 	return &modelIdentity{
 		modelEntity:    modelEntity,
 		providerEntity: providerEntity,
+		instanceEntity: instanceEntity,
 		modelType:      modelType,
 	}, nil
 }
 
-func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*resolvedModel, error) {
+func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	modelEntity, err := s.lookupTenantModel(ctx, access.TenantID, modelRef)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -796,7 +732,7 @@ func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, mod
 			// explicitly: the underlying "provider name missing in model name:
 			// <uuid>" reads like a naming-format mistake and sends the operator to
 			// look at the model's name instead of at the row that no longer exists.
-			composite, compositeErr := s.resolveCompositeModel(ctx, access.TenantID, modelType, modelRef)
+			composite, compositeErr := s.resolveProviderInstanceModel(ctx, access.TenantID, modelType, modelRef)
 			if compositeErr != nil && !strings.Contains(modelRef, "@") {
 				return nil, fmt.Errorf("model %q is neither a tenant model id (no tenant_model row) nor a valid composite name — the reference is dangling: %w", modelRef, compositeErr)
 			}
@@ -811,23 +747,13 @@ func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, mod
 	if !identity.modelType.Has(modelType) {
 		return nil, fmt.Errorf("%w: tenant model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
 	}
-	return s.resolveTenantModel(ctx, access.TenantID, modelType, modelRef, identity)
+	return s.resolveTenantModel(ctx, modelType, modelRef, identity)
 }
 
-func (s *ModelFactory) resolveTenantModel(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string, identity *modelIdentity) (*resolvedModel, error) {
+func (s *ModelFactory) resolveTenantModel(ctx context.Context, modelType entity.ModelType, modelRef string, identity *modelIdentity) (*modelTarget, error) {
 	modelEntity := identity.modelEntity
 	providerEntity := identity.providerEntity
-
-	instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: instance id=%s not found for model %q", errModelConfigUnavailable, modelEntity.InstanceID, modelRef)
-		}
-		return nil, err
-	}
-	if instanceEntity == nil {
-		return nil, fmt.Errorf("%w: instance id=%s not found for model %q", errModelConfigUnavailable, modelEntity.InstanceID, modelRef)
-	}
+	instanceEntity := identity.instanceEntity
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
 	if providerInfo == nil {
@@ -835,11 +761,9 @@ func (s *ModelFactory) resolveTenantModel(ctx context.Context, tenantID string, 
 	}
 
 	modelInfo, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName)
-	if modelInfo != nil {
-		modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
-		if err != nil {
-			return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
-		}
+	modelInfo, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 	}
 
 	extra, err := decodeModelInstanceExtra(instanceEntity.Extra)
@@ -854,36 +778,23 @@ func (s *ModelFactory) resolveTenantModel(ctx context.Context, tenantID string, 
 		return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
 
-	return &resolvedModel{
-		modelEntity:    modelEntity,
-		providerEntity: providerEntity,
-		modelInfo:      modelInfo,
-		modelType:      modelType,
-		modelID:        modelEntity.ID,
-		modelName:      modelEntity.ModelName,
-		instanceID:     instanceEntity.ID,
-		instanceName:   instanceEntity.InstanceName,
-		driver:         driver,
-		apiConfig:      &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL},
+	return &modelTarget{
+		ModelID:       modelEntity.ID,
+		ModelName:     modelEntity.ModelName,
+		ModelType:     modelType,
+		ProviderName:  providerEntity.ProviderName,
+		InstanceID:    instanceEntity.ID,
+		InstanceName:  instanceEntity.InstanceName,
+		Driver:        driver,
+		APIConfig:     &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL},
+		ModelInfo:     modelInfo,
+		ContextLength: contextLengthFromModelInfo(modelInfo),
+		MaxOutput:     maxOutputFromModelInfo(modelInfo),
+		SupportsTools: toolSupportFromEnrollment(modelEntity.Extra, instanceEntity.APIKey, providerEntity.ProviderName, modelEntity.ModelName),
 	}, nil
 }
 
-func (s *ModelFactory) resolveCompositeModel(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*resolvedModel, error) {
-	availableTypes, err := s.resolveCompositeModelType(ctx, tenantID, modelRef)
-	if err != nil {
-		return nil, err
-	}
-	if !availableTypes.Has(modelType) {
-		return nil, fmt.Errorf("%w: model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
-	}
-	resolved, err := s.resolveProviderInstanceModel(ctx, tenantID, modelType, modelRef)
-	if err != nil {
-		return nil, err
-	}
-	return resolved, nil
-}
-
-func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*resolvedModel, error) {
+func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	// TEI builtin embedding short-circuit.
 	if modelType == entity.ModelTypeEmbedding && strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
 		teiModel := common.GetEnv(common.EnvTEIModel)
@@ -893,7 +804,8 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 			if driver == nil {
 				return nil, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, modelRef)
 			}
-			return &resolvedModel{providerEntity: &entity.TenantModelProvider{ProviderName: "Builtin"}, modelType: modelType, modelName: modelRef, driver: driver, apiConfig: &modelModule.APIConfig{BaseURL: &teiBaseURL}}, nil
+			modelInfo, _ := dao.GetModelProviderManager().GetModelByName("Builtin", modelRef)
+			return builtinModelTarget(modelType, modelRef, driver, &modelModule.APIConfig{BaseURL: &teiBaseURL}, modelInfo), nil
 		}
 		teiPure, _, teiProvider := splitRightAnchoredModelName(modelRef)
 		if teiPure == teiModel && (teiProvider == "Builtin" || teiProvider == "") {
@@ -901,8 +813,12 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 			if driver == nil {
 				return nil, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, teiPure)
 			}
-			return &resolvedModel{providerEntity: &entity.TenantModelProvider{ProviderName: "Builtin"}, modelType: modelType, modelName: teiPure, driver: driver, apiConfig: &modelModule.APIConfig{BaseURL: &teiBaseURL}}, nil
+			modelInfo, _ := dao.GetModelProviderManager().GetModelByName("Builtin", teiPure)
+			return builtinModelTarget(modelType, teiPure, driver, &modelModule.APIConfig{BaseURL: &teiBaseURL}, modelInfo), nil
 		}
+	}
+	if s == nil || s.modelProviderDAO == nil || s.modelInstanceDAO == nil || s.modelDAO == nil {
+		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
 	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
@@ -923,12 +839,8 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 				return nil, fmt.Errorf("%w: builtin embedding model %q not found", errModelConfigUnavailable, builtinName)
 			}
 			apiKey, region := "", ""
-			maxTokens := 0
 			modelInfo, _ := dao.GetModelProviderManager().GetModelByName("Builtin", builtinName)
-			if modelInfo != nil {
-				maxTokens = contextLengthFromModelInfo(modelInfo)
-			}
-			return &resolvedModel{providerEntity: &entity.TenantModelProvider{ProviderName: "Builtin"}, modelInfo: modelInfo, modelType: modelType, modelName: builtinName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}, contextLength: maxTokens}, nil
+			return builtinModelTarget(modelType, builtinName, driver, &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}, modelInfo), nil
 		}
 	}
 
@@ -952,20 +864,44 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 	if instance == nil {
 		return nil, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
+	}
 	extra, err := decodeModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decode model instance configuration: %v", errModelConfigUnavailable, err)
 	}
 	region, baseURL, apiKey := extra.Region, extra.BaseURL, instance.APIKey
-	modelEntity, err := s.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, dao.DB, provider.ID, instance.ID, int(modelType), pureModelName)
+	modelEntities, err := s.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("model %q lookup failed: %w", modelRef, err)
 	}
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if modelEntity != nil {
-		if modelEntity.Status == "inactive" {
-			return nil, fmt.Errorf("%w: model %q is disabled", errModelConfigUnavailable, modelRef)
+	var availableTypes entity.ModelType
+	var modelEntity *entity.TenantModel
+	var disabledForRequestedType bool
+	for _, candidate := range modelEntities {
+		if candidate == nil {
+			continue
 		}
+		candidateTypes := entity.ModelType(candidate.ModelType)
+		if strings.EqualFold(candidate.Status, "active") {
+			availableTypes |= candidateTypes
+			if candidateTypes.Has(modelType) && modelEntity == nil {
+				modelEntity = candidate
+			}
+		} else if candidateTypes.Has(modelType) {
+			disabledForRequestedType = true
+		}
+	}
+	if availableTypes != 0 && !availableTypes.Has(modelType) {
+		return nil, fmt.Errorf("%w: model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
+	}
+	if modelEntity == nil && availableTypes == 0 && disabledForRequestedType {
+		return nil, fmt.Errorf("%w: model %q is disabled", errModelConfigUnavailable, modelRef)
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if availableTypes != 0 {
 		if providerInfo == nil {
 			return nil, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerName)
 		}
@@ -974,14 +910,25 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 			return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 		}
 		modelInfo, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName)
-		if modelInfo != nil {
-			modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
-			if err != nil {
-				return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
-			}
+		modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
+		if err != nil {
+			return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 		}
-		contextLength := contextLengthFromModelInfo(modelInfo)
-		return &resolvedModel{modelEntity: modelEntity, providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelID: modelEntity.ID, modelName: modelEntity.ModelName, instanceID: instance.ID, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, contextLength: contextLength}, nil
+		setModelInfoTypes(modelInfo, availableTypes)
+		return &modelTarget{
+			ModelID:       modelEntity.ID,
+			ModelName:     modelEntity.ModelName,
+			ModelType:     modelType,
+			ProviderName:  provider.ProviderName,
+			InstanceID:    instance.ID,
+			InstanceName:  instance.InstanceName,
+			Driver:        driver,
+			APIConfig:     &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL},
+			ModelInfo:     modelInfo,
+			ContextLength: contextLengthFromModelInfo(modelInfo),
+			MaxOutput:     maxOutputFromModelInfo(modelInfo),
+			SupportsTools: toolSupportFromEnrollment(modelEntity.Extra, apiKey, provider.ProviderName, modelEntity.ModelName),
+		}, nil
 	}
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
@@ -1004,14 +951,57 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 	if modelInfo == nil {
 		return nil, fmt.Errorf("%w: model config not found: %s", errModelConfigUnavailable, modelRef)
 	}
+	availableTypes = entity.ModelTypeFromStrings(modelInfo.ModelTypes)
+	if !availableTypes.Has(modelType) {
+		return nil, fmt.Errorf("%w: model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
+	}
 	driver, err := newModelDriverForBaseURL(targetProvider.ModelDriver, providerName, region, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
-	return &resolvedModel{providerEntity: provider, modelInfo: modelInfo, modelType: modelType, modelName: modelInfo.Name, instanceID: instance.ID, instanceName: instanceName, driver: driver, apiConfig: &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}, contextLength: contextLengthFromModelInfo(modelInfo)}, nil
+	return &modelTarget{
+		ModelName:     modelInfo.Name,
+		ModelType:     modelType,
+		ProviderName:  provider.ProviderName,
+		InstanceID:    instance.ID,
+		InstanceName:  instance.InstanceName,
+		Driver:        driver,
+		APIConfig:     &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL},
+		ModelInfo:     modelInfo,
+		ContextLength: contextLengthFromModelInfo(modelInfo),
+		MaxOutput:     maxOutputFromModelInfo(modelInfo),
+		SupportsTools: toolSupportFromEnrollment("", apiKey, provider.ProviderName, modelInfo.Name),
+	}, nil
+}
+
+func builtinModelTarget(modelType entity.ModelType, modelName string, driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig, modelInfo *modelModule.Model) *modelTarget {
+	var apiKey string
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKey = *apiConfig.ApiKey
+	}
+	return &modelTarget{
+		ModelName:     modelName,
+		ModelType:     modelType,
+		ProviderName:  "Builtin",
+		Driver:        driver,
+		APIConfig:     apiConfig,
+		ModelInfo:     modelInfo,
+		ContextLength: contextLengthFromModelInfo(modelInfo),
+		MaxOutput:     maxOutputFromModelInfo(modelInfo),
+		SupportsTools: toolSupportFromEnrollment("", apiKey, "Builtin", modelName),
+	}
 }
 
 func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, modelRef string) (entity.ModelType, error) {
+	if strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
+		teiModel := common.GetEnv(common.EnvTEIModel)
+		if modelRef == teiModel {
+			if modelModule.GetBuiltinEmbeddingModel(teiModel) == nil {
+				return 0, fmt.Errorf("%w: builtin (TEI) embedding model %q not found", errModelConfigUnavailable, teiModel)
+			}
+			return entity.ModelTypeEmbedding, nil
+		}
+	}
 	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
@@ -1041,19 +1031,27 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, 
 	if instance == nil {
 		return 0, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
+	if !strings.EqualFold(instance.Status, "active") {
+		return 0, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
+	}
 
 	models, err := s.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: model %q lookup failed: %v", errModelConfigUnavailable, modelRef, err)
 	}
-	var modelType entity.ModelType
+	var activeTypes, inactiveTypes entity.ModelType
 	for _, model := range models {
-		if model != nil && model.Status == "active" {
-			modelType |= entity.ModelType(model.ModelType)
+		if model == nil {
+			continue
+		}
+		if strings.EqualFold(model.Status, "active") {
+			activeTypes |= entity.ModelType(model.ModelType)
+		} else {
+			inactiveTypes |= entity.ModelType(model.ModelType)
 		}
 	}
-	if modelType != 0 {
-		return modelType, nil
+	if activeTypes != 0 {
+		return activeTypes, nil
 	}
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
@@ -1062,9 +1060,10 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, 
 	}
 	for _, model := range providerInfo.Models {
 		if model != nil && strings.EqualFold(model.Name, pureModelName) {
-			modelType = entity.ModelTypeFromStrings(model.ModelTypes)
-			if modelType != 0 {
-				return modelType, nil
+			catalogTypes := entity.ModelTypeFromStrings(model.ModelTypes)
+			availableTypes := catalogTypes &^ inactiveTypes
+			if availableTypes != 0 {
+				return availableTypes, nil
 			}
 			break
 		}

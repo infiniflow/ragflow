@@ -2459,7 +2459,7 @@ type AddModelRequest struct {
 }
 
 // The tool-calling verdict is no longer memoized: it is computed while the model
-// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// is resolved by ModelFactory and travels with the model metadata,
 // so there is no second lookup to amortize.
 
 type AddCustomModelRequest struct {

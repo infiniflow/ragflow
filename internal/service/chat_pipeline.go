@@ -2169,12 +2169,8 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	modelRef := chat.LLMID
-	if modelRef == "" {
-		modelRef = info.ID
-	}
 	cfg["model_type"] = "chat"
-	if s.ModelFactory.ResolveChatModelType(ctx, chat.TenantID, modelRef).Has(entity.ModelTypeImage2Text) {
+	if entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 		cfg["model_type"] = "image2text"
 	}
 	cfg["is_tools"] = info.SupportsTools
