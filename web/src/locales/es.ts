@@ -78,6 +78,8 @@ export default {
       searchKnowledgePlaceholder: 'Buscar',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continúa con la carga y el sistema cambiará automáticamente estos archivos a una configuración de análisis integrada compatible.',
       dataset: 'Conjunto de datos',
       testing: 'Pruebas de recuperación',
       files: 'Archivos',
