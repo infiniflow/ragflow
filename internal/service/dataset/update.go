@@ -228,9 +228,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = target.ModelID
+					tenantEmbdID = target.ID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID

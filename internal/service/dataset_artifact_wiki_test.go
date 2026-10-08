@@ -36,7 +36,8 @@ func TestWikiPageReadAndEditUseContentWithWeight(t *testing.T) {
 	for _, duplicate := range []string{"", "stale duplicate"} {
 		t.Run("duplicate="+duplicate, func(t *testing.T) {
 			eng := &wikiContentEngine{row: map[string]interface{}{
-				"id": "page1", "slug_kwd": "entity/alpha", "page_type_kwd": "entity",
+				"id": "page1", "slug_kwd": "entity/alpha", "compile_kwd": "wiki",
+				"type_kwd": "wiki_page", "entity_type_kwd": "entity",
 				"content_with_weight": body,
 			}}
 			if duplicate != "" {
@@ -44,7 +45,7 @@ func TestWikiPageReadAndEditUseContentWithWeight(t *testing.T) {
 			}
 			svc := &DatasetArtifactService{docEngine: func() engine.DocEngine { return eng }}
 			page, err := svc.GetWikiPage(t.Context(), "t1", "kb1", "entity", "alpha")
-			if err != nil || page == nil || page.ContentMd != body {
+			if err != nil || page == nil || page.ContentMd != body || page.PageType != "entity" || page.Slug != "alpha" {
 				t.Fatalf("page = %+v, err = %v", page, err)
 			}
 			encoded, err := json.Marshal(page)
@@ -69,6 +70,13 @@ func TestWikiPageReadAndEditUseContentWithWeight(t *testing.T) {
 			for _, req := range eng.queries {
 				if slices.Contains(req.SelectFields, "md_with_weight") {
 					t.Fatal("Wiki detail must not query md_with_weight")
+				}
+				if slices.Contains(req.SelectFields, "content_with_weight") {
+					for _, field := range []string{"compile_kwd", "type_kwd", "entity_type_kwd"} {
+						if !slices.Contains(req.SelectFields, field) {
+							t.Fatalf("Wiki detail query is missing %s", field)
+						}
+					}
 				}
 			}
 		})

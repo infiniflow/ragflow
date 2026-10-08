@@ -127,10 +127,7 @@ type Product struct {
 	DocID    string
 	TenantID string
 	Variant  Variant
-	// Kind is the original compilation_template.kind (e.g. "page_index"),
-	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
-	// is stamped onto compilation_template_kind_kwd so the document-structure
-	// endpoint can group rows by the true template kind.
+	// Kind identifies the producing template's knowledge compilation kind.
 	Kind string
 	// TemplateID is the compilation template that produced this row.
 	TemplateID string

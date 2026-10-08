@@ -17,7 +17,7 @@ import {
   LucideToggleRight,
   LucideTrash2,
 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
@@ -46,7 +46,7 @@ export function useBulkOperateDataset({
   const { findDocumentParseGaps } = useParserGapValidation();
 
   const runDocument = useCallback(
-    async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
+    async (run: number) => {
       const nonVirtualKeys = selectedRowKeys.filter(
         (x) =>
           !documents.some((y) => x === y.id && y.type === DocumentType.Virtual),
@@ -66,7 +66,6 @@ export function useBulkOperateDataset({
         );
         const gaps = findDocumentParseGaps(selectedDocuments);
         if (gaps.length > 0) {
-          hideModal();
           const failingNames = new Set(gaps.map((gap) => gap.name));
           const validIds = selectedDocuments
             .filter((x) => !failingNames.has(x.name))
@@ -105,7 +104,7 @@ export function useBulkOperateDataset({
             cancelText: t('common.cancel'),
             closable: false,
             onOk: async () => {
-              await runDocumentByIds({ documentIds: validIds, run, option });
+              await runDocumentByIds({ documentIds: validIds, run });
             },
           });
           return;
@@ -115,18 +114,16 @@ export function useBulkOperateDataset({
       await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
-        option,
       });
     },
     [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
-  const handleRunClick = useCallback(
-    (option?: { delete: boolean; apply_kb: boolean }) => {
-      runDocument(1, option);
-    },
-    [runDocument],
-  );
+  // Wired straight to the run button's onClick: keep it parameterless so the
+  // click event is never mistaken for run options (it is not serializable).
+  const handleRunClick = useCallback(() => {
+    runDocument(1);
+  }, [runDocument]);
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -209,5 +206,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list, handleRunClick };
+  return { list };
 }

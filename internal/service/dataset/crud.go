@@ -175,9 +175,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = target.ModelID
+			tenantEmbdID = target.ID
 		} else {
 			return nil, common.CodeDataError, err
 		}

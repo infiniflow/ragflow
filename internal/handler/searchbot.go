@@ -103,22 +103,18 @@ type SearchBotRequest struct {
 //	POST /api/v1/searchbots/ask
 //	POST /api/v1/searchbots/mindmap
 type SearchBotHandler struct {
-	searchSvc *service.SearchService
-	tenantSvc *service.TenantService
-	llm       *service.ModelProviderService
-	streamLLM *service.ModelProviderService
-	chunkSvc  service.Retriever
-	askSvc    *service.AskService
-	sseWriter SSEWriter
+	searchSvc    *service.SearchService
+	tenantSvc    *service.TenantService
+	modelFactory *service.ModelFactory
+	chunkSvc     service.Retriever
+	askSvc       *service.AskService
+	sseWriter    SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
-	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, modelFactory *service.ModelFactory, chunkSvc service.Retriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, modelFactory: modelFactory, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
-
-// SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm *service.ModelProviderService) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
@@ -151,7 +147,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
 	if err != nil {
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
@@ -297,12 +293,12 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		h.sseWriter.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		h.sseWriter.Write(c, sseError("model factory not configured"))
 		return
 	}
 	ctx := c.Request.Context()
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
@@ -358,7 +354,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		jsonInternalError(c, fmt.Errorf("chunk service not configured"))
 		return
 	}
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		jsonInternalError(c, fmt.Errorf("LLM not configured"))
 		return
 	}
@@ -387,7 +383,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		AuthUserID:    user.ID,
 		ModelTenantID: user.ID,
 		ChunkSvc:      h.chunkSvc,
-		LLM:           h.llm,
+		LLM:           h.modelFactory,
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {

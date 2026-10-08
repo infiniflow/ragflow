@@ -151,7 +151,7 @@ func firstWords(s string, n int) string {
 
 func installProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -180,7 +180,7 @@ func deterministicVec(s string, dim int) []float32 {
 
 func installMockDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: mockChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -354,7 +354,7 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	// wiki produces a "page" chunk (kind carried by compile_kwd=wiki_page).
 	foundPage := false
 	for _, c := range chunks {
-		if kind, _ := c["compile_kwd"].(string); kind == "wiki_page" {
+		if kind, _ := c["type_kwd"].(string); kind == "wiki_page" {
 			foundPage = true
 		}
 	}
@@ -432,7 +432,7 @@ func invokeWikiCompiler(t *testing.T, inputs map[string]any) []map[string]any {
 
 func hasWikiPageChunk(chunks []map[string]any) bool {
 	for _, cm := range chunks {
-		if kind, _ := cm["compile_kwd"].(string); kind == "wiki_page" {
+		if kind, _ := cm["type_kwd"].(string); kind == "wiki_page" {
 			return true
 		}
 	}
@@ -448,7 +448,7 @@ func wikiScopeFixtureChunks() []any {
 
 func installStrictScopeWikiDeps(t *testing.T, store *strictScopeWikiMapVersions) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, _, _ string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, _, _ string) (common.Deps, error) {
 		return common.Deps{
 			Chat:            proseChat{},
 			Embed:           mockEmbedder{dim: 8},
@@ -575,6 +575,9 @@ func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 		kind, _ := c["type_kwd"].(string)
 		if kind == "entity" {
 			entityCount++
+			if c["entity_type_kwd"] != "mind_map" {
+				t.Fatalf("mindmap entity_type_kwd = %v, want mind_map", c["entity_type_kwd"])
+			}
 			if _, ok := c["name_kwd"]; !ok {
 				t.Fatalf("mindmap entity chunk missing name_kwd: %+v", c)
 			}
@@ -630,7 +633,7 @@ func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 		cm := r.(map[string]any)
 		// Structure rows carry the inferred compile kind (hypergraph here),
 		// mirroring Python's per-row autotype stamp.
-		if ck, _ := cm["compile_kwd"].(string); ck == "hypergraph" {
+		if ck, _ := cm["compile_kwd"].(string); ck == "graph" {
 			compiled++
 			if cm["id"] == nil || cm["id"] == "" {
 				t.Fatal("compiled chunk missing id")
@@ -675,7 +678,7 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 	}
 	for _, r := range out["chunks"].([]any) {
 		cm := r.(map[string]any)
-		if ck, _ := cm["compile_kwd"].(string); ck != "hypergraph" {
+		if ck, _ := cm["compile_kwd"].(string); ck != "graph" {
 			continue
 		}
 		// Every compiled chunk must carry the resolved template id (one per
@@ -782,7 +785,7 @@ func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 // product share one vector, and we supply that vector as a historical candidate;
 // the run must drop the near-duplicate products so none survive in the output.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     proseChat{},
 			Embed:    constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -830,7 +833,7 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 }
 
 func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:     wikiUpdateChat{},
 			Embed:    mockEmbedder{dim: 8},
@@ -878,7 +881,7 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if cm["compile_kwd"] == "wiki_page" && cm["slug_kwd"] == "entity/person/alpha" {
+		if cm["type_kwd"] == "wiki_page" && cm["slug_kwd"] == "entity/person/alpha" {
 			page = cm
 			break
 		}
@@ -921,7 +924,7 @@ func (f *fakeHistoricalKNN) TopKHistory(_ context.Context, _ string, datasetID, 
 // scoped to the dataset, not the document.
 func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	knn := &fakeHistoricalKNN{hit: true} // every product is a near-dup -> dropped
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
 			Chat:          proseChat{},
 			Embed:         constEmbedder{dim: 8, vec: []float32{1, 0, 0, 0, 0, 0, 0, 0}},
@@ -1041,7 +1044,7 @@ func (s wikiStoreTestStub) GetPageBySlug(_ context.Context, _, _, slug string) (
 // entity/relation. A fenced ```json ... ``` reply is now unwrapped and parsed,
 // so the extraction still yields its entities.
 func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: fencedChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -1081,7 +1084,7 @@ func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
 // regression: when the reply is genuinely unparseable (not just fenced), the
 // component must fail loudly instead of silently emitting zero knowledge units.
 func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseOnlyChat{}, Embed: mockEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -1204,7 +1207,7 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 		cm := r.(map[string]any)
 		// No parser_config is supplied, so InferType returns "list" and the
 		// structure variant stamps compile_kwd="list" (not "structure").
-		if cm["compile_kwd"] != "list" {
+		if cm["compile_kwd"] != "graph" {
 			continue
 		}
 		checked++
@@ -1442,10 +1445,10 @@ func TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks(t *testing.T) {
 	}
 }
 
-// TestProductsToChunkDocs_PageVsSectionCompileKWD locks the page/section
-// discriminator (compile_kwd) and the schema-column contract: Markdown stays in
+// TestProductsToChunkDocs_WikiPageAndSectionRoles locks the page/section
+// discriminator (type_kwd) and the schema-column contract: Markdown stays in
 // content_with_weight without a duplicate body column or non-schema fields.
-func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
+func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 	page := common.Product{
 		ID: "page-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
 		Content: "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta).", ParentID: "",
@@ -1465,9 +1468,16 @@ func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 	for _, d := range docs {
 		row := d.ToMap()
 		indexdoc.RenameTextToContentWithWeight(row)
-		// compile_kwd IS the page/section discriminator (wiki_page /
-		// wiki_section); there is no separate kind column.
-		kind, _ := d.GetExtraString("compile_kwd")
+		if compiled, _ := d.GetExtraString("compile_kwd"); compiled != "wiki" {
+			t.Fatalf("compile_kwd = %q, want wiki", compiled)
+		}
+		for _, field := range []string{"compilation_template_kind_kwd", "page_type_kwd"} {
+			if _, exists := d.Extra[field]; exists {
+				t.Fatalf("retired field %s was written", field)
+			}
+		}
+		// type_kwd distinguishes pages from sections within compile_kwd=wiki.
+		kind, _ := d.GetExtraString("type_kwd")
 		if kind == "wiki_page" {
 			pageKWD = kind
 			pageBody, _ = row["content_with_weight"].(string)
@@ -1496,10 +1506,10 @@ func TestProductsToChunkDocs_PageVsSectionCompileKWD(t *testing.T) {
 		}
 	}
 	if pageKWD != "wiki_page" {
-		t.Errorf("page compile_kwd = %q, want wiki_page", pageKWD)
+		t.Errorf("page type_kwd = %q, want wiki_page", pageKWD)
 	}
 	if sectionKWD != "wiki_section" {
-		t.Errorf("section compile_kwd = %q, want wiki_section (schema-backed page/section discriminator)", sectionKWD)
+		t.Errorf("section type_kwd = %q, want wiki_section (schema-backed page/section discriminator)", sectionKWD)
 	}
 	if sectionParent != "page-id" {
 		t.Errorf("section parent_kwd = %q, want page-id", sectionParent)

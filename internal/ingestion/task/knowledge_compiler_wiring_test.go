@@ -63,6 +63,7 @@ func TestWikiPageStoreReadsContentWithoutDuplicateColumn(t *testing.T) {
 	const body = "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta)."
 	eng := &wikiPageStoreEngine{row: map[string]interface{}{
 		"id": "page1", "slug_kwd": "entity/alpha", "content_with_weight": body,
+		"compile_kwd": "wiki", "type_kwd": "wiki_page", "entity_type_kwd": "entity",
 	}}
 	store := &kcWikiPageStore{docEngine: eng}
 	queries := map[string]func() ([]kc.WikiPageCandidate, error){
@@ -86,11 +87,16 @@ func TestWikiPageStoreReadsContentWithoutDuplicateColumn(t *testing.T) {
 			if err != nil || len(pages) != 1 {
 				t.Fatalf("pages = %+v, err = %v", pages, err)
 			}
-			if pages[0].ContentMD != body || pages[0].ContentMDRaw != body {
+			if pages[0].ContentMD != body || pages[0].ContentMDRaw != body || pages[0].PageType != "entity" {
 				t.Fatalf("incremental page body changed: %+v", pages[0])
 			}
 			if slices.Contains(eng.req.SelectFields, "md_with_weight") || !slices.Contains(eng.req.SelectFields, "content_with_weight") {
 				t.Fatalf("unexpected page body query fields: %v", eng.req.SelectFields)
+			}
+			for _, field := range []string{"compile_kwd", "type_kwd", "entity_type_kwd"} {
+				if !slices.Contains(eng.req.SelectFields, field) {
+					t.Fatalf("Wiki page query is missing %s", field)
+				}
 			}
 		})
 	}
