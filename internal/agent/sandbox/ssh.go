@@ -338,16 +338,11 @@ func (p *SSHProvider) ExecuteCode(
 	)
 
 	start := time.Now()
-	stdout, stderr, exitCode, runErr := p.runRemoteCommand(ctx, instance.client, command, timeout)
+	stdout, stderr, exitCode, runErr := p.runRemoteCommand(ctx, instance.client, command, timeout, p.maxOutputBytes)
 	if runErr != nil {
 		return nil, fmt.Errorf("ssh: exec: %w", runErr)
 	}
 	execTime := time.Since(start).Seconds()
-
-	// Validate output size.
-	if p.maxOutputBytes > 0 && len(stdout)+len(stderr) > p.maxOutputBytes {
-		return nil, fmt.Errorf("ssh: output exceeds %d bytes", p.maxOutputBytes)
-	}
 
 	// Extract the structured result from stdout.
 	cleanedStdout, structured := ExtractStructuredResult(stdout)
@@ -401,6 +396,7 @@ func (p *SSHProvider) DestroyInstance(ctx context.Context, inst *SandboxInstance
 	_, _, _, _ = p.runRemoteCommand(ctx, instance.client,
 		fmt.Sprintf("rm -rf %s", shq(instance.remoteWorkDir)),
 		minTimeout(p.timeout, 10),
+		p.maxOutputBytes,
 	)
 	_ = instance.client.Close()
 	return nil
@@ -418,7 +414,7 @@ func (p *SSHProvider) HealthCheck(ctx context.Context) error {
 		return err
 	}
 	defer client.Close()
-	if _, _, _, err := p.runRemoteCommand(ctx, client, "true", minTimeout(p.timeout, 10)); err != nil {
+	if _, _, _, err := p.runRemoteCommand(ctx, client, "true", minTimeout(p.timeout, 10), p.maxOutputBytes); err != nil {
 		return fmt.Errorf("ssh: run health probe: %w", err)
 	}
 	return nil
@@ -528,28 +524,48 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 }
 
 // runRemoteCommand runs command over SSH and returns
-// (stdout, stderr, exit_code, error). The error is non-nil only
-// for transport-level failures; non-zero exit codes are reported
-// via exit_code, not error.
+// (stdout, stderr, exit_code, error). The error is non-nil for
+// transport-level failures and for output that exceeds maxBytes;
+// non-zero exit codes are reported via exit_code, not error.
+//
+// maxBytes bounds the combined stdout and stderr retained in this
+// process. The remote host is not trusted — ExecuteCode runs
+// caller-supplied code there — so both streams draw from one shared
+// budget and stop growing at the cap instead of being buffered in full.
+// The remote command still runs to completion, and because the budget
+// counts every byte received, an overflow is reported rather than
+// silently returning a truncated result. Callers pass the budget they
+// already enforce downstream: p.maxOutputBytes for command output,
+// p.maxArtifactBytes for a single artifact read.
 //
 // All in-package callers build the command argument via shq(),
 // which single-quote escapes any value so the shell cannot be
 // tricked into re-interpreting it (see remoteMkdirAll,
 // remoteRemoveAll, remoteReadFile, remoteWriteFile, etc).
-func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec int) (string, string, int, error) {
+func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec, maxBytes int) (string, string, int, error) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
 	}
 	defer sess.Close()
-	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
+	budget := newOutputBudget(maxBytes)
+	stdoutBuf, stderrBuf := &outputCapture{budget: budget}, &outputCapture{budget: budget}
 	sess.Stdout = stdoutBuf
 	sess.Stderr = stderrBuf
+	// overflowErr reports the retained bytes against the cap. It uses
+	// the shared total, not the buffer lengths, so truncation is
+	// detected rather than hidden by the bound itself.
+	overflowErr := func() error {
+		if combined, exceeded := budget.usage(); exceeded {
+			return fmt.Errorf("ssh: output exceeds %d bytes (got %d)", maxBytes, combined)
+		}
+		return nil
+	}
 	// from shq()-escaped arguments only (see callers above); user
 	// input never reaches the shell unsanitized.
 	// codeql[go/command-injection] False positive: command is built
 	if err := sess.Start(command); err != nil {
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdoutBuf.buffer.String(), stderrBuf.buffer.String(), -1, err
 	}
 	runCtx := ctx
 	cancel := func() {}
@@ -569,7 +585,7 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 		_ = sess.Signal(ssh.SIGKILL)
 		_ = sess.Close()
 		<-done
-		return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+		return stdoutBuf.buffer.String(), stderrBuf.buffer.String(), -1, runCtx.Err()
 	}
 	if err != nil {
 		// ssh.ExitError carries the remote exit code; we surface
@@ -577,11 +593,11 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 		// the ExitCode field).
 		var exitErr *ssh.ExitError
 		if errors.As(err, &exitErr) {
-			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
+			return stdoutBuf.buffer.String(), stderrBuf.buffer.String(), exitErr.ExitStatus(), overflowErr()
 		}
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdoutBuf.buffer.String(), stderrBuf.buffer.String(), -1, err
 	}
-	return stdoutBuf.String(), stderrBuf.String(), 0, nil
+	return stdoutBuf.buffer.String(), stderrBuf.buffer.String(), 0, overflowErr()
 }
 
 // remoteMkdirAll runs `mkdir -p` on the remote. The Python
@@ -591,6 +607,7 @@ func (p *SSHProvider) remoteMkdirAll(ctx context.Context, client *ssh.Client, re
 	_, stderr, exitCode, err := p.runRemoteCommand(ctx, client,
 		fmt.Sprintf("mkdir -p %s", shq(remotePath)),
 		minTimeout(p.timeout, 10),
+		p.maxOutputBytes,
 	)
 	if err != nil {
 		return err
@@ -614,7 +631,7 @@ func (p *SSHProvider) remoteWriteFile(ctx context.Context, client *ssh.Client, r
 		"cat > %s <<'%s'\n%s\n%s",
 		shq(remotePath), tag, content, tag,
 	)
-	_, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	_, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout, p.maxOutputBytes)
 	if err != nil {
 		return err
 	}
@@ -625,11 +642,15 @@ func (p *SSHProvider) remoteWriteFile(ctx context.Context, client *ssh.Client, r
 }
 
 // remoteReadFile reads a remote file's content as a string.
-// Used by collectArtifacts.
+// Used by collectArtifacts. The capture is bounded by
+// p.maxArtifactBytes, the same cap collectArtifacts applies to
+// each entry's reported size, so a legitimate artifact is never
+// truncated while an oversized one cannot be buffered in full.
 func (p *SSHProvider) remoteReadFile(ctx context.Context, client *ssh.Client, remotePath string) (string, error) {
 	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client,
 		fmt.Sprintf("cat %s", shq(remotePath)),
 		p.timeout,
+		p.maxArtifactBytes,
 	)
 	if err != nil {
 		return "", err
@@ -656,7 +677,7 @@ func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, rem
 		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\t%%s\\t%%m\\n'",
 		shq(remotePath),
 	)
-	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout, p.maxOutputBytes)
 	if err != nil {
 		return nil, err
 	}

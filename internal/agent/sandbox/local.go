@@ -40,7 +40,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -88,24 +87,6 @@ const localDefaultNoFile = 64
 // `python3` / `node` for the same purpose.
 const localDefaultPythonBin = "python3"
 const localDefaultNodeBin = "node"
-
-// localOutputCapture keeps the bytes needed for a valid result while
-// accepting all writes so a noisy child can finish rather than block.
-type localOutputCapture struct {
-	buffer bytes.Buffer
-	limit  int
-	total  int
-}
-
-func (c *localOutputCapture) Write(p []byte) (int, error) {
-	n := len(p)
-	c.total += n
-	if c.limit > 0 {
-		p = p[:min(len(p), max(0, c.limit-c.buffer.Len()))]
-	}
-	_, err := c.buffer.Write(p)
-	return n, err
-}
 
 // LocalProvider is the Go port of
 // `agent/sandbox/providers/local.py::LocalProvider`.
@@ -339,8 +320,9 @@ func (p *LocalProvider) ExecuteCode(
 	}
 
 	maxOut := p.maxOutputBytes
-	stdout := localOutputCapture{limit: maxOut}
-	stderr := localOutputCapture{limit: maxOut}
+	budget := newOutputBudget(maxOut)
+	stdout := outputCapture{budget: budget}
+	stderr := outputCapture{budget: budget}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -376,13 +358,10 @@ func (p *LocalProvider) ExecuteCode(
 		return nil, fmt.Errorf("local: execution timed out after %d seconds", timeout)
 	}
 
-	// Validate output size: if stdout+stderr exceed the cap,
+	// Validate output size: if stdout+stderr exceed the shared cap,
 	// surface as a runtime error (matches the Python provider).
-	if maxOut > 0 {
-		combined := stdout.total + stderr.total
-		if combined > maxOut {
-			return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
-		}
+	if combined, exceeded := budget.usage(); exceeded {
+		return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
 	}
 
 	// Extract the structured result from stdout.
