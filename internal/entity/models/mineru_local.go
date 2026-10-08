@@ -123,17 +123,26 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	// Same token extraction as ParseFile/ShowTask: a plain api_key is a bearer
+	// token, while MinerU provider JSON config carries no bearer unless it
+	// embeds mineru_api_key/access_token — sending the raw payload would be an
+	// invalid header.
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 	defer resp.Body.Close()
-	// Any HTTP answer (even 404 on a service without /health) proves the
-	// endpoint is reachable — same "non-auth error means alive" semantics as
-	// the hosted mineru.net driver's CheckConnection.
+	// Match the hosted mineru.net driver's semantics (mineru.go): 401/403 mean
+	// the credentials are wrong, while any other HTTP answer (e.g. 404 on a
+	// service without /health) still proves the endpoint is reachable.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("authentication failed (HTTP %d)", resp.StatusCode)
+	}
 	return nil
 }
 
