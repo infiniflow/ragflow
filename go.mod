@@ -31,6 +31,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cloudwego/eino v0.10.0-alpha.33
 	github.com/denisenkom/go-mssqldb v0.12.3
+	github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
@@ -138,7 +139,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
-	github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect
