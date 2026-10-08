@@ -368,7 +368,7 @@ export default {
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
       reselectParserAfterUploadHint:
-        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+        '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -504,9 +504,6 @@ export default {
       similarityThreshold: '相似度阈值',
       similarityThresholdTip:
         'RAGFlow 在检索时会使用加权关键词相似度与加权向量余弦相似度的组合；选择重排序模型时，则使用加权关键词相似度与加权重排序分数的组合。此参数用于设置用户查询与文本块之间的相似度阈值。相似度分数低于此阈值的文本块将从结果中排除。默认阈值为 20，也就是说，只有混合相似度分数达到 20 或以上的文本块才会被检索。如果向量相似度权重设置为 0，则此阈值不适用。',
-      vectorSimilarityWeight: '向量相似度权重',
-      vectorSimilarityWeightTip:
-        '此项用于设置混合相似度分数中的向量相似度权重，该权重可用于向量余弦相似度或重排序分数。两个权重的总和必须等于 1.0。',
       keywordSimilarityWeight: '关键词相似度权重',
       keywordSimilarityWeightTip:
         '此项用于设置混合相似度分数中的关键词相似度权重。向量与关键词相似度权重的总和必须等于 1.0。',
@@ -1063,6 +1060,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelHighDescription: '深度推理',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: '尽力思考',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: '自主探索语料库',
+      failoverModels: '备用模型',
+      failoverModelsTip:
+        '当主模型遇到服务商故障时，Agentic智能体按此列表顺序切换到下一个模型。',
+      failoverModelsPrimaryLabel: '主模型',
+      failoverModelsNoPrimary: '租户默认',
+      failoverModelsEmpty:
+        '暂无备用模型。至少添加一个，才能在服务商故障时继续服务。',
+      failoverModelsAdd: '添加备用模型',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -2338,16 +2345,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       delimiters: '分隔符',
       delimitersTip:
         '每行一个分隔符，多字符分隔符可直接填写（如 ##）。加反引号（如 `##`）：强制切分，每个分隔符处独立成块，不再按 token 大小合并；不加反引号：只作为切分点，切出的段落仍会按 chunk_token_size 合并，因此短文本可能看不出效果。',
-      delimitersTipPython:
-        '每行一个分隔符。只有用反引号包裹的条目（如 `##`）生效：每个分隔符处独立成块，不再按 token 大小合并；不加反引号的条目会被忽略。',
       childrenDelimitersTip:
         '子块切分：每个父块会再按这些分隔符切成子块（子块用于检索），不受 chunk_token_size 影响。',
       one: 'One',
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
-      flattenMediaToText: '禁用视觉模型',
-      flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
+      enableVisionEnhancement: '启用视觉增强',
+      enableVisionEnhancementTip:
+        '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
       enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',

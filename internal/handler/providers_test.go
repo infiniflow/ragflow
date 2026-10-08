@@ -237,7 +237,7 @@ func TestProviderHandlerCreateProviderInstanceRejectsInvalidInstanceName(t *test
 		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).CreateProviderInstance(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).CreateProviderInstance(ctx)
 
 	body := decodeProviderHandlerResponse(t, recorder)
 	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
@@ -253,7 +253,7 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 		gin.Param{Key: "instance_id_or_name", Value: "default"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -273,7 +273,7 @@ func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -297,7 +297,7 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())

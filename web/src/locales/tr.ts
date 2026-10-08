@@ -413,7 +413,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
       reselectParserAfterUploadHint:
-        'Yüklemeye devam edin, ardından dosya listesinde bu dosyalar için ayrıştırma yöntemini yeniden seçin.',
+        'Yüklemeye devam edin; sistem bu dosyaları otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçirecektir.',
       reselectParserToParseHint:
         'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
       addModelAfterUploadHint:
@@ -2729,8 +2729,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       delimiters: 'Sınırlayıcılar',
       delimitersTip:
         'Her satıra bir sınırlayıcı; çok karakterli sınırlayıcılar olduğu gibi yazılabilir (örneğin ##). Ters tırnakla (örneğin `##`): sert bölme — her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız: yumuşak bölme — sınırlayıcı yalnızca bir bölme noktasıdır ve parçalar yine parça token boyutuna kadar birleştirilir, bu nedenle kısa belgelerde gözle görülür bir değişiklik olmayabilir.',
-      delimitersTipPython:
-        'Her satıra bir sınırlayıcı. Yalnızca ters tırnak içine alınmış girdiler (örneğin `##`) etkili olur: her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız girdiler yok sayılır.',
       childrenDelimitersTip:
         'Alt bölme: her üst parça, alım için kullanılan alt parçalara ayrılmak üzere bu sınırlayıcılarda yeniden bölünür; parça token boyutu burada geçerli değildir.',
       one: 'Tek',

@@ -133,7 +133,7 @@ describe.each([
 
     expect(batchSize?.validation?.min).toBe(1);
     expect(DataSourceFormDefaultValues[key].config).toMatchObject({
-      batch_size: 2,
+      batch_size: 32,
     });
   });
 });
@@ -291,10 +291,8 @@ describe.each([
     const batchSize = fields.find((f) => f.name === 'config.batch_size');
 
     expect(batchSize?.validation?.min).toBe(1);
-    // Python backend (the default in the test environment) keeps the
-    // conservative per-batch default.
     expect(DataSourceFormDefaultValues[key].config).toMatchObject({
-      batch_size: 2,
+      batch_size: 32,
     });
   });
 });

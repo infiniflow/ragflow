@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/agent/retrievalbridge"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	smartagentic "ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
 	"ragflow/internal/deepdoc/native"
 	"ragflow/internal/deepdoc/parser/pdf"
@@ -607,7 +608,7 @@ func main() {
 
 	// Initialize database. The migrate mode stops here: it needs neither the
 	// downgrade check nor any of the engines started below, so it can run
-	// before any server mode boots (see docker/entrypoint-go.sh and
+	// before any server mode boots (see docker/entrypoint.sh and
 	// docker/launch_backend_service.sh).
 	migrate := *arguments.mode == "migrate"
 	if migrate {
@@ -1122,6 +1123,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
+	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService)
 	modelSolver := service.NewModelSolver()
 
 	// Wire the real MemorySaver so the Message component can persist
@@ -1160,6 +1162,16 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 
+	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
+	// pushdown and lexical BM25 over the same doc engine the retrieval adapter
+	// wraps. The locate tools resolve these services per call, so they must be
+	// registered before the server starts serving.
+	runtime.SetGrepService(smartagentic.NewGrepAdapter(docEngine))
+	bm25Adapter := smartagentic.NewBm25Adapter(docEngine)
+	bm25Adapter.SetQueryBuilder(nlp.GetQueryBuilder())
+	runtime.SetBm25Service(bm25Adapter)
+	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
+
 	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
 	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
 	// model resolved from the caller's ModelID and searches through the adapter
@@ -1195,7 +1207,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(datasetsService, chatService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)
-	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
+	providerHandler := handler.NewProviderHandler(userService, modelProviderService, modelCallService)
 	// Install the agent service's Kvrocks-backed run infrastructure
 	// (CheckPointStore / StateSerializer / RunTracker). When Redis
 	// is unreachable (degraded boot, stand-alone mode, no-redis CI)
@@ -1226,7 +1238,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// provider is unconfigured, the synthesizer falls back to a
 	// no-op echo (the audio package contract), so this is always
 	// safe to call.
-	configureTTSSynthesizer(modelProviderService)
+	configureTTSSynthesizer(modelCallService)
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
@@ -1538,14 +1550,14 @@ func buildAgentRunOptions() agentRunOptions {
 // ModelName from req.Engine). When the model provider is
 // unconfigured (nil dispatcher) the helper returns nil, which
 // reverts the audio package to its default stub.
-func configureTTSSynthesizer(modelProviderService *service.ModelProviderService) {
-	if modelProviderService == nil {
-		common.Info("agent: model provider service not initialised; TTS in no-op echo mode")
+func configureTTSSynthesizer(modelCallService *service.ModelCallService) {
+	if modelCallService == nil {
+		common.Info("agent: model call service not initialised; TTS in no-op echo mode")
 		audio.SetModelProviderSynthesizer(nil)
 		return
 	}
-	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelProviderService))
-	common.Info("agent: TTS model-provider dispatch installed (audio.Synthesize → ModelProviderService.AudioSpeech)")
+	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelCallService))
+	common.Info("agent: TTS model-call dispatch installed (audio.Synthesize → ModelCallService.AudioSpeech)")
 }
 
 // inferenceTotalCores returns the CPU budget the DeepDoc inference config is
@@ -1673,13 +1685,13 @@ func logTokenizerCounters() {
 	if len(unavailable) > 0 {
 		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
 			zap.Strings("unavailable", unavailable),
-			zap.String("hint", "run `uv run ragflow_deps/download_go_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+			zap.String("hint", "run `uv run ragflow_deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
 	}
 }
 
 // resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
-// env, else the RAGFlow default model dir (rag/res/deepdoc),
-// else the snapshot fetched by ragflow_deps/download_deps.py. The first
+// env, else the RAGFlow default model dir (internal/rag/res/deepdoc),
+// else the assets fetched by ragflow_deps/download_deps.py. The first
 // candidate that actually contains the required weights wins.
 func resolveDeepDocModelDir() string {
 	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {
@@ -1690,7 +1702,7 @@ func resolveDeepDocModelDir() string {
 	// variable can point at the DeepDoc weights as well as the embedding tokenizers.
 	candidates := append([]string(nil), common.ModelAssetCandidates("huggingface.co/InfiniFlow/deepdoc")...)
 	candidates = append(candidates,
-		filepath.Join(wd, "rag", "res", "deepdoc"),
+		filepath.Join(wd, "internal", "rag", "res", "deepdoc"),
 		filepath.Join(wd, "huggingface.co", "InfiniFlow", "deepdoc"),
 	)
 	for _, c := range candidates {
@@ -1700,7 +1712,7 @@ func resolveDeepDocModelDir() string {
 	}
 	// None verified; return the canonical default so any error message points
 	// at the conventional location.
-	return filepath.Join(wd, "rag", "res", "deepdoc")
+	return filepath.Join(wd, "internal", "rag", "res", "deepdoc")
 }
 
 // resolveDeepDocDropScore returns the explicit DEEPDOC_DROP_SCORE env, else the

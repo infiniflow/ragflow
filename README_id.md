@@ -277,11 +277,11 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   Skrip tersebut menyiapkan pustaka native dan sumber daya model yang diperlukan untuk build Go serta memerlukan `requests` dan `huggingface-hub`. Lewati langkah ini jika sumber daya yang sama telah disiapkan dengan cara lain. Saat dijalankan dari root repositori, layanan Go otomatis menemukan `rag/res/deepdoc`; untuk menjalankan dari direktori lain, atur `DEEPDOC_MODEL_DIR` ke path absolutnya.
+   Skrip tersebut menyiapkan pustaka native dan sumber daya model yang diperlukan untuk build Go serta memerlukan `requests` dan `huggingface-hub`. Lewati langkah ini jika sumber daya yang sama telah disiapkan dengan cara lain. Saat dijalankan dari root repositori, layanan Go otomatis menemukan `internal/rag/res/deepdoc`; untuk menjalankan dari direktori lain, atur `DEEPDOC_MODEL_DIR` ke path absolutnya.
 3. Jalankan dependensi yang diperlukan (Elasticsearch, MySQL, MinIO, NATS, Kvrocks, dan ClickHouse) menggunakan Docker Compose:
 
    ```bash

@@ -15,8 +15,8 @@
 //
 
 // TableChunker emits one chunk per upstream table row. It is the faithful
-// Go port of the Python `table` chunk method (rag/app/table.py), whose
-// docstring states: "Every row in table will be treated as a chunk."
+// Go port of the Python `table` chunk method, whose docstring states:
+// "Every row in table will be treated as a chunk."
 //
 // Unlike TokenChunker (which token-shreds a row's text into multiple
 // pieces) or OneChunker (which merges many rows into a single chunk),
@@ -189,7 +189,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	return out
 }
 
-// tableRowRecordText renders one row in rag/app/table.py's line format:
+// tableRowRecordText renders one row in the Python table chunker's line format:
 // "- {field}: {value}" per non-empty cell, newline joined. A cell whose
 // column has no header name keeps its value alone rather than being dropped.
 func tableRowRecordText(names, cells []string) string {

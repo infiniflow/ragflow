@@ -241,6 +241,33 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
+	// The smart-reasoning agent runs its own retrieval through its corpus
+	// tools, so the pipeline's search and generation phases do not apply. Two
+	// things select it: an explicit agent_mode kwarg, and reasoning level
+	// reasoningLevelAgentic. Reading a nil kwargs map is safe (the zero value
+	// is "").
+	//
+	// The level is resolved from the request first and the dialog's
+	// prompt_config second, exactly as Phase 9 resolves it; a dialog pinned to
+	// the agentic mode therefore keeps that mode when the request omits the
+	// level, and the check stays ahead of the solo-chat short-circuit below so
+	// a level-selected turn is never diverted to a plain LLM answer.
+	//
+	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
+	// resolves a citation with an explicit kb_id scope, and an empty scope
+	// drops that term from the ES query (buildBoolQueryFromCondition), which
+	// would let a cited chunk resolve out of any KB in the tenant. Falling
+	// through keeps an empty scope unreachable instead of trusting every
+	// citation path to defend itself; grep_chunks already refuses an empty
+	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
+	_, agenticSelected := kwargs["agent_mode"].(string)
+	if !agenticSelected {
+		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
+	}
+	if agenticSelected && hasKBs {
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch, quoteEnabled(kwargs, chat.PromptConfig))
+	}
+
 	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
@@ -409,15 +436,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
-		// Either the chat setting or the request can disable citations. Resolve
-		// this once before any retrieval path can return early.
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
+		// Either the chat setting or the request can disable citations. Resolved
+		// once before any retrieval path can return early. The agentic dispatch
+		// above resolves the same value through quoteEnabled.
+		quote := quoteEnabled(kwargs, promptConfig)
 		// The dialog's configured no-answer line ("空回复"). An answer that only
 		// reports it is decorated as if quoting were off, so it carries neither
 		// citation markers nor a document reference (decorateQuote).
@@ -661,9 +683,11 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
-		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
-		// agentic). It comes from the request kwargs first, then prompt_config.
+		// reasoning is an integer level: 0 = off (regular RAG via async_chat),
+		// 1..4 = low/medium/high/ultra (harness agentic). It comes from the
+		// request kwargs first, then prompt_config. reasoningLevelAgentic never
+		// reaches here: the AsyncChat dispatch already routed it to the
+		// smart-reasoning agent, which returns before this goroutine starts.
 		//
 		// Python rag_agent also refuses the agentic loop when the model cannot
 		// call tools, and routes those requests to async_chat.
@@ -1364,8 +1388,8 @@ func (s *ChatPipelineService) AsyncChat(
 						return nil
 					})
 			} else {
-				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
+				driverErr = chatDriver.ChatStreamlyWithSender(
+					ctx, chatMessages, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
@@ -1495,9 +1519,7 @@ func (s *ChatPipelineService) AsyncChat(
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
-				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
-				)
+				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 				if respErr != nil {
 					err = respErr
 				} else if resp != nil && resp.Answer != nil {
@@ -1662,7 +1684,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
-		var ttsModel *modelModule.ChatModel
+		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
 				target, ttsErr := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
@@ -1671,7 +1693,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						zap.String("tenant_id", chat.TenantID),
 						zap.Error(ttsErr))
 				} else {
-					ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+					ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
 				}
 			}
 		}
@@ -1708,8 +1730,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
+			driverErr := chatModel.ChatStreamlyWithSender(
+				ctx, chatMessages, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
@@ -1834,9 +1856,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// Non-streaming: one-shot call.
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
-			)
+			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
 				out <- AsyncChatResult{
@@ -2298,7 +2318,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.EmbeddingModel,
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
-	*modelModule.ChatModel, // TTS model
+	*modelModule.TTSModel, // TTS model
 	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
@@ -2368,12 +2388,12 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// TTS model.
-	var ttsModel *modelModule.ChatModel
+	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
 			target, err := s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeTTS)
 			if err == nil {
-				ttsModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+				ttsModel = modelModule.NewTTSModel(target.Driver, &target.ModelName, target.APIConfig)
 			}
 		}
 	}
@@ -2596,7 +2616,7 @@ func cleanTTSText(text string) string {
 
 // synthesizeTTS calls the TTS model to convert text to audio.
 // Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2604,9 +2624,7 @@ func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *model
 	if text == "" {
 		return nil
 	}
-	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
-	)
+	ttsResp, err := ttsModel.Speech(ctx, &text, &modelModule.TTSConfig{Format: "mp3"}, nil)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
 		return nil
@@ -3088,7 +3106,7 @@ func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([]
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Embed inside the model's window: the caller supplies arbitrary text and the
 	// provider rejects an over-window input with 400/20015 instead of truncating it.
-	embeds, err := e.embModel.EmbedWithinLimit(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
+	embeds, err := e.embModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -3117,7 +3135,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	embModel *modelModule.EmbeddingModel,
 	vectorSimilarityWeight float64,
 	quote bool,
-	ttsModel *modelModule.ChatModel,
+	ttsModel *modelModule.TTSModel,
 	langfuseTraceID string,
 	llmModelConfig map[string]interface{},
 	tenantID string,
@@ -4320,17 +4338,11 @@ func chatForSQL(
 	cfg := &modelModule.ChatConfig{
 		Temperature: &tempLow,
 	}
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: sysPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, cfg, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}
@@ -5335,11 +5347,39 @@ func asInt64(v interface{}) (int64, bool) {
 	return 0, false
 }
 
+// quoteEnabled resolves the effective citation-visibility setting: either the
+// chat setting or the request can disable citations, and both must agree. An
+// absent setting on either side leaves citations on.
+//
+// It is a function because two dispatch points need it — the agentic branch
+// and Phase 6 — and the agentic branch returns before Phase 6 runs. Resolving
+// it twice is how the agentic path ended up ignoring a request's quote:false.
+func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interface{}) bool {
+	quote := true
+	if v, ok := kwargs["quote"].(bool); ok {
+		quote = v
+	}
+	if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+		quote = quote && promptConfigQuote
+	}
+	return quote
+}
+
+// reasoningLevelAgentic is the reasoning level that hands the turn to the
+// smart-reasoning agent (internal/agentic_rag) instead of running the pipeline's
+// own retrieval phases.
+//
+// It is deliberately NOT one of harnessModeForLevel's levels. 1..4 pick a depth
+// within the harness graph; this level picks a different engine outright, so
+// harnessModeForLevel must never see it — its `level >= 4` case would silently
+// answer "ultra" for a level that is no longer part of that domain.
+const reasoningLevelAgentic = 5
+
 // resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
 // level is taken from the request kwargs first, falling back to the chat
-// prompt_config, and is an integer in 0..4 (0 = off, 1..4 = low/medium/high/
-// ultra). Frontend sends Number(getThinkingLevel()), so the raw value is
-// numeric, not a bool.
+// prompt_config, and is an integer 0..4 (0 = off, 1..4 = low/medium/high/
+// ultra), or reasoningLevelAgentic for the smart-reasoning agent. Frontend
+// sends Number(getThinkingLevel()), so the raw value is numeric, not a bool.
 func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
 	if kwargs != nil {
 		if v, ok := kwargs["reasoning"]; ok {
@@ -5361,6 +5401,10 @@ func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[strin
 // harnessModeForLevel maps a Python-style reasoning level to the harness
 // thinking mode. Python uses THINKING_MODES = [low, medium, high, ultra] and
 // falls back to "medium" when n is out of range.
+//
+// Its domain is levels 1..4 only. reasoningLevelAgentic never arrives here — the
+// AsyncChat dispatch hands that turn to the smart-reasoning agent before Phase 9
+// runs — so the `level >= 4` case below does not need to exclude it.
 func harnessModeForLevel(level int) string {
 	switch {
 	case level >= 4:

@@ -40,7 +40,7 @@ func tableChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
-// TestTableChunker_OneChunkPerRow ports rag/app/table.py's contract:
+// TestTableChunker_OneChunkPerRow ports the Python table chunker's contract:
 // "Every row in table will be treated as a chunk." Two upstream rows must
 // yield exactly two chunks, each preserving its own content + metadata.
 func TestTableChunker_OneChunkPerRow(t *testing.T) {
@@ -150,7 +150,7 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 	if chunks[0]["text"] != "- ID: A-1\n- Status: paid" {
 		t.Errorf("chunk0 text = %v", chunks[0]["text"])
 	}
-	// The empty cell is skipped, exactly like rag/app/table.py:656.
+	// The empty cell is skipped, matching the Python table chunker's per-cell skip.
 	if chunks[1]["text"] != "- ID: A-2" {
 		t.Errorf("chunk1 text = %v", chunks[1]["text"])
 	}

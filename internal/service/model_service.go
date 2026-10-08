@@ -65,24 +65,20 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 
 func NewModelProviderService() *ModelProviderService {
 	return &ModelProviderService{
-		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
-		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
-		modelDAO:             dao.NewTenantModelDAO(),
-		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
-		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
-		tenantDAO:            dao.NewTenantDAO(),
-		userTenantDAO:        dao.NewUserTenantDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
+		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
 	}
 }
 
 type ModelProviderService struct {
-	modelProviderDAO     *dao.TenantModelProviderDAO
-	modelInstanceDAO     *dao.TenantModelInstanceDAO
-	modelDAO             *dao.TenantModelDAO
-	modelGroupDAO        *dao.TenantModelGroupDAO
-	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
-	tenantDAO            *dao.TenantDAO
-	userTenantDAO        *dao.UserTenantDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
+	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
@@ -949,7 +945,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			switch mtLower {
 			case "chat", "vision":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
-				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
+				chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+				_, err = chatModel.ChatWithMessages(ctx, msg, nil, nil)
 			case "embedding":
 				// Provider discovery can return models without catalog limits. Apply
 				// the strict validator whenever the model has the metadata required
@@ -962,17 +959,24 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					err = validateEmbeddingModel(model, requestedDimension, 1)
 				}
 				if err == nil {
-					_, err = driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: []string{"test"}}, apiConfig, nil, nil)
+					maxTokens := 0
+					if model.MaxTokens != nil {
+						maxTokens = *model.MaxTokens
+					}
+					embeddingModel := modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+					_, err = embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{"test"}}, nil, nil)
 				}
 			case "rerank":
 				rerankRequest := modelModule.RerankRequest{
 					Query:     "test",
 					Documents: []string{"test"},
 				}
-				_, err = driver.Rerank(ctx, &modelName, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
+				rerankModel := modelModule.NewRerankModel(driver, &modelName, apiConfig, 0)
+				_, err = rerankModel.Rerank(ctx, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
-				_, err = driver.AudioSpeech(ctx, &modelName, &content, apiConfig, nil, nil)
+				ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
+				_, err = ttsModel.Speech(ctx, &content, nil, nil)
 			case "asr":
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
@@ -1094,7 +1098,8 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	}
 	tmpFile.Close()
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, nil, nil)
+	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -2389,140 +2394,6 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(ctx context.Conte
 	return result, nil
 }
 
-// ChatToModelWithMessages sends messages to the model with messages array
-func (m *ModelProviderService) ChatToModelWithMessages(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.ChatConfig{}
-	}
-	modelConfig.ModelClass = info.ModelInfo.Class
-	if modelConfig.Thinking == nil && info.ModelInfo.Thinking != nil {
-		thinking := info.ModelInfo.Thinking.DefaultValue
-		modelConfig.Thinking = &thinking
-	}
-	resolvedModelName := info.ModelInfo.Name
-	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
-		resolvedModelName = info.ModelEntity.ModelName
-	}
-	resolvedProviderName := info.ProviderEntity.ProviderName
-
-	var response *modelModule.ChatResponse
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["chat"] && !info.ModelInfo.ModelTypeMap["vision"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeChat) && !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeImage2Text) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	modelUsage.TenantID = info.ProviderEntity.TenantID
-	modelUsage.InstanceID = info.InstanceEntity.ID
-	modelUsage.APIKey = info.InstanceEntity.APIKey
-
-	response, err = modelDriver.ChatWithMessages(ctx, resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil {
-		return nil, common.CodeServerError, errors.New("empty chat response")
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-// ChatToModelStreamWithSender streams chat response directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.ChatConfig{}
-	}
-	modelConfig.ModelClass = info.ModelInfo.Class
-	if modelConfig.Thinking == nil && info.ModelInfo.Thinking != nil {
-		thinking := info.ModelInfo.Thinking.DefaultValue
-		modelConfig.Thinking = &thinking
-	}
-	resolvedModelName := info.ModelInfo.Name
-	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
-		resolvedModelName = info.ModelEntity.ModelName
-	}
-	resolvedProviderName := info.ProviderEntity.ProviderName
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeChat) && !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeImage2Text) {
-				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", resolvedModelName, resolvedProviderName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return common.CodeServerError, err
-			}
-		} else {
-			return common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	modelUsage.TenantID = info.ProviderEntity.TenantID
-	modelUsage.InstanceID = info.InstanceEntity.ID
-	modelUsage.APIKey = info.InstanceEntity.APIKey
-
-	err = modelDriver.ChatStreamlyWithSender(ctx, resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage, sender)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	return common.CodeSuccess, nil
-}
-
 func validateEmbeddingModel(model *modelModule.Model, requestedDimension, requestedBatchSize int) error {
 	if model == nil {
 		return fmt.Errorf("embedding model is nil")
@@ -2571,489 +2442,6 @@ func validateEmbeddingModel(model *modelModule.Model, requestedDimension, reques
 	}
 
 	return nil
-}
-
-// EmbedText sends texts to the embedding model
-func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.EmbeddingConfig{}
-	}
-	resolvedModelName := info.ModelInfo.Name
-	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
-		resolvedModelName = info.ModelEntity.ModelName
-	}
-	resolvedProviderName := info.ProviderEntity.ProviderName
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["embedding"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", resolvedModelName, resolvedProviderName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeEmbedding) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", resolvedModelName, resolvedProviderName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	if err = validateEmbeddingModel(info.ModelInfo, modelConfig.Dimension, len(texts)); err != nil {
-		return nil, common.CodeBadRequest, err
-	}
-
-	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(ctx, &resolvedModelName, modelModule.EmbedRequest{Texts: texts}, info.APIConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil || len(response) == 0 {
-		return nil, common.CodeServerError, errors.New("empty embed response")
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-// RerankDocument sends texts to the embedding model
-func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID, query string, documents []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.RerankConfig{}
-	}
-	resolvedModelName := info.ModelInfo.Name
-	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
-		resolvedModelName = info.ModelEntity.ModelName
-	}
-	resolvedProviderName := info.ProviderEntity.ProviderName
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["rerank"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", resolvedModelName, resolvedProviderName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeRerank) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", resolvedModelName, resolvedProviderName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, resolvedProviderName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	rerankRequest := modelModule.RerankRequest{
-		Query:     query,
-		Documents: documents,
-	}
-
-	var response *modelModule.RerankResponse
-	rerankModel := modelModule.NewRerankModel(modelDriver, &resolvedModelName, info.APIConfig, maxTokensFromModelInfo(info.ModelInfo, entity.ModelTypeRerank))
-	response, err = rerankModel.Rerank(ctx, rerankRequest, info.APIConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-// TranscribeAudio transcribe audio file to text
-func (m *ModelProviderService) TranscribeAudio(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.ASRConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["asr"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeSpeech2Text) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", *modelName, *providerName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	var response *modelModule.ASRResponse
-	response, err = modelDriver.TranscribeAudio(ctx, modelName, audioFile, apiConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil {
-		return nil, common.CodeServerError, errors.New("empty chat response")
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-// TranscribeAudioStream transcribe audio file to text stream directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) TranscribeAudioStream(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.ASRConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["asr"] {
-			return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeSpeech2Text) {
-				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", *modelName, *providerName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return common.CodeServerError, err
-			}
-		} else {
-			return common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	err = modelDriver.TranscribeAudioWithSender(ctx, modelName, audioFile, apiConfig, modelConfig, nil, sender)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	return common.CodeSuccess, nil
-}
-
-// AudioSpeech convert audio to speech
-func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else if providerName == nil && instanceName == nil && modelName == nil {
-		// No explicit model selection: synthesize through the tenant's
-		// default TTS model, mirroring Python's canvas auto_play which
-		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
-		// A missing default surfaces as a typed error ("no default tts
-		// model is set") instead of a nil-pointer panic.
-		target, derr := m.modelSolver().ResolveDefaultModelConfig(ctx, userID, entity.ModelTypeTTS)
-		if derr != nil {
-			return nil, common.CodeNotFound, derr
-		}
-		if modelConfig == nil {
-			modelConfig = &modelModule.TTSConfig{}
-		}
-		var response *modelModule.TTSResponse
-		response, derr = target.Driver.AudioSpeech(ctx, &target.ModelName, audioContent, target.APIConfig, modelConfig, nil)
-		if derr != nil {
-			return nil, common.CodeServerError, derr
-		}
-		if response == nil {
-			return nil, common.CodeServerError, errors.New("empty chat response")
-		}
-		return response, common.CodeSuccess, nil
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.TTSConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["tts"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeTTS) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", *modelName, *providerName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	var response *modelModule.TTSResponse
-	response, err = modelDriver.AudioSpeech(ctx, modelName, audioContent, apiConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil {
-		return nil, common.CodeServerError, errors.New("empty chat response")
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-func (m *ModelProviderService) AudioSpeechStream(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.TTSConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["tts"] {
-			return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeTTS) {
-				return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", *modelName, *providerName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return common.CodeServerError, err
-			}
-		} else {
-			return common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	err = modelDriver.AudioSpeechWithSender(ctx, modelName, audioContent, apiConfig, modelConfig, nil, sender)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	return common.CodeSuccess, nil
-}
-
-func (m *ModelProviderService) OCRFile(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.OCRConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["ocr"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			if !entity.ModelType(info.ModelEntity.ModelType).Has(entity.ModelTypeOCR) {
-				return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", *modelName, *providerName))
-			}
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	var response *modelModule.OCRFileResponse
-	response, err = modelDriver.OCRFile(ctx, modelName, content, url, apiConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil {
-		return nil, common.CodeServerError, errors.New("empty chat response")
-	}
-
-	return response, common.CodeSuccess, nil
-}
-
-func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
-
-	var err error
-	var info *ModelInstanceAndProviderInfo
-
-	if modelID != nil {
-		info, err = m.getModelInstanceAndProviderByID(ctx, modelID, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	} else {
-		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
-		if err != nil || info == nil {
-			return nil, common.CodeNotFound, err
-		}
-	}
-
-	if modelConfig == nil {
-		modelConfig = &modelModule.ParseFileConfig{}
-	}
-
-	var modelDriver modelModule.ModelDriver
-
-	if info.ModelEntity == nil {
-		if !info.ModelInfo.ModelTypeMap["doc_parse"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a ParseFile model", *modelName, *providerName))
-		}
-		modelDriver = info.ProviderInfo.ModelDriver
-	} else {
-		// model entity exists
-		if info.ModelEntity.Status == "active" {
-			// Note: ParseFile model type is not in the ModelType enum; skip entity-type check
-			// and rely on the factory ModelTypeMap check in the nil-entity branch.
-
-			modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, *providerName, *info.APIConfig.Region, *info.APIConfig.BaseURL)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else {
-			return nil, common.CodeServerError, errors.New("model is inactive")
-		}
-	}
-
-	var response *modelModule.ParseFileResponse
-	response, err = modelDriver.ParseFile(ctx, modelName, content, url, apiConfig, modelConfig, nil)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if response == nil {
-		return nil, common.CodeServerError, errors.New("empty chat response")
-	}
-
-	return response, common.CodeSuccess, nil
 }
 
 type AddModelRequest struct {

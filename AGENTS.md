@@ -18,7 +18,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 ## Go-only target
 - Remove all Python code and Python-specific dependencies, scripts, containers, CI jobs, documentation, SDKs, and tests from the repository. Do not add new Python code while this removal is in progress. Replace Python-based preparation of Go native libraries, DeepDoc models, and the BPE table before removing the existing download scripts.
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
-- Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
+- Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `internal/rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
 - Remove the frontend's Go/Python backend variants and update `web/CLAUDE.md` when the frontend no longer needs them. Until then, treat its dual-backend instructions as migration-only guidance; new frontend work should target the Go API.
 - Update Docker's default entrypoint, dependency image, and CI workflows when removing their Python paths. Until then, select Go explicitly with `API_PROXY_SCHEME=go` where that variable controls startup.
 - Keep this guide aligned with the checked-in tree. Once the Python directories are deleted, remove their migration inventory below.
@@ -53,7 +53,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/python/`: legacy Python client SDK pending deletion.
-- `ragflow_deps/download_go_deps.py`: current Python helper for Go native libraries and model files; replace it before deleting it. `build.sh` currently reads its ONNX Runtime version pin.
+- `ragflow_deps/download_deps.py`: Python helper for Go native libraries, DeepDoc models, and tokenizer assets. Replace it with non-Python preparation before removing Python dependencies.
 - `test/`: contains Python tests, including tests that import the legacy Python implementation directly. Migrate needed coverage to Go tests or frontend tests, then remove the Python tests; keep only tests for supported code.
 
 ## Go-Specific Rules
@@ -61,6 +61,10 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
+
+## GORM query traps
+- **Never pass a bare string ID as the second argument to `Take`/`First`** (e.g. `Take(&x, id)`). Under GORM v1.25.7 a non-numeric string is treated as a raw SQL condition and concatenated into the `WHERE` clause: `Take(&x, "88b17c7a...")` emits `WHERE 88b17c7a... LIMIT 1`, which MySQL rejects with `Error 1054 (42S22): Unknown column '...' in 'where clause'`. Only strings that parse via `strconv.Atoi` are treated as primary-key values, so this bug is invisible for integer IDs and catastrophic for UUID primary keys. Always bind explicitly: `Take(&x, "id = ?", id)` or `Where("id = ?", id).Take(&x)`.
+- When you change a query form across many files, verify the generated SQL with a `Session(&gorm.Session{DryRun: true})` probe before relying on it. A passing unit test with no rows and a broken `WHERE` clause look identical unless the SQL is inspected.
 
 ## Shared database schema (Go + Python)
 The Go services and the Python API write to the same MySQL/PostgreSQL schema, and both own parts of it. Neither is authoritative over the whole.
@@ -125,7 +129,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries and Go DeepDoc models currently come from `ragflow_deps/download_go_deps.py`; see `README_zh.md` for its isolated setup. The Go tokenizer also needs `ragflow_deps/cl100k_base.tiktoken`, which the current Python dependency pipeline provides. These are build/runtime resource preparation steps, not a Python server requirement.
+Native libraries, Go DeepDoc models, tokenizer assets, and `ragflow_deps/cl100k_base.tiktoken` come from `ragflow_deps/download_deps.py`; see `README_zh.md` for its isolated setup. The downloader installs stagehand into the SDK cache using the version in `go.mod`. Build the Go resource image with `cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
 
 ### Frontend
 ```bash

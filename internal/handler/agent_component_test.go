@@ -265,9 +265,9 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 		ID: "c1",
 		DSL: map[string]any{
 			"components": map[string]any{
-				"answer": map[string]any{
+				"message": map[string]any{
 					"obj": map[string]any{
-						"component_name": "Answer",
+						"component_name": "Message",
 						// no params.inputs
 					},
 				},
@@ -276,10 +276,10 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/answer/input-form", "")
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/message/input-form", "")
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
-		{Key: "component_id", Value: "answer"},
+		{Key: "component_id", Value: "message"},
 	}
 	h.GetComponentInputForm(c)
 

@@ -5,6 +5,7 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -128,4 +129,61 @@ func writeZipFile(t *testing.T, zw *zip.Writer, name, body string) {
 	if _, err := w.Write([]byte(body)); err != nil {
 		t.Fatalf("write zip entry %s: %v", name, err)
 	}
+}
+
+// TestDOCXParser_PreservesXMLCharacterReferences pins the office_oxide version.
+// v0.1.9 deleted every XML character reference in DOCX run text instead of
+// decoding it, so <w:t>&lt;SEP&gt;</w:t> parsed as "SEP". That reached the
+// chunker intact, so a delimiter configured as "`<SEP>`" could never match and
+// the marker survived into the chunk body. v0.1.10 was the correctness release
+// that fixed this defect class; v0.1.12 is the pinned version.
+func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
+	cases := []struct {
+		name         string
+		run          string // run text as it appears inside <w:t>, entities unescaped
+		want         string
+		wantMarkdown string
+	}{
+		{"named", "&lt;SEP&gt;", "<SEP>", `\<SEP\>`},
+		{"decimal", "&#60;SEP&#62;", "<SEP>", `\<SEP\>`},
+		{"hex", "&#x3C;SEP&#x3E;", "<SEP>", `\<SEP\>`},
+		{"ampersand", "A&amp;B", "A&B", "A&B"},
+		{"apostrophe", "it&apos;s", "it's", "it's"},
+		{"emdash", "a&#8212;b", "a—b", "a—b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := minimalDOCX(t, tc.run)
+
+			jsonParser := NewDOCXParser()
+			jsonParser.ConfigureFromSetup(map[string]any{"output_format": "json"})
+			jsonRes := jsonParser.ParseWithResult(t.Context(), "entities.docx", data)
+			if jsonRes.Err != nil {
+				t.Fatalf("ParseWithResult(json): %v", jsonRes.Err)
+			}
+			if got := joinItemTexts(jsonRes.JSON); !strings.Contains(got, tc.want) {
+				t.Errorf("json text = %q, want it to contain %q", got, tc.want)
+			}
+
+			mdParser := NewDOCXParser()
+			mdParser.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
+			mdRes := mdParser.ParseWithResult(t.Context(), "entities.docx", data)
+			if mdRes.Err != nil {
+				t.Fatalf("ParseWithResult(markdown): %v", mdRes.Err)
+			}
+			if !strings.Contains(mdRes.Markdown, tc.wantMarkdown) {
+				t.Errorf("markdown = %q, want it to contain %q", mdRes.Markdown, tc.wantMarkdown)
+			}
+		})
+	}
+}
+
+func joinItemTexts(items []map[string]any) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }

@@ -418,7 +418,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): cari parser konfiqurasiyası tərəfindən dəstəklənmir',
       reselectParserAfterUploadHint:
-        'Yükləməyə davam edin, sonra fayl siyahısında bu fayllar üçün təhlil üsulunu yenidən seçin.',
+        'Yükləməyə davam edin; sistem bu faylları avtomatik olaraq dəstəklənən daxili təhlil konfiqurasiyasına keçirəcək.',
       reselectParserToParseHint:
         'Təsirlənən fayllar üçün təhlil üsulunu yenidən seçin, sonra yenidən təhlil edin.',
       addModelAfterUploadHint:
@@ -2794,8 +2794,6 @@ Nümunə: Virtual host üslubu`,
       delimiters: 'Ayırıcılar',
       delimitersTip:
         'Hər sətirdə bir ayırıcı; çoxsimvollu ayırıcılar olduğu kimi yazıla bilər (məsələn, ##). Tərs dırnaq içində olduqda (məsələn, `##`): sərt bölünmə — hər ayırıcı öz hissəsini başladır və token ölçüsünə görə birləşdirmə tətbiq edilmir. Tərs dırnaq olmadan: yumşaq bölünmə — ayırıcı yalnız bölünmə nöqtəsidir və parçalar yenə də hissənin token ölçüsünə qədər birləşdirilir, buna görə qısa sənədlərdə görünən dəyişiklik olmaya bilər.',
-      delimitersTipPython:
-        'Hər sətirdə bir ayırıcı. Yalnız tərs dırnaq içindəki dəyərlər (məsələn, `##`) qüvvəyə minir: hər ayırıcı öz hissəsini başladır və token ölçüsünə görə birləşdirmə tətbiq edilmir. Tərs dırnaq içində olmayan dəyərlər nəzərə alınmır.',
       childrenDelimitersTip:
         'Alt hissələrə bölünmə: hər üst hissə bu ayırıcılar üzrə yenidən axtarış üçün istifadə olunan alt hissələrə bölünür; hissənin token ölçüsü tətbiq edilmir.',
       one: 'Bir',

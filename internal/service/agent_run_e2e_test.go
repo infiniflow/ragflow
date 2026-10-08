@@ -1809,7 +1809,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Invoke of DSL with bad component query ref")
 	}
-	if !strings.Contains(errs[0].Message, "canvas invoke:") {
+	if !strings.Contains(errs[0].Message, "agent invoke:") {
 		t.Errorf("error message %q does not mention invoke context", errs[0].Message)
 	}
 	if strings.Contains(errs[0].Message, "agent storage error") {

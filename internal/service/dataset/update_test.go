@@ -928,8 +928,6 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroup{},
-		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
@@ -973,7 +971,7 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 		DSL:    entity.JSONMap{},
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
-		t.Fatalf("insert test canvas: %v", err)
+		t.Fatalf("insert test agent: %v", err)
 	}
 }
 
@@ -1070,7 +1068,7 @@ func seedDatasetUpdateCanvas(t *testing.T, id, userID string, dslJSON []byte) {
 		DSL:            entity.JSONMap(dslMap),
 	}
 	if err := dao.DB.Create(canvas).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 }
 
@@ -1195,7 +1193,7 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
-// extractorNodeMetadata returns the metadata object stored on the first
+// extractorNodeMetadataInTest returns the metadata object stored on the first
 // Extractor node of a parser_config (the component-scoped form).
 func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
 	t.Helper()
