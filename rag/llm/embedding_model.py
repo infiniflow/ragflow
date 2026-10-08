@@ -731,12 +731,24 @@ class BedrockEmbed(Base):
         elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
+            if not self.bedrock_ak or not self.bedrock_sk:
+                raise ValueError("Bedrock access_key_secret mode requires both bedrock_ak and bedrock_sk in the key")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
         elif mode == "iam_role":
             self.aws_role_arn = key.get("aws_role_arn")
+            if not self.aws_role_arn:
+                raise ValueError("Bedrock iam_role mode requires aws_role_arn in the key")
             sts_client = boto3.client("sts", region_name=self.bedrock_region)
-            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockSession")
-            creds = resp["Credentials"]
+            try:
+                resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockSession")
+            except Exception as exc:
+                # Surface a message that names the role and the auth mode so
+                # operators can distinguish "config missing" from "AWS
+                # denied AssumeRole" from "network blip".
+                raise RuntimeError(f"Bedrock iam_role assume_role failed for role {self.aws_role_arn!r} in region {self.bedrock_region!r}: {exc}") from exc
+            creds = resp.get("Credentials")
+            if not creds:
+                raise RuntimeError(f"Bedrock iam_role assume_role returned no Credentials for role {self.aws_role_arn!r}: {resp!r}")
 
             self.client = boto3.client(
                 service_name="bedrock-runtime",
