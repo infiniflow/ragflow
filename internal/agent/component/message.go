@@ -180,23 +180,12 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		return nil, fmt.Errorf("Message: nil canvas state")
 	}
 
-	// A configured Message template is authoritative. The canvas edge also
-	// carries the upstream output map, whose generic `content` field must not
-	// override an explicit attachment/result selection. An explicit runtime
-	// `text` input remains an override for callers that use the component
-	// dynamically.
-	text, hasRuntimeText := "", false
-	if _, ok := inputs["text"]; ok {
-		text, hasRuntimeText = extractMessageText(inputs), true
-	}
-	if !hasRuntimeText && m.text != "" {
+	text := extractMessageText(inputs)
+	if text == "" {
 		text = m.text
 	}
-	if text == "" && !hasRuntimeText {
-		text = extractMessageText(inputs)
-	}
 	if text == "" {
-		text = formalizedContentFallback(inputs)
+		text = fallbackMessageText(inputs)
 	}
 
 	// A direct Agent→Message edge stores a lazy DeferredStream in the Agent
@@ -388,10 +377,14 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
+	// Agent→Message defer only parks the stream on @content. Templates that
+	// read other Agent outputs (e.g. @structured) must open that stream first
+	// so ResolveTemplate can see the materialized keys.
+	if err := materializeDeferredAgentOutputs(ctx, state, text, matches); err != nil {
+		return "", true, err
+	}
 	if _, err := runtime.ResolveTemplate(text, state); err != nil {
-		if !optionalMissingAttachmentRefs(text, state) {
-			return "", false, err
-		}
+		return "", false, err
 	}
 	// Ordinary Message templates are rendered and emitted once by Invoke.
 	// Only templates that actually reference a DeferredStream belong to the
@@ -467,10 +460,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 				finalText = completedContent
 			}
 		}
-		if strings.Contains(ref, "@") {
-			parts := strings.SplitN(ref, "@", 2)
-			state.SetVar(parts[0], parts[1], finalText)
-			runtime.CompleteDeferredNode(ctx, parts[0])
+		if cpnID, _, ok := splitComponentParamRef(ref); ok {
+			applyDeferredAgentResult(state, cpnID, result, finalText)
+			runtime.CompleteDeferredNode(ctx, cpnID)
 		}
 		out.WriteString(finalText)
 		last = end
@@ -483,21 +475,82 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	return out.String(), streamed, nil
 }
 
-// Attachment outputs are optional side-channel values. A Message that asks
-// for an attachment must still be able to emit an empty text body when the
-// upstream branch produced no file; ordinary missing references remain hard
-// errors.
-func optionalMissingAttachmentRefs(text string, state *runtime.CanvasState) bool {
-	for _, ref := range runtime.ExtractRefs(text) {
-		value, err := state.GetVar(ref)
-		if err != nil || value != nil {
+// materializeDeferredAgentOutputs opens Agent DeferredStreams parked on
+// @content when the Message template references a non-content output of the
+// same component (commonly @structured). Without this, ResolveTemplate fails
+// with "Can't find variable" before the stream is ever opened.
+func materializeDeferredAgentOutputs(ctx context.Context, state *runtime.CanvasState, text string, matches [][]int) error {
+	if state == nil {
+		return nil
+	}
+	need := map[string]struct{}{}
+	for _, match := range matches {
+		ref := text[match[2]:match[3]]
+		cpnID, param, ok := splitComponentParamRef(ref)
+		if !ok || param == "content" {
 			continue
 		}
-		if !strings.HasSuffix(ref, "@attachment") && !strings.HasSuffix(ref, "@attachments") {
-			return false
+		contentVal, _ := state.GetVar(cpnID + "@content")
+		if runtime.IsDeferredStream(contentVal) {
+			need[cpnID] = struct{}{}
 		}
 	}
-	return true
+	for cpnID := range need {
+		contentVal, _ := state.GetVar(cpnID + "@content")
+		deferred, ok := contentVal.(*runtime.DeferredStream)
+		if !ok || deferred == nil || deferred.Open == nil {
+			continue
+		}
+		// Silent sink: the Message will emit the resolved non-content value
+		// (e.g. structured JSON) once, rather than streaming prose then
+		// replacing it.
+		result, err := deferred.Open(ctx, func(string, string) {})
+		if err != nil {
+			return &runtime.DeferredStreamError{Err: err}
+		}
+		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			return &runtime.DeferredStreamError{Text: resultErr}
+		}
+		contentFallback := ""
+		if result != nil {
+			if completedContent, ok := result["content"].(string); ok {
+				contentFallback = completedContent
+			}
+		}
+		applyDeferredAgentResult(state, cpnID, result, contentFallback)
+		runtime.CompleteDeferredNode(ctx, cpnID)
+	}
+	return nil
+}
+
+func splitComponentParamRef(ref string) (cpnID, param string, ok bool) {
+	cpnID, param, found := strings.Cut(ref, "@")
+	if !found || cpnID == "" || param == "" {
+		return "", "", false
+	}
+	return cpnID, param, true
+}
+
+// applyDeferredAgentResult writes every Agent output key into state so
+// downstream refs like @structured resolve after a deferred Open.
+func applyDeferredAgentResult(state *runtime.CanvasState, cpnID string, result map[string]any, contentFallback string) {
+	if state == nil || cpnID == "" {
+		return
+	}
+	if result != nil {
+		for k, v := range result {
+			if k == "_ERROR" || k == "__cpn_id__" || k == "state" {
+				continue
+			}
+			state.SetVar(cpnID, k, v)
+		}
+	}
+	if contentFallback == "" {
+		return
+	}
+	if v, _ := state.GetVar(cpnID + "@content"); runtime.IsDeferredStream(v) || v == nil {
+		state.SetVar(cpnID, "content", contentFallback)
+	}
 }
 
 // extractMemoryIDs normalises a memory_ids value from inputs /
@@ -525,7 +578,7 @@ func extractMemoryIDsFromAny(v any) []string {
 	return nil
 }
 
-func formalizedContentFallback(inputs map[string]any) string {
+func fallbackMessageText(inputs map[string]any) string {
 	if inputs == nil {
 		return ""
 	}
@@ -533,7 +586,36 @@ func formalizedContentFallback(inputs map[string]any) string {
 		return text
 	}
 
+	var only string
+	count := 0
+	for key, value := range inputs {
+		if isMessageInfraInput(key) {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			continue
+		}
+		only = text
+		count++
+		if count > 1 {
+			return ""
+		}
+	}
+	if count == 1 {
+		return only
+	}
 	return ""
+}
+
+func isMessageInfraInput(key string) bool {
+	switch key {
+	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
+		"output_format", "voice", "lang", "auto_play", "memory_save", "memory_ids", "user_id", "stream":
+		return true
+	default:
+		return false
+	}
 }
 
 // stringFromStateSys reads a sys-level state value. Returns ""
