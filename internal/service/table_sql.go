@@ -75,7 +75,7 @@ var tableColumns = map[string]bool{
 	"tag_kwd": true, "img_id": true, "create_time": true, "create_timestamp_flt": true,
 	"pagerank_fea": true, "weight_int": true, "weight_flt": true, "rank_flt": true,
 	"available_int": true, "position_int": true, "page_num_int": true, "top_int": true,
-	"chunk_data": true, "table_row_int": true,
+	"table_row_int": true,
 }
 
 // tableFunctions are the calls a table query may make. json_extract_string and
@@ -384,6 +384,20 @@ func (p *tableSQLPolicy) validate(clause []utility.SQLToken, label string) error
 				return fmt.Errorf("%s: %q is not a column this query may read", label, token.Name)
 			}
 		case utility.SQLPunct:
+			if token.IsPunct("*") {
+				countStar := i >= 2 && clause[i-2].IsWord("count") && isPunctAt(clause, i-1, "(") && isPunctAt(clause, i+1, ")")
+				multiplication := false
+				if i > 0 && i+1 < len(clause) {
+					left, right := clause[i-1], clause[i+1]
+					leftValue := tableColumns[left.Lower] || left.IsWord("null") || left.IsWord("true") || left.IsWord("false") ||
+						left.Kind == utility.SQLNumber || left.Kind == utility.SQLString || left.Kind == utility.SQLQuoted || left.IsPunct(")")
+					multiplication = leftValue &&
+						(isName(right) || right.Kind == utility.SQLNumber || right.Kind == utility.SQLString || right.IsPunct("(") || right.IsPunct("+") || right.IsPunct("-"))
+				}
+				if !countStar && !multiplication {
+					return fmt.Errorf("%s: whole-row wildcards are not allowed", label)
+				}
+			}
 			if !tableOperators[token.Lower] {
 				return fmt.Errorf("%s: %q is not a supported operator", label, token.Text)
 			}
@@ -408,9 +422,7 @@ func (p *tableSQLPolicy) validateWord(clause []utility.SQLToken, i int, label st
 			return 0, fmt.Errorf("%s: %s() is not a supported function", label, token.Text)
 		}
 		if jsonFunctions[token.Lower] {
-			if err := p.validateJSONPath(clause, i, label); err != nil {
-				return 0, err
-			}
+			return p.validateJSONPath(clause, i, label)
 		}
 		return i + 1, nil
 	}
@@ -453,28 +465,28 @@ func (p *tableSQLPolicy) validateQualifiedName(clause []utility.SQLToken, i int,
 // validateJSONPath checks that a JSON extraction reads a published column by
 // its stored key. The readable name is never the address; it is what the answer
 // is labelled with afterwards.
-func (p *tableSQLPolicy) validateJSONPath(clause []utility.SQLToken, name int, label string) error {
-	args, _, err := utility.SQLCallArguments(clause, name)
+func (p *tableSQLPolicy) validateJSONPath(clause []utility.SQLToken, name int, label string) (int, error) {
+	args, next, err := utility.SQLCallArguments(clause, name)
 	if err != nil {
-		return fmt.Errorf("%s: %s: %w", label, clause[name].Text, err)
+		return 0, fmt.Errorf("%s: %s: %w", label, clause[name].Text, err)
 	}
 	if len(args) != 2 {
-		return fmt.Errorf("%s: %s needs a column and a path, got %d arguments", label, clause[name].Text, len(args))
+		return 0, fmt.Errorf("%s: %s needs a column and a path, got %d arguments", label, clause[name].Text, len(args))
 	}
 	if len(args[0]) != 1 || !args[0][0].IsWord("chunk_data") {
-		return fmt.Errorf("%s: %s reads %q, want chunk_data", label, clause[name].Text, utility.SQLRender(args[0], 0))
+		return 0, fmt.Errorf("%s: %s reads %q, want chunk_data", label, clause[name].Text, utility.SQLRender(args[0], 0))
 	}
 	if len(args[1]) != 1 || args[1][0].Kind != utility.SQLString {
-		return fmt.Errorf("%s: %s needs a quoted path", label, clause[name].Text)
+		return 0, fmt.Errorf("%s: %s needs a quoted path", label, clause[name].Text)
 	}
 	match := jsonPathRe.FindStringSubmatch(args[1][0].Value)
 	if match == nil {
-		return fmt.Errorf("%s: %q is not a published column path", label, args[1][0].Value)
+		return 0, fmt.Errorf("%s: %q is not a published column path", label, args[1][0].Value)
 	}
 	if !p.dataKeys[match[1]] {
-		return fmt.Errorf("%s: column %q is not published by these documents", label, match[1])
+		return 0, fmt.Errorf("%s: column %q is not published by these documents", label, match[1])
 	}
-	return nil
+	return next, nil
 }
 
 func isPunctAt(tokens []utility.SQLToken, i int, punct string) bool {

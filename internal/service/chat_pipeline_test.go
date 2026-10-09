@@ -38,6 +38,83 @@ import (
 // dialForTest builds a minimal *entity.Chat suitable for the
 // guard-clause tests. KBs are empty so AsyncChat goes through
 // AsyncChatSolo.
+func TestResolveChatDocIDsPreservesExplicitScope(t *testing.T) {
+	var fromJSON map[string]any
+	if err := json.Unmarshal([]byte(`{"doc_ids":["doc-one"]}`), &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name            string
+		kwargs, message map[string]any
+		want            []string
+	}{
+		{"absent", nil, nil, nil},
+		{"kwargs", map[string]any{"doc_ids": " doc-one, doc-two "}, nil, []string{"doc-one", "doc-two"}},
+		{"JSON overrides kwargs", map[string]any{"doc_ids": "doc-two"}, fromJSON, []string{"doc-one"}},
+		{"typed slice", nil, map[string]any{"doc_ids": []string{"doc-one"}}, []string{"doc-one"}},
+		{"empty JSON array", map[string]any{"doc_ids": "doc-two"}, map[string]any{"doc_ids": []any{}}, []string{}},
+		{"empty typed array", nil, map[string]any{"doc_ids": []string{}}, []string{}},
+		{"empty kwargs", map[string]any{"doc_ids": ""}, nil, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ids, err := resolveChatDocIDs(tc.kwargs, tc.message)
+			if err != nil || !reflect.DeepEqual(ids, tc.want) {
+				t.Fatalf("ids=%#v err=%v, want %#v", ids, err, tc.want)
+			}
+			allowed := restrictToRequestedDocs([]string{"doc-one", "doc-two"}, ids)
+			if tc.want != nil && len(tc.want) == 0 && len(allowed) != 0 {
+				t.Fatalf("empty request expanded to %v", allowed)
+			}
+		})
+	}
+}
+
+func TestAsyncChatRejectsInvalidDocIDsBeforeDispatch(t *testing.T) {
+	for _, raw := range []any{nil, "doc-one", 1, []any{"doc-one", 2}, []string{""}} {
+		_, err := (&ChatPipelineService{}).AsyncChat(t.Context(), "user-1", dialForTest(""),
+			[]map[string]any{{"role": "user", "content": "question", "doc_ids": raw}}, false, nil)
+		if err == nil || !strings.Contains(err.Error(), "doc_ids") {
+			t.Errorf("doc_ids=%#v: expected argument error, got %v", raw, err)
+		}
+	}
+}
+
+func TestAsyncChatEmptyDocScopeReturnsNoKnowledge(t *testing.T) {
+	chat := dialForTest("")
+	chat.KBIDs = []any{"kb-one"}
+	chat.PromptConfig["empty_response"] = "No matching documents."
+	results, err := (&ChatPipelineService{}).AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]any{{"role": "user", "content": "question", "doc_ids": []any{}}}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := <-results
+	if !ok || !result.Final || result.Answer != "No matching documents." {
+		t.Fatalf("an empty document scope entered retrieval/model dispatch: %#v", result)
+	}
+}
+
+func TestAsyncChatEmptyDocScopeStreamsVisibleAnswer(t *testing.T) {
+	chat := dialForTest("")
+	chat.PromptConfig["empty_response"] = "No matching documents."
+	results, err := (&ChatPipelineService{}).AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]any{{"role": "user", "content": "question", "doc_ids": []any{}}}, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delta, ok := <-results
+	if !ok || delta.Final || delta.Answer != "No matching documents." {
+		t.Fatalf("empty-scope answer is not visible to streaming consumers: %#v", delta)
+	}
+	final, ok := <-results
+	if !ok || !final.Final || final.Reference["total"] != 0 {
+		t.Fatalf("missing empty final reference: %#v", final)
+	}
+	if _, ok := <-results; ok {
+		t.Fatal("empty-scope stream did not close")
+	}
+}
+
 func dialForTest(llmid string) *entity.Chat {
 	return &entity.Chat{
 		ID:       "chat-1",

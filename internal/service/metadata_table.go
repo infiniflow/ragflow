@@ -36,10 +36,9 @@ import (
 // to publish, is disabled, or was indexed under another engine simply does not
 // appear here rather than needing a cleanup pass.
 //
-// A document whose profile is unreadable is skipped: the alternative is to
-// quote a column the index cannot resolve. Failures reading the metadata store
-// are returned, because the caller must not read an empty result as "this
-// knowledge base has no table columns".
+// Missing or incomplete profiles do not contribute columns. Malformed profile
+// JSON and metadata-store failures are returned, so callers do not interpret
+// a publisher or infrastructure failure as a knowledge base with no columns.
 //
 // Whether the result may be used for SQL is the caller's decision
 // (SupportsStructuredTableSQL): a read-only view of indexed fields is useful on

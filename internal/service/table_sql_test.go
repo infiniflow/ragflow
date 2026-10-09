@@ -86,6 +86,20 @@ func newTestOceanBaseQuery(t *testing.T, docIDs []string) *tableSQL {
 	return query
 }
 
+func TestTableSQLRefusesWholeRowProjection(t *testing.T) {
+	query := newTestOceanBaseQuery(t, nil)
+	for _, selectList := range []string{"*", "doc_id, *", "all * weight_int", "distinct * weight_int", "chunk_data", "chunk_data as payload", "ragflow_tenant1.chunk_data", "cast(chunk_data as text)", "concat(chunk_data, '')"} {
+		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1"); err == nil {
+			t.Errorf("accepted full row projection: %s", selectList)
+		}
+	}
+	for _, selectList := range []string{"count(*) as total", "weight_int * 2 as doubled", "null * 2 as empty", "(weight_int + 1) * (rank_flt + 2) as score", "sum(weight_int * 2) as total", "json_extract_string(chunk_data, " + testRegionPath() + ") as region"} {
+		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1"); err != nil {
+			t.Errorf("rejected bounded expression %s: %v", selectList, err)
+		}
+	}
+}
+
 func TestTableSQLBoundsReturnedRows(t *testing.T) {
 	query := newTestOceanBaseQuery(t, nil)
 	for _, tc := range []struct{ suffix, want string }{

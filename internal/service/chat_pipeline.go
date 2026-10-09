@@ -148,6 +148,54 @@ type ThinkEvent struct {
 	Summary string `json:"summary"`
 }
 
+// resolveChatDocIDs preserves absent versus explicitly empty document ranges.
+// A message array overrides the comma-separated range supplied in kwargs.
+func resolveChatDocIDs(kwargs, lastMsg map[string]interface{}) ([]string, error) {
+	raw, present := lastMsg["doc_ids"]
+	if !present {
+		raw, present = kwargs["doc_ids"]
+		if !present {
+			return nil, nil
+		}
+		text, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("doc_ids in kwargs must be a comma-separated string")
+		}
+		ids := make([]string, 0)
+		for _, part := range strings.Split(text, ",") {
+			if id := strings.TrimSpace(part); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		return ids, nil
+	}
+	var values []string
+	switch list := raw.(type) {
+	case []string:
+		values = list
+	case []interface{}:
+		values = make([]string, len(list))
+		for i, value := range list {
+			id, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("doc_ids[%d] must be a string", i)
+			}
+			values[i] = id
+		}
+	default:
+		return nil, fmt.Errorf("doc_ids in a message must be an array of strings")
+	}
+	ids := make([]string, 0, len(values))
+	for i, value := range values {
+		id := strings.TrimSpace(value)
+		if id == "" {
+			return nil, fmt.Errorf("doc_ids[%d] must not be empty", i)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // AsyncChat is the Go equivalent of Python's async_chat() in
 // api/db/services/dialog_service.py:541.
 //
@@ -226,6 +274,24 @@ func (s *ChatPipelineService) AsyncChat(
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
+	}
+
+	docIDs, err := resolveChatDocIDs(kwargs, lastMsg)
+	if err != nil {
+		return nil, err
+	}
+	if docIDs != nil && len(docIDs) == 0 {
+		answer, _ := chat.PromptConfig["empty_response"].(string)
+		if answer == "" {
+			answer = "No documents are selected."
+		}
+		out := make(chan AsyncChatResult, 2)
+		if stream {
+			out <- AsyncChatResult{Answer: answer}
+		}
+		out <- AsyncChatResult{Answer: answer, Reference: map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}, "total": 0}, Final: true}
+		close(out)
+		return out, nil
 	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it
@@ -356,8 +422,8 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		timer.Exit(common.PhaseBindModels)
 
-		// === Phase 5: Extract Questions, doc_ids, Attachments ===
-		common.Info("Phase 5: Extract questions, doc_ids, attachments")
+		// === Phase 5: Extract Questions and Attachments ===
+		common.Info("Phase 5: Extract questions and attachments")
 		// Retrieve the last 3 user questions.
 		var questions []string
 		for _, m := range messages {
@@ -373,31 +439,6 @@ func (s *ChatPipelineService) AsyncChat(
 
 		common.Debug("Extracted questions", zap.Strings("questions", questions))
 
-		// Resolve doc_ids from kwargs or the last message.
-		// Kwargs["doc_ids"] is a comma-separated string.
-		// messages[-1]["doc_ids"] ALWAYS overrides the kwargs value.
-		var docIDs []string
-		if docIDsStr, ok := kwargs["doc_ids"].(string); ok {
-			for _, p := range strings.Split(docIDsStr, ",") {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					docIDs = append(docIDs, p)
-				}
-			}
-		}
-		if docIDsRaw, ok := lastMsg["doc_ids"]; ok {
-			docIDs = nil
-			if v, ok := docIDsRaw.([]string); ok {
-				for _, id := range v {
-					if id != "" {
-						docIDs = append(docIDs, id)
-					}
-				}
-			} else {
-				common.Warn("doc_ids in message is not []string, ignoring",
-					zap.Any("type", fmt.Sprintf("%T", docIDsRaw)))
-			}
-		}
 		if docIDs != nil {
 			common.Debug("Resolved doc_ids", zap.Strings("doc_ids", docIDs))
 		}

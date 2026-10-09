@@ -82,9 +82,8 @@ func (p *TableProfile) Encode() (string, error) {
 }
 
 // DecodeTableProfile reads the value stored under TableProfileMetadataField. ok=false
-// means the document has no usable record: absent, not a string, or not valid
-// profile JSON. A caller treats all three the same way — the document does not
-// contribute queryable fields — but only a malformed record is worth logging.
+// means the record is absent, not a non-empty string, or lacks an engine or
+// columns. Malformed JSON returns an error that readers must handle explicitly.
 func DecodeTableProfile(value any) (profile *TableProfile, ok bool, err error) {
 	raw, isString := value.(string)
 	if !isString || raw == "" {

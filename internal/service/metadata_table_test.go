@@ -96,6 +96,32 @@ func tableProfileService(engineType string, records []map[string]interface{}) *M
 	return NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), &tableProfileTestEngine{engineType: engineType, records: records})
 }
 
+func TestTableFieldMapReportsMalformedProfile(t *testing.T) {
+	db := setupTableProfileDB(t)
+	seedDocument(t, db, "doc-bad", true)
+	seedDocument(t, db, "doc-good", true)
+	bad := map[string]any{"id": "doc-bad", "meta_fields": map[string]any{entity.TableProfileMetadataField: "{broken"}}
+	_, _, err := tableProfileService("infinity", []map[string]any{bad, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
+	if err == nil || !strings.Contains(err.Error(), "doc-bad") {
+		t.Fatalf("malformed publisher was silently dropped: %v", err)
+	}
+}
+
+func TestTableFieldMapSkipsIncompleteProfiles(t *testing.T) {
+	for _, raw := range []string{`{"columns":[{"key":"金额"}]}`, `{"engine":"infinity","columns":[]}`} {
+		t.Run(raw, func(t *testing.T) {
+			db := setupTableProfileDB(t)
+			seedDocument(t, db, "doc-incomplete", true)
+			seedDocument(t, db, "doc-good", true)
+			incomplete := map[string]any{"id": "doc-incomplete", "meta_fields": map[string]any{entity.TableProfileMetadataField: raw}}
+			fields, ids, err := tableProfileService("infinity", []map[string]any{incomplete, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
+			if err != nil || len(fields) != 1 || len(ids) != 1 || ids[0] != "doc-good" {
+				t.Fatalf("incomplete profile affected the valid publisher: fields=%v ids=%v err=%v", fields, ids, err)
+			}
+		})
+	}
+}
+
 func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
