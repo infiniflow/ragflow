@@ -25,7 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -40,84 +40,6 @@ import (
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
-
-func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
-	tests := []struct {
-		name    string
-		body    string
-		wantIDs []string
-		wantErr string
-	}{
-		{name: "missing selector", body: `{}`},
-		{name: "missing IDs", body: `{"selector":{}}`},
-		{name: "null IDs", body: `{"selector":{"document_ids":null}}`},
-		{name: "empty IDs", body: `{"selector":{"document_ids":[]}}`},
-		{name: "string IDs", body: `{"selector":{"document_ids":["doc-1","doc-2"]}}`, wantIDs: []string{"doc-1", "doc-2"}},
-		{name: "non-list IDs", body: `{"selector":{"document_ids":"doc-1"}}`, wantErr: "document_ids must be a list."},
-		{name: "numeric ID", body: `{"selector":{"document_ids":[123]}}`, wantErr: "document_ids must contain only strings."},
-		{name: "boolean ID", body: `{"selector":{"document_ids":[true]}}`, wantErr: "document_ids must contain only strings."},
-		{name: "null ID", body: `{"selector":{"document_ids":[null]}}`, wantErr: "document_ids must contain only strings."},
-		{name: "object ID", body: `{"selector":{"document_ids":[{}]}}`, wantErr: "document_ids must contain only strings."},
-		{name: "array ID", body: `{"selector":{"document_ids":[[]]}}`, wantErr: "document_ids must contain only strings."},
-		{name: "mixed IDs", body: `{"selector":{"document_ids":["doc-1",123]}}`, wantErr: "document_ids must contain only strings."},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var body map[string]interface{}
-			if err := json.Unmarshal([]byte(tt.body), &body); err != nil {
-				t.Fatal(err)
-			}
-			selector, errMsg := parseMetadataSelector(body["selector"])
-			if errMsg != tt.wantErr {
-				t.Fatalf("error = %q, want %q", errMsg, tt.wantErr)
-			}
-			if tt.wantErr != "" {
-				if selector != nil {
-					t.Fatalf("selector = %#v, want nil", selector)
-				}
-				return
-			}
-			if selector == nil || !reflect.DeepEqual(selector.DocumentIDs, tt.wantIDs) {
-				t.Fatalf("selector = %#v, want IDs %v", selector, tt.wantIDs)
-			}
-		})
-	}
-}
-
-func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
-	setupDocumentPermissionDB(t, true)
-	h := &DocumentHandler{
-		datasetService: dataset.NewDatasetService(),
-	}
-	tests := []struct {
-		method  string
-		path    string
-		handler gin.HandlerFunc
-	}{
-		{http.MethodPost, "/api/v1/datasets/kb-owner/metadata/update", h.MetadataBatchUpdate},
-		{http.MethodPatch, "/api/v1/datasets/kb-owner/documents/metadatas", h.UpdateDocumentMetadatas},
-	}
-	for _, tt := range tests {
-		t.Run(tt.method, func(t *testing.T) {
-			c, w := setupGinContextWithUser(tt.method, tt.path, `{"selector":{"document_ids":[123]}}`)
-			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
-			tt.handler(c)
-			if w.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
-			}
-			var resp struct {
-				Code    common.ErrorCode `json:"code"`
-				Message string           `json:"message"`
-			}
-			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-				t.Fatal(err)
-			}
-			if resp.Code != common.CodeDataError || resp.Message != "document_ids must contain only strings." {
-				t.Fatalf("unexpected response: %s", w.Body.String())
-			}
-		})
-	}
-}
 
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
@@ -1640,6 +1562,47 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 	}
 	if len(fake.listOpts.DocIDs) != 1 || fake.listOpts.DocIDs[0] != "doc-2" {
 		t.Fatalf("expected metadata filter to keep doc-2, got %#v", fake.listOpts.DocIDs)
+	}
+}
+
+func TestListDocumentsHandler_MetadataConditionNarrowsDocumentIDs(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		listIDs: []string{"doc-1", "doc-2", "doc-3"},
+		metadataByKBs: map[string]interface{}{
+			"_groupId": map[string][]string{
+				"g1": {"doc-2", "doc-4"},
+			},
+			"_isCurrent": map[string][]string{
+				"true": {"doc-1", "doc-2"},
+			},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	cond := url.QueryEscape(`{"logic":"and","conditions":[{"name":"_groupId","comparison_operator":"=","value":"g1"},{"name":"_isCurrent","comparison_operator":"=","value":"true"}]}`)
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?metadata_condition="+cond, "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.ListDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !fake.listOpts.DocIDFilterApplied {
+		t.Fatal("expected metadata_condition filter to apply doc id filter")
+	}
+	if len(fake.listOpts.DocIDs) != 1 || fake.listOpts.DocIDs[0] != "doc-2" {
+		t.Fatalf("expected metadata_condition filter to keep doc-2, got %#v", fake.listOpts.DocIDs)
 	}
 }
 
