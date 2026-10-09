@@ -165,23 +165,44 @@ func dlaPostprocess(out []float32, sf [4]float32) DLAResult {
 		})
 	}
 
-	byClass := map[int][]int{}
-	for i, c := range cands {
-		byClass[c.cls] = append(byClass[c.cls], i)
-	}
+	// The layout model (layout.onnx and layout.ort are the SAME graph — the .ort
+	// is just the FlatBuffer-serialized form, with no NMS op baked in) does NOT
+	// run NMS in its graph: output0 is a set of raw top-k candidate boxes
+	// (xyxy, score, class). The OSS reference pipeline (deepdoc's
+	// LayoutRecognizer4YOLOv10.postprocess / ref_dla.py) applies a per-class
+	// NMS(iou=0.45) on top of these candidates before handing boxes to the
+	// caller — that post-NMS output is the wire contract the caller consumes.
+	// The golden files are generated from that same Python serving post-process,
+	// so to match the caller's view this code re-runs the identical per-class
+	// nms(0.45) (the operators.py +1 convention). This is the single NMS the
+	// serving applies — there is no second NMS downstream (native_analyzer maps
+	// the boxes through as-is), so it is NOT a double-NMS.
 	res := DLAResult{}
-	for cls, idxs := range byClass {
-		sub := make([]nmsBox, len(idxs))
+	// Per-class NMS(0.45, +1) — mirrors OSS Python serving's postprocess; the
+	// golden is generated from that post-NMS output.
+	byCls := map[int][]int{}
+	for i, c := range cands {
+		byCls[c.cls] = append(byCls[c.cls], i)
+	}
+	keep := map[int]bool{}
+	for _, idxs := range byCls {
+		bs := make([]nmsBox, len(idxs))
 		for k, i := range idxs {
-			sub[k] = cands[i].nmsBox
+			bs[k] = cands[i].nmsBox
 		}
-		for _, keep := range nms(sub, 0.45, true) {
-			res.Boxes = append(res.Boxes, DLABox{
-				X0: round2(sub[keep].X0), Y0: round2(sub[keep].Y0),
-				X1: round2(sub[keep].X1), Y1: round2(sub[keep].Y1),
-				Score: round4(sub[keep].Score), Class: cls,
-			})
+		for _, k := range nms(bs, 0.45, true) {
+			keep[idxs[k]] = true
 		}
+	}
+	for i, c := range cands {
+		if !keep[i] {
+			continue
+		}
+		res.Boxes = append(res.Boxes, DLABox{
+			X0: round2(c.nmsBox.X0), Y0: round2(c.nmsBox.Y0),
+			X1: round2(c.nmsBox.X1), Y1: round2(c.nmsBox.Y1),
+			Score: round4(c.nmsBox.Score), Class: c.cls,
+		})
 	}
 	// Re-map class ids through the OSS label->Go index map.
 	mapped := res.Boxes[:0]
@@ -203,6 +224,7 @@ func dlaPostprocess(out []float32, sf [4]float32) DLAResult {
 		mapped = append(mapped, b)
 	}
 	res.Boxes = mapped
+
 	// Deterministic ordering: dlaPostprocess iterates a class->index map, whose
 	// iteration order is unspecified in Go. Sort so identical detections always
 	// serialize identically (e.g. for stable Wire() across runs / session reuse).
