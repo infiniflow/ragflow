@@ -437,20 +437,17 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		}
 	}
 
-	// Reconcile the parser column here too: an existing table is opened through
-	// GetTable and never reaches createChunkStoreWithDB. Best effort, like Python's
-	// ensure_columns — a column that stays missing surfaces on the insert below.
+	// Existing tables must have the table columns before any rows are deleted
+	// or inserted. Dropping the row marker would make indexed rows invisible
+	// to structured table queries.
 	if parserIDFromChunks(chunks) == "table" {
 		if err := e.ensureChunkDataColumn(table, hasChunkData); err != nil {
-			common.Warn("Failed to add chunk_data column", zap.Error(err))
-		} else {
-			hasChunkData = true
+			return nil, err
 		}
 		if err := e.ensureTableRowColumn(table, hasRowInt); err != nil {
-			common.Warn("Failed to add table row marker columns", zap.Error(err))
-		} else {
-			hasRowInt = true
+			return nil, err
 		}
+		hasRowInt = true
 	}
 
 	// Transform chunks using helper function
