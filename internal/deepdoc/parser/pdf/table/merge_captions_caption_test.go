@@ -466,3 +466,87 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
 	t.Errorf("expected the start-anchored English paragraph consumed into <caption> (Python parity); sections = %v",
 		textsOf(result))
 }
+
+// TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
+// page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
+// coordinates repeat on every page, so the figure search used to match on
+// page-local distance alone: here the page-2 caption's page-local centre is
+// CLOSER to the page-0 figure (dist²=13225) than to the page-2 figure it
+// belongs to (dist²=21025). The caption was therefore glued to the page-0
+// figure — pages away — and its own figure was left with no caption at all.
+func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "page zero chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 250, Right: 350, Top: 250, Bottom: 350}}},
+		{Text: "page two chart", LayoutType: pdf.LayoutTypeFigure, Image: "img2",
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 250, Right: 350, Top: 510, Bottom: 610}}},
+		{Text: "Figure 9: latency by shard count", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 250, Right: 350, Top: 400, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+
+	var onZero, onTwo bool
+	for _, s := range result {
+		if s.LayoutType != pdf.LayoutTypeFigure {
+			continue
+		}
+		hasCap := strings.Contains(s.Text, "latency by shard count")
+		switch s.Positions[0].PageNumbers[0] {
+		case 0:
+			onZero = hasCap
+		case 2:
+			onTwo = hasCap
+		}
+	}
+	if !onTwo {
+		t.Errorf("caption did not attach to its own (page 2) figure; sections = %v", textsOf(result))
+	}
+	if onZero {
+		t.Errorf("caption wrongly attached to the page-0 figure (page-local distance only): %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_FigureCaptionUnknownPageStillAttaches pins the deliberate
+// asymmetry with findTables: a figure whose positions carry NO page metadata is
+// kept as a candidate. This search is also the fallback target for orphaned
+// table captions, so rejecting on missing metadata would DELETE their text.
+func TestMergeCaptions_FigureCaptionUnknownPageStillAttaches(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "metadata-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "imgnp",
+			Positions: []pdf.Position{{Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 3: yearly totals", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeFigure && strings.Contains(s.Text, "yearly totals") {
+			return
+		}
+	}
+	t.Errorf("caption dropped instead of attaching to the page-less figure: %v", textsOf(result))
+}
+
+// TestMergeCaptions_TableFallbackSurvivesPageGuard locks the interaction
+// between the figure-side page guard and the orphaned-table-caption fallback
+// (go_bug table-caption-orphan-dropped). A table caption with no table in
+// range falls back to the figure search; the page guard must not then reject
+// every candidate and hand the caller a section to delete. Here the only
+// figure is on another page, so the page-scoped pass finds nothing — the
+// fallback must retry without the page filter and keep the text. Before that
+// retry existed, this caption was deleted outright.
+func TestMergeCaptions_TableFallbackSurvivesPageGuard(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "far away chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Table 5 shows the answer quality and retrieval performance across benchmarks.",
+			LayoutType: pdf.LayoutTypeText,
+			Positions:  []pdf.Position{{PageNumbers: []int{7}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	for _, s := range result {
+		if strings.Contains(s.Text, "answer quality and retrieval performance") {
+			return
+		}
+	}
+	t.Errorf("table caption text deleted instead of preserved on the fallback figure: %v", textsOf(result))
+}
