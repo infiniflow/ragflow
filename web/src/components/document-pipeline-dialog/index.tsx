@@ -130,7 +130,10 @@ export function DocumentPipelineDialog({
                       parseType === ParseType.BuiltIn
                         ? buildParserOptionValue('builtin', selectedParserId)
                         : selectedPipelineId
-                          ? buildParserOptionValue('pipeline', selectedPipelineId)
+                          ? buildParserOptionValue(
+                              'pipeline',
+                              selectedPipelineId,
+                            )
                           : undefined
                     }
                     onChange={handleParserSelect}

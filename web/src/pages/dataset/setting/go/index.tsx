@@ -9,7 +9,13 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
-import { Form, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
 import { buildParserOptionValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
