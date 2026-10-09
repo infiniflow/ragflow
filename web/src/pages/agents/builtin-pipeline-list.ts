@@ -1,9 +1,11 @@
 import { AgentCategory } from '@/constants/agent';
+import { useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
 import {
   AgentListItemType,
   IBuiltinPipeline,
   IBuiltinPipelineListItem,
 } from '@/interfaces/database/agent';
+import { useMemo } from 'react';
 
 // Whether the built-in pipeline section should be shown for the given
 // canvas_category filter as stored on the agents list's filter value. Built-in
@@ -44,7 +46,7 @@ export function filterBuiltinByKeyword(
   if (!keywords || keywords.trim() === '') {
     return items;
   }
-  const kw = keywords.toLowerCase();
+  const kw = keywords.trim().toLowerCase();
   return items.filter((item) => {
     const title = (item.title ?? '').toLowerCase();
     const description = (item.description ?? '').toLowerCase();
@@ -63,4 +65,66 @@ export function toBuiltinListItem(
     type: AgentListItemType.BuiltinPipeline,
     builtin: true,
   };
+}
+
+// Shared hook that resolves the filtered, rendered built-in pipeline items for
+// the given category view and search keyword. Both the section and the
+// agents-list empty-state probe call this with the same arguments; React Query
+// dedupes the underlying catalog request by key, so the request fires once.
+export function useBuiltinItems(
+  rawCategory?: string | string[] | Record<string, string[]>,
+  searchString?: string,
+): { items: IBuiltinPipelineListItem[]; loading: boolean } {
+  const { data: builtinData, loading } = useFetchBuiltinPipelines();
+  const items = useMemo(() => {
+    if (!shouldShowBuiltinForRaw(rawCategory)) {
+      return [];
+    }
+    return filterBuiltinByKeyword(builtinData?.canvas ?? [], searchString).map(
+      toBuiltinListItem,
+    );
+  }, [rawCategory, builtinData, searchString]);
+  return { items, loading };
+}
+
+export type AgentsEmptyState = 'content' | 'search-empty' | 'loading' | 'empty';
+
+// Decides what the agents list should render when there are no user-owned
+// canvases. The decision must account for *filtered* built-in pipeline matches,
+// not merely whether the built-in section is *eligible* for the current
+// category (a category-eligibility boolean would wrongly keep the empty
+// CardContainer mounted on a zero-result search). `builtinVisible` and
+// `builtinLoading` describe the eligible built-in catalog; `listLoading`
+// describes the user-owned list.
+export function resolveAgentsEmptyState(params: {
+  dataLength: number;
+  builtinItemsLength: number;
+  searchString?: string;
+  listLoading: boolean;
+  builtinVisible: boolean;
+  builtinLoading: boolean;
+}): AgentsEmptyState {
+  const hasContent = params.dataLength > 0 || params.builtinItemsLength > 0;
+
+  // While the user-owned list is still loading, render nothing.
+  if (params.listLoading) {
+    return 'loading';
+  }
+
+  // Keep the container mounted while the eligible built-in catalog is still
+  // loading, so we don't briefly flash an empty card before its items arrive
+  // (matches the prior behaviour of showing the bare container during load).
+  if (params.builtinVisible && params.builtinLoading && !hasContent) {
+    return 'content';
+  }
+
+  if (hasContent) {
+    return 'content';
+  }
+
+  if (params.searchString) {
+    return 'search-empty';
+  }
+
+  return 'empty';
 }

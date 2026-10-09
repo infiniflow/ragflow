@@ -1,12 +1,6 @@
-import { useMemo } from 'react';
-import { useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
 import { useTranslation } from 'react-i18next';
 import { CardContainer } from '@/components/card-container';
-import {
-  filterBuiltinByKeyword,
-  shouldShowBuiltinForRaw,
-  toBuiltinListItem,
-} from './builtin-pipeline-list';
+import { useBuiltinItems } from './builtin-pipeline-list';
 import { BuiltinPipelineCard } from './builtin-pipeline-card';
 
 // BuiltinPipelineSection renders the read-only built-in pipeline catalog after
@@ -26,16 +20,7 @@ export function BuiltinPipelineSection({
   showDivider?: boolean;
 }) {
   const { t } = useTranslation();
-  const { data: builtinData } = useFetchBuiltinPipelines();
-
-  const builtinItems = useMemo(() => {
-    if (!shouldShowBuiltinForRaw(rawCategory)) {
-      return [];
-    }
-    return filterBuiltinByKeyword(builtinData?.canvas ?? [], searchString).map(
-      toBuiltinListItem,
-    );
-  }, [rawCategory, builtinData, searchString]);
+  const { items: builtinItems } = useBuiltinItems(rawCategory, searchString);
 
   if (builtinItems.length === 0) {
     return null;

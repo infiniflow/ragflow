@@ -2,14 +2,16 @@ import {
   shouldShowBuiltinForRaw,
   filterBuiltinByKeyword,
   toBuiltinListItem,
+  resolveAgentsEmptyState,
 } from './builtin-pipeline-list';
 import { AgentCategory } from '@/constants/agent';
-import {
-  AgentListItemType,
-  IBuiltinPipeline,
-} from '@/interfaces/database/agent';
+import { AgentListItemType } from '@/interfaces/database/agent';
 
-const sample: IBuiltinPipeline[] = [
+jest.mock('@/hooks/use-agent-request', () => ({
+  useFetchBuiltinPipelines: jest.fn(),
+}));
+
+const sample = [
   {
     id: 'general',
     title: 'General',
@@ -64,6 +66,16 @@ describe('shouldShowBuiltinForRaw', () => {
       shouldShowBuiltinForRaw([
         AgentCategory.AgentCanvas,
         'compilation_template_group',
+      ]),
+    ).toBe(false);
+  });
+
+  it('hides builtin for an array carrying no plain ids', () => {
+    // An array of structured filters has no plain category ids, so the
+    // "All"/"Pipeline" intent cannot be assumed and built-ins stay hidden.
+    expect(
+      shouldShowBuiltinForRaw([
+        { operator: 'or', values: [] } as unknown as string,
       ]),
     ).toBe(false);
   });
@@ -135,5 +147,69 @@ describe('toBuiltinListItem', () => {
   it('keeps an undefined description as undefined', () => {
     const item = toBuiltinListItem(sample[2]);
     expect(item.description).toBeUndefined();
+  });
+});
+
+describe('resolveAgentsEmptyState', () => {
+  const base = {
+    dataLength: 0,
+    builtinItemsLength: 0,
+    searchString: '',
+    listLoading: false,
+    builtinVisible: true,
+    builtinLoading: false,
+  };
+
+  it('shows the empty card (no search) when there is nothing at all', () => {
+    expect(resolveAgentsEmptyState(base)).toBe('empty');
+  });
+
+  it('shows the search empty card when a search yields no user or builtin hits', () => {
+    expect(
+      resolveAgentsEmptyState({ ...base, searchString: 'zzz-no-match' }),
+    ).toBe('search-empty');
+  });
+
+  it('renders content when user items exist even with no search', () => {
+    expect(resolveAgentsEmptyState({ ...base, dataLength: 3 })).toBe('content');
+  });
+
+  it('renders content when filtered builtin items exist (the zero-match-search regression)', () => {
+    // Category-eligible view (builtinVisible true) + search that did not match
+    // anything would previously leave a blank CardContainer; the matched
+    // builtin count now drives the decision.
+    expect(
+      resolveAgentsEmptyState({
+        ...base,
+        searchString: 'zzz-no-match',
+        builtinItemsLength: 2,
+      }),
+    ).toBe('content');
+  });
+
+  it('keeps the container mounted while the eligible builtin catalog loads', () => {
+    expect(resolveAgentsEmptyState({ ...base, builtinLoading: true })).toBe(
+      'content',
+    );
+  });
+
+  it('renders nothing while the user list is loading', () => {
+    expect(resolveAgentsEmptyState({ ...base, listLoading: true })).toBe(
+      'loading',
+    );
+  });
+
+  it('treats a non-eligible (Agent) view as if builtins were absent', () => {
+    // builtinVisible false => the builtin probe is not mounted, so the reported
+    // builtin count stays 0; with no user items and a search, it is a
+    // search-empty, not content.
+    expect(
+      resolveAgentsEmptyState({
+        ...base,
+        builtinVisible: false,
+        searchString: 'zzz-no-match',
+        builtinItemsLength: 0,
+      }),
+    ).toBe('search-empty');
   });
 });
