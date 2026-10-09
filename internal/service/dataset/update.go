@@ -102,19 +102,19 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["permission"] = permission
 	}
 
-	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("mutually exclusive")
+	// Validate the parse_type/parser_id/pipeline_id triple. FromRequest rejects
+	// any partial or contradictory combination (e.g. an id without parse_type,
+	// or both ids). A fully-absent block is allowed on update and means "keep
+	// current" — handled below via Resolve.
+	sel, modeErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if modeErr != nil {
+		return nil, common.CodeDataError, modeErr
 	}
-
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if modeErr != nil {
-			return nil, common.CodeDataError, modeErr
-		}
-		if isBuiltin && req.PipelineID != nil {
+	if sel != nil {
+		if sel.IsBuiltIn() && req.PipelineID != nil {
 			req.PipelineID = nil
 		}
-		if isPipeline && req.ParserID != nil {
+		if sel.IsPipeline() && req.ParserID != nil {
 			req.ParserID = nil
 		}
 	}
@@ -238,13 +238,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			// Resolve effective mode/IDs once via the shared helper. parse_type
-			// is authoritative; the per-mode req IDs were already cleaned above,
-			// but ResolveParseMode does not rely on that — it ignores the
-			// non-applicable ID for the selected mode.
-			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
-				req.ParseType, req.ParserID, req.PipelineID,
-				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
+			// Resolve the effective mode/IDs once. sel is the request selection
+			// (nil when the whole selection block was omitted); current is the
+			// persisted selection. Resolve applies PATCH semantics: an omitted
+			// block keeps the current mode so only parser_config changes still
+			// load the correct DSL.
+			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
+			eff, resolveErr := service.Resolve(current, sel)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			isPipeline, effParserID, effPipelineID := eff.Effective()
 			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",

@@ -6,7 +6,7 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SwitchFormField } from '@/components/switch-form-field';
 import { zodResolver } from '@hookform/resolvers/zod';
 import i18n from '@/locales/config';
-import { memo, useMemo } from 'react';
+import { type ComponentProps, memo, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -31,7 +31,8 @@ const FormSchema = z.object({
   watermark_text: z.string().optional(),
   add_page_numbers: z.boolean(),
   add_timestamp: z.boolean(),
-  font_size: z.coerce.number().min(12, i18n.t('flow.fontSizeMin')),
+  include_download_info_in_content: z.boolean(),
+  font_size: z.coerce.number().int().min(12, i18n.t('flow.fontSizeMin')),
   outputs: z.object({
     doc_id: z.object({ type: z.string() }),
     filename: z.object({ type: z.string() }),
@@ -60,6 +61,18 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
     return transferOutputs(values.outputs);
   }, [values.outputs]);
 
+  const handleFontSizeChange: NonNullable<
+    ComponentProps<typeof NumberInput>['onChange']
+  > = useCallback(
+    (value) => {
+      form.setValue('font_size', Math.trunc(Number(value)), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
+
   useWatchFormChange(node?.id, form);
 
   return (
@@ -86,7 +99,14 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
           {supportsDocumentDecorations && (
             <>
               <RAGFlowFormItem label={t('flow.fontSize')} name="font_size">
-                {(field) => <NumberInput min={12} {...field}></NumberInput>}
+                {(field) => (
+                  <NumberInput
+                    min={12}
+                    step={1}
+                    {...field}
+                    onChange={handleFontSizeChange}
+                  ></NumberInput>
+                )}
               </RAGFlowFormItem>
 
               <RAGFlowFormItem label={t('flow.headerText')} name="header_text">

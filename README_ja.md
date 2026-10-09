@@ -240,7 +240,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
 #### ⚙️ Docker の設定と調整
 
-Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームの制限とmacOSの要件については、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
+Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームのサポートについて（注：macOSは現時点では非対応です。Linux x86_64ホストを使用してください）、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
 
 ドキュメントエンジンの切り替え、設定変更後のサービス再起動、既存データの保持または削除についても、上記のDocker設定ガイドに従ってください。
 

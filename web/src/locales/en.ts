@@ -665,6 +665,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
+      parserSelectPlaceholder: 'Select a parser',
+      parserOptionUnavailable: 'unavailable',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -1280,6 +1283,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      search1apiApiKeyTip:
+        'When Search1API is selected, its web search results supplement dataset retrieval.',
+      search1apiApiKeyMessage: 'Please enter your Search1API API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',

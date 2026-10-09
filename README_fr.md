@@ -250,7 +250,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
 #### ⚙️ Configuration et ajustement de Docker
 
-Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
+Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour la prise en charge des plateformes (note : macOS n'est temporairement pas pris en charge, utilisez un hôte Linux x86_64), consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
 
 Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 

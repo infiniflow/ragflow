@@ -258,7 +258,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 
 #### ⚙️ Docker Yapılandırması ve Ayarlama
 
-Go Docker dağıtımı `docker/.env` ve `docker/docker-compose.yml` dosyalarını kullanır; önbellek ve Checkpoint depolaması için Kvrocks, mesaj kuyruğu olarak da NATS JetStream kullanılır. İmajı, bağlantı noktalarını, parolaları, belge motorunu ve model imajı kaynağını değiştirmek için [Docker yapılandırma kılavuzunu](./docker/README.md) izleyin. Platform sınırlamaları ve macOS gereksinimleri için [Go Docker imajı oluşturma ve platform desteği kılavuzuna](./docs/develop/build_docker_image.mdx) bakın.
+Go Docker dağıtımı `docker/.env` ve `docker/docker-compose.yml` dosyalarını kullanır; önbellek ve Checkpoint depolaması için Kvrocks, mesaj kuyruğu olarak da NATS JetStream kullanılır. İmajı, bağlantı noktalarını, parolaları, belge motorunu ve model imajı kaynağını değiştirmek için [Docker yapılandırma kılavuzunu](./docker/README.md) izleyin. Platform desteği (not: macOS geçici olarak desteklenmiyor, Linux x86_64 ana makinesi kullanın) için [Go Docker imajı oluşturma ve platform desteği kılavuzuna](./docs/develop/build_docker_image.mdx) bakın.
 
 Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetleri yeniden başlatma ve mevcut verileri koruma veya temizleme işlemleri için de yukarıdaki Docker yapılandırma kılavuzunu izleyin.
 

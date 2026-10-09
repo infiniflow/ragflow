@@ -172,6 +172,7 @@ export default {
       html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Jendela konteks gambar & tabel',
       imageTableContextWindowTip:
         'Mengambil N token teks di atas dan di bawah gambar dan tabel untuk memberikan konteks latar yang lebih kaya.',
