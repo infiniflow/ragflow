@@ -21,61 +21,28 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-func TestConfiguredMediaModelID(t *testing.T) {
+func TestConfiguredAudioModelID(t *testing.T) {
 	tests := []struct {
-		name   string
-		family string
-		setup  schema.ParserSetup
-		want   string
+		name  string
+		setup schema.ParserSetup
+		want  string
 	}{
 		{
-			name:   "image parse_method is the VLM model ref",
-			family: "image",
-			setup:  schema.ParserSetup{"parse_method": "gpt-4-vision@openai"},
-			want:   "gpt-4-vision@openai",
+			name:  "audio uses vlm.llm_id",
+			setup: schema.ParserSetup{"vlm": map[string]any{"llm_id": "whisper@openai"}},
+			want:  "whisper@openai",
 		},
 		{
-			name:   "image ocr falls back to vlm.llm_id",
-			family: "image",
-			setup: schema.ParserSetup{
-				"parse_method": "ocr",
-				"vlm":          map[string]any{"llm_id": "gpt-4-vision@openai"},
-			},
-			want: "gpt-4-vision@openai",
-		},
-		{
-			name:   "image ocr falls back to top-level llm_id",
-			family: "image",
-			setup:  schema.ParserSetup{"parse_method": "ocr", "llm_id": "qwen-vl@dashscope"},
-			want:   "qwen-vl@dashscope",
-		},
-		{
-			name:   "pdf uses vlm.llm_id",
-			family: "pdf",
-			setup: schema.ParserSetup{
-				"parse_method": "deepdoc",
-				"vlm":          map[string]any{"llm_id": "custom-vlm@provider"},
-			},
-			want: "custom-vlm@provider",
-		},
-		{
-			name:   "audio uses vlm.llm_id",
-			family: "audio",
-			setup:  schema.ParserSetup{"vlm": map[string]any{"llm_id": "whisper@openai"}},
-			want:   "whisper@openai",
-		},
-		{
-			name:   "empty setup",
-			family: "pdf",
-			setup:  schema.ParserSetup{},
-			want:   "",
+			name:  "empty setup",
+			setup: schema.ParserSetup{},
+			want:  "",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := configuredMediaModelID(tc.setup, tc.family); got != tc.want {
-				t.Fatalf("configuredMediaModelID() = %q, want %q", got, tc.want)
+			if got := configuredAudioModelID(tc.setup); got != tc.want {
+				t.Fatalf("configuredAudioModelID() = %q, want %q", got, tc.want)
 			}
 		})
 	}

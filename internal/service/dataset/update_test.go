@@ -193,13 +193,13 @@ func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 		PipelineID: &pipelineID,
 	})
 	if err == nil {
-		t.Fatal("expected mutual-exclusivity error when both parser_id and pipeline_id are set")
+		t.Fatal("expected error when both parser_id and pipeline_id are set without parse_type")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("expected error to mention 'mutually exclusive', got: %v", err)
+	if err.Error() != "parse_type is required" {
+		t.Fatalf("expected 'parse_type is required', got: %v", err)
 	}
 }
 
@@ -211,14 +211,12 @@ func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 		datasetUpdateCanvasDSL("Parser:HipSignsRhyme", "chunk_token_num"))
 
 	chunkMethod := "book"
-	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 1
 
 	ctx := t.Context()
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-		ParseType:  &parseType,
+		ParserID:  &chunkMethod,
+		ParseType: &parseType,
 	})
 	if err != nil {
 		t.Fatalf("UpdateDataset failed: %v", err)
@@ -226,7 +224,7 @@ func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	// parse_type=1 clears pipeline_id → only parser_id should be set.
+	// parse_type=1 selects builtin mode → only parser_id should be set.
 	if result["parser_id"] != chunkMethod {
 		t.Fatalf("expected parser_id %q, got %#v", chunkMethod, result["parser_id"])
 	}
@@ -235,40 +233,32 @@ func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	}
 }
 
-func TestUpdateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
+// TestUpdateDataset_ParseTypePipelineRejectsParserID locks in the new explicit
+// contract: parse_type=2 (Pipeline) must not carry a parser_id. The previous
+// lenient behavior silently ignored the contradictory id; now it is rejected so
+// a malformed request can never pick the wrong mode.
+func TestUpdateDataset_ParseTypePipelineRejectsParserID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
-		datasetUpdateCanvasDSL("Parser:CustomP", "chunk_token_num"))
 
 	chunkMethod := "book"
 	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 2
 
-	ctx := t.Context()
-	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,
 	})
-	if err != nil {
-		t.Fatalf("UpdateDataset failed: %v", err)
+	if err == nil {
+		t.Fatal("expected error rejecting parser_id in Pipeline mode")
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
 	}
-	// parse_type=2 ignores parser_id → pipeline_id should be set;
-	// parser_id should keep the original value.
-	if result["pipeline_id"] != strings.ToLower(pipelineID) {
-		t.Fatalf("expected pipeline_id %q, got %#v", strings.ToLower(pipelineID), result["pipeline_id"])
-	}
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
-	if err != nil {
-		t.Fatalf("get updated kb: %v", err)
-	}
-	if _, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{}); !ok {
-		t.Fatalf("expected pipeline defaults in parser_config, got %#v", persisted.ParserConfig)
+	if err.Error() != "parser_id must not be set when parse_type is Pipeline" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -343,9 +333,8 @@ func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) 
 	seedDatasetUpdateCanvas(t, "abcdef0123456789abcdef0123456789", "tenant-1",
 		datasetUpdateCanvasDSL("Parser:CustomP", "chunk_token_num"))
 
-	// Dirty parser_id that the builtin branch would otherwise use to load a
-	// builtin DSL. parse_type=2 must ignore it.
-	chunkMethod := "book"
+	// parse_type=2 must clean the config against the canvas DSL. No parser_id is
+	// sent in pipeline mode (the new contract forbids a contradictory id).
 	pipelineID := "abcdef0123456789abcdef0123456789"
 	parseType := 2
 	override := map[string]interface{}{
@@ -354,7 +343,6 @@ func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) 
 
 	ctx := t.Context()
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		ParserID:     &chunkMethod,
 		PipelineID:   &pipelineID,
 		ParseType:    &parseType,
 		ParserConfig: override,

@@ -32,6 +32,9 @@ import (
 	"unicode"
 
 	"github.com/signintech/gopdf"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	gmtext "github.com/yuin/goldmark/text"
 )
 
 // PDFOptions is the public contract for the PDF writer.
@@ -72,6 +75,14 @@ type pdfFontSet struct {
 	hasCJK      bool
 }
 
+type pdfBlock struct {
+	text        string
+	fontSize    int
+	indent      float64
+	spaceBefore float64
+	spaceAfter  float64
+}
+
 // WritePDF renders the content to a PDF byte stream.
 func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	if opts.FontSize <= 0 {
@@ -87,51 +98,151 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 		return nil, err
 	}
 
-	drawHeader(pdf, fonts, opts)
-
 	bodyX := 36.0
-	bodyY := 72.0
-	lineHeight := float64(opts.FontSize) * 1.5
+	baseLineHeight := float64(opts.FontSize) * 1.5
+	bodyTop := max(72.0, 36+baseLineHeight)
+	bodyBottom := 760.0
+	if bodyTop+baseLineHeight > bodyBottom {
+		return nil, fmt.Errorf("PDF: font size %d leaves no usable body area", opts.FontSize)
+	}
+	if err := drawHeader(pdf, fonts, opts); err != nil {
+		return nil, err
+	}
+	bodyY := bodyTop
+	bodyWidth := gopdf.PageSizeA4.W - 2*bodyX
 	pdf.SetX(bodyX)
 	pdf.SetY(bodyY)
 	pageNumber := 1
-	closePage := func() {
-		drawWatermark(pdf, fonts, opts)
-		drawFooter(pdf, fonts, opts, pageNumber)
+	closePage := func() error {
+		if err := drawWatermark(pdf, fonts, opts); err != nil {
+			return err
+		}
+		return drawFooter(pdf, fonts, opts, pageNumber)
+	}
+	newPage := func() error {
+		if err := closePage(); err != nil {
+			return err
+		}
+		pdf.AddPage()
+		if err := drawHeader(pdf, fonts, opts); err != nil {
+			return err
+		}
+		bodyY = bodyTop
+		pageNumber++
+		return nil
 	}
 
-	for _, line := range splitLines(content) {
-		if line == "" {
-			bodyY += lineHeight
-			if bodyY > 760 {
-				closePage()
-				pdf.AddPage()
-				drawHeader(pdf, fonts, opts)
-				bodyY = 72.0
-				pageNumber++
+	for _, block := range markdownPDFBlocks(content, opts.FontSize) {
+		lineHeight := float64(block.fontSize) * 1.5
+		if bodyTop+lineHeight > bodyBottom {
+			return nil, fmt.Errorf("PDF: font size %d leaves no usable body area", block.fontSize)
+		}
+		if bodyY > bodyTop {
+			bodyY += block.spaceBefore
+		}
+		for _, line := range splitLines(block.text) {
+			if line == "" {
+				bodyY += lineHeight
+				continue
 			}
-			pdf.SetX(bodyX)
-			pdf.SetY(bodyY)
-			continue
+			width := bodyWidth - block.indent
+			wrapped, err := wrapPDFText(pdf, fonts, line, block.fontSize, width)
+			if err != nil {
+				return nil, fmt.Errorf("PDF: wrap body text: %w", err)
+			}
+			for _, visualLine := range wrapped {
+				if bodyY > bodyTop && bodyY+lineHeight > bodyBottom {
+					if err := newPage(); err != nil {
+						return nil, err
+					}
+				}
+				pdf.SetX(bodyX + block.indent)
+				pdf.SetY(bodyY)
+				if err := drawPDFText(pdf, fonts, visualLine, block.fontSize); err != nil {
+					return nil, fmt.Errorf("PDF: body text: %w", err)
+				}
+				bodyY += lineHeight
+			}
 		}
-		if bodyY > 760 {
-			closePage()
-			pdf.AddPage()
-			drawHeader(pdf, fonts, opts)
-			bodyY = 72.0
-			pageNumber++
-		}
-		pdf.SetX(bodyX)
-		pdf.SetY(bodyY)
-		if err := drawPDFText(pdf, fonts, line, opts.FontSize); err != nil {
-			return nil, fmt.Errorf("PDF: body text: %w", err)
-		}
-		bodyY += lineHeight
+		bodyY += block.spaceAfter
 	}
 
-	closePage()
+	if err := closePage(); err != nil {
+		return nil, err
+	}
 
 	return writePDFToBytes(pdf)
+}
+
+func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
+	source := []byte(content)
+	document := goldmark.DefaultParser().Parse(gmtext.NewReader(source))
+	blocks := make([]pdfBlock, 0, document.ChildCount())
+	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
+		switch n := node.(type) {
+		case *ast.Heading:
+			sizes := [...]int{8, 6, 4, 2, 1, 0}
+			blocks = append(blocks, pdfBlock{
+				text: inlinePDFText(n, source), fontSize: baseSize + sizes[n.Level-1],
+				spaceBefore: float64(baseSize) * 0.6, spaceAfter: float64(baseSize) * 0.5,
+			})
+		case *ast.Paragraph:
+			blocks = append(blocks, pdfBlock{text: inlinePDFText(n, source), fontSize: baseSize, spaceAfter: float64(baseSize)})
+		case *ast.List:
+			index := n.Start
+			for item := n.FirstChild(); item != nil; item = item.NextSibling() {
+				prefix := "• "
+				if n.IsOrdered() {
+					prefix = fmt.Sprintf("%d. ", index)
+					index++
+				}
+				blocks = append(blocks, pdfBlock{text: prefix + inlinePDFText(item, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize) * 0.35})
+			}
+		case *ast.Blockquote:
+			blocks = append(blocks, pdfBlock{text: "| " + inlinePDFText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+		case *ast.CodeBlock:
+			blocks = append(blocks, pdfBlock{text: rawPDFBlockText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+		case *ast.FencedCodeBlock:
+			blocks = append(blocks, pdfBlock{text: rawPDFBlockText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+		case *ast.ThematicBreak:
+			blocks = append(blocks, pdfBlock{fontSize: baseSize, spaceAfter: float64(baseSize)})
+		default:
+			if text := inlinePDFText(n, source); text != "" {
+				blocks = append(blocks, pdfBlock{text: text, fontSize: baseSize, spaceAfter: float64(baseSize)})
+			}
+		}
+	}
+	return blocks
+}
+
+func inlinePDFText(node ast.Node, source []byte) string {
+	var text strings.Builder
+	_ = ast.Walk(node, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n := node.(type) {
+		case *ast.Text:
+			text.Write(n.Text(source))
+			if n.SoftLineBreak() || n.HardLineBreak() {
+				text.WriteByte('\n')
+			}
+		case *ast.String:
+			text.Write(n.Text(source))
+		}
+		return ast.WalkContinue, nil
+	})
+	return strings.TrimSpace(text.String())
+}
+
+func rawPDFBlockText(node ast.Node, source []byte) string {
+	var text strings.Builder
+	lines := node.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		line := lines.At(i)
+		text.Write(line.Value(source))
+	}
+	return strings.TrimRight(text.String(), "\r\n")
 }
 
 func ensurePDFFonts(pdf *gopdf.GoPdf, size int) (pdfFontSet, error) {
@@ -207,23 +318,18 @@ func normalizeExistingFontPath(candidate string) string {
 	return ""
 }
 
-func drawHeader(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) {
+func drawHeader(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) error {
 	if opts.HeaderText == "" {
-		return
+		return nil
 	}
-	size := overlayFontSize(opts)
-	pdf.SetX(36)
-	pdf.SetY(24)
-	_ = drawPDFText(pdf, fonts, opts.HeaderText, size)
+	return drawPDFTextFitted(pdf, fonts, opts.HeaderText, min(overlayFontSize(opts), 20), 36, 24, gopdf.PageSizeA4.W-72)
 }
 
-func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions, pageNumber int) {
+func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions, pageNumber int) error {
 	if opts.FooterText == "" && !opts.AddTimestamp && !opts.AddPageNumbers {
-		return
+		return nil
 	}
 	size := overlayFontSize(opts)
-	pdf.SetX(36)
-	pdf.SetY(800)
 	parts := []string{}
 	if opts.FooterText != "" {
 		parts = append(parts, opts.FooterText)
@@ -234,18 +340,17 @@ func drawFooter(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions, pageNumber 
 	if opts.AddPageNumbers {
 		parts = append(parts, fmt.Sprintf("Pages %d", pageNumber))
 	}
-	_ = drawPDFText(pdf, fonts, strings.Join(parts, " | "), size)
+	return drawPDFTextFitted(pdf, fonts, strings.Join(parts, " | "), min(size, 42), 36, 800, gopdf.PageSizeA4.W-72)
 }
 
-func drawWatermark(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) {
+func drawWatermark(pdf *gopdf.GoPdf, fonts pdfFontSet, opts PDFOptions) error {
 	if opts.WatermarkText == "" {
-		return
+		return nil
 	}
 	pdf.SetTextColor(200, 200, 200)
-	pdf.SetX(120)
-	pdf.SetY(360)
-	_ = drawPDFText(pdf, fonts, opts.WatermarkText, 48)
+	err := drawPDFTextFitted(pdf, fonts, opts.WatermarkText, 48, 120, 360, gopdf.PageSizeA4.W-156)
 	pdf.SetTextColor(0, 0, 0)
+	return err
 }
 
 func overlayFontSize(opts PDFOptions) int {
@@ -273,6 +378,89 @@ func drawPDFText(pdf *gopdf.GoPdf, fonts pdfFontSet, text string, size int) erro
 		}
 	}
 	return nil
+}
+
+func drawPDFTextFitted(pdf *gopdf.GoPdf, fonts pdfFontSet, text string, size int, x, y, width float64) error {
+	for ; size > 0; size-- {
+		measured := 0.0
+		for _, segment := range splitByPDFFont(text) {
+			family := fonts.latinFamily
+			if segment.cjk && fonts.hasCJK {
+				family = fonts.cjkFamily
+			}
+			if err := pdf.SetFont(family, "", size); err != nil {
+				return err
+			}
+			segmentWidth, err := pdf.MeasureTextWidth(segment.text)
+			if err != nil {
+				return err
+			}
+			measured += segmentWidth
+		}
+		if measured <= width {
+			pdf.SetX(x)
+			pdf.SetY(y)
+			return drawPDFText(pdf, fonts, text, size)
+		}
+	}
+	return fmt.Errorf("PDF: decoration text is too long for the page")
+}
+
+func wrapPDFText(pdf *gopdf.GoPdf, fonts pdfFontSet, text string, size int, width float64) ([]string, error) {
+	lines := []string{}
+	current := ""
+	currentWidth := 0.0
+	for _, segment := range splitByPDFFont(text) {
+		family := fonts.latinFamily
+		if segment.cjk && fonts.hasCJK {
+			family = fonts.cjkFamily
+		}
+		if err := pdf.SetFont(family, "", size); err != nil {
+			return nil, err
+		}
+		segmentWidth, err := pdf.MeasureTextWidth(segment.text)
+		if err != nil {
+			return nil, err
+		}
+		if currentWidth+segmentWidth <= width {
+			current += segment.text
+			currentWidth += segmentWidth
+			continue
+		}
+		if current != "" {
+			lines = append(lines, current)
+			current = ""
+			currentWidth = 0
+		}
+		if segmentWidth <= width {
+			current = segment.text
+			currentWidth = segmentWidth
+			continue
+		}
+		for _, r := range segment.text {
+			runeWidth, err := pdf.MeasureTextWidth(string(r))
+			if err != nil {
+				return nil, err
+			}
+			if runeWidth > width {
+				return nil, fmt.Errorf("font size %d is too large for the PDF body width", size)
+			}
+		}
+		wrapped, err := pdf.SplitTextWithWordWrap(segment.text, width)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, wrapped[:len(wrapped)-1]...)
+		current = wrapped[len(wrapped)-1]
+		currentWidth, err = pdf.MeasureTextWidth(current)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines, nil
 }
 
 type pdfTextSegment struct {
