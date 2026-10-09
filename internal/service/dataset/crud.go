@@ -637,7 +637,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 }
 
 func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	var owners []*entity.DatasetOwnerFilter
+	owners := make([]*entity.DatasetOwnerFilter, 0)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		scope, err := permission.NewDatabaseChecker(tx).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
 			Kind: permission.ResourceKindDataset, Operation: permission.OperationRead,

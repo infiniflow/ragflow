@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 
@@ -115,6 +116,37 @@ func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {
 	owners, ok := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
 	if !ok || len(owners) != 2 {
 		t.Fatalf("ListDatasetFilters owners = %#v, want own and shared tenant groups", filters["filter"])
+	}
+}
+
+func TestDatasetServiceListDatasetFiltersReturnsEmptyOwnerList(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	filters, code, err := testDatasetListService(t).ListDatasetFilters(t.Context(), "user-without-datasets")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListDatasetFilters = (%#v, %v, %v), want success", filters, code, err)
+	}
+
+	owners, ok := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
+	if !ok || owners == nil || len(owners) != 0 {
+		t.Fatalf("ListDatasetFilters owners = %#v, want a non-nil empty slice", filters["filter"])
+	}
+
+	encoded, err := json.Marshal(filters)
+	if err != nil {
+		t.Fatalf("marshal filters: %v", err)
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("unmarshal filters: %v", err)
+	}
+	ownerJSON := response["filter"].(map[string]interface{})["owner"]
+	if ownerJSON == nil {
+		t.Fatal(`serialized owner is null; want []`)
+	}
+	if ownerList, ok := ownerJSON.([]interface{}); !ok || len(ownerList) != 0 {
+		t.Fatalf("serialized owner = %#v, want []", ownerJSON)
 	}
 }
 

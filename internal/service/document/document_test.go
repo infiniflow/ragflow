@@ -2237,6 +2237,26 @@ func TestDownloadDocument_WrongDataset(t *testing.T) {
 	}
 }
 
+func TestDownloadDocument_DatabaseErrorIsNotNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.Migrator().DropTable(&entity.Document{}); err != nil {
+		t.Fatalf("drop document table: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, err := svc.DownloadDocument(t.Context(), "kb-1", "doc-1")
+	if err == nil {
+		t.Fatal("expected database error")
+	}
+	if errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("database error was masked as document not found: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to get document doc-1") {
+		t.Fatalf("unexpected database error: %v", err)
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

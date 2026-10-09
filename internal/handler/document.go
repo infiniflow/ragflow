@@ -1206,7 +1206,9 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
 			return
 		}
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.Error("DownloadDocument failed", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
 		return
 	}
 

@@ -123,6 +123,7 @@ func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
 type fakeDocumentService struct {
 	deleted                int
 	err                    error
+	downloadErr            error
 	doc                    *document.DocumentResponse
 	docErr                 error
 	updateCalled           bool
@@ -232,6 +233,9 @@ func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, do
 	}, nil
 }
 func (f *fakeDocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error) {
+	if f.downloadErr != nil {
+		return nil, f.downloadErr
+	}
 	if docID == "not-found" {
 		return nil, document.ErrDocumentNotFound
 	}
@@ -2210,6 +2214,31 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	}
 	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	h.documentService = &fakeDocumentService{downloadErr: errors.New("database connection failed")}
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response envelope, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	if resp["message"] != "Failed to download document" {
+		t.Fatalf("unexpected client-visible error: %v", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "database connection failed") {
+		t.Fatal("database error detail leaked to the client")
 	}
 }
 
