@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/jsonschema-go/jsonschema"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/chat"
@@ -85,7 +86,8 @@ type AgentParam struct {
 	MaxTokens                *int
 	TopP                     *float64
 	Temperature              *float64
-	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	Tools                    []string // Agent-visible tool names resolved into Eino BaseTool instances
+	OutputStructure          map[string]any
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
 	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
@@ -142,15 +144,17 @@ type AgentMetaParam struct {
 	Required    bool
 }
 
-// AgentOutput mirrors the outputs map (per plan §2.11.3 row 8):
+// AgentOutput mirrors the outputs map:
 //
 //	"content"     string
+//	"structured"  map[string]any (when configured)
 //	"tool_calls"  []map[string]any  (one entry per tool call observed)
 //	"artifacts"   []map[string]any  (collected from tool responses — empty in P0)
 type AgentOutput struct {
-	Content   string
-	ToolCalls []map[string]any
-	Artifacts []map[string]any
+	Content    string
+	Structured map[string]any
+	ToolCalls  []map[string]any
+	Artifacts  []map[string]any
 }
 
 // agentRunner is the package-level ReAct runner. The production value
@@ -900,6 +904,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	if p.OutputStructure != nil {
+		p.SystemPrompt = appendAgentStructuredOutputPrompt(p.SystemPrompt, p.OutputStructure)
+	}
 	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -916,6 +923,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 		if inputs["_ERROR"] == "No dataset is selected." {
+			if p.OutputStructure != nil {
+				return nil, fmt.Errorf("component: Agent structured output: cannot generate output: %s", inputs["_ERROR"])
+			}
 			return map[string]any{"content": "No dataset is selected."}, nil
 		}
 		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); rerr != nil {
@@ -1035,12 +1045,22 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	artifacts := collectArtifactsFromToolCalls(ctx, msg)
+	var structured map[string]any
+	if p.OutputStructure != nil {
+		structured, err = parseAgentStructuredOutput(msg.Content, p.OutputStructure)
+		if err != nil {
+			return nil, fmt.Errorf("component: Agent structured output: %w", err)
+		}
+	}
 	artifactMD := formatArtifactMarkdown(artifacts, content)
 	out := map[string]any{
 		"content":    content + artifactMD,
 		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
+	}
+	if structured != nil {
+		out["structured"] = structured
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
@@ -1112,6 +1132,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"structured":       "Final assistant response parsed according to outputs.structured",
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
@@ -1559,6 +1580,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := inputs["mcp"]; ok {
 		p.MCP = v
 	}
+	if outputs, ok := nestedMapFrom(inputs, "outputs"); ok {
+		if outputStructure, ok := nestedMapFrom(outputs, "structured"); ok {
+			p.OutputStructure = outputStructure
+		}
+	}
 	if v, ok := intFrom(inputs, "tool_timeout"); ok {
 		p.ToolTimeout = time.Duration(v) * time.Second
 	}
@@ -1580,6 +1606,41 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		p.Cite = v
 	}
 	return p
+}
+
+func appendAgentStructuredOutputPrompt(system string, outputSchema map[string]any) string {
+	schemaJSON, err := json.Marshal(outputSchema)
+	if err != nil {
+		return system
+	}
+	instruction := "Return the final answer as one JSON object matching this JSON schema. Do not include markdown fences or prose outside the object:\n" + string(schemaJSON)
+	if strings.TrimSpace(system) == "" {
+		return instruction
+	}
+	return system + "\n\n" + instruction
+}
+
+func parseAgentStructuredOutput(content string, outputSchema map[string]any) (map[string]any, error) {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(cleanFormattedAnswer(content)), &parsed); err != nil {
+		return nil, fmt.Errorf("response is not a JSON object: %w", err)
+	}
+	schemaJSON, err := json.Marshal(outputSchema)
+	if err != nil {
+		return nil, fmt.Errorf("encode schema: %w", err)
+	}
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+		return nil, fmt.Errorf("decode schema: %w", err)
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve schema: %w", err)
+	}
+	if err := resolved.Validate(parsed); err != nil {
+		return nil, fmt.Errorf("response does not match schema: %w", err)
+	}
+	return parsed, nil
 }
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
