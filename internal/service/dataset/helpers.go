@@ -227,12 +227,12 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 }
 
 func validateTableColumnConfig(parserConfig map[string]any) error {
+	if retired := pipelinepkg.CheckRetiredTableColumnKeys(parserConfig); len(retired) > 0 {
+		return fmt.Errorf("parser_config key %q must be configured on a TableChunker node", retired[0])
+	}
 	for key, value := range parserConfig {
-		switch key {
-		case "table_column_mode", "table_column_roles", "table_column_names":
-			return fmt.Errorf("parser_config key %q must be configured on a TableChunker node", key)
-		}
-		if !schema.IsTableChunkerNodeKey(key) {
+
+		if !pipelinepkg.IsTableChunkerNodeKey(key) {
 			continue
 		}
 		params, ok := value.(map[string]interface{})

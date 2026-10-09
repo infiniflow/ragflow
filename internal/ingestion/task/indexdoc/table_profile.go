@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"sort"
 
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
@@ -41,9 +40,9 @@ import (
 func ProjectTableChunks(chunks []map[string]any, engineName string) (*entity.TableProfile, map[string]any) {
 	profile := &entity.TableProfile{
 		Engine:  engineName,
-		Columns: []common.TableColumn{},
+		Columns: []entity.TableColumn{},
 	}
-	columns := map[string]common.TableColumn{}
+	columns := map[string]entity.TableColumn{}
 	values := map[string]map[string]struct{}{}
 
 	for _, ck := range chunks {
@@ -66,7 +65,7 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*entity.Tab
 				continue
 			}
 			columns[col.DataKey] = col
-			if src.Mode != common.TableModeManual || !aggregates(col.Key, src.Roles) {
+			if src.Mode != entity.TableModeManual || !aggregates(col.Key, src.Roles) {
 				continue
 			}
 			if value == "" {
@@ -107,7 +106,7 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*entity.Tab
 // content into document metadata.
 func aggregates(key string, roles map[string]string) bool {
 	switch roles[key] {
-	case common.TableRoleMetadata, common.TableRoleBoth:
+	case entity.TableRoleMetadata, entity.TableRoleBoth:
 		return true
 	}
 	return false

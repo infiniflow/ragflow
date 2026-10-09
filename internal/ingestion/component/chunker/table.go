@@ -38,8 +38,9 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 )
 
 const ComponentNameTableChunker = "TableChunker"
@@ -67,7 +68,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 	}
 	if v, ok := conf["column_mode"]; ok {
 		handled["column_mode"] = struct{}{}
-		mode, err := common.ValidateTableMode(v)
+		mode, err := entity.ValidateTableMode(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
 		} else {
@@ -76,7 +77,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 	}
 	if v, ok := conf["column_roles"]; ok {
 		handled["column_roles"] = struct{}{}
-		roles, err := common.ValidateTableRoles(v)
+		roles, err := entity.ValidateTableRoles(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
 		} else {
@@ -89,7 +90,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 func (tableChunkerParam) Defaults() tableChunkerParam {
 	return tableChunkerParam{
 		TableChunkerParam: schema.TableChunkerParam{
-			ColumnMode:  common.TableModeAuto,
+			ColumnMode:  entity.TableModeAuto,
 			ColumnRoles: map[string]string{},
 		},
 	}
@@ -99,12 +100,12 @@ func (p tableChunkerParam) Validate() error {
 	if p.updateErr != nil {
 		return p.updateErr
 	}
-	if p.ColumnMode != common.TableModeAuto && p.ColumnMode != common.TableModeManual {
+	if p.ColumnMode != entity.TableModeAuto && p.ColumnMode != entity.TableModeManual {
 		return fmt.Errorf("column_mode %q is invalid: only %q and %q are allowed",
-			p.ColumnMode, common.TableModeAuto, common.TableModeManual)
+			p.ColumnMode, entity.TableModeAuto, entity.TableModeManual)
 	}
 	for key, role := range p.ColumnRoles {
-		if !common.IsValidTableRole(role) {
+		if !entity.IsValidTableRole(role) {
 			return fmt.Errorf("column_roles[%q] has an invalid role %q", key, role)
 		}
 	}
@@ -146,17 +147,17 @@ type tableProfile struct {
 
 func (p tableProfile) roleFor(key string) string {
 	if !p.manual {
-		return common.TableRoleBoth
+		return entity.TableRoleBoth
 	}
 	if role, ok := p.roles[key]; ok {
 		return role
 	}
-	return common.TableRoleBoth
+	return entity.TableRoleBoth
 }
 
 // effectiveRoles resolves each column's role for building a row. An unset
 // manual column behaves as both.
-func (p tableProfile) effectiveRoles(cols []common.TableColumn) map[string]string {
+func (p tableProfile) effectiveRoles(cols []entity.TableColumn) map[string]string {
 	roles := make(map[string]string, len(cols))
 	for _, col := range cols {
 		roles[col.Key] = p.roleFor(col.Key)
@@ -190,7 +191,7 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		nodeID: runtime.ComponentNodeID(ctx),
 		mode:   c.param.ColumnMode,
 		roles:  c.param.ColumnRoles,
-		manual: c.param.ColumnMode == common.TableModeManual,
+		manual: c.param.ColumnMode == entity.TableModeManual,
 	}
 
 	switch upstream.OutputFormat {
@@ -276,10 +277,10 @@ func tableItems(items, chunks []schema.ChunkDoc, profile tableProfile, fileType 
 // filters down to nothing emits no chunk rather than falling back to the whole
 // table markup, which would leak every excluded column back into the index.
 func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
-	if !isTableHTML(item.Text) {
+	if !parser.LooksLikeTableHTML(item.Text) {
 		return []schema.ChunkDoc{item}, nil
 	}
-	rows, headerCount := tableRowsWithHeader(item.Text)
+	rows, headerCount := parser.HTMLTableRowsWithHeader(item.Text)
 	spreadsheet := item.SheetIndex != nil && headerCount >= 1
 	if profile.manual {
 		if !supportsColumnMode(fileType) {
@@ -322,7 +323,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 			profile.mode, describeTableItem(item), len(rows), len(matrix))
 	}
 
-	cols := common.DeriveTableColumns(names)
+	cols := entity.DeriveTableColumns(names)
 	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
@@ -393,7 +394,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 // the columns readable as structured values, with an empty cell written as an
 // empty string so the row's field set stays the sheet's field set. A row whose
 // cells are all empty yields nothing.
-func projectTableRow(cols []common.TableColumn, roles map[string]string, cells []string) (string, map[string]any) {
+func projectTableRow(cols []entity.TableColumn, roles map[string]string, cells []string) (string, map[string]any) {
 	lines := make([]string, 0, len(cells))
 	data := make(map[string]any, len(cols))
 	hasValue := false
@@ -406,10 +407,10 @@ func projectTableRow(cols []common.TableColumn, roles map[string]string, cells [
 			hasValue = true
 		}
 		role := roles[col.Key]
-		if role != common.TableRoleMetadata && value != "" {
+		if role != entity.TableRoleMetadata && value != "" {
 			lines = append(lines, "- "+col.DisplayName+": "+value)
 		}
-		if role != common.TableRoleIndexing {
+		if role != entity.TableRoleIndexing {
 			data[col.DataKey] = value
 		}
 	}

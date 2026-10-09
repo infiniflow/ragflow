@@ -42,6 +42,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	parserpkg "ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
 )
 
@@ -413,7 +414,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// no <table> markup, so such an item used to enter the table
 		// extractor, find no rows, and silently lose every pair; conversely
 		// a text-labelled block holding real table markup is read as a
-		// table. isTableHTML is only the cheap candidate filter: the
+		// table. parserpkg.LooksLikeTableHTML is only the cheap candidate filter: the
 		// walker's result decides, so nothing it can read is denied, and a
 		// block that merely opens with "<table" text (no row) stays on the
 		// prose path instead of silently pairing nothing. (Python's qa.py
@@ -423,8 +424,8 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// fall through to the text extractor, so documents from before this
 		// wire must be re-parsed rather than re-chunked.
 		var rows [][]string
-		if isTableHTML(txt) {
-			rows = tableRows(txt)
+		if parserpkg.LooksLikeTableHTML(txt) {
+			rows = parserpkg.HTMLTableRows(txt)
 		}
 		if len(rows) > 0 {
 			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
@@ -454,7 +455,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
+	return qaPairsFromRows(parserpkg.HTMLTableRows(htmlStr), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

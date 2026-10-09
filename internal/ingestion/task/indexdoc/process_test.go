@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 )
 
 // =============================================================================
@@ -564,7 +564,7 @@ func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T)
 // columns, so the boundary that drops pipeline bookkeeping must keep them while
 // dropping the row source map they were derived from.
 func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
-	ck := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"},
+	ck := tableRowChunk(t, entity.TableModeManual, map[string]string{"金额": "metadata"},
 		[]string{"金额"}, map[string]string{"金额": "100"})
 
 	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "sales.xlsx", time.Unix(0, 0)); err != nil {
@@ -585,10 +585,10 @@ func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
 }
 
 func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
-	first := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
-	edited := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	first := tableRowChunk(t, entity.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	edited := tableRowChunk(t, entity.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
 	edited["text"] = "Sheet 1, row 2"
-	next := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	next := tableRowChunk(t, entity.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
 	next["table_row_source"].(map[string]any)["source_row"] = float64(3)
 	for _, row := range []map[string]any{first, edited, next} {
 		if _, err := ProcessChunksForPipeline([]map[string]any{row}, "doc-1", "table.csv", time.Now()); err != nil {
@@ -604,8 +604,8 @@ func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
 }
 
 func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
-	first := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
-	other := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	first := tableRowChunk(t, entity.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	other := tableRowChunk(t, entity.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
 	other["table_row_source"].(map[string]any)["node_id"] = "TableChunker:Other"
 	if _, err := ProcessChunksForPipeline([]map[string]any{first, other}, "doc-1", "table.csv", time.Now()); err == nil {
 		t.Fatal("conflicting roles for the same source row were indexed")

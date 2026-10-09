@@ -14,16 +14,16 @@
 //  limitations under the License.
 //
 
-package chunker
+package parser
 
 import "testing"
 
-// TestIsTableStrictHTML pins the predicate's prefix semantics: it reports
+// TestIsTableOpeningTag pins the predicate's prefix semantics: it reports
 // whether the block opens with the "<table" text, exactly as the markdown
 // parser has always classified its HTML blocks. It is deliberately loose (a
 // "<tableau>" token passes), which is why routing never treats it as the final
 // word — the row walker decides.
-func TestIsTableStrictHTML(t *testing.T) {
+func TestIsTableOpeningTag(t *testing.T) {
 	cases := []struct {
 		text string
 		want bool
@@ -33,20 +33,22 @@ func TestIsTableStrictHTML(t *testing.T) {
 		{"<table-x>", true}, // historical prefix semantics: "<table" prefix only
 		{"<tableau>", true},
 		{"<div><table>", false},
+		{"<tr><td>q</td><td>a</td></tr>", false},
+		{"<tbody><tr><td>q</td></tr></tbody>", false},
 		{"plain text", false},
 		{"", false},
 	}
 	for _, tc := range cases {
-		if got := isTableStrictHTML(tc.text); got != tc.want {
-			t.Errorf("isTableStrictHTML(%q) = %v, want %v", tc.text, got, tc.want)
+		if got := IsTableOpeningTag(tc.text); got != tc.want {
+			t.Errorf("IsTableOpeningTag(%q) = %v, want %v", tc.text, got, tc.want)
 		}
 	}
 }
 
-// TestIsTableHTMLCoversWhatTheWalkerReads guards the routing invariant: the
+// TestLooksLikeTableHTMLCoversWhatTheWalkerReads guards the routing invariant: the
 // candidate filter must never deny a payload the row walker can read, or a
 // readable table would silently fall through to the prose extractor.
-func TestIsTableHTMLCoversWhatTheWalkerReads(t *testing.T) {
+func TestLooksLikeTableHTMLCoversWhatTheWalkerReads(t *testing.T) {
 	texts := []string{
 		"<table><tr><th>q</th><th>a</th></tr></table>",
 		"<table><caption>c</caption>\n<tr><td>q</td><td>a</td></tr>\n</table>\n",
@@ -60,11 +62,11 @@ func TestIsTableHTMLCoversWhatTheWalkerReads(t *testing.T) {
 		"",
 	}
 	for _, text := range texts {
-		if len(tableRows(text)) == 0 {
+		if len(HTMLTableRows(text)) == 0 {
 			continue
 		}
-		if !isTableHTML(text) {
-			t.Errorf("tableRows can read %q but isTableHTML denies it", text)
+		if !LooksLikeTableHTML(text) {
+			t.Errorf("HTMLTableRows can read %q but LooksLikeTableHTML denies it", text)
 		}
 	}
 }

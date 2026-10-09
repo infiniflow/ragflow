@@ -13,7 +13,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -36,7 +36,7 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 
 	targets := make([]string, 0, 2)
 	for key := range config {
-		if schema.IsTableChunkerNodeKey(key) {
+		if pipeline.IsTableChunkerNodeKey(key) {
 			targets = append(targets, key)
 		}
 	}
@@ -48,14 +48,14 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 	}
 
 	for cpnID, raw := range override {
-		if !schema.IsTableChunkerNodeKey(cpnID) {
+		if !pipeline.IsTableChunkerNodeKey(cpnID) {
 			return nil, fmt.Errorf("parser_config[%q] must be keyed by a TableChunker node", cpnID)
 		}
 		params, ok := raw.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("parser_config[%q] must be an object of component parameters", cpnID)
 		}
-		if _, _, err := schema.ValidateTableColumnOverride(params); err != nil {
+		if _, _, err := pipeline.ValidateTableColumnOverride(params); err != nil {
 			return nil, fmt.Errorf("parser_config[%q]: %v", cpnID, err)
 		}
 
@@ -73,7 +73,7 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 		}
 
 		base, _ := out[target].(map[string]interface{})
-		merged, err := schema.MergeTableChunkerParams(base, params)
+		merged, err := pipeline.MergeTableChunkerParams(base, params)
 		if err != nil {
 			return nil, fmt.Errorf("parser_config[%q]: %v", target, err)
 		}

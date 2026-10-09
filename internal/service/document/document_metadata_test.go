@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
@@ -216,7 +215,7 @@ func publishedProfile(t *testing.T, owned ...string) string {
 	t.Helper()
 	profile := &entity.TableProfile{
 		Engine:        "infinity",
-		Columns:       common.DeriveTableColumns([]string{"金额"}),
+		Columns:       entity.DeriveTableColumns([]string{"金额"}),
 		OwnedMetadata: owned,
 	}
 	raw, err := profile.Encode()

@@ -1,4 +1,4 @@
-package common
+package entity
 
 import (
 	"crypto/sha256"
@@ -36,7 +36,7 @@ const emptyKeyPrefix = "#column:"
 // NormalizeTableHeader applies Unicode NFC, strips leading/trailing BOM and
 // whitespace, then escapes backslash and '#' so the result can be embedded in
 // a column key unambiguously. Duplicate disambiguation and empty-header
-// position names are added by DeriveColumns.
+// position names are added by DeriveTableColumns.
 func NormalizeTableHeader(raw string) string {
 	return escapeKey(normalizeCore(raw))
 }
@@ -53,7 +53,7 @@ func escapeKey(s string) string {
 	return strings.ReplaceAll(s, "#", `\#`)
 }
 
-// DeriveColumns derives the key, display name and data key for one sheet's
+// DeriveTableColumns derives the key, display name and data key for one sheet's
 // full header row. Repeated normalized headers get "#2", "#3", ... from the
 // second occurrence onward; empty headers get a stable position-based key.
 // Callers must pass the complete header row: renumbering depends on it, not

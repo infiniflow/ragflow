@@ -39,7 +39,7 @@ import (
 const tableSQLBudgetBytes = 64 << 10
 
 // jsonPathRe matches a JSONPath that addresses one indexed table column. The
-// key is a hash of a header (common.TableDataKey), so a path either names a column a
+// key is a hash of a header (entity.TableDataKey), so a path either names a column a
 // document published or was invented.
 var jsonPathRe = regexp.MustCompile(`^\$\.(c_[0-9a-f]{64})$`)
 

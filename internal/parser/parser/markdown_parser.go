@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
-	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
+	markdownlib "github.com/gomarkdown/markdown"
 	mdparser "github.com/gomarkdown/markdown/parser"
 )
 
@@ -437,7 +437,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			// order — no duplicate doc_type_kwd:"text" copy — so the table is
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
-			if isTableHTML(txt) {
+			if IsTableOpeningTag(txt) {
 				*out = append(*out, map[string]any{
 					"text":         txt,
 					"doc_type_kwd": "table",
@@ -513,13 +513,6 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		*out = append(*out, item)
 	}
 	return unresolvedImages
-}
-
-// isTableHTML reports whether block text is an outer <table> element (the
-// inlined GFM/HTML table). Only such blocks are emitted as structured table
-// items; other raw HTML (e.g. <div>, <style>) is plain text.
-func isTableHTML(s string) bool {
-	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
 }
 
 // findBlockImage returns the destination URL of the first image node found

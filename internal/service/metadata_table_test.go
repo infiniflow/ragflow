@@ -8,7 +8,6 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -77,7 +76,7 @@ func seedDocument(t *testing.T, db *gorm.DB, id string, enabled bool) {
 
 func profileRecord(t *testing.T, docID, engineName string, headers ...string) map[string]interface{} {
 	t.Helper()
-	cols := common.DeriveTableColumns(headers)
+	cols := entity.DeriveTableColumns(headers)
 	profile := &entity.TableProfile{Engine: engineName, Columns: cols}
 	raw, err := profile.Encode()
 	if err != nil {
@@ -114,8 +113,8 @@ func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
 	}
 
 	want := map[string]string{
-		common.TableDataKey("金额"): "金额",
-		common.TableDataKey("编号"): "编号",
+		entity.TableDataKey("金额"): "金额",
+		entity.TableDataKey("编号"): "编号",
 	}
 	if len(fields) != len(want) {
 		t.Fatalf("fields = %v, want %v", fields, want)
@@ -151,7 +150,7 @@ func TestTableFieldMapSkipsDocumentsThatCannotBeQueried(t *testing.T) {
 		t.Errorf("fields = %v, docs = %v, want only doc-1", fields, docIDs)
 	}
 	for dataKey := range fields {
-		if dataKey == common.TableDataKey("旧列") {
+		if dataKey == entity.TableDataKey("旧列") {
 			t.Error("a record from another engine must not contribute fields")
 		}
 	}
@@ -186,7 +185,7 @@ func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
 	two["meta_fields"].(map[string]interface{})[entity.TableProfileMetadataField] = func() string {
 		profile := &entity.TableProfile{
 			Engine:  "infinity",
-			Columns: []common.TableColumn{{Index: 1, Key: "金额", DisplayName: "金额(抄错的)", DataKey: common.TableDataKey("金额")}},
+			Columns: []entity.TableColumn{{Index: 1, Key: "金额", DisplayName: "金额(抄错的)", DataKey: entity.TableDataKey("金额")}},
 		}
 		raw, err := profile.Encode()
 		if err != nil {

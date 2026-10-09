@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -85,14 +84,14 @@ func columnOverride(mode string, roles map[string]string) map[string]interface{}
 func TestApplyColumnOverrideMapsToTheSoleNode(t *testing.T) {
 	config := entity.JSONMap{
 		"TableChunker:TableOnlyNode": map[string]interface{}{
-			"column_mode":     common.TableModeAuto,
-			"column_roles":    map[string]interface{}{"旧列": common.TableRoleMetadata},
+			"column_mode":     entity.TableModeAuto,
+			"column_roles":    map[string]interface{}{"旧列": entity.TableRoleMetadata},
 			"enable_children": true,
 		},
 		"Tokenizer:SomeNode": map[string]interface{}{"chunk_token_size": 256},
 	}
 
-	out, err := applyColumnOverride(config, columnOverride(common.TableModeManual, map[string]string{"金额": "metadata"}))
+	out, err := applyColumnOverride(config, columnOverride(entity.TableModeManual, map[string]string{"金额": "metadata"}))
 	if err != nil {
 		t.Fatalf("override refused: %v", err)
 	}
@@ -100,7 +99,7 @@ func TestApplyColumnOverrideMapsToTheSoleNode(t *testing.T) {
 	if !ok {
 		t.Fatalf("node lost: %v", out)
 	}
-	if node["column_mode"] != common.TableModeManual {
+	if node["column_mode"] != entity.TableModeManual {
 		t.Errorf("column_mode = %v", node["column_mode"])
 	}
 	// A submitted role map replaces the dataset's, so a stale role cannot
@@ -126,11 +125,11 @@ func TestApplyColumnOverrideMapsToTheSoleNode(t *testing.T) {
 // configuration.
 func TestApplyColumnOverrideRequiresAnExactNodeWhenSeveralExist(t *testing.T) {
 	config := entity.JSONMap{
-		"TableChunker:Alpha": map[string]interface{}{"column_mode": common.TableModeAuto},
-		"TableChunker:Beta":  map[string]interface{}{"column_mode": common.TableModeAuto},
+		"TableChunker:Alpha": map[string]interface{}{"column_mode": entity.TableModeAuto},
+		"TableChunker:Beta":  map[string]interface{}{"column_mode": entity.TableModeAuto},
 	}
 
-	_, err := applyColumnOverride(config, columnOverride(common.TableModeManual, nil))
+	_, err := applyColumnOverride(config, columnOverride(entity.TableModeManual, nil))
 	if err == nil {
 		t.Fatal("an ambiguous override was accepted")
 	}
@@ -140,22 +139,22 @@ func TestApplyColumnOverrideRequiresAnExactNodeWhenSeveralExist(t *testing.T) {
 
 	// Naming one of them is unambiguous.
 	out, err := applyColumnOverride(config, map[string]interface{}{
-		"TableChunker:Beta": map[string]interface{}{"column_mode": common.TableModeManual},
+		"TableChunker:Beta": map[string]interface{}{"column_mode": entity.TableModeManual},
 	})
 	if err != nil {
 		t.Fatalf("explicit node refused: %v", err)
 	}
-	if out["TableChunker:Beta"].(map[string]interface{})["column_mode"] != common.TableModeManual {
+	if out["TableChunker:Beta"].(map[string]interface{})["column_mode"] != entity.TableModeManual {
 		t.Errorf("named node not updated: %v", out)
 	}
-	if out["TableChunker:Alpha"].(map[string]interface{})["column_mode"] != common.TableModeAuto {
+	if out["TableChunker:Alpha"].(map[string]interface{})["column_mode"] != entity.TableModeAuto {
 		t.Errorf("the other node changed: %v", out)
 	}
 }
 
 func TestApplyColumnOverrideWithoutAnyNode(t *testing.T) {
 	config := entity.JSONMap{"Tokenizer:SomeNode": map[string]interface{}{"chunk_token_size": 256}}
-	_, err := applyColumnOverride(config, columnOverride(common.TableModeManual, nil))
+	_, err := applyColumnOverride(config, columnOverride(entity.TableModeManual, nil))
 	if err == nil || !strings.Contains(err.Error(), "no TableChunker node") {
 		t.Errorf("error = %v, want the missing-node case named", err)
 	}
@@ -163,7 +162,7 @@ func TestApplyColumnOverrideWithoutAnyNode(t *testing.T) {
 
 func TestApplyColumnOverrideRefusesBadValues(t *testing.T) {
 	config := entity.JSONMap{
-		"TableChunker:Only": map[string]interface{}{"column_mode": common.TableModeAuto},
+		"TableChunker:Only": map[string]interface{}{"column_mode": entity.TableModeAuto},
 	}
 	cases := []struct {
 		name     string
@@ -185,7 +184,7 @@ func TestApplyColumnOverrideRefusesBadValues(t *testing.T) {
 }
 
 func TestApplyColumnOverrideWithoutOverrideIsIdentity(t *testing.T) {
-	config := entity.JSONMap{"TableChunker:Only": map[string]interface{}{"column_mode": common.TableModeManual}}
+	config := entity.JSONMap{"TableChunker:Only": map[string]interface{}{"column_mode": entity.TableModeManual}}
 	out, err := applyColumnOverride(config, nil)
 	if err != nil {
 		t.Fatalf("empty override: %v", err)

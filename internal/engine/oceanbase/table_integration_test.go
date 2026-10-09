@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/server/config"
 )
 
@@ -43,7 +43,7 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 	if err := e.CreateChunkStore(ctx, table, kb, 2, "table"); err != nil {
 		t.Fatal(err)
 	}
-	col := common.DeriveTableColumns([]string{`金额 "折扣" / %`})[0]
+	col := entity.DeriveTableColumns([]string{`金额 "折扣" / %`})[0]
 	chunks := []map[string]interface{}{
 		{"id": "row", "doc_id": "published", "content_with_weight": "row", "available_int": 1, "table_row_int": 1, "chunk_data": map[string]any{col.DataKey: "100% 中文"}},
 		{"id": "disabled", "doc_id": "published", "content_with_weight": "disabled", "available_int": 0, "table_row_int": 1, "chunk_data": map[string]any{col.DataKey: "disabled"}},

@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 )
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
@@ -153,7 +153,7 @@ type TableRowSource struct {
 	// Mode is the column mode actually applied to this row.
 	Mode string `json:"mode"`
 	// Columns is the sheet's column identity in header order.
-	Columns []common.TableColumn `json:"columns"`
+	Columns []entity.TableColumn `json:"columns"`
 	// Roles holds only the roles the configuration states — empty for auto,
 	// and never the resolved default. A column missing from it under manual was
 	// indexed as "both", which is the difference between a column whose values

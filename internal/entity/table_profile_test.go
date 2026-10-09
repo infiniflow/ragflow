@@ -2,15 +2,13 @@ package entity
 
 import (
 	"testing"
-
-	"ragflow/internal/common"
 )
 
 func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
-	cols := common.DeriveTableColumns([]string{"金额", "编号"})
+	cols := DeriveTableColumns([]string{"金额", "编号"})
 	profile := &TableProfile{
 		Engine:        "infinity",
-		Columns:       []common.TableColumn{cols[1], cols[0]},
+		Columns:       []TableColumn{cols[1], cols[0]},
 		OwnedMetadata: []string{"编号", "金额"},
 	}
 	raw, err := profile.Encode()
@@ -44,7 +42,7 @@ func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
 }
 
 func TestProfileFieldMapUsesReadableNames(t *testing.T) {
-	cols := common.DeriveTableColumns([]string{"金额", "金额"})
+	cols := DeriveTableColumns([]string{"金额", "金额"})
 	profile := &TableProfile{Engine: "infinity", Columns: cols}
 	fields := profile.FieldMap()
 	if len(fields) != 2 {

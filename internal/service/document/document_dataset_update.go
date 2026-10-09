@@ -14,7 +14,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
@@ -185,7 +184,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		if schema.IsTableColumnOnlyConfig(req.ParserConfig) {
+		if pipelinepkg.IsTableColumnOnlyConfig(req.ParserConfig) {
 			// A column-only patch edits the document's own configuration. The
 			// general path rebuilds parser_config from the current DSL, which
 			// would drop every parameter this request never mentioned: changing

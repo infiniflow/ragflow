@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-
-	"ragflow/internal/common"
 )
 
 // TableProfileMetadataField is the reserved document-metadata key holding the column
@@ -32,7 +30,7 @@ type TableProfile struct {
 	Engine string `json:"engine"`
 	// Columns is the deduplicated column identity of every indexed row, in
 	// key order.
-	Columns []common.TableColumn `json:"columns"`
+	Columns []TableColumn `json:"columns"`
 	// OwnedMetadata lists the document-metadata keys the table system wrote
 	// and may replace or delete. A key a user or the LLM took over is not in
 	// this list.
@@ -62,14 +60,14 @@ func (p *TableProfile) OwnedKeys() []string {
 	return p.OwnedMetadata
 }
 
-// Encode renders the profile as the value stored under ProfileMetadataField.
+// Encode renders the profile as the value stored under TableProfileMetadataField.
 // It is a JSON string rather than a nested object so that every engine treats
 // it as one opaque metadata value: a nested object would be mapped and indexed
 // as user fields by the document-metadata stores.
 func (p *TableProfile) Encode() (string, error) {
 	normalized := TableProfile{
 		Engine:        p.Engine,
-		Columns:       append([]common.TableColumn(nil), p.Columns...),
+		Columns:       append([]TableColumn(nil), p.Columns...),
 		OwnedMetadata: append([]string(nil), p.OwnedMetadata...),
 	}
 	sort.Slice(normalized.Columns, func(i, j int) bool {
@@ -83,7 +81,7 @@ func (p *TableProfile) Encode() (string, error) {
 	return string(raw), nil
 }
 
-// DecodeTableProfile reads the value stored under ProfileMetadataField. ok=false
+// DecodeTableProfile reads the value stored under TableProfileMetadataField. ok=false
 // means the document has no usable record: absent, not a string, or not valid
 // profile JSON. A caller treats all three the same way — the document does not
 // contribute queryable fields — but only a malformed record is worth logging.

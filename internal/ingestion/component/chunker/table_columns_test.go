@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -108,7 +108,7 @@ func TestTableChunkerAutoWritesChunkDataForEveryColumn(t *testing.T) {
 	data := chunkDataRow(t, ck)
 	want := map[string]any{"ID": "A-1", "Status": "paid"}
 	for name, value := range want {
-		if got := data[common.TableDataKey(name)]; got != value {
+		if got := data[entity.TableDataKey(name)]; got != value {
 			t.Errorf("chunk_data[%s] = %v, want %v", name, got, value)
 		}
 	}
@@ -140,10 +140,10 @@ func TestTableChunkerManualRoleSplit(t *testing.T) {
 		t.Errorf("indexing column must be the only body line, got %q", ck["text"])
 	}
 	data := chunkDataRow(t, ck)
-	if data[common.TableDataKey("Status")] != "paid" {
+	if data[entity.TableDataKey("Status")] != "paid" {
 		t.Errorf("metadata column missing from chunk_data: %v", data)
 	}
-	if _, ok := data[common.TableDataKey("ID")]; ok {
+	if _, ok := data[entity.TableDataKey("ID")]; ok {
 		t.Errorf("indexing column must not enter chunk_data: %v", data)
 	}
 	src := rowSourceMap(t, ck)
@@ -172,7 +172,7 @@ func TestTableChunkerManualMetadataOnlyRowKeepsLocatorText(t *testing.T) {
 	if strings.Contains(ck["text"].(string), "100") {
 		t.Errorf("locator text leaked the excluded cell value: %q", ck["text"])
 	}
-	if got := chunkDataRow(t, ck)[common.TableDataKey("金额")]; got != "100" {
+	if got := chunkDataRow(t, ck)[entity.TableDataKey("金额")]; got != "100" {
 		t.Errorf("chunk_data[金额] = %v, want 100", got)
 	}
 }
@@ -189,7 +189,7 @@ func TestTableChunkerManualEmptyCellWrittenAsEmptyString(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want 1", len(chunks))
 	}
-	if got := chunkDataRow(t, chunks[0])[common.TableDataKey("Status")]; got != "" {
+	if got := chunkDataRow(t, chunks[0])[entity.TableDataKey("Status")]; got != "" {
 		t.Errorf("chunk_data[Status] = %q, want empty string", got)
 	}
 }
@@ -350,7 +350,7 @@ func TestTableChunkerDuplicateAndEmptyHeadersGetDistinctKeys(t *testing.T) {
 	if ck["text"] != "- 金额: 100\n- 金额 (2): 200\n- 列 3: note" {
 		t.Errorf("text = %q", ck["text"])
 	}
-	cols := common.DeriveTableColumns(header)
+	cols := entity.DeriveTableColumns(header)
 	data := chunkDataRow(t, ck)
 	want := map[string]string{cols[0].DataKey: "100", cols[1].DataKey: "200", cols[2].DataKey: "note"}
 	if len(cols) != 3 || cols[1].Key == cols[0].Key || cols[2].Key == "" {

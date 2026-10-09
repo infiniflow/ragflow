@@ -27,11 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/chunker"
-	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 )
@@ -233,7 +231,7 @@ func parseSpreadsheetItems(ctx context.Context, extension, filename string, data
 func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 	type sheetState struct {
 		name    string
-		columns []common.TableColumn
+		columns []entity.TableColumn
 		rows    int
 	}
 	bySheet := map[int]*sheetState{}
@@ -246,10 +244,11 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 			continue // no sheet identity: not the spreadsheet wire
 		}
 		markup, _ := item["text"].(string)
-		columns, ok := chunker.SpreadsheetHeaderColumns(markup)
-		if !ok {
+		rows, headerCount := parser.HTMLTableRowsWithHeader(markup)
+		if headerCount != 1 || len(rows) == 0 {
 			continue
 		}
+		columns := entity.DeriveTableColumns(rows[0])
 		state, seen := bySheet[sheetIndex]
 		if !seen {
 			if len(bySheet) >= tableProbeMaxSheets {
@@ -314,7 +313,7 @@ func staleRoleWarnings(doc *entity.Document, sheets []TableProbeSheet) []string 
 	}
 	var warnings []string
 	for key, raw := range doc.ParserConfig {
-		if !schema.IsTableChunkerNodeKey(key) {
+		if !pipeline.IsTableChunkerNodeKey(key) {
 			continue
 		}
 		params, ok := raw.(map[string]any)

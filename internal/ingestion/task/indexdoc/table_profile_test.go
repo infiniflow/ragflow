@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -13,10 +13,10 @@ import (
 // roles that were declared for it.
 func tableRowChunk(t *testing.T, mode string, declared map[string]string, headers []string, cells map[string]string) map[string]any {
 	t.Helper()
-	cols := common.DeriveTableColumns(headers)
+	cols := entity.DeriveTableColumns(headers)
 	data := make(map[string]any, len(cols))
 	for _, col := range cols {
-		if mode == common.TableModeAuto || declared[col.Key] != common.TableRoleIndexing {
+		if mode == entity.TableModeAuto || declared[col.Key] != entity.TableRoleIndexing {
 			data[col.DataKey] = cells[col.Key]
 		}
 	}
@@ -46,16 +46,16 @@ func tableRowChunk(t *testing.T, mode string, declared map[string]string, header
 	return ck
 }
 
-func findColumn(cols []common.TableColumn, key string) (common.TableColumn, bool) {
+func findColumn(cols []entity.TableColumn, key string) (entity.TableColumn, bool) {
 	for _, col := range cols {
 		if col.Key == key {
 			return col, true
 		}
 	}
-	return common.TableColumn{}, false
+	return entity.TableColumn{}, false
 }
 
-func columnKeys(cols []common.TableColumn) map[string]string {
+func columnKeys(cols []entity.TableColumn) map[string]string {
 	out := make(map[string]string, len(cols))
 	for _, col := range cols {
 		out[col.Key] = col.DisplayName
@@ -70,9 +70,9 @@ func TestProjectTableChunksManualRoles(t *testing.T) {
 	declared := map[string]string{"金额": "metadata", "编号": "both", "名称": "indexing"}
 	headers := []string{"金额", "编号", "名称"}
 	chunks := []map[string]any{
-		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": "100", "编号": "A-1", "名称": "x"}),
-		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": "200", "编号": "A-1"}),
-		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": ""}),
+		tableRowChunk(t, entity.TableModeManual, declared, headers, map[string]string{"金额": "100", "编号": "A-1", "名称": "x"}),
+		tableRowChunk(t, entity.TableModeManual, declared, headers, map[string]string{"金额": "200", "编号": "A-1"}),
+		tableRowChunk(t, entity.TableModeManual, declared, headers, map[string]string{"金额": ""}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -117,7 +117,7 @@ func TestProjectTableChunksManualRoles(t *testing.T) {
 func TestProjectTableChunksManualDefaultColumn(t *testing.T) {
 	declared := map[string]string{"金额": "metadata"}
 	chunks := []map[string]any{
-		tableRowChunk(t, common.TableModeManual, declared, []string{"金额", "备注"}, map[string]string{"金额": "100", "备注": "急"}),
+		tableRowChunk(t, entity.TableModeManual, declared, []string{"金额", "备注"}, map[string]string{"金额": "100", "备注": "急"}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -134,7 +134,7 @@ func TestProjectTableChunksManualDefaultColumn(t *testing.T) {
 
 func TestProjectTableChunksAutoPublishesNoDocumentValues(t *testing.T) {
 	chunks := []map[string]any{
-		tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"}),
+		tableRowChunk(t, entity.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -162,7 +162,7 @@ func TestProjectTableChunksIgnoresNonTableRowChunks(t *testing.T) {
 
 func TestProjectTableChunksEmptyCellsStillPublishColumns(t *testing.T) {
 	chunks := []map[string]any{
-		tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": ""}),
+		tableRowChunk(t, entity.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": ""}),
 	}
 	profile, values := ProjectTableChunks(chunks, "infinity")
 	if profile == nil {

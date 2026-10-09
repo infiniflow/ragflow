@@ -112,7 +112,7 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 // markup, because consumers of that label read the text as HTML rows. Free
 // text recognized inside a table region is labelled "text".
 func pdfTableDocType(text string) string {
-	if isTableHTML(text) {
+	if IsTableOpeningTag(text) {
 		return "table"
 	}
 	return "text"

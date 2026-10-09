@@ -3,14 +3,15 @@ package pipeline
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	parserchunk "ragflow/internal/parser/chunk"
-
-	"go.uber.org/zap"
 )
 
 // llmRuntimeParamKeys contains generic LLM hyper-parameters and UI switches common to LLM-based components.
@@ -417,6 +418,96 @@ func ResolveComponentParamsDefaults(dslJSON []byte) (entity.JSONMap, error) {
 		out[k] = v
 	}
 	return out, nil
+}
+
+// TableChunkerNodePrefix is the component-domain key prefix a column configuration lives
+// under, e.g. "TableChunker:FastFoxesJump".
+const TableChunkerNodePrefix = "TableChunker"
+
+// IsTableChunkerNodeKey reports whether a parser_config key names a TableChunker node.
+func IsTableChunkerNodeKey(key string) bool {
+	component, _, found := strings.Cut(key, ":")
+	return found && component == TableChunkerNodePrefix
+}
+
+// ValidateTableColumnOverride checks an override that must consist of column fields only:
+// unknown keys are refused rather than accepted and ignored, so a client that
+// misspells a field hears about it instead of watching the setting do nothing.
+func ValidateTableColumnOverride(params map[string]any) (mode string, roles map[string]string, err error) {
+	mode, roles, err = schema.ValidateTableColumnFields(params)
+	if err != nil {
+		return "", nil, err
+	}
+	for key := range params {
+		if key != "column_mode" && key != "column_roles" {
+			return "", nil, fmt.Errorf("TableChunker node does not accept the parameter %q", key)
+		}
+	}
+	return mode, roles, nil
+}
+
+// MergeTableChunkerParams applies a column override onto the parameters a node would
+// otherwise run with. Fields the override does not mention keep their previous
+// value; column_roles replaces the whole map, so dropping a role is done by
+// submitting the map without that column rather than by omitting the field.
+//
+// Every other parameter of the node — outputs, delimiters, anything a canvas
+// carries — survives untouched, because an upload override is about columns,
+// not about re-declaring the node.
+func MergeTableChunkerParams(base, override map[string]any) (map[string]any, error) {
+	if _, _, err := ValidateTableColumnOverride(override); err != nil {
+		return nil, err
+	}
+	merged := make(map[string]any, len(base)+len(override))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range override {
+		merged[key] = value
+	}
+	return merged, nil
+}
+
+// IsTableColumnOnlyConfig reports whether a parser_config carries nothing but table
+// column settings. A client that only wants to change roles should not have to
+// resend — and therefore not risk rebuilding — the rest of the document's
+// component configuration.
+func IsTableColumnOnlyConfig(raw map[string]any) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	for key, value := range raw {
+		if !IsTableChunkerNodeKey(key) {
+			return false
+		}
+		params, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		for field := range params {
+			if field != "column_mode" && field != "column_roles" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// retiredTableColumnKeys are the pre-component-scoping upload keys. They are refused
+// with an explicit error rather than ignored: a request that carried them used
+// to report success while the roles silently did nothing.
+var retiredTableColumnKeys = []string{"table_column_mode", "table_column_roles", "table_column_names"}
+
+// CheckRetiredTableColumnKeys reports which retired flat keys a request carried.
+func CheckRetiredTableColumnKeys(raw map[string]any) []string {
+	found := make([]string, 0, len(retiredTableColumnKeys))
+	for _, key := range retiredTableColumnKeys {
+		if _, ok := raw[key]; ok {
+			found = append(found, key)
+		}
+	}
+	sort.Strings(found)
+	return found
 }
 
 // ResolveComponentParamsDefaultsFromIDs loads the DSL for the target pipeline

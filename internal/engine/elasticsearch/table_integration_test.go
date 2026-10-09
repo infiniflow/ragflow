@@ -158,7 +158,7 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 				if !ok {
 					t.Fatalf("chunk_data = %#v", stored)
 				}
-				if data[common.TableDataKey("金额")] != "secretword" || fmt.Sprint(stored["table_row_int"]) != "1" {
+				if data[entity.TableDataKey("金额")] != "secretword" || fmt.Sprint(stored["table_row_int"]) != "1" {
 					t.Fatalf("structured row = %#v", stored)
 				}
 				if mode == "auto" && (!strings.Contains(body, "secretword") || len(data) != 4) {
@@ -168,7 +168,7 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 					if strings.Contains(body, "secretword") || !strings.Contains(body, "visibleword") || !strings.Contains(body, "bothword") || !strings.Contains(body, "defaultword") {
 						t.Fatalf("manual body = %q", body)
 					}
-					if _, exists := data[common.TableDataKey("名称")]; exists {
+					if _, exists := data[entity.TableDataKey("名称")]; exists {
 						t.Fatal("indexing-only value entered JSON")
 					}
 				}

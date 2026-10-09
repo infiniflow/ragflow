@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 )
@@ -322,7 +321,7 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 func tableProfileForTest(owned []string) *entity.TableProfile {
 	return &entity.TableProfile{
 		Engine:        "infinity",
-		Columns:       common.DeriveTableColumns([]string{"金额"}),
+		Columns:       entity.DeriveTableColumns([]string{"金额"}),
 		OwnedMetadata: owned,
 	}
 }
@@ -564,7 +563,7 @@ func TestStopRequestedBeforeFinalizationDoesNotPublish(t *testing.T) {
 func TestBuiltInMetadataTakesOverTableKey(t *testing.T) {
 	profile := &entity.TableProfile{
 		Engine:        "infinity",
-		Columns:       common.DeriveTableColumns([]string{"file_name"}),
+		Columns:       entity.DeriveTableColumns([]string{"file_name"}),
 		OwnedMetadata: []string{"file_name"},
 	}
 	raw, err := profile.Encode()

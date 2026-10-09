@@ -37,7 +37,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/dataset"
@@ -1054,15 +1054,15 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			if legacy := schema.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
+			if legacy := pipeline.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
 				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 					fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
-						strings.Join(legacy, ", "), schema.TableChunkerNodePrefix))
+						strings.Join(legacy, ", "), pipeline.TableChunkerNodePrefix))
 				return
 			}
 			cleaned := map[string]interface{}{}
 			for key, value := range parsed {
-				if !schema.IsTableChunkerNodeKey(key) {
+				if !pipeline.IsTableChunkerNodeKey(key) {
 					continue
 				}
 				params, ok := value.(map[string]interface{})
@@ -1071,7 +1071,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 						fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
 					return
 				}
-				if _, _, err = schema.ValidateTableColumnOverride(params); err != nil {
+				if _, _, err = pipeline.ValidateTableColumnOverride(params); err != nil {
 					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 						fmt.Sprintf("parser_config[%q]: %v", key, err))
 					return
